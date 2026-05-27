@@ -1069,51 +1069,6 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                             </div>
                                                         )}
 
-                                                        {item.id && item.mode && item.mode.startsWith('aigc_') && item.is_public === true && (
-                                                            <div className="p-3 bg-white/5 border border-white/10 flex flex-col gap-2">
-                                                                <div className="text-white/40 text-[10px] font-pixel-hans uppercase tracking-widest">
-                                                                    {current.mcmodal.feedbackTitle}
-                                                                </div>
-
-                                                                {!hasFeedback ? (
-                                                                    <div className="grid grid-cols-2 gap-2">
-                                                                        <button
-                                                                            onClick={() => handleQualityFeedback(true)}
-                                                                            className="flex items-center justify-center gap-1.5 py-1.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 text-xs font-pixel-hans cursor-pointer transition-colors active:translate-y-0.5"
-                                                                        >
-                                                                            <Icon icon="pixelarticons:check" className="text-[12px]" />
-                                                                            <span>{current.mcmodal.feedbackGood}</span>
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => handleQualityFeedback(false)}
-                                                                            className="flex items-center justify-center gap-1.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-pixel-hans cursor-pointer transition-colors active:translate-y-0.5"
-                                                                        >
-                                                                            <Icon icon="pixelarticons:close" className="text-[12px]" />
-                                                                            <span>{current.mcmodal.feedbackBad}</span>
-                                                                        </button>
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="text-xs font-pixel-hans text-green-400/90 leading-normal flex items-start gap-1.5 py-0.5">
-                                                                        <Icon icon="pixelarticons:check-double" className="text-xs shrink-0 mt-0.5" />
-                                                                        <span>{current.mcmodal.feedbackThanks}</span>
-                                                                    </div>
-                                                                )}
-
-                                                                <div className="text-xs font-pixel-hans text-white/40 leading-relaxed border-t border-white/5 pt-2 mt-1">
-                                                                    <span>{current.mcmodal.discordPrompt}</span>
-                                                                    <a
-                                                                        href="https://discord.gg/JHd2EecN"
-                                                                        target="_blank"
-                                                                        rel="noreferrer"
-                                                                        className="text-[#5865F2] hover:underline inline-flex items-center gap-0.5 shrink-0"
-                                                                    >
-                                                                        <Icon icon="pixelarticons:message-text" className="text-xs" />
-                                                                        <span>{current.mcmodal.discordLinkText}</span>
-                                                                    </a>
-                                                                </div>
-                                                            </div>
-                                                        )}
-
                                                         <div className="mt-auto w-full border-t border-dashed border-white/10 pt-1.5 flex flex-col gap-1">
                                                             {item.model_version && (
                                                                 <div className="flex justify-between items-center text-white/30 text-[9px] font-pixel-hans">
@@ -1169,6 +1124,52 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                     <div className="text-white/40">{formatDate(item.timestamp)}</div>
                                                                 </div>
                                                             )}
+
+                                                            {item.id && item.mode && item.mode.startsWith('aigc_') && item.is_public === true && (
+                                                                <div className="p-3 bg-white/5 border border-white/10 flex flex-col gap-2 mt-2">
+                                                                    <div className="text-white/40 text-[10px] font-pixel-hans uppercase tracking-widest">
+                                                                        {current.mcmodal.feedbackTitle}
+                                                                    </div>
+
+                                                                    {!hasFeedback ? (
+                                                                        <div className="grid grid-cols-2 gap-2">
+                                                                            <button
+                                                                                onClick={() => handleQualityFeedback(true)}
+                                                                                className="flex items-center justify-center gap-1.5 py-1.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 text-xs font-pixel-hans cursor-pointer transition-colors active:translate-y-0.5"
+                                                                            >
+                                                                                <Icon icon="pixelarticons:check" className="text-[12px]" />
+                                                                                <span>{current.mcmodal.feedbackGood}</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => handleQualityFeedback(false)}
+                                                                                className="flex items-center justify-center gap-1.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-pixel-hans cursor-pointer transition-colors active:translate-y-0.5"
+                                                                            >
+                                                                                <Icon icon="pixelarticons:close" className="text-[12px]" />
+                                                                                <span>{current.mcmodal.feedbackBad}</span>
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="text-xs font-pixel-hans text-green-400/90 leading-normal flex items-start gap-1.5 py-0.5">
+                                                                            <Icon icon="pixelarticons:check-double" className="text-xs shrink-0 mt-0.5" />
+                                                                            <span>{current.mcmodal.feedbackThanks}</span>
+                                                                        </div>
+                                                                    )}
+
+                                                                    <div className="text-xs font-pixel-hans text-white/40 leading-relaxed border-t border-white/5 pt-2 mt-1">
+                                                                        <span>{current.mcmodal.discordPrompt}</span>
+                                                                        <a
+                                                                            href="https://discord.gg/JHd2EecN"
+                                                                            target="_blank"
+                                                                            rel="noreferrer"
+                                                                            className="text-[#5865F2] hover:underline inline-flex items-center gap-0.5 shrink-0"
+                                                                        >
+                                                                            <Icon icon="pixelarticons:message-text" className="text-xs" />
+                                                                            <span>{current.mcmodal.discordLinkText}</span>
+                                                                        </a>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
                                                             {item.id && (
                                                                 <div className="flex justify-end gap-3 text-white/25 text-[9px] font-pixel-hans mt-0.5 pt-1 border-t border-white/5">
                                                                     <button ref={reportButtonRef} onClick={handleReport} className={`hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer ${isReportOpen ? 'text-orange-400' : ''}`}>
