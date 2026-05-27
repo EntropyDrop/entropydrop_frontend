@@ -250,7 +250,7 @@ export default {
             pro_plus: {
                 title: 'Pro-Plus',
                 price: '20',
-                quota: '每 5 小时 15 次生成额度',
+                quota: '每 5 小时 12 次生成额度',
                 concurrent: '2 个并发生成',
                 private: '1,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
@@ -259,7 +259,7 @@ export default {
             pro_max: {
                 title: 'Pro-Max',
                 price: '50',
-                quota: '每 5 小时 50 次生成额度',
+                quota: '每 5 小时 36 次生成额度',
                 concurrent: '3 个并发生成',
                 private: '5,000 个私有皮肤上限',
                 priority: '高优先级生成队列',

@@ -250,7 +250,7 @@ export default {
             pro_plus: {
                 title: 'Pro-Plus',
                 price: '20',
-                quota: '15 generations per 5 hours',
+                quota: '12 generations per 5 hours',
                 concurrent: '2 concurrent generations',
                 private: '1,000 private skins limit',
                 priority: 'High priority queue',
@@ -259,7 +259,7 @@ export default {
             pro_max: {
                 title: 'Pro-Max',
                 price: '50',
-                quota: '50 generations per 5 hours',
+                quota: '36 generations per 5 hours',
                 concurrent: '3 concurrent generations',
                 private: '5,000 private skins limit',
                 priority: 'High priority queue',
