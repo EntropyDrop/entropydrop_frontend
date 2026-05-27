@@ -242,7 +242,7 @@ export default {
                 title: 'Free',
                 price: '0',
                 quota: 'Up to 6 generations per day (dynamically adjusted based on capacity)',
-                concurrent: '1 concurrent generation',
+                collections: 'Public collections only',
                 private: 'No private space',
                 priority: 'Regular priority',
                 experimental: 'Basic model access'
@@ -251,7 +251,7 @@ export default {
                 title: 'Pro-Plus',
                 price: '20',
                 quota: '12 generations per 5 hours',
-                concurrent: '2 concurrent generations',
+                collections: 'Support private collections',
                 private: '1,000 private skins limit',
                 priority: 'High priority queue',
                 experimental: 'Early access to new features'
@@ -260,7 +260,7 @@ export default {
                 title: 'Pro-Max',
                 price: '50',
                 quota: '36 generations per 5 hours',
-                concurrent: '3 concurrent generations',
+                collections: 'Support private collections',
                 private: '5,000 private skins limit',
                 priority: 'High priority queue',
                 experimental: 'Early access to new features'

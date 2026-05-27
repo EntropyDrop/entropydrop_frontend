@@ -242,7 +242,7 @@ export default {
                 title: '免费版',
                 price: '0',
                 quota: '每日最多 6 次生成额度（根据算力动态调整）',
-                concurrent: '1 个并发生成',
+                collections: '仅支持公开收藏夹',
                 private: '不支持私有空间',
                 priority: '普通生成优先级',
                 experimental: '基础模型体验'
@@ -251,7 +251,7 @@ export default {
                 title: 'Pro-Plus',
                 price: '20',
                 quota: '每 5 小时 12 次生成额度',
-                concurrent: '2 个并发生成',
+                collections: '支持创建私有收藏夹',
                 private: '1,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
                 experimental: '优先体验新功能'
@@ -260,7 +260,7 @@ export default {
                 title: 'Pro-Max',
                 price: '50',
                 quota: '每 5 小时 36 次生成额度',
-                concurrent: '3 个并发生成',
+                collections: '支持创建私有收藏夹',
                 private: '5,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
                 experimental: '优先体验新功能'
