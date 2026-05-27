@@ -100,7 +100,7 @@ export function MCModalPreview({
     };
 
     return (
-        <div className="w-full lg:w-[600px] aspect-square lg:h-[600px] bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] relative overflow-hidden flex-shrink-0 border-b lg:border-b-0 lg:border-r border-white/10">
+        <div className="w-full lg:w-[600px] aspect-square lg:h-[720px] bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] relative overflow-hidden flex-shrink-0 border-b lg:border-b-0 lg:border-r border-white/10">
             <Canvas
                 camera={{ position: [35, 35, 35], fov: 40 }}
                 shadows
