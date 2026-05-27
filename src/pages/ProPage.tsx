@@ -221,10 +221,7 @@ export function ProPage({ current }: ProPageProps) {
                                     <Icon icon="pixelarticons:image" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
                                     <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.quota}</span>
                                 </div>
-                                <div className="flex items-start gap-3">
-                                    <Icon icon="pixelarticons:sliders" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
-                                    <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.concurrent}</span>
-                                </div>
+
                                 <div className="flex items-start gap-3">
                                     <Icon icon="pixelarticons:folder" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
                                     <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.private}</span>
