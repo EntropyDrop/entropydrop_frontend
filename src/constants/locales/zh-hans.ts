@@ -241,7 +241,7 @@ export default {
             free: {
                 title: '免费版',
                 price: '0',
-                quota: '每日 6 次生成额度',
+                quota: '每日最多 6 次生成额度（根据算力动态调整）',
                 concurrent: '1 个并发生成',
                 private: '不支持私有空间',
                 priority: '普通生成优先级',

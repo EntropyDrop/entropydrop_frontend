@@ -241,7 +241,7 @@ export default {
             free: {
                 title: 'Free',
                 price: '0',
-                quota: '6 generations per day',
+                quota: 'Up to 6 generations per day (dynamically adjusted based on capacity)',
                 concurrent: '1 concurrent generation',
                 private: 'No private space',
                 priority: 'Regular priority',
