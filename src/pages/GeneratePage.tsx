@@ -63,10 +63,49 @@ export function GeneratePage({ current }: GeneratePageProps) {
                     const res = await fetch(location.state.sourceImage);
                     const blob = await res.blob();
                     const filename = location.state.sourceImage.split('/').pop() || 'source.jpg';
-                    const file = new File([blob], filename, { type: blob.type });
-                    setImageFile(file);
+                    
+                    const img = new Image();
+                    const url = URL.createObjectURL(blob);
+                    await new Promise<void>((resolve, reject) => {
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 768;
+                            canvas.height = 768;
+                            const ctx = canvas.getContext('2d');
+                            if (ctx) {
+                                // Fill white background
+                                ctx.fillStyle = '#FFFFFF';
+                                ctx.fillRect(0, 0, 768, 768);
+
+                                // Calculate aspect ratio
+                                const scale = Math.min(768 / img.width, 768 / img.height);
+                                const x = (768 - img.width * scale) / 2;
+                                const y = (768 - img.height * scale) / 2;
+                                const drawWidth = img.width * scale;
+                                const drawHeight = img.height * scale;
+
+                                ctx.drawImage(img, x, y, drawWidth, drawHeight);
+
+                                canvas.toBlob((resizedBlob) => {
+                                    if (resizedBlob) {
+                                        const newName = filename.replace(/\.[^/.]+$/, "") + ".jpg";
+                                        const resizedFile = new File([resizedBlob], newName, { type: 'image/jpeg' });
+                                        setImageFile(resizedFile);
+                                        setImagePreviewUrl(canvas.toDataURL('image/jpeg', 0.82));
+                                    }
+                                    resolve();
+                                }, 'image/jpeg', 0.82);
+                            } else {
+                                reject(new Error('Failed to get 2D context'));
+                            }
+                        };
+                        img.onerror = (err) => reject(err);
+                        img.src = url;
+                    }).finally(() => {
+                        URL.revokeObjectURL(url);
+                    });
                 } catch (e) {
-                    console.error('Failed to load state image into File', e);
+                    console.error('Failed to load and resize state image into File', e);
                 }
             }
         };
@@ -545,18 +584,18 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                     const img = new Image();
                                                                     img.onload = () => {
                                                                         const canvas = document.createElement('canvas');
-                                                                        canvas.width = 512;
-                                                                        canvas.height = 512;
+                                                                        canvas.width = 768;
+                                                                        canvas.height = 768;
                                                                         const ctx = canvas.getContext('2d');
                                                                         if (ctx) {
                                                                             // Fill white background
                                                                             ctx.fillStyle = '#FFFFFF';
-                                                                            ctx.fillRect(0, 0, 512, 512);
+                                                                            ctx.fillRect(0, 0, 768, 768);
 
                                                                             // Calculate aspect ratio
-                                                                            const scale = Math.min(512 / img.width, 512 / img.height);
-                                                                            const x = (512 - img.width * scale) / 2;
-                                                                            const y = (512 - img.height * scale) / 2;
+                                                                            const scale = Math.min(768 / img.width, 768 / img.height);
+                                                                            const x = (768 - img.width * scale) / 2;
+                                                                            const y = (768 - img.height * scale) / 2;
                                                                             const drawWidth = img.width * scale;
                                                                             const drawHeight = img.height * scale;
 
