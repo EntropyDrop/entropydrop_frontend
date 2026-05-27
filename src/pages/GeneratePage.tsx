@@ -67,7 +67,39 @@ export function GeneratePage({ current }: GeneratePageProps) {
                     const img = new Image();
                     const url = URL.createObjectURL(blob);
                     await new Promise<void>((resolve, reject) => {
-                        img.onload = () => {
+                        img.onload = async () => {
+                            // Check if it is a Minecraft skin layout file (64x64 or 64x32)
+                            if (img.width === 64 && (img.height === 64 || img.height === 32)) {
+                                try {
+                                    const skinCanvas = await Skin2D(url);
+                                    const canvas = document.createElement('canvas');
+                                    canvas.width = 768;
+                                    canvas.height = 768;
+                                    const ctx = canvas.getContext('2d');
+                                    if (ctx) {
+                                        ctx.fillStyle = '#FFFFFF';
+                                        ctx.fillRect(0, 0, 768, 768);
+                                        ctx.drawImage(skinCanvas, 0, 0, 768, 768);
+
+                                        canvas.toBlob((resizedBlob) => {
+                                            if (resizedBlob) {
+                                                const newName = filename.replace(/\.[^/.]+$/, "") + "_rendered.jpg";
+                                                const resizedFile = new File([resizedBlob], newName, { type: 'image/jpeg' });
+                                                setImageFile(resizedFile);
+                                                setImagePreviewUrl(canvas.toDataURL('image/jpeg', 0.82));
+                                            }
+                                            resolve();
+                                        }, 'image/jpeg', 0.82);
+                                    } else {
+                                        reject(new Error('Failed to get 2D context'));
+                                    }
+                                } catch (err) {
+                                    reject(err);
+                                }
+                                return;
+                            }
+
+                            // Normal image load logic
                             const canvas = document.createElement('canvas');
                             canvas.width = 768;
                             canvas.height = 768;
@@ -582,7 +614,36 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                             reader.onload = (ev) => {
                                                                 if (ev.target?.result) {
                                                                     const img = new Image();
-                                                                    img.onload = () => {
+                                                                    img.onload = async () => {
+                                                                        // Check if it is a Minecraft skin layout file (64x64 or 64x32)
+                                                                        if (img.width === 64 && (img.height === 64 || img.height === 32)) {
+                                                                            try {
+                                                                                const skinCanvas = await Skin2D(ev.target?.result as string);
+                                                                                const canvas = document.createElement('canvas');
+                                                                                canvas.width = 768;
+                                                                                canvas.height = 768;
+                                                                                const ctx = canvas.getContext('2d');
+                                                                                if (ctx) {
+                                                                                    ctx.fillStyle = '#FFFFFF';
+                                                                                    ctx.fillRect(0, 0, 768, 768);
+                                                                                    ctx.drawImage(skinCanvas, 0, 0, 768, 768);
+
+                                                                                    canvas.toBlob((blob) => {
+                                                                                        if (blob) {
+                                                                                            const newName = file.name.replace(/\.[^/.]+$/, "") + "_rendered.jpg";
+                                                                                            const resizedFile = new File([blob], newName, { type: 'image/jpeg' });
+                                                                                            setImageFile(resizedFile);
+                                                                                        }
+                                                                                    }, 'image/jpeg', 0.82);
+                                                                                    setImagePreviewUrl(canvas.toDataURL('image/jpeg', 0.82));
+                                                                                }
+                                                                            } catch (err) {
+                                                                                console.error("Failed to render skin via Skin2D:", err);
+                                                                            }
+                                                                            return;
+                                                                        }
+
+                                                                        // Normal image load logic
                                                                         const canvas = document.createElement('canvas');
                                                                         canvas.width = 768;
                                                                         canvas.height = 768;
