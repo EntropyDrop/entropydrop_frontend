@@ -23,12 +23,26 @@ export function DiscoverySearch({ current, onSelect, selectedItem }: DiscoverySe
     const PAGE_SIZE = 15;
 
     const handleSearch = async (pageNum: number) => {
-        if (!query.trim()) return
+        const trimmedQuery = query.trim()
+        if (!trimmedQuery) return
+
+        const hasChinese = /[\u4e00-\u9fa5]/.test(trimmedQuery)
+        const minLength = hasChinese ? 1 : 3
+        if (trimmedQuery.length < minLength) {
+            window.dispatchEvent(new CustomEvent('global-error', {
+                detail: {
+                    title: current.generate.notice || 'Notice',
+                    message: current.discovery.searchMinLengthWarning || 'Search query must be at least 3 characters'
+                }
+            }))
+            return
+        }
+
         setIsSearching(true)
         setIsOpen(true)
 
         try {
-            const res = await apiFetch(`/api/discovery/search?q=${encodeURIComponent(query)}&page=${pageNum}&page_size=${PAGE_SIZE}`)
+            const res = await apiFetch(`/api/discovery/search?q=${encodeURIComponent(trimmedQuery)}&page=${pageNum}&page_size=${PAGE_SIZE}`)
             if (res.status === 429) {
                 // Rate limited
                 window.dispatchEvent(new CustomEvent('global-error', {

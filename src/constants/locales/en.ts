@@ -566,6 +566,7 @@ export default {
         prev: 'Prev',
         next: 'Next',
         rateLimitTitle: 'Rate Limited',
-        rateLimitMessage: 'Please wait 5 seconds before retrying'
+        rateLimitMessage: 'Please wait 5 seconds before retrying',
+        searchMinLengthWarning: 'Search query must be at least 3 characters'
     }
 } as const
