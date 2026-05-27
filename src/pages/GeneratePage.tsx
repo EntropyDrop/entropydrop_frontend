@@ -389,12 +389,18 @@ export function GeneratePage({ current }: GeneratePageProps) {
             setImageFile(null)
             setImagePreviewUrl(null)
             setSourceId(null)
+            setEditSourceType(null)
+            setSelectedHistory(undefined)
 
             setSeed(Math.floor(Math.random() * max_seed))
             setNStep(100)
             setGuidance(4)
             setIsSourcePrivate(false)
             setIsPrivate(false)
+
+            if (location.state) {
+                navigate(location.pathname, { replace: true, state: {} });
+            }
         }
     }
 

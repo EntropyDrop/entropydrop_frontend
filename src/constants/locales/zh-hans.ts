@@ -1,7 +1,7 @@
 export default {
     lang: 'zh-hans',
     title: 'EntropyDrop',
-    subtitle: '开放生产体系',
+    subtitle: '',
     fontClass: 'font-pixel-hans',
     nav: { discover: '发现', generate: '生成', edit: '编辑', print: '3D打印', collection: '收藏', pro: 'Pro订阅', open: '公开', monitor: '监控' },
     generate: {
