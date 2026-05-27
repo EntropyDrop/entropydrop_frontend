@@ -177,104 +177,104 @@ export function ProPage({ current }: ProPageProps) {
                         }
                     ].map((tier) => {
                         const isUpgrade = tier.key === 'pro_max' && userProfile?.pro_level === 'pro-plus' && userProfile?.paypal_subscription_status === 'ACTIVE';
-                        const userLevel = userProfile?.paypal_subscription_status === 'ACTIVE' 
-                            ? (userProfile?.pro_level === 'pro-max' ? 2 : (userProfile?.pro_level === 'pro-plus' ? 1 : 0)) 
+                        const userLevel = userProfile?.paypal_subscription_status === 'ACTIVE'
+                            ? (userProfile?.pro_level === 'pro-max' ? 2 : (userProfile?.pro_level === 'pro-plus' ? 1 : 0))
                             : 0;
                         const tierLevel = tier.key === 'pro_max' ? 2 : (tier.key === 'pro_plus' ? 1 : 0);
                         const isLowerTier = tierLevel < userLevel;
 
                         return (
-                        <div
-                            key={tier.key}
-                            className={`relative flex flex-col p-6 border transition-all duration-300 ${tier.isCurrent
-                                ? `${tier.styles.activeBorder} ${tier.styles.activeBg} ring-1 ${tier.styles.ring}`
-                                : `${tier.styles.border} ${tier.styles.bg} hover:border-white/30`
-                                }`}
-                        >
-                            {tier.popular && (
-                                <span className={`absolute -top-3 left-1/2 -translate-x-1/2 bg-green-500 text-black font-bold text-[10px] px-3 py-1 uppercase tracking-wider ${current.fontClass}`}>
-                                    {current.pro.recommended}
-                                </span>
-                            )}
+                            <div
+                                key={tier.key}
+                                className={`relative flex flex-col p-6 border transition-all duration-300 ${tier.isCurrent
+                                    ? `${tier.styles.activeBorder} ${tier.styles.activeBg} ring-1 ${tier.styles.ring}`
+                                    : `${tier.styles.border} ${tier.styles.bg} hover:border-white/30`
+                                    }`}
+                            >
+                                {tier.popular && (
+                                    <span className={`absolute -top-3 left-1/2 -translate-x-1/2 bg-green-500 text-black font-bold text-[10px] px-3 py-1 uppercase tracking-wider ${current.fontClass}`}>
+                                        {current.pro.recommended}
+                                    </span>
+                                )}
 
-                            {tier.isCurrent && (
-                                <div className={`absolute -top-3 right-4 px-2 py-1 flex items-center gap-1 text-black font-bold text-[10px] ${tier.key === 'free' ? 'bg-white' : (tier.key === 'pro_plus' ? 'bg-green-500' : 'bg-purple-500')} ${current.fontClass}`}>
-                                    <Icon icon="pixelarticons:check-double" />
-                                    {current.pro.currentPlan}
-                                </div>
-                            )}
+                                {tier.isCurrent && (
+                                    <div className={`absolute -top-3 right-4 px-2 py-1 flex items-center gap-1 text-black font-bold text-[10px] ${tier.key === 'free' ? 'bg-white' : (tier.key === 'pro_plus' ? 'bg-green-500' : 'bg-purple-500')} ${current.fontClass}`}>
+                                        <Icon icon="pixelarticons:check-double" />
+                                        {current.pro.currentPlan}
+                                    </div>
+                                )}
 
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className={`p-2 border ${tier.key === 'free' ? 'bg-white/10 border-white/20' : (tier.key === 'pro_plus' ? 'bg-green-500/10 border-green-500/20' : 'bg-purple-500/10 border-purple-500/20')}`}>
-                                    <Icon icon={tier.icon} className={`text-2xl ${tier.styles.text}`} />
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className={`p-2 border ${tier.key === 'free' ? 'bg-white/10 border-white/20' : (tier.key === 'pro_plus' ? 'bg-green-500/10 border-green-500/20' : 'bg-purple-500/10 border-purple-500/20')}`}>
+                                        <Icon icon={tier.icon} className={`text-2xl ${tier.styles.text}`} />
+                                    </div>
+                                    <h3 className={`text-lg font-bold ${current.fontClass}`}>{tier.perks.title}</h3>
                                 </div>
-                                <h3 className={`text-lg font-bold ${current.fontClass}`}>{tier.perks.title}</h3>
+
+                                <div className="flex items-baseline gap-1 mb-8">
+                                    <span className={`text-3xl font-bold ${current.fontClass} ${tier.styles.text}`}>${tier.perks.price}</span>
+                                    <span className={`text-white/40 text-xs ${current.fontClass}`}>/ {current.pro.plansData.month}</span>
+                                </div>
+
+                                <div className="flex-1 flex flex-col gap-4 mb-8">
+                                    <div className="flex items-start gap-3">
+                                        <Icon icon="pixelarticons:image" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
+                                        <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.quota}</span>
+                                    </div>
+
+                                    <div className="flex items-start gap-3">
+                                        <Icon icon="pixelarticons:lock" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
+                                        <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.private}</span>
+                                    </div>
+                                    <div className="flex items-start gap-3">
+                                        <Icon icon="pixelarticons:folder" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
+                                        <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.collections}</span>
+                                    </div>
+                                    <div className="flex items-start gap-3">
+                                        <Icon icon="pixelarticons:zap" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
+                                        <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.priority}</span>
+                                    </div>
+                                    <div className="flex items-start gap-3">
+                                        <Icon icon="pixelarticons:flag" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
+                                        <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.experimental}</span>
+                                    </div>
+                                </div>
+
+                                {tier.key === 'free' ? (
+                                    <></>
+                                ) : (
+                                    <button
+                                        onClick={() => {
+                                            if (tier.isCurrent) {
+                                                handleCancelSubscription();
+                                            } else {
+                                                // Find the plan data to pass it directly
+                                                const planData = plans.find(p => p.key === tier.key) || { key: tier.key, price: tier.key === 'pro_max' ? 50 : 20 };
+                                                handleSubscribe(planData, isUpgrade);
+                                            }
+                                        }}
+                                        disabled={isCancelling || isCreatingOrder || isLowerTier}
+                                        className={`w-full py-3 font-bold transition-all flex items-center justify-center gap-2 text-sm ${tier.isCurrent
+                                            ? 'bg-red-500 hover:bg-red-600 text-black border border-red-400'
+                                            : isLowerTier
+                                                ? 'bg-white/5 text-white/30 cursor-not-allowed border border-white/10'
+                                                : `${tier.styles.button} border border-black/10`
+                                            } ${current.fontClass}`}
+                                    >
+                                        {tier.isCurrent ? (
+                                            <>
+                                                <Icon icon="pixelarticons:close" className={isCancelling ? 'animate-spin' : ''} />
+                                                {current.pro.cancel}
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Icon icon="pixelarticons:check" />
+                                                {isUpgrade ? current.pro.upgrade : current.pro.subscribe}
+                                            </>
+                                        )}
+                                    </button>
+                                )}
                             </div>
-
-                            <div className="flex items-baseline gap-1 mb-8">
-                                <span className={`text-3xl font-bold ${current.fontClass} ${tier.styles.text}`}>${tier.perks.price}</span>
-                                <span className={`text-white/40 text-xs ${current.fontClass}`}>/ {current.pro.plansData.month}</span>
-                            </div>
-
-                            <div className="flex-1 flex flex-col gap-4 mb-8">
-                                <div className="flex items-start gap-3">
-                                    <Icon icon="pixelarticons:image" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
-                                    <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.quota}</span>
-                                </div>
-
-                                <div className="flex items-start gap-3">
-                                    <Icon icon="pixelarticons:folder" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
-                                    <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.private}</span>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <Icon icon="pixelarticons:open-bookmark" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
-                                    <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.collections}</span>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <Icon icon="pixelarticons:zap" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
-                                    <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.priority}</span>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <Icon icon="pixelarticons:flag" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
-                                    <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.experimental}</span>
-                                </div>
-                            </div>
-
-                            {tier.key === 'free' ? (
-                                <></>
-                            ) : (
-                                <button
-                                    onClick={() => {
-                                        if (tier.isCurrent) {
-                                            handleCancelSubscription();
-                                        } else {
-                                            // Find the plan data to pass it directly
-                                            const planData = plans.find(p => p.key === tier.key) || { key: tier.key, price: tier.key === 'pro_max' ? 50 : 20 };
-                                            handleSubscribe(planData, isUpgrade);
-                                        }
-                                    }}
-                                    disabled={isCancelling || isCreatingOrder || isLowerTier}
-                                    className={`w-full py-3 font-bold transition-all flex items-center justify-center gap-2 text-sm ${tier.isCurrent
-                                        ? 'bg-red-500 hover:bg-red-600 text-black border border-red-400'
-                                        : isLowerTier
-                                            ? 'bg-white/5 text-white/30 cursor-not-allowed border border-white/10'
-                                            : `${tier.styles.button} border border-black/10`
-                                        } ${current.fontClass}`}
-                                >
-                                    {tier.isCurrent ? (
-                                        <>
-                                            <Icon icon="pixelarticons:close" className={isCancelling ? 'animate-spin' : ''} />
-                                            {current.pro.cancel}
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Icon icon="pixelarticons:check" />
-                                            {isUpgrade ? current.pro.upgrade : current.pro.subscribe}
-                                        </>
-                                    )}
-                                </button>
-                            )}
-                        </div>
                         );
                     })}
                 </div>
