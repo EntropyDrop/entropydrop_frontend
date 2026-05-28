@@ -480,9 +480,9 @@ export function CollectionPage({ current }: CollectionPageProps) {
             <div className="w-full max-w-7xl h-full flex flex-col gap-6 bg-black/40 backdrop-blur-md p-6 sm:p-8 border border-white/10 overflow-y-auto custom-scrollbar pointer-events-auto relative">
 
                 {/* Header */}
-                <div className="flex justify-between items-end border-b border-white/10 pb-6 shrink-0">
-                    <div>
-                        <div className="flex items-center gap-2 mb-1">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-white/10 pb-6 shrink-0 w-full">
+                    <div className="w-full md:w-auto">
+                        <div className="flex items-center gap-2 mb-1 w-full">
                             {currentCollection && (
                                 <button
                                     onClick={() => {
@@ -500,12 +500,12 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                             fetchCollections(publicColPage, uid, true)
                                         }
                                     }}
-                                    className="p-1 hover:bg-white/10 text-white/40 hover:text-white transition-colors cursor-pointer"
+                                    className="p-1 hover:bg-white/10 text-white/40 hover:text-white transition-colors cursor-pointer shrink-0"
                                 >
                                     <Icon icon="pixelarticons:arrow-left" className="text-xl" />
                                 </button>
                             )}
-                            <h2 className={`text-white text-2xl sm:text-3xl m-0 ${current.fontClass}`}>
+                            <h2 className={`text-white text-2xl sm:text-3xl m-0 truncate ${current.fontClass}`}>
                                 {currentCollection ? currentCollection.name : current.collection.title}
                             </h2>
                         </div>
@@ -517,11 +517,11 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         </p>
                     </div>
 
-                    <div className="flex flex-col items-end gap-3">
+                    <div className="flex flex-col items-stretch md:items-end gap-3 w-full md:w-auto">
                         {!currentCollection && (
                             <button
                                 onClick={() => setIsCreateModalOpen(true)}
-                                className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white border-2 border-black cursor-pointer text-xs flex items-center gap-2 transition-all active:translate-y-0.5 ${current.fontClass}`}
+                                className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white border-2 border-black cursor-pointer text-xs flex items-center justify-center gap-2 transition-all active:translate-y-0.5 w-full md:w-auto ${current.fontClass}`}
                             >
                                 <Icon icon="pixelarticons:plus" />
                                 {current.collection.btnNew}
@@ -529,10 +529,10 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         )}
 
                         {currentCollection && (
-                            <div className="flex flex-col items-end gap-3">
+                            <div className="flex flex-col items-stretch md:items-end gap-3 w-full md:w-auto">
                                 {/* Header Filter Bar */}
-                                <div className="flex items-center gap-2">
-                                    <div className="relative w-40 sm:w-72">
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+                                    <div className="relative w-full sm:w-72">
                                         <Icon icon="pixelarticons:search" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40 text-xs" />
                                         <input
                                             type="text"
@@ -546,7 +546,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                     <select
                                         value={modeInput}
                                         onChange={(e) => setModeInput(e.target.value)}
-                                        className="bg-black/40 border border-white/10 px-3 py-2 text-white text-xs outline-none focus:border-[#3c8527] transition-colors cursor-pointer font-pixel-hans min-w-[120px]"
+                                        className="bg-black/40 border border-white/10 px-3 py-2 text-white text-xs outline-none focus:border-[#3c8527] transition-colors cursor-pointer font-pixel-hans w-full sm:w-auto min-w-0 sm:min-w-[120px]"
                                     >
                                         <option value="">{current.collection.allTypes}</option>
                                         <option value="aigc_text_to_skin">{current.collection.modeTextToSkin}</option>
@@ -561,7 +561,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                             setFilterMode(modeInput);
                                             setItemPage(1);
                                         }}
-                                        className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white text-xs border border-black cursor-pointer transition-all active:translate-y-0.5 ${current.fontClass}`}
+                                        className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white text-xs border border-black cursor-pointer transition-all active:translate-y-0.5 w-full sm:w-auto ${current.fontClass}`}
                                     >
                                         {current.collection.search}
                                     </button>
@@ -915,8 +915,8 @@ export function CollectionPage({ current }: CollectionPageProps) {
 
                 {/* Footer (Pagination & Actions) */}
                 {currentCollection && (
-                    <div className="mt-auto pt-6 border-t border-white/5 flex items-center shrink-0">
-                        <div className="flex-1 flex items-center gap-4">
+                    <div className="mt-auto pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 w-full">
+                        <div className="flex items-center justify-center sm:justify-start gap-4 w-full sm:w-auto">
                             {currentCollection && itemTotalPages > 1 && (
                                 <>
                                     <button
@@ -942,16 +942,13 @@ export function CollectionPage({ current }: CollectionPageProps) {
                             )}
                         </div>
 
-                        {/* Center Spacer if needed, or pagination can stay left. 
-                            Actually, common UI puts pagination center. Let's do 3-col. */}
-
                         {/* Right Actions (Upload & Generate) */}
-                        <div className="flex-1 flex justify-end">
-                            <div className="flex items-center gap-3">
+                        <div className="w-full sm:w-auto flex justify-center sm:justify-end">
+                            <div className="flex flex-wrap items-center justify-center gap-3 w-full sm:w-auto">
                                 {currentCollection && (
                                     <button
                                         onClick={() => navigate('/skin/generate')}
-                                        className={`px-4 py-2 bg-[#1a1a1a] hover:bg-white/10 text-white border-2 border-white/10 cursor-pointer text-xs flex items-center gap-2 transition-all active:translate-y-0.5 ${current.fontClass}`}
+                                        className={`px-4 py-2 bg-[#1a1a1a] hover:bg-white/10 text-white border-2 border-white/10 cursor-pointer text-xs flex items-center justify-center gap-2 transition-all active:translate-y-0.5 w-full sm:w-auto ${current.fontClass}`}
                                     >
                                         <Icon icon="pixelarticons:zap" />
                                         {current.collection.btnGenerate}
@@ -959,7 +956,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                 )}
 
                                 {currentCollection && ['creations_public', 'creations_private'].includes(String(currentCollection.id)) && localStorage.getItem('token') && (
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center justify-center gap-3 w-full sm:w-auto">
                                         <input
                                             id="upload-item-input"
                                             type="file"
@@ -968,10 +965,10 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                             onChange={handleUploadItem}
                                         />
                                         {(!isPro && currentCollection.id === 'creations_private') ? (
-                                            <div className="flex items-center gap-3">
+                                            <div className="flex flex-wrap items-center justify-center gap-3 w-full sm:w-auto">
                                                 <div
                                                     onClick={() => navigate('/skin/pro')}
-                                                    className="flex items-center gap-1.5 px-2 py-1 bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 cursor-pointer hover:bg-yellow-400/20 transition-all animate-in fade-in slide-in-from-left-2 duration-300"
+                                                    className="flex items-center justify-center gap-1.5 px-2 py-1 bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 cursor-pointer hover:bg-yellow-400/20 transition-all animate-in fade-in slide-in-from-left-2 duration-300 w-full sm:w-auto"
                                                 >
                                                     <Icon icon="pixelarticons:zap" className="text-xs" />
                                                     <span className={`text-[9px] lg:text-[10px] font-bold ${current.fontClass}`}>
@@ -980,7 +977,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                 </div>
                                                 <button
                                                     disabled
-                                                    className={`px-4 py-2 bg-gray-700 text-white/40 border-2 border-black cursor-not-allowed text-xs flex items-center gap-2 transition-all ${current.fontClass}`}
+                                                    className={`px-4 py-2 bg-gray-700 text-white/40 border-2 border-black cursor-not-allowed text-xs flex items-center justify-center gap-2 transition-all w-full sm:w-auto ${current.fontClass}`}
                                                 >
                                                     <Icon icon="pixelarticons:upload" />
                                                     {current.collection.upload}
@@ -991,7 +988,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                 onClick={() => {
                                                     document.getElementById('upload-item-input')?.click();
                                                 }}
-                                                className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white border-2 border-black cursor-pointer text-xs flex items-center gap-2 transition-all active:translate-y-0.5 ${current.fontClass}`}
+                                                className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white border-2 border-black cursor-pointer text-xs flex items-center justify-center gap-2 transition-all active:translate-y-0.5 w-full sm:w-auto ${current.fontClass}`}
                                             >
                                                 <Icon icon="pixelarticons:upload" />
                                                 {current.collection.upload}
