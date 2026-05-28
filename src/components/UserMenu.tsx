@@ -161,20 +161,12 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                     <Icon icon="pixelarticons:chevron-down" className={`text-white/20 group-hover:text-white/60 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
                 : (
-                    <div className="relative overflow-hidden cursor-pointer flex items-center justify-center group">
-                        {/* Custom visually beautiful button */}
-                        <LoginTrigger current={current} />
-
-                        {/* Invisible Google Login Button Overlay */}
-                        <div className="absolute inset-0 opacity-0 cursor-pointer [&_iframe]:!w-full [&_iframe]:!h-full [&_iframe]:!min-w-0 [&_iframe]:!absolute [&_iframe]:!inset-0 scale-[2.5]">
-                            <Suspense fallback={null}>
-                                <GoogleSignInButton
-                                    onSuccess={handleGoogleSuccess}
-                                    onError={() => console.error('Google login error')}
-                                />
-                            </Suspense>
-                        </div>
-                    </div>
+                    <Suspense fallback={<LoginTrigger current={current} disabled />}>
+                        <GoogleSignInButton
+                            onSuccess={handleGoogleSuccess}
+                            onError={() => console.error('Google login error')}
+                        />
+                    </Suspense>
                 )}
 
             {isOpen && (
@@ -350,7 +342,7 @@ function LoginTrigger({
     return (
         <button
             disabled={disabled}
-            className={`flex items-center justify-center gap-2 bg-black/40 group-hover:bg-black/60 border-2 border-white/10 h-10 px-3 text-white/80 transition-all cursor-pointer disabled:cursor-wait disabled:opacity-60 ${current.fontClass}`}
+            className={`flex items-center justify-center gap-2 bg-black/40 hover:bg-black/60 border-2 border-white/10 h-10 px-3 text-white/80 transition-all cursor-pointer disabled:cursor-wait disabled:opacity-60 ${current.fontClass}`}
         >
             <Icon icon="pixelarticons:user" className="text-lg" />
             <span className="hidden sm:inline text-xs">{current.user.login}</span>
