@@ -728,11 +728,11 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                         animate={{ scale: 1, opacity: 1, y: 0 }}
                         exit={{ scale: 0.9, opacity: 0.1 }}
                         transition={{ duration: 0.2, ease: "easeInOut" }}
-                        className={`pointer-events-auto flex items-center justify-center sm:p-4 w-full h-full lg:h-auto transition-[max-width] duration-300 ${showSidebar ? 'max-w-[1280px]' : 'max-w-[950px]'}`}
+                        className={`pointer-events-auto flex items-center justify-center sm:p-4 w-full h-full lg:h-auto [@media(max-height:850px)]:lg:h-full transition-[max-width] duration-300 ${showSidebar ? 'max-w-[1280px]' : 'max-w-[950px]'}`}
                         onClick={closeModal}
                     >
                         <div
-                            className="bg-[#121212] sm:border-2 border-white/10 w-full h-full sm:h-auto sm:w-fit flex flex-col lg:flex-row text-white shadow-[0_0_100px_rgba(0,0,0,0.8)] relative overflow-y-auto lg:overflow-hidden max-h-screen lg:max-h-[85vh]"
+                            className="bg-[#121212] sm:border-2 border-white/10 w-full h-full sm:h-auto sm:w-fit flex flex-col lg:flex-row text-white shadow-[0_0_100px_rgba(0,0,0,0.8)] relative overflow-y-auto lg:overflow-hidden max-h-screen lg:max-h-[85vh] [@media(max-height:850px)]:lg:h-full [@media(max-height:850px)]:lg:max-h-full"
                             onClick={(e) => e.stopPropagation()}
                         >
                             {isNotFound ? (
@@ -799,7 +799,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                             <LoadingSpinner className="w-8 h-8 border-4" />
                                         </div>
                                     ) : (
-                                        <div className={`w-full lg:w-[316px] flex-shrink-0 flex flex-col bg-[#121212] relative h-auto lg:h-[720px] border-t lg:border-t-0 lg:border-l border-white/10 ${showSidebar ? 'hidden lg:flex' : 'flex'}`}>
+                                        <div className={`w-full lg:w-[316px] flex-shrink-0 flex flex-col bg-[#121212] relative h-auto lg:h-[720px] [@media(max-height:850px)]:lg:h-full border-t lg:border-t-0 lg:border-l border-white/10 ${showSidebar ? 'hidden lg:flex' : 'flex'}`}>
                                             <div className="absolute bottom-0 right-0 w-64 h-64 bg-gradient-to-tl from-[#38598b]/5 to-transparent pointer-events-none" />
 
                                             {/* Header Info */}

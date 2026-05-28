@@ -77,7 +77,7 @@ export function MCModalSidebar({
             animate={{ width: window.innerWidth < 1024 ? "100%" : 260, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="h-full lg:h-[720px] border-b lg:border-b-0 lg:border-r border-white/10 bg-[#0a0a0a] flex flex-col overflow-hidden shrink-0"
+            className="h-full lg:h-[720px] [@media(max-height:850px)]:lg:h-full border-b lg:border-b-0 lg:border-r border-white/10 bg-[#0a0a0a] flex flex-col overflow-hidden shrink-0"
         >
             <div className="p-4 border-b border-white/5 flex justify-between items-center bg-black/20">
                 <div className="flex items-center gap-2">

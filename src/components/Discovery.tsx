@@ -1,5 +1,5 @@
 import { useRef, useMemo, useEffect, useCallback, useState } from 'react'
-import { useFrame, useThree } from '@react-three/fiber'
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { 
     Vector3, 
     Group, 
@@ -8,14 +8,26 @@ import {
     CanvasTexture, 
     NearestFilter, 
     DoubleSide, 
-    Mesh,
-    type Texture 
+    type Texture,
+    PerspectiveCamera
 } from 'three'
 import { Skin2D } from './utils'
 import { apiFetch } from '../utils/api'
 import type { GenerationLogItemBrief } from '../types/log'
 
 const DISCOVERY_SKIN_PREVIEW_SCALE = 4
+const DISCOVERY_SLOT_COUNT = 180
+const DISCOVERY_LOAD_CONCURRENCY = 6
+const DISCOVERY_BATCH_SIZE = 2
+const DISCOVERY_LOAD_DELAY_MS = 70
+const DISCOVERY_BLOCK_SIZE = 3
+const DISCOVERY_RADIUS = 15
+
+type LoadedDiscoveryItem = {
+    log: GenerationLogItemBrief
+    tex: CanvasTexture
+    slotIndex: number
+}
 
 function getSpiralPosition(n: number, radius: number): Vector3 {
     const offsets = [0, Math.PI / 3, Math.PI / 3 * 2, Math.PI, Math.PI / 3 * 4, Math.PI / 3 * 5]
@@ -48,9 +60,23 @@ export function Discovery({
     const groupRef = useRef<Group>(null!)
     const gl = useThree((state) => state.gl)
     const camera = useThree((state) => state.camera)
+    const { width } = useThree((state) => state.size)
+
+    useEffect(() => {
+        if (camera instanceof PerspectiveCamera) {
+            // Mobile viewports (width < 768px) get a larger FOV (e.g. 95)
+            // Desktop/larger viewports get the default 75
+            const targetFov = width < 768 ? 95 : 75
+            if (camera.fov !== targetFov) {
+                camera.fov = targetFov
+                camera.updateProjectionMatrix()
+            }
+        }
+    }, [camera, width])
+
     const focusedPosition = useRef<Vector3 | null>(null)
-    const selectionTimeout = useRef<any>(null)
-    const [loadedItems, setLoadedItems] = useState<{ log: GenerationLogItemBrief; tex: CanvasTexture; slotIndex: number }[]>([])
+    const selectionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const [loadedItems, setLoadedItems] = useState<LoadedDiscoveryItem[]>([])
     const isFirstRun = useRef(true);
 
     useEffect(() => {
@@ -79,15 +105,16 @@ export function Discovery({
                 if (!active) return;
 
                 // Shuffle slots
-                const indices = Array.from({ length: 180 }, (_, i) => i);
+                const indices = Array.from({ length: DISCOVERY_SLOT_COUNT }, (_, i) => i);
                 for (let i = indices.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
                     [indices[i], indices[j]] = [indices[j], indices[i]];
                 }
 
-                const CONCURRENCY = 8;
-                const BATCH_SIZE = 3;
-                let loadedBuffer: { log: GenerationLogItemBrief; tex: CanvasTexture; slotIndex: number }[] = [];
+                const queuedItems = data
+                    .slice(0, DISCOVERY_SLOT_COUNT)
+                    .map((log, index) => ({ log, slotIndex: indices[index] }));
+                let loadedBuffer: LoadedDiscoveryItem[] = [];
 
                 const updateState = () => {
                     if (loadedBuffer.length > 0) {
@@ -102,12 +129,11 @@ export function Discovery({
                 };
 
                 // Load items in chunks to control concurrency
-                for (let i = 0; i < data.length; i += CONCURRENCY) {
+                for (let i = 0; i < queuedItems.length; i += DISCOVERY_LOAD_CONCURRENCY) {
                     if (!active) break;
-                    const chunk = data.slice(i, i + CONCURRENCY);
+                    const chunk = queuedItems.slice(i, i + DISCOVERY_LOAD_CONCURRENCY);
 
-                    await Promise.all(chunk.map(async (log, chunkIdx) => {
-                        const slotIndex = indices[(i + chunkIdx) % indices.length];
+                    await Promise.all(chunk.map(async ({ log, slotIndex }) => {
                         try {
                             const canvas = await Skin2D(log.result, { scale: DISCOVERY_SKIN_PREVIEW_SCALE });
                             if (!active) return;
@@ -119,7 +145,7 @@ export function Discovery({
 
                             loadedBuffer.push({ log, tex, slotIndex });
 
-                            if (loadedBuffer.length >= BATCH_SIZE) {
+                            if (loadedBuffer.length >= DISCOVERY_BATCH_SIZE) {
                                 updateState();
                             }
                         } catch (err) {
@@ -129,7 +155,9 @@ export function Discovery({
                     }));
 
                     // Small delay to keep the UI responsive during intensive rendering
-                    await new Promise(resolve => setTimeout(resolve, 30));
+                    if (active && i + DISCOVERY_LOAD_CONCURRENCY < queuedItems.length) {
+                        await new Promise(resolve => setTimeout(resolve, DISCOVERY_LOAD_DELAY_MS));
+                    }
                 }
 
                 updateState();
@@ -153,7 +181,7 @@ export function Discovery({
         const urlParams = new URLSearchParams(window.location.search);
         const id = urlParams.get('id');
         if (id && onSelect) {
-            onSelect({ id, result: '', is_public: true, timestamp: '' } as any);
+            onSelect({ id, result: '', is_public: true, prompt: '' });
         }
     }, [onSelect])
 
@@ -169,7 +197,7 @@ export function Discovery({
     const lastPointer = useRef({ x: 0, y: 0 })
     const dragSensitivity = 0.003
     const autoRotateSpeed = 0.0008
-    const radius = 15
+    const radius = DISCOVERY_RADIUS
     const dragDistance = useRef(0)
 
     // Convert spherical to a lookAt point on a unit sphere
@@ -229,31 +257,21 @@ export function Discovery({
         }
     }, [gl])
 
-    // Create data for blocks in a spherical spiral
+    // Create all placeholder slots immediately, then fill them as textures finish rendering.
     const blocks = useMemo(() => {
-        return loadedItems.map((item) => {
-            const position = getSpiralPosition(item.slotIndex, radius);
-            const size = 3;
+        const loadedBySlot = new Map(loadedItems.map(item => [item.slotIndex, item]));
 
-            // Use a seeded random for rotation speed to keep it stable
-            const seed = item.log.id;
-            const seededRandom = () => {
-                let hash = 0;
-                for (let j = 0; j < seed.length; j++) {
-                    hash = seed.charCodeAt(j) + ((hash << 5) - hash);
-                }
-                return (Math.abs(hash) % 1000) / 1000;
-            };
-
+        return Array.from({ length: DISCOVERY_SLOT_COUNT }, (_, slotIndex) => {
+            const item = loadedBySlot.get(slotIndex);
             return {
-                position,
-                size,
-                rotationSpeed: seededRandom() * 0.02,
-                texture: item.tex,
-                data: item.log
+                slotIndex,
+                position: getSpiralPosition(slotIndex, radius),
+                size: DISCOVERY_BLOCK_SIZE,
+                texture: item?.tex ?? null,
+                data: item?.log ?? null
             };
         });
-    }, [loadedItems])
+    }, [loadedItems, radius])
 
     // We don't need the raw texture loader here anymore since we use rendered texture from Skin2D
 
@@ -294,13 +312,14 @@ export function Discovery({
 
 
 
-    const handleSceneClick = (e: any) => {
+    const handleSceneClick = (e: ThreeEvent<MouseEvent>) => {
         e.stopPropagation()
         const ray = e.ray
         let minDistanceSq = Infinity
-        let nearestBlock = null
+        let nearestBlock: (typeof blocks)[number] | null = null
 
         for (const block of blocks) {
+            if (!block.data) continue
             const distSq = ray.distanceSqToPoint(block.position)
             if (distSq < minDistanceSq) {
                 minDistanceSq = distSq
@@ -310,16 +329,19 @@ export function Discovery({
 
         if (dragDistance.current > 10) return
 
-        if (nearestBlock) {
+        if (nearestBlock?.data) {
+            const selectedPosition = nearestBlock.position
+            const selectedData = nearestBlock.data
+
             if (selected) {
                 // closeModal()
-            } else if (focusedPosition.current && focusedPosition.current.equals(nearestBlock.position)) {
+            } else if (focusedPosition.current && focusedPosition.current.equals(selectedPosition)) {
                 // closeModal()
             } else {
-                focusedPosition.current = nearestBlock.position
+                focusedPosition.current = selectedPosition
                 if (selectionTimeout.current) clearTimeout(selectionTimeout.current)
                 selectionTimeout.current = setTimeout(() => {
-                    if (onSelect) onSelect(nearestBlock.data)
+                    if (onSelect) onSelect(selectedData)
                     selectionTimeout.current = null
                 }, 200)
             }
@@ -333,9 +355,9 @@ export function Discovery({
                 <sphereGeometry args={[radius * 2, 16, 16]} />
                 <meshBasicMaterial transparent opacity={0} depthWrite={false} side={DoubleSide} />
             </mesh>
-            {blocks.map((block, i) => (
+            {blocks.map((block) => (
                 <Block
-                    key={`${block.data.id}-${i}`}
+                    key={block.slotIndex}
                     {...block}
                 />
             ))}
@@ -344,48 +366,68 @@ export function Discovery({
 }
 
 
-function Block({ position, size, texture }: {
+function Block({ position, size, texture, slotIndex }: {
     position: Vector3,
     size: number,
-    texture: Texture
+    texture: Texture | null,
+    slotIndex: number
 }) {
-    const meshRef = useRef<Mesh>(null!)
-    const [opacity, setOpacity] = useState(0)
+    const groupRef = useRef<Group>(null!)
+    const [loadedOpacity, setLoadedOpacity] = useState(0)
 
     useEffect(() => {
-        // Fade in
+        if (!texture) {
+            return
+        }
+
         const duration = 500
         const start = performance.now()
         let frameId: number
 
         const animate = (time: number) => {
             const progress = Math.min((time - start) / duration, 1)
-            setOpacity(progress)
+            setLoadedOpacity(progress)
             if (progress < 1) {
                 frameId = requestAnimationFrame(animate)
             }
         }
         frameId = requestAnimationFrame(animate)
         return () => cancelAnimationFrame(frameId)
-    }, [])
+    }, [texture])
 
     useFrame(() => {
-        if (meshRef.current) {
-            meshRef.current.lookAt(0, 0, 0)
+        if (groupRef.current) {
+            groupRef.current.lookAt(0, 0, 0)
         }
     })
 
+    const placeholderOpacity = texture ? Math.max(0.06, 0.28 * (1 - loadedOpacity)) : 0.28
+    const placeholderColor = slotIndex % 3 === 0 ? '#26372f' : slotIndex % 3 === 1 ? '#2c3340' : '#342f2b'
+
     return (
-        <mesh
-            ref={meshRef}
+        <group
+            ref={groupRef}
             position={position}
         >
-            <planeGeometry args={[size, size]} />
-            <meshStandardMaterial
-                map={texture}
-                transparent={true}
-                opacity={opacity}
-            />
-        </mesh>
+            <mesh>
+                <planeGeometry args={[size, size]} />
+                <meshBasicMaterial
+                    color={placeholderColor}
+                    transparent
+                    opacity={placeholderOpacity}
+                    wireframe={!texture}
+                />
+            </mesh>
+            {texture && (
+                <mesh position={[0, 0, 0.015]}>
+                    <planeGeometry args={[size, size]} />
+                    <meshStandardMaterial
+                        map={texture}
+                        transparent
+                        opacity={loadedOpacity}
+                    />
+                </mesh>
+            )}
+        </group>
     )
 }
