@@ -12,11 +12,12 @@ interface PayModalProps {
     isSubscription?: boolean;
     isUpgrade?: boolean;
     existingSubscriptionId?: string;
+    userId?: string;
     onClose: () => void;
     onSuccess: () => void;
 }
 
-export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubscription, isUpgrade, existingSubscriptionId, onClose, onSuccess }: PayModalProps) {
+export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubscription, isUpgrade, existingSubscriptionId, userId, onClose, onSuccess }: PayModalProps) {
     const [isLoadingClient, setIsLoadingClient] = useState(true);
     const [isSdkLoaded, setIsSdkLoaded] = useState(false);
     const [clientId, setClientId] = useState<string>('');
@@ -118,7 +119,8 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
                     }
 
                     return actions.subscription.create({
-                        plan_id: planId
+                        plan_id: planId,
+                        ...(userId ? { custom_id: userId } : {})
                     });
                 },
                 onApprove: async (data: any, _actions: any) => {

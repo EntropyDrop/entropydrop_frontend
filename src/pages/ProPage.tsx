@@ -305,6 +305,7 @@ export function ProPage({ current }: ProPageProps) {
                     isSubscription={true}
                     isUpgrade={payModalConfig.isUpgrade}
                     existingSubscriptionId={payModalConfig.existingSubscriptionId}
+                    userId={userProfile?.id}
                     onClose={() => setPayModalConfig(prev => ({ ...prev, isOpen: false }))}
                     onSuccess={() => {
                         setPayModalConfig(prev => ({ ...prev, isOpen: false }));
