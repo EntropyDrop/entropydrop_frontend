@@ -63,7 +63,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                     const res = await fetch(location.state.sourceImage);
                     const blob = await res.blob();
                     const filename = location.state.sourceImage.split('/').pop() || 'source.jpg';
-                    
+
                     const img = new Image();
                     const url = URL.createObjectURL(blob);
                     await new Promise<void>((resolve, reject) => {
@@ -459,18 +459,18 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                 let isQueueing = false;
 
                                                 if (item.status === 'pending') {
-                                                    progressPercent = 15;
+                                                    progressPercent = 10;
                                                     phaseText = current.generate.statusPending;
                                                     isQueueing = true;
                                                 } else if (item.status === 'processing') {
-                                                    progressPercent = 45;
+                                                    progressPercent = 25;
                                                     phaseText = current.generate.statusProcessing;
                                                 } else if (item.status === 'pending_skin') {
-                                                    progressPercent = 70;
+                                                    progressPercent = 40;
                                                     phaseText = current.generate.statusPendingSkin;
                                                     isQueueing = true;
                                                 } else if (item.status === 'processing_skin') {
-                                                    progressPercent = 90;
+                                                    progressPercent = 60;
                                                     phaseText = current.generate.statusProcessingSkin;
                                                 }
 
@@ -512,9 +512,11 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                         </div>
 
                                                         {/* Description Prompt Row */}
-                                                        <div className={`text-[9px] text-white/60 truncate italic px-1 ${current.fontClass}`}>
-                                                            "{item.prompt || (item.mode === 'aigc_image_to_skin' || item.mode === 'aigc_image_edit_to_skin' ? current.generate.imageUploadDesc : current.generate.noPrompt)}"
-                                                        </div>
+                                                        {item.mode !== 'aigc_image_to_skin' && (
+                                                            <div className={`text-[9px] text-white/60 truncate italic px-1 ${current.fontClass}`}>
+                                                                "{item.prompt || (item.mode === 'aigc_image_edit_to_skin' ? current.generate.imageUploadDesc : current.generate.noPrompt)}"
+                                                            </div>
+                                                        )}
 
                                                         {/* Retro Progress Bar */}
                                                         <div className="relative w-full h-3 bg-black/60 border border-white/10 p-[1px] flex items-center">
@@ -523,10 +525,6 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                 style={{ width: `${progressPercent}%` }}
                                                             >
                                                                 <div className="absolute inset-0 animate-retro-stripe opacity-25" />
-                                                            </div>
-                                                            {/* Progress Percent Overlay */}
-                                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                                <span className="text-[8px] font-mono font-bold text-white shadow-sm">{progressPercent}%</span>
                                                             </div>
                                                         </div>
                                                     </div>
