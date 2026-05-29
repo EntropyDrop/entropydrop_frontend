@@ -63,6 +63,32 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Unfinished logs additions
+  interface UnfinishedLogItem {
+    id: string;
+    prompt: string | null;
+    mode: string;
+    status: string;
+    created_at: string | null;
+    user_id: string | null;
+    user_email: string | null;
+    user_username: string | null;
+  }
+  interface UnfinishedData {
+    items: UnfinishedLogItem[];
+    total_count: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
+  }
+
+  const [unfinishedData, setUnfinishedData] = useState<UnfinishedData | null>(null)
+  const [loadingUnfinished, setLoadingUnfinished] = useState(true)
+  const [page, setPage] = useState(1)
+  const [now, setNow] = useState(new Date())
+
+  const isZh = current.lang === 'zh-hans'
+
   const fetchStats = async () => {
     try {
       const response = await apiFetch('/api/monitor/stats')
@@ -82,11 +108,105 @@ export function MonitorPage({ current }: MonitorPageProps) {
     }
   }
 
+  const fetchUnfinished = async (p: number) => {
+    try {
+      const response = await apiFetch(`/api/monitor/unfinished?page=${p}&page_size=10`)
+      if (response.ok) {
+        const data = await response.json()
+        setUnfinishedData(data)
+      }
+    } catch (e) {
+      console.error('Failed to fetch unfinished logs', e)
+    } finally {
+      setLoadingUnfinished(false)
+    }
+  }
+
   useEffect(() => {
     fetchStats()
     const timer = setInterval(fetchStats, 3000)
     return () => clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    fetchUnfinished(page)
+    const timer = setInterval(() => {
+      fetchUnfinished(page)
+    }, 60000) // Poll every 60 seconds
+    return () => clearInterval(timer)
+  }, [page])
+
+  useEffect(() => {
+    const clockTimer = setInterval(() => {
+      setNow(new Date())
+    }, 1000) // Clock ticks every second
+    return () => clearInterval(clockTimer)
+  }, [])
+
+  const calculateWaitTime = (createdAtStr: string | null) => {
+    if (!createdAtStr) return 'N/A'
+    const created = new Date(createdAtStr).getTime()
+    const diff = now.getTime() - created
+    if (isNaN(diff) || diff < 0) return '0s'
+    
+    const secs = Math.floor(diff / 1000)
+    const mins = Math.floor(secs / 60)
+    const hours = Math.floor(mins / 60)
+    
+    if (hours > 0) {
+      return `${hours}h ${mins % 60}m ${secs % 60}s`
+    }
+    if (mins > 0) {
+      return `${mins}m ${secs % 60}s`
+    }
+    return `${secs}s`
+  }
+
+  const getStatusBadge = (status: string) => {
+    let label = status
+    let classes = 'bg-white/5 border-white/10 text-white/40'
+    
+    if (status === 'pending' || status === 'pending_skin') {
+      label = isZh ? '排队中' : 'QUEUED'
+      classes = 'bg-orange-500/10 border-orange-500/30 text-orange-400'
+    } else if (status === 'processing' || status === 'processing_skin') {
+      label = isZh ? '生成中' : 'PROCESSING'
+      classes = 'bg-green-500/10 border-green-500/30 text-green-400 font-bold'
+    }
+    
+    return (
+      <div className={`px-2 py-0.5 text-[10px] border font-mono rounded flex items-center gap-1.5 w-fit ${classes}`}>
+        {(status === 'processing' || status === 'processing_skin') && (
+          <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-ping" />
+        )}
+        {label}
+      </div>
+    )
+  }
+
+  const getModeLabel = (mode: string) => {
+    switch (mode) {
+      case 'aigc_text_to_image':
+        return isZh ? 'AI 文生图' : 'Text to Image'
+      case 'aigc_image_to_image':
+        return isZh ? 'AI 图生图' : 'Image to Image'
+      case 'aigc_image_edit':
+        return isZh ? 'AI 局部编辑' : 'Image Edit'
+      case 'aigc_image_to_skin':
+        return isZh ? 'AI 图生皮肤' : 'Image to Skin'
+      case 'aigc_text_to_skin':
+        return isZh ? 'AI 文生皮肤' : 'Text to Skin'
+      case 'aigc_image_edit_to_skin':
+        return isZh ? 'AI 编辑生皮肤' : 'Edit to Skin'
+      case 'human_edit':
+        return isZh ? '人类编辑' : 'Human Edit'
+      case 'human_upload':
+        return isZh ? '人类上传' : 'Human Upload'
+      default:
+        return mode
+    }
+  }
+
 
   if (loading && !stats) {
     return (
@@ -97,8 +217,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
   }
 
   return (
-    <div className="absolute inset-0 z-10 flex items-start lg:items-center justify-center p-2 sm:p-8 lg:p-12 pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
-      <div className="w-full max-w-7xl h-auto lg:h-full flex flex-col gap-6 bg-black/40 backdrop-blur-md p-4 sm:p-6 lg:p-8 border border-white/10 overflow-visible lg:overflow-y-auto animate-in fade-in zoom-in duration-300 pointer-events-auto custom-scrollbar">
+    <div className="absolute inset-0 z-10 flex items-start justify-center p-2 sm:p-8 lg:p-12 pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
+      <div className="w-full max-w-7xl h-auto flex flex-col gap-6 bg-black/40 backdrop-blur-md p-4 sm:p-6 lg:p-8 border border-white/10 overflow-visible animate-in fade-in zoom-in duration-300 pointer-events-auto custom-scrollbar">
 
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-white/10 pb-6 shrink-0">
@@ -349,12 +469,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
         </div>
 
         {/* Queues Section */}
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
-          <div className="lg:col-span-1 flex flex-col gap-4">
+        <div className="shrink-0 grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[450px] min-h-0">
+          <div className="lg:col-span-1 flex flex-col gap-4 min-h-0 h-full">
             <h3 className={`text-white/60 text-sm m-0 flex items-center gap-2 ${current.fontClass}`}>
               <Icon icon="pixelarticons:list-box" /> Queues Status
             </h3>
-            <div className="flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-1">
+            <div className="flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-1 flex-1 min-h-0">
               {stats && Object.entries(stats.queue_stats).map(([name, data]) => (
                 <div key={name} className="bg-white/5 border border-white/5 p-3 flex flex-col gap-2 hover:bg-white/10 transition-colors group">
                   <div className="flex justify-between items-center">
@@ -379,7 +499,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           </div>
 
-          <div className="lg:col-span-2 flex flex-col gap-4 min-h-0">
+          <div className="lg:col-span-2 flex flex-col gap-4 min-h-0 h-full">
             <h3 className={`text-white/60 text-sm m-0 flex items-center gap-2 ${current.fontClass}`}>
               <Icon icon="pixelarticons:server" /> Active Workers (Nodes)
             </h3>
@@ -438,6 +558,148 @@ export function MonitorPage({ current }: MonitorPageProps) {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Unfinished Generations Section */}
+        <div className="bg-white/5 border border-white/10 p-4 sm:p-6 flex flex-col gap-4 shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+            <div className="flex items-center gap-2.5">
+              <Icon icon="pixelarticons:loader" className="text-xl text-green-500 animate-spin" />
+              <h3 className={`text-white text-base m-0 ${current.fontClass}`}>
+                {isZh ? '未完成的生成任务' : 'Unfinished Generations'}
+              </h3>
+              {unfinishedData && (
+                <span className="px-2 py-0.5 bg-green-500/10 border border-green-500/20 text-green-500 text-[10px] uppercase font-mono font-bold tracking-wider rounded">
+                  {isZh ? `排队中: ${unfinishedData.total_count}` : `Queued: ${unfinishedData.total_count}`}
+                </span>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button 
+                onClick={() => fetchUnfinished(page)}
+                disabled={loadingUnfinished}
+                className="w-8 h-8 flex items-center justify-center bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                title={isZh ? '刷新任务列表' : 'Refresh list'}
+              >
+                <Icon icon="pixelarticons:reload" className={loadingUnfinished ? 'animate-spin text-green-500' : ''} />
+              </button>
+            </div>
+          </div>
+
+          {loadingUnfinished && !unfinishedData ? (
+            <div className="flex items-center justify-center p-12 bg-white/5 border border-dashed border-white/10 opacity-30">
+              <Icon icon="pixelarticons:reload" className="text-4xl text-green-500 animate-spin" />
+            </div>
+          ) : !unfinishedData || unfinishedData.items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-12 bg-white/5 border border-dashed border-white/10 opacity-30">
+              <Icon icon="pixelarticons:close" className="text-4xl" />
+              <span className="text-xs mt-2">{isZh ? '暂无未完成的生成任务' : 'No unfinished generations found'}</span>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="w-full overflow-x-auto custom-scrollbar">
+                <table className="w-full min-w-[800px] border-collapse text-left font-mono">
+                  <thead>
+                    <tr className="border-b border-white/10 text-white/40 text-[11px] uppercase tracking-wider">
+                      <th className="pb-3 pl-2 font-semibold">{isZh ? '任务 ID' : 'Task ID'}</th>
+                      <th className="pb-3 font-semibold">{isZh ? '类型' : 'Mode'}</th>
+                      <th className="pb-3 font-semibold">{isZh ? '状态' : 'Status'}</th>
+                      <th className="pb-3 font-semibold">{isZh ? '用户信息' : 'User Info'}</th>
+                      <th className="pb-3 font-semibold">{isZh ? '创建时间' : 'Created At'}</th>
+                      <th className="pb-3 pr-2 font-semibold text-right">{isZh ? '等待时间' : 'Wait Time'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-[12px] text-white/80">
+                    {unfinishedData.items.map(log => (
+                      <tr key={log.id} className="hover:bg-white/5 transition-colors group">
+                        <td className="py-3 pl-2 text-green-400 font-bold group-hover:text-green-300 transition-colors">
+                          {log.id}
+                        </td>
+                        <td className="py-3 text-white/70">
+                          {getModeLabel(log.mode)}
+                        </td>
+                        <td className="py-3">
+                          {getStatusBadge(log.status)}
+                        </td>
+                        <td className="py-3">
+                          {log.user_email ? (
+                            <div className="flex flex-col">
+                              <span className="text-white/90">{log.user_email}</span>
+                              {log.user_username && (
+                                <span className="text-[10px] text-white/40">{log.user_username}</span>
+                              )}
+                            </div>
+                          ) : log.user_id ? (
+                            <span className="text-white/60">{log.user_id}</span>
+                          ) : (
+                            <span className="text-white/20 italic">{isZh ? '匿名' : 'Anonymous'}</span>
+                          )}
+                        </td>
+                        <td className="py-3 text-white/40 text-[10px]">
+                          {log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A'}
+                        </td>
+                        <td className="py-3 pr-2 text-right text-green-400 font-bold font-mono tracking-tight">
+                          {calculateWaitTime(log.created_at)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {unfinishedData.total_pages > 1 && (
+                <div className="flex items-center justify-between border-t border-white/5 pt-4 text-xs font-mono">
+                  <div className="text-white/40">
+                    {isZh ? (
+                      <>共 <span className="text-white font-bold">{unfinishedData.total_count}</span> 项 • 第 <span className="text-white font-bold">{page}</span>/{unfinishedData.total_pages} 页</>
+                    ) : (
+                      <>Total <span className="text-white font-bold">{unfinishedData.total_count}</span> items • Page <span className="text-white font-bold">{page}</span> of {unfinishedData.total_pages}</>
+                    )}
+                  </div>
+                  
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      className="px-3 py-1 bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                    >
+                      {isZh ? '上一页' : 'Prev'}
+                    </button>
+                    
+                    {Array.from({ length: unfinishedData.total_pages }, (_, i) => i + 1)
+                      .filter(p => Math.abs(p - page) <= 2 || p === 1 || p === unfinishedData.total_pages)
+                      .map((p, idx, arr) => {
+                        const showEllipsis = idx > 0 && p - arr[idx - 1] > 1;
+                        return (
+                          <div key={p} className="flex gap-1.5">
+                            {showEllipsis && <span className="text-white/30 px-1">...</span>}
+                            <button
+                              onClick={() => setPage(p)}
+                              className={`px-3 py-1 border transition-all active:scale-95 cursor-pointer ${
+                                page === p
+                                  ? 'bg-green-500/20 border-green-500 text-green-400 font-bold'
+                                  : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          </div>
+                        );
+                      })}
+
+                    <button
+                      onClick={() => setPage(p => Math.min(unfinishedData.total_pages, p + 1))}
+                      disabled={page === unfinishedData.total_pages}
+                      className="px-3 py-1 bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                    >
+                      {isZh ? '下一页' : 'Next'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
       </div>
