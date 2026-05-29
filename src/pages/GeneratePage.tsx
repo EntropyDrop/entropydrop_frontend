@@ -424,6 +424,9 @@ export function GeneratePage({ current }: GeneratePageProps) {
         )
     }
 
+    const activeTasks = history.filter(item => ['pending', 'processing', 'pending_skin', 'processing_skin'].includes(item.status || ''))
+    const completedHistory = history.filter(item => !['pending', 'processing', 'pending_skin', 'processing_skin'].includes(item.status || ''))
+
     return (
         <div className="absolute inset-0 z-10 flex items-start lg:items-center justify-center p-1 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
             <div className="w-full max-w-7xl h-auto lg:h-full flex flex-col lg:flex-row gap-3 lg:gap-6 bg-black/40 backdrop-blur-md p-3 sm:p-6 lg:p-8 border border-white/10 overflow-visible lg:overflow-hidden animate-in fade-in zoom-in duration-300 pointer-events-auto">
@@ -434,79 +437,162 @@ export function GeneratePage({ current }: GeneratePageProps) {
                         <Icon icon="pixelarticons:book-open" /> {current.generate.historyTitle}
                     </h3>
 
-                    <div className="flex flex-col gap-3 pb-2 custom-scrollbar lg:flex-1">
+                    <div className="flex flex-col gap-3 pb-2 custom-scrollbar lg:flex-1 overflow-y-auto">
                         {history.length === 0 ? (
                             <div className="text-white flex flex-col items-center justify-center h-24 lg:h-full w-full opacity-20 text-[10px] gap-2 shrink-0">
                                 <Icon icon="pixelarticons:notes-delete" className="text-xl lg:text-2xl" />
                                 <span className={current.fontClass}>{current.generate.historyEmpty}</span>
                             </div>
                         ) : (
-                            history.map(item => (
-                                <div
-                                    key={item.id}
-                                    onClick={() => selectHistory(item)}
-                                    className={`group p-2 bg-white/5 border border-transparent ${(['pending', 'processing', 'pending_skin', 'processing_skin'].includes(item.status || '')) ? 'cursor-not-allowed opacity-60' : 'hover:border-green-500/30 hover:bg-white/10 cursor-pointer'} transition-all flex gap-3 items-center shrink-0 w-full`}
-                                >
-                                    <div className="w-14 h-14 lg:w-20 lg:h-20 bg-black/40 overflow-hidden shrink-0 border border-white/5 flex items-center justify-center">
-                                        {item.status === 'success' || !item.status ? (
-                                            item.result_render_2d ? (
-                                                <img
-                                                    src={item.result_render_2d}
-                                                    className="w-full h-full object-contain p-1"
-                                                    style={{ imageRendering: 'pixelated' }}
-                                                    alt="thumb"
-                                                />
-                                            ) : (
-                                                <LoadingSpinner className="w-3 h-3 border-2" />
-                                            )
-                                        ) : item.status === 'failed' ? (
-                                            <Icon icon="pixelarticons:close" className="text-red-500 text-lg" />
-                                        ) : (
-                                            <div className="relative w-full h-full bg-black/40 flex flex-col items-center justify-center overflow-hidden">
-                                                {item.edited_image_url && (
-                                                    <img
-                                                        src={item.edited_image_url}
-                                                        className="absolute inset-0 w-full h-full object-cover opacity-50 blur-[0.5px]"
-                                                        style={{ imageRendering: 'pixelated' }}
-                                                        alt="intermediate"
-                                                    />
-                                                )}
-                                                <div className="relative z-10 flex flex-col items-center justify-center w-full h-full bg-black/30 backdrop-blur-[0.5px]">
-                                                    <LoadingSpinner className="w-4 h-4 border-2 text-green-500" />
-                                                    {item.queue_position && item.queue_position > 0 ? (
-                                                        <span className="text-[6px] text-green-500/90 mt-1 font-mono font-bold bg-black/60 px-1 py-0.5 rounded leading-none">Q:{item.queue_position}</span>
-                                                    ) : (
-                                                        <span className="text-[6px] text-green-500/90 mt-1 bg-black/60 px-1 py-0.5 rounded leading-none">...</span>
-                                                    )}
-                                                </div>
-                                            </div>
+                            <>
+                                {/* 1. Active Task Queue Dashboard */}
+                                {activeTasks.length > 0 && (
+                                    <div className="flex flex-col gap-2 shrink-0">
+                                        <h4 className={`text-[10px] text-[#a6df7a] m-0 uppercase tracking-wider flex items-center gap-1.5 font-bold ${current.fontClass}`}>
+                                            <span className="w-1.5 h-1.5 bg-[#a6df7a] rounded-none animate-ping" />
+                                            {current.lang === 'zh-hans' ? '当前构建任务' : 'Active Tasks'}
+                                        </h4>
+                                        <div className="flex flex-col gap-2">
+                                            {activeTasks.map(item => {
+                                                let progressPercent = 10;
+                                                let phaseText = '';
+                                                let isQueueing = false;
+
+                                                if (item.status === 'pending') {
+                                                    progressPercent = 15;
+                                                    phaseText = current.generate.statusPending;
+                                                    isQueueing = true;
+                                                } else if (item.status === 'processing') {
+                                                    progressPercent = 45;
+                                                    phaseText = current.generate.statusProcessing;
+                                                } else if (item.status === 'pending_skin') {
+                                                    progressPercent = 70;
+                                                    phaseText = current.generate.statusPendingSkin;
+                                                    isQueueing = true;
+                                                } else if (item.status === 'processing_skin') {
+                                                    progressPercent = 90;
+                                                    phaseText = current.generate.statusProcessingSkin;
+                                                }
+
+                                                return (
+                                                    <div
+                                                        key={item.id}
+                                                        className="p-3 bg-black/60 border border-[#3c8527]/30 hover:border-[#3c8527]/60 transition-all flex flex-col gap-2 shrink-0 w-full rounded-none animate-pixel-glow"
+                                                    >
+                                                        {/* Header Row: Icon + Mode & Queue Position */}
+                                                        <div className="flex items-start gap-2.5">
+                                                            <div className="w-10 h-10 bg-black/40 border border-white/10 flex items-center justify-center shrink-0 text-[#a6df7a]">
+                                                                <Icon
+                                                                    icon={isQueueing ? "pixelarticons:hourglass" : "pixelarticons:reload"}
+                                                                    className={`text-xl ${isQueueing ? 'animate-pixel-blink' : 'animate-spin'}`}
+                                                                    style={isQueueing ? {} : { animationDuration: '4s' }}
+                                                                />
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center justify-between gap-1">
+                                                                    <span className={`text-[9px] text-white/50 uppercase truncate ${current.fontClass}`}>
+                                                                        {item.mode === 'aigc_image_to_skin' ? 'Image to Skin' : item.mode === 'aigc_image_edit_to_skin' ? 'Image Edit to Skin' : 'Text to Skin'}
+                                                                    </span>
+                                                                    {item.queue_position && item.queue_position > 0 ? (
+                                                                        <span className="shrink-0 px-1 py-0.5 bg-[#a6df7a]/15 text-[#a6df7a] border border-[#a6df7a]/30 text-[8px] font-mono font-bold leading-none uppercase">
+                                                                            Q: #{item.queue_position}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="shrink-0 px-1 py-0.5 bg-[#a6df7a]/10 text-[#a6df7a]/85 border border-[#a6df7a]/20 text-[8px] font-mono font-bold leading-none uppercase animate-pulse">
+                                                                            Q: READY
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                                    <span className={`text-[11px] font-bold text-[#a6df7a] truncate ${current.fontClass}`}>
+                                                                        {phaseText}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Description Prompt Row */}
+                                                        <div className={`text-[9px] text-white/60 truncate italic px-1 ${current.fontClass}`}>
+                                                            "{item.prompt || (item.mode === 'aigc_image_to_skin' || item.mode === 'aigc_image_edit_to_skin' ? current.generate.imageUploadDesc : current.generate.noPrompt)}"
+                                                        </div>
+
+                                                        {/* Retro Progress Bar */}
+                                                        <div className="relative w-full h-3 bg-black/60 border border-white/10 p-[1px] flex items-center">
+                                                            <div
+                                                                className="h-full bg-[#3c8527] transition-all duration-1000 ease-out relative overflow-hidden flex items-center justify-end pr-1"
+                                                                style={{ width: `${progressPercent}%` }}
+                                                            >
+                                                                <div className="absolute inset-0 animate-retro-stripe opacity-25" />
+                                                            </div>
+                                                            {/* Progress Percent Overlay */}
+                                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                <span className="text-[8px] font-mono font-bold text-white shadow-sm">{progressPercent}%</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 2. Completed History */}
+                                {completedHistory.length > 0 && (
+                                    <div className="flex flex-col gap-2 shrink-0">
+                                        {activeTasks.length > 0 && (
+                                            <h4 className={`text-[10px] text-white/30 m-0 uppercase tracking-wider flex items-center gap-1.5 font-bold mt-2 ${current.fontClass}`}>
+                                                <Icon icon="pixelarticons:book-open" className="text-xs" />
+                                                {current.lang === 'zh-hans' ? '已完成历史' : 'Completed History'}
+                                            </h4>
                                         )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-[10px] lg:text-xs text-white/40 truncate flex justify-between">
-                                            <div className="flex items-center gap-1">
-                                                <span>{formatDate(item.timestamp)}</span>
-                                            </div>
-                                            {item.status === 'pending' && <span className="text-yellow-500/80">{current.generate.statusPending}</span>}
-                                            {item.status === 'processing' && <span className="text-green-500/80 animate-pulse">{current.generate.statusProcessing}</span>}
-                                            {item.status === 'pending_skin' && <span className="text-yellow-500/80">{current.generate.statusPendingSkin}</span>}
-                                            {item.status === 'processing_skin' && <span className="text-green-500/80 animate-pulse">{current.generate.statusProcessingSkin}</span>}
-                                            {item.status === 'failed' && <span className="text-red-500/80">{current.generate.statusFailed}</span>}
+                                        <div className="flex flex-col gap-3">
+                                            {completedHistory.map(item => (
+                                                <div
+                                                    key={item.id}
+                                                    onClick={() => selectHistory(item)}
+                                                    className="group p-2 bg-white/5 border border-transparent hover:border-green-500/30 hover:bg-white/10 cursor-pointer transition-all flex gap-3 items-center shrink-0 w-full"
+                                                >
+                                                    <div className="w-14 h-14 lg:w-20 lg:h-20 bg-black/40 overflow-hidden shrink-0 border border-white/5 flex items-center justify-center">
+                                                        {item.status === 'success' || !item.status ? (
+                                                            item.result_render_2d ? (
+                                                                <img
+                                                                    src={item.result_render_2d}
+                                                                    className="w-full h-full object-contain p-1"
+                                                                    style={{ imageRendering: 'pixelated' }}
+                                                                    alt="thumb"
+                                                                />
+                                                            ) : (
+                                                                <LoadingSpinner className="w-3 h-3 border-2" />
+                                                            )
+                                                        ) : (
+                                                            <Icon icon="pixelarticons:close" className="text-red-500 text-lg" />
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-[10px] lg:text-xs text-white/40 truncate flex justify-between">
+                                                            <div className="flex items-center gap-1">
+                                                                <span>{formatDate(item.timestamp)}</span>
+                                                            </div>
+                                                            {item.status === 'failed' && <span className="text-red-500/80">{current.generate.statusFailed}</span>}
+                                                        </div>
+                                                        <div className="flex items-center gap-2 mt-1 min-w-0">
+                                                            <div className={`flex-1 text-xs lg:text-sm text-white/80 truncate ${current.fontClass}`}>
+                                                                {item.prompt || (item.mode === 'aigc_image_to_skin' || item.mode === 'aigc_image_edit_to_skin' ? current.generate.imageUploadDesc : current.generate.noPrompt)}
+                                                            </div>
+                                                            {item.is_pro && (
+                                                                <span className="shrink-0 px-1 bg-yellow-500/20 text-yellow-500 text-[6px] lg:text-[7px] border border-yellow-500/30 flex items-center gap-0.5">
+                                                                    <Icon icon="pixelarticons:zap" className="text-[6px]" />
+                                                                    {current.generate.proTag}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                        <div className="flex items-center gap-2 mt-1 min-w-0">
-                                            <div className={`flex-1 text-xs lg:text-sm text-white/80 truncate ${current.fontClass}`}>
-                                                {item.prompt || (item.mode === 'aigc_image_to_skin' || item.mode === 'aigc_image_edit_to_skin' ? current.generate.imageUploadDesc : current.generate.noPrompt)}
-                                            </div>
-                                            {item.is_pro && (
-                                                <span className="shrink-0 px-1 bg-yellow-500/20 text-yellow-500 text-[6px] lg:text-[7px] border border-yellow-500/30 flex items-center gap-0.5">
-                                                    <Icon icon="pixelarticons:zap" className="text-[6px]" />
-                                                    {current.generate.proTag}
-                                                </span>
-                                            )}
-                                        </div>
                                     </div>
-                                </div>
-                            ))
+                                )}
+                            </>
                         )}
                     </div>
 

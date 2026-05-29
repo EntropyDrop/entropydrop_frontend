@@ -43,3 +43,48 @@
     background: rgba(255, 255, 255, 0.2);
   }
 }
+
+@keyframes retro-stripe {
+  0% { background-position: 0 0; }
+  100% { background-position: 20px 0; }
+}
+
+@keyframes pixel-glow {
+  0%, 100% {
+    border-color: rgba(60, 133, 39, 0.3);
+    box-shadow: 0 0 0 1px rgba(60, 133, 39, 0.2);
+  }
+  50% {
+    border-color: rgba(166, 223, 122, 0.6);
+    box-shadow: 0 0 8px rgba(166, 223, 122, 0.3);
+  }
+}
+
+@keyframes pixel-blink {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.animate-retro-stripe {
+  background-image: linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.15) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 20px 20px;
+  animation: retro-stripe 1.5s linear infinite;
+}
+
+.animate-pixel-glow {
+  animation: pixel-glow 2s infinite ease-in-out;
+}
+
+.animate-pixel-blink {
+  animation: pixel-blink 1.2s infinite ease-in-out;
+}
+
