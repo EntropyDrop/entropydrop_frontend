@@ -172,6 +172,9 @@ export function MonitorPage({ current }: MonitorPageProps) {
     } else if (status === 'processing' || status === 'processing_skin') {
       label = isZh ? '生成中' : 'PROCESSING'
       classes = 'bg-green-500/10 border-green-500/30 text-green-400 font-bold'
+    } else if (status === 'failed') {
+      label = isZh ? '失败' : 'FAILED'
+      classes = 'bg-red-500/10 border-red-500/30 text-red-400 font-bold'
     }
     
     return (
@@ -566,11 +569,11 @@ export function MonitorPage({ current }: MonitorPageProps) {
             <div className="flex items-center gap-2.5">
               <Icon icon="pixelarticons:loader" className="text-xl text-green-500 animate-spin" />
               <h3 className={`text-white text-base m-0 ${current.fontClass}`}>
-                {isZh ? '未完成的生成任务' : 'Unfinished Generations'}
+                {isZh ? '未完成/失败的生成任务' : 'Unfinished & Failed Tasks'}
               </h3>
               {unfinishedData && (
                 <span className="px-2 py-0.5 bg-green-500/10 border border-green-500/20 text-green-500 text-[10px] uppercase font-mono font-bold tracking-wider rounded">
-                  {isZh ? `排队中: ${unfinishedData.total_count}` : `Queued: ${unfinishedData.total_count}`}
+                  {isZh ? `待处理/失败: ${unfinishedData.total_count}` : `Active/Failed: ${unfinishedData.total_count}`}
                 </span>
               )}
             </div>
@@ -594,7 +597,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
           ) : !unfinishedData || unfinishedData.items.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 bg-white/5 border border-dashed border-white/10 opacity-30">
               <Icon icon="pixelarticons:close" className="text-4xl" />
-              <span className="text-xs mt-2">{isZh ? '暂无未完成的生成任务' : 'No unfinished generations found'}</span>
+              <span className="text-xs mt-2">{isZh ? '暂无未完成或失败的生成任务' : 'No unfinished or failed tasks found'}</span>
             </div>
           ) : (
             <div className="flex flex-col gap-4">
