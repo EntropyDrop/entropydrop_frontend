@@ -87,6 +87,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [page, setPage] = useState(1)
   const [now, setNow] = useState(new Date())
 
+  // Admin delete states
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [purgeIdInput, setPurgeIdInput] = useState('')
+  const [deleteMessage, setDeleteMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [actionLoading, setActionLoading] = useState(false)
+
   const isZh = current.lang === 'zh-hans'
 
   const fetchStats = async () => {
@@ -142,6 +148,48 @@ export function MonitorPage({ current }: MonitorPageProps) {
     }, 1000) // Clock ticks every second
     return () => clearInterval(clockTimer)
   }, [])
+
+  useEffect(() => {
+    if (deleteMessage) {
+      const timer = setTimeout(() => {
+        setDeleteMessage(null)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [deleteMessage])
+
+  const executeDelete = async (id: string) => {
+    setActionLoading(true)
+    try {
+      const response = await apiFetch(`/api/monitor/logs/${id}`, {
+        method: 'DELETE'
+      })
+      if (response.ok) {
+        setDeleteMessage({
+          type: 'success',
+          text: isZh ? `成功删除皮肤 ${id} 及其相关资源。` : `Skin ${id} and associated resources successfully deleted.`
+        })
+        setPurgeIdInput('')
+        // Refresh data
+        fetchStats()
+        fetchUnfinished(page)
+      } else {
+        const errData = await response.json().catch(() => ({}))
+        setDeleteMessage({
+          type: 'error',
+          text: errData.detail || (isZh ? `删除失败：${response.status}` : `Deletion failed: ${response.status}`)
+        })
+      }
+    } catch (e) {
+      setDeleteMessage({
+        type: 'error',
+        text: isZh ? '网络连接错误，删除操作失败。' : 'Connection error. Deletion failed.'
+      })
+    } finally {
+      setActionLoading(false)
+      setDeletingId(null)
+    }
+  }
 
   const calculateWaitTime = (createdAtStr: string | null) => {
     if (!createdAtStr) return 'N/A'
@@ -590,6 +638,60 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           </div>
 
+          {/* Deletion Banner Message */}
+          {deleteMessage && (
+            <div className={`p-3 border font-mono text-[11px] flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 ${
+              deleteMessage.type === 'success' 
+                ? 'bg-green-500/10 border-green-500/30 text-green-400' 
+                : 'bg-red-500/10 border-red-500/30 text-red-400'
+            }`}>
+              <div className="flex items-center gap-2">
+                <Icon icon={deleteMessage.type === 'success' ? 'pixelarticons:check' : 'pixelarticons:close'} className="text-base shrink-0" />
+                <span>{deleteMessage.text}</span>
+              </div>
+              <button 
+                onClick={() => setDeleteMessage(null)}
+                className="text-white/40 hover:text-white transition-colors cursor-pointer bg-transparent border-0"
+              >
+                <Icon icon="pixelarticons:close" />
+              </button>
+            </div>
+          )}
+
+          {/* Admin Purge Terminal */}
+          <div className="bg-red-500/5 border border-red-500/20 p-4 rounded flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-col gap-1">
+              <span className="text-red-400 text-xs font-bold font-mono tracking-wide uppercase flex items-center gap-1.5">
+                <Icon icon="pixelarticons:shield-attention" className="text-red-500" />
+                {isZh ? '皮肤紧急清理工具 (Admin)' : 'Emergency Skin Purge (Admin)'}
+              </span>
+              <span className="text-white/40 text-[9px] font-mono uppercase">
+                {isZh ? '输入任意 Generation Log ID 进行彻底物理删除 (清除 DB / S3)' : 'Enter any Generation Log ID for permanent DB & S3 deletion'}
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-2 w-full sm:w-auto sm:max-w-md">
+              <input
+                type="text"
+                placeholder={isZh ? '输入 ID (如: aBcd1234Efgh5678)' : 'Enter Log ID...'}
+                value={purgeIdInput}
+                onChange={(e) => setPurgeIdInput(e.target.value.trim())}
+                className="flex-1 min-w-[200px] h-9 px-3 bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-red-500/50 transition-colors placeholder:text-white/20"
+              />
+              <button
+                onClick={() => {
+                  if (!purgeIdInput) return
+                  setDeletingId(purgeIdInput)
+                }}
+                disabled={!purgeIdInput || actionLoading}
+                className="h-9 px-4 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-bold font-mono uppercase tracking-wider transition-all disabled:opacity-30 disabled:pointer-events-none active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                <Icon icon="pixelarticons:trash" />
+                {isZh ? '删除' : 'PURGE'}
+              </button>
+            </div>
+          </div>
+
           {loadingUnfinished && !unfinishedData ? (
             <div className="flex items-center justify-center p-12 bg-white/5 border border-dashed border-white/10 opacity-30">
               <Icon icon="pixelarticons:reload" className="text-4xl text-green-500 animate-spin" />
@@ -610,7 +712,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
                       <th className="pb-3 font-semibold">{isZh ? '状态' : 'Status'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '用户信息' : 'User Info'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '创建时间' : 'Created At'}</th>
-                      <th className="pb-3 pr-2 font-semibold text-right">{isZh ? '等待时间' : 'Wait Time'}</th>
+                      <th className="pb-3 font-semibold text-right">{isZh ? '等待时间' : 'Wait Time'}</th>
+                      <th className="pb-3 pr-2 font-semibold text-right w-20">{isZh ? '操作' : 'Actions'}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 text-[12px] text-white/80">
@@ -642,8 +745,17 @@ export function MonitorPage({ current }: MonitorPageProps) {
                         <td className="py-3 text-white/40 text-[10px]">
                           {log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A'}
                         </td>
-                        <td className="py-3 pr-2 text-right text-green-400 font-bold font-mono tracking-tight">
+                        <td className="py-3 text-right text-green-400 font-bold font-mono tracking-tight">
                           {calculateWaitTime(log.created_at)}
+                        </td>
+                        <td className="py-3 pr-2 text-right">
+                          <button
+                            onClick={() => setDeletingId(log.id)}
+                            className="w-7 h-7 inline-flex items-center justify-center bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:border-red-500 hover:text-white transition-all active:scale-95 rounded cursor-pointer"
+                            title={isZh ? '强制删除皮肤' : 'Force Delete Skin'}
+                          >
+                            <Icon icon="pixelarticons:trash" className="text-sm" />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -704,6 +816,59 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           )}
         </div>
+
+      {/* Deletion Confirmation Modal */}
+      {deletingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
+          <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-red-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500 text-2xl shrink-0">
+                <Icon icon="pixelarticons:shield-attention" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <h4 className={`text-white text-base m-0 ${current.fontClass}`}>
+                  {isZh ? '确认要彻底物理删除吗？' : 'Confirm Permanent Purge'}
+                </h4>
+                <p className="text-white/60 text-xs leading-relaxed mt-1">
+                  {isZh ? (
+                    <>
+                      您正在请求彻底物理删除皮肤 <strong>{deletingId}</strong>。
+                      这将永久删除该生成日志、数据库记录，并<b>物理擦除</b> S3 中的源图与结果图文件。此操作不可逆！
+                    </>
+                  ) : (
+                    <>
+                      Are you sure you want to permanently purge skin <strong>{deletingId}</strong>?
+                      This will soft-delete the database record and <b>physically erase</b> all associated source and result files from Amazon S3. This action is irreversible.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeletingId(null)}
+                disabled={actionLoading}
+                className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+              >
+                {isZh ? '取消' : 'Cancel'}
+              </button>
+              <button
+                onClick={() => executeDelete(deletingId)}
+                disabled={actionLoading}
+                className="px-4 py-2 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95 flex items-center gap-1.5"
+              >
+                {actionLoading ? (
+                  <Icon icon="pixelarticons:reload" className="animate-spin text-red-500" />
+                ) : (
+                  <Icon icon="pixelarticons:trash" />
+                )}
+                {isZh ? '确认删除' : 'CONFIRM PURGE'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       </div>
     </div>
