@@ -3,7 +3,7 @@ export default {
     title: 'EntropyDrop',
     subtitle: '',
     fontClass: 'font-pixel-hans',
-    nav: { discover: '发现', generate: '生成', edit: '编辑', print: '3D打印', collection: '收藏', pro: 'Pro订阅', open: '公开', monitor: '监控' },
+    nav: { discover: '发现', generate: '生成', edit: '编辑', print: '3D打印', collection: '收藏', pro: 'Pro订阅', public: '公开', monitor: '监控' },
     generate: {
         imageMode: '图片生成',
         textMode: '文本生成',
@@ -428,7 +428,7 @@ export default {
         discordPrompt: '想要详细吐槽或提供建议？加入我们的',
         discordLinkText: 'Discord 社区'
     },
-    open_page: {
+    public_page: {
         title: '开放生产 / 根信任治理',
         introduction: {
             title: '关于我们',
@@ -469,7 +469,7 @@ export default {
                     items: [
                         { title: '财务状况', desc: '平台营收流、运营支出、资金流向及总资产的概览。', status: '开发中' },
                         { title: '固定资产', desc: '计算节点、实物加工设备及资产列表。', status: '开发中' },
-                        { title: '实时总账', desc: '平台所有财务收支流水的实时、脱敏流展示。', status: '进行中', link: '/skin/open/ledger' }
+                        { title: '实时总账', desc: '平台所有财务收支流水的实时、脱敏流展示。', status: '进行中', link: '/skin/public/ledger' }
                     ]
                 }
             ]

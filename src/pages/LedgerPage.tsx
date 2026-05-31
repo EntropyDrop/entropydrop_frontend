@@ -114,7 +114,7 @@ function normalizePayload(payload: unknown): LedgerResponse {
 
 export function LedgerPage({ current }: LedgerPageProps) {
     const navigate = useNavigate()
-    const pageData = current.open_page.assets_pages.ledger
+    const pageData = current.public_page.assets_pages.ledger
     const [ledger, setLedger] = useState<LedgerResponse>({
         entries: [],
         summaries: { all: emptySummary, paypal: emptySummary, aws: emptySummary },
@@ -126,7 +126,7 @@ export function LedgerPage({ current }: LedgerPageProps) {
         let active = true
         async function fetchLedger() {
             try {
-                const response = await apiFetch('/api/open/ledger')
+                const response = await apiFetch('/api/public/ledger')
                 if (response.ok && active) {
                     const data = await response.json()
                     setLedger(normalizePayload(data))
@@ -186,7 +186,7 @@ export function LedgerPage({ current }: LedgerPageProps) {
             <div className={`w-full max-w-7xl h-full flex flex-col gap-6 bg-black/60 backdrop-blur-xl p-6 sm:p-10 border border-white/10 overflow-y-auto custom-scrollbar pointer-events-auto text-white animate-in fade-in slide-in-from-bottom-4 duration-500 ${current.fontClass}`}>
 
                 <button
-                    onClick={() => navigate('/skin/open')}
+                    onClick={() => navigate('/skin/public')}
                     className="flex items-center gap-2 text-white/50 hover:text-green-500 transition-colors self-start group"
                 >
                     <Icon icon="pixelarticons:arrow-left" className="text-xl transform group-hover:-translate-x-1 transition-transform" />

@@ -55,7 +55,7 @@ const pieColors = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#a855f7', '#14b8
 
 export function FinancialsPage({ current }: FinancialsPageProps) {
     const navigate = useNavigate()
-    const pageData = current.open_page.assets_pages?.financials || {}
+    const pageData = current.public_page.assets_pages?.financials || {}
     const [entries, setEntries] = useState<LedgerEntry[]>([])
     const [lastUpdate, setLastUpdate] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState(true)
@@ -64,7 +64,7 @@ export function FinancialsPage({ current }: FinancialsPageProps) {
         let active = true
         async function fetchLedger() {
             try {
-                const response = await apiFetch('/api/open/ledger')
+                const response = await apiFetch('/api/public/ledger')
                 if (!response.ok) return
                 const data: LedgerResponse = await response.json()
                 if (!active) return
@@ -140,7 +140,7 @@ export function FinancialsPage({ current }: FinancialsPageProps) {
         <div className="absolute inset-0 z-10 flex items-center justify-center p-4 sm:p-8 lg:p-12 pt-28 lg:pt-32 box-border overflow-y-auto pointer-events-none">
             <div className="w-full max-w-6xl h-full flex flex-col gap-8 bg-black/60 backdrop-blur-xl p-6 sm:p-10 border border-white/10 overflow-y-auto custom-scrollbar pointer-events-auto text-white animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <button
-                    onClick={() => navigate('/skin/open')}
+                    onClick={() => navigate('/skin/public')}
                     className="flex items-center gap-2 text-white/50 hover:text-green-500 transition-colors self-start group"
                 >
                     <Icon icon="pixelarticons:arrow-left" className="text-xl transform group-hover:-translate-x-1 transition-transform" />

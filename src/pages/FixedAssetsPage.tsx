@@ -18,7 +18,7 @@ const assets: AssetRecord[] = []
 
 export function FixedAssetsPage({ current }: FixedAssetsPageProps) {
     const navigate = useNavigate()
-    const pageData = current.open_page.assets_pages?.fixed_assets || {}
+    const pageData = current.public_page.assets_pages?.fixed_assets || {}
 
     const categoryCounts = assets.reduce<Record<string, number>>((acc, asset) => {
         acc[asset.type] = (acc[asset.type] || 0) + 1
@@ -35,7 +35,7 @@ export function FixedAssetsPage({ current }: FixedAssetsPageProps) {
         <div className="absolute inset-0 z-10 flex items-center justify-center p-4 sm:p-8 lg:p-12 pt-28 lg:pt-32 box-border overflow-y-auto pointer-events-none">
             <div className="w-full max-w-5xl h-full flex flex-col gap-6 bg-black/60 backdrop-blur-xl p-6 sm:p-10 border border-white/10 overflow-y-auto custom-scrollbar pointer-events-auto text-white animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <button
-                    onClick={() => navigate('/skin/open')}
+                    onClick={() => navigate('/skin/public')}
                     className="flex items-center gap-2 text-white/50 hover:text-green-500 transition-colors self-start group"
                 >
                     <Icon icon="pixelarticons:arrow-left" className="text-xl transform group-hover:-translate-x-1 transition-transform" />

@@ -3,7 +3,7 @@ export default {
     title: 'EntropyDrop',
     subtitle: 'Open-Source Manufacturer',
     fontClass: 'font-pixel-hans',
-    nav: { discover: 'Discover', generate: 'Generate', edit: 'Edit', print: '3D Print', collection: 'Collections', pro: 'Pro', open: 'Open', monitor: 'Monitor' },
+    nav: { discover: 'Discover', generate: 'Generate', edit: 'Edit', print: '3D Print', collection: 'Collections', pro: 'Pro', public: 'Public', monitor: 'Monitor' },
     generate: {
         imageMode: 'Image Mode',
         textMode: 'Text Mode',
@@ -428,7 +428,7 @@ export default {
         discordPrompt: 'Want to give detailed feedback? Join our ',
         discordLinkText: 'Discord Community'
     },
-    open_page: {
+    public_page: {
         title: 'Open Production / Root Trust Governance',
         introduction: {
             title: 'About Us',
@@ -469,7 +469,7 @@ export default {
                     items: [
                         { title: 'Financial Status', desc: 'An overview of platform revenue streams, operating expenditures, funds flow, and total assets.', status: 'In Development' },
                         { title: 'Fixed Assets', desc: 'A list of computing nodes, physical manufacturing equipment, and assets.', status: 'In Development' },
-                        { title: 'Live Ledger', desc: 'A real-time, anonymized stream display of all platform financial revenue and expenditure transactions.', status: 'Active', link: '/skin/open/ledger' }
+                        { title: 'Live Ledger', desc: 'A real-time, anonymized stream display of all platform financial revenue and expenditure transactions.', status: 'Active', link: '/skin/public/ledger' }
                     ]
                 }
             ]

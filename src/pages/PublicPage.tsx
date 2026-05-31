@@ -2,13 +2,37 @@ import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { Link, useNavigate } from 'react-router-dom'
 
-interface OpenPageProps {
+interface PublicPageProps {
     current: LangData
 }
 
-export function OpenPage({ current }: OpenPageProps) {
-    const data = current.open_page;
+interface RoadmapItem {
+    title: string
+    desc: string
+    status: string
+    link?: string
+}
+
+interface RoadmapModule {
+    title: string
+    icon?: string
+    iconColor?: string
+    items: readonly RoadmapItem[]
+}
+
+interface ArticleItem {
+    id: string
+    title: string
+    summary: string
+    tags: readonly string[]
+    date: string
+}
+
+export function PublicPage({ current }: PublicPageProps) {
+    const data = current.public_page;
     const navigate = useNavigate();
+    const roadmapModules: readonly RoadmapModule[] = data.roadmap.modules;
+    const articles: readonly ArticleItem[] = data.articles.list;
     const activeStatuses = data.roadmap?.activeStatuses || [];
     const developmentStatuses = data.roadmap?.developmentStatuses || [];
 
@@ -137,7 +161,7 @@ export function OpenPage({ current }: OpenPageProps) {
                                 {data.vision.content}
                             </p>
                             <Link
-                                to="/skin/open/article/root-trust-governance"
+                                to="/skin/public/article/root-trust-governance"
                                 className="flex items-center gap-2 px-3 py-1.5 bg-blue-400/10 hover:bg-blue-400/20 border border-blue-400/20 hover:border-blue-400/40 text-blue-300 hover:text-blue-200 transition-all text-sm font-mono self-start mt-auto group"
                             >
                                 <span>{data.vision.moreLabel}</span>
@@ -156,7 +180,7 @@ export function OpenPage({ current }: OpenPageProps) {
                     </h3>
 
                     <div className="flex flex-col gap-8">
-                        {data.roadmap.modules.map((module: any, mIndex: number) => (
+                        {roadmapModules.map((module, mIndex) => (
                             <div key={mIndex} className="flex flex-col gap-3">
                                 <div className="flex items-center gap-3 mb-1">
                                     <div className="flex items-center gap-2">
@@ -173,17 +197,18 @@ export function OpenPage({ current }: OpenPageProps) {
                                     <div className="flex-1 h-px bg-white/5" />
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                                    {module.items.map((item: any, iIndex: number) => {
-                                        const isClickable = !!item.link;
-                                        const isExternalLink = typeof item.link === 'string' && /^https?:\/\//.test(item.link);
+                                    {module.items.map((item, iIndex) => {
+                                        const link = item.link;
+                                        const isClickable = !!link;
+                                        const isExternalLink = typeof link === 'string' && /^https?:\/\//.test(link);
                                         const statusStyle = getStatusStyle(item.status);
                                         const handleItemClick = () => {
-                                            if (!item.link) return;
+                                            if (!link) return;
                                             if (isExternalLink) {
-                                                window.open(item.link, '_blank', 'noopener,noreferrer');
+                                                window.open(link, '_blank', 'noopener,noreferrer');
                                                 return;
                                             }
-                                            navigate(item.link);
+                                            navigate(link);
                                         };
 
                                         return (
@@ -229,10 +254,10 @@ export function OpenPage({ current }: OpenPageProps) {
                     </h3>
 
                     <div className="flex flex-col gap-3">
-                        {data.articles.list.map((article: any, index: number) => (
+                        {articles.map((article, index) => (
                             <a
                                 key={index}
-                                href={`/skin/open/article/${article.id}`}
+                                href={`/skin/public/article/${article.id}`}
                                 className="bg-white/5 border border-white/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/10 transition-all cursor-pointer group hover:border-green-500/20"
                             >
                                 <div className="flex flex-col gap-1">

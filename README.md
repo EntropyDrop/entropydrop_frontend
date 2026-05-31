@@ -45,9 +45,9 @@ A central workspace for managing, sorting, and sharing skins.
 - **Privacy Controls:** Toggle assets between **Public** (shared with the community and model training loops) and **Private** (restricted visibility).
 - **Direct Redirection:** Easily reload saved skins into the generator or editor for quick iterations.
 
-### 4. 🔓 Open Startup & Real-time Ledger (`/skin/open`)
+### 4. 🔓 Public Startup & Real-time Ledger (`/skin/public`)
 Exposing actual system operations and financials directly to the community to maintain complete transparency.
-- **Real-Time Ledger (`/skin/open/ledger`):** A live, anonymized billing ledger displaying daily-synchronized PayPal income transactions and AWS cloud infrastructure costs.
+- **Real-Time Ledger (`/skin/public/ledger`):** A live, anonymized billing ledger displaying daily-synchronized PayPal income transactions and AWS cloud infrastructure costs.
 - **Open Roadmap:** Tracks software evolution milestones, data synthesis improvements, and protocol releases.
 - **Technical Articles:** Built-in Markdown reader serving our latest research (e.g., Flux2 Klein LoRA fine-tuning methodologies, deep dives into skin UV spatial parameters, and backend scaling boundaries).
 
@@ -145,4 +145,3 @@ npm run lint
 ## 📄 License
 
 This project is licensed under the terms of the [LICENSE](./LICENSE) file included in this repository.
-
