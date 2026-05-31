@@ -1,13 +1,13 @@
 import { useRef, useMemo, useEffect, useCallback, useState } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { 
-    Vector3, 
-    Group, 
-    Quaternion, 
-    Matrix4, 
-    CanvasTexture, 
-    NearestFilter, 
-    DoubleSide, 
+import {
+    Vector3,
+    Group,
+    Quaternion,
+    Matrix4,
+    CanvasTexture,
+    NearestFilter,
+    DoubleSide,
     type Texture,
     PerspectiveCamera
 } from 'three'
@@ -27,6 +27,23 @@ type LoadedDiscoveryItem = {
     log: GenerationLogItemBrief
     tex: CanvasTexture
     slotIndex: number
+}
+
+function normalizeDiscoveryItem(item: unknown): GenerationLogItemBrief | null {
+    if (!item || typeof item !== 'object') return null
+
+    const raw = item as Record<string, unknown>
+    const id = typeof raw.id === 'string' ? raw.id.trim() : ''
+    const result = typeof raw.result === 'string' ? raw.result.trim() : ''
+    if (!id || !result) return null
+
+    return {
+        ...(raw as Partial<GenerationLogItemBrief>),
+        id,
+        result,
+        prompt: typeof raw.prompt === 'string' ? raw.prompt : '',
+        is_public: raw.is_public !== false,
+    }
 }
 
 function getSpiralPosition(n: number, radius: number): Vector3 {
@@ -101,8 +118,17 @@ export function Discovery({
 
         apiFetch('/api/discovery')
             .then(res => res.json())
-            .then(async (data: GenerationLogItemBrief[]) => {
+            .then(async (data: unknown) => {
                 if (!active) return;
+
+                const rawItems = Array.isArray(data) ? data : [];
+                const discoveryItems = rawItems
+                    .map(normalizeDiscoveryItem)
+                    .filter((item): item is GenerationLogItemBrief => item !== null);
+
+                if (rawItems.length !== discoveryItems.length) {
+                    console.warn(`Discovery skipped ${rawItems.length - discoveryItems.length} invalid item(s)`);
+                }
 
                 // Shuffle slots
                 const indices = Array.from({ length: DISCOVERY_SLOT_COUNT }, (_, i) => i);
@@ -111,7 +137,7 @@ export function Discovery({
                     [indices[i], indices[j]] = [indices[j], indices[i]];
                 }
 
-                const queuedItems = data
+                const queuedItems = discoveryItems
                     .slice(0, DISCOVERY_SLOT_COUNT)
                     .map((log, index) => ({ log, slotIndex: indices[index] }));
                 let loadedBuffer: LoadedDiscoveryItem[] = [];

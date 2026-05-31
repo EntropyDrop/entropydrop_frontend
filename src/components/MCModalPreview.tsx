@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react'
-import { Suspense, useState, useRef, useEffect } from 'react'
+import { Component, Suspense, useState, useRef, useEffect, type ErrorInfo, type ReactNode } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Stage } from '@react-three/drei'
 import { MinecraftCharacter } from './MC'
@@ -39,6 +39,34 @@ const DanceOptions = [
     { label: 'Twist Dance', value: '/fbx/Twist Dance.fbx' },
     { label: 'Breakdance Uprock Var 2', value: '/fbx/Breakdance Uprock Var 2.fbx' }
 ]
+
+interface PreviewErrorBoundaryProps {
+    children: ReactNode
+    onError: () => void
+}
+
+interface PreviewErrorBoundaryState {
+    hasError: boolean
+}
+
+class PreviewErrorBoundary extends Component<PreviewErrorBoundaryProps, PreviewErrorBoundaryState> {
+    state: PreviewErrorBoundaryState = { hasError: false }
+
+    static getDerivedStateFromError(): PreviewErrorBoundaryState {
+        return { hasError: true }
+    }
+
+    componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
+        console.warn('Minecraft preview failed to render:', error, errorInfo.componentStack)
+        this.props.onError()
+    }
+
+    render() {
+        if (this.state.hasError) return null
+        return this.props.children
+    }
+}
+
 export function MCModalPreview({
     textureUrl,
     mode,
@@ -57,6 +85,7 @@ export function MCModalPreview({
     setFbxUrl,
 }: MCModalPreviewProps) {
     const [isFbxDropdownOpen, setIsFbxDropdownOpen] = useState(false);
+    const [previewFailed, setPreviewFailed] = useState(false);
     const fbxDropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -75,10 +104,16 @@ export function MCModalPreview({
         }
     }, [action, setFbxUrl]);
 
+    useEffect(() => {
+        setPreviewFailed(false);
+    }, [textureUrl]);
+
     const handleDownload = async (e: React.MouseEvent) => {
         e.preventDefault();
+        if (!textureUrl) return;
         try {
             const response = await fetch(textureUrl);
+            if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
@@ -111,16 +146,28 @@ export function MCModalPreview({
                 <spotLight position={[10, 20, 10]} angle={0.15} penumbra={1} intensity={1.5} castShadow />
                 <pointLight position={[-10, -10, -10]} intensity={0.5} />
 
-                <Suspense fallback={null}>
-                    <Stage environment={null} intensity={0.5} shadows="contact" adjustCamera={false}>
-                        <group position={[0, -0.5, 0]}>
-                            <MinecraftCharacter textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} />
-                        </group>
-                    </Stage>
-                </Suspense>
+                {!previewFailed && (
+                    <PreviewErrorBoundary key={textureUrl} onError={() => setPreviewFailed(true)}>
+                        <Suspense fallback={null}>
+                            <Stage environment={null} intensity={0.5} shadows="contact" adjustCamera={false}>
+                                <group position={[0, -0.5, 0]}>
+                                    <MinecraftCharacter textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} />
+                                </group>
+                            </Stage>
+                        </Suspense>
+                    </PreviewErrorBoundary>
+                )}
 
                 <OrbitControls makeDefault enableDamping target={[0, 0, 0]} />
             </Canvas>
+
+            {previewFailed && (
+                <div className={`absolute inset-0 pointer-events-none flex items-center justify-center p-6 text-center ${current.fontClass}`}>
+                    <div className="bg-black/50 border border-white/10 px-4 py-3 text-xs text-white/60">
+                        {current.mcmodal?.previewUnavailable || 'Preview unavailable'}
+                    </div>
+                </div>
+            )}
 
             {/* Floating Scene Controls */}
             <div className="absolute inset-0 pointer-events-none p-4 flex flex-col justify-between">

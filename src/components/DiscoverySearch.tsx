@@ -4,17 +4,42 @@ import { Icon } from '@iconify/react'
 import { apiFetch } from '../utils/api'
 import type { LangData } from '../constants/lang'
 import { Skin2DImg } from './Skin2DImg'
+import type { GenerationLogItemBrief } from '../types/log'
+
+type DiscoverySearchResult = GenerationLogItemBrief & {
+    name?: string
+    creator?: {
+        username?: string
+    }
+}
+
+function normalizeDiscoverySearchResult(item: unknown): DiscoverySearchResult | null {
+    if (!item || typeof item !== 'object') return null
+
+    const raw = item as Record<string, unknown>
+    const id = typeof raw.id === 'string' ? raw.id.trim() : ''
+    const result = typeof raw.result === 'string' ? raw.result.trim() : ''
+    if (!id || !result) return null
+
+    return {
+        ...(raw as Partial<DiscoverySearchResult>),
+        id,
+        result,
+        prompt: typeof raw.prompt === 'string' ? raw.prompt : '',
+        is_public: raw.is_public !== false,
+    }
+}
 
 interface DiscoverySearchProps {
     current: LangData
-    onSelect: (item: any) => void
-    selectedItem?: any
+    onSelect: (item: GenerationLogItemBrief) => void
+    selectedItem?: GenerationLogItemBrief | null
 }
 
 export function DiscoverySearch({ current, onSelect, selectedItem }: DiscoverySearchProps) {
     const [query, setQuery] = useState('')
     const [isSearching, setIsSearching] = useState(false)
-    const [results, setResults] = useState<any[]>([])
+    const [results, setResults] = useState<DiscoverySearchResult[]>([])
     const [isOpen, setIsOpen] = useState(false)
 
     const [page, setPage] = useState(1)
@@ -55,9 +80,19 @@ export function DiscoverySearch({ current, onSelect, selectedItem }: DiscoverySe
                 return
             }
             if (res.ok) {
-                const data = await res.json()
-                setResults(data.items)
-                setTotal(data.total)
+                const data: unknown = await res.json()
+                const response = data && typeof data === 'object' ? data as Record<string, unknown> : {}
+                const rawItems = Array.isArray(response.items) ? response.items : []
+                const safeItems = rawItems
+                    .map(normalizeDiscoverySearchResult)
+                    .filter((item): item is DiscoverySearchResult => item !== null)
+
+                if (rawItems.length !== safeItems.length) {
+                    console.warn(`Discovery search skipped ${rawItems.length - safeItems.length} invalid item(s)`)
+                }
+
+                setResults(safeItems)
+                setTotal(typeof response.total === 'number' ? response.total : safeItems.length)
                 setPage(pageNum)
             }
         } catch (e) {

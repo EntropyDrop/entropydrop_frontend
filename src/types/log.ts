@@ -15,6 +15,7 @@ export interface GenerationLogItem extends GenerationLogItemBrief {
     status?: 'pending' | 'processing' | 'pending_skin' | 'processing_skin' | 'success' | 'failed'
     queue_position?: number
     error_msg?: string
+    has_feedback?: boolean
     creator: {
         id: string
         username: string
@@ -29,4 +30,3 @@ export interface GenerationLogItem extends GenerationLogItemBrief {
     guidance?: number
     is_pro: boolean
 }
-

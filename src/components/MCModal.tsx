@@ -89,16 +89,27 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
             setDerivedCount(null);
             setRelatedCollectionsCount(null);
         }
+        setIsNotFound(false);
         try {
             const res = await apiFetch(`/api/logs/${id}`);
-            if (res.status === 404) {
+            if (res.status === 404 || res.status === 403) {
                 setIsNotFound(true);
+                setTextureUrl('');
+                setParentItem(null);
+                setIsParentDeleted(false);
                 return;
             }
             if (!res.ok) {
                 throw new Error(`Failed with status ${res.status}`);
             }
             const data = await res.json();
+            if (!data?.result) {
+                setIsNotFound(true);
+                setTextureUrl('');
+                setParentItem(null);
+                setIsParentDeleted(false);
+                return;
+            }
             setItem(data);
             setTextureUrl(data.result);
             setIsNotFound(false);
@@ -346,7 +357,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     useEffect(() => {
         setIsLiked(item.is_liked || false);
         setLikesCount(item.likes_count || 0);
-        setHasFeedback(false);
+        setHasFeedback(item.has_feedback === true);
         setFeedbackType(null);
     }, [item]);
 
@@ -679,6 +690,8 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         }
     };
 
+    const hasUserFeedback = hasFeedback || item.has_feedback === true;
+
     const convertModel = (target: 'steve' | 'alex') => {
         if (modelType === target) return;
 
@@ -773,23 +786,27 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
                                     {/* Left: 3D Preview Section */}
                                     <div className={showSidebar ? 'hidden lg:block' : 'block'}>
-                                        <MCModalPreview
-                                            textureUrl={textureUrl}
-                                            mode={mode}
-                                            action={action}
-                                            modelType={modelType}
-                                            visibleParts={visibleParts}
-                                            setMode={setMode}
-                                            setAction={setAction}
-                                            fbxUrl={fbxUrl}
-                                            setFbxUrl={setFbxUrl}
-                                            convertModel={convertModel}
-                                            togglePart={togglePart}
-                                            onEdit={onEdit ? () => onEdit(item.is_public === true) : undefined}
-                                            onPrint={handlePrint}
-                                            downloadFilename={item.id ? `skin_${item.id.toString().substring(0, 8)}.png` : 'skin.png'}
-                                            current={current}
-                                        />
+                                        {isLoadingDetails ? (
+                                            <MCModalPreviewPlaceholder />
+                                        ) : (
+                                            <MCModalPreview
+                                                textureUrl={textureUrl}
+                                                mode={mode}
+                                                action={action}
+                                                modelType={modelType}
+                                                visibleParts={visibleParts}
+                                                setMode={setMode}
+                                                setAction={setAction}
+                                                fbxUrl={fbxUrl}
+                                                setFbxUrl={setFbxUrl}
+                                                convertModel={convertModel}
+                                                togglePart={togglePart}
+                                                onEdit={onEdit ? () => onEdit(item.is_public === true) : undefined}
+                                                onPrint={handlePrint}
+                                                downloadFilename={item.id ? `skin_${item.id.toString().substring(0, 8)}.png` : 'skin.png'}
+                                                current={current}
+                                            />
+                                        )}
                                     </div>
 
 
@@ -1125,35 +1142,28 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                 </div>
                                                             )}
 
-                                                            {item.id && item.mode && item.mode.startsWith('aigc_') && item.is_public === true && (
+                                                            {item.id && item.mode && item.mode.startsWith('aigc_') && item.is_public === true && !hasUserFeedback && (
                                                                 <div className="p-3 bg-white/5 border border-white/10 flex flex-col gap-2 mt-2">
                                                                     <div className="text-white/40 text-[10px] font-pixel-hans uppercase tracking-widest">
                                                                         {current.mcmodal.feedbackTitle}
                                                                     </div>
 
-                                                                    {!hasFeedback ? (
-                                                                        <div className="grid grid-cols-2 gap-2">
-                                                                            <button
-                                                                                onClick={() => handleQualityFeedback(true)}
-                                                                                className="flex items-center justify-center gap-1.5 py-1.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 text-xs font-pixel-hans cursor-pointer transition-colors active:translate-y-0.5"
-                                                                            >
-                                                                                <Icon icon="pixelarticons:check" className="text-[12px]" />
-                                                                                <span>{current.mcmodal.feedbackGood}</span>
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => handleQualityFeedback(false)}
-                                                                                className="flex items-center justify-center gap-1.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-pixel-hans cursor-pointer transition-colors active:translate-y-0.5"
-                                                                            >
-                                                                                <Icon icon="pixelarticons:close" className="text-[12px]" />
-                                                                                <span>{current.mcmodal.feedbackBad}</span>
-                                                                            </button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="text-xs font-pixel-hans text-green-400/90 leading-normal flex items-start gap-1.5 py-0.5">
-                                                                            <Icon icon="pixelarticons:check-double" className="text-xs shrink-0 mt-0.5" />
-                                                                            <span>{current.mcmodal.feedbackThanks}</span>
-                                                                        </div>
-                                                                    )}
+                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                        <button
+                                                                            onClick={() => handleQualityFeedback(true)}
+                                                                            className="flex items-center justify-center gap-1.5 py-1.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 text-xs font-pixel-hans cursor-pointer transition-colors active:translate-y-0.5"
+                                                                        >
+                                                                            <Icon icon="pixelarticons:check" className="text-[12px]" />
+                                                                            <span>{current.mcmodal.feedbackGood}</span>
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleQualityFeedback(false)}
+                                                                            className="flex items-center justify-center gap-1.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-pixel-hans cursor-pointer transition-colors active:translate-y-0.5"
+                                                                        >
+                                                                            <Icon icon="pixelarticons:close" className="text-[12px]" />
+                                                                            <span>{current.mcmodal.feedbackBad}</span>
+                                                                        </button>
+                                                                    </div>
 
                                                                     <div className="text-xs font-pixel-hans text-white/40 leading-relaxed border-t border-white/5 pt-2 mt-1">
                                                                         <span>{current.mcmodal.discordPrompt}</span>
@@ -1331,4 +1341,12 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     );
 
     return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : null;
+}
+
+function MCModalPreviewPlaceholder() {
+    return (
+        <div className="w-full lg:w-[600px] aspect-square lg:h-[720px] [@media(max-height:850px)]:lg:h-full [@media(max-height:850px)]:lg:aspect-square bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] relative overflow-hidden flex-shrink-0 border-b lg:border-b-0 lg:border-r border-white/10 flex items-center justify-center">
+            <LoadingSpinner className="w-8 h-8 border-4" />
+        </div>
+    );
 }

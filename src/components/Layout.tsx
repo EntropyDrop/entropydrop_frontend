@@ -66,7 +66,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                     <div className="flex items-center gap-2 sm:gap-12 min-w-0">
                         <div className="hidden sm:flex gap-2 sm:gap-8 pointer-events-auto bg-black/40 sm:bg-transparent p-1.5 sm:p-0border border-white/10 sm:border-none rounded-sm">
                             {NAV_ITEMS.map((item) => {
-                                const isActive = item.path === '/skin/' 
+                                const isActive = item.path === '/skin/'
                                     ? (location.pathname === '/skin/' || location.pathname === '/skin')
                                     : location.pathname.startsWith(item.path)
                                 const label = current.nav[item.key]

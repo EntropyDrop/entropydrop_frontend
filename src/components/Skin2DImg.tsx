@@ -24,6 +24,12 @@ export function Skin2DImg({
     useEffect(() => {
         let active = true
 
+        if (!src) {
+            return () => {
+                active = false
+            }
+        }
+
         Skin2D(src, { scale }).then(result => {
             if (!active) return
             setRenderState({
@@ -50,6 +56,7 @@ export function Skin2DImg({
     const base64 = isCurrentRender ? renderState.base64 : null
     const error = isCurrentRender ? renderState.error : false
 
+    if (!src) return null
     if (!base64 && !error && !showRawFallback) return null
 
     if (error) {
