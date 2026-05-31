@@ -12,7 +12,7 @@ export default {
         fileTooLarge: '文件太大，最大支持 512KB',
         textPlaceholder: '例如: 一个穿蓝衣服的人...',
         imageEditTextPlaceholder: '例如: 把衣服换成红色...',
-        textTitle: '模型描述',
+        textTitle: '提示词',
         btnStart: '开始生成',
         btnGenerating: '正在构建...',
         emptyTitle: '准备好创造了吗？',

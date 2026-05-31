@@ -12,7 +12,7 @@ export default {
         fileTooLarge: 'File too large, max support 512KB',
         textPlaceholder: 'e.g. A character in blue...',
         imageEditTextPlaceholder: 'e.g. Change the clothes to red...',
-        textTitle: 'Description',
+        textTitle: 'Prompt',
         btnStart: 'Generate Now',
         btnGenerating: 'Building...',
         emptyTitle: 'Ready to Create?',
