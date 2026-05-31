@@ -62,7 +62,9 @@ export default {
         dailyQuota: '每日额度',
         remainingQuota: '今日剩余额度: ',
         quotaExceeded: '今日额度已用完',
-        proTag: '加速'
+        proTag: '加速',
+        loadingModels: '加载中...',
+        btnLoadingModel: '正在加载模型...'
     },
     collection: {
         title: '我的收藏',

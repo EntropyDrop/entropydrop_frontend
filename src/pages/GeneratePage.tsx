@@ -193,6 +193,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
         const currentMode = genMode
         if (modelsConfig[currentMode] && modelsConfig[currentMode].length > 0) {
             setModelVersion(modelsConfig[currentMode][0])
+        } else {
+            setModelVersion('unknown')
         }
     }, [genMode, modelsConfig])
 
@@ -286,7 +288,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
     }, [isGenerating])
 
     const handleGenerate = async () => {
-        if (isGenerating) return
+        if (isGenerating || modelVersion === 'unknown' || !modelVersion) return
 
         if ((genMode === 'aigc_image_to_skin' || genMode === 'aigc_image_edit_to_skin') && !imageFile) {
             setInfoModal({ isOpen: true, title: current.generate.notice, message: current.generate.pleaseUploadImage, type: 'info' })
@@ -820,11 +822,18 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                         <select
                                             value={modelVersion}
                                             onChange={(e) => setModelVersion(e.target.value)}
-                                            className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors cursor-pointer ${current.fontClass}`}
+                                            disabled={modelVersion === 'unknown' || !modelVersion}
+                                            className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors cursor-pointer ${current.fontClass} disabled:opacity-50 disabled:cursor-not-allowed`}
                                         >
-                                            {(modelsConfig[genMode] || []).map(m => (
-                                                <option key={m} value={m} className="bg-[#2a2a2a] text-white">{m}</option>
-                                            ))}
+                                            {(modelsConfig[genMode] || []).length === 0 ? (
+                                                <option value="unknown" className="bg-[#2a2a2a] text-white">
+                                                    {current.generate.loadingModels}
+                                                </option>
+                                            ) : (
+                                                (modelsConfig[genMode] || []).map(m => (
+                                                    <option key={m} value={m} className="bg-[#2a2a2a] text-white">{m}</option>
+                                                ))
+                                            )}
                                         </select>
                                     </div>
 
@@ -957,7 +966,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                 )}
 
                                 <button
-                                    disabled={isGenerating}
+                                    disabled={isGenerating || modelVersion === 'unknown' || !modelVersion}
                                     onClick={handleGenerate}
                                     className={`py-3 lg:py-4 bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-gray-700 text-white border-2 border-black cursor-pointer transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass}`}
                                 >
@@ -965,6 +974,11 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                         <span key="generating" className="flex items-center justify-center gap-2">
                                             <Icon icon="pixelarticons:reload" className="animate-spin" />
                                             {current.generate.btnGenerating}
+                                        </span>
+                                    ) : (modelVersion === 'unknown' || !modelVersion) ? (
+                                        <span key="loading-model" className="flex items-center justify-center gap-2">
+                                            <Icon icon="pixelarticons:reload" className="animate-spin" />
+                                            {current.generate.btnLoadingModel}
                                         </span>
                                     ) : (
                                         <span key="start" className="flex items-center justify-center gap-2">

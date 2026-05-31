@@ -62,7 +62,9 @@ export default {
         dailyQuota: 'Daily Quota',
         remainingQuota: 'Generations left today: ',
         quotaExceeded: 'Daily quota exceeded',
-        proTag: 'Pro'
+        proTag: 'Pro',
+        loadingModels: 'Loading...',
+        btnLoadingModel: 'Loading model...'
     },
     collection: {
         title: 'My Collections',
