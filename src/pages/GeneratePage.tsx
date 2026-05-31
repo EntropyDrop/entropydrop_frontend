@@ -45,6 +45,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [isSourcePrivate, setIsSourcePrivate] = useState(false)
     const [lastSubmittedId, setLastSubmittedId] = useState<string | null>(null)
     const [quota, setQuota] = useState<{ remaining: number; limit: number } | null>(null)
+    const [unlimitedQuota, setUnlimitedQuota] = useState(false)
     const [infoModal, setInfoModal] = useState<{ isOpen: boolean; title: string; message: string; type?: 'info' | 'error' | 'success' }>({ isOpen: false, title: '', message: '' })
     const [isHistoryLoading, setIsHistoryLoading] = useState(false)
 
@@ -177,6 +178,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             if (res.ok) {
                 const data = await res.json()
                 setIsPro(data.is_pro)
+                setUnlimitedQuota(!!data.unlimited_quota)
                 if (data.daily_generation_limit !== undefined) {
                     setQuota({
                         remaining: data.remaining_generation_quota,
@@ -958,11 +960,18 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                 )}
 
                                 {/* Quota Display */}
-                                {!isPro && quota && (
-                                    <div className={`text-[10px] lg:text-xs flex text-[#a6df7a] items-center gap-1.5 opacity-60 ${current.fontClass} -mb-1`}>
-                                        <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
-                                        <span>{current.generate.remainingQuota}{quota.remaining} / {quota.limit}</span>
+                                {unlimitedQuota ? (
+                                    <div className={`text-[10px] lg:text-xs flex text-[#a6df7a] items-center gap-1.5 font-bold ${current.fontClass} -mb-1`}>
+                                        <Icon icon="pixelarticons:gift" className="text-yellow-400 animate-bounce" />
+                                        <span>{current.lang === 'zh-hans' ? '限时活动，生成不消耗额度' : 'Limited-time event, free generation'}</span>
                                     </div>
+                                ) : (
+                                    !isPro && quota && (
+                                        <div className={`text-[10px] lg:text-xs flex text-[#a6df7a] items-center gap-1.5 opacity-60 ${current.fontClass} -mb-1`}>
+                                            <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                            <span>{current.generate.remainingQuota}{quota.remaining} / {quota.limit}</span>
+                                        </div>
+                                    )
                                 )}
 
                                 <button
