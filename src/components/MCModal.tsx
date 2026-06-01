@@ -876,7 +876,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                             {item.prompt && (
                                                                 <div>
                                                                     <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-1">Prompt</div>
-                                                                    <p className="text-white/90 font-pixel-hans text-xs leading-snug overflow-hidden text-ellipsis line-clamp-2 italic">"{item.prompt}"</p>
+                                                                    <p className="text-white/90 font-pixel-hans text-xs leading-snug break-words whitespace-pre-wrap italic">"{item.prompt}"</p>
                                                                 </div>
                                                             )}
                                                             {item.edited_image_url && (
@@ -958,7 +958,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                             {item.prompt && (
                                                                 <div>
                                                                     <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-1">Prompt</div>
-                                                                    <p className="text-white/90 font-pixel-hans text-xs leading-snug overflow-hidden text-ellipsis line-clamp-2 italic">"{item.prompt}"</p>
+                                                                    <p className="text-white/90 font-pixel-hans text-xs leading-snug break-words whitespace-pre-wrap italic">"{item.prompt}"</p>
                                                                 </div>
                                                             )}
                                                             {item.edited_image_url && (
