@@ -412,8 +412,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
     if (!localStorage.getItem('token')) {
         return (
-            <div className="absolute inset-0 z-10 flex items-start lg:items-center justify-center p-2 sm:p-8 lg:p-12 pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
-                <div className="w-full max-w-7xl h-auto lg:h-full flex flex-col items-center justify-center gap-6 bg-black/40 backdrop-blur-md p-4 sm:p-6 lg:p-8 border border-white/10 overflow-visible lg:overflow-hidden animate-in fade-in zoom-in duration-300 pointer-events-auto text-white">
+            <div className="absolute inset-0 z-10 flex items-start lg:items-center justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
+                <div className="w-full max-w-7xl h-auto lg:h-full flex flex-col items-center justify-center gap-6 bg-black/40 backdrop-blur-md p-4 sm:p-8 border border-white/10 overflow-visible lg:overflow-hidden animate-in fade-in zoom-in duration-300 pointer-events-auto text-white">
                     <Icon icon="pixelarticons:lock" className="text-6xl opacity-30" />
                     <div className="text-center flex flex-col gap-1">
                         <h2 className={`text-xl font-bold ${current.fontClass}`}>
@@ -432,8 +432,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const completedHistory = history.filter(item => !['pending', 'processing', 'pending_skin', 'processing_skin'].includes(item.status || ''))
 
     return (
-        <div className="absolute inset-0 z-10 flex items-start lg:items-center justify-center p-1 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
-            <div className="w-full max-w-7xl h-auto lg:h-full flex flex-col lg:flex-row gap-3 lg:gap-6 bg-black/40 backdrop-blur-md p-3 sm:p-6 lg:p-8 border border-white/10 overflow-visible lg:overflow-hidden animate-in fade-in zoom-in duration-300 pointer-events-auto">
+        <div className="absolute inset-0 z-10 flex items-start lg:items-center justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
+            <div className="w-full max-w-7xl h-auto lg:h-full flex flex-col lg:flex-row gap-3 lg:gap-6 bg-black/40 backdrop-blur-md p-4 sm:p-8 border border-white/10 overflow-visible lg:overflow-hidden animate-in fade-in zoom-in duration-300 pointer-events-auto">
 
                 {/* Left: History Sidebar */}
                 <div className="w-full lg:w-80 flex flex-col gap-4 order-last lg:order-first border-t lg:border-t-0 lg:border-r border-white/10 pt-4 lg:pt-0 lg:pr-6 shrink-0 h-auto lg:h-full">

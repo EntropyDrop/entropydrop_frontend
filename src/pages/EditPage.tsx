@@ -535,7 +535,7 @@ export function EditPage({ current }: EditPageProps) {
     ];
 
     return (
-        <div className="absolute inset-0 z-10 flex items-center justify-center p-4 sm:p-8 lg:p-12 pt-16 sm:pt-28 lg:pt-32 box-border overflow-y-auto pointer-events-none">
+        <div className="absolute inset-0 z-10 flex items-center justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
             <div className="w-full max-w-7xl h-full flex flex-col gap-4 bg-black/40 backdrop-blur-md p-0 border border-white/10 overflow-visible lg:overflow-hidden animate-in fade-in zoom-in duration-300 pointer-events-auto">
 
                 {/* Top Section: Previews */}
