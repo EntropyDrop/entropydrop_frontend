@@ -248,7 +248,7 @@ export default {
                 private: 'No private space',
                 priority: 'Regular priority',
                 experimental: 'Basic model access',
-                commercial: 'Commercial license included'
+                commercial: 'Generated skins support commercial use'
             },
             pro_plus: {
                 title: 'Pro-Plus',
@@ -258,7 +258,7 @@ export default {
                 private: '1,000 private skins limit',
                 priority: 'High priority queue',
                 experimental: 'Early access to new features',
-                commercial: 'Commercial license included'
+                commercial: 'Generated skins support commercial use'
             },
             pro_max: {
                 title: 'Pro-Max',
@@ -268,7 +268,7 @@ export default {
                 private: '5,000 private skins limit',
                 priority: 'High priority queue',
                 experimental: 'Early access to new features',
-                commercial: 'Commercial license included'
+                commercial: 'Generated skins support commercial use'
             }
         }
     },

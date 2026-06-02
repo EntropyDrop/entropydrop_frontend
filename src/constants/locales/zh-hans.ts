@@ -248,7 +248,7 @@ export default {
                 private: '不支持私有空间',
                 priority: '普通生成优先级',
                 experimental: '基础模型体验',
-                commercial: '包含商业许可（支持商用）'
+                commercial: '生成的皮肤支持商用'
             },
             pro_plus: {
                 title: 'Pro-Plus',
@@ -258,7 +258,7 @@ export default {
                 private: '1,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
                 experimental: '优先体验新功能',
-                commercial: '包含商业许可（支持商用）'
+                commercial: '生成的皮肤支持商用'
             },
             pro_max: {
                 title: 'Pro-Max',
@@ -268,7 +268,7 @@ export default {
                 private: '5,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
                 experimental: '优先体验新功能',
-                commercial: '包含商业许可（支持商用）'
+                commercial: '生成的皮肤支持商用'
             }
         }
     },
