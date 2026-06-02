@@ -251,7 +251,7 @@ export default {
             },
             pro_plus: {
                 title: 'Pro-Plus',
-                price: '20',
+                price: '8',
                 quota: '12 generations per 5 hours',
                 collections: 'Support private collections',
                 private: '1,000 private skins limit',
@@ -260,7 +260,7 @@ export default {
             },
             pro_max: {
                 title: 'Pro-Max',
-                price: '50',
+                price: '20',
                 quota: '36 generations per 5 hours',
                 collections: 'Support private collections',
                 private: '5,000 private skins limit',

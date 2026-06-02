@@ -251,7 +251,7 @@ export default {
             },
             pro_plus: {
                 title: 'Pro-Plus',
-                price: '20',
+                price: '8',
                 quota: '每 5 小时 12 次生成额度',
                 collections: '支持创建私有收藏夹',
                 private: '1,000 个私有皮肤上限',
@@ -260,7 +260,7 @@ export default {
             },
             pro_max: {
                 title: 'Pro-Max',
-                price: '50',
+                price: '20',
                 quota: '每 5 小时 36 次生成额度',
                 collections: '支持创建私有收藏夹',
                 private: '5,000 个私有皮肤上限',

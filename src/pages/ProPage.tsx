@@ -45,8 +45,8 @@ export function ProPage({ current }: ProPageProps) {
     });
 
     const plans: Plan[] = [
-        { key: 'pro_plus', duration: current.pro.plansData.pro_plus, price: 20, popular: true },
-        { key: 'pro_max', duration: current.pro.plansData.pro_max, price: 50 }
+        { key: 'pro_plus', duration: current.pro.plansData.pro_plus, price: 8, popular: true },
+        { key: 'pro_max', duration: current.pro.plansData.pro_max, price: 20 }
     ];
 
     const handleSubscribe = async (tier: any, isUpgrade: boolean = false) => {
@@ -249,7 +249,7 @@ export function ProPage({ current }: ProPageProps) {
                                                 handleCancelSubscription();
                                             } else {
                                                 // Find the plan data to pass it directly
-                                                const planData = plans.find(p => p.key === tier.key) || { key: tier.key, price: tier.key === 'pro_max' ? 50 : 20 };
+                                                const planData = plans.find(p => p.key === tier.key) || { key: tier.key, price: tier.key === 'pro_max' ? 20 : 8 };
                                                 handleSubscribe(planData, isUpgrade);
                                             }
                                         }}
