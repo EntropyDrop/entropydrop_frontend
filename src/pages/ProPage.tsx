@@ -235,6 +235,10 @@ export function ProPage({ current }: ProPageProps) {
                                         <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.priority}</span>
                                     </div>
                                     <div className="flex items-start gap-3">
+                                        <Icon icon="pixelarticons:briefcase" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
+                                        <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.commercial}</span>
+                                    </div>
+                                    <div className="flex items-start gap-3">
                                         <Icon icon="pixelarticons:flag" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
                                         <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.experimental}</span>
                                     </div>

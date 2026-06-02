@@ -247,7 +247,8 @@ export default {
                 collections: '仅支持公开收藏夹',
                 private: '不支持私有空间',
                 priority: '普通生成优先级',
-                experimental: '基础模型体验'
+                experimental: '基础模型体验',
+                commercial: '仅限个人非商业用途使用'
             },
             pro_plus: {
                 title: 'Pro-Plus',
@@ -256,7 +257,8 @@ export default {
                 collections: '支持创建私有收藏夹',
                 private: '1,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
-                experimental: '优先体验新功能'
+                experimental: '优先体验新功能',
+                commercial: '包含商业许可（支持商用）'
             },
             pro_max: {
                 title: 'Pro-Max',
@@ -265,7 +267,8 @@ export default {
                 collections: '支持创建私有收藏夹',
                 private: '5,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
-                experimental: '优先体验新功能'
+                experimental: '优先体验新功能',
+                commercial: '包含商业许可（支持商用）'
             }
         }
     },

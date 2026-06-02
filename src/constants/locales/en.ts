@@ -247,7 +247,8 @@ export default {
                 collections: 'Public collections only',
                 private: 'No private space',
                 priority: 'Regular priority',
-                experimental: 'Basic model access'
+                experimental: 'Basic model access',
+                commercial: 'Personal use only'
             },
             pro_plus: {
                 title: 'Pro-Plus',
@@ -256,7 +257,8 @@ export default {
                 collections: 'Support private collections',
                 private: '1,000 private skins limit',
                 priority: 'High priority queue',
-                experimental: 'Early access to new features'
+                experimental: 'Early access to new features',
+                commercial: 'Commercial license included'
             },
             pro_max: {
                 title: 'Pro-Max',
@@ -265,7 +267,8 @@ export default {
                 collections: 'Support private collections',
                 private: '5,000 private skins limit',
                 priority: 'High priority queue',
-                experimental: 'Early access to new features'
+                experimental: 'Early access to new features',
+                commercial: 'Commercial license included'
             }
         }
     },
