@@ -248,7 +248,7 @@ export default {
                 private: 'No private space',
                 priority: 'Regular priority',
                 experimental: 'Basic model access',
-                commercial: 'Personal use only'
+                commercial: 'Commercial license included'
             },
             pro_plus: {
                 title: 'Pro-Plus',

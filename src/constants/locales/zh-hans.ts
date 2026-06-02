@@ -248,7 +248,7 @@ export default {
                 private: '不支持私有空间',
                 priority: '普通生成优先级',
                 experimental: '基础模型体验',
-                commercial: '仅限个人非商业用途使用'
+                commercial: '包含商业许可（支持商用）'
             },
             pro_plus: {
                 title: 'Pro-Plus',
