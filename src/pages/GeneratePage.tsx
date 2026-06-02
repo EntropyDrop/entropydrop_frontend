@@ -316,6 +316,9 @@ export function GeneratePage({ current }: GeneratePageProps) {
             return
         }
 
+        const newSeed = Math.floor(Math.random() * max_seed)
+        setSeed(newSeed)
+
         setIsGenerating(true)
         // setShowResult removed
 
@@ -338,7 +341,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 formData.append('edit_source_type', editSourceType)
             }
             formData.append('model_version', modelVersion)
-            if (seed !== undefined) formData.append('seed', String(seed))
+            formData.append('seed', String(newSeed))
             if (nStep !== undefined) formData.append('n_step', String(nStep))
             if (guidance !== undefined) formData.append('guidance', String(guidance))
 
