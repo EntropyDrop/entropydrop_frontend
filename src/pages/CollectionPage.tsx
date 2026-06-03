@@ -336,7 +336,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                 method: 'PUT',
                 body: JSON.stringify({
                     name: renameCollectionName,
-                    is_public: isRenameCollectionPublic
+                    is_public: collectionToRename.is_public
                 })
             })
             if (response.ok) {
@@ -1135,20 +1135,20 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                     </label>
                                     <div className="grid grid-cols-2 gap-2">
                                         <button
-                                            onClick={() => setIsRenameCollectionPublic(true)}
-                                            className={`p-2 border flex items-center justify-center gap-2 text-xs transition-all cursor-pointer ${isRenameCollectionPublic
+                                            disabled
+                                            className={`p-2 border flex items-center justify-center gap-2 text-xs transition-all cursor-not-allowed opacity-50 ${isRenameCollectionPublic
                                                 ? 'bg-[#3c8527]/20 border-[#3c8527] text-white'
-                                                : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
+                                                : 'bg-white/5 border-white/10 text-white/40'
                                                 } ${current.fontClass}`}
                                         >
                                             <Icon icon="pixelarticons:bullseye" className="text-base" />
                                             {current.collection.public}
                                         </button>
                                         <button
-                                            onClick={() => setIsRenameCollectionPublic(false)}
-                                            className={`p-2 border flex items-center justify-center gap-2 text-xs transition-all cursor-pointer ${!isRenameCollectionPublic
+                                            disabled
+                                            className={`p-2 border flex items-center justify-center gap-2 text-xs transition-all cursor-not-allowed opacity-50 ${!isRenameCollectionPublic
                                                 ? 'bg-red-500/20 border-red-500 text-white'
-                                                : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
+                                                : 'bg-white/5 border-white/10 text-white/40'
                                                 } ${current.fontClass}`}
                                         >
                                             <Icon icon="pixelarticons:lock" className="text-base" />
