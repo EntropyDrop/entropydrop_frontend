@@ -248,7 +248,7 @@ export default {
                 private: 'No private space',
                 priority: 'Regular priority',
                 experimental: 'Basic model access',
-                commercial: 'Generated skins support commercial use'
+                commercial: 'Generated skins for personal use only (non-commercial)'
             },
             pro_plus: {
                 title: 'Pro-Plus',
@@ -370,7 +370,7 @@ export default {
         title: 'Terms of Service',
         sections: [
             { title: '1. Service Disclaimer', content: 'Entropydrop provides 3D model and skin generation services based on Artificial Intelligence (AIGC). Content is AI-generated, and due to technical characteristics, we cannot guarantee absolute accuracy or satisfy your specific aesthetics.' },
-            { title: '2. Intellectual Property & Authorization', content: 'Works created by you belong to you. For works set to "Public", you authorize Entropydrop a free, irrevocable right to publicly display, publish, and use for model fine-tuning/training.' },
+            { title: '2. Intellectual Property & Authorization', content: 'Works created by you belong to you. Note that your right to use the generated works commercially depends on your subscription tier: works generated under the Free plan are strictly for personal, non-commercial use (such as learning, research, and non-commercial entertainment) and must not be used for any commercial purpose; only works generated under active Pro subscriptions (including Pro-Plus and Pro-Max) support commercial use. For works set to "Public", you authorize Entropydrop a free, irrevocable right to publicly display, publish, and use for model fine-tuning/training.' },
             { title: '3. Compliance Guidelines', content: 'It is strictly forbidden to generate, upload, edit, or create any content involving political sensitivity, pornography, violence, terror, or copyright infringement. Entropydrop reserves the right to delete violating content without notice. You bear full legal and community responsibility for all outputs and published content.' },
             { title: '4. Disclaimer', content: 'This service is for artistic creation and entertainment only. If you encounter disputes when using it on other platforms (e.g., in games), Entropydrop bears no joint responsibility.' },
             { title: '5. Value-Added Services & Customization', content: 'Entropydrop provides value-added services such as virtual points, generation quotas, and 3D printing. All 3D printed physical products provided by this platform are "14+ Adult Collectibles" and are not toys for children. Regarding Resale: You own the physical products you purchase and have the right to resell that specific item. Additionally, if the model involves third-party copyright (such as fan art), resale may involve legal risks, which you must bear yourself. Entropydrop reserves the right to refuse service for any localized physical customization that involves infringement or violation of our guidelines (such as politically sensitive, pornographic, or violent content). Virtual items are generally non-refundable once consumed. For customized physical products, refunds are not supported unless there is logistics damage or severe quality issues.' },
