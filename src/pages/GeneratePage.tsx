@@ -810,9 +810,9 @@ export function GeneratePage({ current }: GeneratePageProps) {
                         </div> {/* End Area 1 */}
 
                         {/* Area 2: Settings & Action */}
-                        <div className="flex-1 flex flex-col gap-4">
+                        <div className="flex-1 flex flex-col gap-4 min-h-0">
                             {/* Advanced Settings */}
-                            <div className="flex flex-col gap-3 shrink-0 bg-white/5 border border-white/10 p-4">
+                            <div className="flex-1 flex flex-col gap-3 bg-white/5 border border-white/10 p-4 overflow-y-auto custom-scrollbar pr-1">
                                 <h3 className={`text-white text-xs lg:text-sm m-0 opacity-80 flex items-center gap-2 ${current.fontClass}`}>
                                     <Icon icon="pixelarticons:sliders" />
                                     {current.generate.advancedSettings}
@@ -891,7 +891,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                     </div>
                                 </div>
                             </div>
-                            <div className="flex flex-col gap-3 mt-auto">
+                            <div className="flex flex-col gap-3 mt-auto shrink-0">
                                 <div className="flex items-center gap-4">
                                     {/* Public Option */}
                                     <label className={`flex items-center gap-2 cursor-pointer group ${sourceId ? 'opacity-60' : ''}`}>
