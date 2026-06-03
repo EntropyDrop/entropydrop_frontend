@@ -12,11 +12,7 @@ window.fetch = async (input, init) => {
     }
 
     // Check if it is a backend API request
-    const isApiRequest = url && (
-        url.includes(':8000/api') ||
-        url.includes('127.0.0.1:8000/api') ||
-        url.includes('/api/')
-    );
+    const isApiRequest = url && /\/api\b/.test(url);
 
     let skipGlobalError = false;
     let finalInit = init;
