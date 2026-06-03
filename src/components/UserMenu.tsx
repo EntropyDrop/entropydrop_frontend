@@ -170,7 +170,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 )}
 
             {isOpen && (
-                <div className="absolute top-full right-0 mt-2 w-64 sm:w-52 bg-[#333] border-2 border-black shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="absolute top-full right-0 mt-2 w-64 sm:w-52 max-h-[75vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar bg-[#333] border-2 border-black shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                     {/* Mobile Navigation Links */}
                     <div className="sm:hidden border-b border-black/10 pb-1 pt-1 bg-black/10">
                         <span className={`text-white/40 text-[9px] uppercase px-4 py-2 block ${current.fontClass}`}>{current.common?.navigation || 'NAVIGATE'}</span>
