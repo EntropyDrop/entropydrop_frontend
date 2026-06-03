@@ -335,8 +335,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
             const response = await apiFetch(`/api/collections/${collectionToRename.id}`, {
                 method: 'PUT',
                 body: JSON.stringify({
-                    name: renameCollectionName,
-                    is_public: collectionToRename.is_public
+                    name: renameCollectionName
                 })
             })
             if (response.ok) {
