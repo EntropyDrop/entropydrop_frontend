@@ -167,7 +167,12 @@ export default {
         auto: 'Auto',
         navigation: 'Navigation',
         authRequired: 'Please login',
-        connectError: 'Failed to connect to server'
+        connectError: 'Failed to connect to server',
+        sessionExpired: 'Session expired, please log in again.',
+        requestFailed: 'Request failed',
+        requestError: 'Request Error',
+        networkError: 'Network Error',
+        networkConnectFailed: 'Network connection failed'
     },
     placeholder: {
         building: 'Module under construction',

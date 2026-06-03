@@ -167,7 +167,12 @@ export default {
         auto: '跟随系统',
         navigation: '导航',
         authRequired: '请先登录',
-        connectError: '无法连接到服务器'
+        connectError: '无法连接到服务器',
+        sessionExpired: '登录已过期，请重新登录。',
+        requestFailed: '请求失败',
+        requestError: '请求错误',
+        networkError: '网络错误',
+        networkConnectFailed: '网络连接失败'
     },
     placeholder: {
         building: '模块建设中',

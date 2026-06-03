@@ -2,6 +2,23 @@ let isAlerting = false;
 
 const originalFetch = window.fetch;
 
+const getCurrentLocale = async () => {
+    const isAuto = localStorage.getItem('isAuto') !== 'false';
+    let lang = 'en';
+    if (isAuto) {
+        const fullLang = navigator.language.toLowerCase();
+        if (fullLang.startsWith('zh')) lang = 'zh-hans';
+    } else {
+        const stored = localStorage.getItem('lang');
+        if (stored === 'zh-hans' || stored === 'en') {
+            lang = stored;
+        }
+    }
+    return lang === 'zh-hans'
+        ? (await import('../constants/locales/zh-hans')).default
+        : (await import('../constants/locales/en')).default;
+};
+
 window.fetch = async (input, init) => {
     // Get request URL
     let url = '';
@@ -28,12 +45,12 @@ window.fetch = async (input, init) => {
         const response = await originalFetch(input, finalInit);
 
         if (!response.ok && isApiRequest && !skipGlobalError) {
+            const locale = await getCurrentLocale();
             if (response.status === 401) {
                 if (!isAlerting) {
                     isAlerting = true;
                     localStorage.removeItem('token');
-                    const isZh = navigator.language.toLowerCase().startsWith('zh');
-                    alert(isZh ? '登录已过期，请重新登录。' : 'Session expired, please log in again.');
+                    alert(locale.common.sessionExpired);
                     window.location.reload();
                 }
             } else {
@@ -41,20 +58,18 @@ window.fetch = async (input, init) => {
                 try {
                     const clone = response.clone();
                     const data = await clone.json();
-                    const message = data.detail || `请求失败 (${response.status})`;
-                    const isZh = navigator.language.toLowerCase().startsWith('zh');
+                    const message = data.detail || `${locale.common.requestFailed} (${response.status})`;
                     window.dispatchEvent(new CustomEvent('global-error', {
                         detail: {
                             message,
-                            title: isZh ? '请求错误' : 'Request Error'
+                            title: locale.common.requestError
                         }
                     }));
                 } catch (e) {
-                    const isZh = navigator.language.toLowerCase().startsWith('zh');
                     window.dispatchEvent(new CustomEvent('global-error', {
                         detail: {
-                            message: `请求失败 (${response.status})`,
-                            title: isZh ? '请求错误' : 'Request Error'
+                            message: `${locale.common.requestFailed} (${response.status})`,
+                            title: locale.common.requestError
                         }
                     }));
                 }
@@ -64,11 +79,11 @@ window.fetch = async (input, init) => {
         return response;
     } catch (error: any) {
         if (isApiRequest && !skipGlobalError) {
-            const isZh = navigator.language.toLowerCase().startsWith('zh');
+            const locale = await getCurrentLocale();
             window.dispatchEvent(new CustomEvent('global-error', {
                 detail: {
-                    message: error.message || '网络连接失败',
-                    title: isZh ? '网络错误' : 'Network Error'
+                    message: error.message || locale.common.networkConnectFailed,
+                    title: locale.common.networkError
                 }
             }));
         }
