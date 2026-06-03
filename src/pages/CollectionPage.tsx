@@ -261,18 +261,46 @@ export function CollectionPage({ current }: CollectionPageProps) {
         formData.append('file', file);
 
         try {
-            const response = await apiFetch(`/api/collections/${currentCollection.id}/upload`, {
+            let uploadColId = currentCollection.id;
+            const isCustom = !['creations_public', 'creations_private'].includes(String(currentCollection.id));
+            if (isCustom) {
+                uploadColId = currentCollection.is_public ? 'creations_public' : 'creations_private';
+            }
+
+            const response = await apiFetch(`/api/collections/${uploadColId}/upload`, {
                 method: 'POST',
                 body: formData
             });
             if (response.ok) {
-                fetchItems(currentCollection.id, itemPage);
+                if (isCustom) {
+                    const data = await response.json();
+                    const linkResponse = await apiFetch('/api/collections/items', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            collection_id: String(currentCollection.id),
+                            name: data.name || file.name.replace(/\.[^/.]+$/, ""),
+                            type: 'human_upload',
+                            log_id: data.log_id || data.id,
+                            data: data.data || {}
+                        })
+                    });
+                    if (linkResponse.ok) {
+                        fetchItems(currentCollection.id, itemPage);
+                    } else {
+                        const errorData = await linkResponse.json().catch(() => ({}));
+                        showError(errorData.detail || current.collection.uploadFailed);
+                    }
+                } else {
+                    fetchItems(currentCollection.id, itemPage);
+                }
             } else {
                 showError(current.collection.uploadFailed);
             }
         } catch (e) {
-
             console.error('Failed to upload item', e);
+        } finally {
+            // Reset file input value so same file can be uploaded again if needed
+            e.target.value = '';
         }
     };
 
@@ -955,7 +983,10 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                     </button>
                                 )}
 
-                                {currentCollection && ['creations_public', 'creations_private'].includes(String(currentCollection.id)) && localStorage.getItem('token') && (
+                                {currentCollection && localStorage.getItem('token') && (
+                                    ['creations_public', 'creations_private'].includes(String(currentCollection.id)) ||
+                                    (!currentCollection.original_creation && myUserId && String(currentCollection.user_id) === String(myUserId))
+                                ) && (
                                     <div className="flex items-center justify-center gap-3 w-full sm:w-auto">
                                         <input
                                             id="upload-item-input"
@@ -964,7 +995,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                             style={{ display: 'none' }}
                                             onChange={handleUploadItem}
                                         />
-                                        {(!isPro && currentCollection.id === 'creations_private') ? (
+                                        {(!isPro && !currentCollection.is_public) ? (
                                             <div className="flex flex-wrap items-center justify-center gap-3 w-full sm:w-auto">
                                                 <div
                                                     onClick={() => navigate('/skin/pro')}
