@@ -2,13 +2,13 @@ let isAlerting = false;
 
 const originalFetch = window.fetch;
 
-window.fetch = async (...args) => {
+window.fetch = async (input, init) => {
     // Get request URL
     let url = '';
-    if (typeof args[0] === 'string') {
-        url = args[0];
-    } else if (args[0] && typeof args[0] === 'object' && 'url' in args[0]) {
-        url = (args[0] as any).url;
+    if (typeof input === 'string') {
+        url = input;
+    } else if (input && typeof input === 'object' && 'url' in input) {
+        url = (input as any).url;
     }
 
     // Check if it is a backend API request
@@ -18,10 +18,20 @@ window.fetch = async (...args) => {
         url.includes('/api/')
     );
 
-    try {
-        const response = await originalFetch(...args);
+    let skipGlobalError = false;
+    let finalInit = init;
+    if (finalInit && typeof finalInit === 'object') {
+        if ('skipGlobalError' in finalInit) {
+            skipGlobalError = !!(finalInit as any).skipGlobalError;
+            const { skipGlobalError: _, ...restOptions } = finalInit as any;
+            finalInit = restOptions;
+        }
+    }
 
-        if (!response.ok && isApiRequest) {
+    try {
+        const response = await originalFetch(input, finalInit);
+
+        if (!response.ok && isApiRequest && !skipGlobalError) {
             if (response.status === 401) {
                 if (!isAlerting) {
                     isAlerting = true;
@@ -57,7 +67,7 @@ window.fetch = async (...args) => {
 
         return response;
     } catch (error: any) {
-        if (isApiRequest) {
+        if (isApiRequest && !skipGlobalError) {
             const isZh = navigator.language.toLowerCase().startsWith('zh');
             window.dispatchEvent(new CustomEvent('global-error', {
                 detail: {

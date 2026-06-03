@@ -91,7 +91,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         }
         setIsNotFound(false);
         try {
-            const res = await apiFetch(`/api/logs/${id}`);
+            const res = await apiFetch(`/api/logs/${id}`, { skipGlobalError: true });
             if (res.status === 404 || res.status === 403) {
                 setIsNotFound(true);
                 setTextureUrl('');
@@ -116,7 +116,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
             if (data.parent) {
                 try {
-                    const parentRes = await apiFetch(`/api/logs/${data.parent}`);
+                    const parentRes = await apiFetch(`/api/logs/${data.parent}`, { skipGlobalError: true });
                     if (parentRes.ok) {
                         const parentData = await parentRes.json();
                         setParentItem(parentData);

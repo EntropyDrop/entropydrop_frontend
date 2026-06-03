@@ -2,6 +2,7 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localho
 
 interface RequestOptions extends RequestInit {
     // Add any custom options here
+    skipGlobalError?: boolean;
 }
 
 export const apiFetch = async (path: string, options: RequestOptions = {}) => {
