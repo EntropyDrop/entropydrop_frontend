@@ -69,7 +69,6 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const [isRenameModalOpen, setIsRenameModalOpen] = useState(false)
     const [collectionToRename, setCollectionToRename] = useState<Collection | null>(null)
     const [renameCollectionName, setRenameCollectionName] = useState('')
-    const [isRenameCollectionPublic, setIsRenameCollectionPublic] = useState(true)
 
     // Pagination for Collections
     const [publicColPage, setPublicColPage] = useState(1)
@@ -751,7 +750,6 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                                 e.stopPropagation();
                                                                 setCollectionToRename(col);
                                                                 setRenameCollectionName(col.name);
-                                                                setIsRenameCollectionPublic(col.is_public);
                                                                 setIsRenameModalOpen(true);
                                                             }}
                                                             className="p-1 bg-blue-900/40 hover:bg-blue-600 text-white/60 hover:text-white border border-white/10"
@@ -842,7 +840,6 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                                 e.stopPropagation();
                                                                 setCollectionToRename(col);
                                                                 setRenameCollectionName(col.name);
-                                                                setIsRenameCollectionPublic(col.is_public);
                                                                 setIsRenameModalOpen(true);
                                                             }}
                                                             className="p-1 bg-blue-900/40 hover:bg-blue-600 text-white/60 hover:text-white border border-white/10"
@@ -1126,34 +1123,6 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                         className="w-full bg-black/40 border border-white/10 p-3 text-white text-sm outline-none focus:border-[#3c8527] transition-colors"
                                         autoFocus
                                     />
-                                </div>
-
-                                <div className="flex flex-col gap-2">
-                                    <label className={`text-white/40 text-[10px] uppercase font-bold tracking-wider ${current.fontClass}`}>
-                                        {current.collection.visibility}
-                                    </label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <button
-                                            disabled
-                                            className={`p-2 border flex items-center justify-center gap-2 text-xs transition-all cursor-not-allowed opacity-50 ${isRenameCollectionPublic
-                                                ? 'bg-[#3c8527]/20 border-[#3c8527] text-white'
-                                                : 'bg-white/5 border-white/10 text-white/40'
-                                                } ${current.fontClass}`}
-                                        >
-                                            <Icon icon="pixelarticons:bullseye" className="text-base" />
-                                            {current.collection.public}
-                                        </button>
-                                        <button
-                                            disabled
-                                            className={`p-2 border flex items-center justify-center gap-2 text-xs transition-all cursor-not-allowed opacity-50 ${!isRenameCollectionPublic
-                                                ? 'bg-red-500/20 border-red-500 text-white'
-                                                : 'bg-white/5 border-white/10 text-white/40'
-                                                } ${current.fontClass}`}
-                                        >
-                                            <Icon icon="pixelarticons:lock" className="text-base" />
-                                            {current.collection.private}
-                                        </button>
-                                    </div>
                                 </div>
                             </div>
 
