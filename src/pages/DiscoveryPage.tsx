@@ -54,7 +54,7 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
                 window.dispatchEvent(new CustomEvent('global-error', {
                     detail: {
                         title: current.discovery.rateLimitTitle || 'Rate Limited',
-                        message: current.discovery.rateLimitMessage || 'Please wait 5s before retrying'
+                        message: current.discovery.rateLimitMessage || 'Please wait 1s before retrying'
                     }
                 }))
                 setIsLoading(false)

@@ -4,6 +4,7 @@ export const NAV_ITEMS = [
     { key: 'edit', icon: 'pixelarticons:edit', path: '/skin/edit' },
     // { key: 'print', icon: 'pixelarticons:box', path: '/skin/print' },
     { key: 'collection', icon: 'pixelarticons:folder', path: '/skin/collection' },
+    { key: 'pro', icon: 'pixelarticons:zap', path: '/skin/pro' },
     { key: 'public', icon: 'pixelarticons:binary', path: '/skin/public' },
 ] as const
 

@@ -73,7 +73,7 @@ export function DiscoverySearch({ current, onSelect, selectedItem }: DiscoverySe
                 window.dispatchEvent(new CustomEvent('global-error', {
                     detail: {
                         title: current.discovery.rateLimitTitle || 'Rate Limited',
-                        message: current.discovery.rateLimitMessage || 'Please wait 5s before retrying'
+                        message: current.discovery.rateLimitMessage || 'Please wait 1s before retrying'
                     }
                 }))
                 setIsSearching(false)

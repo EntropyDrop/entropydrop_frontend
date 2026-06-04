@@ -209,12 +209,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                 )}
                             </div>
 
-                            <button
-                                onClick={() => { setIsOpen(false); navigate('/skin/pro'); }}
-                                className={`w-full px-4 py-3 text-left text-yellow-400 hover:bg-white/10 hover:text-yellow-300 transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
-                            >
-                                <Icon icon="pixelarticons:zap" /> {user.is_pro ? current.user.renewViewPro : current.user.activatePro}
-                            </button>
+
                             <button
                                 onClick={() => { setIsOpen(false); navigate('/skin/orders'); }}
                                 className={`w-full px-4 py-3 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
