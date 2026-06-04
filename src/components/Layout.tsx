@@ -1,7 +1,7 @@
 import { Icon } from '@iconify/react'
 import { useState, useEffect, lazy, Suspense, type ReactNode } from 'react'
 
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { UserMenu } from './UserMenu'
 import { ErrorModal } from './ErrorModal'
 
@@ -31,6 +31,8 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
     const [selectedDiscoveryItem, setSelectedDiscoveryItem] = useState<GenerationLogItemBrief | null>(null)
     const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' })
     const [isDiscoveryLoading, setIsDiscoveryLoading] = useState(false)
+    const [searchParams] = useSearchParams()
+    const is3DMode = searchParams.get('view') === '3d'
     const isDiscoveryPage = location.pathname === NAV_ITEMS[0].path
 
 
@@ -103,11 +105,11 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
             </div>
 
             {children}
-            {isDiscoveryLoading && !isDiscoveryPage && <LoadingPlaceholder current={current} className="top-24 sm:top-28 z-20" />}
+            {isDiscoveryLoading && !(isDiscoveryPage && is3DMode) && <LoadingPlaceholder current={current} className="top-24 sm:top-28 z-20" />}
 
             {/* Background scene */}
             <div className="absolute inset-0 z-0">
-                {isDiscoveryPage ? (
+                {isDiscoveryPage && is3DMode ? (
                     <Suspense fallback={<LightweightBackground />}>
                         <DiscoveryScene
                             selected={selectedDiscoveryItem}
@@ -120,7 +122,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                 )}
             </div>
 
-            {isDiscoveryPage && (
+            {isDiscoveryPage && is3DMode && (
                 <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 z-30 pointer-events-auto shadow-2xl">
                     <Suspense fallback={null}>
                         <DiscoverySearch current={current} onSelect={setSelectedDiscoveryItem} selectedItem={selectedDiscoveryItem} />

@@ -19,6 +19,7 @@ const MonitorPage = lazy(() => import('./pages/MonitorPage').then(m => ({ defaul
 const FinancialsPage = lazy(() => import('./pages/FinancialsPage').then(m => ({ default: m.FinancialsPage })))
 const FixedAssetsPage = lazy(() => import('./pages/FixedAssetsPage').then(m => ({ default: m.FixedAssetsPage })))
 const LedgerPage = lazy(() => import('./pages/LedgerPage').then(m => ({ default: m.LedgerPage })))
+const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage').then(m => ({ default: m.DiscoveryPage })))
 
 /**
  * Get the system's current language and map it to our LangKey
@@ -54,7 +55,7 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
     <Suspense fallback={<LoadingPlaceholder current={currentLangData} />}>
       <Routes>
         <Route path="/" element={<Navigate to="/skin/" replace />} />
-        <Route path="/skin/" element={<></>} />
+        <Route path="/skin/" element={<DiscoveryPage current={currentLangData} />} />
         <Route path="/skin/generate" element={<GeneratePage current={currentLangData} />} />
         <Route path="/skin/edit" element={<EditPage current={currentLangData} />} />
         <Route path="/skin/print" element={<PrintPage current={currentLangData} />} />

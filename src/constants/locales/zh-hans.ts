@@ -577,6 +577,10 @@ export default {
         next: '下一页',
         rateLimitTitle: '请求过于频繁',
         rateLimitMessage: '请等待5秒后再搜索',
-        searchMinLengthWarning: '搜索关键词长度至少为 3 个字符'
+        searchMinLengthWarning: '搜索关键词长度至少为 1 个字符',
+        modeList: '列表模式',
+        mode3D: '3D 模式',
+        sortByLikes: '最受欢迎',
+        sortByTime: '最新发布'
     }
 } as const

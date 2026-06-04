@@ -577,6 +577,10 @@ export default {
         next: 'Next',
         rateLimitTitle: 'Rate Limited',
         rateLimitMessage: 'Please wait 5 seconds before retrying',
-        searchMinLengthWarning: 'Search query must be at least 3 characters'
+        searchMinLengthWarning: 'Search query must be at least 3 characters',
+        modeList: 'List View',
+        mode3D: '3D View',
+        sortByLikes: 'Most Liked',
+        sortByTime: 'Latest'
     }
 } as const
