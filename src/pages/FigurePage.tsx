@@ -746,158 +746,285 @@ export function FigurePage({ current }: FigurePageProps) {
                 {/* POST DETAIL VIEW MODAL OVERLAY */}
                 {selectedPost && (
                     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[1000] p-4 backdrop-blur-sm pointer-events-auto animate-in fade-in duration-200">
-                        <div className="bg-[#1a1a1a] border-2 border-white/10 w-full max-w-4xl max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col md:flex-row shadow-2xl animate-in zoom-in-95 duration-200">
-                            
-                            {/* Left Side: Image container */}
-                            <div className="w-full md:w-1/2 aspect-square md:aspect-auto md:h-full min-h-[200px] bg-zinc-950 flex items-center justify-center p-6 border-b md:border-b-0 md:border-r border-white/10 relative shrink-0">
-                                {selectedPost.image ? (
-                                    <img
-                                        src={selectedPost.image}
-                                        alt={selectedPost.title}
-                                        className="max-w-full max-h-[50vh] md:max-h-full object-contain drop-shadow-[0_15px_30px_rgba(0,0,0,0.8)]"
-                                    />
-                                ) : (
-                                    <div className="flex flex-col items-center gap-2 text-white/20 font-mono">
-                                        <Icon icon="pixelarticons:comment" className="text-6xl" />
-                                        <span className="text-xs uppercase">Discussion Post (No Image)</span>
-                                    </div>
-                                )}
+                        {selectedPost.category === 'discussions' ? (
+                            /* REDDIT-STYLE DISCUSSION THREAD VIEW */
+                            <div className="bg-[#1a1a1a] border-2 border-white/10 w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 p-6 relative">
+                                {/* Close Button */}
                                 <button
                                     onClick={() => setSelectedPost(null)}
-                                    className="absolute top-4 left-4 w-8 h-8 bg-black/60 border border-white/10 rounded-full flex items-center justify-center text-white/60 hover:text-white cursor-pointer md:hidden"
+                                    className="absolute top-4 right-4 w-7 h-7 bg-white/5 border border-white/10 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white cursor-pointer rounded-xs"
                                 >
                                     <Icon icon="pixelarticons:close" />
                                 </button>
-                            </div>
 
-                            {/* Right Side: Details and comments */}
-                            <div className="flex-1 p-6 flex flex-col justify-between overflow-y-auto max-h-[90vh] md:max-h-full">
-                                <div>
-                                    {/* Header close button & Category */}
-                                    <div className="flex justify-between items-start mb-4">
-                                        <span className="bg-black/60 backdrop-blur-md border border-white/20 text-white/95 text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider">
-                                            {selectedPost.category === 'showcase' ? 'Showcase' : 'Discussion'}
-                                        </span>
-                                        <button
-                                            onClick={() => setSelectedPost(null)}
-                                            className="w-7 h-7 bg-white/5 border border-white/10 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white cursor-pointer hidden md:flex rounded-xs"
-                                        >
-                                            <Icon icon="pixelarticons:close" />
-                                        </button>
-                                    </div>
-
-                                    {/* Post Title */}
-                                    <h2 className={`text-lg sm:text-xl font-bold leading-snug mb-2 text-white ${current.fontClass}`}>
-                                        {selectedPost.title}
-                                    </h2>
-
-                                    {/* Author row */}
-                                    <div className="flex items-center gap-2 text-xs text-white/40 mb-4">
-                                        <span>By</span>
+                                {/* Header: Category Tag & Author Info */}
+                                <div className="flex items-center gap-2 mb-3 pr-8">
+                                    <span className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider font-mono">
+                                        Discussion
+                                    </span>
+                                    <div className="flex items-center gap-1.5 text-xs text-white/40">
+                                        <span>Posted by</span>
                                         <span className="text-white/70 font-semibold">@{selectedPost.author}</span>
                                         {selectedPost.role && (
-                                            <span className="bg-white/5 text-[#5cff5c] text-[8px] px-1 font-mono uppercase">
+                                            <span className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[7px] px-1 font-mono uppercase">
                                                 {selectedPost.role}
                                             </span>
                                         )}
-                                        <span className="mx-1">•</span>
+                                        <span>•</span>
                                         <span>{selectedPost.createdAt}</span>
                                     </div>
+                                </div>
 
-                                    {/* Post Content */}
-                                    <p className="text-xs sm:text-sm text-white/70 leading-relaxed font-sans whitespace-pre-wrap border-b border-white/5 pb-4 mb-4">
-                                        {selectedPost.content}
-                                    </p>
+                                {/* Title */}
+                                <h2 className={`text-xl sm:text-2xl font-bold leading-snug mb-4 text-white ${current.fontClass}`}>
+                                    {selectedPost.title}
+                                </h2>
 
-                                    {/* Print Settings Grid Box */}
-                                    <div className="bg-black/40 border border-white/10 p-4 rounded-sm mb-6">
-                                        <h3 className={`text-xs font-bold text-white mb-3 flex items-center gap-2 border-b border-white/5 pb-2 uppercase tracking-wide ${current.fontClass}`}>
-                                            <Icon icon="pixelarticons:device-laptop" className="text-[#3c8527] text-sm" />
-                                            <span>{current.figureForum.printSettingsTitle}</span>
-                                        </h3>
-                                        <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-xs font-mono">
-                                            <div>
-                                                <span className="text-white/40 block text-[10px] uppercase">Printer</span>
-                                                <span className="text-white/90">{selectedPost.printSettings.printer}</span>
-                                            </div>
-                                            <div>
-                                                <span className="text-white/40 block text-[10px] uppercase">Layer Height</span>
-                                                <span className="text-white/90">{selectedPost.printSettings.layerHeight}</span>
-                                            </div>
-                                            <div>
-                                                <span className="text-white/40 block text-[10px] uppercase">Infill</span>
-                                                <span className="text-white/90">{selectedPost.printSettings.infill}</span>
-                                            </div>
-                                            <div>
-                                                <span className="text-white/40 block text-[10px] uppercase">Print Time</span>
-                                                <span className="text-white/90">{selectedPost.printSettings.printTime}</span>
-                                            </div>
-                                            <div className="col-span-2">
-                                                <span className="text-white/40 block text-[10px] uppercase">{current.figureForum.material}</span>
-                                                <span className="text-[#5cff5c] text-[11px]">{selectedPost.printSettings.material}</span>
-                                            </div>
-                                        </div>
+                                {/* Body Content */}
+                                <div className="text-xs sm:text-sm text-white/80 leading-relaxed font-sans whitespace-pre-wrap mb-4">
+                                    {selectedPost.content}
+                                </div>
 
-                                        {/* Direct print ordering simulator */}
-                                        <button
-                                            onClick={() => triggerToast('Direct ordering is locked in sandbox. Model added to configuration list.')}
-                                            className={`w-full mt-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 text-xs font-bold uppercase transition-colors flex items-center justify-center gap-2 cursor-pointer ${current.fontClass}`}
-                                        >
-                                            <Icon icon="pixelarticons:cart" />
-                                            <span>{current.figureForum.orderPrint}</span>
-                                        </button>
+                                {/* Inline Image (if present) */}
+                                {selectedPost.image && (
+                                    <div className="bg-zinc-950/60 border border-white/5 rounded p-4 flex items-center justify-center mb-6 overflow-hidden max-h-[350px]">
+                                        <img
+                                            src={selectedPost.image}
+                                            alt={selectedPost.title}
+                                            className="max-h-[300px] object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.6)]"
+                                        />
                                     </div>
+                                )}
 
-                                    {/* Comments Section */}
-                                    <div className="border-t border-white/5 pt-4">
-                                        <h3 className={`text-xs font-bold text-white mb-4 flex items-center gap-2 ${current.fontClass}`}>
-                                            <Icon icon="pixelarticons:comment" className="text-sm" />
-                                            <span>{current.figureForum.comments} ({selectedPost.comments.length})</span>
-                                        </h3>
+                                {/* Tags */}
+                                <div className="flex flex-wrap gap-1.5 mb-6 border-b border-white/5 pb-4">
+                                    {selectedPost.tags.map(tag => (
+                                        <span key={tag} className="text-[9px] text-white/45 bg-white/5 border border-white/10 px-2 py-0.5 uppercase">
+                                            #{tag}
+                                        </span>
+                                    ))}
+                                </div>
 
-                                        {/* Comments list */}
-                                        <div className="flex flex-col gap-3 max-h-48 overflow-y-auto custom-scrollbar pr-1 mb-4">
-                                            {selectedPost.comments.length === 0 ? (
-                                                <div className="text-center text-white/35 py-4 text-xs font-sans">
-                                                    No comments yet. Be the first to reply!
-                                                </div>
-                                            ) : (
-                                                selectedPost.comments.map(c => (
-                                                    <div key={c.id} className="bg-white/5 p-2.5 border border-white/5 rounded-xs flex flex-col gap-1 text-xs">
-                                                        <div className="flex justify-between items-center text-[10px] text-white/45">
-                                                            <div className="flex items-center gap-1">
-                                                                <span className={`text-white/70 font-semibold ${current.fontClass}`}>@{c.author}</span>
-                                                                {c.isPro && <span className="text-[8px] bg-yellow-400 text-black px-0.5 font-bold">PRO</span>}
-                                                            </div>
-                                                            <span className="font-mono text-[9px]">{c.createdAt}</span>
+                                {/* Interaction Row */}
+                                <div className="flex items-center gap-6 text-xs text-white/40 mb-6 border-b border-white/5 pb-4 shrink-0">
+                                    <button
+                                        onClick={(e) => handleLikePost(selectedPost.id, e)}
+                                        className="flex items-center gap-2 hover:text-red-500 transition-colors border-none bg-transparent cursor-pointer"
+                                    >
+                                        <Icon icon="pixelarticons:heart" className={`text-sm ${selectedPost.isLiked ? 'text-red-500' : ''}`} />
+                                        <span className={selectedPost.isLiked ? 'text-red-500' : ''}>{selectedPost.likes} Likes</span>
+                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <Icon icon="pixelarticons:comment" className="text-sm" />
+                                        <span>{selectedPost.comments.length} Comments</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Icon icon="pixelarticons:sun" className="text-sm" />
+                                        <span>{selectedPost.views} Views</span>
+                                    </div>
+                                </div>
+
+                                {/* Comments Section */}
+                                <div className="flex flex-col gap-4">
+                                    <h3 className={`text-xs font-bold text-white uppercase tracking-wider ${current.fontClass}`}>
+                                        Comments
+                                    </h3>
+
+                                    {/* Comment form */}
+                                    <form onSubmit={handleAddComment} className="flex gap-2 mb-4">
+                                        <input
+                                            type="text"
+                                            placeholder={current.figureForum.writeComment}
+                                            className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] flex-1 font-sans"
+                                            value={commentText}
+                                            onChange={e => setCommentText(e.target.value)}
+                                        />
+                                        <button
+                                            type="submit"
+                                            className={`px-4 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 text-xs font-semibold cursor-pointer ${current.fontClass}`}
+                                        >
+                                            {current.figureForum.commentBtn}
+                                        </button>
+                                    </form>
+
+                                    {/* Comments list */}
+                                    <div className="flex flex-col gap-3 max-h-[30vh] overflow-y-auto custom-scrollbar pr-1">
+                                        {selectedPost.comments.length === 0 ? (
+                                            <div className="text-center text-white/35 py-4 text-xs font-sans">
+                                                No comments yet. Be the first to reply!
+                                            </div>
+                                        ) : (
+                                            selectedPost.comments.map(c => (
+                                                <div key={c.id} className="bg-white/5 p-3 border border-white/5 rounded-xs flex flex-col gap-1 text-xs">
+                                                    <div className="flex justify-between items-center text-[10px] text-white/45">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className={`text-white/70 font-semibold ${current.fontClass}`}>@{c.author}</span>
+                                                            {c.isPro && <span className="text-[8px] bg-yellow-400 text-black px-0.5 font-bold">PRO</span>}
                                                         </div>
-                                                        <p className="text-white/80 font-sans text-xs leading-normal">{c.content}</p>
+                                                        <span className="font-mono text-[9px]">{c.createdAt}</span>
                                                     </div>
-                                                ))
-                                            )}
-                                        </div>
-
-                                        {/* Comment Form */}
-                                        <form onSubmit={handleAddComment} className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                placeholder={current.figureForum.writeComment}
-                                                className="bg-black/50 border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#3c8527] flex-1 font-sans"
-                                                value={commentText}
-                                                onChange={e => setCommentText(e.target.value)}
-                                            />
-                                            <button
-                                                type="submit"
-                                                className={`px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 text-xs font-semibold cursor-pointer ${current.fontClass}`}
-                                            >
-                                                {current.figureForum.commentBtn}
-                                            </button>
-                                        </form>
+                                                    <p className="text-white/85 font-sans text-xs leading-relaxed mt-0.5">{c.content}</p>
+                                                </div>
+                                            ))
+                                        )}
                                     </div>
                                 </div>
                             </div>
+                        ) : (
+                            /* ORIGINAL 50/50 PRODUCT-LIKE SHOWCASE PRINT VIEW */
+                            <div className="bg-[#1a1a1a] border-2 border-white/10 w-full max-w-4xl max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col md:flex-row shadow-2xl animate-in zoom-in-95 duration-200">
+                                
+                                {/* Left Side: Image container */}
+                                <div className="w-full md:w-1/2 aspect-square md:aspect-auto md:h-full min-h-[200px] bg-zinc-950 flex items-center justify-center p-6 border-b md:border-b-0 md:border-r border-white/10 relative shrink-0">
+                                    {selectedPost.image ? (
+                                        <img
+                                            src={selectedPost.image}
+                                            alt={selectedPost.title}
+                                            className="max-w-full max-h-[50vh] md:max-h-full object-contain drop-shadow-[0_15px_30px_rgba(0,0,0,0.8)]"
+                                        />
+                                    ) : (
+                                        <div className="flex flex-col items-center gap-2 text-white/20 font-mono">
+                                            <Icon icon="pixelarticons:comment" className="text-6xl" />
+                                            <span className="text-xs uppercase">Discussion Post (No Image)</span>
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={() => setSelectedPost(null)}
+                                        className="absolute top-4 left-4 w-8 h-8 bg-black/60 border border-white/10 rounded-full flex items-center justify-center text-white/60 hover:text-white cursor-pointer md:hidden"
+                                    >
+                                        <Icon icon="pixelarticons:close" />
+                                    </button>
+                                </div>
 
-                        </div>
+                                {/* Right Side: Details and comments */}
+                                <div className="flex-1 p-6 flex flex-col justify-between overflow-y-auto max-h-[90vh] md:max-h-full">
+                                    <div>
+                                        {/* Header close button & Category */}
+                                        <div className="flex justify-between items-start mb-4">
+                                            <span className="bg-black/60 backdrop-blur-md border border-white/20 text-white/95 text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider">
+                                                {selectedPost.category === 'showcase' ? 'Showcase' : 'Discussion'}
+                                            </span>
+                                            <button
+                                                onClick={() => setSelectedPost(null)}
+                                                className="w-7 h-7 bg-white/5 border border-white/10 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white cursor-pointer hidden md:flex rounded-xs"
+                                            >
+                                                <Icon icon="pixelarticons:close" />
+                                            </button>
+                                        </div>
+
+                                        {/* Post Title */}
+                                        <h2 className={`text-lg sm:text-xl font-bold leading-snug mb-2 text-white ${current.fontClass}`}>
+                                            {selectedPost.title}
+                                        </h2>
+
+                                        {/* Author row */}
+                                        <div className="flex items-center gap-2 text-xs text-white/40 mb-4">
+                                            <span>By</span>
+                                            <span className="text-white/70 font-semibold">@{selectedPost.author}</span>
+                                            {selectedPost.role && (
+                                                <span className="bg-white/5 text-[#5cff5c] text-[8px] px-1 font-mono uppercase">
+                                                    {selectedPost.role}
+                                                </span>
+                                            )}
+                                            <span className="mx-1">•</span>
+                                            <span>{selectedPost.createdAt}</span>
+                                        </div>
+
+                                        {/* Post Content */}
+                                        <p className="text-xs sm:text-sm text-white/70 leading-relaxed font-sans whitespace-pre-wrap border-b border-white/5 pb-4 mb-4">
+                                            {selectedPost.content}
+                                        </p>
+
+                                        {/* Print Settings Grid Box */}
+                                        <div className="bg-black/40 border border-white/10 p-4 rounded-sm mb-6">
+                                            <h3 className={`text-xs font-bold text-white mb-3 flex items-center gap-2 border-b border-white/5 pb-2 uppercase tracking-wide ${current.fontClass}`}>
+                                                <Icon icon="pixelarticons:device-laptop" className="text-[#3c8527] text-sm" />
+                                                <span>{current.figureForum.printSettingsTitle}</span>
+                                            </h3>
+                                            <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-xs font-mono">
+                                                <div>
+                                                    <span className="text-white/40 block text-[10px] uppercase">Printer</span>
+                                                    <span className="text-white/90">{selectedPost.printSettings.printer}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-white/40 block text-[10px] uppercase">Layer Height</span>
+                                                    <span className="text-white/90">{selectedPost.printSettings.layerHeight}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-white/40 block text-[10px] uppercase">Infill</span>
+                                                    <span className="text-white/90">{selectedPost.printSettings.infill}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-white/40 block text-[10px] uppercase">Print Time</span>
+                                                    <span className="text-white/90">{selectedPost.printSettings.printTime}</span>
+                                                </div>
+                                                <div className="col-span-2">
+                                                    <span className="text-white/40 block text-[10px] uppercase">{current.figureForum.material}</span>
+                                                    <span className="text-[#5cff5c] text-[11px]">{selectedPost.printSettings.material}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Direct print ordering simulator */}
+                                            <button
+                                                onClick={() => triggerToast('Direct ordering is locked in sandbox. Model added to configuration list.')}
+                                                className={`w-full mt-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 text-xs font-bold uppercase transition-colors flex items-center justify-center gap-2 cursor-pointer ${current.fontClass}`}
+                                            >
+                                                <Icon icon="pixelarticons:cart" />
+                                                <span>{current.figureForum.orderPrint}</span>
+                                            </button>
+                                        </div>
+
+                                        {/* Comments Section */}
+                                        <div className="border-t border-white/5 pt-4">
+                                            <h3 className={`text-xs font-bold text-white mb-4 flex items-center gap-2 ${current.fontClass}`}>
+                                                <Icon icon="pixelarticons:comment" className="text-sm" />
+                                                <span>{current.figureForum.comments} ({selectedPost.comments.length})</span>
+                                            </h3>
+
+                                            {/* Comments list */}
+                                            <div className="flex flex-col gap-3 max-h-48 overflow-y-auto custom-scrollbar pr-1 mb-4">
+                                                {selectedPost.comments.length === 0 ? (
+                                                    <div className="text-center text-white/35 py-4 text-xs font-sans">
+                                                        No comments yet. Be the first to reply!
+                                                    </div>
+                                                ) : (
+                                                    selectedPost.comments.map(c => (
+                                                        <div key={c.id} className="bg-white/5 p-2.5 border border-white/5 rounded-xs flex flex-col gap-1 text-xs">
+                                                            <div className="flex justify-between items-center text-[10px] text-white/45">
+                                                                <div className="flex items-center gap-1">
+                                                                    <span className={`text-white/70 font-semibold ${current.fontClass}`}>@{c.author}</span>
+                                                                    {c.isPro && <span className="text-[8px] bg-yellow-400 text-black px-0.5 font-bold">PRO</span>}
+                                                                </div>
+                                                                <span className="font-mono text-[9px]">{c.createdAt}</span>
+                                                            </div>
+                                                            <p className="text-white/80 font-sans text-xs leading-normal">{c.content}</p>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+
+                                            {/* Comment Form */}
+                                            <form onSubmit={handleAddComment} className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder={current.figureForum.writeComment}
+                                                    className="bg-black/50 border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#3c8527] flex-1 font-sans"
+                                                    value={commentText}
+                                                    onChange={e => setCommentText(e.target.value)}
+                                                />
+                                                <button
+                                                    type="submit"
+                                                    className={`px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 text-xs font-semibold cursor-pointer ${current.fontClass}`}
+                                                >
+                                                    {current.figureForum.commentBtn}
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        )}
                     </div>
                 )}
 
