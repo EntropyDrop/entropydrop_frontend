@@ -1,9 +1,10 @@
 import { PageContainer } from '../components/PageContainer';
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { apiFetch } from '../utils/api'
 import type { LangData } from '../constants/lang'
+import { ArticleMarkdown } from '../components/ArticleMarkdown'
 
 interface FigurePageProps {
     current: LangData
@@ -185,18 +186,37 @@ export function FigurePage({ current }: FigurePageProps) {
     // Current logged in user info (mocked/fetched)
     const [currentUser, setCurrentUser] = useState<{ username: string; picture: string; is_pro: boolean } | null>(null)
 
-    // Form states for creating a post
     const [newTitle, setNewTitle] = useState('')
     const [newContent, setNewContent] = useState('')
     const [newCategory, setNewCategory] = useState<'discussions' | 'showcase'>('discussions')
     const [newTags, setNewTags] = useState('')
     const [hasImage, setHasImage] = useState(true)
     const [newImage, setNewImage] = useState('/images/warrior_figure.png')
-    const [newPrinter, setNewPrinter] = useState('Bambu Lab P1S')
-    const [newLayerHeight, setNewLayerHeight] = useState('0.12mm')
-    const [newInfill, setNewInfill] = useState('15%')
-    const [newPrintTime, setNewPrintTime] = useState('10 hours')
-    const [newMaterial, setNewMaterial] = useState('PLA + TPU')
+
+    // Markdown editor states & selection helper
+    const [editorTab, setEditorTab] = useState<'write' | 'preview'>('write')
+    const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+    const insertMarkdown = (before: string, after: string = '') => {
+        const textarea = textareaRef.current
+        if (!textarea) {
+            setNewContent(prev => prev + before + after)
+            return
+        }
+        const start = textarea.selectionStart
+        const end = textarea.selectionEnd
+        const text = textarea.value
+        const selected = text.substring(start, end)
+        const replacement = before + (selected || '') + after
+        const newVal = text.substring(0, start) + replacement + text.substring(end)
+        setNewContent(newVal)
+        
+        // Return focus and restore selection
+        setTimeout(() => {
+            textarea.focus()
+            textarea.setSelectionRange(start + before.length, start + before.length + (selected || '').length)
+        }, 0)
+    }
 
     // Comment input state
     const [commentText, setCommentText] = useState('')
@@ -574,11 +594,11 @@ export function FigurePage({ current }: FigurePageProps) {
             views: 1,
             isLiked: false,
             printSettings: {
-                printer: newPrinter,
-                layerHeight: newLayerHeight,
-                infill: newInfill,
-                printTime: newPrintTime,
-                material: newMaterial
+                printer: '',
+                layerHeight: '',
+                infill: '',
+                printTime: '',
+                material: ''
             },
             comments: [],
             createdAt: 'Just now'
@@ -593,11 +613,6 @@ export function FigurePage({ current }: FigurePageProps) {
         setNewTags('')
         setHasImage(true)
         setNewImage('/images/warrior_figure.png')
-        setNewPrinter('Bambu Lab P1S')
-        setNewLayerHeight('0.12mm')
-        setNewInfill('15%')
-        setNewPrintTime('10 hours')
-        setNewMaterial('PLA + TPU')
 
         triggerToast('Post published successfully!')
     }
@@ -699,59 +714,18 @@ export function FigurePage({ current }: FigurePageProps) {
                             </h2>
 
                             {/* Body Content */}
-                            <div className="text-xs sm:text-sm text-white/80 leading-relaxed font-sans whitespace-pre-wrap">
-                                {selectedPost.content}
+                            <div className="text-xs sm:text-sm text-white/80 leading-relaxed font-sans border-b border-white/5 pb-4 mb-2">
+                                <ArticleMarkdown content={selectedPost.content} />
                             </div>
 
                             {/* Image (if present, typical for Showcase or image-attached Discussion posts) */}
                             {selectedPost.image && (
-                                <div className="bg-zinc-950/60 border border-white/5 rounded p-4 flex items-center justify-center overflow-hidden max-h-[450px]">
+                                <div className="bg-zinc-950/60 border border-white/5 rounded p-4 flex items-center justify-center overflow-hidden max-h-[450px] mb-4">
                                     <img
                                         src={selectedPost.image}
                                         alt={selectedPost.title}
                                         className="max-h-[400px] object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.6)]"
                                     />
-                                </div>
-                            )}
-
-                            {/* Print Settings (if showcase or has printSettings) */}
-                            {selectedPost.printSettings && (selectedPost.category === 'showcase' || Object.values(selectedPost.printSettings).some(Boolean)) && (
-                                <div className="bg-black/40 border border-white/10 p-4 rounded-sm max-w-xl">
-                                    <h3 className={`text-xs font-bold text-white mb-3 flex items-center gap-2 border-b border-white/5 pb-2 uppercase tracking-wide ${current.fontClass}`}>
-                                        <Icon icon="pixelarticons:device-laptop" className="text-[#3c8527] text-sm" />
-                                        <span>{current.figureForum.printSettingsTitle}</span>
-                                    </h3>
-                                    <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-xs font-mono">
-                                        <div>
-                                            <span className="text-white/40 block text-[10px] uppercase">Printer</span>
-                                            <span className="text-white/90">{selectedPost.printSettings.printer}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-white/40 block text-[10px] uppercase">Layer Height</span>
-                                            <span className="text-white/90">{selectedPost.printSettings.layerHeight}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-white/40 block text-[10px] uppercase">Infill</span>
-                                            <span className="text-white/90">{selectedPost.printSettings.infill}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-white/40 block text-[10px] uppercase">Print Time</span>
-                                            <span className="text-white/90">{selectedPost.printSettings.printTime}</span>
-                                        </div>
-                                        <div className="col-span-2">
-                                            <span className="text-white/40 block text-[10px] uppercase">{current.figureForum.material}</span>
-                                            <span className="text-[#5cff5c] text-[11px]">{selectedPost.printSettings.material}</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Direct print ordering simulator */}
-                                    <button
-                                        onClick={() => triggerToast('Direct ordering is locked in sandbox. Model added to configuration list.')}
-                                        className={`w-full mt-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 text-xs font-bold uppercase transition-colors flex items-center justify-center gap-2 cursor-pointer ${current.fontClass}`}
-                                    >
-                                        <Icon icon="pixelarticons:cart" />
-                                        <span>{current.figureForum.orderPrint}</span>
-                                    </button>
                                 </div>
                             )}
 
@@ -1043,11 +1017,6 @@ export function FigurePage({ current }: FigurePageProps) {
                                                                 <span>{countTotalComments(post.comments)}</span>
                                                             </div>
                                                         </div>
-
-                                                        <div className="flex items-center gap-1 text-[9px] bg-white/5 border border-white/10 text-white/60 px-2 py-0.5 rounded-sm">
-                                                            <Icon icon="pixelarticons:device-laptop" className="text-[10px] text-[#3c8527]" />
-                                                            <span>{post.printSettings.material.split(' ')[0]}</span>
-                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1260,71 +1229,91 @@ export function FigurePage({ current }: FigurePageProps) {
                                     </div>
                                 )}
 
-                                {/* Description Content */}
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postContent}</label>
-                                    <textarea
-                                        rows={4}
-                                        placeholder="Describe details, settings, assembly tips, or ask a question..."
-                                        className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans resize-none"
-                                        value={newContent}
-                                        onChange={e => setNewContent(e.target.value)}
-                                        required
-                                    />
-                                </div>
-
-                                {/* Slicing Settings subform */}
-                                <div className="border border-white/5 bg-white/5 p-4 rounded-sm">
-                                    <h4 className={`text-xs font-bold text-white mb-3 uppercase tracking-wide ${current.fontClass}`}>
-                                        3D Print Spec Settings (Optional)
-                                    </h4>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] text-white/40 uppercase font-mono font-semibold">Printer Model</span>
-                                            <input
-                                                type="text"
-                                                className="bg-black/45 border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#3c8527]"
-                                                value={newPrinter}
-                                                onChange={e => setNewPrinter(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] text-white/40 uppercase font-mono font-semibold">Layer Height</span>
-                                            <input
-                                                type="text"
-                                                className="bg-black/45 border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#3c8527]"
-                                                value={newLayerHeight}
-                                                onChange={e => setNewLayerHeight(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] text-white/40 uppercase font-mono font-semibold">Infill %</span>
-                                            <input
-                                                type="text"
-                                                className="bg-black/45 border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#3c8527]"
-                                                value={newInfill}
-                                                onChange={e => setNewInfill(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] text-white/40 uppercase font-mono font-semibold">Print Time</span>
-                                            <input
-                                                type="text"
-                                                className="bg-black/45 border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#3c8527]"
-                                                value={newPrintTime}
-                                                onChange={e => setNewPrintTime(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="flex flex-col gap-1 col-span-2">
-                                            <span className="text-[10px] text-white/40 uppercase font-mono font-semibold">Filament & Material Specs</span>
-                                            <input
-                                                type="text"
-                                                className="bg-black/45 border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#3c8527]"
-                                                value={newMaterial}
-                                                onChange={e => setNewMaterial(e.target.value)}
-                                            />
+                                {/* Description Content with Markdown Toolbar & Preview */}
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex justify-between items-center border-b border-white/10 pb-1.5 mt-1 select-none">
+                                        <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postContent}</label>
+                                        <div className="flex border border-white/10 p-0.5 bg-black/20 text-[10px]">
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditorTab('write')}
+                                                className={`px-3 py-1 cursor-pointer transition-colors border-none ${editorTab === 'write' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white'}`}
+                                            >
+                                                Write
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditorTab('preview')}
+                                                className={`px-3 py-1 cursor-pointer transition-colors border-none ${editorTab === 'preview' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white'}`}
+                                            >
+                                                Preview
+                                            </button>
                                         </div>
                                     </div>
+
+                                    {editorTab === 'write' ? (
+                                        <div className="flex flex-col gap-1">
+                                            {/* Editor Toolbar */}
+                                            <div className="flex flex-wrap gap-1 p-1 bg-black/30 border border-b-0 border-white/10 select-none">
+                                                <button
+                                                    type="button"
+                                                    title="Bold (**text**)"
+                                                    onClick={() => insertMarkdown('**', '**')}
+                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
+                                                >
+                                                    <Icon icon="pixelarticons:bold" className="text-sm" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    title="Italic (*text*)"
+                                                    onClick={() => insertMarkdown('*', '*')}
+                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
+                                                >
+                                                    <Icon icon="pixelarticons:italic" className="text-sm" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    title="Code Block (```)"
+                                                    onClick={() => insertMarkdown('\n```javascript\n', '\n```\n')}
+                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold font-mono"
+                                                >
+                                                    <Icon icon="pixelarticons:code" className="text-sm" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    title="Table (|col|)"
+                                                    onClick={() => insertMarkdown('\n| Column 1 | Column 2 |\n|---|---|\n| Cell 1 | Cell 2 |\n')}
+                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
+                                                >
+                                                    <Icon icon="pixelarticons:table" className="text-sm" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    title="Image (![alt](url))"
+                                                    onClick={() => insertMarkdown('![Model figure|400]', '(/images/warrior_figure.png)')}
+                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
+                                                >
+                                                    <Icon icon="pixelarticons:image" className="text-sm" />
+                                                </button>
+                                            </div>
+                                            
+                                            {/* Textarea */}
+                                            <textarea
+                                                ref={textareaRef}
+                                                rows={6}
+                                                placeholder="Describe details, tips, guides using markdown formatting. You can insert images, tables, lists, and code blocks using the toolbar!"
+                                                className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans resize-none w-full"
+                                                value={newContent}
+                                                onChange={e => setNewContent(e.target.value)}
+                                                required
+                                            />
+                                        </div>
+                                    ) : (
+                                        /* Markdown Live Preview Container */
+                                        <div className="bg-black/60 border border-white/10 p-4 min-h-[160px] max-h-[300px] overflow-y-auto custom-scrollbar text-xs">
+                                            <ArticleMarkdown content={newContent || '*Nothing to preview yet. Click the "Write" tab to enter content.*'} />
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Tags (comma separated) */}
