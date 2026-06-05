@@ -1,3 +1,4 @@
+import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
@@ -163,8 +164,7 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
     }
 
     return (
-        <div className="absolute inset-0 z-10 flex items-center justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
-            <div className="w-full max-w-7xl h-full flex flex-col gap-6 bg-black/40 backdrop-blur-md p-4 sm:p-8 border border-white/10 overflow-y-auto custom-scrollbar pointer-events-auto relative text-white animate-in fade-in duration-300">
+        <PageContainer className="relative">
 
                 {/* Header Bar with Controls */}
                 <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 border-b border-white/10 pb-6 shrink-0">
@@ -306,7 +306,6 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
                         </button>
                     </div>
                 )}
-            </div>
 
             {/* Skin Detail Modal Overlay */}
             {selectedItem && (
@@ -325,6 +324,6 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
                     }}
                 />
             )}
-        </div>
+        </PageContainer>
     )
 }

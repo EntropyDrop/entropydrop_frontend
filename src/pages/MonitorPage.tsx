@@ -1,3 +1,4 @@
+import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
@@ -317,8 +318,13 @@ export function MonitorPage({ current }: MonitorPageProps) {
   }
 
   return (
-    <div className="absolute inset-0 z-10 flex items-start justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
-      <div className="w-full max-w-7xl h-auto flex flex-col gap-6 bg-black/40 backdrop-blur-md p-4 sm:p-8 border border-white/10 overflow-visible animate-in fade-in zoom-in duration-300 pointer-events-auto custom-scrollbar">
+    <PageContainer
+      alignItems="items-start"
+      height="h-auto"
+      overflow="overflow-visible"
+      animate="animate-in fade-in zoom-in duration-300"
+      className="custom-scrollbar"
+    >
 
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-white/10 pb-6 shrink-0">
@@ -955,8 +961,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
         </div>
       )}
 
-      </div>
-    </div>
+    </PageContainer>
   )
 }
 

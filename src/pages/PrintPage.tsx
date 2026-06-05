@@ -1,3 +1,4 @@
+import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -100,8 +101,7 @@ export function PrintPage({ current }: PrintPageProps) {
 
     if (!localStorage.getItem('token')) {
         return (
-            <div className="absolute inset-0 z-10 flex items-center justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
-                <div className="w-full max-w-7xl h-full flex flex-col items-center justify-center gap-6 bg-black/40 backdrop-blur-md p-4 sm:p-8 border border-white/10 overflow-y-auto custom-scrollbar pointer-events-auto text-white">
+            <PageContainer className="items-center justify-center">
                     <Icon icon="pixelarticons:lock" className="text-6xl opacity-30" />
                     <div className="text-center flex flex-col gap-1">
                         <h2 className={`text-xl font-bold ${current.fontClass}`}>
@@ -111,8 +111,7 @@ export function PrintPage({ current }: PrintPageProps) {
                             {current.print.loginPrompt}
                         </p>
                     </div>
-                </div>
-            </div>
+            </PageContainer>
         )
     }
 
@@ -125,8 +124,7 @@ export function PrintPage({ current }: PrintPageProps) {
         ];
 
         return (
-            <div className="absolute inset-0 z-10 flex items-center justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
-                <div className="w-full max-w-7xl h-full flex flex-col lg:flex-row gap-8 bg-black/40 backdrop-blur-md p-4 sm:p-8 border border-white/10 overflow-y-auto custom-scrollbar pointer-events-auto text-white animate-in fade-in duration-300">
+            <PageContainer gap="gap-8" className="flex-col lg:flex-row">
                     {/* Left: Content & Guidance */}
                     <div className="flex-1 flex flex-col justify-center gap-6 max-w-xl">
                         <div className="flex flex-col gap-2">
@@ -362,8 +360,7 @@ export function PrintPage({ current }: PrintPageProps) {
                             ))}
                         </div>
                     </div>
-                </div>
-            </div>
+            </PageContainer>
         )
     }
 
@@ -416,8 +413,12 @@ export function PrintPage({ current }: PrintPageProps) {
 
 
     return (
-        <div className="absolute inset-0 z-10 flex items-center justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
-            <div className="w-full max-w-7xl h-full flex flex-col gap-4 bg-black/40 backdrop-blur-md p-4 sm:p-8 border border-white/10 overflow-hidden animate-in fade-in zoom-in duration-300 pointer-events-auto">
+        <PageContainer
+            gap="gap-4"
+            overflow="overflow-hidden"
+            animate="animate-in fade-in zoom-in duration-300"
+        >
+
                 {/* Header */}
                 <div className="flex justify-between items-end border-b border-white/10 pb-4 shrink-0">
                     <div className="flex items-center gap-2">
@@ -561,7 +562,6 @@ export function PrintPage({ current }: PrintPageProps) {
                         </div>
                     </div>
                 </div>
-            </div>
 
             <AddressManager
                 isOpen={isAddressOpen}
@@ -572,7 +572,7 @@ export function PrintPage({ current }: PrintPageProps) {
                     setIsAddressOpen(false);
                 }}
             />
-        </div>
+        </PageContainer>
     );
 }
 

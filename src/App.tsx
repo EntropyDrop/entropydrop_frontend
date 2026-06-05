@@ -20,6 +20,8 @@ const FinancialsPage = lazy(() => import('./pages/FinancialsPage').then(m => ({ 
 const FixedAssetsPage = lazy(() => import('./pages/FixedAssetsPage').then(m => ({ default: m.FixedAssetsPage })))
 const LedgerPage = lazy(() => import('./pages/LedgerPage').then(m => ({ default: m.LedgerPage })))
 const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage').then(m => ({ default: m.DiscoveryPage })))
+const FigurePage = lazy(() => import('./pages/FigurePage').then(m => ({ default: m.FigurePage })))
+
 
 /**
  * Get the system's current language and map it to our LangKey
@@ -37,7 +39,7 @@ const getStoredIsAuto = (): boolean => {
 
 function LegacyOpenRedirect() {
   const location = useLocation()
-  const target = `${location.pathname.replace(/^\/skin\/open/, '/skin/public')}${location.search}${location.hash}`
+  const target = `${location.pathname.replace(/^\/skin\/open/, '/public')}${location.search}${location.hash}`
   return <Navigate to={target} replace />
 }
 
@@ -63,16 +65,17 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/skin/collection/:userId" element={<CollectionPage current={currentLangData} />} />
         <Route path="/skin/collection/:userId/:collectionId" element={<CollectionPage current={currentLangData} />} />
         <Route path="/skin/orders" element={<OrdersPage current={currentLangData} />} />
-        <Route path="/skin/pro" element={<ProPage current={currentLangData} />} />
-        <Route path="/skin/public" element={<PublicPage current={currentLangData} />} />
-        <Route path="/skin/public/article/:id" element={<ArticlePage current={currentLangData} />} />
+        <Route path="/pro" element={<ProPage current={currentLangData} />} />
+        <Route path="/public" element={<PublicPage current={currentLangData} />} />
+        <Route path="/public/article/:id" element={<ArticlePage current={currentLangData} />} />
         <Route path="/skin/privacy" element={<PrivacyPolicyPage current={currentLangData} />} />
         <Route path="/skin/tos" element={<TermsOfServicePage current={currentLangData} />} />
         <Route path="/skin/monitor" element={<MonitorPage current={currentLangData} />} />
-        <Route path="/skin/public/financials" element={<FinancialsPage current={currentLangData} />} />
-        <Route path="/skin/public/fixed-assets" element={<FixedAssetsPage current={currentLangData} />} />
-        <Route path="/skin/public/ledger" element={<LedgerPage current={currentLangData} />} />
+        <Route path="/public/financials" element={<FinancialsPage current={currentLangData} />} />
+        <Route path="/public/fixed-assets" element={<FixedAssetsPage current={currentLangData} />} />
+        <Route path="/public/ledger" element={<LedgerPage current={currentLangData} />} />
         <Route path="/skin/open/*" element={<LegacyOpenRedirect />} />
+        <Route path="/figure" element={<FigurePage current={currentLangData} />} />
       </Routes>
     </Suspense>
   )

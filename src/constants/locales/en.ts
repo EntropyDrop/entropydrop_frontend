@@ -3,7 +3,50 @@ export default {
     title: 'EntropyDrop',
     subtitle: 'Open-Source Manufacturer',
     fontClass: 'font-pixel-hans',
-    nav: { discover: 'Discover', generate: 'Generate', edit: 'Edit', print: '3D Print', collection: 'Collections', pro: 'Pro', public: 'Public', monitor: 'Monitor' },
+    nav: {
+        discover: 'Discover',
+        generate: 'Generate',
+        edit: 'Edit',
+        print: '3D Print',
+        collection: 'Collections',
+        pro: 'Pro',
+        public: 'Public',
+        monitor: 'Monitor',
+        skin: 'Skins',
+        figure: 'Figures',
+        discussions: 'Discussions',
+        showcase: 'Showcase',
+        videos: 'Videos'
+    },
+    figureForum: {
+        title: '3D Figure Forum',
+        subtitle: 'Share, discuss, and showcase 3D printed pixel-style figures.',
+        publishPost: 'Publish Post',
+        activeMembers: 'Active Members',
+        totalPosts: 'Total Posts',
+        totalPrints: 'Total Prints',
+        postTitle: 'Title',
+        postContent: 'Content',
+        postCategory: 'Category',
+        postTags: 'Tags (comma separated)',
+        postSettings: '3D Print Settings',
+        layerHeight: 'Layer Height',
+        infill: 'Infill',
+        printerModel: 'Printer Model',
+        printTime: 'Print Time',
+        submitPost: 'Submit Post',
+        cancel: 'Cancel',
+        comments: 'Comments',
+        writeComment: 'Write a comment...',
+        commentBtn: 'Comment',
+        printSettingsTitle: 'Print Settings',
+        orderPrint: 'Order 3D Print',
+        views: 'views',
+        likes: 'likes',
+        commentsCount: 'comments',
+        hours: 'hours',
+        material: 'Material',
+    },
     generate: {
         imageMode: 'Image Mode',
         textMode: 'Text Mode',
@@ -477,7 +520,7 @@ export default {
                     items: [
                         { title: 'Financial Status', desc: 'An overview of platform revenue streams, operating expenditures, funds flow, and total assets.', status: 'In Development' },
                         { title: 'Fixed Assets', desc: 'A list of computing nodes, physical manufacturing equipment, and assets.', status: 'In Development' },
-                        { title: 'Live Ledger', desc: 'A real-time, anonymized stream display of all platform financial revenue and expenditure transactions.', status: 'Active', link: '/skin/public/ledger' }
+                        { title: 'Live Ledger', desc: 'A real-time, anonymized stream display of all platform financial revenue and expenditure transactions.', status: 'Active', link: '/public/ledger' }
                     ]
                 }
             ]

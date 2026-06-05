@@ -3,7 +3,50 @@ export default {
     title: 'EntropyDrop',
     subtitle: '',
     fontClass: 'font-pixel-hans',
-    nav: { discover: '发现', generate: '生成', edit: '编辑', print: '3D打印', collection: '收藏', pro: 'Pro订阅', public: '公开', monitor: '监控' },
+    nav: {
+        discover: '发现',
+        generate: '生成',
+        edit: '编辑',
+        print: '3D打印',
+        collection: '收藏',
+        pro: 'Pro订阅',
+        public: '公开',
+        monitor: '监控',
+        skin: '皮肤生成',
+        figure: '手办论坛',
+        discussions: '讨论交流',
+        showcase: '玩家晒图',
+        videos: '视频分享'
+    },
+    figureForum: {
+        title: '3D 打印手办论坛',
+        subtitle: '在这里分享、交流、展示你的像素级 3D 打印手办创作。',
+        publishPost: '发布帖子',
+        activeMembers: '活跃成员',
+        totalPosts: '帖子总数',
+        totalPrints: '打印总数',
+        postTitle: '标题',
+        postContent: '内容描述',
+        postCategory: '类别',
+        postTags: '标签 (以逗号分隔)',
+        postSettings: '3D 打印设置',
+        layerHeight: '层高',
+        infill: '填充率',
+        printerModel: '打印机型号',
+        printTime: '打印时长',
+        submitPost: '确认发布',
+        cancel: '取消',
+        comments: '评论回复',
+        writeComment: '写下你的评论...',
+        commentBtn: '发表评论',
+        printSettingsTitle: '打印参数',
+        orderPrint: '订购 3D 打印',
+        views: '浏览',
+        likes: '赞',
+        commentsCount: '回复',
+        hours: '小时',
+        material: '材料',
+    },
     generate: {
         imageMode: '图片生成',
         textMode: '文本生成',
@@ -477,7 +520,7 @@ export default {
                     items: [
                         { title: '财务状况', desc: '平台营收流、运营支出、资金流向及总资产的概览。', status: '开发中' },
                         { title: '固定资产', desc: '计算节点、实物加工设备及资产列表。', status: '开发中' },
-                        { title: '实时总账', desc: '平台所有财务收支流水的实时、脱敏流展示。', status: '进行中', link: '/skin/public/ledger' }
+                        { title: '实时总账', desc: '平台所有财务收支流水的实时、脱敏流展示。', status: '进行中', link: '/public/ledger' }
                     ]
                 }
             ]

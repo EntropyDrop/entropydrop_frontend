@@ -1,3 +1,4 @@
+import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
@@ -45,8 +46,10 @@ export function ArticlePage({ current }: ArticlePageProps) {
     }, [id, current.lang])
 
     return (
-        <div className="absolute inset-0 z-10 flex items-center justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
-            <div className="w-full max-w-7xl h-full flex flex-col gap-6 bg-black/60 backdrop-blur-xl p-4 sm:p-8 border border-white/10 overflow-y-auto custom-scrollbar pointer-events-auto text-white animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <PageContainer
+            bg="bg-black/60 backdrop-blur-xl"
+            animate="animate-in fade-in slide-in-from-bottom-4 duration-500"
+        >
 
                 {/* Navigation */}
                 <button
@@ -74,7 +77,6 @@ export function ArticlePage({ current }: ArticlePageProps) {
                         </Suspense>
                     </article>
                 )}
-            </div>
-        </div>
+        </PageContainer>
     )
 }

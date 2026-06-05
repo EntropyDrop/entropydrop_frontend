@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type LangData, type LangKey, SUPPORTED_LANGUAGES } from '../constants/lang'
 import { apiFetch } from '../utils/api'
-import { NAV_ITEMS } from "../constants/nav"
+import { SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS } from "../constants/nav"
 
 const GoogleSignInButton = lazy(() => import('./GoogleSignInButton').then(m => ({ default: m.GoogleSignInButton })))
 
@@ -131,7 +131,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             {!user && (
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className="sm:hidden flex items-center justify-center bg-black/40 border-2 border-white/10 w-10 h-10 transition-all cursor-pointer"
+                    className="lg:hidden flex items-center justify-center bg-black/40 border-2 border-white/10 w-10 h-10 transition-all cursor-pointer"
                 >
                     <Icon icon={isOpen ? "pixelarticons:close" : "pixelarticons:menu"} className="text-white text-xl" />
                 </button>
@@ -171,16 +171,47 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
 
             {isOpen && (
                 <div className="absolute top-full right-0 mt-2 w-64 sm:w-52 max-h-[50vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar bg-[#333] border-2 border-black shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                    {/* Mobile Navigation Links */}
-                    <div className="sm:hidden border-b border-black/10 pb-1 pt-1 bg-black/10">
-                        <span className={`text-white/40 text-[9px] uppercase px-4 py-2 block ${current.fontClass}`}>{current.common?.navigation || 'NAVIGATE'}</span>
-                        {NAV_ITEMS.map((item) => (
+                    {/* Mobile/Tablet Navigation Links */}
+                    <div className="lg:hidden border-b border-black/10 pb-1 pt-1 bg-black/10 flex flex-col gap-1">
+                        {/* Global Platform Links: Pro & Public */}
+                        <button
+                            onClick={() => { setIsOpen(false); navigate('/pro'); }}
+                            className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                        >
+                            <Icon icon="pixelarticons:zap" className="text-sm shrink-0" /> {current.nav.pro}
+                        </button>
+                        <button
+                            onClick={() => { setIsOpen(false); navigate('/public'); }}
+                            className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                        >
+                            <Icon icon="pixelarticons:binary" className="text-sm shrink-0" /> {current.nav.public}
+                        </button>
+
+                        <div className="h-px bg-white/5 my-1 mx-4" />
+
+                        {/* Skins Sub-Navigation */}
+                        <span className={`text-white/40 text-[9px] uppercase px-4 pt-1 block ${current.fontClass}`}>{current.nav.skin}</span>
+                        {SKIN_NAV_ITEMS.map((item) => (
                             <button
                                 key={item.key}
                                 onClick={() => { setIsOpen(false); navigate(item.path); }}
-                                className={`w-full px-4 py-3 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                                className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 pl-6 ${current.fontClass}`}
                             >
-                                <Icon icon={item.icon} /> {current.nav[item.key]}
+                                <Icon icon={item.icon} className="text-sm shrink-0" /> {current.nav[item.key as keyof typeof current.nav]}
+                            </button>
+                        ))}
+
+                        <div className="h-px bg-white/5 my-1 mx-4" />
+
+                        {/* Figures Sub-Navigation */}
+                        <span className={`text-white/40 text-[9px] uppercase px-4 pt-1 block ${current.fontClass}`}>{current.nav.figure}</span>
+                        {FIGURE_NAV_ITEMS.map((item) => (
+                            <button
+                                key={item.key}
+                                onClick={() => { setIsOpen(false); navigate(item.path); }}
+                                className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 pl-6 ${current.fontClass}`}
+                            >
+                                <Icon icon={item.icon} className="text-sm shrink-0" /> {current.nav[item.key as keyof typeof current.nav]}
                             </button>
                         ))}
                     </div>

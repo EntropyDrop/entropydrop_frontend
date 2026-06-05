@@ -9,7 +9,7 @@ import { LoadingPlaceholder } from './LoadingPlaceholder'
 import { type LangKey, type LangData } from '../constants/lang'
 import type { GenerationLogItem, GenerationLogItemBrief } from '../types/log'
 
-import { NAV_ITEMS } from '../constants/nav'
+import { SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS, TOP_NAV_ITEMS } from '../constants/nav'
 
 // Lazy load heavy components
 const DiscoveryScene = lazy(() => import('./DiscoveryScene').then(m => ({ default: m.DiscoveryScene })))
@@ -33,7 +33,17 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
     const [isDiscoveryLoading, setIsDiscoveryLoading] = useState(false)
     const [searchParams] = useSearchParams()
     const is3DMode = searchParams.get('view') === '3d'
-    const isDiscoveryPage = location.pathname === NAV_ITEMS[0].path
+
+    const isFigureSection = location.pathname.startsWith('/figure')
+    const isSkinSection = location.pathname.startsWith('/skin') || location.pathname === '/'
+
+    const activeSubNavItems = isFigureSection
+        ? FIGURE_NAV_ITEMS
+        : isSkinSection
+            ? SKIN_NAV_ITEMS
+            : []
+
+    const isDiscoveryPage = location.pathname === '/skin/' || location.pathname === '/skin' || location.pathname === '/'
 
 
     useEffect(() => {
@@ -65,32 +75,87 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                         <h2 className="m-0 text-base sm:text-2xl text-gray-400 hidden sm:block">{current.subtitle}</h2>
                     </div>
 
-                    <div className="flex items-center gap-2 sm:gap-12 min-w-0">
-                        <div className="hidden sm:flex gap-2 sm:gap-8 pointer-events-auto bg-black/40 sm:bg-transparent p-1.5 sm:p-0border border-white/10 sm:border-none rounded-sm">
-                            {NAV_ITEMS.map((item) => {
-                                const isActive = item.path === '/skin/'
-                                    ? (location.pathname === '/skin/' || location.pathname === '/skin')
-                                    : location.pathname.startsWith(item.path)
-                                const label = current.nav[item.key]
-                                return (
+                    <div className="flex items-center gap-4 sm:gap-6 min-w-0">
+                        {/* Stacked Navigation Container */}
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                            {/* Top Row: Switcher and Global Links */}
+                            <div className="hidden lg:flex items-center gap-3 sm:gap-4 shrink-0">
+                                {/* First-Level Navigation Switcher */}
+                                <div className="flex border border-white/10 p-0.5 bg-black/40 backdrop-blur-md gap-0.5 pointer-events-auto">
+                                    {TOP_NAV_ITEMS.map((item) => {
+                                        const isCurrentSection = item.key === 'skin'
+                                            ? isSkinSection
+                                            : location.pathname.startsWith(item.path)
+                                        return (
+                                            <Link
+                                                key={item.key}
+                                                to={item.path}
+                                                className={`px-3 py-1.5 text-[11px] sm:text-sm font-semibold cursor-pointer transition-colors flex items-center gap-1.5 sm:gap-2 no-underline border-none ${isCurrentSection
+                                                    ? 'bg-[#3c8527] text-white shadow-sm'
+                                                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                                                    } ${current.fontClass}`}
+                                            >
+                                                <Icon icon={item.icon} className="text-sm sm:text-base" />
+                                                <span>{current.nav[item.key as keyof typeof current.nav]}</span>
+                                            </Link>
+                                        )
+                                    })}
+                                </div>
+
+                                {/* Global Platform Links (Pro & Public) */}
+                                <div className="flex items-center gap-1 sm:gap-2 pointer-events-auto">
                                     <Link
-                                        key={item.key}
-                                        to={item.path}
-                                        className={`group flex flex-col items-center gap-0.5 sm:gap-1 text-white transition-all no-underline transform hover:scale-110 active:scale-95 ${isActive ? 'opacity-100 scale-105' : 'opacity-60 hover:opacity-100'
-                                            }`}
+                                        to="/pro"
+                                        className={`px-2 py-1.5 text-[11px] sm:text-sm font-semibold cursor-pointer transition-colors flex items-center gap-1.5 no-underline hover:bg-white/5 border-none ${location.pathname.startsWith('/pro')
+                                            ? 'text-white bg-white/10 font-bold opacity-100'
+                                            : 'text-white/60 hover:text-white hover:opacity-100'
+                                            } ${current.fontClass}`}
                                     >
-                                        <Icon
-                                            icon={item.icon}
-                                            className="text-xl sm:text-3xl"
-                                            style={{ imageRendering: 'pixelated' }}
-                                        />
-                                        <span className={`text-[8px] sm:text-sm mt-0 sm:mt-1 ${current.fontClass} hidden sm:block`}>{label}</span>
-                                        {isActive && (
-                                            <div className="w-1 h-1 bg-green-500 mt-0.5 sm:mt-1 animate-pulse" />
-                                        )}
+                                        <Icon icon="pixelarticons:zap" className="text-sm sm:text-base" />
+                                        <span>{current.nav.pro}</span>
                                     </Link>
-                                )
-                            })}
+                                    <Link
+                                        to="/public"
+                                        className={`px-2 py-1.5 text-[11px] sm:text-sm font-semibold cursor-pointer transition-colors flex items-center gap-1.5 no-underline hover:bg-white/5 border-none ${location.pathname.startsWith('/public')
+                                            ? 'text-white bg-white/10 font-bold opacity-100'
+                                            : 'text-white/60 hover:text-white hover:opacity-100'
+                                            } ${current.fontClass}`}
+                                    >
+                                        <Icon icon="pixelarticons:binary" className="text-sm sm:text-base" />
+                                        <span>{current.nav.public}</span>
+                                    </Link>
+                                </div>
+                            </div>
+
+                            {/* Second-Level Sub-Navigation */}
+                            <div className="hidden lg:flex gap-5 sm:gap-7 shrink-0 pointer-events-auto items-center h-6">
+                                {activeSubNavItems.map((item) => {
+                                    const isActive = item.path === '/skin/'
+                                        ? (location.pathname === '/skin/' || location.pathname === '/skin')
+                                        : item.path === '/figure'
+                                            ? (location.pathname === item.path && !location.search)
+                                            : (location.pathname + location.search).startsWith(item.path)
+                                    const label = current.nav[item.key as keyof typeof current.nav]
+                                    return (
+                                        <Link
+                                            key={item.key}
+                                            to={item.path}
+                                            className={`group flex items-center gap-1.5 text-white transition-all no-underline transform hover:scale-105 active:scale-95 ${isActive ? 'opacity-100' : 'opacity-65 hover:opacity-100'
+                                                }`}
+                                        >
+                                            <Icon
+                                                icon={item.icon}
+                                                className="text-sm sm:text-lg"
+                                                style={{ imageRendering: 'pixelated' }}
+                                            />
+                                            <span className={`text-[11px] sm:text-sm ${current.fontClass}`}>{label}</span>
+                                            {isActive && (
+                                                <div className="w-1 h-1 bg-green-500 animate-pulse ml-0.5" />
+                                            )}
+                                        </Link>
+                                    )
+                                })}
+                            </div>
                         </div>
 
                         <UserMenu

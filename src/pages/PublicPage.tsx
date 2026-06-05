@@ -1,3 +1,4 @@
+import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { Link, useNavigate } from 'react-router-dom'
@@ -58,8 +59,7 @@ export function PublicPage({ current }: PublicPageProps) {
     };
 
     return (
-        <div className="absolute inset-0 z-10 flex items-center justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
-            <div className="w-full max-w-7xl h-full flex flex-col gap-6 bg-black/40 backdrop-blur-md p-4 sm:p-8 border border-white/10 overflow-y-auto custom-scrollbar pointer-events-auto text-white animate-in fade-in duration-300">
+        <PageContainer>
 
                 {/* Header */}
                 <div className="flex flex-col gap-2 border-b border-white/10 pb-6 shrink-0">
@@ -286,7 +286,6 @@ export function PublicPage({ current }: PublicPageProps) {
                     </div>
                 </div>
 
-            </div>
-        </div>
+        </PageContainer>
     );
 }

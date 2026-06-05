@@ -1,3 +1,4 @@
+import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -234,7 +235,13 @@ export function OrdersPage({ current }: OrdersPageProps) {
     };
 
     return (
-        <div className="absolute inset-0 z-10 flex items-center justify-center p-2 sm:p-8 lg:p-12 pt-20 sm:pt-24 lg:pt-32 box-border overflow-y-auto pointer-events-none">
+        <PageContainer
+            maxWidth="max-w-4xl"
+            gap="gap-4"
+            overflow="overflow-hidden"
+            animate="animate-in fade-in zoom-in duration-300"
+            className={current.fontClass}
+        >
             {/* Modal */}
             <ConfirmModal
                 isOpen={modalConfig.isOpen}
@@ -263,7 +270,7 @@ export function OrdersPage({ current }: OrdersPageProps) {
                 textureUrl={skin3DModalConfig.textureUrl}
                 current={current}
             />
-            <div className={`w-full max-w-4xl h-full flex flex-col gap-4 bg-black/40 backdrop-blur-md p-4 sm:p-8 border border-white/10 overflow-hidden animate-in fade-in zoom-in duration-300 pointer-events-auto ${current.fontClass}`}>
+
                 {/* Header */}
                 <div className="flex justify-between items-end border-b border-white/10 pb-4 shrink-0">
                     <div className="flex items-center gap-2">
@@ -430,7 +437,6 @@ export function OrdersPage({ current }: OrdersPageProps) {
                         </>
                     )}
                 </div>
-            </div>
-        </div>
+        </PageContainer>
     );
 }
