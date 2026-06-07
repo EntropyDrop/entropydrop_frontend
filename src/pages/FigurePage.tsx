@@ -1257,22 +1257,6 @@ export function FigurePage({ current }: FigurePageProps) {
                                             <div className="flex flex-wrap gap-1 p-1 bg-black/30 border border-b-0 border-white/10 select-none">
                                                 <button
                                                     type="button"
-                                                    title="Bold (**text**)"
-                                                    onClick={() => insertMarkdown('**', '**')}
-                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
-                                                >
-                                                    <Icon icon="pixelarticons:bold" className="text-sm" />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    title="Italic (*text*)"
-                                                    onClick={() => insertMarkdown('*', '*')}
-                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
-                                                >
-                                                    <Icon icon="pixelarticons:italic" className="text-sm" />
-                                                </button>
-                                                <button
-                                                    type="button"
                                                     title="Code Block (```)"
                                                     onClick={() => insertMarkdown('\n```javascript\n', '\n```\n')}
                                                     className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold font-mono"
