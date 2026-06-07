@@ -180,7 +180,7 @@ export function FigurePage({ current }: FigurePageProps) {
     const [searchQuery, setSearchQuery] = useState('')
     const [sortBy, setSortBy] = useState<'latest' | 'popular'>('latest')
     const [selectedPost, setSelectedPost] = useState<ForumPost | null>(null)
-    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+    const [isCreateFormOpen, setIsCreateFormOpen] = useState(false)
     const [selectedVideo, setSelectedVideo] = useState<YoutubeVideo | null>(null)
 
     // Current logged in user info (mocked/fetched)
@@ -190,8 +190,6 @@ export function FigurePage({ current }: FigurePageProps) {
     const [newContent, setNewContent] = useState('')
     const [newCategory, setNewCategory] = useState<'discussions' | 'showcase'>('discussions')
     const [newTags, setNewTags] = useState('')
-    const [hasImage, setHasImage] = useState(true)
-    const [newImage, setNewImage] = useState('/images/warrior_figure.png')
 
     // Markdown editor states & selection helper
     const [editorTab, setEditorTab] = useState<'write' | 'preview'>('write')
@@ -246,6 +244,12 @@ export function FigurePage({ current }: FigurePageProps) {
         }
         fetchUser()
     }, [])
+
+    // Reset view states when category filter changes
+    useEffect(() => {
+        setIsCreateFormOpen(false)
+        setSelectedPost(null)
+    }, [activeCategory])
 
     // Seed post data
     const [posts, setPosts] = useState<ForumPost[]>([
@@ -585,7 +589,7 @@ export function FigurePage({ current }: FigurePageProps) {
             title: newTitle,
             content: newContent,
             category: newCategory,
-            image: hasImage ? newImage : undefined,
+            image: newCategory === 'showcase' ? '/images/warrior_figure.png' : undefined,
             tags: tagList.length > 0 ? tagList : ['Custom', 'Figure'],
             author: currentUser?.username || 'GuestMaker',
             isPro: currentUser?.is_pro || false,
@@ -605,14 +609,12 @@ export function FigurePage({ current }: FigurePageProps) {
         }
 
         setPosts([createdPost, ...posts])
-        setIsCreateModalOpen(false)
+        setIsCreateFormOpen(false)
         // Reset form
         setNewTitle('')
         setNewContent('')
         setNewCategory('discussions')
         setNewTags('')
-        setHasImage(true)
-        setNewImage('/images/warrior_figure.png')
 
         triggerToast('Post published successfully!')
     }
@@ -663,7 +665,7 @@ export function FigurePage({ current }: FigurePageProps) {
 
                     {activeCategory !== 'videos' && (
                         <button
-                            onClick={() => setIsCreateModalOpen(true)}
+                            onClick={() => { setIsCreateFormOpen(true); setSelectedPost(null); }}
                             className={`z-10 w-full md:w-auto px-4 py-2.5 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 transition-all font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-md hover:scale-105 active:scale-95 ${current.fontClass}`}
                         >
                             <Icon icon="pixelarticons:plus" className="text-lg" />
@@ -799,6 +801,167 @@ export function FigurePage({ current }: FigurePageProps) {
                                 </div>
                             </div>
 
+                        </div>
+                    </div>
+                ) : isCreateFormOpen ? (
+                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 min-h-0 animate-in fade-in duration-300 flex flex-col gap-6">
+                        {/* Back Button */}
+                        <div>
+                            <button
+                                onClick={() => setIsCreateFormOpen(false)}
+                                className={`flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors bg-white/5 border border-white/10 px-3 py-1.5 rounded-xs cursor-pointer ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:arrow-left" />
+                                <span>Back to Forum</span>
+                            </button>
+                        </div>
+
+                        {/* Inline Create Post View */}
+                        <div className="bg-black/20 border border-white/10 p-5 sm:p-6 flex flex-col gap-4">
+                            <div className="flex justify-between items-start mb-2">
+                                <h3 className={`text-base sm:text-lg font-bold text-white flex items-center gap-2 ${current.fontClass}`}>
+                                    <Icon icon="pixelarticons:plus" className="text-[#3c8527]" />
+                                    <span>{current.figureForum.publishPost}</span>
+                                </h3>
+                            </div>
+
+                            <form onSubmit={handleCreatePost} className="flex flex-col gap-4">
+                                {/* Title */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postTitle}</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Slicing micro figurines instructions"
+                                        className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans"
+                                        value={newTitle}
+                                        onChange={e => setNewTitle(e.target.value)}
+                                        required
+                                    />
+                                </div>
+
+                                {/* Category Selection */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postCategory}</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setNewCategory('discussions'); }}
+                                            className={`py-2 border flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-mono font-bold ${newCategory === 'discussions' ? 'bg-[#3c8527]/15 border-[#3c8527] text-white' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
+                                        >
+                                            <Icon icon="pixelarticons:comment" />
+                                            <span>Discussion</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setNewCategory('showcase'); }}
+                                            className={`py-2 border flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-mono font-bold ${newCategory === 'showcase' ? 'bg-[#3c8527]/15 border-[#3c8527] text-white' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
+                                        >
+                                            <Icon icon="pixelarticons:image-new" />
+                                            <span>Showcase</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Description Content with Markdown Toolbar & Preview */}
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex justify-between items-center border-b border-white/10 pb-1.5 mt-1 select-none">
+                                        <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postContent}</label>
+                                        <div className="flex border border-white/10 p-0.5 bg-black/20 text-[10px]">
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditorTab('write')}
+                                                className={`px-3 py-1 cursor-pointer transition-colors border-none ${editorTab === 'write' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white'}`}
+                                            >
+                                                Write
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditorTab('preview')}
+                                                className={`px-3 py-1 cursor-pointer transition-colors border-none ${editorTab === 'preview' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white'}`}
+                                            >
+                                                Preview
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {editorTab === 'write' ? (
+                                        <div className="flex flex-col gap-1">
+                                            {/* Editor Toolbar */}
+                                            <div className="flex flex-wrap gap-1 p-1 bg-black/30 border border-b-0 border-white/10 select-none">
+                                                <button
+                                                    type="button"
+                                                    title="Code Block (```)"
+                                                    onClick={() => insertMarkdown('\n```javascript\n', '\n```\n')}
+                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold font-mono"
+                                                >
+                                                    <Icon icon="pixelarticons:code" className="text-sm" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    title="Table (|col|)"
+                                                    onClick={() => insertMarkdown('\n| Column 1 | Column 2 |\n|---|---|\n| Cell 1 | Cell 2 |\n')}
+                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
+                                                >
+                                                    <Icon icon="pixelarticons:table" className="text-sm" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    title="Image (![alt](url))"
+                                                    onClick={() => insertMarkdown('![Model figure|400]', '(/images/warrior_figure.png)')}
+                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
+                                                >
+                                                    <Icon icon="pixelarticons:image" className="text-sm" />
+                                                </button>
+                                            </div>
+                                            
+                                            {/* Textarea */}
+                                            <textarea
+                                                ref={textareaRef}
+                                                rows={6}
+                                                placeholder="Describe details, tips, guides using markdown formatting. You can insert images, tables, lists, and code blocks using the toolbar!"
+                                                className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans resize-none w-full"
+                                                value={newContent}
+                                                onChange={e => setNewContent(e.target.value)}
+                                                required
+                                            />
+                                        </div>
+                                    ) : (
+                                        /* Markdown Live Preview Container */
+                                        <div className="bg-black/60 border border-white/10 p-4 min-h-[160px] max-h-[300px] overflow-y-auto custom-scrollbar text-xs">
+                                            <ArticleMarkdown content={newContent || '*Nothing to preview yet. Click the "Write" tab to enter content.*'} />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Tags (comma separated) */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postTags}</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. PLA, BambuLab, Voxel"
+                                        className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-mono"
+                                        value={newTags}
+                                        onChange={e => setNewTags(e.target.value)}
+                                    />
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex gap-3 justify-end mt-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsCreateFormOpen(false)}
+                                        className={`px-4 py-2 border border-white/10 bg-transparent text-white/60 hover:text-white transition-colors text-xs font-semibold cursor-pointer ${current.fontClass}`}
+                                    >
+                                        {current.figureForum.cancel}
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white font-bold text-xs transition-colors cursor-pointer border-none shadow-md ${current.fontClass}`}
+                                    >
+                                        {current.figureForum.submitPost}
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 ) : (
@@ -1142,196 +1305,6 @@ export function FigurePage({ current }: FigurePageProps) {
                     </div>
                 )}
 
-                {/* PUBLISH POST MODAL OVERLAY */}
-                {isCreateModalOpen && (
-                    <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-[1000] p-4 backdrop-blur-sm pointer-events-auto animate-in fade-in duration-200">
-                        <div className="bg-[#1a1a1a] border-2 border-white/10 w-full max-w-xl p-6 shadow-2xl relative animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                            
-                            <div className="flex justify-between items-start mb-6">
-                                <h3 className={`text-base sm:text-lg font-bold text-white flex items-center gap-2 ${current.fontClass}`}>
-                                    <Icon icon="pixelarticons:plus" className="text-[#3c8527]" />
-                                    <span>{current.figureForum.publishPost}</span>
-                                </h3>
-                                <button
-                                    onClick={() => setIsCreateModalOpen(false)}
-                                    className="w-7 h-7 bg-white/5 border border-white/10 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white cursor-pointer rounded-xs"
-                                >
-                                    <Icon icon="pixelarticons:close" />
-                                </button>
-                            </div>
-
-                            <form onSubmit={handleCreatePost} className="flex flex-col gap-4">
-                                {/* Title */}
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postTitle}</label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. Slicing micro figurines instructions"
-                                        className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans"
-                                        value={newTitle}
-                                        onChange={e => setNewTitle(e.target.value)}
-                                        required
-                                    />
-                                </div>
-
-                                {/* Category Selection */}
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postCategory}</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => { setNewCategory('discussions'); }}
-                                            className={`py-2 border flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-mono font-bold ${newCategory === 'discussions' ? 'bg-[#3c8527]/15 border-[#3c8527] text-white' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
-                                        >
-                                            <Icon icon="pixelarticons:comment" />
-                                            <span>Discussion</span>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => { setNewCategory('showcase'); setHasImage(true); }}
-                                            className={`py-2 border flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-mono font-bold ${newCategory === 'showcase' ? 'bg-[#3c8527]/15 border-[#3c8527] text-white' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
-                                        >
-                                            <Icon icon="pixelarticons:image-new" />
-                                            <span>Showcase</span>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Image Attachment Toggle for Discussions */}
-                                {newCategory === 'discussions' && (
-                                    <div className="flex items-center gap-3 py-1">
-                                        <input
-                                            type="checkbox"
-                                            id="hasImageCheckbox"
-                                            className="w-4 h-4 accent-[#3c8527] cursor-pointer"
-                                            checked={hasImage}
-                                            onChange={e => setHasImage(e.target.checked)}
-                                        />
-                                        <label htmlFor="hasImageCheckbox" className="text-xs text-white/80 cursor-pointer font-sans select-none">
-                                            Attach a 3D Printed Figurine Model image
-                                        </label>
-                                    </div>
-                                )}
-
-                                {/* Image selector */}
-                                {hasImage && (
-                                    <div className="flex flex-col gap-1.5">
-                                        <label className="text-xs text-white/60 uppercase font-mono">Select Figurine Model Asset</label>
-                                        <select
-                                            className={`bg-[#222] border border-white/10 p-2.5 text-xs text-white/80 focus:outline-none focus:border-[#3c8527] cursor-pointer ${current.fontClass}`}
-                                            value={newImage}
-                                            onChange={e => setNewImage(e.target.value)}
-                                        >
-                                            <option value="/images/warrior_figure.png">Pixel Knight Warrior (Blue)</option>
-                                            <option value="/images/robot_figure.png">Neon Cyber Mecha (Robot)</option>
-                                            <option value="/images/fox_figure.png">Orange Red Fox Figurine</option>
-                                        </select>
-                                    </div>
-                                )}
-
-                                {/* Description Content with Markdown Toolbar & Preview */}
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex justify-between items-center border-b border-white/10 pb-1.5 mt-1 select-none">
-                                        <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postContent}</label>
-                                        <div className="flex border border-white/10 p-0.5 bg-black/20 text-[10px]">
-                                            <button
-                                                type="button"
-                                                onClick={() => setEditorTab('write')}
-                                                className={`px-3 py-1 cursor-pointer transition-colors border-none ${editorTab === 'write' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white'}`}
-                                            >
-                                                Write
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setEditorTab('preview')}
-                                                className={`px-3 py-1 cursor-pointer transition-colors border-none ${editorTab === 'preview' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white'}`}
-                                            >
-                                                Preview
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {editorTab === 'write' ? (
-                                        <div className="flex flex-col gap-1">
-                                            {/* Editor Toolbar */}
-                                            <div className="flex flex-wrap gap-1 p-1 bg-black/30 border border-b-0 border-white/10 select-none">
-                                                <button
-                                                    type="button"
-                                                    title="Code Block (```)"
-                                                    onClick={() => insertMarkdown('\n```javascript\n', '\n```\n')}
-                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold font-mono"
-                                                >
-                                                    <Icon icon="pixelarticons:code" className="text-sm" />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    title="Table (|col|)"
-                                                    onClick={() => insertMarkdown('\n| Column 1 | Column 2 |\n|---|---|\n| Cell 1 | Cell 2 |\n')}
-                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
-                                                >
-                                                    <Icon icon="pixelarticons:table" className="text-sm" />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    title="Image (![alt](url))"
-                                                    onClick={() => insertMarkdown('![Model figure|400]', '(/images/warrior_figure.png)')}
-                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
-                                                >
-                                                    <Icon icon="pixelarticons:image" className="text-sm" />
-                                                </button>
-                                            </div>
-                                            
-                                            {/* Textarea */}
-                                            <textarea
-                                                ref={textareaRef}
-                                                rows={6}
-                                                placeholder="Describe details, tips, guides using markdown formatting. You can insert images, tables, lists, and code blocks using the toolbar!"
-                                                className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans resize-none w-full"
-                                                value={newContent}
-                                                onChange={e => setNewContent(e.target.value)}
-                                                required
-                                            />
-                                        </div>
-                                    ) : (
-                                        /* Markdown Live Preview Container */
-                                        <div className="bg-black/60 border border-white/10 p-4 min-h-[160px] max-h-[300px] overflow-y-auto custom-scrollbar text-xs">
-                                            <ArticleMarkdown content={newContent || '*Nothing to preview yet. Click the "Write" tab to enter content.*'} />
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Tags (comma separated) */}
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postTags}</label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. PLA, BambuLab, Voxel"
-                                        className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-mono"
-                                        value={newTags}
-                                        onChange={e => setNewTags(e.target.value)}
-                                    />
-                                </div>
-
-                                {/* Action Buttons */}
-                                <div className="flex gap-3 justify-end mt-4">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsCreateModalOpen(false)}
-                                        className={`px-4 py-2 border border-white/10 bg-transparent text-white/60 hover:text-white transition-colors text-xs font-semibold cursor-pointer ${current.fontClass}`}
-                                    >
-                                        {current.figureForum.cancel}
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white font-bold text-xs transition-colors cursor-pointer border-none shadow-md ${current.fontClass}`}
-                                    >
-                                        {current.figureForum.submitPost}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
 
         </PageContainer>
     )
