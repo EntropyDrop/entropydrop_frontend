@@ -60,8 +60,8 @@ export function Skin2DImg({
     if (!base64 && !error && !showRawFallback) return null
 
     if (error) {
-        return <img src={src} alt="" className={className} style={style} />
+        return <img src={src} crossOrigin="anonymous" alt="" className={className} style={style} />
     }
 
-    return <img src={base64 || (showRawFallback ? src : undefined)} alt="" className={className} style={style} />
+    return <img src={base64 || (showRawFallback ? src : undefined)} crossOrigin={base64 ? undefined : "anonymous"} alt="" className={className} style={style} />
 }

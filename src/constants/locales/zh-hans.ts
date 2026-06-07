@@ -436,6 +436,7 @@ export default {
         ]
     },
     mcmodal: {
+        previewUnavailable: '无法预览',
         editName: '编辑名称',
         noName: '无名称',
         author: '作者',

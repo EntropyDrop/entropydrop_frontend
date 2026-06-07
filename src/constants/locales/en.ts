@@ -436,6 +436,7 @@ export default {
         ]
     },
     mcmodal: {
+        previewUnavailable: 'Preview unavailable',
         editName: 'Edit Name',
         noName: 'No Name',
         author: 'Author',
