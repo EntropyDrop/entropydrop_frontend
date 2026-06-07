@@ -638,6 +638,8 @@ export function FigurePage({ current }: FigurePageProps) {
             return b.id.localeCompare(a.id)
         })
 
+    const isZh = current.figureForum.title.includes('手办') || current.figureForum.cancel === '取消'
+
     return (
         <PageContainer className="relative">
                 
@@ -647,6 +649,18 @@ export function FigurePage({ current }: FigurePageProps) {
                         {toastMessage}
                     </div>
                 )}
+
+                {/* Under Construction Warning Banner */}
+                <div className="border border-amber-500/20 bg-amber-500/5 text-amber-200/90 px-4 py-3 text-[11px] sm:text-xs flex items-center gap-2.5 shrink-0 animate-in fade-in slide-in-from-top duration-300">
+                    <Icon icon="pixelarticons:warning-box" className="text-amber-500 text-lg flex-shrink-0 animate-pulse" />
+                    <div className="flex-1 font-sans">
+                        {isZh ? (
+                            <span><strong>建设中提示：</strong> 3D 打印手办社区目前正处于开发调试阶段，暂不可用。敬请期待！</span>
+                        ) : (
+                            <span><strong>Under Construction:</strong> The 3D Print Figure Forum is currently under active development and is temporarily unavailable. Stay tuned!</span>
+                        )}
+                    </div>
+                </div>
 
                 {/* Forum Header Banner */}
                 <div className="relative overflow-hidden border border-white/10 bg-gradient-to-r from-black/60 to-zinc-900/60 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shrink-0">
