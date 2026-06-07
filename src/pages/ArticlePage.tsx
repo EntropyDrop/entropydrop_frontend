@@ -49,7 +49,7 @@ export function ArticlePage({ current }: ArticlePageProps) {
         <PageContainer
             bg="bg-black/60 backdrop-blur-xl"
             animate="animate-in fade-in slide-in-from-bottom-4 duration-500"
-            innerPadding="p-6 sm:p-10 md:p-16"
+            innerPadding="p-10"
         >
 
             {/* Navigation */}
