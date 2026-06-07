@@ -481,7 +481,7 @@ export default {
         discordLinkText: 'Discord 社区'
     },
     public_page: {
-        title: '开放生产 / 根信任治理',
+        title: '开放生产',
         introduction: {
             title: '关于我们',
             company: '上海齐秩科技有限公司',

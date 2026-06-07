@@ -481,7 +481,7 @@ export default {
         discordLinkText: 'Discord Community'
     },
     public_page: {
-        title: 'Open Production / Root Trust Governance',
+        title: 'Open Production',
         introduction: {
             title: 'About Us',
             company: 'Shanghai EqualRank Technology Co., Ltd.',

@@ -32,7 +32,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
     const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' })
     const [isDiscoveryLoading, setIsDiscoveryLoading] = useState(false)
     const [searchParams] = useSearchParams()
-    const is3DMode = searchParams.get('view') === '3d'
+    const is3DMode = searchParams.get('view') !== 'list'
 
     const isFigureSection = location.pathname.startsWith('/figure')
     const isSkinSection = location.pathname.startsWith('/skin') || location.pathname === '/'

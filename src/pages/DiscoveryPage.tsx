@@ -15,7 +15,7 @@ interface DiscoveryPageProps {
 export function DiscoveryPage({ current }: DiscoveryPageProps) {
     const navigate = useNavigate()
     const [searchParams, setSearchParams] = useSearchParams()
-    const viewMode = searchParams.get('view') === '3d' ? '3d' : 'list'
+    const viewMode = searchParams.get('view') === 'list' ? 'list' : '3d'
 
     // List mode states
     const [items, setItems] = useState<GenerationLogItem[]>([])
