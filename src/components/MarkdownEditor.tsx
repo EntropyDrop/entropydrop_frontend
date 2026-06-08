@@ -121,6 +121,7 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
         try {
             const url = await uploadImageFile(file)
             if (editorRef.current) {
+                editorRef.current.focus()
                 editorRef.current.insertMarkdown(`![image](${url})`)
             }
         } catch (err) {
