@@ -46,6 +46,8 @@ export default {
         commentsCount: 'comments',
         hours: 'hours',
         material: 'Material',
+        bodyTypes: ['SLA', 'FDM', 'UV Inkjet 3D Printing', 'Other'],
+        colorModes: ['Stickers', 'UV Inkjet', 'Spraying', 'FDM Multi-color', 'Other'],
     },
     generate: {
         imageMode: 'Image Mode',

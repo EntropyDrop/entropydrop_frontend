@@ -19,8 +19,11 @@ import {
     codeMirrorPlugin,
     InsertThematicBreak,
     Separator,
+    imagePlugin,
+    InsertImage,
     type MDXEditorMethods
 } from '@mdxeditor/editor'
+import { apiFetch } from '../utils/api'
 
 interface MarkdownEditorProps {
     value: string
@@ -59,6 +62,22 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
                     tablePlugin(),
                     codeBlockPlugin({ defaultCodeBlockLanguage: 'javascript' }),
                     codeMirrorPlugin({ codeBlockLanguages: { js: 'JavaScript', css: 'CSS', html: 'HTML', python: 'Python', json: 'JSON' } }),
+                    imagePlugin({
+                        imageUploadHandler: async (image: File) => {
+                            const formData = new FormData()
+                            formData.append('file', image)
+                            const res = await apiFetch('/api/upload/image', {
+                                method: 'POST',
+                                body: formData
+                            })
+                            if (!res.ok) {
+                                const errorData = await res.json().catch(() => ({}))
+                                throw new Error(errorData.detail || 'Failed to upload image')
+                            }
+                            const data = await res.json()
+                            return data.url
+                        }
+                    }),
                     markdownShortcutPlugin(),
                     toolbarPlugin({
                         toolbarClassName: 'bg-zinc-950/60 border-b border-white/10 p-1 flex flex-wrap items-center gap-1 select-none',
@@ -74,6 +93,7 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
                                 <Separator />
                                 <InsertTable />
                                 <InsertCodeBlock />
+                                <InsertImage />
                                 <InsertThematicBreak />
                             </div>
                         )

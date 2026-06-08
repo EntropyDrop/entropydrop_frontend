@@ -46,6 +46,8 @@ export default {
         commentsCount: '回复',
         hours: '小时',
         material: '材料',
+        bodyTypes: ['单色光固化', 'fdm', '光固化喷墨打印 (UV Inkjet 3D Printing)', '其他'],
+        colorModes: ['贴纸', 'UV喷墨', '喷涂', 'fdm多色', '其他'],
     },
     generate: {
         imageMode: '图片生成',
