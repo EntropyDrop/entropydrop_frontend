@@ -29,11 +29,11 @@ interface ForumComment {
     replies?: ForumComment[]
 }
 
-const BODY_TYPES_ZH = ['单色光固化', 'fdm', '光固化喷墨打印 (UV Inkjet 3D Printing)'];
-const BODY_TYPES_EN = ['SLA', 'FDM', 'UV Inkjet 3D Printing'];
+const BODY_TYPES_ZH = ['单色光固化', 'fdm', '光固化喷墨打印 (UV Inkjet 3D Printing)', '其他'];
+const BODY_TYPES_EN = ['SLA', 'FDM', 'UV Inkjet 3D Printing', 'Other'];
 
-const MULTICOLOR_TYPES_ZH = ['贴纸', 'UV喷墨', '喷涂', 'fdm多色'];
-const MULTICOLOR_TYPES_EN = ['Stickers', 'UV Inkjet', 'Spraying', 'FDM Multi-color'];
+const MULTICOLOR_TYPES_ZH = ['贴纸', 'UV喷墨', '喷涂', 'fdm多色', '其他'];
+const MULTICOLOR_TYPES_EN = ['Stickers', 'UV Inkjet', 'Spraying', 'FDM Multi-color', 'Other'];
 
 interface ForumPost {
     id: string
@@ -199,7 +199,7 @@ export function FigurePage({ current }: FigurePageProps) {
     const [newContent, setNewContent] = useState('')
     const [newCategory, setNewCategory] = useState<'discussions' | 'showcase'>('discussions')
     const [newTags, setNewTags] = useState('')
-    const [newBodyType, setNewBodyType] = useState('单色光固化')
+    const [newBodyType, setNewBodyType] = useState('fdm')
     const [newMultiColorType, setNewMultiColorType] = useState('贴纸')
 
 
@@ -613,7 +613,7 @@ export function FigurePage({ current }: FigurePageProps) {
         setNewContent('')
         setNewCategory('discussions')
         setNewTags('')
-        setNewBodyType('单色光固化')
+        setNewBodyType('fdm')
         setNewMultiColorType('贴纸')
 
         triggerToast('Post published successfully!')
