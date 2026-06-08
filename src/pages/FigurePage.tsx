@@ -193,8 +193,13 @@ function CommentNode({ comment, current, onReply }: CommentNodeProps) {
 }
 
 const extractFirstImageUrl = (markdown: string): string | undefined => {
+    // 1. Try markdown image syntax
     const match = markdown.match(/!\[.*?\]\((.*?)\)/);
-    return match ? match[1] : undefined;
+    if (match) return match[1];
+    
+    // 2. Try HTML img src syntax
+    const htmlMatch = markdown.match(/<img\s+[^>]*src=["']([^"']+)["']/i);
+    return htmlMatch ? htmlMatch[1] : undefined;
 };
 
 export function FigurePage({ current }: FigurePageProps) {
@@ -684,7 +689,13 @@ export function FigurePage({ current }: FigurePageProps) {
                         {/* Publish Post button */}
                         {activeCategory !== 'videos' && (
                             <button
-                                onClick={() => { setIsCreateFormOpen(true); setSelectedPost(null); }}
+                                onClick={() => {
+                                    setIsCreateFormOpen(true);
+                                    setSelectedPost(null);
+                                    if (activeCategory === 'showcase' || activeCategory === 'discussions') {
+                                        setNewCategory(activeCategory);
+                                    }
+                                }}
                                 className={`px-3 py-1.5 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 transition-all font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:scale-105 active:scale-95 text-xs ${current.fontClass}`}
                             >
                                 <Icon icon="pixelarticons:plus" className="text-sm" />
