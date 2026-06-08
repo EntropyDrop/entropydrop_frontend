@@ -198,7 +198,6 @@ export function FigurePage({ current }: FigurePageProps) {
     const [newTitle, setNewTitle] = useState('')
     const [newContent, setNewContent] = useState('')
     const [newCategory, setNewCategory] = useState<'discussions' | 'showcase'>('discussions')
-    const [newTags, setNewTags] = useState('')
     const [newBodyType, setNewBodyType] = useState('fdm')
     const [newMultiColorType, setNewMultiColorType] = useState('贴纸')
 
@@ -578,7 +577,8 @@ export function FigurePage({ current }: FigurePageProps) {
             return
         }
 
-        const tagList = newTags.split(',').map(t => t.trim()).filter(t => t.length > 0)
+        // Deriving tags from bodyType and multiColorType (instead of manual tag input)
+        const tagList = [newBodyType, newMultiColorType].filter(Boolean)
 
         const createdPost: ForumPost = {
             id: `post-${Date.now()}`,
@@ -612,7 +612,6 @@ export function FigurePage({ current }: FigurePageProps) {
         setNewTitle('')
         setNewContent('')
         setNewCategory('discussions')
-        setNewTags('')
         setNewBodyType('fdm')
         setNewMultiColorType('贴纸')
 
@@ -944,17 +943,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                     />
                                 </div>
 
-                                {/* Tags (comma separated) */}
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postTags}</label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. PLA, BambuLab, Voxel"
-                                        className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-mono"
-                                        value={newTags}
-                                        onChange={e => setNewTags(e.target.value)}
-                                    />
-                                </div>
+
 
                                 {/* Action Buttons */}
                                 <div className="flex gap-3 justify-end mt-4">
