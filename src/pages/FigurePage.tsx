@@ -199,6 +199,11 @@ function CommentNode({ comment, current, onReply }: CommentNodeProps) {
     )
 }
 
+const extractFirstImageUrl = (markdown: string): string | undefined => {
+    const match = markdown.match(/!\[.*?\]\((.*?)\)/);
+    return match ? match[1] : undefined;
+};
+
 export function FigurePage({ current }: FigurePageProps) {
     const [searchParams] = useSearchParams()
     const activeCategory = searchParams.get('category') || 'discussions'
@@ -217,8 +222,6 @@ export function FigurePage({ current }: FigurePageProps) {
     const [newCategory, setNewCategory] = useState<'discussions' | 'showcase'>('discussions')
     const [newBodyType, setNewBodyType] = useState('Other')
     const [newMultiColorType, setNewMultiColorType] = useState('Stickers')
-    const [newImage, setNewImage] = useState<string | undefined>(undefined)
-    const [isUploadingImage, setIsUploadingImage] = useState(false)
 
     // Comment input state
     const [commentText, setCommentText] = useState('')
@@ -506,52 +509,7 @@ export function FigurePage({ current }: FigurePageProps) {
     }
 
     // Image upload handler
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
-        if (!file) return
 
-        if (file.size > 512 * 1024) {
-            triggerToast(isZh ? '文件太大，最大支持 512KB' : 'File too large, max support 512KB')
-            return
-        }
-
-        setIsUploadingImage(true)
-        try {
-            const res = await apiFetch('/api/upload/presigned-url', {
-                method: 'POST',
-                body: JSON.stringify({
-                    filename: file.name,
-                    content_type: file.type
-                })
-            })
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}))
-                throw new Error(errData.detail || 'Failed to get upload config')
-            }
-            const { uploadUrl, fields, fileUrl } = await res.json()
-
-            const formData = new FormData()
-            Object.entries(fields).forEach(([k, v]) => {
-                formData.append(k, v as string)
-            })
-            formData.append('file', file)
-
-            const uploadRes = await fetch(uploadUrl, {
-                method: 'POST',
-                body: formData
-            })
-            if (!uploadRes.ok) {
-                throw new Error('S3 upload failed')
-            }
-            setNewImage(fileUrl)
-            triggerToast(isZh ? '图片上传成功！' : 'Image uploaded successfully!')
-        } catch (err: any) {
-            console.error(err)
-            triggerToast(err.message || 'Image upload failed')
-        } finally {
-            setIsUploadingImage(false)
-        }
-    }
 
     // Create post handler
     const handleCreatePost = async (e: React.FormEvent) => {
@@ -561,8 +519,9 @@ export function FigurePage({ current }: FigurePageProps) {
             return
         }
 
-        if (newCategory === 'showcase' && !newImage) {
-            triggerToast(isZh ? '玩家晒图必须上传图片附件！' : 'Showcase posts require an image attachment!')
+        const parsedImage = extractFirstImageUrl(newContent)
+        if (newCategory === 'showcase' && !parsedImage) {
+            triggerToast(isZh ? '玩家晒图必须包含图片！' : 'Showcase posts must contain at least one image!')
             return
         }
 
@@ -575,7 +534,7 @@ export function FigurePage({ current }: FigurePageProps) {
                     category: newCategory,
                     body_type: newBodyType,
                     multi_color_type: newMultiColorType,
-                    image: newImage
+                    image: parsedImage
                 })
             })
 
@@ -589,7 +548,6 @@ export function FigurePage({ current }: FigurePageProps) {
                 setNewCategory('discussions')
                 setNewBodyType('Other')
                 setNewMultiColorType('Stickers')
-                setNewImage(undefined)
 
                 triggerToast('Post published successfully!')
             } else {
@@ -961,39 +919,6 @@ export function FigurePage({ current }: FigurePageProps) {
                                 </div>
                             </div>
 
-                            {/* Image Attachment (Optional for Discussions, Required for Showcase) */}
-                            <div className="flex flex-col gap-1.5">
-                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>
-                                    {isZh ? '图片附件' : 'Image Attachment'}
-                                    {newCategory === 'showcase' && <span className="text-red-500 ml-1">*</span>}
-                                </label>
-                                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-                                    <label className="px-4 py-2 border border-white/10 hover:border-[#3c8527] bg-white/5 hover:bg-[#3c8527]/10 text-white text-xs font-semibold cursor-pointer transition-all flex items-center gap-2">
-                                        <Icon icon={isUploadingImage ? "pixelarticons:loader" : "pixelarticons:upload"} className={isUploadingImage ? "animate-spin" : ""} />
-                                        <span>{isUploadingImage ? (isZh ? '上传中...' : 'Uploading...') : (isZh ? '选择图片 (最大 512KB)' : 'Choose Image (Max 512KB)')}</span>
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            className="hidden"
-                                            onChange={handleImageUpload}
-                                            disabled={isUploadingImage}
-                                        />
-                                    </label>
-
-                                    {newImage && (
-                                        <div className="relative w-20 h-20 bg-zinc-900 border border-white/10 rounded-sm overflow-hidden flex items-center justify-center p-1 group">
-                                            <img src={newImage} alt="Preview" className="max-w-full max-h-full object-contain" />
-                                            <button
-                                                type="button"
-                                                onClick={() => setNewImage(undefined)}
-                                                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-red-500 border-none cursor-pointer"
-                                            >
-                                                <Icon icon="pixelarticons:trash" className="text-base" />
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
 
                         {/* Description Content with WYSIWYG MDXEditor */}
                             <div className="flex flex-col gap-2">
