@@ -78,10 +78,10 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                     <div className="flex items-center gap-4 sm:gap-6 min-w-0">
                         {/* Stacked Navigation Container */}
                         <div className="flex flex-col items-end gap-1.5 shrink-0">
-                            {/* Top Row: Switcher and Global Links */}
-                            <div className="hidden lg:flex items-center gap-3 sm:gap-4 shrink-0">
+                            {/* Top Row: Switcher and UserMenu */}
+                            <div className="flex items-center gap-3 sm:gap-4 shrink-0 pointer-events-auto">
                                 {/* First-Level Navigation Switcher */}
-                                <div className="flex border border-white/10 p-0.5 bg-black/40 backdrop-blur-md gap-0.5 pointer-events-auto">
+                                <div className="hidden lg:flex border border-white/10 p-0.5 bg-black/40 backdrop-blur-md gap-0.5">
                                     {TOP_NAV_ITEMS.map((item) => {
                                         const isCurrentSection = item.key === 'skin'
                                             ? isSkinSection
@@ -102,29 +102,13 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                     })}
                                 </div>
 
-                                {/* Global Platform Links (Pro & Public) */}
-                                <div className="flex items-center gap-1 sm:gap-2 pointer-events-auto">
-                                    <Link
-                                        to="/pro"
-                                        className={`px-2 py-1.5 text-[11px] sm:text-sm font-semibold cursor-pointer transition-colors flex items-center gap-1.5 no-underline hover:bg-white/5 border-none ${location.pathname.startsWith('/pro')
-                                            ? 'text-white bg-white/10 font-bold opacity-100'
-                                            : 'text-white/60 hover:text-white hover:opacity-100'
-                                            } ${current.fontClass}`}
-                                    >
-                                        <Icon icon="pixelarticons:zap" className="text-sm sm:text-base" />
-                                        <span>{current.nav.pro}</span>
-                                    </Link>
-                                    <Link
-                                        to="/public"
-                                        className={`px-2 py-1.5 text-[11px] sm:text-sm font-semibold cursor-pointer transition-colors flex items-center gap-1.5 no-underline hover:bg-white/5 border-none ${location.pathname.startsWith('/public')
-                                            ? 'text-white bg-white/10 font-bold opacity-100'
-                                            : 'text-white/60 hover:text-white hover:opacity-100'
-                                            } ${current.fontClass}`}
-                                    >
-                                        <Icon icon="pixelarticons:binary" className="text-sm sm:text-base" />
-                                        <span>{current.nav.public}</span>
-                                    </Link>
-                                </div>
+                                <UserMenu
+                                    current={current}
+                                    lang={lang}
+                                    setLang={setLang}
+                                    isAuto={isAuto}
+                                    setIsAuto={setIsAuto}
+                                />
                             </div>
 
                             {/* Second-Level Sub-Navigation */}
@@ -157,14 +141,6 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                 })}
                             </div>
                         </div>
-
-                        <UserMenu
-                            current={current}
-                            lang={lang}
-                            setLang={setLang}
-                            isAuto={isAuto}
-                            setIsAuto={setIsAuto}
-                        />
                     </div>
                 </div>
             </div>
