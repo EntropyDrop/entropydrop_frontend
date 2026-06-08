@@ -29,6 +29,12 @@ interface ForumComment {
     replies?: ForumComment[]
 }
 
+const BODY_TYPES_ZH = ['单色光固化', 'fdm', '3D全彩光固化'];
+const BODY_TYPES_EN = ['Mono SLA', 'FDM', '3D Full-Color SLA'];
+
+const MULTICOLOR_TYPES_ZH = ['贴纸', '3D全彩光固化', '2D全彩光固化', '喷涂', 'fdm多色'];
+const MULTICOLOR_TYPES_EN = ['Stickers', '3D Full-Color SLA', '2D Full-Color SLA', 'Spraying', 'FDM Multi-color'];
+
 interface ForumPost {
     id: string
     title: string
@@ -46,6 +52,8 @@ interface ForumPost {
     printSettings: PrintSettings
     comments: ForumComment[]
     createdAt: string
+    bodyType?: string
+    multiColorType?: string
 }
 
 interface YoutubeVideo {
@@ -191,6 +199,8 @@ export function FigurePage({ current }: FigurePageProps) {
     const [newContent, setNewContent] = useState('')
     const [newCategory, setNewCategory] = useState<'discussions' | 'showcase'>('discussions')
     const [newTags, setNewTags] = useState('')
+    const [newBodyType, setNewBodyType] = useState('单色光固化')
+    const [newMultiColorType, setNewMultiColorType] = useState('贴纸')
 
 
 
@@ -268,7 +278,9 @@ export function FigurePage({ current }: FigurePageProps) {
                     createdAt: '1 hour ago'
                 }
             ],
-            createdAt: '4 hours ago'
+            createdAt: '4 hours ago',
+            bodyType: 'fdm',
+            multiColorType: '贴纸'
         },
         {
             id: 'post-2',
@@ -325,7 +337,9 @@ export function FigurePage({ current }: FigurePageProps) {
                     ]
                 }
             ],
-            createdAt: '8 hours ago'
+            createdAt: '8 hours ago',
+            bodyType: 'fdm',
+            multiColorType: 'fdm多色'
         },
         {
             id: 'post-3',
@@ -356,7 +370,9 @@ export function FigurePage({ current }: FigurePageProps) {
                     createdAt: '1 day ago'
                 }
             ],
-            createdAt: '1 day ago'
+            createdAt: '1 day ago',
+            bodyType: '单色光固化',
+            multiColorType: '喷涂'
         },
         {
             id: 'post-4',
@@ -377,7 +393,9 @@ export function FigurePage({ current }: FigurePageProps) {
                 material: 'PLA'
             },
             comments: [],
-            createdAt: '2 days ago'
+            createdAt: '2 days ago',
+            bodyType: '3D全彩光固化',
+            multiColorType: '3D全彩光固化'
         }
     ])
 
@@ -583,7 +601,9 @@ export function FigurePage({ current }: FigurePageProps) {
                 material: ''
             },
             comments: [],
-            createdAt: 'Just now'
+            createdAt: 'Just now',
+            bodyType: newBodyType,
+            multiColorType: newMultiColorType
         }
 
         setPosts([createdPost, ...posts])
@@ -593,6 +613,8 @@ export function FigurePage({ current }: FigurePageProps) {
         setNewContent('')
         setNewCategory('discussions')
         setNewTags('')
+        setNewBodyType('单色光固化')
+        setNewMultiColorType('贴纸')
 
         triggerToast('Post published successfully!')
     }
@@ -710,6 +732,24 @@ export function FigurePage({ current }: FigurePageProps) {
                             <h2 className={`text-lg sm:text-2xl font-bold leading-snug text-white ${current.fontClass}`}>
                                 {selectedPost.title}
                             </h2>
+
+                            {/* Body Type & Multicolor Metadata */}
+                            {(selectedPost.bodyType || selectedPost.multiColorType) && (
+                                <div className="flex flex-wrap gap-4 text-[10px] sm:text-xs bg-white/5 border border-white/10 p-3 select-none">
+                                    {selectedPost.bodyType && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-white/40">{isZh ? '主体类型:' : 'Body Type:'}</span>
+                                            <span className="text-[#5cff5c] font-semibold bg-[#3c8527]/15 border border-[#3c8527]/30 px-2 py-0.5 rounded-xs font-mono">{selectedPost.bodyType}</span>
+                                        </div>
+                                    )}
+                                    {selectedPost.multiColorType && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-white/40">{isZh ? '多色处理:' : 'Color Mode:'}</span>
+                                            <span className="text-cyan-400 font-semibold bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5 rounded-xs font-mono">{selectedPost.multiColorType}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Body Content */}
                             <div className="text-xs sm:text-sm text-white/80 leading-relaxed font-sans border-b border-white/5 pb-4 mb-2">
@@ -855,6 +895,41 @@ export function FigurePage({ current }: FigurePageProps) {
                                             <Icon icon="pixelarticons:image-new" />
                                             <span>Showcase</span>
                                         </button>
+                                    </div>
+                                </div>
+
+                                {/* Body Type & Multicolor Type Selection */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {/* Body Type Selector */}
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs text-white/60 uppercase font-mono">{isZh ? '主体类型' : 'Body Type'}</label>
+                                        <select
+                                            value={newBodyType}
+                                            onChange={e => setNewBodyType(e.target.value)}
+                                            className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans w-full"
+                                        >
+                                            {(isZh ? BODY_TYPES_ZH : BODY_TYPES_EN).map((t, idx) => (
+                                                <option key={t} value={BODY_TYPES_ZH[idx]} className="bg-zinc-900 text-white">
+                                                    {t}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Multicolor Type Selector */}
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs text-white/60 uppercase font-mono">{isZh ? '多色处理' : 'Color Mode'}</label>
+                                        <select
+                                            value={newMultiColorType}
+                                            onChange={e => setNewMultiColorType(e.target.value)}
+                                            className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans w-full"
+                                        >
+                                            {(isZh ? MULTICOLOR_TYPES_ZH : MULTICOLOR_TYPES_EN).map((t, idx) => (
+                                                <option key={t} value={MULTICOLOR_TYPES_ZH[idx]} className="bg-zinc-900 text-white">
+                                                    {t}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
                                 </div>
 
@@ -1012,7 +1087,17 @@ export function FigurePage({ current }: FigurePageProps) {
                                                             <Icon icon="pixelarticons:sun" className="text-xs" />
                                                             <span>{post.views}</span>
                                                         </div>
-                                                        <div className="flex gap-1 ml-auto">
+                                                        <div className="flex flex-wrap gap-1.5 ml-auto">
+                                                            {post.bodyType && (
+                                                                <span className="text-[7px] text-[#5cff5c] bg-[#3c8527]/15 border border-[#3c8527]/30 px-1.5 py-0.5 uppercase rounded-xs font-mono select-none">
+                                                                    {post.bodyType}
+                                                                </span>
+                                                            )}
+                                                            {post.multiColorType && (
+                                                                <span className="text-[7px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 uppercase rounded-xs font-mono select-none">
+                                                                    {post.multiColorType}
+                                                                </span>
+                                                            )}
                                                             {post.tags.slice(0, 3).map(tag => (
                                                                 <span key={tag} className="text-[7px] text-white/45 bg-white/5 border border-white/10 px-1 py-0.2 uppercase rounded-xs">
                                                                     #{tag}
@@ -1094,6 +1179,16 @@ export function FigurePage({ current }: FigurePageProps) {
                                                         </p>
 
                                                         <div className="flex flex-wrap gap-1 mt-3">
+                                                            {post.bodyType && (
+                                                                <span className="text-[8px] text-[#5cff5c] bg-[#3c8527]/15 border border-[#3c8527]/30 px-1.5 py-0.5 rounded-sm font-mono select-none">
+                                                                    {post.bodyType}
+                                                                </span>
+                                                            )}
+                                                            {post.multiColorType && (
+                                                                <span className="text-[8px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 rounded-sm font-mono select-none">
+                                                                    {post.multiColorType}
+                                                                </span>
+                                                            )}
                                                             {post.tags.map(tag => (
                                                                 <span key={tag} className="text-[8px] text-white/45 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded-sm">
                                                                     #{tag}
