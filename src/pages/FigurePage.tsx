@@ -221,7 +221,7 @@ export function FigurePage({ current }: FigurePageProps) {
     const [newContent, setNewContent] = useState('')
     const [newCategory, setNewCategory] = useState<'discussions' | 'showcase'>('discussions')
     const [newBodyType, setNewBodyType] = useState('Other')
-    const [newMultiColorType, setNewMultiColorType] = useState('Stickers')
+    const [newMultiColorType, setNewMultiColorType] = useState('Other')
 
     // Comment input state
     const [commentText, setCommentText] = useState('')
@@ -547,7 +547,7 @@ export function FigurePage({ current }: FigurePageProps) {
                 setNewContent('')
                 setNewCategory('discussions')
                 setNewBodyType('Other')
-                setNewMultiColorType('Stickers')
+                setNewMultiColorType('Other')
 
                 triggerToast('Post published successfully!')
             } else {
