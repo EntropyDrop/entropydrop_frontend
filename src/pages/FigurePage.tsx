@@ -5,6 +5,7 @@ import { Icon } from '@iconify/react'
 import { apiFetch } from '../utils/api'
 import type { LangData } from '../constants/lang'
 import { ArticleMarkdown } from '../components/ArticleMarkdown'
+import { MarkdownEditor } from '../components/MarkdownEditor'
 
 interface FigurePageProps {
     current: LangData
@@ -191,30 +192,7 @@ export function FigurePage({ current }: FigurePageProps) {
     const [newCategory, setNewCategory] = useState<'discussions' | 'showcase'>('discussions')
     const [newTags, setNewTags] = useState('')
 
-    // Markdown editor states & selection helper
-    const [editorTab, setEditorTab] = useState<'write' | 'preview'>('write')
-    const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-    const insertMarkdown = (before: string, after: string = '') => {
-        const textarea = textareaRef.current
-        if (!textarea) {
-            setNewContent(prev => prev + before + after)
-            return
-        }
-        const start = textarea.selectionStart
-        const end = textarea.selectionEnd
-        const text = textarea.value
-        const selected = text.substring(start, end)
-        const replacement = before + (selected || '') + after
-        const newVal = text.substring(0, start) + replacement + text.substring(end)
-        setNewContent(newVal)
-        
-        // Return focus and restore selection
-        setTimeout(() => {
-            textarea.focus()
-            textarea.setSelectionRange(start + before.length, start + before.length + (selected || '').length)
-        }, 0)
-    }
 
     // Comment input state
     const [commentText, setCommentText] = useState('')
@@ -880,75 +858,15 @@ export function FigurePage({ current }: FigurePageProps) {
                                     </div>
                                 </div>
 
-                                {/* Description Content with Markdown Toolbar & Preview */}
+                                {/* Description Content with WYSIWYG MDXEditor */}
                                 <div className="flex flex-col gap-2">
-                                    <div className="flex justify-between items-center border-b border-white/10 pb-1.5 mt-1 select-none">
-                                        <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postContent}</label>
-                                        <div className="flex border border-white/10 p-0.5 bg-black/20 text-[10px]">
-                                            <button
-                                                type="button"
-                                                onClick={() => setEditorTab('write')}
-                                                className={`px-3 py-1 cursor-pointer transition-colors border-none ${editorTab === 'write' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white'}`}
-                                            >
-                                                Write
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setEditorTab('preview')}
-                                                className={`px-3 py-1 cursor-pointer transition-colors border-none ${editorTab === 'preview' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white'}`}
-                                            >
-                                                Preview
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {editorTab === 'write' ? (
-                                        <div className="flex flex-col gap-1">
-                                            {/* Editor Toolbar */}
-                                            <div className="flex flex-wrap gap-1 p-1 bg-black/30 border border-b-0 border-white/10 select-none">
-                                                <button
-                                                    type="button"
-                                                    title="Code Block (```)"
-                                                    onClick={() => insertMarkdown('\n```javascript\n', '\n```\n')}
-                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold font-mono"
-                                                >
-                                                    <Icon icon="pixelarticons:code" className="text-sm" />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    title="Table (|col|)"
-                                                    onClick={() => insertMarkdown('\n| Column 1 | Column 2 |\n|---|---|\n| Cell 1 | Cell 2 |\n')}
-                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
-                                                >
-                                                    <Icon icon="pixelarticons:table" className="text-sm" />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    title="Image (![alt](url))"
-                                                    onClick={() => insertMarkdown('![Model figure|400]', '(/images/warrior_figure.png)')}
-                                                    className="p-1 px-2 border border-white/5 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs cursor-pointer flex items-center justify-center gap-1 font-semibold"
-                                                >
-                                                    <Icon icon="pixelarticons:image" className="text-sm" />
-                                                </button>
-                                            </div>
-                                            
-                                            {/* Textarea */}
-                                            <textarea
-                                                ref={textareaRef}
-                                                rows={6}
-                                                placeholder="Describe details, tips, guides using markdown formatting. You can insert images, tables, lists, and code blocks using the toolbar!"
-                                                className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans resize-none w-full"
-                                                value={newContent}
-                                                onChange={e => setNewContent(e.target.value)}
-                                                required
-                                            />
-                                        </div>
-                                    ) : (
-                                        /* Markdown Live Preview Container */
-                                        <div className="bg-black/60 border border-white/10 p-4 min-h-[160px] max-h-[300px] overflow-y-auto custom-scrollbar text-xs">
-                                            <ArticleMarkdown content={newContent || '*Nothing to preview yet. Click the "Write" tab to enter content.*'} />
-                                        </div>
-                                    )}
+                                    <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postContent}</label>
+                                    <MarkdownEditor
+                                        value={newContent}
+                                        onChange={setNewContent}
+                                        placeholder="Describe details, tips, guides using the WYSIWYG editor..."
+                                        current={current}
+                                    />
                                 </div>
 
                                 {/* Tags (comma separated) */}
