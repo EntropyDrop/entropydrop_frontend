@@ -74,14 +74,7 @@ interface ForumPost {
 
 interface YoutubeVideo {
     id: string
-    title: string
-    description: string
     youtubeId: string
-    thumbnailUrl: string
-    channelName: string
-    views: string
-    duration: string
-    publishedAt: string
 }
 
 interface CommentNodeProps {
@@ -212,9 +205,8 @@ export function FigurePage({ current }: FigurePageProps) {
     const [searchQuery, setSearchQuery] = useState('')
     const [searchInput, setSearchInput] = useState('')
     const [sortBy, setSortBy] = useState<'latest' | 'popular'>('latest')
-    const [selectedPost, setSelectedPost] = useState<ForumPost | null>(null)
+        const [selectedPost, setSelectedPost] = useState<ForumPost | null>(null)
     const [isCreateFormOpen, setIsCreateFormOpen] = useState(false)
-    const [selectedVideo, setSelectedVideo] = useState<YoutubeVideo | null>(null)
 
     // Current logged in user info (mocked/fetched)
     const [currentUser, setCurrentUser] = useState<{ username: string; picture: string; is_pro: boolean; is_admin?: boolean } | null>(null)
@@ -222,10 +214,7 @@ export function FigurePage({ current }: FigurePageProps) {
     // Video form states
     const [youtubeVideos, setYoutubeVideos] = useState<YoutubeVideo[]>([])
     const [isAddVideoFormOpen, setIsAddVideoFormOpen] = useState(false)
-    const [newVideoTitle, setNewVideoTitle] = useState('')
     const [newVideoUrl, setNewVideoUrl] = useState('')
-    const [newVideoDescription, setNewVideoDescription] = useState('')
-    const [newVideoDuration, setNewVideoDuration] = useState('')
 
     const [newTitle, setNewTitle] = useState('')
     const [newContent, setNewContent] = useState('')
@@ -388,16 +377,13 @@ export function FigurePage({ current }: FigurePageProps) {
 
     const handleCreateVideo = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!newVideoTitle.trim() || !newVideoUrl.trim()) return
+        if (!newVideoUrl.trim()) return
 
         try {
             const res = await apiFetch('/api/forum/videos', {
                 method: 'POST',
                 body: JSON.stringify({
-                    title: newVideoTitle.trim(),
-                    youtube_url: newVideoUrl.trim(),
-                    description: newVideoDescription.trim(),
-                    duration: newVideoDuration.trim()
+                    youtube_url: newVideoUrl.trim()
                 })
             })
 
@@ -405,10 +391,7 @@ export function FigurePage({ current }: FigurePageProps) {
                 const createdVideo = await res.json()
                 setYoutubeVideos(prev => [createdVideo, ...prev])
                 setIsAddVideoFormOpen(false)
-                setNewVideoTitle('')
                 setNewVideoUrl('')
-                setNewVideoDescription('')
-                setNewVideoDuration('')
                 triggerToast('Video added successfully!')
             } else {
                 const err = await res.json().catch(() => ({}))
@@ -1032,19 +1015,6 @@ export function FigurePage({ current }: FigurePageProps) {
                         </div>
 
                         <form onSubmit={handleCreateVideo} className="flex flex-col gap-4">
-                            {/* Video Title */}
-                            <div className="flex flex-col gap-1.5">
-                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? '视频标题' : 'Video Title'}</label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. Slicing micro figurines instructions"
-                                    className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] ${current.fontClass}`}
-                                    value={newVideoTitle}
-                                    onChange={e => setNewVideoTitle(e.target.value)}
-                                    required
-                                />
-                            </div>
-
                             {/* YouTube URL */}
                             <div className="flex flex-col gap-1.5">
                                 <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? 'YouTube 链接或视频 ID' : 'YouTube Link or Video ID'}</label>
@@ -1055,30 +1025,6 @@ export function FigurePage({ current }: FigurePageProps) {
                                     value={newVideoUrl}
                                     onChange={e => setNewVideoUrl(e.target.value)}
                                     required
-                                />
-                            </div>
-
-                            {/* Video Description */}
-                            <div className="flex flex-col gap-1.5">
-                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? '视频描述' : 'Video Description'}</label>
-                                <textarea
-                                    rows={4}
-                                    placeholder="Enter video description..."
-                                    className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] resize-none ${current.fontClass}`}
-                                    value={newVideoDescription}
-                                    onChange={e => setNewVideoDescription(e.target.value)}
-                                />
-                            </div>
-
-                            {/* Video Duration */}
-                            <div className="flex flex-col gap-1.5">
-                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? '视频时长' : 'Video Duration'}</label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. 12:34"
-                                    className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] ${current.fontClass}`}
-                                    value={newVideoDuration}
-                                    onChange={e => setNewVideoDuration(e.target.value)}
                                 />
                             </div>
 
@@ -1287,79 +1233,38 @@ export function FigurePage({ current }: FigurePageProps) {
                             </div>
                         )}
 
-                        {/* Category 3: Videos (YouTube list with modal player) */}
+                        {/* Category 3: Videos (Direct YouTube embeds) */}
                         {activeCategory === 'videos' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
-                                {youtubeVideos
-                                    .filter(v => searchQuery.trim() === '' ||
-                                        v.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                        v.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                        v.channelName.toLowerCase().includes(searchQuery.toLowerCase())
-                                    )
-                                    .map(video => (
-                                        <div
-                                            key={video.id}
-                                            onClick={() => setSelectedVideo(video)}
-                                            className="bg-black/30 border border-white/10 flex flex-col cursor-pointer group hover:border-[#3c8527]/50 transition-all duration-300 shadow-lg overflow-hidden relative"
-                                        >
-                                            {currentUser?.is_admin && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDeleteVideo(video.id);
-                                                    }}
-                                                    className="absolute top-2 right-2 z-20 bg-red-700/80 hover:bg-red-600 text-white p-1 border border-white/10 transition-colors cursor-pointer"
-                                                    title={isZh ? '删除视频' : 'Delete Video'}
-                                                >
-                                                    <Icon icon="pixelarticons:trash" className="text-xs" />
-                                                </button>
-                                            )}
-                                            {/* Thumbnail Container */}
-                                            <div className="w-full aspect-video bg-zinc-950 relative overflow-hidden flex items-center justify-center border-b border-white/5">
-                                                <img
-                                                    src={video.thumbnailUrl}
-                                                    alt={video.title}
-                                                    className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-102 transition-all duration-300"
-                                                />
-                                                {/* Duration tag */}
-                                                <span className="absolute bottom-2 right-2 bg-black/75 px-1.5 py-0.5 text-[9px] font-mono tracking-widest text-white/90">
-                                                    {video.duration}
-                                                </span>
-
-                                                {/* Play Overlay Button */}
-                                                <div className="absolute inset-0 flex items-center justify-center">
-                                                    <div className="w-12 h-12 bg-black/60 border border-white/20 group-hover:border-red-500 group-hover:bg-red-500 flex items-center justify-center text-white transition-all shadow-md group-hover:scale-110 duration-200">
-                                                        <Icon icon="pixelarticons:play" className="text-xl ml-0.5" />
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Video Info details */}
-                                            <div className="p-4 flex-1 flex flex-col justify-between gap-3 bg-zinc-900/10">
-                                                <div className="flex flex-col gap-1.5">
-                                                    <h3 className={`text-xs sm:text-sm font-bold text-white group-hover:text-[#5cff5c] transition-colors line-clamp-2 leading-snug ${current.fontClass}`}>
-                                                        {video.title}
-                                                    </h3>
-                                                    <p className={`text-[11px] text-white/50 line-clamp-2 leading-relaxed m-0 ${current.fontClass}`}>
-                                                        {video.description}
-                                                    </p>
-                                                </div>
-
-                                                <div className="flex items-center justify-between text-[10px] text-white/40 border-t border-white/5 pt-2 mt-1">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <Icon icon="pixelarticons:user" className="text-red-500/80" />
-                                                        <span className="font-semibold text-white/60">{video.channelName}</span>
-                                                    </div>
-                                                    <div className="flex gap-2 font-mono text-[9px]">
-                                                        <span>{video.views}</span>
-                                                        <span>•</span>
-                                                        <span>{video.publishedAt}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                {youtubeVideos.map(video => (
+                                    <div
+                                        key={video.id}
+                                        className="bg-black/30 border border-white/10 flex flex-col group hover:border-[#3c8527]/50 transition-all duration-300 shadow-lg overflow-hidden relative text-white"
+                                    >
+                                        {currentUser?.is_admin && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteVideo(video.id);
+                                                }}
+                                                className="absolute top-2 right-2 z-20 bg-red-700/80 hover:bg-red-600 text-white p-1 border border-white/10 transition-colors cursor-pointer"
+                                                title={isZh ? '删除视频' : 'Delete Video'}
+                                            >
+                                                <Icon icon="pixelarticons:trash" className="text-xs" />
+                                            </button>
+                                        )}
+                                        {/* Embedded Iframe Container */}
+                                        <div className="w-full aspect-video bg-zinc-950 relative border-b border-white/5">
+                                            <iframe
+                                                src={`https://www.youtube.com/embed/${video.youtubeId}`}
+                                                className="w-full h-full border-none"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                                allowFullScreen
+                                                title={`YouTube video player - ${video.youtubeId}`}
+                                            ></iframe>
                                         </div>
-                                    ))
-                                }
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -1391,53 +1296,7 @@ export function FigurePage({ current }: FigurePageProps) {
 
 
 
-            {/* YOUTUBE VIDEO PLAYER MODAL OVERLAY */}
-            {selectedVideo && (
-                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[1000] p-4 backdrop-blur-sm pointer-events-auto animate-in fade-in duration-200">
-                    <div className="bg-[#1a1a1a] border-2 border-white/10 w-full max-w-3xl flex flex-col shadow-2xl relative animate-in zoom-in-95 duration-200 overflow-hidden">
-                        {/* Close button */}
-                        <button
-                            onClick={() => setSelectedVideo(null)}
-                            className="absolute top-3 right-3 w-8 h-8 bg-black/60 border border-white/15 flex items-center justify-center text-white/70 hover:text-white cursor-pointer z-10"
-                        >
-                            <Icon icon="pixelarticons:close" />
-                        </button>
 
-                        {/* Youtube Embed Iframe Container */}
-                        <div className="w-full aspect-video bg-black relative">
-                            <iframe
-                                className="w-full h-full"
-                                src={`https://www.youtube.com/embed/${selectedVideo.youtubeId}?autoplay=1`}
-                                title={selectedVideo.title}
-                                frameBorder="0"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                allowFullScreen
-                            />
-                        </div>
-
-                        {/* Video detail descriptions */}
-                        <div className="p-5 flex flex-col gap-2">
-                            <span className="text-[10px] font-mono text-red-500 uppercase tracking-widest flex items-center gap-1.5">
-                                <Icon icon="pixelarticons:play" />
-                                <span>YouTube Media Integration</span>
-                            </span>
-                            <h3 className={`text-sm sm:text-base font-bold text-white m-0 ${current.fontClass}`}>
-                                {selectedVideo.title}
-                            </h3>
-                            <p className={`text-xs text-white/60 leading-relaxed m-0 ${current.fontClass}`}>
-                                {selectedVideo.description}
-                            </p>
-                            <div className="flex justify-between items-center text-[10px] text-white/40 border-t border-white/5 pt-3 mt-1 font-mono">
-                                <span>CHANNEL: <strong className="text-white/75">{selectedVideo.channelName}</strong></span>
-                                <div className="flex gap-3">
-                                    <span>{selectedVideo.views}</span>
-                                    <span>{selectedVideo.publishedAt}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
 
 
         </PageContainer>
