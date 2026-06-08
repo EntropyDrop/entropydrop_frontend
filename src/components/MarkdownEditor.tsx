@@ -75,18 +75,20 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
                                 const errorData = await res.json().catch(() => ({}))
                                 throw new Error(errorData.detail || 'Failed to get upload URL')
                             }
-                            const { uploadUrl, fileUrl } = await res.json()
+                            const { uploadUrl, fields, fileUrl } = await res.json()
+
+                            const formData = new FormData()
+                            Object.entries(fields).forEach(([key, value]) => {
+                                formData.append(key, value as string)
+                            })
+                            formData.append('file', image)
 
                             const uploadRes = await fetch(uploadUrl, {
-                                method: 'PUT',
-                                body: image,
-                                headers: {
-                                    'Content-Type': image.type,
-                                    'x-amz-acl': 'public-read'
-                                }
+                                method: 'POST',
+                                body: formData
                             })
                             if (!uploadRes.ok) {
-                                throw new Error('Failed to upload image to S3')
+                                throw new Error('Failed to upload image to S3 (max 512KB)')
                             }
                             return fileUrl
                         }
