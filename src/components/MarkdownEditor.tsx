@@ -1,4 +1,5 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
+import { Icon } from '@iconify/react'
 import '@mdxeditor/editor/style.css'
 import {
     MDXEditor,
@@ -20,7 +21,6 @@ import {
     InsertThematicBreak,
     Separator,
     imagePlugin,
-    InsertImage,
     type MDXEditorMethods
 } from '@mdxeditor/editor'
 import { apiFetch } from '../utils/api'
@@ -34,6 +34,11 @@ interface MarkdownEditorProps {
 
 export function MarkdownEditor({ value, onChange, placeholder, current }: MarkdownEditorProps) {
     const editorRef = useRef<MDXEditorMethods>(null)
+    const fileInputRef = useRef<HTMLInputElement>(null)
+    const [uploadState, setUploadState] = useState<{ isUploading: boolean; progress: number }>({
+        isUploading: false,
+        progress: 0
+    })
 
     // Sync external changes if needed (to prevent cursor jumping, we only set if it actually differs)
     useEffect(() => {
@@ -45,8 +50,101 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
         }
     }, [value])
 
+    const uploadImageFile = async (file: File): Promise<string> => {
+        try {
+            setUploadState({ isUploading: true, progress: 0 })
+
+            // 1. Get presigned URL
+            const res = await apiFetch('/api/upload/presigned-url', {
+                method: 'POST',
+                body: JSON.stringify({
+                    filename: file.name,
+                    content_type: file.type
+                })
+            })
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}))
+                throw new Error(errorData.detail || 'Failed to get upload URL')
+            }
+            const { uploadUrl, fields, fileUrl } = await res.json()
+
+            // 2. Build FormData
+            const formData = new FormData()
+            Object.entries(fields).forEach(([key, val]) => {
+                formData.append(key, val as string)
+            })
+            formData.append('file', file)
+
+            // 3. Upload using XMLHttpRequest to track progress
+            await new Promise<void>((resolve, reject) => {
+                const xhr = new XMLHttpRequest()
+                xhr.open('POST', uploadUrl)
+
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        const percent = Math.round((event.loaded / event.total) * 100)
+                        setUploadState({ isUploading: true, progress: percent })
+                    }
+                }
+
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve()
+                    } else {
+                        reject(new Error(`Upload failed with status: ${xhr.status}`))
+                    }
+                }
+
+                xhr.onerror = () => {
+                    reject(new Error('Network error during upload'))
+                }
+
+                xhr.send(formData)
+            })
+
+            return fileUrl
+
+        } catch (err: any) {
+            console.error(err)
+            alert(err.message || 'Failed to upload image')
+            throw err
+        } finally {
+            setUploadState({ isUploading: false, progress: 0 })
+        }
+    }
+
+    const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+        e.target.value = ''
+
+        try {
+            const url = await uploadImageFile(file)
+            if (editorRef.current) {
+                editorRef.current.insertMarkdown(`![image](${url})`)
+            }
+        } catch (err) {
+            // Error is handled inside uploadImageFile
+        }
+    }
+
     return (
         <div className={`mdx-editor-dark-wrapper w-full border border-white/10 bg-black/40 text-white rounded-xs overflow-hidden ${current.fontClass || ''}`}>
+            <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageFileChange}
+            />
+            {uploadState.isUploading && (
+                <div className="w-full bg-zinc-950 h-1 relative overflow-hidden">
+                    <div
+                        className="bg-green-500 h-full transition-all duration-150"
+                        style={{ width: `${uploadState.progress}%` }}
+                    />
+                </div>
+            )}
             <MDXEditor
                 ref={editorRef}
                 markdown={value}
@@ -63,35 +161,7 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
                     codeBlockPlugin({ defaultCodeBlockLanguage: 'javascript' }),
                     codeMirrorPlugin({ codeBlockLanguages: { js: 'JavaScript', css: 'CSS', html: 'HTML', python: 'Python', json: 'JSON' } }),
                     imagePlugin({
-                        imageUploadHandler: async (image: File) => {
-                            const res = await apiFetch('/api/upload/presigned-url', {
-                                method: 'POST',
-                                body: JSON.stringify({
-                                    filename: image.name,
-                                    content_type: image.type
-                                })
-                            })
-                            if (!res.ok) {
-                                const errorData = await res.json().catch(() => ({}))
-                                throw new Error(errorData.detail || 'Failed to get upload URL')
-                            }
-                            const { uploadUrl, fields, fileUrl } = await res.json()
-
-                            const formData = new FormData()
-                            Object.entries(fields).forEach(([key, value]) => {
-                                formData.append(key, value as string)
-                            })
-                            formData.append('file', image)
-
-                            const uploadRes = await fetch(uploadUrl, {
-                                method: 'POST',
-                                body: formData
-                            })
-                            if (!uploadRes.ok) {
-                                throw new Error('Failed to upload image to S3 (max 512KB)')
-                            }
-                            return fileUrl
-                        }
+                        imageUploadHandler: uploadImageFile
                     }),
                     markdownShortcutPlugin(),
                     toolbarPlugin({
@@ -108,7 +178,14 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
                                 <Separator />
                                 <InsertTable />
                                 <InsertCodeBlock />
-                                <InsertImage />
+                                <button
+                                    type="button"
+                                    title="Upload Image"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded-xs flex items-center justify-center cursor-pointer transition-colors"
+                                >
+                                    <Icon icon="pixelarticons:image" className="text-lg" />
+                                </button>
                                 <InsertThematicBreak />
                             </div>
                         )
@@ -118,4 +195,3 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
         </div>
     )
 }
-
