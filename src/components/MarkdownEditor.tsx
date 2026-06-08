@@ -53,7 +53,7 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
                 onChange={onChange}
                 placeholder={placeholder || "Describe details, tips, guides..."}
                 className="dark-theme dark-editor text-xs sm:text-sm"
-                contentEditableClassName="prose prose-invert max-w-none p-4 min-h-[220px] text-white/95 focus:outline-none font-sans"
+                contentEditableClassName={`prose prose-invert max-w-none p-4 min-h-[220px] text-white/95 focus:outline-none ${current.fontClass || 'font-pixel-hans'}`}
                 plugins={[
                     headingsPlugin(),
                     listsPlugin(),

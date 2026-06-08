@@ -66,6 +66,7 @@ interface ForumPost {
     isLiked?: boolean
     printSettings: PrintSettings
     comments: ForumComment[]
+    commentsCount: number
     createdAt: string
     bodyType?: string
     multiColorType?: string
@@ -120,16 +121,16 @@ function CommentNode({ comment, current, onReply }: CommentNodeProps) {
                     <div className="flex items-center gap-2 text-[10px] text-white/40">
                         <span className={`text-white/70 font-semibold ${current.fontClass}`}>@{comment.author}</span>
                         {comment.isPro && (
-                            <span className="text-[7px] bg-yellow-400 text-black px-0.5 font-bold font-mono leading-none py-0.5">
+                            <span className={`text-[7px] bg-yellow-400 text-black px-0.5 font-bold leading-none py-0.5 ${current.fontClass}`}>
                                 PRO
                             </span>
                         )}
                         <span>•</span>
-                        <span className="font-mono text-[9px]">{comment.createdAt}</span>
+                        <span className={`text-[9px] ${current.fontClass}`}>{comment.createdAt}</span>
                     </div>
 
                     {/* Text content */}
-                    <p className="text-white/95 font-sans text-xs leading-relaxed mt-0.5 pr-2 break-words">
+                    <p className={`text-white/95 text-xs leading-relaxed mt-0.5 pr-2 break-words ${current.fontClass}`}>
                         {comment.content}
                     </p>
 
@@ -137,7 +138,7 @@ function CommentNode({ comment, current, onReply }: CommentNodeProps) {
                     <div className="flex items-center gap-4 mt-1">
                         <button
                             onClick={() => setIsReplying(!isReplying)}
-                            className="text-[10px] text-white/40 hover:text-[#5cff5c] transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1 font-mono"
+                            className={`text-[10px] text-white/40 hover:text-[#5cff5c] transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1 ${current.fontClass}`}
                         >
                             <Icon icon="pixelarticons:reply" className="text-xs" />
                             <span>Reply</span>
@@ -150,7 +151,7 @@ function CommentNode({ comment, current, onReply }: CommentNodeProps) {
                             <input
                                 type="text"
                                 placeholder="Write a reply..."
-                                className="bg-black/60 border border-white/15 p-1.5 text-xs text-white focus:outline-none focus:border-[#3c8527] flex-1 font-sans"
+                                className={`bg-black/60 border border-white/15 p-1.5 text-xs text-white focus:outline-none focus:border-[#3c8527] flex-1 ${current.fontClass}`}
                                 value={replyValue}
                                 onChange={e => setReplyValue(e.target.value)}
                                 autoFocus
@@ -202,6 +203,7 @@ export function FigurePage({ current }: FigurePageProps) {
     const [searchParams] = useSearchParams()
     const activeCategory = searchParams.get('category') || 'discussions'
     const [searchQuery, setSearchQuery] = useState('')
+    const [searchInput, setSearchInput] = useState('')
     const [sortBy, setSortBy] = useState<'latest' | 'popular'>('latest')
     const [selectedPost, setSelectedPost] = useState<ForumPost | null>(null)
     const [isCreateFormOpen, setIsCreateFormOpen] = useState(false)
@@ -215,8 +217,8 @@ export function FigurePage({ current }: FigurePageProps) {
     const [newCategory, setNewCategory] = useState<'discussions' | 'showcase'>('discussions')
     const [newBodyType, setNewBodyType] = useState('Other')
     const [newMultiColorType, setNewMultiColorType] = useState('Stickers')
-
-
+    const [newImage, setNewImage] = useState<string | undefined>(undefined)
+    const [isUploadingImage, setIsUploadingImage] = useState(false)
 
     // Comment input state
     const [commentText, setCommentText] = useState('')
@@ -251,167 +253,109 @@ export function FigurePage({ current }: FigurePageProps) {
     useEffect(() => {
         setIsCreateFormOpen(false)
         setSelectedPost(null)
+        setPostPage(1)
     }, [activeCategory])
 
-    // Seed post data
-    const [posts, setPosts] = useState<ForumPost[]>([
-        {
-            id: 'post-1',
-            title: 'My first completed Bambu Lab print! Cyberpunk Knight figure',
-            content: 'Stickers were a bit tricky around the knees, but the PLA body print came out extremely clean. Joint tolerances are perfect on my P1S. Used photo-grade adhesive waterproof paper for the sticker wrap and the colors popped nicely!',
-            category: 'showcase',
-            image: '/images/warrior_figure.png',
-            tags: ['BambuLab', 'Warrior', 'Articulated'],
-            author: 'PixelMaster',
-            authorAvatar: 'https://lh3.googleusercontent.com/a/ACg8ocL3c7...',
-            isPro: true,
-            role: 'Pro Creator',
-            likes: 48,
-            views: 342,
-            isLiked: false,
-            printSettings: {
-                printer: 'Bambu Lab X1C',
-                layerHeight: '0.12mm',
-                infill: '15% Gyroid',
-                printTime: '12 hours',
-                material: 'PLA (Body) + TPU (Joints)'
-            },
-            comments: [
-                {
-                    id: 'c-1',
-                    author: 'Stickerman',
-                    isPro: false,
-                    content: 'Looks incredible! Which sticker paper brand did you use?',
-                    createdAt: '2 hours ago'
-                },
-                {
-                    id: 'c-2',
-                    author: '3D-Warrior',
-                    isPro: true,
-                    content: 'Did you print the joints with TPU 95A? Mine were a bit loose.',
-                    createdAt: '1 hour ago'
-                }
-            ],
-            createdAt: '4 hours ago',
-            bodyType: 'FDM',
-            multiColorType: 'Stickers'
-        },
-        {
-            id: 'post-2',
-            title: 'Optimizing joint tolerances for TPU prints',
-            content: 'After 5 failed joint prints, I found that scaling the joint models down by 1.5% in Bambu Studio makes them fit perfectly into the PLA sockets without cracking. Here is the step-by-step sizing breakdown for tight but posable limbs.',
-            category: 'discussions',
-            tags: ['Tolerances', 'TPU', 'Guide'],
-            author: 'PrintPhysicist',
-            isPro: true,
-            role: 'Mod',
-            likes: 95,
-            views: 620,
-            isLiked: false,
-            printSettings: {
-                printer: 'Bambu Lab P1S',
-                layerHeight: '0.16mm',
-                infill: '20% Cubic',
-                printTime: '6 hours',
-                material: 'TPU (95A)'
-            },
-            comments: [
-                {
-                    id: 'c-3',
-                    author: 'FilamentKing',
-                    isPro: false,
-                    content: 'Extremely helpful guide, thanks for sharing! Saved me some TPU.',
-                    createdAt: '5 hours ago',
-                    replies: [
-                        {
-                            id: 'c-3-1',
-                            author: 'PrintPhysicist',
-                            isPro: true,
-                            content: 'Glad it helped! Let me know if you run into any issues at 1.5% scaling.',
-                            createdAt: '4 hours ago',
-                            replies: [
-                                {
-                                    id: 'c-3-1-1',
-                                    author: 'FilamentKing',
-                                    isPro: false,
-                                    content: 'Will do! Trying a test batch now.',
-                                    createdAt: '3 hours ago',
-                                    replies: []
-                                }
-                            ]
-                        },
-                        {
-                            id: 'c-3-2',
-                            author: 'LayerExpert',
-                            isPro: false,
-                            content: 'I usually scale down to 1.8% for wood filaments because they expand slightly. Just a tip for others!',
-                            createdAt: '2 hours ago',
-                            replies: []
-                        }
-                    ]
-                }
-            ],
-            createdAt: '8 hours ago',
-            bodyType: 'FDM',
-            multiColorType: 'FDM Multi-color'
-        },
-        {
-            id: 'post-3',
-            title: 'Minecraft Fox Figure - Printed in Orange PLA!',
-            content: 'Sharing my sliced files for the Minecraft Fox. Print layout is optimized to minimize support usage so you do not ruin the outer face. Tail is fully rotatable with a snap joint.',
-            category: 'showcase',
-            image: '/images/fox_figure.png',
-            tags: ['Fox', 'Minecraft', 'Toy'],
-            author: 'FoxyCreator',
-            isPro: false,
-            role: 'Creator',
-            likes: 120,
-            views: 890,
-            isLiked: false,
-            printSettings: {
-                printer: 'Bambu Lab A1',
-                layerHeight: '0.08mm',
-                infill: '10% Gyroid',
-                printTime: '8.5 hours',
-                material: 'PLA'
-            },
-            comments: [
-                {
-                    id: 'c-4',
-                    author: 'MiniBuilder',
-                    isPro: true,
-                    content: 'This is so cute! My daughter is going to love it.',
-                    createdAt: '1 day ago'
-                }
-            ],
-            createdAt: '1 day ago',
-            bodyType: 'SLA',
-            multiColorType: 'Spraying'
-        },
-        {
-            id: 'post-4',
-            title: 'Discussing the optimal slicing profiles for small voxel hand figurines',
-            content: 'When printing characters under 8cm with high voxel density, standard Bambu Studio profiles can over-extrude at corners. I recommend dropping print temperature by 5C and setting outer wall speeds to 40mm/s. Here is my setup.',
-            category: 'discussions',
-            tags: ['Slicing', 'Settings', 'PLA'],
-            author: 'LayerExpert',
-            isPro: false,
-            likes: 31,
-            views: 180,
-            isLiked: false,
-            printSettings: {
-                printer: 'Bambu Lab X1C',
-                layerHeight: '0.08mm',
-                infill: '15% Grid',
-                printTime: '4 hours',
-                material: 'PLA'
-            },
-            comments: [],
-            createdAt: '2 days ago',
-            bodyType: 'UV Inkjet 3D Printing',
-            multiColorType: 'UV Inkjet'
+    useEffect(() => {
+        setPostPage(1)
+    }, [searchQuery, sortBy])
+
+    const [posts, setPosts] = useState<ForumPost[]>([])
+    
+    // Pagination states
+    const [postPage, setPostPage] = useState(1)
+    const [totalPosts, setTotalPosts] = useState(0)
+    const [postPageSize] = useState(10)
+
+    const [comments, setComments] = useState<ForumComment[]>([])
+    const [commentPage, setCommentPage] = useState(1)
+    const [totalComments, setTotalComments] = useState(0)
+    const [commentPageSize] = useState(10)
+
+    // Fetch comments for expanded post
+    const fetchComments = async (postId: string, page: number) => {
+        try {
+            const res = await apiFetch(`/api/forum/posts/${postId}/comments?page=${page}&page_size=${commentPageSize}`)
+            if (res.ok) {
+                const data = await res.json()
+                setComments(data.comments)
+                setTotalComments(data.total)
+            }
+        } catch (e) {
+            console.error("Failed to fetch comments", e)
         }
-    ])
+    }
+
+    // Automatically load/reload comments when selected post or comment page changes
+    useEffect(() => {
+        if (selectedPost?.id) {
+            setCommentPage(1)
+            fetchComments(selectedPost.id, 1)
+        } else {
+            setComments([])
+            setTotalComments(0)
+        }
+    }, [selectedPost?.id])
+
+    useEffect(() => {
+        if (selectedPost?.id) {
+            fetchComments(selectedPost.id, commentPage)
+        }
+    }, [commentPage])
+
+    // Fetch posts from backend
+    const fetchPosts = async () => {
+        try {
+            const params = new URLSearchParams()
+            if (activeCategory) params.append('category', activeCategory)
+            if (searchQuery) params.append('search', searchQuery)
+            if (sortBy) params.append('sort', sortBy)
+            params.append('page', postPage.toString())
+            params.append('page_size', postPageSize.toString())
+            
+            const res = await apiFetch(`/api/forum/posts?${params.toString()}`)
+            if (res.ok) {
+                const data = await res.json()
+                setPosts(data.posts)
+                setTotalPosts(data.total)
+            }
+        } catch (e) {
+            console.error("Failed to fetch forum posts", e)
+        }
+    }
+
+    const fetchPostDetails = async (postId: string) => {
+        try {
+            const res = await apiFetch(`/api/forum/posts/${postId}`)
+            if (res.ok) {
+                const data = await res.json()
+                setSelectedPost(data)
+                // Update post in listing too
+                setPosts(prev => prev.map(p => p.id === postId ? data : p))
+            }
+        } catch (e) {
+            console.error("Failed to load post details", e)
+        }
+    }
+
+    // Debounced fetch posts on changes
+    useEffect(() => {
+        if (activeCategory === 'videos') return
+        const delayDebounceFn = setTimeout(() => {
+            fetchPosts()
+        }, 300)
+        return () => clearTimeout(delayDebounceFn)
+    }, [activeCategory, searchQuery, sortBy, postPage])
+
+    // Fetch post directly if query param contains postId
+    const postIdFromUrl = searchParams.get('postId')
+    useEffect(() => {
+        if (postIdFromUrl) {
+            fetchPostDetails(postIdFromUrl)
+        } else {
+            setSelectedPost(null)
+        }
+    }, [postIdFromUrl])
 
     const youtubeVideos: YoutubeVideo[] = [
         {
@@ -456,34 +400,34 @@ export function FigurePage({ current }: FigurePageProps) {
     }
 
     // Like handler
-    const handleLikePost = (postId: string, e: React.MouseEvent) => {
+    const handleLikePost = async (postId: string, e: React.MouseEvent) => {
         e.stopPropagation()
-        setPosts(prev => prev.map(p => {
-            if (p.id === postId) {
-                const liked = !p.isLiked
-                return {
-                    ...p,
-                    isLiked: liked,
-                    likes: liked ? p.likes + 1 : p.likes - 1
+        if (!currentUser) {
+            triggerToast(isZh ? '请先登录！' : 'Please login first!')
+            return
+        }
+
+        try {
+            const res = await apiFetch(`/api/forum/posts/${postId}/like`, {
+                method: 'POST'
+            })
+            if (res.ok) {
+                const { isLiked, likes } = await res.json()
+                setPosts(prev => prev.map(p => {
+                    if (p.id === postId) {
+                        return { ...p, isLiked, likes }
+                    }
+                    return p
+                }))
+                if (selectedPost && selectedPost.id === postId) {
+                    setSelectedPost(prev => prev ? { ...prev, isLiked, likes } : null)
                 }
             }
-            return p
-        }))
-        // Sync selectedPost if open
-        if (selectedPost && selectedPost.id === postId) {
-            setSelectedPost(prev => {
-                if (!prev) return null
-                const liked = !prev.isLiked
-                return {
-                    ...prev,
-                    isLiked: liked,
-                    likes: liked ? prev.likes + 1 : prev.likes - 1
-                }
-            })
+        } catch (err) {
+            console.error("Failed to like post", err)
         }
     }
 
-    // Recursive comment helpers
     const countTotalComments = (commentsList: ForumComment[]): number => {
         let count = commentsList.length
         for (const c of commentsList) {
@@ -494,93 +438,118 @@ export function FigurePage({ current }: FigurePageProps) {
         return count
     }
 
-    const addReplyToTree = (commentsList: ForumComment[], targetId: string, newReply: ForumComment): ForumComment[] => {
-        return commentsList.map(c => {
-            if (c.id === targetId) {
-                return {
-                    ...c,
-                    replies: [...(c.replies || []), newReply]
-                }
-            }
-            if (c.replies && c.replies.length > 0) {
-                return {
-                    ...c,
-                    replies: addReplyToTree(c.replies, targetId, newReply)
-                }
-            }
-            return c
-        })
-    }
-
     // Add comment handler
-    const handleAddComment = (e: React.FormEvent) => {
+    const handleAddComment = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!commentText.trim()) return
 
-        const newComment: ForumComment = {
-            id: `c-${Date.now()}`,
-            author: currentUser?.username || 'GuestMaker',
-            isPro: currentUser?.is_pro || false,
-            content: commentText.trim(),
-            createdAt: 'Just now',
-            replies: []
+        if (!currentUser) {
+            triggerToast(isZh ? '请先登录！' : 'Please login first!')
+            return
         }
 
         if (selectedPost) {
-            const updatedPosts = posts.map(p => {
-                if (p.id === selectedPost.id) {
-                    return {
-                        ...p,
-                        comments: [...p.comments, newComment]
-                    }
+            try {
+                const res = await apiFetch(`/api/forum/posts/${selectedPost.id}/comments`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        content: commentText.trim()
+                    })
+                })
+                if (res.ok) {
+                    await fetchPostDetails(selectedPost.id)
+                    fetchComments(selectedPost.id, commentPage)
+                    setCommentText('')
+                    triggerToast('Comment posted successfully!')
+                } else {
+                    const err = await res.json().catch(() => ({}))
+                    triggerToast(err.detail || 'Failed to post comment')
                 }
-                return p
-            })
-            setPosts(updatedPosts)
-            setSelectedPost(prev => {
-                if (!prev) return null
-                return {
-                    ...prev,
-                    comments: [...prev.comments, newComment]
-                }
-            })
-            setCommentText('')
-            triggerToast('Comment posted successfully!')
+            } catch (err) {
+                console.error(err)
+                triggerToast('Network error')
+            }
         }
     }
 
     // Add nested comment reply handler
-    const handleCommentReply = (parentCommentId: string, replyText: string) => {
+    const handleCommentReply = async (parentCommentId: string, replyText: string) => {
         if (!replyText.trim()) return
 
-        const newReply: ForumComment = {
-            id: `c-${Date.now()}`,
-            author: currentUser?.username || 'GuestMaker',
-            isPro: currentUser?.is_pro || false,
-            content: replyText.trim(),
-            createdAt: 'Just now',
-            replies: []
+        if (!currentUser) {
+            triggerToast(isZh ? '请先登录！' : 'Please login first!')
+            return
         }
 
         if (selectedPost) {
-            const updatedPosts = posts.map(p => {
-                if (p.id === selectedPost.id) {
-                    return {
-                        ...p,
-                        comments: addReplyToTree(p.comments, parentCommentId, newReply)
-                    }
+            try {
+                const res = await apiFetch(`/api/forum/posts/${selectedPost.id}/comments`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        content: replyText.trim(),
+                        parent_id: parentCommentId
+                    })
+                })
+                if (res.ok) {
+                    await fetchPostDetails(selectedPost.id)
+                    fetchComments(selectedPost.id, commentPage)
+                    triggerToast('Reply posted successfully!')
+                } else {
+                    const err = await res.json().catch(() => ({}))
+                    triggerToast(err.detail || 'Failed to reply')
                 }
-                return p
+            } catch (err) {
+                console.error(err)
+                triggerToast('Network error')
+            }
+        }
+    }
+
+    // Image upload handler
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        if (file.size > 512 * 1024) {
+            triggerToast(isZh ? '文件太大，最大支持 512KB' : 'File too large, max support 512KB')
+            return
+        }
+
+        setIsUploadingImage(true)
+        try {
+            const res = await apiFetch('/api/upload/presigned-url', {
+                method: 'POST',
+                body: JSON.stringify({
+                    filename: file.name,
+                    content_type: file.type
+                })
             })
-            setPosts(updatedPosts)
-            setSelectedPost(prev => {
-                if (!prev) return null
-                return {
-                    ...prev,
-                    comments: addReplyToTree(prev.comments, parentCommentId, newReply)
-                }
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}))
+                throw new Error(errData.detail || 'Failed to get upload config')
+            }
+            const { uploadUrl, fields, fileUrl } = await res.json()
+
+            const formData = new FormData()
+            Object.entries(fields).forEach(([k, v]) => {
+                formData.append(k, v as string)
             })
-            triggerToast('Reply posted successfully!')
+            formData.append('file', file)
+
+            const uploadRes = await fetch(uploadUrl, {
+                method: 'POST',
+                body: formData
+            })
+            if (!uploadRes.ok) {
+                throw new Error('S3 upload failed')
+            }
+            setNewImage(fileUrl)
+            triggerToast(isZh ? '图片上传成功！' : 'Image uploaded successfully!')
+        } catch (err: any) {
+            console.error(err)
+            triggerToast(err.message || 'Image upload failed')
+        } finally {
+            setIsUploadingImage(false)
         }
     }
 
@@ -592,114 +561,49 @@ export function FigurePage({ current }: FigurePageProps) {
             return
         }
 
-        let finalContent = newContent
+        if (newCategory === 'showcase' && !newImage) {
+            triggerToast(isZh ? '玩家晒图必须上传图片附件！' : 'Showcase posts require an image attachment!')
+            return
+        }
 
-        // Find and confirm any uploaded temporary S3 images
-        const tempUrlRegex = /https?:\/\/[^\s"'()]+/g
-        const urls = newContent.match(tempUrlRegex) || []
-        const tempUrls = urls.filter(url => url.includes('forum/tmp/'))
-
-        if (tempUrls.length > 0) {
-            const uniqueTempUrls = Array.from(new Set(tempUrls))
-            const keys = uniqueTempUrls.map(url => {
-                const index = url.indexOf('forum/tmp/')
-                return url.substring(index)
+        try {
+            const res = await apiFetch('/api/forum/posts', {
+                method: 'POST',
+                body: JSON.stringify({
+                    title: newTitle.trim(),
+                    content: newContent.trim(),
+                    category: newCategory,
+                    body_type: newBodyType,
+                    multi_color_type: newMultiColorType,
+                    image: newImage
+                })
             })
 
-            try {
-                const response = await apiFetch('/api/upload/image/confirm', {
-                    method: 'POST',
-                    body: JSON.stringify({ keys })
-                })
+            if (res.ok) {
+                const createdPost = await res.json()
+                setPosts(prev => [createdPost, ...prev])
+                setIsCreateFormOpen(false)
+                // Reset form
+                setNewTitle('')
+                setNewContent('')
+                setNewCategory('discussions')
+                setNewBodyType('Other')
+                setNewMultiColorType('Stickers')
+                setNewImage(undefined)
 
-                if (response.ok) {
-                    const urlMapping = await response.json()
-                    Object.entries(urlMapping).forEach(([oldUrl, newUrl]) => {
-                        finalContent = finalContent.replaceAll(oldUrl, newUrl as string)
-                    })
-                } else {
-                    const err = await response.json().catch(() => ({}))
-                    triggerToast(err.detail || 'Failed to finalize image uploads.')
-                    return
-                }
-            } catch (error) {
-                console.error('Error confirming S3 images', error)
-                triggerToast('Network error finalizing image uploads.')
-                return
-            }
-        }
-
-        // Deriving tags from bodyType and multiColorType (instead of manual tag input)
-        const tagList = [newBodyType, newMultiColorType].filter(Boolean)
-
-        // For showcase posts, extract the first image URL in the editor to use as card preview thumbnail
-        let showcaseImage = undefined
-        if (newCategory === 'showcase') {
-            const mdImageRegex = /!\[.*?\]\((https?:\/\/[^\s"'()]+)\)/
-            const match = finalContent.match(mdImageRegex)
-            if (match && match[1]) {
-                showcaseImage = match[1]
+                triggerToast('Post published successfully!')
             } else {
-                showcaseImage = '/images/warrior_figure.png'
+                const err = await res.json().catch(() => ({}))
+                triggerToast(err.detail || 'Failed to publish post')
             }
+        } catch (err) {
+            console.error(err)
+            triggerToast('Network error, please try again')
         }
-
-        const createdPost: ForumPost = {
-            id: `post-${Date.now()}`,
-            title: newTitle,
-            content: finalContent,
-            category: newCategory,
-            image: showcaseImage,
-            tags: tagList.length > 0 ? tagList : ['Custom', 'Figure'],
-            author: currentUser?.username || 'GuestMaker',
-            isPro: currentUser?.is_pro || false,
-            role: currentUser?.is_pro ? 'Pro Member' : 'Member',
-            likes: 0,
-            views: 1,
-            isLiked: false,
-            printSettings: {
-                printer: '',
-                layerHeight: '',
-                infill: '',
-                printTime: '',
-                material: ''
-            },
-            comments: [],
-            createdAt: 'Just now',
-            bodyType: newBodyType,
-            multiColorType: newMultiColorType
-        }
-
-        setPosts([createdPost, ...posts])
-        setIsCreateFormOpen(false)
-        // Reset form
-        setNewTitle('')
-        setNewContent('')
-        setNewCategory('discussions')
-        setNewBodyType('Other')
-        setNewMultiColorType('Stickers')
-
-        triggerToast('Post published successfully!')
     }
 
-    // Filtered and sorted posts
     const filteredPosts = posts
-        .filter(p => {
-            // Under discussions category, show ALL posts (since discussions represents the main thread) or those specific to discussions.
-            // Let's filter: activeCategory === 'discussions' shows everything, activeCategory === 'showcase' ONLY shows posts with images.
-            const matchesCategory = activeCategory === 'discussions' || (activeCategory === 'showcase' && !!p.image)
-            const matchesSearch = searchQuery.trim() === '' ||
-                p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                p.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                p.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
-            return matchesCategory && matchesSearch
-        })
-        .sort((a, b) => {
-            if (sortBy === 'popular') {
-                return b.likes - a.likes
-            }
-            return b.id.localeCompare(a.id)
-        })
+
 
     const isZh = current.figureForum.title.includes('手办') || current.figureForum.cancel === '取消'
 
@@ -713,45 +617,94 @@ export function FigurePage({ current }: FigurePageProps) {
                 </div>
             )}
 
-            {/* Under Construction Warning Banner */}
-            {!selectedPost && !isCreateFormOpen && (
-                <div className="border border-amber-500/20 bg-amber-500/5 text-amber-200/90 px-4 py-3 text-[11px] sm:text-xs flex items-center gap-2.5 shrink-0 animate-in fade-in slide-in-from-top duration-300">
-                    <Icon icon="pixelarticons:warning-box" className="text-amber-500 text-lg flex-shrink-0 animate-pulse" />
-                    <div className="flex-1 font-sans">
-                        {isZh ? (
-                            <span><strong>建设中提示：</strong> 3D 打印手办社区目前正处于开发调试阶段，暂不可用。敬请期待！</span>
-                        ) : (
-                            <span><strong>Under Construction:</strong> The 3D Print Figure Forum is currently under active development and is temporarily unavailable. Stay tuned!</span>
-                        )}
-                    </div>
-                </div>
-            )}
+
 
             {/* Forum Header Banner */}
             {!selectedPost && !isCreateFormOpen && (
-                <div className="relative overflow-hidden border border-white/10 bg-gradient-to-r from-black/60 to-zinc-900/60 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shrink-0">
-                    <div className="z-10 flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="bg-[#3c8527] text-white text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider">3D Print</span>
-                            <span className="text-white/40 text-xs font-mono">v1.2.0-beta</span>
+                <div className="relative overflow-hidden border border-white/10 bg-gradient-to-r from-black/60 to-zinc-900/60 p-4 sm:p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shrink-0">
+                    <div className="z-10 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                            <span className={`bg-[#3c8527] text-white text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider ${current.fontClass}`}>3D Print</span>
+                            <span className={`text-white/40 text-[10px] ${current.fontClass}`}>v1.2.0-beta</span>
                         </div>
-                        <h2 className={`text-xl sm:text-3xl font-extrabold text-white leading-tight ${current.fontClass}`} style={{ textShadow: '1px 1px 0px #000' }}>
+                        <h2 className={`text-lg sm:text-2xl font-extrabold text-white leading-tight ${current.fontClass}`} style={{ textShadow: '1px 1px 0px #000' }}>
                             {current.figureForum.title}
                         </h2>
-                        <p className={`text-xs sm:text-sm text-white/50 mt-1 max-w-2xl ${current.fontClass}`}>
+                        <p className={`text-xs text-white/50 mt-1 max-w-2xl ${current.fontClass}`}>
                             {current.figureForum.subtitle}
                         </p>
                     </div>
 
-                    {activeCategory !== 'videos' && (
-                        <button
-                            onClick={() => { setIsCreateFormOpen(true); setSelectedPost(null); }}
-                            className={`z-10 w-full md:w-auto px-4 py-2.5 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 transition-all font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-md hover:scale-105 active:scale-95 ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:plus" className="text-lg" />
-                            <span>{current.figureForum.publishPost}</span>
-                        </button>
-                    )}
+                    <div className="z-10 flex flex-wrap items-center gap-3 shrink-0 w-full lg:w-auto justify-start lg:justify-end">
+                        {/* Search container */}
+                        <div className="flex items-center gap-1.5 w-full sm:w-auto flex-1 sm:flex-initial">
+                            <div className="flex items-center bg-black/40 border border-white/10 focus-within:border-white/30 transition-all p-1 w-full sm:w-48 md:w-52">
+                                <input
+                                    type="text"
+                                    placeholder={activeCategory === 'videos' ? "Search videos..." : "Search discussions..."}
+                                    className="bg-transparent text-white px-2 py-0.5 text-xs outline-none flex-1 placeholder:text-white/30 font-pixel-hans"
+                                    value={searchInput}
+                                    onChange={e => setSearchInput(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            setSearchQuery(searchInput);
+                                        }
+                                    }}
+                                />
+                                {searchInput && (
+                                    <button
+                                        onClick={() => {
+                                            setSearchInput('');
+                                            setSearchQuery('');
+                                        }}
+                                        className="text-white/30 hover:text-white px-1 cursor-pointer border-none bg-transparent"
+                                    >
+                                        <Icon icon="pixelarticons:close" />
+                                    </button>
+                                )}
+                            </div>
+                            <button
+                                onClick={() => setSearchQuery(searchInput)}
+                                className={`px-3 py-1 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/10 transition-colors font-semibold flex items-center gap-1 cursor-pointer text-xs shrink-0 ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:search" />
+                                <span>{isZh ? '搜索' : 'Search'}</span>
+                            </button>
+                        </div>
+
+                        {/* Sorting Selector */}
+                        {activeCategory !== 'videos' && (
+                            <div className="flex items-center">
+                                <div className="flex border border-white/10 p-0.5 bg-black/20">
+                                    <button
+                                        onClick={() => setSortBy('latest')}
+                                        className={`px-2.5 py-1 text-[10px] font-semibold cursor-pointer transition-colors flex items-center gap-1 border-none ${sortBy === 'latest' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white hover:bg-white/5'} ${current.fontClass}`}
+                                    >
+                                        <Icon icon="pixelarticons:clock" className="text-xs" />
+                                        <span>Latest</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setSortBy('popular')}
+                                        className={`px-2.5 py-1 text-[10px] font-semibold cursor-pointer transition-colors flex items-center gap-1 border-none ${sortBy === 'popular' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white hover:bg-white/5'} ${current.fontClass}`}
+                                    >
+                                        <Icon icon="pixelarticons:heart" className="text-xs" />
+                                        <span>Popular</span>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Publish Post button */}
+                        {activeCategory !== 'videos' && (
+                            <button
+                                onClick={() => { setIsCreateFormOpen(true); setSelectedPost(null); }}
+                                className={`px-3 py-1.5 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 transition-all font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:scale-105 active:scale-95 text-xs ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:plus" className="text-sm" />
+                                <span>{current.figureForum.publishPost}</span>
+                            </button>
+                        )}
+                    </div>
 
                     {/* Decorative cyber grid */}
                     <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none w-1/3 h-full bg-[linear-gradient(to_right,rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:16px_16px]" />
@@ -774,18 +727,13 @@ export function FigurePage({ current }: FigurePageProps) {
                     {/* Inline Post Detail View */}
                     <div className="bg-black/20 border border-white/10 p-5 sm:p-6 flex flex-col gap-4">
                         {/* Header Info */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider font-mono">
+                        <div className={`flex items-center gap-2 flex-wrap text-xs text-white/40 ${current.fontClass}`}>
+                            <span className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider">
                                 {selectedPost.category === 'showcase' ? 'Showcase' : 'Discussion'}
                             </span>
-                            <div className="flex items-center gap-1.5 text-xs text-white/40">
+                            <div className="flex items-center gap-1.5">
                                 <span>Posted by</span>
                                 <span className="text-white/70 font-semibold">@{selectedPost.author}</span>
-                                {selectedPost.role && (
-                                    <span className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[7px] px-1 font-mono uppercase">
-                                        {selectedPost.role}
-                                    </span>
-                                )}
                                 <span>•</span>
                                 <span>{selectedPost.createdAt}</span>
                             </div>
@@ -796,26 +744,26 @@ export function FigurePage({ current }: FigurePageProps) {
                             {selectedPost.title}
                         </h2>
 
-                        {/* Body Type & Multicolor Metadata */}
+                        {/* Body Type and Multi-color details for Showcase posts */}
                         {(selectedPost.bodyType || selectedPost.multiColorType) && (
-                            <div className="flex flex-wrap gap-4 text-[10px] sm:text-xs bg-white/5 border border-white/10 p-3 select-none">
+                            <div className={`flex flex-wrap gap-x-6 gap-y-2 text-xs border-b border-white/5 pb-4 mb-1 ${current.fontClass}`}>
                                 {selectedPost.bodyType && (
                                     <div className="flex items-center gap-2">
                                         <span className="text-white/40">{isZh ? '主体类型:' : 'Body Type:'}</span>
-                                        <span className="text-[#5cff5c] font-semibold bg-[#3c8527]/15 border border-[#3c8527]/30 px-2 py-0.5 rounded-xs font-mono">{getBodyTypeLabel(selectedPost.bodyType, current)}</span>
+                                        <span className="text-[#5cff5c] font-semibold bg-[#3c8527]/15 border border-[#3c8527]/30 px-2 py-0.5 rounded-xs">{getBodyTypeLabel(selectedPost.bodyType, current)}</span>
                                     </div>
                                 )}
                                 {selectedPost.multiColorType && (
                                     <div className="flex items-center gap-2">
                                         <span className="text-white/40">{isZh ? '多色处理:' : 'Color Mode:'}</span>
-                                        <span className="text-cyan-400 font-semibold bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5 rounded-xs font-mono">{getMultiColorTypeLabel(selectedPost.multiColorType, current)}</span>
+                                        <span className="text-cyan-400 font-semibold bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5 rounded-xs">{getMultiColorTypeLabel(selectedPost.multiColorType, current)}</span>
                                     </div>
                                 )}
                             </div>
                         )}
 
                         {/* Body Content */}
-                        <div className="text-xs sm:text-sm text-white/80 leading-relaxed font-sans border-b border-white/5 pb-4 mb-2">
+                        <div className={`text-xs sm:text-sm text-white/80 leading-relaxed border-b border-white/5 pb-4 mb-2 ${current.fontClass}`}>
                             <ArticleMarkdown content={selectedPost.content} />
                         </div>
 
@@ -830,17 +778,9 @@ export function FigurePage({ current }: FigurePageProps) {
                             </div>
                         )}
 
-                        {/* Tags */}
-                        <div className="flex flex-wrap gap-1.5 border-b border-white/5 pb-4">
-                            {selectedPost.tags.map(tag => (
-                                <span key={tag} className="text-[9px] text-white/45 bg-white/5 border border-white/10 px-2 py-0.5 uppercase">
-                                    #{tag}
-                                </span>
-                            ))}
-                        </div>
 
                         {/* Interaction Row */}
-                        <div className="flex items-center gap-6 text-xs text-white/40 border-b border-white/5 pb-4 shrink-0 font-mono">
+                        <div className={`flex items-center gap-6 text-xs text-white/40 border-b border-white/5 pb-4 shrink-0 ${current.fontClass}`}>
                             <button
                                 onClick={(e) => handleLikePost(selectedPost.id, e)}
                                 className="flex items-center gap-2 hover:text-red-500 transition-colors border-none bg-transparent cursor-pointer"
@@ -850,7 +790,7 @@ export function FigurePage({ current }: FigurePageProps) {
                             </button>
                             <div className="flex items-center gap-2">
                                 <Icon icon="pixelarticons:comment" className="text-sm" />
-                                <span>{countTotalComments(selectedPost.comments)} Comments</span>
+                                <span>{selectedPost.commentsCount} Comments</span>
                             </div>
                             <div className="flex items-center gap-2">
                                 <Icon icon="pixelarticons:sun" className="text-sm" />
@@ -869,7 +809,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                 <input
                                     type="text"
                                     placeholder={current.figureForum.writeComment}
-                                    className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] flex-1 font-sans"
+                                    className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] flex-1 ${current.fontClass}`}
                                     value={commentText}
                                     onChange={e => setCommentText(e.target.value)}
                                 />
@@ -883,12 +823,12 @@ export function FigurePage({ current }: FigurePageProps) {
 
                             {/* Recursive comments list */}
                             <div className="flex flex-col gap-4">
-                                {selectedPost.comments.length === 0 ? (
-                                    <div className="text-center text-white/35 py-4 text-xs font-sans">
+                                {comments.length === 0 ? (
+                                    <div className={`text-center text-white/35 py-4 text-xs ${current.fontClass}`}>
                                         No comments yet. Be the first to reply!
                                     </div>
                                 ) : (
-                                    selectedPost.comments.map(c => (
+                                    comments.map(c => (
                                         <CommentNode
                                             key={c.id}
                                             comment={c}
@@ -898,6 +838,31 @@ export function FigurePage({ current }: FigurePageProps) {
                                     ))
                                 )}
                             </div>
+
+                            {/* Pagination for comments */}
+                            {totalComments > commentPageSize && (
+                                <div className="flex justify-center items-center gap-3 mt-4 py-2 border-t border-white/5 font-pixel-hans text-[11px] text-white">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCommentPage(p => Math.max(1, p - 1))}
+                                        disabled={commentPage === 1}
+                                        className="px-2 py-0.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white/80 hover:text-white transition-colors"
+                                    >
+                                        &lt;
+                                    </button>
+                                    <span className="select-none">
+                                        {isZh ? `第 ${commentPage} 页，共 ${Math.ceil(totalComments / commentPageSize)} 页` : `Page ${commentPage} of ${Math.ceil(totalComments / commentPageSize)}`}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCommentPage(p => Math.min(Math.ceil(totalComments / commentPageSize), p + 1))}
+                                        disabled={commentPage >= Math.ceil(totalComments / commentPageSize)}
+                                        className="px-2 py-0.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white/80 hover:text-white transition-colors"
+                                    >
+                                        &gt;
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                     </div>
@@ -927,11 +892,11 @@ export function FigurePage({ current }: FigurePageProps) {
                         <form onSubmit={handleCreatePost} className="flex flex-col gap-4">
                             {/* Title */}
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postTitle}</label>
+                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{current.figureForum.postTitle}</label>
                                 <input
                                     type="text"
                                     placeholder="e.g. Slicing micro figurines instructions"
-                                    className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans"
+                                    className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] ${current.fontClass}`}
                                     value={newTitle}
                                     onChange={e => setNewTitle(e.target.value)}
                                     required
@@ -940,12 +905,12 @@ export function FigurePage({ current }: FigurePageProps) {
 
                             {/* Category Selection */}
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postCategory}</label>
+                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{current.figureForum.postCategory}</label>
                                 <div className="grid grid-cols-2 gap-3">
                                     <button
                                         type="button"
                                         onClick={() => { setNewCategory('discussions'); }}
-                                        className={`py-2 border flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-mono font-bold ${newCategory === 'discussions' ? 'bg-[#3c8527]/15 border-[#3c8527] text-white' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
+                                        className={`py-2 border flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-bold ${current.fontClass} ${newCategory === 'discussions' ? 'bg-[#3c8527]/15 border-[#3c8527] text-white' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
                                     >
                                         <Icon icon="pixelarticons:comment" />
                                         <span>Discussion</span>
@@ -953,7 +918,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                     <button
                                         type="button"
                                         onClick={() => { setNewCategory('showcase'); }}
-                                        className={`py-2 border flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-mono font-bold ${newCategory === 'showcase' ? 'bg-[#3c8527]/15 border-[#3c8527] text-white' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
+                                        className={`py-2 border flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-bold ${current.fontClass} ${newCategory === 'showcase' ? 'bg-[#3c8527]/15 border-[#3c8527] text-white' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
                                     >
                                         <Icon icon="pixelarticons:image-new" />
                                         <span>Showcase</span>
@@ -965,11 +930,11 @@ export function FigurePage({ current }: FigurePageProps) {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 {/* Body Type Selector */}
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs text-white/60 uppercase font-mono">{isZh ? '主体类型' : 'Body Type'}</label>
+                                    <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? '主体类型' : 'Body Type'}</label>
                                     <select
                                         value={newBodyType}
                                         onChange={e => setNewBodyType(e.target.value)}
-                                        className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans w-full"
+                                        className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] w-full ${current.fontClass}`}
                                     >
                                         {(current.figureForum.bodyTypes || []).map((t, idx) => (
                                             <option key={t} value={BODY_TYPES_EN[idx]} className="bg-zinc-900 text-white">
@@ -981,11 +946,11 @@ export function FigurePage({ current }: FigurePageProps) {
 
                                 {/* Multicolor Type Selector */}
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs text-white/60 uppercase font-mono">{isZh ? '多色处理' : 'Color Mode'}</label>
+                                    <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? '多色处理' : 'Color Mode'}</label>
                                     <select
                                         value={newMultiColorType}
                                         onChange={e => setNewMultiColorType(e.target.value)}
-                                        className="bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] font-sans w-full"
+                                        className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] w-full ${current.fontClass}`}
                                     >
                                         {(current.figureForum.colorModes || []).map((t, idx) => (
                                             <option key={t} value={MULTICOLOR_TYPES_EN[idx]} className="bg-zinc-900 text-white">
@@ -996,9 +961,43 @@ export function FigurePage({ current }: FigurePageProps) {
                                 </div>
                             </div>
 
-                            {/* Description Content with WYSIWYG MDXEditor */}
+                            {/* Image Attachment (Optional for Discussions, Required for Showcase) */}
+                            <div className="flex flex-col gap-1.5">
+                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>
+                                    {isZh ? '图片附件' : 'Image Attachment'}
+                                    {newCategory === 'showcase' && <span className="text-red-500 ml-1">*</span>}
+                                </label>
+                                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                                    <label className="px-4 py-2 border border-white/10 hover:border-[#3c8527] bg-white/5 hover:bg-[#3c8527]/10 text-white text-xs font-semibold cursor-pointer transition-all flex items-center gap-2">
+                                        <Icon icon={isUploadingImage ? "pixelarticons:loader" : "pixelarticons:upload"} className={isUploadingImage ? "animate-spin" : ""} />
+                                        <span>{isUploadingImage ? (isZh ? '上传中...' : 'Uploading...') : (isZh ? '选择图片 (最大 512KB)' : 'Choose Image (Max 512KB)')}</span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={handleImageUpload}
+                                            disabled={isUploadingImage}
+                                        />
+                                    </label>
+
+                                    {newImage && (
+                                        <div className="relative w-20 h-20 bg-zinc-900 border border-white/10 rounded-sm overflow-hidden flex items-center justify-center p-1 group">
+                                            <img src={newImage} alt="Preview" className="max-w-full max-h-full object-contain" />
+                                            <button
+                                                type="button"
+                                                onClick={() => setNewImage(undefined)}
+                                                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-red-500 border-none cursor-pointer"
+                                            >
+                                                <Icon icon="pixelarticons:trash" className="text-base" />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                        {/* Description Content with WYSIWYG MDXEditor */}
                             <div className="flex flex-col gap-2">
-                                <label className="text-xs text-white/60 uppercase font-mono">{current.figureForum.postContent}</label>
+                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{current.figureForum.postContent}</label>
                                 <MarkdownEditor
                                     value={newContent}
                                     onChange={setNewContent}
@@ -1030,49 +1029,6 @@ export function FigurePage({ current }: FigurePageProps) {
                 </div>
             ) : (
                 <>
-                    {/* Filter and Search Bar */}
-                    <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 border-b border-white/10 pb-4 shrink-0">
-                        {/* Left: Search input */}
-                        <div className="flex-1 max-w-md flex items-center bg-black/40 border border-white/10 focus-within:border-white/30 transition-all p-1">
-                            <input
-                                type="text"
-                                placeholder={activeCategory === 'videos' ? "Search videos..." : "Search discussions or tags..."}
-                                className="bg-transparent text-white px-2 py-1 text-xs outline-none flex-1 placeholder:text-white/30 font-pixel-hans"
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                            />
-                            {searchQuery && (
-                                <button onClick={() => setSearchQuery('')} className="text-white/30 hover:text-white px-1.5 cursor-pointer">
-                                    <Icon icon="pixelarticons:close" />
-                                </button>
-                            )}
-                            <span className="text-white/30 px-2 border-l border-white/10">
-                                <Icon icon="pixelarticons:search" className="text-sm" />
-                            </span>
-                        </div>
-
-                        {/* Right: Sorting Selector */}
-                        {activeCategory !== 'videos' && (
-                            <div className="flex items-center gap-3">
-                                <div className="flex border border-white/10 p-0.5 bg-black/20">
-                                    <button
-                                        onClick={() => setSortBy('latest')}
-                                        className={`px-3 py-1.5 text-[10px] sm:text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 border-none ${sortBy === 'latest' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white hover:bg-white/5'} ${current.fontClass}`}
-                                    >
-                                        <Icon icon="pixelarticons:clock" />
-                                        <span>Latest</span>
-                                    </button>
-                                    <button
-                                        onClick={() => setSortBy('popular')}
-                                        className={`px-3 py-1.5 text-[10px] sm:text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 border-none ${sortBy === 'popular' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white hover:bg-white/5'} ${current.fontClass}`}
-                                    >
-                                        <Icon icon="pixelarticons:heart" />
-                                        <span>Popular</span>
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
 
                     {/* Main Content View Switcher */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 min-h-0">
@@ -1102,16 +1058,11 @@ export function FigurePage({ current }: FigurePageProps) {
                                                             )}
                                                         </div>
                                                         <span className={`text-white/60 font-semibold truncate max-w-[100px] ${current.fontClass}`}>@{post.author}</span>
-                                                        {post.role && (
-                                                            <span className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[7px] px-1 font-mono uppercase scale-90">
-                                                                {post.role}
-                                                            </span>
-                                                        )}
                                                     </div>
                                                     <span>•</span>
-                                                    <span className="font-mono">{post.createdAt}</span>
+                                                    <span className={current.fontClass}>{post.createdAt}</span>
                                                     <span>•</span>
-                                                    <span className="bg-white/5 border border-white/10 text-white/60 px-1 rounded-xs uppercase tracking-wider text-[8px]">
+                                                    <span className={`bg-white/5 border border-white/10 text-white/60 px-1 rounded-xs uppercase tracking-wider text-[8px] ${current.fontClass}`}>
                                                         {post.category === 'showcase' ? 'Showcase' : 'Discussion'}
                                                     </span>
                                                 </div>
@@ -1122,7 +1073,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                                 </h3>
 
                                                 {/* Snippet */}
-                                                <p className="text-xs text-white/50 line-clamp-2 mt-1.5 leading-relaxed font-sans pr-4">
+                                                <p className={`text-xs text-white/50 line-clamp-2 mt-1.5 leading-relaxed pr-4 ${current.fontClass}`}>
                                                     {post.content}
                                                 </p>
 
@@ -1134,7 +1085,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                                     </div>
                                                     <div className="flex items-center gap-1">
                                                         <Icon icon="pixelarticons:comment" className="text-xs" />
-                                                        <span>{countTotalComments(post.comments)}</span>
+                                                        <span>{post.commentsCount}</span>
                                                     </div>
                                                     <div className="flex items-center gap-1">
                                                         <Icon icon="pixelarticons:sun" className="text-xs" />
@@ -1142,20 +1093,15 @@ export function FigurePage({ current }: FigurePageProps) {
                                                     </div>
                                                     <div className="flex flex-wrap gap-1.5 ml-auto">
                                                         {post.bodyType && (
-                                                            <span className="text-[7px] text-[#5cff5c] bg-[#3c8527]/15 border border-[#3c8527]/30 px-1.5 py-0.5 uppercase rounded-xs font-mono select-none">
+                                                            <span className={`text-[7px] text-[#5cff5c] bg-[#3c8527]/15 border border-[#3c8527]/30 px-1.5 py-0.5 uppercase rounded-xs select-none ${current.fontClass}`}>
                                                                 {getBodyTypeLabel(post.bodyType, current)}
                                                             </span>
                                                         )}
                                                         {post.multiColorType && (
-                                                            <span className="text-[7px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 uppercase rounded-xs font-mono select-none">
+                                                            <span className={`text-[7px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 uppercase rounded-xs select-none ${current.fontClass}`}>
                                                                 {getMultiColorTypeLabel(post.multiColorType, current)}
                                                             </span>
                                                         )}
-                                                        {post.tags.slice(0, 3).map(tag => (
-                                                            <span key={tag} className="text-[7px] text-white/45 bg-white/5 border border-white/10 px-1 py-0.2 uppercase rounded-xs">
-                                                                #{tag}
-                                                            </span>
-                                                        ))}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1227,26 +1173,21 @@ export function FigurePage({ current }: FigurePageProps) {
                                                         {post.title}
                                                     </h3>
 
-                                                    <p className="text-xs text-white/50 line-clamp-2 mt-1.5 leading-relaxed font-sans">
+                                                    <p className={`text-xs text-white/50 line-clamp-2 mt-1.5 leading-relaxed ${current.fontClass}`}>
                                                         {post.content}
                                                     </p>
 
                                                     <div className="flex flex-wrap gap-1 mt-3">
                                                         {post.bodyType && (
-                                                            <span className="text-[8px] text-[#5cff5c] bg-[#3c8527]/15 border border-[#3c8527]/30 px-1.5 py-0.5 rounded-sm font-mono select-none">
+                                                            <span className={`text-[8px] text-[#5cff5c] bg-[#3c8527]/15 border border-[#3c8527]/30 px-1.5 py-0.5 rounded-sm select-none ${current.fontClass}`}>
                                                                 {getBodyTypeLabel(post.bodyType, current)}
                                                             </span>
                                                         )}
                                                         {post.multiColorType && (
-                                                            <span className="text-[8px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 rounded-sm font-mono select-none">
+                                                            <span className={`text-[8px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 rounded-sm select-none ${current.fontClass}`}>
                                                                 {getMultiColorTypeLabel(post.multiColorType, current)}
                                                             </span>
                                                         )}
-                                                        {post.tags.map(tag => (
-                                                            <span key={tag} className="text-[8px] text-white/45 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded-sm">
-                                                                #{tag}
-                                                            </span>
-                                                        ))}
                                                     </div>
                                                 </div>
 
@@ -1261,7 +1202,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                                         </button>
                                                         <div className="flex items-center gap-1.5">
                                                             <Icon icon="pixelarticons:comment" className="text-sm" />
-                                                            <span>{countTotalComments(post.comments)}</span>
+                                                            <span>{post.commentsCount}</span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1313,7 +1254,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                                     <h3 className={`text-xs sm:text-sm font-bold text-white group-hover:text-[#5cff5c] transition-colors line-clamp-2 leading-snug ${current.fontClass}`}>
                                                         {video.title}
                                                     </h3>
-                                                    <p className="text-[11px] text-white/50 line-clamp-2 leading-relaxed font-sans m-0">
+                                                    <p className={`text-[11px] text-white/50 line-clamp-2 leading-relaxed m-0 ${current.fontClass}`}>
                                                         {video.description}
                                                     </p>
                                                 </div>
@@ -1336,6 +1277,29 @@ export function FigurePage({ current }: FigurePageProps) {
                             </div>
                         )}
                     </div>
+
+                    {/* Pagination for posts */}
+                    {(activeCategory === 'discussions' || activeCategory === 'showcase') && totalPosts > postPageSize && (
+                        <div className="flex justify-center items-center gap-4 py-3.5 border-t border-white/5 font-pixel-hans text-xs text-white shrink-0 mt-3">
+                            <button
+                                onClick={() => setPostPage(p => Math.max(1, p - 1))}
+                                disabled={postPage === 1}
+                                className="px-2.5 py-1 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white/80 hover:text-white transition-colors"
+                            >
+                                &lt;&lt;
+                            </button>
+                            <span className="select-none">
+                                {isZh ? `第 ${postPage} 页，共 ${Math.ceil(totalPosts / postPageSize)} 页` : `Page ${postPage} of ${Math.ceil(totalPosts / postPageSize)}`}
+                            </span>
+                            <button
+                                onClick={() => setPostPage(p => Math.min(Math.ceil(totalPosts / postPageSize), p + 1))}
+                                disabled={postPage >= Math.ceil(totalPosts / postPageSize)}
+                                className="px-2.5 py-1 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white/80 hover:text-white transition-colors"
+                            >
+                                &gt;&gt;
+                            </button>
+                        </div>
+                    )}
                 </>
             )}
 
@@ -1374,7 +1338,7 @@ export function FigurePage({ current }: FigurePageProps) {
                             <h3 className={`text-sm sm:text-base font-bold text-white m-0 ${current.fontClass}`}>
                                 {selectedVideo.title}
                             </h3>
-                            <p className="text-xs text-white/60 leading-relaxed font-sans m-0">
+                            <p className={`text-xs text-white/60 leading-relaxed m-0 ${current.fontClass}`}>
                                 {selectedVideo.description}
                             </p>
                             <div className="flex justify-between items-center text-[10px] text-white/40 border-t border-white/5 pt-3 mt-1 font-mono">

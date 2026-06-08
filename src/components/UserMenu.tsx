@@ -39,6 +39,15 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
     const menuRef = useRef<HTMLDivElement>(null)
     const navigate = useNavigate()
 
+    const [isNotifOpen, setIsNotifOpen] = useState(false)
+    const [notifications, setNotifications] = useState<any[]>([])
+    const notifRef = useRef<HTMLDivElement>(null)
+
+    const [unreadCount, setUnreadCount] = useState(0)
+    const [notifPage, setNotifPage] = useState(1)
+    const [totalNotifs, setTotalNotifs] = useState(0)
+    const [notifPageSize] = useState(10)
+
     // Load user on mount
     useEffect(() => {
         const token = localStorage.getItem('token')
@@ -55,6 +64,55 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             window.removeEventListener('user-updated', handleUserUpdate)
         }
     }, [])
+
+    const fetchNotifications = async (page = notifPage) => {
+        try {
+            const res = await apiFetch(`/api/forum/notifications?page=${page}&page_size=${notifPageSize}`)
+            if (res.ok) {
+                const data = await res.json()
+                setNotifications(data.notifications)
+                setUnreadCount(data.unread_count)
+                setTotalNotifs(data.total)
+            }
+        } catch (e) {
+            console.error("Failed to fetch notifications", e)
+        }
+    }
+
+    const handleToggleNotif = () => {
+        setIsNotifOpen(!isNotifOpen)
+        if (!isNotifOpen) {
+            setNotifPage(1)
+            fetchNotifications(1)
+        }
+    }
+
+    const handleMarkAllRead = async () => {
+        try {
+            const res = await apiFetch('/api/forum/notifications/read-all', {
+                method: 'POST'
+            })
+            if (res.ok) {
+                setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
+                setUnreadCount(0)
+            }
+        } catch (e) {
+            console.error(e)
+        }
+    }
+
+    // Load and poll notifications
+    useEffect(() => {
+        if (user) {
+            fetchNotifications(notifPage)
+            const timer = setInterval(() => fetchNotifications(notifPage), 30000)
+            return () => clearInterval(timer)
+        } else {
+            setNotifications([])
+            setUnreadCount(0)
+            setTotalNotifs(0)
+        }
+    }, [user, notifPage])
 
     const fetchUser = async () => {
         try {
@@ -120,6 +178,9 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
                 setIsOpen(false)
             }
+            if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+                setIsNotifOpen(false)
+            }
         }
         document.addEventListener('mousedown', handleClickOutside)
         return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -127,6 +188,122 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
 
     return (
         <div className="relative pointer-events-auto flex items-center gap-2" ref={menuRef}>
+            {user && (
+                <div className="relative shrink-0" ref={notifRef}>
+                    <button
+                        onClick={handleToggleNotif}
+                        className="relative flex items-center justify-center bg-black/40 hover:bg-black/60 border-2 border-white/10 w-10 h-10 transition-all cursor-pointer text-white/70 hover:text-white"
+                    >
+                        <Icon icon="pixelarticons:mail" className="text-xl" />
+                        {unreadCount > 0 && (
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-[#5cff5c] rounded-full border border-black animate-pulse" />
+                        )}
+                    </button>
+                    {isNotifOpen && (
+                        <div className="absolute top-full right-0 mt-2 w-72 max-h-[350px] overflow-y-auto custom-scrollbar bg-[#333] border-2 border-black shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="p-3 border-b border-black/20 bg-black/20 flex justify-between items-center">
+                                <span className={`text-white text-xs font-bold ${current.fontClass}`}>
+                                    {lang === 'zh-hans' ? '消息通知' : 'Notifications'}
+                                </span>
+                                {unreadCount > 0 && (
+                                    <button
+                                        onClick={handleMarkAllRead}
+                                        className={`text-[10px] text-green-400 hover:text-green-300 border-none bg-transparent cursor-pointer ${current.fontClass}`}
+                                    >
+                                        {lang === 'zh-hans' ? '全部已读' : 'Mark all as read'}
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex flex-col">
+                                {notifications.length === 0 ? (
+                                    <div className={`p-4 text-center text-white/40 text-xs ${current.fontClass}`}>
+                                        {lang === 'zh-hans' ? '暂无消息' : 'No notifications'}
+                                    </div>
+                                ) : (
+                                    notifications.map(n => (
+                                        <div
+                                            key={n.id}
+                                            onClick={async () => {
+                                                setIsNotifOpen(false);
+                                                if (n.postId) {
+                                                    navigate(`/figure?postId=${n.postId}`);
+                                                }
+                                                // Optimistically mark as read
+                                                if (!n.isRead) {
+                                                    setUnreadCount(prev => Math.max(0, prev - 1));
+                                                }
+                                                setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, isRead: true } : item));
+                                                
+                                                // Sync with backend
+                                                try {
+                                                    await apiFetch(`/api/forum/notifications/${n.id}/read`, {
+                                                        method: 'POST'
+                                                    });
+                                                } catch (err) {
+                                                    console.error("Failed to mark notification as read", err);
+                                                }
+                                            }}
+                                            className={`p-3 border-b border-white/5 hover:bg-white/5 flex gap-2.5 items-start cursor-pointer transition-colors ${!n.isRead ? 'bg-white/5' : ''} ${current.fontClass}`}
+                                        >
+                                            <div className="w-6 h-6 rounded-full bg-zinc-800 overflow-hidden border border-white/10 flex items-center justify-center shrink-0">
+                                                {n.senderAvatar ? (
+                                                    <img src={n.senderAvatar} alt="avatar" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <Icon icon="pixelarticons:user" className="text-white/40 text-xs" />
+                                                )}
+                                            </div>
+                                            <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                                                <p className="text-[11px] text-white/90 leading-tight m-0 break-words">
+                                                    <strong className="text-white">@{n.senderName}</strong>{' '}
+                                                    {n.type === 'like' && (lang === 'zh-hans' ? '点赞了你的帖子' : 'liked your post')}
+                                                    {n.type === 'comment' && (lang === 'zh-hans' ? '评论了你的帖子' : 'commented on your post')}
+                                                    {n.type === 'reply' && (lang === 'zh-hans' ? '回复了你的评论' : 'replied to your comment')}
+                                                    {n.postId && (
+                                                        <span className={`text-white/50 italic block truncate mt-0.5 text-[10px] ${current.fontClass}`}>
+                                                            "{n.postTitle}"
+                                                        </span>
+                                                    )}
+                                                </p>
+                                                <span className={`text-[9px] text-white/30 mt-0.5 ${current.fontClass}`}>{n.createdAt}</span>
+                                            </div>
+                                            {!n.isRead && (
+                                                <span className="w-1.5 h-1.5 bg-[#5cff5c] rounded-full shrink-0 mt-1.5" />
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            {/* Compact page selectors for notifications */}
+                            {totalNotifs > notifPageSize && (
+                                <div className="p-2 border-t border-black/20 bg-black/10 flex justify-between items-center text-[10px] font-pixel-hans text-white/60">
+                                    <button
+                                        type="button"
+                                        disabled={notifPage === 1}
+                                        onClick={(e) => { e.stopPropagation(); setNotifPage(p => Math.max(1, p - 1)); }}
+                                        className="px-2 py-0.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white hover:text-white transition-colors"
+                                    >
+                                        &lt; Prev
+                                    </button>
+                                    <span className="select-none">
+                                        {lang === 'zh-hans' 
+                                            ? `第 ${notifPage} / ${Math.ceil(totalNotifs / notifPageSize)} 页` 
+                                            : `Page ${notifPage} of ${Math.ceil(totalNotifs / notifPageSize)}`}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        disabled={notifPage >= Math.ceil(totalNotifs / notifPageSize)}
+                                        onClick={(e) => { e.stopPropagation(); setNotifPage(p => Math.min(Math.ceil(totalNotifs / notifPageSize), p + 1)); }}
+                                        className="px-2 py-0.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white hover:text-white transition-colors"
+                                    >
+                                        Next &gt;
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
             {/* Mobile Nav Toggle when not logged in */}
             {!user && (
                 <button
