@@ -14,9 +14,9 @@ export const SKIN_NAV_ITEMS = [
 ] as const
 
 export const FIGURE_NAV_ITEMS = [
-    { key: 'discussions', icon: 'pixelarticons:comment', path: '/figure' },
-    { key: 'showcase', icon: 'pixelarticons:image-new', path: '/figure?category=showcase' },
-    { key: 'videos', icon: 'pixelarticons:device-laptop', path: '/figure?category=videos' },
+    { key: 'discussions', icon: 'pixelarticons:comment', path: '/figure/discussions' },
+    { key: 'showcase', icon: 'pixelarticons:image-new', path: '/figure/showcase' },
+    { key: 'videos', icon: 'pixelarticons:device-laptop', path: '/figure/videos' },
 ] as const
 
 export type TopNavKey = typeof TOP_NAV_ITEMS[number]['key']

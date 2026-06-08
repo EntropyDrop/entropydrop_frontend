@@ -1,6 +1,6 @@
 import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useParams } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { apiFetch } from '../utils/api'
 import type { LangData } from '../constants/lang'
@@ -206,7 +206,8 @@ const extractFirstImageUrl = (markdown: string): string | undefined => {
 
 export function FigurePage({ current }: FigurePageProps) {
     const [searchParams] = useSearchParams()
-    const activeCategory = searchParams.get('category') || 'discussions'
+    const { category } = useParams<{ category?: string }>()
+    const activeCategory = category || 'discussions'
     const [searchQuery, setSearchQuery] = useState('')
     const [searchInput, setSearchInput] = useState('')
     const [sortBy, setSortBy] = useState<'latest' | 'popular'>('latest')

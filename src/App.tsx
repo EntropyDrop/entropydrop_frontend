@@ -37,6 +37,12 @@ const getStoredIsAuto = (): boolean => {
   return stored !== null ? JSON.parse(stored) : true
 }
 
+function FigureRedirect() {
+  const location = useLocation()
+  const target = `/figure/discussions${location.search}${location.hash}`
+  return <Navigate to={target} replace />
+}
+
 function LegacyOpenRedirect() {
   const location = useLocation()
   const target = `${location.pathname.replace(/^\/skin\/open/, '/public')}${location.search}${location.hash}`
@@ -75,7 +81,8 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/public/fixed-assets" element={<FixedAssetsPage current={currentLangData} />} />
         <Route path="/public/ledger" element={<LedgerPage current={currentLangData} />} />
         <Route path="/skin/open/*" element={<LegacyOpenRedirect />} />
-        <Route path="/figure" element={<FigurePage current={currentLangData} />} />
+        <Route path="/figure" element={<FigureRedirect />} />
+        <Route path="/figure/:category" element={<FigurePage current={currentLangData} />} />
       </Routes>
     </Suspense>
   )

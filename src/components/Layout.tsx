@@ -116,9 +116,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                 {activeSubNavItems.map((item) => {
                                     const isActive = item.path === '/skin/'
                                         ? (location.pathname === '/skin/' || location.pathname === '/skin')
-                                        : item.path === '/figure'
-                                            ? (location.pathname === item.path && !location.search)
-                                            : (location.pathname + location.search).startsWith(item.path)
+                                        : location.pathname === item.path
                                     const label = current.nav[item.key as keyof typeof current.nav]
                                     return (
                                         <Link
