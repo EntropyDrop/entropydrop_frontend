@@ -39,7 +39,7 @@ const getStoredIsAuto = (): boolean => {
 
 function FigureRedirect() {
   const location = useLocation()
-  const target = `/figure/discussions${location.search}${location.hash}`
+  const target = `/figure/showcase${location.search}${location.hash}`
   return <Navigate to={target} replace />
 }
 

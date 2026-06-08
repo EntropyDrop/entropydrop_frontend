@@ -14,8 +14,8 @@ export const SKIN_NAV_ITEMS = [
 ] as const
 
 export const FIGURE_NAV_ITEMS = [
-    { key: 'discussions', icon: 'pixelarticons:comment', path: '/figure/discussions' },
     { key: 'showcase', icon: 'pixelarticons:image-new', path: '/figure/showcase' },
+    { key: 'discussions', icon: 'pixelarticons:comment', path: '/figure/discussions' },
     { key: 'videos', icon: 'pixelarticons:device-laptop', path: '/figure/videos' },
 ] as const
 
