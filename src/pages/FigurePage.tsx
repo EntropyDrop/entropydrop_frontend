@@ -585,22 +585,71 @@ export function FigurePage({ current }: FigurePageProps) {
     }
 
     // Create post handler
-    const handleCreatePost = (e: React.FormEvent) => {
+    const handleCreatePost = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!newTitle.trim() || !newContent.trim()) {
             triggerToast('Title and content are required!')
             return
         }
 
+        let finalContent = newContent
+
+        // Find and confirm any uploaded temporary S3 images
+        const tempUrlRegex = /https?:\/\/[^\s"'()]+/g
+        const urls = newContent.match(tempUrlRegex) || []
+        const tempUrls = urls.filter(url => url.includes('forum/tmp/'))
+
+        if (tempUrls.length > 0) {
+            const uniqueTempUrls = Array.from(new Set(tempUrls))
+            const keys = uniqueTempUrls.map(url => {
+                const index = url.indexOf('forum/tmp/')
+                return url.substring(index)
+            })
+
+            try {
+                const response = await apiFetch('/api/upload/image/confirm', {
+                    method: 'POST',
+                    body: JSON.stringify({ keys })
+                })
+
+                if (response.ok) {
+                    const urlMapping = await response.json()
+                    Object.entries(urlMapping).forEach(([oldUrl, newUrl]) => {
+                        finalContent = finalContent.replaceAll(oldUrl, newUrl as string)
+                    })
+                } else {
+                    const err = await response.json().catch(() => ({}))
+                    triggerToast(err.detail || 'Failed to finalize image uploads.')
+                    return
+                }
+            } catch (error) {
+                console.error('Error confirming S3 images', error)
+                triggerToast('Network error finalizing image uploads.')
+                return
+            }
+        }
+
         // Deriving tags from bodyType and multiColorType (instead of manual tag input)
         const tagList = [newBodyType, newMultiColorType].filter(Boolean)
+
+        // For showcase posts, extract the first image URL in the editor to use as card preview thumbnail
+        let showcaseImage = undefined
+        if (newCategory === 'showcase') {
+            const mdImageRegex = /!\[.*?\]\((https?:\/\/[^\s"'()]+)\)/
+            const match = finalContent.match(mdImageRegex)
+            if (match && match[1]) {
+                showcaseImage = match[1]
+            } else {
+                showcaseImage = '/images/warrior_figure.png'
+            }
+        }
 
         const createdPost: ForumPost = {
             id: `post-${Date.now()}`,
             title: newTitle,
-            content: newContent,
+            content: finalContent,
             category: newCategory,
-            image: newCategory === 'showcase' ? '/images/warrior_figure.png' : undefined,
+            image: showcaseImage,
             tags: tagList.length > 0 ? tagList : ['Custom', 'Figure'],
             author: currentUser?.username || 'GuestMaker',
             isPro: currentUser?.is_pro || false,
