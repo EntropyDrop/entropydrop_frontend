@@ -64,18 +64,31 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
                     codeMirrorPlugin({ codeBlockLanguages: { js: 'JavaScript', css: 'CSS', html: 'HTML', python: 'Python', json: 'JSON' } }),
                     imagePlugin({
                         imageUploadHandler: async (image: File) => {
-                            const formData = new FormData()
-                            formData.append('file', image)
-                            const res = await apiFetch('/api/upload/image', {
+                            const res = await apiFetch('/api/upload/presigned-url', {
                                 method: 'POST',
-                                body: formData
+                                body: JSON.stringify({
+                                    filename: image.name,
+                                    content_type: image.type
+                                })
                             })
                             if (!res.ok) {
                                 const errorData = await res.json().catch(() => ({}))
-                                throw new Error(errorData.detail || 'Failed to upload image')
+                                throw new Error(errorData.detail || 'Failed to get upload URL')
                             }
-                            const data = await res.json()
-                            return data.url
+                            const { uploadUrl, fileUrl } = await res.json()
+
+                            const uploadRes = await fetch(uploadUrl, {
+                                method: 'PUT',
+                                body: image,
+                                headers: {
+                                    'Content-Type': image.type,
+                                    'x-amz-acl': 'public-read'
+                                }
+                            })
+                            if (!uploadRes.ok) {
+                                throw new Error('Failed to upload image to S3')
+                            }
+                            return fileUrl
                         }
                     }),
                     markdownShortcutPlugin(),
