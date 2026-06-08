@@ -107,7 +107,7 @@ function CommentNode({ comment, current, onReply }: CommentNodeProps) {
             {/* Comment Body */}
             <div className="flex gap-3 items-start">
                 {/* Avatar icon */}
-                <div className="w-6 h-6 rounded-full bg-zinc-800 overflow-hidden border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                <div className="w-6 h-6 bg-zinc-800 overflow-hidden border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
                     {comment.avatarUrl ? (
                         <img src={comment.avatarUrl} alt={comment.author} className="w-full h-full object-cover" />
                     ) : (
@@ -264,7 +264,7 @@ export function FigurePage({ current }: FigurePageProps) {
     }, [searchQuery, sortBy])
 
     const [posts, setPosts] = useState<ForumPost[]>([])
-    
+
     // Pagination states
     const [postPage, setPostPage] = useState(1)
     const [totalPosts, setTotalPosts] = useState(0)
@@ -315,7 +315,7 @@ export function FigurePage({ current }: FigurePageProps) {
             if (sortBy) params.append('sort', sortBy)
             params.append('page', postPage.toString())
             params.append('page_size', postPageSize.toString())
-            
+
             const res = await apiFetch(`/api/forum/posts?${params.toString()}`)
             if (res.ok) {
                 const data = await res.json()
@@ -675,7 +675,7 @@ export function FigurePage({ current }: FigurePageProps) {
                     <div>
                         <button
                             onClick={() => setSelectedPost(null)}
-                            className={`flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors bg-white/5 border border-white/10 px-3 py-1.5 rounded-xs cursor-pointer ${current.fontClass}`}
+                            className={`flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors bg-white/5 border border-white/10 px-3 py-1.5 cursor-pointer ${current.fontClass}`}
                         >
                             <Icon icon="pixelarticons:arrow-left" />
                             <span>Back to Forum</span>
@@ -708,13 +708,13 @@ export function FigurePage({ current }: FigurePageProps) {
                                 {selectedPost.bodyType && (
                                     <div className="flex items-center gap-2">
                                         <span className="text-white/40">{isZh ? '主体类型:' : 'Body Type:'}</span>
-                                        <span className="text-[#5cff5c] font-semibold bg-[#3c8527]/15 border border-[#3c8527]/30 px-2 py-0.5 rounded-xs">{getBodyTypeLabel(selectedPost.bodyType, current)}</span>
+                                        <span className="text-[#5cff5c] font-semibold bg-[#3c8527]/15 border border-[#3c8527]/30 px-2 py-0.5">{getBodyTypeLabel(selectedPost.bodyType, current)}</span>
                                     </div>
                                 )}
                                 {selectedPost.multiColorType && (
                                     <div className="flex items-center gap-2">
                                         <span className="text-white/40">{isZh ? '多色处理:' : 'Color Mode:'}</span>
-                                        <span className="text-cyan-400 font-semibold bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5 rounded-xs">{getMultiColorTypeLabel(selectedPost.multiColorType, current)}</span>
+                                        <span className="text-cyan-400 font-semibold bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5">{getMultiColorTypeLabel(selectedPost.multiColorType, current)}</span>
                                     </div>
                                 )}
                             </div>
@@ -727,7 +727,7 @@ export function FigurePage({ current }: FigurePageProps) {
 
                         {/* Image (if present, typical for Showcase or image-attached Discussion posts) */}
                         {selectedPost.image && (
-                            <div className="bg-zinc-950/60 border border-white/5 rounded p-4 flex items-center justify-center overflow-hidden max-h-[450px] mb-4">
+                            <div className="bg-zinc-950/60 border border-white/5 p-4 flex items-center justify-center overflow-hidden max-h-[450px] mb-4">
                                 <img
                                     src={selectedPost.image}
                                     alt={selectedPost.title}
@@ -831,7 +831,7 @@ export function FigurePage({ current }: FigurePageProps) {
                     <div>
                         <button
                             onClick={() => setIsCreateFormOpen(false)}
-                            className={`flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors bg-white/5 border border-white/10 px-3 py-1.5 rounded-xs cursor-pointer ${current.fontClass}`}
+                            className={`flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors bg-white/5 border border-white/10 px-3 py-1.5 cursor-pointer ${current.fontClass}`}
                         >
                             <Icon icon="pixelarticons:arrow-left" />
                             <span>Back to Forum</span>
@@ -920,7 +920,7 @@ export function FigurePage({ current }: FigurePageProps) {
                             </div>
 
 
-                        {/* Description Content with WYSIWYG MDXEditor */}
+                            {/* Description Content with WYSIWYG MDXEditor */}
                             <div className="flex flex-col gap-2">
                                 <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{current.figureForum.postContent}</label>
                                 <MarkdownEditor
@@ -975,7 +975,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                                 {/* Header Info */}
                                                 <div className="flex items-center flex-wrap gap-2 text-[10px] text-white/40 mb-2">
                                                     <div className="flex items-center gap-1">
-                                                        <div className="w-3.5 h-3.5 rounded-full bg-zinc-700 overflow-hidden border border-white/15 flex items-center justify-center shrink-0">
+                                                        <div className="w-3.5 h-3.5 bg-zinc-700 overflow-hidden border border-white/15 flex items-center justify-center shrink-0">
                                                             {post.authorAvatar ? (
                                                                 <img src={post.authorAvatar} alt={post.author} className="w-full h-full object-cover" />
                                                             ) : (
@@ -987,7 +987,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                                     <span>•</span>
                                                     <span className={current.fontClass}>{post.createdAt}</span>
                                                     <span>•</span>
-                                                    <span className={`bg-white/5 border border-white/10 text-white/60 px-1 rounded-xs uppercase tracking-wider text-[8px] ${current.fontClass}`}>
+                                                    <span className={`bg-white/5 border border-white/10 text-white/60 px-1 uppercase tracking-wider text-[8px] ${current.fontClass}`}>
                                                         {post.category === 'showcase' ? 'Showcase' : 'Discussion'}
                                                     </span>
                                                 </div>
@@ -1018,12 +1018,12 @@ export function FigurePage({ current }: FigurePageProps) {
                                                     </div>
                                                     <div className="flex flex-wrap gap-1.5 ml-auto">
                                                         {post.bodyType && (
-                                                            <span className={`text-[7px] text-[#5cff5c] bg-[#3c8527]/15 border border-[#3c8527]/30 px-1.5 py-0.5 uppercase rounded-xs select-none ${current.fontClass}`}>
+                                                            <span className={`text-[7px] text-[#5cff5c] bg-[#3c8527]/15 border border-[#3c8527]/30 px-1.5 py-0.5 uppercase select-none ${current.fontClass}`}>
                                                                 {getBodyTypeLabel(post.bodyType, current)}
                                                             </span>
                                                         )}
                                                         {post.multiColorType && (
-                                                            <span className={`text-[7px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 uppercase rounded-xs select-none ${current.fontClass}`}>
+                                                            <span className={`text-[7px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 uppercase select-none ${current.fontClass}`}>
                                                                 {getMultiColorTypeLabel(post.multiColorType, current)}
                                                             </span>
                                                         )}
@@ -1033,7 +1033,7 @@ export function FigurePage({ current }: FigurePageProps) {
 
                                             {/* Optional Image Thumbnail on Right */}
                                             {post.image && (
-                                                <div className="w-20 h-20 bg-zinc-950/45 border border-white/10 rounded-sm shrink-0 flex items-center justify-center p-2 self-center sm:self-start overflow-hidden">
+                                                <div className="w-20 h-20 bg-zinc-950/45 border border-white/10 shrink-0 flex items-center justify-center p-2 self-center sm:self-start overflow-hidden">
                                                     <img
                                                         src={post.image}
                                                         alt="Thumbnail"
@@ -1063,7 +1063,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                         >
                                             {/* Post Category Tag */}
                                             <div className="absolute top-3 left-3 z-10">
-                                                <span className="bg-black/60 backdrop-blur-md border border-white/20 text-white/95 text-[9px] px-2 py-0.5 rounded-sm uppercase tracking-wider font-semibold">
+                                                <span className="bg-black/60 backdrop-blur-md border border-white/20 text-white/95 text-[9px] px-2 py-0.5 uppercase tracking-wider font-semibold">
                                                     Showcase
                                                 </span>
                                             </div>
@@ -1082,7 +1082,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                                 <div>
                                                     <div className="flex items-center justify-between text-[10px] text-white/40 mb-2">
                                                         <div className="flex items-center gap-1.5">
-                                                            <div className="w-4 h-4 rounded-full bg-zinc-700 overflow-hidden border border-white/15 flex items-center justify-center">
+                                                            <div className="w-4 h-4 bg-zinc-700 overflow-hidden border border-white/15 flex items-center justify-center">
                                                                 {post.authorAvatar ? (
                                                                     <img src={post.authorAvatar} alt={post.author} className="w-full h-full object-cover" />
                                                                 ) : (
@@ -1104,12 +1104,12 @@ export function FigurePage({ current }: FigurePageProps) {
 
                                                     <div className="flex flex-wrap gap-1 mt-3">
                                                         {post.bodyType && (
-                                                            <span className={`text-[8px] text-[#5cff5c] bg-[#3c8527]/15 border border-[#3c8527]/30 px-1.5 py-0.5 rounded-sm select-none ${current.fontClass}`}>
+                                                            <span className={`text-[8px] text-[#5cff5c] bg-[#3c8527]/15 border border-[#3c8527]/30 px-1.5 py-0.5 select-none ${current.fontClass}`}>
                                                                 {getBodyTypeLabel(post.bodyType, current)}
                                                             </span>
                                                         )}
                                                         {post.multiColorType && (
-                                                            <span className={`text-[8px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 rounded-sm select-none ${current.fontClass}`}>
+                                                            <span className={`text-[8px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 select-none ${current.fontClass}`}>
                                                                 {getMultiColorTypeLabel(post.multiColorType, current)}
                                                             </span>
                                                         )}
@@ -1167,7 +1167,7 @@ export function FigurePage({ current }: FigurePageProps) {
 
                                                 {/* Play Overlay Button */}
                                                 <div className="absolute inset-0 flex items-center justify-center">
-                                                    <div className="w-12 h-12 bg-black/60 border border-white/20 group-hover:border-red-500 group-hover:bg-red-500 rounded-full flex items-center justify-center text-white transition-all shadow-md group-hover:scale-110 duration-200">
+                                                    <div className="w-12 h-12 bg-black/60 border border-white/20 group-hover:border-red-500 group-hover:bg-red-500 flex items-center justify-center text-white transition-all shadow-md group-hover:scale-110 duration-200">
                                                         <Icon icon="pixelarticons:play" className="text-xl ml-0.5" />
                                                     </div>
                                                 </div>
@@ -1237,7 +1237,7 @@ export function FigurePage({ current }: FigurePageProps) {
                         {/* Close button */}
                         <button
                             onClick={() => setSelectedVideo(null)}
-                            className="absolute top-3 right-3 w-8 h-8 bg-black/60 border border-white/15 rounded-full flex items-center justify-center text-white/70 hover:text-white cursor-pointer z-10"
+                            className="absolute top-3 right-3 w-8 h-8 bg-black/60 border border-white/15 flex items-center justify-center text-white/70 hover:text-white cursor-pointer z-10"
                         >
                             <Icon icon="pixelarticons:close" />
                         </button>

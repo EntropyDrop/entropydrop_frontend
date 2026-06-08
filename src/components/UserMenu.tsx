@@ -317,9 +317,9 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             {user ?
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className={`flex items-center bg-black/40 hover:bg-black/60 border-2 border-white/10 p-1 transition-all cursor-pointer group shrink-0 ${isOpen ? 'gap-3 sm:pr-2' : ''}`}
+                    className={`flex items-center bg-black/40 hover:bg-black/60 border-2 border-white/10 h-10 transition-all cursor-pointer group shrink-0 ${isOpen ? 'px-2 gap-3' : 'w-10 justify-center'}`}
                 >
-                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-[#555] border-2 border-black overflow-hidden shrink-0 flex items-center justify-center">
+                    <div className="w-8 h-8 bg-[#555] border-2 border-black overflow-hidden shrink-0 flex items-center justify-center">
                         <img
                             src={user.picture}
                             alt="avatar"
