@@ -1,6 +1,6 @@
 import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect } from 'react'
-import { useSearchParams, useParams } from 'react-router-dom'
+import { useSearchParams, useParams, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { apiFetch } from '../utils/api'
 import type { LangData } from '../constants/lang'
@@ -207,6 +207,7 @@ const extractFirstImageUrl = (markdown: string): string | undefined => {
 export function FigurePage({ current }: FigurePageProps) {
     const [searchParams] = useSearchParams()
     const { category } = useParams<{ category?: string }>()
+    const navigate = useNavigate()
     const activeCategory = category || 'discussions'
     const [searchQuery, setSearchQuery] = useState('')
     const [searchInput, setSearchInput] = useState('')
@@ -675,7 +676,7 @@ export function FigurePage({ current }: FigurePageProps) {
                     {/* Back Button */}
                     <div>
                         <button
-                            onClick={() => setSelectedPost(null)}
+                            onClick={() => navigate(`/figure/${activeCategory}`)}
                             className={`flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors bg-white/5 border border-white/10 px-3 py-1.5 cursor-pointer ${current.fontClass}`}
                         >
                             <Icon icon="pixelarticons:arrow-left" />
@@ -969,7 +970,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                     filteredPosts.map(post => (
                                         <div
                                             key={post.id}
-                                            onClick={() => setSelectedPost(post)}
+                                            onClick={() => navigate(`/figure/${activeCategory}?postId=${post.id}`)}
                                             className="bg-black/30 border border-white/10 p-4 sm:p-5 flex flex-col sm:flex-row gap-4 justify-between items-start hover:border-[#3c8527]/50 hover:bg-white/5 transition-all duration-300 cursor-pointer group shadow-md"
                                         >
                                             <div className="flex-1 flex flex-col min-w-0">
@@ -1060,7 +1061,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                         <div
                                             key={post.id}
                                             className="bg-black/30 border border-white/10 flex flex-col cursor-pointer group hover:border-[#3c8527]/50 transition-all duration-300 relative shadow-lg overflow-hidden"
-                                            onClick={() => setSelectedPost(post)}
+                                            onClick={() => navigate(`/figure/${activeCategory}?postId=${post.id}`)}
                                         >
                                             {/* Post Category Tag */}
                                             <div className="absolute top-3 left-3 z-10">
