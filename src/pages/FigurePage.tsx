@@ -651,45 +651,49 @@ export function FigurePage({ current }: FigurePageProps) {
                 )}
 
                 {/* Under Construction Warning Banner */}
-                <div className="border border-amber-500/20 bg-amber-500/5 text-amber-200/90 px-4 py-3 text-[11px] sm:text-xs flex items-center gap-2.5 shrink-0 animate-in fade-in slide-in-from-top duration-300">
-                    <Icon icon="pixelarticons:warning-box" className="text-amber-500 text-lg flex-shrink-0 animate-pulse" />
-                    <div className="flex-1 font-sans">
-                        {isZh ? (
-                            <span><strong>建设中提示：</strong> 3D 打印手办社区目前正处于开发调试阶段，暂不可用。敬请期待！</span>
-                        ) : (
-                            <span><strong>Under Construction:</strong> The 3D Print Figure Forum is currently under active development and is temporarily unavailable. Stay tuned!</span>
-                        )}
+                {!selectedPost && !isCreateFormOpen && (
+                    <div className="border border-amber-500/20 bg-amber-500/5 text-amber-200/90 px-4 py-3 text-[11px] sm:text-xs flex items-center gap-2.5 shrink-0 animate-in fade-in slide-in-from-top duration-300">
+                        <Icon icon="pixelarticons:warning-box" className="text-amber-500 text-lg flex-shrink-0 animate-pulse" />
+                        <div className="flex-1 font-sans">
+                            {isZh ? (
+                                <span><strong>建设中提示：</strong> 3D 打印手办社区目前正处于开发调试阶段，暂不可用。敬请期待！</span>
+                            ) : (
+                                <span><strong>Under Construction:</strong> The 3D Print Figure Forum is currently under active development and is temporarily unavailable. Stay tuned!</span>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Forum Header Banner */}
-                <div className="relative overflow-hidden border border-white/10 bg-gradient-to-r from-black/60 to-zinc-900/60 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shrink-0">
-                    <div className="z-10 flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="bg-[#3c8527] text-white text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider">3D Print</span>
-                            <span className="text-white/40 text-xs font-mono">v1.2.0-beta</span>
+                {!selectedPost && !isCreateFormOpen && (
+                    <div className="relative overflow-hidden border border-white/10 bg-gradient-to-r from-black/60 to-zinc-900/60 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shrink-0">
+                        <div className="z-10 flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="bg-[#3c8527] text-white text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider">3D Print</span>
+                                <span className="text-white/40 text-xs font-mono">v1.2.0-beta</span>
+                            </div>
+                            <h2 className={`text-xl sm:text-3xl font-extrabold text-white leading-tight ${current.fontClass}`} style={{ textShadow: '1px 1px 0px #000' }}>
+                                {current.figureForum.title}
+                            </h2>
+                            <p className={`text-xs sm:text-sm text-white/50 mt-1 max-w-2xl ${current.fontClass}`}>
+                                {current.figureForum.subtitle}
+                            </p>
                         </div>
-                        <h2 className={`text-xl sm:text-3xl font-extrabold text-white leading-tight ${current.fontClass}`} style={{ textShadow: '1px 1px 0px #000' }}>
-                            {current.figureForum.title}
-                        </h2>
-                        <p className={`text-xs sm:text-sm text-white/50 mt-1 max-w-2xl ${current.fontClass}`}>
-                            {current.figureForum.subtitle}
-                        </p>
-                    </div>
 
-                    {activeCategory !== 'videos' && (
-                        <button
-                            onClick={() => { setIsCreateFormOpen(true); setSelectedPost(null); }}
-                            className={`z-10 w-full md:w-auto px-4 py-2.5 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 transition-all font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-md hover:scale-105 active:scale-95 ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:plus" className="text-lg" />
-                            <span>{current.figureForum.publishPost}</span>
-                        </button>
-                    )}
-                    
-                    {/* Decorative cyber grid */}
-                    <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none w-1/3 h-full bg-[linear-gradient(to_right,rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:16px_16px]" />
-                </div>
+                        {activeCategory !== 'videos' && (
+                            <button
+                                onClick={() => { setIsCreateFormOpen(true); setSelectedPost(null); }}
+                                className={`z-10 w-full md:w-auto px-4 py-2.5 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 transition-all font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-md hover:scale-105 active:scale-95 ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:plus" className="text-lg" />
+                                <span>{current.figureForum.publishPost}</span>
+                            </button>
+                        )}
+                        
+                        {/* Decorative cyber grid */}
+                        <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none w-1/3 h-full bg-[linear-gradient(to_right,rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:16px_16px]" />
+                    </div>
+                )}
 
                 {selectedPost ? (
                     <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 min-h-0 animate-in fade-in duration-300 flex flex-col gap-6">
