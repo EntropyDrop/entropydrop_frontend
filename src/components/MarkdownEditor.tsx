@@ -11,15 +11,12 @@ import {
     UndoRedo,
     BoldItalicUnderlineToggles,
     BlockTypeSelect,
-    CreateLink,
     InsertTable,
     InsertCodeBlock,
     ListsToggle,
     tablePlugin,
     codeBlockPlugin,
     codeMirrorPlugin,
-    linkPlugin,
-    linkDialogPlugin,
     InsertThematicBreak,
     Separator,
     type MDXEditorMethods
@@ -59,8 +56,6 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
                     listsPlugin(),
                     quotePlugin(),
                     thematicBreakPlugin(),
-                    linkPlugin(),
-                    linkDialogPlugin(),
                     tablePlugin(),
                     codeBlockPlugin({ defaultCodeBlockLanguage: 'javascript' }),
                     codeMirrorPlugin({ codeBlockLanguages: { js: 'JavaScript', css: 'CSS', html: 'HTML', python: 'Python', json: 'JSON' } }),
@@ -77,7 +72,6 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
                                 <Separator />
                                 <ListsToggle />
                                 <Separator />
-                                <CreateLink />
                                 <InsertTable />
                                 <InsertCodeBlock />
                                 <InsertThematicBreak />
