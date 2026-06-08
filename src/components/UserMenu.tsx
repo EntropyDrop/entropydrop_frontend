@@ -317,7 +317,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             {user ?
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className="flex items-center gap-3 bg-black/40 hover:bg-black/60 border-2 border-white/10 p-1.5 sm:p-2 transition-all cursor-pointer group"
+                    className={`flex items-center bg-black/40 hover:bg-black/60 border-2 border-white/10 p-1 transition-all cursor-pointer group shrink-0 ${isOpen ? 'gap-3 sm:pr-2' : ''}`}
                 >
                     <div className="w-8 h-8 sm:w-10 sm:h-10 bg-[#555] border-2 border-black overflow-hidden shrink-0 flex items-center justify-center">
                         <img
@@ -327,15 +327,17 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             style={{ imageRendering: user.picture ? 'auto' : 'pixelated' }}
                         />
                     </div>
-                    <div className="hidden sm:flex flex-col items-start pr-2">
+                    {isOpen && (
                         <>
-                            <div className="flex items-center gap-1">
-                                <span className={`text-white text-xs ${current.fontClass} max-w-[80px] truncate`}>{user.username}</span>
-                                {user.is_pro && <span className="text-[9px] bg-yellow-400 text-black px-1 border border-black shadow">PRO</span>}
+                            <div className="hidden sm:flex flex-col items-start">
+                                <div className="flex items-center gap-1">
+                                    <span className={`text-white text-xs ${current.fontClass} max-w-[80px] truncate`}>{user.username}</span>
+                                    {user.is_pro && <span className="text-[9px] bg-yellow-400 text-black px-1 border border-black shadow">PRO</span>}
+                                </div>
                             </div>
+                            <Icon icon="pixelarticons:chevron-down" className="text-white/20 group-hover:text-white/60 transition-transform rotate-180 hidden sm:block shrink-0" />
                         </>
-                    </div>
-                    <Icon icon="pixelarticons:chevron-down" className={`text-white/20 group-hover:text-white/60 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                    )}
                 </button>
                 : (
                     <Suspense fallback={<LoginTrigger current={current} disabled />}>
