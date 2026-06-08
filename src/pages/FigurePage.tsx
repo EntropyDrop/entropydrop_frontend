@@ -217,7 +217,15 @@ export function FigurePage({ current }: FigurePageProps) {
     const [selectedVideo, setSelectedVideo] = useState<YoutubeVideo | null>(null)
 
     // Current logged in user info (mocked/fetched)
-    const [currentUser, setCurrentUser] = useState<{ username: string; picture: string; is_pro: boolean } | null>(null)
+    const [currentUser, setCurrentUser] = useState<{ username: string; picture: string; is_pro: boolean; is_admin?: boolean } | null>(null)
+
+    // Video form states
+    const [youtubeVideos, setYoutubeVideos] = useState<YoutubeVideo[]>([])
+    const [isAddVideoFormOpen, setIsAddVideoFormOpen] = useState(false)
+    const [newVideoTitle, setNewVideoTitle] = useState('')
+    const [newVideoUrl, setNewVideoUrl] = useState('')
+    const [newVideoDescription, setNewVideoDescription] = useState('')
+    const [newVideoDuration, setNewVideoDuration] = useState('')
 
     const [newTitle, setNewTitle] = useState('')
     const [newContent, setNewContent] = useState('')
@@ -243,7 +251,8 @@ export function FigurePage({ current }: FigurePageProps) {
                         setCurrentUser({
                             username: data.username,
                             picture: data.picture,
-                            is_pro: data.is_pro
+                            is_pro: data.is_pro,
+                            is_admin: data.is_admin
                         })
                     }
                 } catch (e) {
@@ -343,9 +352,12 @@ export function FigurePage({ current }: FigurePageProps) {
         }
     }
 
-    // Debounced fetch posts on changes
+    // Debounced fetch posts or videos on changes
     useEffect(() => {
-        if (activeCategory === 'videos') return
+        if (activeCategory === 'videos') {
+            fetchVideos()
+            return
+        }
         const delayDebounceFn = setTimeout(() => {
             fetchPosts()
         }, 300)
@@ -362,41 +374,73 @@ export function FigurePage({ current }: FigurePageProps) {
         }
     }, [postIdFromUrl])
 
-    const youtubeVideos: YoutubeVideo[] = [
-        {
-            id: 'v-1',
-            title: 'I 3D Printed My Minecraft Skin! (Using Bambu Lab P1S)',
-            description: 'In this video, I walk through the full process of extracting a Minecraft skin, converting it into a printable 3D OBJ model with solid joints, slicing in Bambu Studio, and printing it in colorful PLA.',
-            youtubeId: 'p96u86q_7H0',
-            thumbnailUrl: 'https://img.youtube.com/vi/p96u86q_7H0/mqdefault.jpg',
-            channelName: '3DPrintCraft',
-            views: '45K views',
-            duration: '12:34',
-            publishedAt: '3 weeks ago'
-        },
-        {
-            id: 'v-2',
-            title: 'Bambu Lab A1 Mini - Slicing and Printing Mini Figures',
-            description: 'Reviewing the Bambu Lab A1 Mini printer specifically for micro-sized figures and pixelated models. We test different layer heights down to 0.08mm and test tolerance clearance on tight joints.',
-            youtubeId: 'v2A_B1yL72Y',
-            thumbnailUrl: 'https://img.youtube.com/vi/v2A_B1yL72Y/mqdefault.jpg',
-            channelName: 'MakeAnythingMini',
-            views: '128K views',
-            duration: '15:10',
-            publishedAt: '1 month ago'
-        },
-        {
-            id: 'v-3',
-            title: 'How to Post-Process & Paint 3D Printed Figures',
-            description: 'Sanding, priming, and painting voxel models can be tough. Check out this beginner-friendly tutorial on using water-based acrylic paints, micro brushes, and matte varnishes to give your figures a premium finish.',
-            youtubeId: 'wL6HkH20L1o',
-            thumbnailUrl: 'https://img.youtube.com/vi/wL6HkH20L1o/mqdefault.jpg',
-            channelName: 'PixelPainter',
-            views: '82K views',
-            duration: '8:45',
-            publishedAt: '2 months ago'
+    const fetchVideos = async () => {
+        try {
+            const res = await apiFetch('/api/forum/videos')
+            if (res.ok) {
+                const data = await res.json()
+                setYoutubeVideos(data)
+            }
+        } catch (e) {
+            console.error('Failed to fetch videos', e)
         }
-    ]
+    }
+
+    const handleCreateVideo = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!newVideoTitle.trim() || !newVideoUrl.trim()) return
+
+        try {
+            const res = await apiFetch('/api/forum/videos', {
+                method: 'POST',
+                body: JSON.stringify({
+                    title: newVideoTitle.trim(),
+                    youtube_url: newVideoUrl.trim(),
+                    description: newVideoDescription.trim(),
+                    duration: newVideoDuration.trim()
+                })
+            })
+
+            if (res.ok) {
+                const createdVideo = await res.json()
+                setYoutubeVideos(prev => [createdVideo, ...prev])
+                setIsAddVideoFormOpen(false)
+                setNewVideoTitle('')
+                setNewVideoUrl('')
+                setNewVideoDescription('')
+                setNewVideoDuration('')
+                triggerToast('Video added successfully!')
+            } else {
+                const err = await res.json().catch(() => ({}))
+                triggerToast(err.detail || 'Failed to add video')
+            }
+        } catch (err) {
+            console.error(err)
+            triggerToast('Network error, please try again')
+        }
+    }
+
+    const handleDeleteVideo = async (videoId: string) => {
+        if (!confirm(isZh ? '确定要删除这个视频吗？' : 'Are you sure you want to delete this video?')) return
+
+        try {
+            const res = await apiFetch(`/api/forum/videos/${videoId}`, {
+                method: 'DELETE'
+            })
+
+            if (res.ok) {
+                setYoutubeVideos(prev => prev.filter(v => v.id !== videoId))
+                triggerToast('Video deleted successfully!')
+            } else {
+                const err = await res.json().catch(() => ({}))
+                triggerToast(err.detail || 'Failed to delete video')
+            }
+        } catch (err) {
+            console.error(err)
+            triggerToast('Network error, please try again')
+        }
+    }
+
 
     // Toast helper
     const triggerToast = (msg: string) => {
@@ -662,6 +706,17 @@ export function FigurePage({ current }: FigurePageProps) {
                             >
                                 <Icon icon="pixelarticons:plus" className="text-sm" />
                                 <span>{current.figureForum.publishPost}</span>
+                            </button>
+                        )}
+
+                        {/* Add Video button (Admin only) */}
+                        {activeCategory === 'videos' && currentUser?.is_admin && (
+                            <button
+                                onClick={() => { setIsAddVideoFormOpen(true); setSelectedPost(null); }}
+                                className={`px-3 py-1.5 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 transition-all font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:scale-105 active:scale-95 text-xs ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:plus" className="text-sm" />
+                                <span>{isZh ? '添加视频' : 'Add Video'}</span>
                             </button>
                         )}
                     </div>
@@ -954,6 +1009,98 @@ export function FigurePage({ current }: FigurePageProps) {
                         </form>
                     </div>
                 </div>
+            ) : isAddVideoFormOpen ? (
+                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 min-h-0 animate-in fade-in duration-300 flex flex-col gap-6">
+                    {/* Back Button */}
+                    <div>
+                        <button
+                            onClick={() => setIsAddVideoFormOpen(false)}
+                            className={`flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors bg-white/5 border border-white/10 px-3 py-1.5 cursor-pointer ${current.fontClass}`}
+                        >
+                            <Icon icon="pixelarticons:arrow-left" />
+                            <span>{isZh ? '返回视频列表' : 'Back to Videos'}</span>
+                        </button>
+                    </div>
+
+                    {/* Inline Add Video View */}
+                    <div className="bg-black/20 border border-white/10 p-5 sm:p-6 flex flex-col gap-4">
+                        <div className="flex justify-between items-start mb-2">
+                            <h3 className={`text-base sm:text-lg font-bold text-white flex items-center gap-2 ${current.fontClass}`}>
+                                <Icon icon="pixelarticons:plus" className="text-[#3c8527]" />
+                                <span>{isZh ? '添加新视频' : 'Add New Video'}</span>
+                            </h3>
+                        </div>
+
+                        <form onSubmit={handleCreateVideo} className="flex flex-col gap-4">
+                            {/* Video Title */}
+                            <div className="flex flex-col gap-1.5">
+                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? '视频标题' : 'Video Title'}</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Slicing micro figurines instructions"
+                                    className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] ${current.fontClass}`}
+                                    value={newVideoTitle}
+                                    onChange={e => setNewVideoTitle(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            {/* YouTube URL */}
+                            <div className="flex flex-col gap-1.5">
+                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? 'YouTube 链接或视频 ID' : 'YouTube Link or Video ID'}</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. https://www.youtube.com/watch?v=... or p96u86q_7H0"
+                                    className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] ${current.fontClass}`}
+                                    value={newVideoUrl}
+                                    onChange={e => setNewVideoUrl(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            {/* Video Description */}
+                            <div className="flex flex-col gap-1.5">
+                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? '视频描述' : 'Video Description'}</label>
+                                <textarea
+                                    rows={4}
+                                    placeholder="Enter video description..."
+                                    className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] resize-none ${current.fontClass}`}
+                                    value={newVideoDescription}
+                                    onChange={e => setNewVideoDescription(e.target.value)}
+                                />
+                            </div>
+
+                            {/* Video Duration */}
+                            <div className="flex flex-col gap-1.5">
+                                <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? '视频时长' : 'Video Duration'}</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. 12:34"
+                                    className={`bg-black/50 border border-white/10 p-2.5 text-xs text-white focus:outline-none focus:border-[#3c8527] ${current.fontClass}`}
+                                    value={newVideoDuration}
+                                    onChange={e => setNewVideoDuration(e.target.value)}
+                                />
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-3 justify-end mt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAddVideoFormOpen(false)}
+                                    className={`px-4 py-2 border border-white/10 bg-transparent text-white/60 hover:text-white transition-colors text-xs font-semibold cursor-pointer ${current.fontClass}`}
+                                >
+                                    {isZh ? '取消' : 'Cancel'}
+                                </button>
+                                <button
+                                    type="submit"
+                                    className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white font-bold text-xs transition-colors cursor-pointer border-none shadow-md ${current.fontClass}`}
+                                >
+                                    {isZh ? '发布视频' : 'Publish Video'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             ) : (
                 <>
 
@@ -1153,8 +1300,20 @@ export function FigurePage({ current }: FigurePageProps) {
                                         <div
                                             key={video.id}
                                             onClick={() => setSelectedVideo(video)}
-                                            className="bg-black/30 border border-white/10 flex flex-col cursor-pointer group hover:border-[#3c8527]/50 transition-all duration-300 shadow-lg overflow-hidden"
+                                            className="bg-black/30 border border-white/10 flex flex-col cursor-pointer group hover:border-[#3c8527]/50 transition-all duration-300 shadow-lg overflow-hidden relative"
                                         >
+                                            {currentUser?.is_admin && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeleteVideo(video.id);
+                                                    }}
+                                                    className="absolute top-2 right-2 z-20 bg-red-700/80 hover:bg-red-600 text-white p-1 border border-white/10 transition-colors cursor-pointer"
+                                                    title={isZh ? '删除视频' : 'Delete Video'}
+                                                >
+                                                    <Icon icon="pixelarticons:trash" className="text-xs" />
+                                                </button>
+                                            )}
                                             {/* Thumbnail Container */}
                                             <div className="w-full aspect-video bg-zinc-950 relative overflow-hidden flex items-center justify-center border-b border-white/5">
                                                 <img
