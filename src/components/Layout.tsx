@@ -128,7 +128,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                             </div>
 
                             {/* Second-Level Sub-Navigation */}
-                            <div className="hidden lg:flex gap-5 sm:gap-7 shrink-0 pointer-events-auto items-center h-6">
+                            <div className="hidden lg:flex gap-5 sm:gap-7 shrink-0 pointer-events-auto items-center h-8">
                                 {activeSubNavItems.map((item) => {
                                     const isActive = item.path === '/skin/'
                                         ? (location.pathname === '/skin/' || location.pathname === '/skin')
@@ -140,17 +140,17 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                         <Link
                                             key={item.key}
                                             to={item.path}
-                                            className={`group flex items-center gap-1.5 text-white transition-all no-underline transform hover:scale-105 active:scale-95 ${isActive ? 'opacity-100' : 'opacity-65 hover:opacity-100'
+                                            className={`group flex items-center gap-2 text-white transition-all no-underline transform hover:scale-105 active:scale-95 ${isActive ? 'opacity-100' : 'opacity-65 hover:opacity-100'
                                                 }`}
                                         >
                                             <Icon
                                                 icon={item.icon}
-                                                className="text-sm sm:text-lg"
+                                                className="text-base sm:text-xl"
                                                 style={{ imageRendering: 'pixelated' }}
                                             />
-                                            <span className={`text-[11px] sm:text-sm ${current.fontClass}`}>{label}</span>
+                                            <span className={`text-xs sm:text-base ${current.fontClass}`}>{label}</span>
                                             {isActive && (
-                                                <div className="w-1 h-1 bg-green-500 animate-pulse ml-0.5" />
+                                                <div className="w-1.5 h-1.5 bg-green-500 animate-pulse ml-0.5" />
                                             )}
                                         </Link>
                                     )
