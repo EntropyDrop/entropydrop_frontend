@@ -29,8 +29,8 @@ interface ForumComment {
     replies?: ForumComment[]
 }
 
-const BODY_TYPES_ZH = ['单色光固化', 'fdm', '3D全彩光固化'];
-const BODY_TYPES_EN = ['Mono SLA', 'FDM', '3D Full-Color SLA'];
+const BODY_TYPES_ZH = ['单色光固化', 'fdm', '光固化喷墨打印 (UV Inkjet 3D Printing)'];
+const BODY_TYPES_EN = ['Mono SLA', 'FDM', 'UV Inkjet 3D Printing'];
 
 const MULTICOLOR_TYPES_ZH = ['贴纸', '3D全彩光固化', '2D全彩光固化', '喷涂', 'fdm多色'];
 const MULTICOLOR_TYPES_EN = ['Stickers', '3D Full-Color SLA', '2D Full-Color SLA', 'Spraying', 'FDM Multi-color'];
@@ -394,7 +394,7 @@ export function FigurePage({ current }: FigurePageProps) {
             },
             comments: [],
             createdAt: '2 days ago',
-            bodyType: '3D全彩光固化',
+            bodyType: '光固化喷墨打印 (UV Inkjet 3D Printing)',
             multiColorType: '3D全彩光固化'
         }
     ])
