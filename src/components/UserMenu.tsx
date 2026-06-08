@@ -194,9 +194,9 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         onClick={handleToggleNotif}
                         className="relative flex items-center justify-center bg-black/40 hover:bg-black/60 border-2 border-white/10 w-10 h-10 transition-all cursor-pointer text-white/70 hover:text-white"
                     >
-                        <Icon icon="pixelarticons:mail" className="text-xl" />
+                        <Icon icon="pixelarticons:mail" className="text-2xl" />
                         {unreadCount > 0 && (
-                            <span className="absolute top-1 right-1 w-2 h-2 bg-[#5cff5c] rounded-full border border-black animate-pulse" />
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-[#5cff5c] border border-black animate-pulse" />
                         )}
                     </button>
                     {isNotifOpen && (
@@ -245,7 +245,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                             }}
                                             className={`p-3 border-b border-white/5 hover:bg-white/5 flex gap-2.5 items-start cursor-pointer transition-colors ${!n.isRead ? 'bg-white/5' : ''} ${current.fontClass}`}
                                         >
-                                            <div className="w-6 h-6 rounded-full bg-zinc-800 overflow-hidden border border-white/10 flex items-center justify-center shrink-0">
+                                            <div className="w-6 h-6 bg-zinc-800 overflow-hidden border border-white/10 flex items-center justify-center shrink-0">
                                                 {n.senderAvatar ? (
                                                     <img src={n.senderAvatar} alt="avatar" className="w-full h-full object-cover" />
                                                 ) : (
@@ -267,7 +267,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                 <span className={`text-[9px] text-white/30 mt-0.5 ${current.fontClass}`}>{n.createdAt}</span>
                                             </div>
                                             {!n.isRead && (
-                                                <span className="w-1.5 h-1.5 bg-[#5cff5c] rounded-full shrink-0 mt-1.5" />
+                                                <span className="w-1.5 h-1.5 bg-[#5cff5c] shrink-0 mt-1.5" />
                                             )}
                                         </div>
                                     ))
@@ -319,7 +319,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                     onClick={() => setIsOpen(!isOpen)}
                     className={`flex items-center bg-black/40 hover:bg-black/60 border-2 border-white/10 h-10 transition-all cursor-pointer group shrink-0 ${isOpen ? 'px-2 gap-3' : 'w-10 justify-center'}`}
                 >
-                    <div className="w-8 h-8 bg-[#555] border-2 border-black overflow-hidden shrink-0 flex items-center justify-center">
+                    <div className="w-6 h-6 bg-[#555] border border-black overflow-hidden shrink-0 flex items-center justify-center">
                         <img
                             src={user.picture}
                             alt="avatar"
