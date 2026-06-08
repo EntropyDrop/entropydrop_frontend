@@ -29,8 +29,8 @@ interface ForumComment {
     replies?: ForumComment[]
 }
 
-const BODY_TYPES_EN = ['SLA', 'FDM', 'UV Inkjet 3D Printing', 'Other'];
-const MULTICOLOR_TYPES_EN = ['Stickers', 'UV Inkjet', 'Spraying', 'FDM Multi-color', 'Other'];
+const BODY_TYPES_EN = ['SLA', 'FDM', 'UV Inkjet 3D Printing', 'Other/Unknown'];
+const MULTICOLOR_TYPES_EN = ['Stickers', 'UV Inkjet', 'Spraying', 'FDM Multi-color', 'Other/Unknown'];
 
 const getBodyTypeLabel = (val: string | undefined, current: LangData) => {
     if (!val) return '';
@@ -220,8 +220,8 @@ export function FigurePage({ current }: FigurePageProps) {
     const [newTitle, setNewTitle] = useState('')
     const [newContent, setNewContent] = useState('')
     const [newCategory, setNewCategory] = useState<'discussions' | 'showcase'>('discussions')
-    const [newBodyType, setNewBodyType] = useState('Other')
-    const [newMultiColorType, setNewMultiColorType] = useState('Other')
+    const [newBodyType, setNewBodyType] = useState('Other/Unknown')
+    const [newMultiColorType, setNewMultiColorType] = useState('Other/Unknown')
 
     // Comment input state
     const [commentText, setCommentText] = useState('')
@@ -546,8 +546,8 @@ export function FigurePage({ current }: FigurePageProps) {
                 setNewTitle('')
                 setNewContent('')
                 setNewCategory('discussions')
-                setNewBodyType('Other')
-                setNewMultiColorType('Other')
+                setNewBodyType('Other/Unknown')
+                setNewMultiColorType('Other/Unknown')
 
                 triggerToast('Post published successfully!')
             } else {
