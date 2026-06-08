@@ -192,7 +192,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 <div className="relative shrink-0" ref={notifRef}>
                     <button
                         onClick={handleToggleNotif}
-                        className="relative flex items-center justify-center bg-black/40 hover:bg-black/60 border-2 border-white/10 w-10 h-10 transition-all cursor-pointer text-white/70 hover:text-white"
+                        className="relative flex items-center justify-center bg-black/40 hover:bg-black/60 border border-white/10 w-10 h-10 transition-all cursor-pointer text-white/70 hover:text-white"
                     >
                         <Icon icon="pixelarticons:mail" className="text-2xl" />
                         {unreadCount > 0 && (
@@ -200,7 +200,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         )}
                     </button>
                     {isNotifOpen && (
-                        <div className="absolute top-full right-0 mt-2 w-72 max-h-[350px] overflow-y-auto custom-scrollbar bg-[#333] border-2 border-black shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="absolute top-full right-0 mt-2 w-72 max-h-[350px] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                             <div className="p-3 border-b border-black/20 bg-black/20 flex justify-between items-center">
                                 <span className={`text-white text-xs font-bold ${current.fontClass}`}>
                                     {lang === 'zh-hans' ? '消息通知' : 'Notifications'}
@@ -308,7 +308,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             {!user && (
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className="lg:hidden flex items-center justify-center bg-black/40 border-2 border-white/10 w-10 h-10 transition-all cursor-pointer"
+                    className="lg:hidden flex items-center justify-center bg-black/40 border border-white/10 w-10 h-10 transition-all cursor-pointer"
                 >
                     <Icon icon={isOpen ? "pixelarticons:close" : "pixelarticons:menu"} className="text-white text-xl" />
                 </button>
@@ -317,7 +317,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             {user ?
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className={`flex items-center bg-black/40 hover:bg-black/60 border-2 border-white/10 h-10 transition-all cursor-pointer group shrink-0 ${isOpen ? 'px-2 gap-3' : 'w-10 justify-center'}`}
+                    className={`flex items-center bg-black/40 hover:bg-black/60 border border-white/10 h-10 transition-all cursor-pointer group shrink-0 ${isOpen ? 'px-2 gap-3' : 'w-10 justify-center'}`}
                 >
                     <div className="w-6 h-6 bg-[#555] border border-black overflow-hidden shrink-0 flex items-center justify-center">
                         <img
@@ -349,7 +349,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 )}
 
             {isOpen && (
-                <div className="absolute top-full right-0 mt-2 w-64 sm:w-52 max-h-[50vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar bg-[#333] border-2 border-black shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="absolute top-full right-0 mt-2 w-64 sm:w-52 max-h-[50vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                     {/* Mobile/Tablet Navigation Links */}
                     <div className="lg:hidden border-b border-black/10 pb-1 pt-1 bg-black/10 flex flex-col gap-1">
                         {/* Global Platform Links: Pro & Public */}
@@ -547,7 +547,7 @@ function LoginTrigger({
     return (
         <button
             disabled={disabled}
-            className={`flex items-center justify-center gap-2 bg-black/40 hover:bg-black/60 border-2 border-white/10 h-10 px-3 text-white/80 transition-all cursor-pointer disabled:cursor-wait disabled:opacity-60 ${current.fontClass}`}
+            className={`flex items-center justify-center gap-2 bg-black/40 hover:bg-black/60 border border-white/10 h-10 px-3 text-white/80 transition-all cursor-pointer disabled:cursor-wait disabled:opacity-60 ${current.fontClass}`}
         >
             <Icon icon="pixelarticons:user" className="text-lg" />
             <span className="hidden sm:inline text-xs">{current.user.login}</span>
