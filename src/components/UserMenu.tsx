@@ -48,6 +48,54 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
     const [totalNotifs, setTotalNotifs] = useState(0)
     const [notifPageSize] = useState(10)
 
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+    const [tempNickname, setTempNickname] = useState('')
+    const [isSavingProfile, setIsSavingProfile] = useState(false)
+    const [profileError, setProfileError] = useState('')
+    const [profileSuccess, setProfileSuccess] = useState('')
+
+    const handleOpenProfileModal = () => {
+        if (user) {
+            setTempNickname(user.username || '')
+            setProfileError('')
+            setProfileSuccess('')
+            setIsProfileModalOpen(true)
+        }
+    }
+
+    const handleSaveProfile = async () => {
+        if (!tempNickname.trim()) return
+        setIsSavingProfile(true)
+        setProfileError('')
+        setProfileSuccess('')
+        try {
+            const res = await apiFetch('/api/users/me/username', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username: tempNickname.trim() })
+            })
+            if (res.ok) {
+                const updatedUser = await res.json()
+                setUser(updatedUser)
+                setProfileSuccess(lang === 'zh-hans' ? '昵称修改成功！' : 'Nickname updated successfully!')
+                window.dispatchEvent(new Event('user-updated'))
+                setTimeout(() => {
+                    setIsProfileModalOpen(false)
+                }, 1000)
+            } else {
+                const errData = await res.json()
+                setProfileError(errData?.detail || (lang === 'zh-hans' ? '保存失败' : 'Failed to save'))
+            }
+        } catch (err) {
+            console.error(err)
+            setProfileError(lang === 'zh-hans' ? '网络错误，请稍后重试' : 'Network error, please try again')
+        } finally {
+            setIsSavingProfile(false)
+        }
+    }
+
     // Load user on mount
     useEffect(() => {
         const token = localStorage.getItem('token')
@@ -398,7 +446,16 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                     {user && (
                         <>
                             <div className="p-3 border-b border-black/20 bg-black/20">
-                                <span className={`text-white text-xs ${current.fontClass} block truncate mb-2`}>{user.email}</span>
+                                <button
+                                    onClick={() => {
+                                        setIsOpen(false);
+                                        handleOpenProfileModal();
+                                    }}
+                                    className={`w-full py-1.5 px-3 mb-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs cursor-pointer flex items-center justify-center gap-2 transition-all ${current.fontClass}`}
+                                >
+                                    <Icon icon="pixelarticons:user" className="text-sm" />
+                                    {lang === 'zh-hans' ? '个人资料' : 'Profile'}
+                                </button>
                                 {user.is_pro && user.pro_expires_at && (
                                     <div className={`bg-black/40 p-2 border border-white/5 flex flex-col gap-1 text-[10px] sm:text-xs ${current.fontClass}`}>
                                         <div className="flex flex-col gap-1 text-white/60">
@@ -527,6 +584,104 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                 className={`flex-1 py-2 bg-[#5cff5c] hover:bg-[#4ae04a] text-black font-bold text-xs transition-colors cursor-pointer border-none ${current.fontClass}`}
                             >
                                 {current.terms.agree}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isProfileModalOpen && user && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] backdrop-blur-sm pointer-events-auto animate-in fade-in duration-300">
+                    <div className="bg-[#1a1a1a] border border-white/10 p-6 max-w-sm w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-4">
+                        <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                            <h3 className={`text-white text-sm font-bold ${current.fontClass}`}>
+                                {lang === 'zh-hans' ? '个人资料' : 'Profile'}
+                            </h3>
+                            <button
+                                onClick={() => setIsProfileModalOpen(false)}
+                                className="text-white/40 hover:text-white transition-colors cursor-pointer"
+                            >
+                                <Icon icon="pixelarticons:close" className="text-sm" />
+                            </button>
+                        </div>
+
+                        {/* Avatar (Read-only) */}
+                        <div className="flex flex-col gap-1.5">
+                            <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
+                                {lang === 'zh-hans' ? '头像 (不可修改)' : 'Avatar (Read-only)'}
+                            </span>
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 bg-zinc-800 border border-white/10 flex items-center justify-center overflow-hidden">
+                                    {user.picture ? (
+                                        <img src={user.picture} alt="avatar" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <Icon icon="pixelarticons:user" className="text-white/40 text-lg" />
+                                    )}
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className={`text-[10px] text-white/50 ${current.fontClass}`}>
+                                        {lang === 'zh-hans' ? '自 Google 账号同步' : 'Synced from Google'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Email (Read-only) */}
+                        <div className="flex flex-col gap-1.5">
+                            <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
+                                {lang === 'zh-hans' ? '邮箱 (不可修改)' : 'Email (Read-only)'}
+                            </span>
+                            <input
+                                type="text"
+                                readOnly
+                                value={user.email}
+                                className={`w-full bg-white/5 border border-white/10 p-2 text-white/50 text-xs focus:outline-none cursor-not-allowed select-none ${current.fontClass}`}
+                            />
+                        </div>
+
+                        {/* Nickname (Editable) */}
+                        <div className="flex flex-col gap-1.5">
+                            <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
+                                {lang === 'zh-hans' ? '昵称' : 'Nickname'}
+                            </span>
+                            <input
+                                type="text"
+                                value={tempNickname}
+                                onChange={(e) => setTempNickname(e.target.value)}
+                                className={`w-full bg-black/40 border border-white/10 p-2 text-white text-xs focus:outline-none focus:border-green-500/30 ${current.fontClass}`}
+                                placeholder={lang === 'zh-hans' ? '请输入昵称...' : 'Enter nickname...'}
+                                maxLength={50}
+                            />
+                        </div>
+
+                        {/* Feedback messages */}
+                        {profileError && (
+                            <span className={`text-[10px] text-red-400 ${current.fontClass}`}>
+                                {profileError}
+                            </span>
+                        )}
+                        {profileSuccess && (
+                            <span className={`text-[10px] text-green-400 ${current.fontClass}`}>
+                                {profileSuccess}
+                            </span>
+                        )}
+
+                        {/* Action buttons */}
+                        <div className="flex gap-3 mt-2">
+                            <button
+                                onClick={() => setIsProfileModalOpen(false)}
+                                className={`flex-1 py-2 bg-transparent border border-white/10 hover:bg-white/5 text-white/50 hover:text-white text-xs transition-colors cursor-pointer ${current.fontClass}`}
+                            >
+                                {lang === 'zh-hans' ? '取消' : 'Cancel'}
+                            </button>
+                            <button
+                                onClick={handleSaveProfile}
+                                disabled={isSavingProfile || !tempNickname.trim()}
+                                className={`flex-1 py-2 bg-[#5cff5c] hover:bg-[#4ae04a] disabled:bg-zinc-800 disabled:text-white/30 disabled:cursor-not-allowed text-black font-bold text-xs transition-colors cursor-pointer ${current.fontClass}`}
+                            >
+                                {isSavingProfile 
+                                    ? (lang === 'zh-hans' ? '保存中...' : 'Saving...') 
+                                    : (lang === 'zh-hans' ? '保存' : 'Save')}
                             </button>
                         </div>
                     </div>
