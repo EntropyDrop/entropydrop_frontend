@@ -196,8 +196,10 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
     }, [notifPage, notifPageSize])
 
     const handleToggleNotif = () => {
-        setIsNotifOpen(!isNotifOpen)
-        if (!isNotifOpen) {
+        const nextIsNotifOpen = !isNotifOpen
+        setIsNotifOpen(nextIsNotifOpen)
+        if (nextIsNotifOpen) {
+            setIsOpen(false)
             setNotifPage(1)
             fetchNotifications(1)
         }
@@ -304,163 +306,169 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
 
     return (
         <div className="relative pointer-events-auto flex items-center gap-2" ref={menuRef}>
-            {user && (
-                <div className="relative shrink-0" ref={notifRef}>
-                    <button
-                        onClick={handleToggleNotif}
-                        className="relative flex items-center justify-center bg-black/40 hover:bg-black/60 border border-white/10 w-10 h-10 transition-all cursor-pointer text-white/70 hover:text-white"
-                    >
-                        <Icon icon="pixelarticons:mail" className="text-2xl" />
-                        {unreadCount > 0 && (
-                            <span className="absolute top-1 right-1 w-2 h-2 bg-[#5cff5c] border border-black animate-pulse" />
-                        )}
-                    </button>
-                    {isNotifOpen && (
-                        <div className="absolute top-full right-0 mt-2 w-72 max-h-[350px] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                            <div className="p-3 border-b border-black/20 bg-black/20 flex justify-between items-center">
-                                <span className={`text-white text-xs font-bold ${current.fontClass}`}>
-                                    {current.user.notifications.title}
-                                </span>
-                                {unreadCount > 0 && (
-                                    <button
-                                        onClick={handleMarkAllRead}
-                                        className={`text-[10px] text-green-400 hover:text-green-300 border-none bg-transparent cursor-pointer ${current.fontClass}`}
-                                    >
-                                        {current.user.notifications.markAllRead}
-                                    </button>
-                                )}
-                            </div>
-                            <div className="flex flex-col">
-                                {notifications.length === 0 ? (
-                                    <div className={`p-4 text-center text-white/40 text-xs ${current.fontClass}`}>
-                                        {current.user.notifications.empty}
-                                    </div>
-                                ) : (
-                                    notifications.map(n => (
-                                        <div
-                                            key={n.id}
-                                            onClick={async () => {
-                                                setIsNotifOpen(false);
-                                                if (n.postId) {
-                                                    navigate(`/figure?postId=${n.postId}`);
-                                                }
-                                                // Optimistically mark as read
-                                                if (!n.isRead) {
-                                                    setUnreadCount(prev => Math.max(0, prev - 1));
-                                                }
-                                                setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, isRead: true } : item));
-                                                
-                                                // Sync with backend
-                                                try {
-                                                    await apiFetch(`/api/forum/notifications/${n.id}/read`, {
-                                                        method: 'POST'
-                                                    });
-                                                } catch (err) {
-                                                    console.error("Failed to mark notification as read", err);
-                                                }
-                                            }}
-                                            className={`p-3 border-b border-white/5 hover:bg-white/5 flex gap-2.5 items-start cursor-pointer transition-colors ${!n.isRead ? 'bg-white/5' : ''} ${current.fontClass}`}
+            {user ? (
+                <div className="flex items-center h-10 bg-black/40 border border-white/10 shrink-0">
+                    <div className="relative shrink-0" ref={notifRef}>
+                        <button
+                            onClick={handleToggleNotif}
+                            className="relative flex items-center justify-center hover:bg-black/30 w-10 h-10 transition-colors cursor-pointer text-white/70 hover:text-white"
+                        >
+                            <Icon icon="pixelarticons:mail" className="text-2xl" />
+                            {unreadCount > 0 && (
+                                <span className="absolute top-1 right-1 w-2 h-2 bg-[#5cff5c] border border-black animate-pulse" />
+                            )}
+                        </button>
+                        {isNotifOpen && (
+                            <div className="absolute top-full right-0 mt-2 w-72 max-h-[350px] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="p-3 border-b border-black/20 bg-black/20 flex justify-between items-center">
+                                    <span className={`text-white text-xs font-bold ${current.fontClass}`}>
+                                        {current.user.notifications.title}
+                                    </span>
+                                    {unreadCount > 0 && (
+                                        <button
+                                            onClick={handleMarkAllRead}
+                                            className={`text-[10px] text-green-400 hover:text-green-300 border-none bg-transparent cursor-pointer ${current.fontClass}`}
                                         >
-                                            <div className="w-6 h-6 bg-zinc-800 overflow-hidden border border-white/10 flex items-center justify-center shrink-0">
-                                                {n.senderAvatar ? (
-                                                    <img src={n.senderAvatar} alt="avatar" className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <Icon icon="pixelarticons:user" className="text-white/40 text-xs" />
+                                            {current.user.notifications.markAllRead}
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="flex flex-col">
+                                    {notifications.length === 0 ? (
+                                        <div className={`p-4 text-center text-white/40 text-xs ${current.fontClass}`}>
+                                            {current.user.notifications.empty}
+                                        </div>
+                                    ) : (
+                                        notifications.map(n => (
+                                            <div
+                                                key={n.id}
+                                                onClick={async () => {
+                                                    setIsNotifOpen(false);
+                                                    if (n.postId) {
+                                                        navigate(`/figure?postId=${n.postId}`);
+                                                    }
+                                                    // Optimistically mark as read
+                                                    if (!n.isRead) {
+                                                        setUnreadCount(prev => Math.max(0, prev - 1));
+                                                    }
+                                                    setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, isRead: true } : item));
+
+                                                    // Sync with backend
+                                                    try {
+                                                        await apiFetch(`/api/forum/notifications/${n.id}/read`, {
+                                                            method: 'POST'
+                                                        });
+                                                    } catch (err) {
+                                                        console.error("Failed to mark notification as read", err);
+                                                    }
+                                                }}
+                                                className={`p-3 border-b border-white/5 hover:bg-white/5 flex gap-2.5 items-start cursor-pointer transition-colors ${!n.isRead ? 'bg-white/5' : ''} ${current.fontClass}`}
+                                            >
+                                                <div className="w-6 h-6 bg-zinc-800 overflow-hidden border border-white/10 flex items-center justify-center shrink-0">
+                                                    {n.senderAvatar ? (
+                                                        <img src={n.senderAvatar} alt="avatar" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <Icon icon="pixelarticons:user" className="text-white/40 text-xs" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                                                    <p className="text-[11px] text-white/90 leading-tight m-0 break-words">
+                                                        <strong className="text-white">@{n.senderName}</strong>{' '}
+                                                        {getNotificationActionLabel(current, n.type)}
+                                                        {n.postId && (
+                                                            <span className={`text-white/50 italic block truncate mt-0.5 text-[10px] ${current.fontClass}`}>
+                                                                "{n.postTitle}"
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                    <span className={`text-[9px] text-white/30 mt-0.5 ${current.fontClass}`}>{n.createdAt}</span>
+                                                </div>
+                                                {!n.isRead && (
+                                                    <span className="w-1.5 h-1.5 bg-[#5cff5c] shrink-0 mt-1.5" />
                                                 )}
                                             </div>
-                                            <div className="flex-1 flex flex-col gap-0.5 min-w-0">
-                                                <p className="text-[11px] text-white/90 leading-tight m-0 break-words">
-                                                    <strong className="text-white">@{n.senderName}</strong>{' '}
-                                                    {getNotificationActionLabel(current, n.type)}
-                                                    {n.postId && (
-                                                        <span className={`text-white/50 italic block truncate mt-0.5 text-[10px] ${current.fontClass}`}>
-                                                            "{n.postTitle}"
-                                                        </span>
-                                                    )}
-                                                </p>
-                                                <span className={`text-[9px] text-white/30 mt-0.5 ${current.fontClass}`}>{n.createdAt}</span>
-                                            </div>
-                                            {!n.isRead && (
-                                                <span className="w-1.5 h-1.5 bg-[#5cff5c] shrink-0 mt-1.5" />
-                                            )}
-                                        </div>
-                                    ))
+                                        ))
+                                    )}
+                                </div>
+
+                                {/* Compact page selectors for notifications */}
+                                {totalNotifs > notifPageSize && (
+                                    <div className="p-2 border-t border-black/20 bg-black/10 flex justify-between items-center text-[10px] font-pixel-hans text-white/60">
+                                        <button
+                                            type="button"
+                                            disabled={notifPage === 1}
+                                            onClick={(e) => { e.stopPropagation(); setNotifPage(p => Math.max(1, p - 1)); }}
+                                            className="px-2 py-0.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white hover:text-white transition-colors"
+                                        >
+                                            &lt; {current.user.notifications.prev}
+                                        </button>
+                                        <span className="select-none">
+                                            {formatLocaleText(current.user.notifications.pageLabel, {
+                                                page: notifPage,
+                                                total: Math.ceil(totalNotifs / notifPageSize),
+                                            })}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            disabled={notifPage >= Math.ceil(totalNotifs / notifPageSize)}
+                                            onClick={(e) => { e.stopPropagation(); setNotifPage(p => Math.min(Math.ceil(totalNotifs / notifPageSize), p + 1)); }}
+                                            className="px-2 py-0.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white hover:text-white transition-colors"
+                                        >
+                                            {current.user.notifications.next} &gt;
+                                        </button>
+                                    </div>
                                 )}
                             </div>
+                        )}
+                    </div>
 
-                            {/* Compact page selectors for notifications */}
-                            {totalNotifs > notifPageSize && (
-                                <div className="p-2 border-t border-black/20 bg-black/10 flex justify-between items-center text-[10px] font-pixel-hans text-white/60">
-                                    <button
-                                        type="button"
-                                        disabled={notifPage === 1}
-                                        onClick={(e) => { e.stopPropagation(); setNotifPage(p => Math.max(1, p - 1)); }}
-                                        className="px-2 py-0.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white hover:text-white transition-colors"
-                                    >
-                                        &lt; {current.user.notifications.prev}
-                                    </button>
-                                    <span className="select-none">
-                                        {formatLocaleText(current.user.notifications.pageLabel, {
-                                            page: notifPage,
-                                            total: Math.ceil(totalNotifs / notifPageSize),
-                                        })}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        disabled={notifPage >= Math.ceil(totalNotifs / notifPageSize)}
-                                        onClick={(e) => { e.stopPropagation(); setNotifPage(p => Math.min(Math.ceil(totalNotifs / notifPageSize), p + 1)); }}
-                                        className="px-2 py-0.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white hover:text-white transition-colors"
-                                    >
-                                        {current.user.notifications.next} &gt;
-                                    </button>
+                    <div className="h-6 w-px bg-white/10 shrink-0" />
+
+                    <button
+                        onClick={() => {
+                            const nextIsOpen = !isOpen
+                            setIsOpen(nextIsOpen)
+                            if (nextIsOpen) setIsNotifOpen(false)
+                        }}
+                        className={`flex items-center hover:bg-black/30 h-10 transition-all cursor-pointer group shrink-0 overflow-hidden ${isOpen ? 'pr-2 gap-3' : 'w-10 justify-center'}`}
+                    >
+                        <SkinAvatarImage
+                            textureUrl={user.minecraft_skin_url}
+                            fallbackSrc={user.picture}
+                            alt="avatar"
+                            className="w-10 h-10 min-w-[2.5rem] max-w-[2.5rem] min-h-[2.5rem] max-h-[2.5rem] flex-none p-1"
+                            framed={false}
+                        />
+                        {isOpen && (
+                            <>
+                                <div className="hidden sm:flex flex-col items-start">
+                                    <div className="flex items-center gap-1">
+                                        <span className={`text-white text-xs ${current.fontClass} max-w-[80px] truncate`}>{user.username}</span>
+                                        {user.is_pro && <span className="text-[9px] bg-yellow-400 text-black px-1 border border-black shadow">PRO</span>}
+                                    </div>
                                 </div>
-                            )}
-                        </div>
-                    )}
+                                <Icon icon="pixelarticons:chevron-down" className="text-white/20 group-hover:text-white/60 transition-transform rotate-180 hidden sm:block shrink-0" />
+                            </>
+                        )}
+                    </button>
                 </div>
-            )}
-            {/* Mobile Nav Toggle when not logged in */}
-            {!user && (
-                <button
-                    onClick={() => setIsOpen(!isOpen)}
-                    className="lg:hidden flex items-center justify-center bg-black/40 border border-white/10 w-10 h-10 transition-all cursor-pointer"
-                >
-                    <Icon icon={isOpen ? "pixelarticons:close" : "pixelarticons:menu"} className="text-white text-xl" />
-                </button>
-            )}
-
-            {user ?
-                <button
-                    onClick={() => setIsOpen(!isOpen)}
-                    className={`flex items-center bg-black/40 hover:bg-black/60 border border-white/10 h-10 transition-all cursor-pointer group shrink-0 overflow-hidden ${isOpen ? 'pr-2 gap-3' : 'w-10 justify-center'}`}
-                >
-                    <SkinAvatarImage
-                        textureUrl={user.minecraft_skin_url}
-                        fallbackSrc={user.picture}
-                        alt="avatar"
-                        className="w-10 h-10 min-w-[2.5rem] max-w-[2.5rem] min-h-[2.5rem] max-h-[2.5rem] flex-none p-1"
-                        framed={false}
-                    />
-                    {isOpen && (
-                        <>
-                            <div className="hidden sm:flex flex-col items-start">
-                                <div className="flex items-center gap-1">
-                                    <span className={`text-white text-xs ${current.fontClass} max-w-[80px] truncate`}>{user.username}</span>
-                                    {user.is_pro && <span className="text-[9px] bg-yellow-400 text-black px-1 border border-black shadow">PRO</span>}
-                                </div>
-                            </div>
-                            <Icon icon="pixelarticons:chevron-down" className="text-white/20 group-hover:text-white/60 transition-transform rotate-180 hidden sm:block shrink-0" />
-                        </>
-                    )}
-                </button>
-                : (
+            ) : (
+                <>
+                    {/* Mobile Nav Toggle when not logged in */}
+                    <button
+                        onClick={() => setIsOpen(!isOpen)}
+                        className="lg:hidden flex items-center justify-center bg-black/40 border border-white/10 w-10 h-10 transition-all cursor-pointer"
+                    >
+                        <Icon icon={isOpen ? "pixelarticons:close" : "pixelarticons:menu"} className="text-white text-xl" />
+                    </button>
                     <Suspense fallback={<LoginTrigger current={current} disabled />}>
                         <GoogleSignInButton
                             onSuccess={handleGoogleSuccess}
                             onError={() => console.error('Google login error')}
                         />
                     </Suspense>
-                )}
+                </>
+            )}
 
             {isOpen && (
                 <div className="absolute top-full right-0 mt-2 w-64 sm:w-52 max-h-[50vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
