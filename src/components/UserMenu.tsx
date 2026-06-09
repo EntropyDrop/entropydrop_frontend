@@ -1,11 +1,14 @@
 import { Icon } from '@iconify/react'
-import { useState, useRef, useEffect, lazy, Suspense } from 'react'
+import { useState, useRef, useEffect, lazy, Suspense, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { type LangData, type LangKey, SUPPORTED_LANGUAGES } from '../constants/lang'
 import { apiFetch } from '../utils/api'
 import { SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS } from "../constants/nav"
+import { SkinAvatarImage } from './SkinAvatarImage'
 
 const GoogleSignInButton = lazy(() => import('./GoogleSignInButton').then(m => ({ default: m.GoogleSignInButton })))
+const ProfileSkinPreview = lazy(() => import('./ProfileSkinPreview').then(m => ({ default: m.ProfileSkinPreview })))
 
 interface UserMenuProps {
     current: LangData
@@ -26,11 +29,28 @@ interface UserInfo {
     terms_agreed: boolean
     pro_level: string
     paypal_subscription_status?: string
-    minecraft_skin_url?: string
+    minecraft_skin_url?: string | null
 }
 
 interface GoogleCredentialResponse {
     credential?: string
+}
+
+interface NotificationInfo {
+    id: string | number
+    senderAvatar?: string
+    senderName: string
+    type: string
+    postId?: string | number
+    postTitle?: string
+    createdAt: string
+    isRead: boolean
+}
+
+interface NotificationsResponse {
+    notifications: NotificationInfo[]
+    unread_count: number
+    total: number
 }
 
 export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenuProps) {
@@ -41,7 +61,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
     const navigate = useNavigate()
 
     const [isNotifOpen, setIsNotifOpen] = useState(false)
-    const [notifications, setNotifications] = useState<any[]>([])
+    const [notifications, setNotifications] = useState<NotificationInfo[]>([])
     const notifRef = useRef<HTMLDivElement>(null)
 
     const [unreadCount, setUnreadCount] = useState(0)
@@ -52,6 +72,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
     const [tempNickname, setTempNickname] = useState('')
     const [isSavingProfile, setIsSavingProfile] = useState(false)
+    const [isResettingCharacter, setIsResettingCharacter] = useState(false)
     const [profileError, setProfileError] = useState('')
     const [profileSuccess, setProfileSuccess] = useState('')
 
@@ -82,9 +103,6 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 setUser(updatedUser)
                 setProfileSuccess(lang === 'zh-hans' ? '昵称修改成功！' : 'Nickname updated successfully!')
                 window.dispatchEvent(new Event('user-updated'))
-                setTimeout(() => {
-                    setIsProfileModalOpen(false)
-                }, 1000)
             } else {
                 const errData = await res.json()
                 setProfileError(errData?.detail || (lang === 'zh-hans' ? '保存失败' : 'Failed to save'))
@@ -94,6 +112,36 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             setProfileError(lang === 'zh-hans' ? '网络错误，请稍后重试' : 'Network error, please try again')
         } finally {
             setIsSavingProfile(false)
+        }
+    }
+
+    const handleResetCharacter = async () => {
+        setIsResettingCharacter(true)
+        setProfileError('')
+        setProfileSuccess('')
+        try {
+            const res = await apiFetch('/api/users/me/minecraft_skin', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ minecraft_skin_url: null })
+            })
+
+            if (res.ok) {
+                const updatedUser = await res.json()
+                setUser(updatedUser)
+                setProfileSuccess(lang === 'zh-hans' ? '角色已重置' : 'Character reset')
+                window.dispatchEvent(new Event('user-updated'))
+            } else {
+                const errData = await res.json()
+                setProfileError(errData?.detail || (lang === 'zh-hans' ? '重置失败' : 'Failed to reset character'))
+            }
+        } catch (err) {
+            console.error('Failed to reset Minecraft character', err)
+            setProfileError(lang === 'zh-hans' ? '网络错误，请稍后重试' : 'Network error, please try again')
+        } finally {
+            setIsResettingCharacter(false)
         }
     }
 
@@ -114,11 +162,11 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         }
     }, [])
 
-    const fetchNotifications = async (page = notifPage) => {
+    const fetchNotifications = useCallback(async (page = notifPage) => {
         try {
             const res = await apiFetch(`/api/forum/notifications?page=${page}&page_size=${notifPageSize}`)
             if (res.ok) {
-                const data = await res.json()
+                const data = await res.json() as NotificationsResponse
                 setNotifications(data.notifications)
                 setUnreadCount(data.unread_count)
                 setTotalNotifs(data.total)
@@ -126,7 +174,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         } catch (e) {
             console.error("Failed to fetch notifications", e)
         }
-    }
+    }, [notifPage, notifPageSize])
 
     const handleToggleNotif = () => {
         setIsNotifOpen(!isNotifOpen)
@@ -161,7 +209,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             setUnreadCount(0)
             setTotalNotifs(0)
         }
-    }, [user, notifPage])
+    }, [user, notifPage, fetchNotifications])
 
     const fetchUser = async () => {
         try {
@@ -366,16 +414,15 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             {user ?
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className={`flex items-center bg-black/40 hover:bg-black/60 border border-white/10 h-10 transition-all cursor-pointer group shrink-0 ${isOpen ? 'px-2 gap-3' : 'w-10 justify-center'}`}
+                    className={`flex items-center bg-black/40 hover:bg-black/60 border border-white/10 h-10 transition-all cursor-pointer group shrink-0 overflow-hidden ${isOpen ? 'pr-2 gap-3' : 'w-10 justify-center'}`}
                 >
-                    <div className="w-6 h-6 bg-[#555] border border-black overflow-hidden shrink-0 flex items-center justify-center">
-                        <img
-                            src={user.picture}
-                            alt="avatar"
-                            className="w-full h-full object-contain"
-                            style={{ imageRendering: user.picture ? 'auto' : 'pixelated' }}
-                        />
-                    </div>
+                    <SkinAvatarImage
+                        textureUrl={user.minecraft_skin_url}
+                        fallbackSrc={user.picture}
+                        alt="avatar"
+                        className="w-10 h-10 min-w-[2.5rem] max-w-[2.5rem] min-h-[2.5rem] max-h-[2.5rem] flex-none p-1"
+                        framed={false}
+                    />
                     {isOpen && (
                         <>
                             <div className="hidden sm:flex flex-col items-start">
@@ -546,7 +593,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 </div>
             )}
 
-            {user && user.terms_agreed === false && (
+            {user && user.terms_agreed === false && createPortal(
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] backdrop-blur-sm pointer-events-auto animate-in fade-in duration-300">
                     <div className="bg-[#1a1a1a] border-2 border-white/10 p-6 max-w-sm w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-200">
                         <h3 className={`text-white text-base font-bold mb-3 ${current.fontClass}`}>
@@ -588,12 +635,13 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
-            {isProfileModalOpen && user && (
+            {isProfileModalOpen && user && createPortal(
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] backdrop-blur-sm pointer-events-auto animate-in fade-in duration-300">
-                    <div className="bg-[#1a1a1a] border border-white/10 p-6 max-w-sm w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-4">
+                    <div className="bg-[#1a1a1a] border border-white/10 p-5 max-w-lg w-full max-h-[90vh] overflow-y-auto custom-scrollbar mx-4 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-4">
                         <div className="flex justify-between items-center pb-2 border-b border-white/10">
                             <h3 className={`text-white text-sm font-bold ${current.fontClass}`}>
                                 {lang === 'zh-hans' ? '个人资料' : 'Profile'}
@@ -606,68 +654,27 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             </button>
                         </div>
 
-                        {/* Avatar (Read-only) */}
-                        <div className="flex flex-col gap-1.5">
-                            <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
-                                {lang === 'zh-hans' ? '头像' : 'Avatar'}
-                            </span>
-                            <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 bg-zinc-800 border border-white/10 flex items-center justify-center overflow-hidden">
-                                    {user.picture ? (
-                                        <img src={user.picture} alt="avatar" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <Icon icon="pixelarticons:user" className="text-white/40 text-lg" />
-                                    )}
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className={`text-[10px] text-white/50 ${current.fontClass}`}>
-                                        {lang === 'zh-hans' ? '自 Google 账号同步' : 'Synced from Google'}
-                                    </span>
-                                </div>
+                        {/* Google Account Data */}
+                        <div className="bg-black/25 border border-white/10 p-3 flex items-center gap-3">
+                            <div className="w-14 h-14 bg-zinc-800 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                                {user.picture ? (
+                                    <img src={user.picture} alt="google avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                    <Icon icon="pixelarticons:user" className="text-white/40 text-lg" />
+                                )}
                             </div>
-                        </div>
-
-                        {/* Minecraft Character Skin (Read-only) */}
-                        {user.minecraft_skin_url && (
-                            <div className="flex flex-col gap-1.5">
+                            <div className="min-w-0 flex-1 flex flex-col gap-1">
                                 <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
-                                    {lang === 'zh-hans' ? 'Minecraft 角色形象' : 'Minecraft Character'}
+                                    Google Account
                                 </span>
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 bg-zinc-800 border border-white/10 flex items-center justify-center overflow-hidden">
-                                        <img 
-                                            src={user.minecraft_skin_url} 
-                                            alt="minecraft skin" 
-                                            className="w-full h-full object-contain"
-                                            style={{ imageRendering: 'pixelated' }}
-                                        />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className={`text-[10px] text-white/50 ${current.fontClass}`}>
-                                            {lang === 'zh-hans' ? '自手办模型设定' : 'Set from figure model'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Email (Read-only) */}
-                        <div className="flex flex-col gap-1.5">
-                            <div className="flex justify-between items-center">
-                                <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
-                                    {lang === 'zh-hans' ? '邮箱' : 'Email'}
+                                <span className={`text-[10px] text-white/50 truncate ${current.fontClass}`}>
+                                    {user.email}
                                 </span>
                                 <span className={`text-[9px] text-[#4ea632]/80 flex items-center gap-1 ${current.fontClass}`}>
                                     <Icon icon="pixelarticons:lock" className="text-xs shrink-0" />
                                     {lang === 'zh-hans' ? '仅自己可见' : 'Visible only to you'}
                                 </span>
                             </div>
-                            <input
-                                type="text"
-                                readOnly
-                                value={user.email}
-                                className={`w-full bg-white/5 border border-white/10 p-2 text-white/50 text-xs focus:outline-none cursor-not-allowed select-none ${current.fontClass}`}
-                            />
                         </div>
 
                         {/* Nickname (Editable) */}
@@ -675,14 +682,90 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
                                 {lang === 'zh-hans' ? '昵称' : 'Nickname'}
                             </span>
-                            <input
-                                type="text"
-                                value={tempNickname}
-                                onChange={(e) => setTempNickname(e.target.value)}
-                                className={`w-full bg-black/40 border border-white/10 p-2 text-white text-xs focus:outline-none focus:border-green-500/30 ${current.fontClass}`}
-                                placeholder={lang === 'zh-hans' ? '请输入昵称...' : 'Enter nickname...'}
-                                maxLength={50}
-                            />
+                            <div className="flex items-center bg-black/40 border border-white/10 focus-within:border-green-500/30">
+                                <input
+                                    type="text"
+                                    value={tempNickname}
+                                    onChange={(e) => setTempNickname(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleSaveProfile()
+                                        if (e.key === 'Escape') setTempNickname(user.username || '')
+                                    }}
+                                    className={`min-w-0 flex-1 bg-transparent px-2 py-2 text-white text-xs focus:outline-none ${current.fontClass}`}
+                                    placeholder={lang === 'zh-hans' ? '请输入昵称...' : 'Enter nickname...'}
+                                    maxLength={50}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleSaveProfile}
+                                    disabled={isSavingProfile || !tempNickname.trim()}
+                                    className="m-1 w-7 h-7 bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-zinc-800 disabled:text-white/30 disabled:cursor-not-allowed text-white border border-black shadow flex items-center justify-center cursor-pointer transition-colors"
+                                    title={lang === 'zh-hans' ? '保存昵称' : 'Save nickname'}
+                                >
+                                    <Icon icon={isSavingProfile ? 'pixelarticons:reload' : 'pixelarticons:check'} className={`text-xs ${isSavingProfile ? 'animate-spin' : ''}`} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* My Character Skin (Read-only) */}
+                        <div className="flex flex-col gap-2">
+                            <div className="flex items-center justify-between gap-3">
+                                <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
+                                    MY CHARACTER
+                                </span>
+                                {user.minecraft_skin_url && (
+                                    <button
+                                        type="button"
+                                        onClick={handleResetCharacter}
+                                        disabled={isResettingCharacter}
+                                        className={`px-2 py-1 bg-white/5 hover:bg-red-500/15 disabled:opacity-50 disabled:cursor-not-allowed border border-white/10 hover:border-red-400/30 text-white/45 hover:text-red-300 text-[9px] transition-colors cursor-pointer ${current.fontClass}`}
+                                    >
+                                        {isResettingCharacter
+                                            ? (lang === 'zh-hans' ? '重置中...' : 'Resetting...')
+                                            : (lang === 'zh-hans' ? '重置角色' : 'Reset Character')}
+                                    </button>
+                                )}
+                            </div>
+                            {user.minecraft_skin_url ? (
+                                <div className="bg-black/25 border border-white/10 p-3 flex flex-col gap-2">
+                                    <Suspense fallback={<ProfileSkinPreviewFallback textureUrl={user.minecraft_skin_url} />}>
+                                        <ProfileSkinPreview
+                                            textureUrl={user.minecraft_skin_url}
+                                            current={current}
+                                            className="w-full h-72 sm:h-80"
+                                        />
+                                    </Suspense>
+                                    <span className={`text-[10px] text-white/50 ${current.fontClass}`}>
+                                        {lang === 'zh-hans' ? '自手办模型设定' : 'Set from figure model'}
+                                    </span>
+                                </div>
+                            ) : (
+                                <div className={`bg-black/25 border border-white/10 p-4 text-center text-white/35 text-[10px] ${current.fontClass}`}>
+                                    {lang === 'zh-hans' ? '尚未设置角色' : 'No character set'}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Current Avatar */}
+                        <div className="flex flex-col gap-1.5">
+                            <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
+                                {lang === 'zh-hans' ? '当前头像' : 'Current Avatar'}
+                            </span>
+                            <div className="flex items-center gap-3">
+                                <SkinAvatarImage
+                                    textureUrl={user.minecraft_skin_url}
+                                    fallbackSrc={user.picture}
+                                    alt="current avatar"
+                                    className="w-12 h-12"
+                                />
+                                <div className="flex flex-col">
+                                    <span className={`text-[10px] text-white/50 ${current.fontClass}`}>
+                                        {user.minecraft_skin_url
+                                            ? (lang === 'zh-hans' ? '由 MY CHARACTER 实时生成' : 'Generated from MY CHARACTER')
+                                            : (lang === 'zh-hans' ? '自 Google 账号同步' : 'Synced from Google')}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Feedback messages */}
@@ -705,20 +788,25 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             >
                                 {lang === 'zh-hans' ? '取消' : 'Cancel'}
                             </button>
-                            <button
-                                onClick={handleSaveProfile}
-                                disabled={isSavingProfile || !tempNickname.trim()}
-                                className={`flex-1 py-2 bg-[#5cff5c] hover:bg-[#4ae04a] disabled:bg-zinc-800 disabled:text-white/30 disabled:cursor-not-allowed text-black font-bold text-xs transition-colors cursor-pointer ${current.fontClass}`}
-                            >
-                                {isSavingProfile 
-                                    ? (lang === 'zh-hans' ? '保存中...' : 'Saving...') 
-                                    : (lang === 'zh-hans' ? '保存' : 'Save')}
-                            </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
+        </div>
+    )
+}
+
+function ProfileSkinPreviewFallback({ textureUrl }: { textureUrl: string }) {
+    return (
+        <div className="w-full h-72 sm:h-80 bg-zinc-900 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+            <img
+                src={textureUrl}
+                alt="minecraft skin"
+                className="w-16 h-16 object-contain"
+                style={{ imageRendering: 'pixelated' }}
+            />
         </div>
     )
 }

@@ -1177,7 +1177,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                 </div>
                                                             )}
 
-                                                            {currentUser && item.result && (
+                                                            {currentUser && item.result && item.is_public === true && (
                                                                 <div className="flex flex-col gap-1.5 mt-2">
                                                                     <button
                                                                         type="button"

@@ -13,6 +13,7 @@ const DEFAULT_SKIN_2D_OPTIONS = {
 
 const MAX_SKIN_2D_CACHE_SIZE = 240
 const skin2DCache = new Map<string, Promise<HTMLCanvasElement>>()
+const skinAvatarCache = new Map<string, Promise<HTMLCanvasElement>>()
 let canvas2DRendererPromise: Promise<typeof import("@daidr/minecraft-skin-renderer/canvas2d")> | null = null
 
 function getSkin2DCacheKey(imgSrc: string, options: Required<Skin2DOptions>) {
@@ -26,6 +27,16 @@ function rememberSkin2DRender(key: string, promise: Promise<HTMLCanvasElement>) 
         const oldestKey = skin2DCache.keys().next().value
         if (!oldestKey) break
         skin2DCache.delete(oldestKey)
+    }
+}
+
+function rememberSkinAvatarRender(key: string, promise: Promise<HTMLCanvasElement>) {
+    skinAvatarCache.set(key, promise)
+
+    while (skinAvatarCache.size > MAX_SKIN_2D_CACHE_SIZE) {
+        const oldestKey = skinAvatarCache.keys().next().value
+        if (!oldestKey) break
+        skinAvatarCache.delete(oldestKey)
     }
 }
 
@@ -142,6 +153,47 @@ export async function Skin2D(imgSrc: string, options: Skin2DOptions = {}): Promi
     return promise
 }
 
+async function renderSkinAvatar(imgSrc: string, options: Required<Skin2DOptions>) {
+    const { renderAvatar } = await getCanvas2DRenderer()
+
+    const response = await fetch(imgSrc)
+    if (!response.ok) throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`)
+
+    const imageData = await loadImageDataFromBlob(await response.blob())
+    const canvas = document.createElement('canvas')
+
+    await renderAvatar(canvas, {
+        skin: imageData,
+        slim: getSlimFromImageData(imageData),
+        scale: options.scale,
+        showOverlay: options.showOverlay,
+        overlayInflated: options.overlayInflated,
+    })
+
+    return canvas
+}
+
+export async function SkinAvatar(imgSrc: string, options: Skin2DOptions = {}): Promise<HTMLCanvasElement> {
+    const normalizedOptions = { ...DEFAULT_SKIN_2D_OPTIONS, scale: 10, ...options }
+    const key = getSkin2DCacheKey(imgSrc, normalizedOptions)
+    const cached = skinAvatarCache.get(key)
+    if (cached) {
+        skinAvatarCache.delete(key)
+        skinAvatarCache.set(key, cached)
+        return cached
+    }
+
+    const promise = renderSkinAvatar(imgSrc, normalizedOptions).catch(err => {
+        if (skinAvatarCache.get(key) === promise) {
+            skinAvatarCache.delete(key)
+        }
+        throw err
+    })
+
+    rememberSkinAvatarRender(key, promise)
+    return promise
+}
+
 /**
  * In plane mode, the decorative layer (overlay) does not necessarily appear on another adjacent face.
  * To ensure the consistency of the overlay edges in voxel mode, some compensation is applied.
@@ -154,6 +206,9 @@ export function ensureSkinVoxelModeConsistency(canvas: HTMLCanvasElement) {
     const { width, height } = canvas;
     const imgData = ctx.getImageData(0, 0, width, height);
     const pixels = imgData.data;
+    type Rgba = [number, number, number, number]
+    type DecorFace = [[number, number, number], [number, number]]
+    type DecorPart = [DecorFace[], [number, number]]
 
     // Pre-process: make translucent pixels fully opaque
     for (let i = 0; i < pixels.length; i += 4) {
@@ -163,12 +218,12 @@ export function ensureSkinVoxelModeConsistency(canvas: HTMLCanvasElement) {
     }
 
     // --- Helper Utility Functions ---
-    const getPixel = (x: number, y: number) => {
+    const getPixel = (x: number, y: number): Rgba => {
         const i = (y * width + x) * 4;
         return [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]];
     };
 
-    const setPixel = (x: number, y: number, rgba: [number, number, number, number]) => {
+    const setPixel = (x: number, y: number, rgba: Rgba) => {
         const i = (y * width + x) * 4;
         pixels[i] = rgba[0];
         pixels[i + 1] = rgba[1];
@@ -180,7 +235,7 @@ export function ensureSkinVoxelModeConsistency(canvas: HTMLCanvasElement) {
     const is_slim = getPixel(47, 52)[3] === 0;
 
     // --- Data structures strictly kept as-is ---
-    const parts = [
+    const parts: DecorPart[] = [
         // head
         [[
             [[8, 8, 8], [8, 8]],
@@ -235,11 +290,11 @@ export function ensureSkinVoxelModeConsistency(canvas: HTMLCanvasElement) {
         ], [0, 16]]
     ];
 
-    parts.forEach((part, _part_idx) => {
-        const decor_offset: [number, number] = (part as any)[1];
-        const [x, y, z]: [number, number, number] = (part as any)[0][4][0]; // Get x, y, z from the first face
+    parts.forEach((part) => {
+        const decor_offset = part[1];
+        const [x, y, z] = part[0][4][0]; // Get x, y, z from the first face
 
-        const colors: { [key: string]: { rgba: number[], priority: number } } = {};
+        const colors: { [key: string]: { rgba: Rgba, priority: number } } = {};
         const inverse: { [key: string]: number[][] } = {}; // Simulate inverse dictionary
 
         const getPriority = (faceIdx: number) => {
@@ -255,9 +310,8 @@ export function ensureSkinVoxelModeConsistency(canvas: HTMLCanvasElement) {
         };
 
         part[0].forEach((face, idx) => {
-            const size: [number, number, number] = (face as any)[0];
-            const offset: [number, number] = (face as any)[1];
-            if (!offset) { debugger }
+            const size = face[0];
+            const offset = face[1];
 
             for (let dx = 0; dx < size[0]; dx++) {
                 for (let dy = 0; dy < size[1]; dy++) {
@@ -265,7 +319,7 @@ export function ensureSkinVoxelModeConsistency(canvas: HTMLCanvasElement) {
                     const img_y = offset[1] + dy + decor_offset[1];
                     const c = getPixel(img_x, img_y);
 
-                    let new_x, new_y, new_z;
+                    let new_x = 0, new_y = 0, new_z = 0;
                     if (idx === 4) [new_x, new_y, new_z] = [dx, y - 1 - dy, z - 1];      // top
                     else if (idx === 5) [new_x, new_y, new_z] = [dx, y - 1 - dy, 0];      // bottom
                     else if (idx === 0) [new_x, new_y, new_z] = [dx, 0, z - 1 - dy];      // front
@@ -291,14 +345,14 @@ export function ensureSkinVoxelModeConsistency(canvas: HTMLCanvasElement) {
         });
 
         // Apply colors back to the texture map
-        for (let posKey in inverse) {
+        for (const posKey in inverse) {
             const colorInfo = colors[posKey];
             if (!colorInfo) continue; // All missing, no color to fill
 
             inverse[posKey].forEach(coord => {
                 const existingColor = getPixel(coord[0], coord[1]);
                 if (existingColor[3] === 0) {
-                    setPixel(coord[0], coord[1], colorInfo.rgba as any);
+                    setPixel(coord[0], coord[1], colorInfo.rgba);
                 }
             });
         }
