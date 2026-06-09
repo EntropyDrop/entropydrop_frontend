@@ -10,6 +10,151 @@ import { showAlert, showError } from '../utils/alert'
 import { apiFetch } from '../utils/api'
 
 
+interface KMeansResult {
+    imageData: ImageData;
+    palette: string[];
+}
+
+function runKMeansQuantization(imageData: ImageData, k: number): KMeansResult {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+
+    const colorMap = new Map<string, number[]>();
+
+    for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
+
+        if (a > 0) {
+            const key = `${r},${g},${b}`;
+            if (!colorMap.has(key)) {
+                colorMap.set(key, []);
+            }
+            colorMap.get(key)!.push(i);
+        }
+    }
+
+    const uniqueColors: { r: number; g: number; b: number; weight: number; indices: number[] }[] = [];
+    colorMap.forEach((indices, key) => {
+        const [r, g, b] = key.split(',').map(Number);
+        uniqueColors.push({ r, g, b, weight: indices.length, indices });
+    });
+
+    if (uniqueColors.length <= k) {
+        const palette = uniqueColors.map(c => {
+            const hexR = c.r.toString(16).padStart(2, '0');
+            const hexG = c.g.toString(16).padStart(2, '0');
+            const hexB = c.b.toString(16).padStart(2, '0');
+            return `#${hexR}${hexG}${hexB}`;
+        });
+        return { imageData, palette };
+    }
+
+    let centroids: { r: number; g: number; b: number }[] = [];
+    const step = uniqueColors.length / k;
+    for (let i = 0; i < k; i++) {
+        const index = Math.min(Math.floor(i * step), uniqueColors.length - 1);
+        centroids.push({ r: uniqueColors[index].r, g: uniqueColors[index].g, b: uniqueColors[index].b });
+    }
+
+    const maxIterations = 15;
+    let assignments = new Array(uniqueColors.length).fill(-1);
+
+    for (let iter = 0; iter < maxIterations; iter++) {
+        let changed = false;
+
+        for (let i = 0; i < uniqueColors.length; i++) {
+            const color = uniqueColors[i];
+            let minDist = Infinity;
+            let bestIndex = 0;
+
+            for (let j = 0; j < centroids.length; j++) {
+                const c = centroids[j];
+                const dist = (color.r - c.r) ** 2 + (color.g - c.g) ** 2 + (color.b - c.b) ** 2;
+                if (dist < minDist) {
+                    minDist = dist;
+                    bestIndex = j;
+                }
+            }
+
+            if (assignments[i] !== bestIndex) {
+                assignments[i] = bestIndex;
+                changed = true;
+            }
+        }
+
+        if (!changed) break;
+
+        const sumR = new Array(centroids.length).fill(0);
+        const sumG = new Array(centroids.length).fill(0);
+        const sumB = new Array(centroids.length).fill(0);
+        const counts = new Array(centroids.length).fill(0);
+
+        for (let i = 0; i < uniqueColors.length; i++) {
+            const color = uniqueColors[i];
+            const clusterIndex = assignments[i];
+            sumR[clusterIndex] += color.r * color.weight;
+            sumG[clusterIndex] += color.g * color.weight;
+            sumB[clusterIndex] += color.b * color.weight;
+            counts[clusterIndex] += color.weight;
+        }
+
+        for (let j = 0; j < centroids.length; j++) {
+            if (counts[j] > 0) {
+                centroids[j] = {
+                    r: Math.round(sumR[j] / counts[j]),
+                    g: Math.round(sumG[j] / counts[j]),
+                    b: Math.round(sumB[j] / counts[j])
+                };
+            }
+        }
+    }
+
+    const outputImageData = new ImageData(new Uint8ClampedArray(data), width, height);
+    const activeCentroids = new Set<number>();
+    
+    for (let i = 0; i < uniqueColors.length; i++) {
+        const color = uniqueColors[i];
+        const clusterIndex = assignments[i];
+        const centroid = centroids[clusterIndex];
+        activeCentroids.add(clusterIndex);
+        for (const idx of color.indices) {
+            outputImageData.data[idx] = centroid.r;
+            outputImageData.data[idx + 1] = centroid.g;
+            outputImageData.data[idx + 2] = centroid.b;
+        }
+    }
+
+    const palette: string[] = [];
+    activeCentroids.forEach(idx => {
+        const c = centroids[idx];
+        const hexR = c.r.toString(16).padStart(2, '0');
+        const hexG = c.g.toString(16).padStart(2, '0');
+        const hexB = c.b.toString(16).padStart(2, '0');
+        palette.push(`#${hexR}${hexG}${hexB}`);
+    });
+
+    return { imageData: outputImageData, palette };
+}
+
+function getUniqueColors(imageData: ImageData): string[] {
+    const data = imageData.data;
+    const colors = new Set<string>();
+    for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] > 0) {
+            const r = data[i].toString(16).padStart(2, '0');
+            const g = data[i + 1].toString(16).padStart(2, '0');
+            const b = data[i + 2].toString(16).padStart(2, '0');
+            colors.add(`#${r}${g}${b}`);
+        }
+    }
+    return Array.from(colors);
+}
+
+
 interface EditPageProps {
     current: LangData
 }
@@ -144,6 +289,45 @@ export function EditPage({ current }: EditPageProps) {
         saveState(hsb);
         originalImageDataRef.current = null;
     };
+
+    const [isKMeansPanelOpen, setIsKMeansPanelOpen] = useState(false);
+    const [kmeansK, setKmeansK] = useState(16);
+    const [kmeansPalette, setKmeansPalette] = useState<string[]>([]);
+    const originalKMeansImageDataRef = useRef<ImageData | null>(null);
+
+    const handleKMeansStart = () => {
+        if (!ctx) return;
+        originalKMeansImageDataRef.current = ctx.getImageData(0, 0, 64, 64);
+    };
+
+    const applyKMeans = (k: number) => {
+        if (!ctx || !originalKMeansImageDataRef.current) return;
+        const res = runKMeansQuantization(originalKMeansImageDataRef.current, k);
+        ctx.putImageData(res.imageData, 0, 0);
+        setKmeansPalette(res.palette);
+        if (texture) {
+            texture.needsUpdate = true;
+            setUpdateTrigger(prev => prev + 1);
+        }
+    };
+
+    const handleKMeansChange = (k: number) => {
+        setKmeansK(k);
+        applyKMeans(k);
+    };
+
+    const handleKMeansEnd = () => {
+        saveState();
+        originalKMeansImageDataRef.current = null;
+    };
+
+    useEffect(() => {
+        if (isKMeansPanelOpen && ctx) {
+            const imgData = ctx.getImageData(0, 0, 64, 64);
+            const initialPalette = getUniqueColors(imgData);
+            setKmeansPalette(initialPalette);
+        }
+    }, [isKMeansPanelOpen, ctx, updateTrigger]);
 
     const handleSaveToCreation = async (isPublic: boolean) => {
         const canvas = canvasRef.current;
@@ -617,11 +801,24 @@ export function EditPage({ current }: EditPageProps) {
                                             </button>
                                             <div className="w-full h-px bg-white/5 my-1" />
                                             <button
-                                                onClick={() => setIsAdjustPanelOpen(!isAdjustPanelOpen)}
+                                                onClick={() => {
+                                                    setIsAdjustPanelOpen(!isAdjustPanelOpen);
+                                                    setIsKMeansPanelOpen(false);
+                                                }}
                                                 className={`p-2 border cursor-pointer ${isAdjustPanelOpen ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
                                                 title={current.edit.adjust}
                                             >
                                                 <Icon icon="pixelarticons:sliders" className="text-base" />
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setIsKMeansPanelOpen(!isKMeansPanelOpen);
+                                                    setIsAdjustPanelOpen(false);
+                                                }}
+                                                className={`p-2 border cursor-pointer ${isKMeansPanelOpen ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
+                                                title={current.edit.kmeans}
+                                            >
+                                                <Icon icon="pixelarticons:palette" className="text-base" />
                                             </button>
                                         </div>
 
@@ -689,6 +886,59 @@ export function EditPage({ current }: EditPageProps) {
                                                         />
                                                     </div>
                                                 </div>
+                                            </div>
+                                        )}
+
+                                        {isKMeansPanelOpen && (
+                                            <div className="absolute left-16 top-0 z-30 bg-black/90 backdrop-blur-lg p-4 border border-white/10 flex flex-col gap-4 min-w-[220px] max-w-[280px] shadow-2xl animate-in slide-in-from-left-4 fade-in duration-300 pointer-events-auto">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>{current.edit.kmeans}</span>
+                                                    <button onClick={() => setIsKMeansPanelOpen(false)} className="text-white/30 hover:text-white transition-colors cursor-pointer">
+                                                        <Icon icon="pixelarticons:close" className="text-sm" />
+                                                    </button>
+                                                </div>
+
+                                                <div className="text-[11px] text-white/50 leading-relaxed font-pixel-hans">
+                                                    {current.edit.kmeansDescription}
+                                                </div>
+
+                                                <div className="flex flex-col gap-3">
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <div className="flex justify-between text-[11px] font-pixel-hans">
+                                                            <span className="text-white/60">{current.edit.kmeansClusters}</span>
+                                                            <span className="text-[#4ea632] font-bold">{kmeansK}</span>
+                                                        </div>
+                                                        <input
+                                                            type="range"
+                                                            min="2"
+                                                            max="32"
+                                                            value={kmeansK}
+                                                            onPointerDown={handleKMeansStart}
+                                                            onChange={(e) => handleKMeansChange(parseInt(e.target.value))}
+                                                            onPointerUp={handleKMeansEnd}
+                                                            className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                {kmeansPalette.length > 0 && (
+                                                    <div className="flex flex-col gap-2">
+                                                        <div className="text-[10px] text-white/40 uppercase tracking-widest font-pixel-hans">
+                                                            {current.edit.kmeansPalettePreview} ({kmeansPalette.length})
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-1 p-1.5 bg-black/20 border border-white/5 max-h-[100px] overflow-y-auto custom-scrollbar">
+                                                            {kmeansPalette.map((c, idx) => (
+                                                                <div
+                                                                    key={idx}
+                                                                    style={{ backgroundColor: c }}
+                                                                    className="w-5 h-5 border border-black/50 shrink-0 cursor-pointer transform hover:scale-110 transition-transform"
+                                                                    onClick={() => setCurrentColor(c)}
+                                                                    title={c}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>

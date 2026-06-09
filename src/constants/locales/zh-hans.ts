@@ -191,7 +191,11 @@ export default {
         hue: '色相',
         saturation: '饱和度',
         brightness: '亮度',
-        adjust: '调整'
+        adjust: '调整',
+        kmeans: 'K-Means 减色',
+        kmeansClusters: '目标颜色数 (K)',
+        kmeansDescription: '通过聚类算法合并相似颜色，使皮肤色彩更干净、像素化更纯粹。',
+        kmeansPalettePreview: '调色盘预览'
     },
     user: {
         accountStatus: '账号状态',

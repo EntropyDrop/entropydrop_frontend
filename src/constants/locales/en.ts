@@ -191,7 +191,11 @@ export default {
         hue: 'Hue',
         saturation: 'Saturation',
         brightness: 'Brightness',
-        adjust: 'Adjust'
+        adjust: 'Adjust',
+        kmeans: 'K-Means Quantization',
+        kmeansClusters: 'Target Colors (K)',
+        kmeansDescription: 'Merge similar colors using K-Means to make skin colors cleaner and more pixelated.',
+        kmeansPalettePreview: 'Palette Preview'
     },
     user: {
         accountStatus: 'Account Status',
