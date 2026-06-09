@@ -172,7 +172,7 @@ export function EditPage({ current }: EditPageProps) {
 
 
     // Undo/Redo state
-    const [history, setHistory] = useState<{ list: { data: ImageData, hsb: { h: number, s: number, b: number } }[], index: number }>({ list: [], index: -1 });
+    const [history, setHistory] = useState<{ list: { data: ImageData, hsb: { h: number, s: number, b: number }, kmeansK: number }[], index: number }>({ list: [], index: -1 });
     const hasChangedRef = useRef(false);
     const hoverRef = useRef<{ x: number, y: number, savedData: ImageData } | null>(null);
 
@@ -388,7 +388,7 @@ export function EditPage({ current }: EditPageProps) {
             setIsEmptyModel(true);
             setModelType('steve');
             const initialData = c.getImageData(0, 0, 64, 64);
-            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0 } }], index: 0 });
+            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: 16 }], index: 0 });
             const tex = new THREE.CanvasTexture(canvas);
             tex.magFilter = THREE.NearestFilter;
             tex.minFilter = THREE.NearestFilter;
@@ -415,7 +415,7 @@ export function EditPage({ current }: EditPageProps) {
 
             // Save initial state for undo
             const initialData = c.getImageData(0, 0, 64, 64);
-            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0 } }], index: 0 });
+            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: 16 }], index: 0 });
 
             // Create CanvasTexture
             const tex = new THREE.CanvasTexture(canvas);
@@ -528,14 +528,14 @@ export function EditPage({ current }: EditPageProps) {
         }
     };
 
-    const saveState = (currentHsb = { h: 0, s: 0, b: 0 }) => {
+    const saveState = (currentHsb = { h: 0, s: 0, b: 0 }, currentK = kmeansK) => {
         if (!ctx) return;
         const canvas = canvasRef.current;
         if (!canvas) return;
         const imageData = ctx.getImageData(0, 0, 64, 64);
         setHistory(prev => {
             const newList = prev.list.slice(0, prev.index + 1);
-            newList.push({ data: imageData, hsb: { ...currentHsb } });
+            newList.push({ data: imageData, hsb: { ...currentHsb }, kmeansK: currentK });
             const maxHistory = 50;
             if (newList.length > maxHistory) {
                 newList.shift();
@@ -566,6 +566,12 @@ export function EditPage({ current }: EditPageProps) {
         // Restore HSB sliders from history
         setHsb({ ...item.hsb });
         originalImageDataRef.current = null;
+
+        // Restore KMeans K value from history
+        if (item.kmeansK !== undefined) {
+            setKmeansK(item.kmeansK);
+        }
+        originalKMeansImageDataRef.current = null;
 
         if (texture) {
             texture.needsUpdate = true;
@@ -678,7 +684,7 @@ export function EditPage({ current }: EditPageProps) {
                 setBasedOnSkinRenderUrl(null);
                 setModelType(isSlim(img) ? 'alex' : 'steve');
                 const imageData = ctx.getImageData(0, 0, 64, 64);
-                setHistory({ list: [{ data: imageData, hsb: { h: 0, s: 0, b: 0 } }], index: 0 });
+                setHistory({ list: [{ data: imageData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: 16 }], index: 0 });
                 e.target.value = '';
             };
             img.src = event.target?.result as string;
