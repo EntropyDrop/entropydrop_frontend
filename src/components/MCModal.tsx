@@ -264,11 +264,11 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                 }, 2000);
             } else {
                 const errData = await res.json();
-                setSkinError(errData?.detail || (current.lang === 'zh-hans' ? '设置失败' : 'Failed to set'));
+                setSkinError(errData?.detail || current.mcmodal.setMyCharacterFailed);
             }
         } catch (err) {
             console.error('Failed to set Minecraft skin', err);
-            setSkinError(current.lang === 'zh-hans' ? '网络错误，请稍后重试' : 'Network error, please try again');
+            setSkinError(current.mcmodal.setMyCharacterNetworkError);
         } finally {
             setIsSettingSkin(false);
         }
@@ -1188,17 +1188,17 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                         {isSettingSkin ? (
                                                                             <>
                                                                                 <Icon icon="pixelarticons:reload" className="text-sm shrink-0 animate-spin" />
-                                                                                <span>{current.lang === 'zh-hans' ? '设置中...' : 'Setting...'}</span>
+                                                                                <span>{current.mcmodal.settingMyCharacter}</span>
                                                                             </>
                                                                         ) : skinSuccess ? (
                                                                             <>
                                                                                 <Icon icon="pixelarticons:check" className="text-sm shrink-0" />
-                                                                                <span>{current.lang === 'zh-hans' ? '设置成功！' : 'Set successfully!'}</span>
+                                                                                <span>{current.mcmodal.setMyCharacterSuccess}</span>
                                                                             </>
                                                                         ) : (
                                                                             <>
                                                                                 <Icon icon="pixelarticons:user animate-pulse" className="text-sm shrink-0" />
-                                                                                <span>{current.lang === 'zh-hans' ? '设为自己的形象' : 'Set as My Character'}</span>
+                                                                                <span>{current.mcmodal.setMyCharacter}</span>
                                                                             </>
                                                                         )}
                                                                     </button>

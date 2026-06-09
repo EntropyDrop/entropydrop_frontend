@@ -210,7 +210,39 @@ export default {
         renewViewPro: '查看 PRO',
         activatePro: '开通 PRO',
         language: '语言',
-        login: '登录'
+        login: '登录',
+        notifications: {
+            title: '消息通知',
+            markAllRead: '全部已读',
+            empty: '暂无消息',
+            like: '点赞了你的帖子',
+            comment: '评论了你的帖子',
+            reply: '回复了你的评论',
+            prev: '上一页',
+            next: '下一页',
+            pageLabel: '第 {page} / {total} 页'
+        },
+        profileDialog: {
+            googleAccount: 'Google 账号',
+            visibleOnlyToYou: '仅自己可见',
+            nickname: '昵称',
+            nicknamePlaceholder: '请输入昵称...',
+            saveNickname: '保存昵称',
+            nicknameUpdated: '昵称修改成功！',
+            saveFailed: '保存失败',
+            networkError: '网络错误，请稍后重试',
+            characterReset: '角色已重置',
+            resetFailed: '重置失败',
+            myCharacter: 'MY CHARACTER',
+            resetCharacter: '重置角色',
+            resettingCharacter: '重置中...',
+            setFromFigureModel: '自手办模型设定',
+            noCharacterSet: '尚未设置角色',
+            currentAvatar: '当前头像',
+            generatedFromMyCharacter: '由 MY CHARACTER 生成',
+            syncedFromGoogle: '自 Google 账号同步',
+            cancel: '取消'
+        }
     },
     common: {
         auto: '跟随系统',
@@ -484,7 +516,12 @@ export default {
         feedbackBad: '有瑕疵',
         feedbackThanks: '感谢反馈！已记录数据用于优化模型。',
         discordPrompt: '想要详细吐槽或提供建议？加入我们的',
-        discordLinkText: 'Discord 社区'
+        discordLinkText: 'Discord 社区',
+        setMyCharacter: '设为自己的形象',
+        settingMyCharacter: '设置中...',
+        setMyCharacterSuccess: '设置成功！',
+        setMyCharacterFailed: '设置失败',
+        setMyCharacterNetworkError: '网络错误，请稍后重试'
     },
     public_page: {
         title: '开放生产',

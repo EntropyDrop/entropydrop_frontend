@@ -18,6 +18,11 @@ interface UserMenuProps {
     setIsAuto: (a: boolean) => void
 }
 
+const LANGUAGE_LABELS: Record<LangKey, string> = {
+    'zh-hans': '简体中文',
+    en: 'English',
+}
+
 interface UserInfo {
     username: string
     picture: string
@@ -51,6 +56,20 @@ interface NotificationsResponse {
     notifications: NotificationInfo[]
     unread_count: number
     total: number
+}
+
+function formatLocaleText(template: string, values: Record<string, string | number>) {
+    return Object.entries(values).reduce(
+        (text, [key, value]) => text.replace(`{${key}}`, String(value)),
+        template
+    )
+}
+
+function getNotificationActionLabel(current: LangData, type: string) {
+    if (type === 'like') return current.user.notifications.like
+    if (type === 'comment') return current.user.notifications.comment
+    if (type === 'reply') return current.user.notifications.reply
+    return ''
 }
 
 export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenuProps) {
@@ -101,15 +120,15 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             if (res.ok) {
                 const updatedUser = await res.json()
                 setUser(updatedUser)
-                setProfileSuccess(lang === 'zh-hans' ? '昵称修改成功！' : 'Nickname updated successfully!')
+                setProfileSuccess(current.user.profileDialog.nicknameUpdated)
                 window.dispatchEvent(new Event('user-updated'))
             } else {
                 const errData = await res.json()
-                setProfileError(errData?.detail || (lang === 'zh-hans' ? '保存失败' : 'Failed to save'))
+                setProfileError(errData?.detail || current.user.profileDialog.saveFailed)
             }
         } catch (err) {
             console.error(err)
-            setProfileError(lang === 'zh-hans' ? '网络错误，请稍后重试' : 'Network error, please try again')
+            setProfileError(current.user.profileDialog.networkError)
         } finally {
             setIsSavingProfile(false)
         }
@@ -131,15 +150,15 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             if (res.ok) {
                 const updatedUser = await res.json()
                 setUser(updatedUser)
-                setProfileSuccess(lang === 'zh-hans' ? '角色已重置' : 'Character reset')
+                setProfileSuccess(current.user.profileDialog.characterReset)
                 window.dispatchEvent(new Event('user-updated'))
             } else {
                 const errData = await res.json()
-                setProfileError(errData?.detail || (lang === 'zh-hans' ? '重置失败' : 'Failed to reset character'))
+                setProfileError(errData?.detail || current.user.profileDialog.resetFailed)
             }
         } catch (err) {
             console.error('Failed to reset Minecraft character', err)
-            setProfileError(lang === 'zh-hans' ? '网络错误，请稍后重试' : 'Network error, please try again')
+            setProfileError(current.user.profileDialog.networkError)
         } finally {
             setIsResettingCharacter(false)
         }
@@ -300,21 +319,21 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         <div className="absolute top-full right-0 mt-2 w-72 max-h-[350px] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                             <div className="p-3 border-b border-black/20 bg-black/20 flex justify-between items-center">
                                 <span className={`text-white text-xs font-bold ${current.fontClass}`}>
-                                    {lang === 'zh-hans' ? '消息通知' : 'Notifications'}
+                                    {current.user.notifications.title}
                                 </span>
                                 {unreadCount > 0 && (
                                     <button
                                         onClick={handleMarkAllRead}
                                         className={`text-[10px] text-green-400 hover:text-green-300 border-none bg-transparent cursor-pointer ${current.fontClass}`}
                                     >
-                                        {lang === 'zh-hans' ? '全部已读' : 'Mark all as read'}
+                                        {current.user.notifications.markAllRead}
                                     </button>
                                 )}
                             </div>
                             <div className="flex flex-col">
                                 {notifications.length === 0 ? (
                                     <div className={`p-4 text-center text-white/40 text-xs ${current.fontClass}`}>
-                                        {lang === 'zh-hans' ? '暂无消息' : 'No notifications'}
+                                        {current.user.notifications.empty}
                                     </div>
                                 ) : (
                                     notifications.map(n => (
@@ -352,9 +371,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                             <div className="flex-1 flex flex-col gap-0.5 min-w-0">
                                                 <p className="text-[11px] text-white/90 leading-tight m-0 break-words">
                                                     <strong className="text-white">@{n.senderName}</strong>{' '}
-                                                    {n.type === 'like' && (lang === 'zh-hans' ? '点赞了你的帖子' : 'liked your post')}
-                                                    {n.type === 'comment' && (lang === 'zh-hans' ? '评论了你的帖子' : 'commented on your post')}
-                                                    {n.type === 'reply' && (lang === 'zh-hans' ? '回复了你的评论' : 'replied to your comment')}
+                                                    {getNotificationActionLabel(current, n.type)}
                                                     {n.postId && (
                                                         <span className={`text-white/50 italic block truncate mt-0.5 text-[10px] ${current.fontClass}`}>
                                                             "{n.postTitle}"
@@ -380,12 +397,13 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                         onClick={(e) => { e.stopPropagation(); setNotifPage(p => Math.max(1, p - 1)); }}
                                         className="px-2 py-0.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white hover:text-white transition-colors"
                                     >
-                                        &lt; Prev
+                                        &lt; {current.user.notifications.prev}
                                     </button>
                                     <span className="select-none">
-                                        {lang === 'zh-hans' 
-                                            ? `第 ${notifPage} / ${Math.ceil(totalNotifs / notifPageSize)} 页` 
-                                            : `Page ${notifPage} of ${Math.ceil(totalNotifs / notifPageSize)}`}
+                                        {formatLocaleText(current.user.notifications.pageLabel, {
+                                            page: notifPage,
+                                            total: Math.ceil(totalNotifs / notifPageSize),
+                                        })}
                                     </span>
                                     <button
                                         type="button"
@@ -393,7 +411,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                         onClick={(e) => { e.stopPropagation(); setNotifPage(p => Math.min(Math.ceil(totalNotifs / notifPageSize), p + 1)); }}
                                         className="px-2 py-0.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white hover:text-white transition-colors"
                                     >
-                                        Next &gt;
+                                        {current.user.notifications.next} &gt;
                                     </button>
                                 </div>
                             )}
@@ -502,7 +520,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                     className={`w-full py-1.5 px-3 mb-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs cursor-pointer flex items-center justify-center gap-2 transition-all ${current.fontClass}`}
                                 >
                                     <Icon icon="pixelarticons:user" className="text-sm" />
-                                    {lang === 'zh-hans' ? '个人资料' : 'Profile'}
+                                    {current.user.profile}
                                 </button>
                                 {user.is_pro && user.pro_expires_at && (
                                     <div className={`bg-black/40 p-2 border border-white/5 flex flex-col gap-1 text-[10px] sm:text-xs ${current.fontClass}`}>
@@ -567,7 +585,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             <option value="auto" className="bg-[#1a1a1a] text-white"> {current.common.auto}</option>
                             {SUPPORTED_LANGUAGES.map(lk => (
                                 <option key={lk} value={lk} className="bg-[#1a1a1a] text-white">
-                                    {lk === 'zh-hans' ? '简体中文' : lk === 'en' ? 'English' : lk === 'ja' ? '日本語' : '한국어'}
+                                    {LANGUAGE_LABELS[lk]}
                                 </option>
                             ))}
                         </select>
@@ -644,7 +662,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                     <div className="bg-[#1a1a1a] border border-white/10 p-5 max-w-lg w-full max-h-[90vh] overflow-y-auto custom-scrollbar mx-4 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-4">
                         <div className="flex justify-between items-center pb-2 border-b border-white/10">
                             <h3 className={`text-white text-sm font-bold ${current.fontClass}`}>
-                                {lang === 'zh-hans' ? '个人资料' : 'Profile'}
+                                {current.user.profile}
                             </h3>
                             <button
                                 onClick={() => setIsProfileModalOpen(false)}
@@ -665,14 +683,14 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             </div>
                             <div className="min-w-0 flex-1 flex flex-col gap-1">
                                 <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
-                                    Google Account
+                                    {current.user.profileDialog.googleAccount}
                                 </span>
                                 <span className={`text-[10px] text-white/50 truncate ${current.fontClass}`}>
                                     {user.email}
                                 </span>
                                 <span className={`text-[9px] text-[#4ea632]/80 flex items-center gap-1 ${current.fontClass}`}>
                                     <Icon icon="pixelarticons:lock" className="text-xs shrink-0" />
-                                    {lang === 'zh-hans' ? '仅自己可见' : 'Visible only to you'}
+                                    {current.user.profileDialog.visibleOnlyToYou}
                                 </span>
                             </div>
                         </div>
@@ -680,7 +698,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         {/* Nickname (Editable) */}
                         <div className="flex flex-col gap-1.5">
                             <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
-                                {lang === 'zh-hans' ? '昵称' : 'Nickname'}
+                                {current.user.profileDialog.nickname}
                             </span>
                             <div className="flex items-center bg-black/40 border border-white/10 focus-within:border-green-500/30">
                                 <input
@@ -692,7 +710,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                         if (e.key === 'Escape') setTempNickname(user.username || '')
                                     }}
                                     className={`min-w-0 flex-1 bg-transparent px-2 py-2 text-white text-xs focus:outline-none ${current.fontClass}`}
-                                    placeholder={lang === 'zh-hans' ? '请输入昵称...' : 'Enter nickname...'}
+                                    placeholder={current.user.profileDialog.nicknamePlaceholder}
                                     maxLength={50}
                                 />
                                 <button
@@ -700,7 +718,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                     onClick={handleSaveProfile}
                                     disabled={isSavingProfile || !tempNickname.trim()}
                                     className="m-1 w-7 h-7 bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-zinc-800 disabled:text-white/30 disabled:cursor-not-allowed text-white border border-black shadow flex items-center justify-center cursor-pointer transition-colors"
-                                    title={lang === 'zh-hans' ? '保存昵称' : 'Save nickname'}
+                                    title={current.user.profileDialog.saveNickname}
                                 >
                                     <Icon icon={isSavingProfile ? 'pixelarticons:reload' : 'pixelarticons:check'} className={`text-xs ${isSavingProfile ? 'animate-spin' : ''}`} />
                                 </button>
@@ -711,7 +729,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         <div className="flex flex-col gap-2">
                             <div className="flex items-center justify-between gap-3">
                                 <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
-                                    MY CHARACTER
+                                    {current.user.profileDialog.myCharacter}
                                 </span>
                                 {user.minecraft_skin_url && (
                                     <button
@@ -721,8 +739,8 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                         className={`px-2 py-1 bg-white/5 hover:bg-red-500/15 disabled:opacity-50 disabled:cursor-not-allowed border border-white/10 hover:border-red-400/30 text-white/45 hover:text-red-300 text-[9px] transition-colors cursor-pointer ${current.fontClass}`}
                                     >
                                         {isResettingCharacter
-                                            ? (lang === 'zh-hans' ? '重置中...' : 'Resetting...')
-                                            : (lang === 'zh-hans' ? '重置角色' : 'Reset Character')}
+                                            ? current.user.profileDialog.resettingCharacter
+                                            : current.user.profileDialog.resetCharacter}
                                     </button>
                                 )}
                             </div>
@@ -736,12 +754,12 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                         />
                                     </Suspense>
                                     <span className={`text-[10px] text-white/50 ${current.fontClass}`}>
-                                        {lang === 'zh-hans' ? '自手办模型设定' : 'Set from figure model'}
+                                        {current.user.profileDialog.setFromFigureModel}
                                     </span>
                                 </div>
                             ) : (
                                 <div className={`bg-black/25 border border-white/10 p-4 text-center text-white/35 text-[10px] ${current.fontClass}`}>
-                                    {lang === 'zh-hans' ? '尚未设置角色' : 'No character set'}
+                                    {current.user.profileDialog.noCharacterSet}
                                 </div>
                             )}
                         </div>
@@ -749,7 +767,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         {/* Current Avatar */}
                         <div className="flex flex-col gap-1.5">
                             <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
-                                {lang === 'zh-hans' ? '当前头像' : 'Current Avatar'}
+                                {current.user.profileDialog.currentAvatar}
                             </span>
                             <div className="flex items-center gap-3">
                                 <SkinAvatarImage
@@ -761,8 +779,8 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                 <div className="flex flex-col">
                                     <span className={`text-[10px] text-white/50 ${current.fontClass}`}>
                                         {user.minecraft_skin_url
-                                            ? (lang === 'zh-hans' ? '由 MY CHARACTER 实时生成' : 'Generated from MY CHARACTER')
-                                            : (lang === 'zh-hans' ? '自 Google 账号同步' : 'Synced from Google')}
+                                            ? current.user.profileDialog.generatedFromMyCharacter
+                                            : current.user.profileDialog.syncedFromGoogle}
                                     </span>
                                 </div>
                             </div>
@@ -786,7 +804,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                 onClick={() => setIsProfileModalOpen(false)}
                                 className={`flex-1 py-2 bg-transparent border border-white/10 hover:bg-white/5 text-white/50 hover:text-white text-xs transition-colors cursor-pointer ${current.fontClass}`}
                             >
-                                {lang === 'zh-hans' ? '取消' : 'Cancel'}
+                                {current.user.profileDialog.cancel}
                             </button>
                         </div>
                     </div>

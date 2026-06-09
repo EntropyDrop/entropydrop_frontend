@@ -210,7 +210,39 @@ export default {
         renewViewPro: 'View PRO',
         activatePro: 'Activate PRO',
         language: 'Language',
-        login: 'Login'
+        login: 'Login',
+        notifications: {
+            title: 'Notifications',
+            markAllRead: 'Mark all as read',
+            empty: 'No notifications',
+            like: 'liked your post',
+            comment: 'commented on your post',
+            reply: 'replied to your comment',
+            prev: 'Prev',
+            next: 'Next',
+            pageLabel: 'Page {page} of {total}'
+        },
+        profileDialog: {
+            googleAccount: 'Google Account',
+            visibleOnlyToYou: 'Visible only to you',
+            nickname: 'Nickname',
+            nicknamePlaceholder: 'Enter nickname...',
+            saveNickname: 'Save nickname',
+            nicknameUpdated: 'Nickname updated successfully!',
+            saveFailed: 'Failed to save',
+            networkError: 'Network error, please try again',
+            characterReset: 'Character reset',
+            resetFailed: 'Failed to reset character',
+            myCharacter: 'MY CHARACTER',
+            resetCharacter: 'Reset Character',
+            resettingCharacter: 'Resetting...',
+            setFromFigureModel: 'Set from figure model',
+            noCharacterSet: 'No character set',
+            currentAvatar: 'Current Avatar',
+            generatedFromMyCharacter: 'Generated from MY CHARACTER',
+            syncedFromGoogle: 'Synced from Google',
+            cancel: 'Cancel'
+        }
     },
     common: {
         auto: 'Auto',
@@ -484,7 +516,12 @@ export default {
         feedbackBad: 'Glitched',
         feedbackThanks: 'Thanks for feedback! Recorded to help optimize the model.',
         discordPrompt: 'Want to give detailed feedback? Join our ',
-        discordLinkText: 'Discord Community'
+        discordLinkText: 'Discord Community',
+        setMyCharacter: 'Set as My Character',
+        settingMyCharacter: 'Setting...',
+        setMyCharacterSuccess: 'Set successfully!',
+        setMyCharacterFailed: 'Failed to set',
+        setMyCharacterNetworkError: 'Network error, please try again'
     },
     public_page: {
         title: 'Open Production',
