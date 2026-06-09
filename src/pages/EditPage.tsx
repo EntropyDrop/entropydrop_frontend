@@ -115,7 +115,7 @@ function runKMeansQuantization(imageData: ImageData, k: number): KMeansResult {
 
     const outputImageData = new ImageData(new Uint8ClampedArray(data), width, height);
     const activeCentroids = new Set<number>();
-    
+
     for (let i = 0; i < uniqueColors.length; i++) {
         const color = uniqueColors[i];
         const clusterIndex = assignments[i];
@@ -290,7 +290,6 @@ export function EditPage({ current }: EditPageProps) {
         originalImageDataRef.current = null;
     };
 
-    const [isKMeansPanelOpen, setIsKMeansPanelOpen] = useState(false);
     const [kmeansK, setKmeansK] = useState(16);
     const [kmeansPalette, setKmeansPalette] = useState<string[]>([]);
     const originalKMeansImageDataRef = useRef<ImageData | null>(null);
@@ -323,19 +322,19 @@ export function EditPage({ current }: EditPageProps) {
 
     // Initialize K and palette when panel opens
     useEffect(() => {
-        if (isKMeansPanelOpen && ctx) {
+        if (isAdjustPanelOpen && ctx) {
             const imgData = ctx.getImageData(0, 0, 64, 64);
             const initialPalette = getUniqueColors(imgData);
             setKmeansPalette(initialPalette);
-            
+
             const defaultK = Math.min(32, Math.max(2, initialPalette.length));
             setKmeansK(defaultK);
         }
-    }, [isKMeansPanelOpen, ctx]);
+    }, [isAdjustPanelOpen, ctx]);
 
     // Keep palette preview in sync when painting or undoing/redoing
     useEffect(() => {
-        if (isKMeansPanelOpen && ctx) {
+        if (isAdjustPanelOpen && ctx) {
             const imgData = ctx.getImageData(0, 0, 64, 64);
             const currentPalette = getUniqueColors(imgData);
             setKmeansPalette(currentPalette);
@@ -746,211 +745,198 @@ export function EditPage({ current }: EditPageProps) {
             animate="animate-in fade-in zoom-in duration-300"
         >
 
-                {/* Top Section: Previews */}
-                <div className="flex-1 flex min-h-0">
-                    {/* 3D Preview */}
-                    <div className="w-full flex-1 bg-black/30 border border-white/5 flex flex-col items-center justify-center relative overflow-hidden min-w-0">
+            {/* Top Section: Previews */}
+            <div className="flex-1 flex min-h-0">
+                {/* 3D Preview */}
+                <div className="w-full flex-1 bg-black/30 border border-white/5 flex flex-col items-center justify-center relative overflow-hidden min-w-0">
 
 
-                        <div
-                            className={`w-full h-full bg-[#1a1a1a] overflow-hidden flex items-center justify-center shadow-inner relative ${tool === 'picker' ? 'cursor-crosshair' : ''}`}
-                            onPointerLeave={handleHoverEnd}
-                        >
-                            <input
-                                id="import-input"
-                                type="file"
-                                accept="image/*"
-                                style={{ display: 'none' }}
-                                onChange={handleImport}
-                            />
+                    <div
+                        className={`w-full h-full bg-[#1a1a1a] overflow-hidden flex items-center justify-center shadow-inner relative ${tool === 'picker' ? 'cursor-crosshair' : ''}`}
+                        onPointerLeave={handleHoverEnd}
+                    >
+                        <input
+                            id="import-input"
+                            type="file"
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            onChange={handleImport}
+                        />
 
-                            {isEmptyModel ? (
-                                <div className="flex flex-col items-center gap-4 z-20">
-                                    <button
-                                        onClick={() => document.getElementById('import-input')?.click()}
-                                        className="px-6 py-3 bg-[#3c8527] hover:bg-[#4ea632] text-white font-pixel-hans text-xs cursor-pointer flex items-center gap-2 transition-all shadow-lg border border-black active:translate-y-px"
-                                    >
-                                        <Icon icon="pixelarticons:upload" className="text-base" />
-                                        {current.edit.importTitle}
-                                    </button>
-                                    <div className="text-white/40 font-pixel-hans text-[11px] text-center max-w-xs mt-2 leading-relaxed">
-                                        {current.edit.importDesc}
-                                    </div>
+                        {isEmptyModel ? (
+                            <div className="flex flex-col items-center gap-4 z-20">
+                                <button
+                                    onClick={() => document.getElementById('import-input')?.click()}
+                                    className="px-6 py-3 bg-[#3c8527] hover:bg-[#4ea632] text-white font-pixel-hans text-xs cursor-pointer flex items-center gap-2 transition-all shadow-lg border border-black active:translate-y-px"
+                                >
+                                    <Icon icon="pixelarticons:upload" className="text-base" />
+                                    {current.edit.importTitle}
+                                </button>
+                                <div className="text-white/40 font-pixel-hans text-[11px] text-center max-w-xs mt-2 leading-relaxed">
+                                    {current.edit.importDesc}
                                 </div>
-                            ) : null}
+                            </div>
+                        ) : null}
 
-                            {!isEmptyModel && texture && (
-                                <>
-                                    <MC texture={texture} updateTrigger={updateTrigger} mode={previewMode} action={previewAction} visibleParts={visibleParts} showOverlay={showOverlay} onPaint={paintPixel} onPaintEnd={handlePaintEnd} onHover={handleHover} onHoverEnd={handleHoverEnd} />
-                                    {/* Floating Tools on Left-Center (Desktop) or Bottom-Left Above Palette (Mobile) */}
-                                    <div className="absolute z-20 flex flex-col items-start gap-1.5 pointer-events-auto lg:left-4 lg:top-1/2 lg:-translate-y-1/2 max-lg:bottom-20 max-lg:left-4">
-                                        <button
-                                            onClick={() => setShowOverlay(!showOverlay)}
-                                            className={`p-1.5 px-2 bg-black/60 backdrop-blur-md border text-white cursor-pointer hover:bg-black/80 flex items-center gap-1.5 transition-all outline-none ${current.fontClass} ${showOverlay ? 'border-[#4ea632]/80 bg-[#4ea632]/10' : 'border-white/10'}`}
-                                        >
-                                            <div className={`w-4 h-4 border flex items-center justify-center transition-all duration-200 ${showOverlay ? 'border-white bg-[#4ea632]' : 'border-white/20 bg-transparent'}`}>
-                                                <Icon icon="pixelarticons:check" className={`text-xs text-white animate-in zoom-in duration-100 ${showOverlay ? 'block' : 'hidden'}`} />
-                                            </div>
-                                            <span className={`text-xs ${showOverlay ? 'text-white' : 'text-white/60'}`}>
-                                                {current.edit.overlay}
-                                            </span>
-                                        </button>
-
-                                        <div className="flex flex-col gap-2 bg-black/60 backdrop-blur-md p-2 border border-white/10">
-                                            <button
-                                                onClick={() => setTool('pencil')}
-                                                className={`p-2 border cursor-pointer ${tool === 'pencil' ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
-                                                title={current.edit.pencil}
-                                            >
-                                                <Icon icon="pixelarticons:edit" className="text-base" />
-                                            </button>
-                                            <button
-                                                onClick={() => setTool('eraser')}
-                                                className={`p-2 border cursor-pointer ${tool === 'eraser' ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
-                                                title={current.edit.eraser}
-                                            >
-                                                <Icon icon="pixelarticons:close" className="text-base" />
-                                            </button>
-                                            <button
-                                                onClick={() => setTool('picker')}
-                                                className={`p-2 border cursor-pointer ${tool === 'picker' ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
-                                                title={current.edit.colorPicker}
-                                            >
-                                                <Icon icon="pixelarticons:pipette" className="text-base" />
-                                            </button>
-                                            <div className="w-full h-px bg-white/5 my-1" />
-                                            <button
-                                                onClick={() => {
-                                                    setIsAdjustPanelOpen(!isAdjustPanelOpen);
-                                                    setIsKMeansPanelOpen(false);
-                                                }}
-                                                className={`p-2 border cursor-pointer ${isAdjustPanelOpen ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
-                                                title={current.edit.adjust}
-                                            >
-                                                <Icon icon="pixelarticons:sliders" className="text-base" />
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    setIsKMeansPanelOpen(!isKMeansPanelOpen);
-                                                    setIsAdjustPanelOpen(false);
-                                                }}
-                                                className={`p-2 border cursor-pointer ${isKMeansPanelOpen ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
-                                                title={current.edit.kmeans}
-                                            >
-                                                <Icon icon="pixelarticons:palette" className="text-base" />
-                                            </button>
+                        {!isEmptyModel && texture && (
+                            <>
+                                <MC texture={texture} updateTrigger={updateTrigger} mode={previewMode} action={previewAction} visibleParts={visibleParts} showOverlay={showOverlay} onPaint={paintPixel} onPaintEnd={handlePaintEnd} onHover={handleHover} onHoverEnd={handleHoverEnd} />
+                                {/* Floating Tools on Left-Center (Desktop) or Bottom-Left Above Palette (Mobile) */}
+                                <div className="absolute z-20 flex flex-col items-start gap-1.5 pointer-events-auto lg:left-4 lg:top-1/2 lg:-translate-y-1/2 max-lg:bottom-20 max-lg:left-4">
+                                    <button
+                                        onClick={() => setShowOverlay(!showOverlay)}
+                                        className={`p-1.5 px-2 bg-black/60 backdrop-blur-md border text-white cursor-pointer hover:bg-black/80 flex items-center gap-1.5 transition-all outline-none ${current.fontClass} ${showOverlay ? 'border-[#4ea632]/80 bg-[#4ea632]/10' : 'border-white/10'}`}
+                                    >
+                                        <div className={`w-4 h-4 border flex items-center justify-center transition-all duration-200 ${showOverlay ? 'border-white bg-[#4ea632]' : 'border-white/20 bg-transparent'}`}>
+                                            <Icon icon="pixelarticons:check" className={`text-xs text-white animate-in zoom-in duration-100 ${showOverlay ? 'block' : 'hidden'}`} />
                                         </div>
+                                        <span className={`text-xs ${showOverlay ? 'text-white' : 'text-white/60'}`}>
+                                            {current.edit.overlay}
+                                        </span>
+                                    </button>
 
-                                        {isAdjustPanelOpen && (
-                                            <div className="absolute left-16 top-0 z-30 bg-black/90 backdrop-blur-lg p-4 border border-white/10 flex flex-col gap-4 min-w-[200px] shadow-2xl animate-in slide-in-from-left-4 fade-in duration-300 pointer-events-auto">
-                                                <div className="flex justify-between items-center mb-1">
-                                                    <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>{current.edit.adjust}</span>
-                                                    <button onClick={() => setIsAdjustPanelOpen(false)} className="text-white/30 hover:text-white transition-colors cursor-pointer">
-                                                        <Icon icon="pixelarticons:close" className="text-sm" />
-                                                    </button>
+                                    <div className="flex flex-col gap-2 bg-black/60 backdrop-blur-md p-2 border border-white/10">
+                                        <button
+                                            onClick={() => setTool('pencil')}
+                                            className={`p-2 border cursor-pointer ${tool === 'pencil' ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
+                                            title={current.edit.pencil}
+                                        >
+                                            <Icon icon="pixelarticons:edit" className="text-base" />
+                                        </button>
+                                        <button
+                                            onClick={() => setTool('eraser')}
+                                            className={`p-2 border cursor-pointer ${tool === 'eraser' ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
+                                            title={current.edit.eraser}
+                                        >
+                                            <Icon icon="pixelarticons:close" className="text-base" />
+                                        </button>
+                                        <button
+                                            onClick={() => setTool('picker')}
+                                            className={`p-2 border cursor-pointer ${tool === 'picker' ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
+                                            title={current.edit.colorPicker}
+                                        >
+                                            <Icon icon="pixelarticons:pipette" className="text-base" />
+                                        </button>
+                                        <div className="w-full h-px bg-white/5 my-1" />
+                                        <button
+                                            onClick={() => setIsAdjustPanelOpen(!isAdjustPanelOpen)}
+                                            className={`p-2 border cursor-pointer ${isAdjustPanelOpen ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
+                                            title={current.edit.adjust}
+                                        >
+                                            <Icon icon="pixelarticons:sliders" className="text-base" />
+                                        </button>
+                                    </div>
+
+                                    {isAdjustPanelOpen && (
+                                        <div className="absolute left-16 top-0 z-30 bg-black/90 backdrop-blur-lg p-4 border border-white/10 flex flex-col gap-4 min-w-[240px] max-w-[300px] shadow-2xl animate-in slide-in-from-left-4 fade-in duration-300 pointer-events-auto">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>{current.edit.adjust}</span>
+                                                <button onClick={() => setIsAdjustPanelOpen(false)} className="text-white/30 hover:text-white transition-colors cursor-pointer">
+                                                    <Icon icon="pixelarticons:close" className="text-sm" />
+                                                </button>
+                                            </div>
+
+                                            {/* HSB Color Adjust Section */}
+                                            <div className="flex flex-col gap-3">
+                                                <div className="text-[9px] text-white/40 uppercase tracking-widest font-pixel-hans pb-1 border-b border-white/5">
+                                                    {current.edit.adjust} (HSB)
                                                 </div>
 
-                                                <div className="flex flex-col gap-3">
-                                                    {/* Hue */}
-                                                    <div className="flex flex-col gap-1.5">
-                                                        <div className="flex justify-between text-[11px] font-pixel-hans">
-                                                            <span className="text-white/60">{current.edit.hue}</span>
-                                                            <span className="text-[#4ea632]">{hsb.h}°</span>
-                                                        </div>
-                                                        <input
-                                                            type="range"
-                                                            min="-180"
-                                                            max="180"
-                                                            value={hsb.h}
-                                                            onPointerDown={handleHSBStart}
-                                                            onChange={(e) => handleHSBChange('h', parseInt(e.target.value))}
-                                                            onPointerUp={handleHSBEnd}
-                                                            className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
-                                                        />
+                                                {/* Hue */}
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex justify-between text-[11px] font-pixel-hans">
+                                                        <span className="text-white/60">{current.edit.hue}</span>
+                                                        <span className="text-[#4ea632]">{hsb.h}°</span>
                                                     </div>
+                                                    <input
+                                                        type="range"
+                                                        min="-180"
+                                                        max="180"
+                                                        value={hsb.h}
+                                                        onPointerDown={handleHSBStart}
+                                                        onChange={(e) => handleHSBChange('h', parseInt(e.target.value))}
+                                                        onPointerUp={handleHSBEnd}
+                                                        className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
+                                                    />
+                                                </div>
 
-                                                    {/* Saturation */}
-                                                    <div className="flex flex-col gap-1.5">
-                                                        <div className="flex justify-between text-[11px] font-pixel-hans">
-                                                            <span className="text-white/60">{current.edit.saturation}</span>
-                                                            <span className="text-[#4ea632]">{hsb.s > 0 ? '+' : ''}{hsb.s}%</span>
-                                                        </div>
-                                                        <input
-                                                            type="range"
-                                                            min="-100"
-                                                            max="100"
-                                                            value={hsb.s}
-                                                            onPointerDown={handleHSBStart}
-                                                            onChange={(e) => handleHSBChange('s', parseInt(e.target.value))}
-                                                            onPointerUp={handleHSBEnd}
-                                                            className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
-                                                        />
+                                                {/* Saturation */}
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex justify-between text-[11px] font-pixel-hans">
+                                                        <span className="text-white/60">{current.edit.saturation}</span>
+                                                        <span className="text-[#4ea632]">{hsb.s > 0 ? '+' : ''}{hsb.s}%</span>
                                                     </div>
+                                                    <input
+                                                        type="range"
+                                                        min="-100"
+                                                        max="100"
+                                                        value={hsb.s}
+                                                        onPointerDown={handleHSBStart}
+                                                        onChange={(e) => handleHSBChange('s', parseInt(e.target.value))}
+                                                        onPointerUp={handleHSBEnd}
+                                                        className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
+                                                    />
+                                                </div>
 
-                                                    {/* Brightness */}
-                                                    <div className="flex flex-col gap-1.5">
-                                                        <div className="flex justify-between text-[11px] font-pixel-hans">
-                                                            <span className="text-white/60">{current.edit.brightness}</span>
-                                                            <span className="text-[#4ea632]">{hsb.b > 0 ? '+' : ''}{hsb.b}%</span>
-                                                        </div>
-                                                        <input
-                                                            type="range"
-                                                            min="-100"
-                                                            max="100"
-                                                            value={hsb.b}
-                                                            onPointerDown={handleHSBStart}
-                                                            onChange={(e) => handleHSBChange('b', parseInt(e.target.value))}
-                                                            onPointerUp={handleHSBEnd}
-                                                            className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
-                                                        />
+                                                {/* Brightness */}
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex justify-between text-[11px] font-pixel-hans">
+                                                        <span className="text-white/60">{current.edit.brightness}</span>
+                                                        <span className="text-[#4ea632]">{hsb.b > 0 ? '+' : ''}{hsb.b}%</span>
                                                     </div>
+                                                    <input
+                                                        type="range"
+                                                        min="-100"
+                                                        max="100"
+                                                        value={hsb.b}
+                                                        onPointerDown={handleHSBStart}
+                                                        onChange={(e) => handleHSBChange('b', parseInt(e.target.value))}
+                                                        onPointerUp={handleHSBEnd}
+                                                        className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
+                                                    />
                                                 </div>
                                             </div>
-                                        )}
 
-                                        {isKMeansPanelOpen && (
-                                            <div className="absolute left-16 top-0 z-30 bg-black/90 backdrop-blur-lg p-4 border border-white/10 flex flex-col gap-4 min-w-[220px] max-w-[280px] shadow-2xl animate-in slide-in-from-left-4 fade-in duration-300 pointer-events-auto">
-                                                <div className="flex justify-between items-center mb-1">
-                                                    <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>{current.edit.kmeans}</span>
-                                                    <button onClick={() => setIsKMeansPanelOpen(false)} className="text-white/30 hover:text-white transition-colors cursor-pointer">
-                                                        <Icon icon="pixelarticons:close" className="text-sm" />
-                                                    </button>
+                                            <div className="w-full h-px bg-white/5 my-1" />
+
+                                            {/* KMeans Color Quantization Section */}
+                                            <div className="flex flex-col gap-3">
+                                                <div className="text-[9px] text-white/40 uppercase tracking-widest font-pixel-hans pb-1 border-b border-white/5">
+                                                    {current.edit.kmeans}
                                                 </div>
 
-                                                <div className="text-[11px] text-white/50 leading-relaxed font-pixel-hans">
+                                                <div className="text-[10px] text-white/50 leading-relaxed font-pixel-hans">
                                                     {current.edit.kmeansDescription}
                                                 </div>
 
-                                                <div className="flex flex-col gap-3">
-                                                    <div className="flex flex-col gap-1.5">
-                                                        <div className="flex justify-between text-[11px] font-pixel-hans">
-                                                            <span className="text-white/60">{current.edit.kmeansClusters}</span>
-                                                            <span className="text-[#4ea632] font-bold">{kmeansK}</span>
-                                                        </div>
-                                                        <input
-                                                            type="range"
-                                                            min="2"
-                                                            max="32"
-                                                            value={kmeansK}
-                                                            onPointerDown={handleKMeansStart}
-                                                            onChange={(e) => handleKMeansChange(parseInt(e.target.value))}
-                                                            onPointerUp={handleKMeansEnd}
-                                                            className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
-                                                        />
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex justify-between text-[11px] font-pixel-hans">
+                                                        <span className="text-white/60">{current.edit.kmeansClusters}</span>
+                                                        <span className="text-[#4ea632] font-bold">{kmeansK}</span>
                                                     </div>
+                                                    <input
+                                                        type="range"
+                                                        min="2"
+                                                        max="32"
+                                                        value={kmeansK}
+                                                        onPointerDown={handleKMeansStart}
+                                                        onChange={(e) => handleKMeansChange(parseInt(e.target.value))}
+                                                        onPointerUp={handleKMeansEnd}
+                                                        className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
+                                                    />
                                                 </div>
 
                                                 {kmeansPalette.length > 0 && (
-                                                    <div className="flex flex-col gap-2">
-                                                        <div className="text-[10px] text-white/40 uppercase tracking-widest font-pixel-hans">
+                                                    <div className="flex flex-col gap-1.5 mt-1">
+                                                        <div className="text-[9px] text-white/40 uppercase tracking-widest font-pixel-hans">
                                                             {current.edit.kmeansPalettePreview} ({kmeansPalette.length})
                                                         </div>
-                                                        <div className="flex flex-wrap gap-1 p-1.5 bg-black/20 border border-white/5 max-h-[100px] overflow-y-auto custom-scrollbar">
+                                                        <div className="flex flex-wrap gap-1 p-1 bg-black/20 border border-white/5 max-h-[72px] overflow-y-auto custom-scrollbar">
                                                             {kmeansPalette.map((c, idx) => (
                                                                 <div
                                                                     key={idx}
                                                                     style={{ backgroundColor: c }}
-                                                                    className="w-5 h-5 border border-black/50 shrink-0 cursor-pointer transform hover:scale-110 transition-transform"
+                                                                    className="w-4 h-4 border border-black/50 shrink-0 cursor-pointer transform hover:scale-110 transition-transform"
                                                                     onClick={() => setCurrentColor(c)}
                                                                     title={c}
                                                                 />
@@ -959,219 +945,220 @@ export function EditPage({ current }: EditPageProps) {
                                                     </div>
                                                 )}
                                             </div>
-                                        )}
-                                    </div>
+                                        </div>
+                                    )}
+                                </div>
 
-                                    {/* Floating Controls Top Right */}
-                                    <div className="absolute top-4 right-4 z-20 flex gap-1.5 bg-black/60 backdrop-blur-md p-1 border border-white/10 items-center">
-                                        {!isEmptyModel && (
-                                            <>
+                                {/* Floating Controls Top Right */}
+                                <div className="absolute top-4 right-4 z-20 flex gap-1.5 bg-black/60 backdrop-blur-md p-1 border border-white/10 items-center">
+                                    {!isEmptyModel && (
+                                        <>
+                                            <button
+                                                onClick={undo}
+                                                disabled={history.index <= 0}
+                                                className={`p-1.5 border cursor-pointer ${history.index <= 0 ? 'opacity-30 cursor-not-allowed' : 'bg-white/10 border-white/20 text-white hover:bg-white/20'}`}
+                                                title={current.edit.undo}
+                                            >
+                                                <Icon icon="pixelarticons:undo" className="text-sm text-white" />
+                                            </button>
+                                            <button
+                                                onClick={redo}
+                                                disabled={history.index >= history.list.length - 1}
+                                                className={`p-1.5 border cursor-pointer ${history.index >= history.list.length - 1 ? 'opacity-30 cursor-not-allowed' : 'bg-white/10 border-white/20 text-white hover:bg-white/20'}`}
+                                                title={current.edit.redo}
+                                            >
+                                                <Icon icon="pixelarticons:redo" className="text-sm text-white" />
+                                            </button>
+
+                                            <div className="w-px h-3 bg-white/10" />
+                                        </>
+                                    )}
+
+                                    <button
+                                        onClick={() => document.getElementById('import-input')?.click()}
+                                        className={`p-1.5 px-2.5 bg-[#555] hover:bg-[#666] text-white border border-black cursor-pointer flex items-center gap-1.5 transition-colors active:translate-y-px ${current.fontClass}`}
+                                        title={current.edit.import}
+                                    >
+                                        <Icon icon="pixelarticons:upload" className="text-sm" />
+                                        <span className="text-[11px] font-bold">{current.edit.import}</span>
+                                    </button>
+
+                                    {!isEmptyModel && (
+                                        <>
+                                            <button
+                                                onClick={handleSave}
+                                                className={`p-1.5 px-2.5 bg-[#555] hover:bg-[#666] text-white border border-black cursor-pointer flex items-center gap-1.5 transition-colors active:translate-y-px ${current.fontClass}`}
+                                                title={current.edit.export}
+                                            >
+                                                <Icon icon="pixelarticons:download" className="text-sm" />
+                                                <span className="text-[11px] font-bold">{current.edit.export}</span>
+                                            </button>
+
+                                            <div className="relative">
                                                 <button
-                                                    onClick={undo}
-                                                    disabled={history.index <= 0}
-                                                    className={`p-1.5 border cursor-pointer ${history.index <= 0 ? 'opacity-30 cursor-not-allowed' : 'bg-white/10 border-white/20 text-white hover:bg-white/20'}`}
-                                                    title={current.edit.undo}
+                                                    onClick={() => setIsDropdownOpen(prev => !prev)}
+                                                    className={`p-1.5 px-2.5 bg-[#e09f3e] hover:bg-[#9e2a2b] text-white border border-black cursor-pointer flex items-center gap-1.5 transition-colors active:translate-y-px ${current.fontClass}`}
+                                                    title={current.edit.collect}
                                                 >
-                                                    <Icon icon="pixelarticons:undo" className="text-sm text-white" />
-                                                </button>
-                                                <button
-                                                    onClick={redo}
-                                                    disabled={history.index >= history.list.length - 1}
-                                                    className={`p-1.5 border cursor-pointer ${history.index >= history.list.length - 1 ? 'opacity-30 cursor-not-allowed' : 'bg-white/10 border-white/20 text-white hover:bg-white/20'}`}
-                                                    title={current.edit.redo}
-                                                >
-                                                    <Icon icon="pixelarticons:redo" className="text-sm text-white" />
+                                                    <Icon icon="pixelarticons:bookmark" className="text-sm" />
+                                                    <span className="text-[11px] font-bold">{current.edit.collect}</span>
                                                 </button>
 
-                                                <div className="w-px h-3 bg-white/10" />
-                                            </>
-                                        )}
-
-                                        <button
-                                            onClick={() => document.getElementById('import-input')?.click()}
-                                            className={`p-1.5 px-2.5 bg-[#555] hover:bg-[#666] text-white border border-black cursor-pointer flex items-center gap-1.5 transition-colors active:translate-y-px ${current.fontClass}`}
-                                            title={current.edit.import}
-                                        >
-                                            <Icon icon="pixelarticons:upload" className="text-sm" />
-                                            <span className="text-[11px] font-bold">{current.edit.import}</span>
-                                        </button>
-
-                                        {!isEmptyModel && (
-                                            <>
-                                                <button
-                                                    onClick={handleSave}
-                                                    className={`p-1.5 px-2.5 bg-[#555] hover:bg-[#666] text-white border border-black cursor-pointer flex items-center gap-1.5 transition-colors active:translate-y-px ${current.fontClass}`}
-                                                    title={current.edit.export}
-                                                >
-                                                    <Icon icon="pixelarticons:download" className="text-sm" />
-                                                    <span className="text-[11px] font-bold">{current.edit.export}</span>
-                                                </button>
-
-                                                <div className="relative">
-                                                    <button
-                                                        onClick={() => setIsDropdownOpen(prev => !prev)}
-                                                        className={`p-1.5 px-2.5 bg-[#e09f3e] hover:bg-[#9e2a2b] text-white border border-black cursor-pointer flex items-center gap-1.5 transition-colors active:translate-y-px ${current.fontClass}`}
-                                                        title={current.edit.collect}
-                                                    >
-                                                        <Icon icon="pixelarticons:bookmark" className="text-sm" />
-                                                        <span className="text-[11px] font-bold">{current.edit.collect}</span>
-                                                    </button>
-
-                                                    {isDropdownOpen && (
-                                                        <div className="absolute top-full right-0 mt-1 z-30 bg-[#121212] border border-white/10 p-2 flex flex-col gap-1 w-48 shadow-lg">
-                                                            <div className="flex flex-col gap-2 p-1">
-                                                                <div className="text-[10px] text-white/60 pb-1 border-b border-white/5 mb-1 font-pixel-hans">
-                                                                    {current.edit.saveToCreations}
-                                                                </div>
-                                                                <button
-                                                                    onClick={() => !isParentPrivate && handleSaveToCreation(true)}
-                                                                    disabled={isSavingToCreation || isParentPrivate}
-                                                                    className={`text-left p-1.5 text-[10px] cursor-pointer flex items-center gap-1 transition-colors ${isParentPrivate
-                                                                        ? 'opacity-40 cursor-not-allowed bg-white/5 border border-white/5 text-white/30'
-                                                                        : 'bg-[#3c8527]/20 border border-[#3c8527]/40 hover:bg-[#3c8527]/40 text-white/80'
-                                                                        }`}
-                                                                >
-                                                                    <Icon icon="pixelarticons:folder" className="text-[#4ea632]" />
-                                                                    <span className={current.fontClass}>{current.edit.saveAsPublic}</span>
-                                                                </button>
-                                                                {isParentPrivate && (
-                                                                    <div className="text-[9px] text-yellow-500/80 px-1.5 py-0.5 font-pixel-hans">
-                                                                        {current.edit.privateModelWarning}
-                                                                    </div>
-                                                                )}
-                                                                <button
-                                                                    onClick={() => handleSaveToCreation(false)}
-                                                                    disabled={isSavingToCreation}
-                                                                    className="text-left p-1.5 hover:bg-white/10 text-[10px] text-white/80 cursor-pointer flex items-center gap-1 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
-                                                                >
-                                                                    <Icon icon="pixelarticons:folder" className="text-white/60" />
-                                                                    <span className={current.fontClass}>{current.edit.saveAsPrivate}</span>
-                                                                </button>
-                                                                {isSavingToCreation && <div className="text-[9px] text-white/40 text-center animate-pulse">{current.edit.saving}</div>}
+                                                {isDropdownOpen && (
+                                                    <div className="absolute top-full right-0 mt-1 z-30 bg-[#121212] border border-white/10 p-2 flex flex-col gap-1 w-48 shadow-lg">
+                                                        <div className="flex flex-col gap-2 p-1">
+                                                            <div className="text-[10px] text-white/60 pb-1 border-b border-white/5 mb-1 font-pixel-hans">
+                                                                {current.edit.saveToCreations}
                                                             </div>
+                                                            <button
+                                                                onClick={() => !isParentPrivate && handleSaveToCreation(true)}
+                                                                disabled={isSavingToCreation || isParentPrivate}
+                                                                className={`text-left p-1.5 text-[10px] cursor-pointer flex items-center gap-1 transition-colors ${isParentPrivate
+                                                                    ? 'opacity-40 cursor-not-allowed bg-white/5 border border-white/5 text-white/30'
+                                                                    : 'bg-[#3c8527]/20 border border-[#3c8527]/40 hover:bg-[#3c8527]/40 text-white/80'
+                                                                    }`}
+                                                            >
+                                                                <Icon icon="pixelarticons:folder" className="text-[#4ea632]" />
+                                                                <span className={current.fontClass}>{current.edit.saveAsPublic}</span>
+                                                            </button>
+                                                            {isParentPrivate && (
+                                                                <div className="text-[9px] text-yellow-500/80 px-1.5 py-0.5 font-pixel-hans">
+                                                                    {current.edit.privateModelWarning}
+                                                                </div>
+                                                            )}
+                                                            <button
+                                                                onClick={() => handleSaveToCreation(false)}
+                                                                disabled={isSavingToCreation}
+                                                                className="text-left p-1.5 hover:bg-white/10 text-[10px] text-white/80 cursor-pointer flex items-center gap-1 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                                                            >
+                                                                <Icon icon="pixelarticons:folder" className="text-white/60" />
+                                                                <span className={current.fontClass}>{current.edit.saveAsPrivate}</span>
+                                                            </button>
+                                                            {isSavingToCreation && <div className="text-[9px] text-white/40 text-center animate-pulse">{current.edit.saving}</div>}
                                                         </div>
-                                                    )}
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-
-                                    {/* Floating Palette Bottom Center */}
-                                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-row items-center gap-1.5 bg-black/60 backdrop-blur-md p-1.5 border border-white/10 pointer-events-auto w-[92%] max-w-[300px] sm:w-auto sm:max-w-xl shadow-2xl">
-                                        {/* Large Color Picker Square */}
-                                        <div className="relative w-12 h-12 border border-white/20 bg-transparent flex-shrink-0 shadow-lg">
-                                            <input
-                                                type="color"
-                                                value={currentColor}
-                                                onChange={(e) => setCurrentColor(e.target.value)}
-                                                className="absolute inset-0 w-full h-full cursor-pointer opacity-0 z-10"
-                                            />
-                                            <div
-                                                className="absolute inset-0 border border-black/50"
-                                                style={{ backgroundColor: currentColor }}
-                                            />
-                                        </div>
-
-                                        <div className="flex-1 flex flex-row items-center gap-1 p-1 bg-black/20 border border-white/5 overflow-x-auto custom-scrollbar min-w-0">
-                                            {recentColors.map(c => (
-                                                <button
-                                                    key={c}
-                                                    style={{ backgroundColor: c }}
-                                                    onClick={() => setCurrentColor(c)}
-                                                    className={`w-8 h-8 sm:w-6 sm:h-6 shrink-0 border border-black cursor-pointer transform hover:scale-110 transition-transform ${currentColor === c ? 'ring-2 ring-white/60' : ''}`}
-                                                />
-                                            ))}
-                                            {recentColors.length > 0 && <div className="w-px h-4 bg-white/20 shrink-0 mx-1" />}
-                                            {colors.map(c => (
-                                                <button
-                                                    key={c}
-                                                    style={{ backgroundColor: c }}
-                                                    onClick={() => setCurrentColor(c)}
-                                                    className={`w-8 h-8 sm:w-6 sm:h-6 shrink-0 border border-black cursor-pointer transform hover:scale-110 transition-transform ${currentColor === c ? 'ring-2 ring-white/60' : ''}`}
-                                                />
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Simplified Character Toggler (Desktop Bottom-Right, Mobile Above Palette) */}
-                                    <div className="absolute z-20 flex flex-col items-center gap-2 pointer-events-auto lg:bottom-4 lg:right-4 max-lg:bottom-20 max-lg:right-4">
-                                        <div className="flex bg-black/60 backdrop-blur-md border border-white/10 p-0.5">
-                                            <button
-                                                onClick={() => convertModel('steve')}
-                                                className={`px-2 py-1 text-[9px] cursor-pointer transition-colors ${current.fontClass} ${modelType === 'steve' ? 'bg-[#3c8527] text-white' : 'text-white/40 hover:text-white/60'}`}
-                                            >
-                                                {current.edit.strongMode}
-                                            </button>
-                                            <button
-                                                onClick={() => convertModel('alex')}
-                                                className={`px-2 py-1 text-[9px] cursor-pointer transition-colors ${current.fontClass} ${modelType === 'alex' ? 'bg-[#3c8527] text-white' : 'text-white/40 hover:text-white/60'}`}
-                                            >
-                                                {current.edit.slimMode}
-                                            </button>
-                                        </div>
-
-                                        <div className="bg-black/40 backdrop-blur-md p-4 border border-white/10 flex flex-col items-center gap-1.5 w-fit">
-                                            <div
-                                                onClick={() => togglePart('head')}
-                                                className={`w-6 h-6 cursor-pointer border-2 transition-colors ${visibleParts.head ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`}
-                                            />
-                                            <div className="flex gap-1.5">
-                                                <div onClick={() => togglePart('rightArm')} className={`w-3 h-9 cursor-pointer border-2 transition-colors ${visibleParts.rightArm ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
-                                                <div onClick={() => togglePart('body')} className={`w-6 h-9 cursor-pointer border-2 transition-colors ${visibleParts.body ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
-                                                <div onClick={() => togglePart('leftArm')} className={`w-3 h-9 cursor-pointer border-2 transition-colors ${visibleParts.leftArm ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div className="flex gap-1.5">
-                                                <div onClick={() => togglePart('rightLeg')} className={`w-3 h-9 cursor-pointer border-2 transition-colors ${visibleParts.rightLeg ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
-                                                <div onClick={() => togglePart('leftLeg')} className={`w-3 h-9 cursor-pointer border-2 transition-colors ${visibleParts.leftLeg ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
+                                        </>
+                                    )}
+                                </div>
 
-                        </div>
-
-                        {parentSkinId && (
-                            <div className="absolute z-30 bg-black/60 backdrop-blur-md p-1.5 border border-white/10 flex items-center gap-2 pointer-events-auto lg:top-10 lg:left-10 max-lg:top-16 max-lg:right-4">
-                                {basedOnSkinRenderUrl ? (
-                                    <div key="based-on-image" className="w-10 h-10 bg-black/40 border border-white/5 overflow-hidden flex items-center justify-center">
-                                        <img
-                                            src={basedOnSkinRenderUrl}
-                                            className="w-full h-full object-contain"
-                                            style={{ imageRendering: 'pixelated' }}
-                                            alt="Based On"
+                                {/* Floating Palette Bottom Center */}
+                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-row items-center gap-1.5 bg-black/60 backdrop-blur-md p-1.5 border border-white/10 pointer-events-auto w-[92%] max-w-[300px] sm:w-auto sm:max-w-xl shadow-2xl">
+                                    {/* Large Color Picker Square */}
+                                    <div className="relative w-12 h-12 border border-white/20 bg-transparent flex-shrink-0 shadow-lg">
+                                        <input
+                                            type="color"
+                                            value={currentColor}
+                                            onChange={(e) => setCurrentColor(e.target.value)}
+                                            className="absolute inset-0 w-full h-full cursor-pointer opacity-0 z-10"
+                                        />
+                                        <div
+                                            className="absolute inset-0 border border-black/50"
+                                            style={{ backgroundColor: currentColor }}
                                         />
                                     </div>
-                                ) : (
-                                    <div key="based-on-loading" className="w-10 h-10 bg-black/40 border border-white/5 flex items-center justify-center">
-                                        <Icon icon="pixelarticons:reload" className="text-white/20 animate-spin" />
+
+                                    <div className="flex-1 flex flex-row items-center gap-1 p-1 bg-black/20 border border-white/5 overflow-x-auto custom-scrollbar min-w-0">
+                                        {recentColors.map(c => (
+                                            <button
+                                                key={c}
+                                                style={{ backgroundColor: c }}
+                                                onClick={() => setCurrentColor(c)}
+                                                className={`w-8 h-8 sm:w-6 sm:h-6 shrink-0 border border-black cursor-pointer transform hover:scale-110 transition-transform ${currentColor === c ? 'ring-2 ring-white/60' : ''}`}
+                                            />
+                                        ))}
+                                        {recentColors.length > 0 && <div className="w-px h-4 bg-white/20 shrink-0 mx-1" />}
+                                        {colors.map(c => (
+                                            <button
+                                                key={c}
+                                                style={{ backgroundColor: c }}
+                                                onClick={() => setCurrentColor(c)}
+                                                className={`w-8 h-8 sm:w-6 sm:h-6 shrink-0 border border-black cursor-pointer transform hover:scale-110 transition-transform ${currentColor === c ? 'ring-2 ring-white/60' : ''}`}
+                                            />
+                                        ))}
                                     </div>
-                                )}
-                                <div className="flex flex-col">
-                                    <span className="text-white/30 text-[8px] font-pixel-hans uppercase tracking-widest">Based on</span>
-                                    <span className="text-[#4ea632] font-pixel-hans text-[11px] font-bold" title={parentSkinId}>
-                                        {parentSkinId.substring(0, 8).toUpperCase()}
-                                    </span>
                                 </div>
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setParentSkinId(null);
-                                        setBasedOnSkinRenderUrl(null);
-                                        setIsEmptyModel(true);
-                                        setTexture(null);
-                                    }}
-                                    className="p-1 hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors cursor-pointer border border-transparent hover:border-white/10 flex items-center justify-center ml-1"
-                                    title={current.edit.exitReference}
-                                >
-                                    <Icon icon="pixelarticons:close" className="text-base" />
-                                </button>
-                            </div>
+
+                                {/* Simplified Character Toggler (Desktop Bottom-Right, Mobile Above Palette) */}
+                                <div className="absolute z-20 flex flex-col items-center gap-2 pointer-events-auto lg:bottom-4 lg:right-4 max-lg:bottom-20 max-lg:right-4">
+                                    <div className="flex bg-black/60 backdrop-blur-md border border-white/10 p-0.5">
+                                        <button
+                                            onClick={() => convertModel('steve')}
+                                            className={`px-2 py-1 text-[9px] cursor-pointer transition-colors ${current.fontClass} ${modelType === 'steve' ? 'bg-[#3c8527] text-white' : 'text-white/40 hover:text-white/60'}`}
+                                        >
+                                            {current.edit.strongMode}
+                                        </button>
+                                        <button
+                                            onClick={() => convertModel('alex')}
+                                            className={`px-2 py-1 text-[9px] cursor-pointer transition-colors ${current.fontClass} ${modelType === 'alex' ? 'bg-[#3c8527] text-white' : 'text-white/40 hover:text-white/60'}`}
+                                        >
+                                            {current.edit.slimMode}
+                                        </button>
+                                    </div>
+
+                                    <div className="bg-black/40 backdrop-blur-md p-4 border border-white/10 flex flex-col items-center gap-1.5 w-fit">
+                                        <div
+                                            onClick={() => togglePart('head')}
+                                            className={`w-6 h-6 cursor-pointer border-2 transition-colors ${visibleParts.head ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`}
+                                        />
+                                        <div className="flex gap-1.5">
+                                            <div onClick={() => togglePart('rightArm')} className={`w-3 h-9 cursor-pointer border-2 transition-colors ${visibleParts.rightArm ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
+                                            <div onClick={() => togglePart('body')} className={`w-6 h-9 cursor-pointer border-2 transition-colors ${visibleParts.body ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
+                                            <div onClick={() => togglePart('leftArm')} className={`w-3 h-9 cursor-pointer border-2 transition-colors ${visibleParts.leftArm ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
+                                        </div>
+                                        <div className="flex gap-1.5">
+                                            <div onClick={() => togglePart('rightLeg')} className={`w-3 h-9 cursor-pointer border-2 transition-colors ${visibleParts.rightLeg ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
+                                            <div onClick={() => togglePart('leftLeg')} className={`w-3 h-9 cursor-pointer border-2 transition-colors ${visibleParts.leftLeg ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
                         )}
+
                     </div>
 
-                    <canvas ref={canvasRef} style={{ display: 'none' }} />
+                    {parentSkinId && (
+                        <div className="absolute z-30 bg-black/60 backdrop-blur-md p-1.5 border border-white/10 flex items-center gap-2 pointer-events-auto lg:top-10 lg:left-10 max-lg:top-16 max-lg:right-4">
+                            {basedOnSkinRenderUrl ? (
+                                <div key="based-on-image" className="w-10 h-10 bg-black/40 border border-white/5 overflow-hidden flex items-center justify-center">
+                                    <img
+                                        src={basedOnSkinRenderUrl}
+                                        className="w-full h-full object-contain"
+                                        style={{ imageRendering: 'pixelated' }}
+                                        alt="Based On"
+                                    />
+                                </div>
+                            ) : (
+                                <div key="based-on-loading" className="w-10 h-10 bg-black/40 border border-white/5 flex items-center justify-center">
+                                    <Icon icon="pixelarticons:reload" className="text-white/20 animate-spin" />
+                                </div>
+                            )}
+                            <div className="flex flex-col">
+                                <span className="text-white/30 text-[8px] font-pixel-hans uppercase tracking-widest">Based on</span>
+                                <span className="text-[#4ea632] font-pixel-hans text-[11px] font-bold" title={parentSkinId}>
+                                    {parentSkinId.substring(0, 8).toUpperCase()}
+                                </span>
+                            </div>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setParentSkinId(null);
+                                    setBasedOnSkinRenderUrl(null);
+                                    setIsEmptyModel(true);
+                                    setTexture(null);
+                                }}
+                                className="p-1 hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors cursor-pointer border border-transparent hover:border-white/10 flex items-center justify-center ml-1"
+                                title={current.edit.exitReference}
+                            >
+                                <Icon icon="pixelarticons:close" className="text-base" />
+                            </button>
+                        </div>
+                    )}
                 </div>
+
+                <canvas ref={canvasRef} style={{ display: 'none' }} />
+            </div>
         </PageContainer>
     );
 }
