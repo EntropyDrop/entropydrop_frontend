@@ -321,13 +321,26 @@ export function EditPage({ current }: EditPageProps) {
         originalKMeansImageDataRef.current = null;
     };
 
+    // Initialize K and palette when panel opens
     useEffect(() => {
         if (isKMeansPanelOpen && ctx) {
             const imgData = ctx.getImageData(0, 0, 64, 64);
             const initialPalette = getUniqueColors(imgData);
             setKmeansPalette(initialPalette);
+            
+            const defaultK = Math.min(32, Math.max(2, initialPalette.length));
+            setKmeansK(defaultK);
         }
-    }, [isKMeansPanelOpen, ctx, updateTrigger]);
+    }, [isKMeansPanelOpen, ctx]);
+
+    // Keep palette preview in sync when painting or undoing/redoing
+    useEffect(() => {
+        if (isKMeansPanelOpen && ctx) {
+            const imgData = ctx.getImageData(0, 0, 64, 64);
+            const currentPalette = getUniqueColors(imgData);
+            setKmeansPalette(currentPalette);
+        }
+    }, [updateTrigger]);
 
     const handleSaveToCreation = async (isPublic: boolean) => {
         const canvas = canvasRef.current;
@@ -388,7 +401,7 @@ export function EditPage({ current }: EditPageProps) {
             setIsEmptyModel(true);
             setModelType('steve');
             const initialData = c.getImageData(0, 0, 64, 64);
-            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: 16 }], index: 0 });
+            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: Math.min(32, Math.max(2, getUniqueColors(initialData).length)) }], index: 0 });
             const tex = new THREE.CanvasTexture(canvas);
             tex.magFilter = THREE.NearestFilter;
             tex.minFilter = THREE.NearestFilter;
@@ -415,7 +428,7 @@ export function EditPage({ current }: EditPageProps) {
 
             // Save initial state for undo
             const initialData = c.getImageData(0, 0, 64, 64);
-            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: 16 }], index: 0 });
+            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: Math.min(32, Math.max(2, getUniqueColors(initialData).length)) }], index: 0 });
 
             // Create CanvasTexture
             const tex = new THREE.CanvasTexture(canvas);
@@ -684,7 +697,7 @@ export function EditPage({ current }: EditPageProps) {
                 setBasedOnSkinRenderUrl(null);
                 setModelType(isSlim(img) ? 'alex' : 'steve');
                 const imageData = ctx.getImageData(0, 0, 64, 64);
-                setHistory({ list: [{ data: imageData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: 16 }], index: 0 });
+                setHistory({ list: [{ data: imageData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: Math.min(32, Math.max(2, getUniqueColors(imageData).length)) }], index: 0 });
                 e.target.value = '';
             };
             img.src = event.target?.result as string;
