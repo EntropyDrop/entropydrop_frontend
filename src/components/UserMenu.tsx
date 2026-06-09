@@ -628,9 +628,15 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
 
                         {/* Email (Read-only) */}
                         <div className="flex flex-col gap-1.5">
-                            <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
-                                {lang === 'zh-hans' ? '邮箱 (不可修改)' : 'Email (Read-only)'}
-                            </span>
+                            <div className="flex justify-between items-center">
+                                <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
+                                    {lang === 'zh-hans' ? '邮箱 (不可修改)' : 'Email (Read-only)'}
+                                </span>
+                                <span className={`text-[9px] text-[#4ea632]/80 flex items-center gap-1 ${current.fontClass}`}>
+                                    <Icon icon="pixelarticons:lock" className="text-xs shrink-0" />
+                                    {lang === 'zh-hans' ? '仅自己可见' : 'Visible only to you'}
+                                </span>
+                            </div>
                             <input
                                 type="text"
                                 readOnly
