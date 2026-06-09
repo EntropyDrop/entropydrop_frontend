@@ -203,6 +203,10 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const [hasFeedback, setHasFeedback] = useState(false);
     const [, setFeedbackType] = useState<'good' | 'bad' | null>(null);
 
+    const [isSettingSkin, setIsSettingSkin] = useState(false);
+    const [setSkinSuccess, setSkinSuccess] = useState(false);
+    const [setSkinError, setSkinError] = useState('');
+
     useEffect(() => {
         if (!isLoggedIn) return;
         const fetchCurrentUser = async () => {
@@ -236,6 +240,37 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         } catch (err) {
 
             console.error('Failed to update name', err);
+        }
+    };
+
+    const handleSetMinecraftSkin = async () => {
+        if (!item?.result) return;
+        setIsSettingSkin(true);
+        setSkinSuccess(false);
+        setSkinError('');
+        try {
+            const res = await apiFetch('/api/users/me/minecraft_skin', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ minecraft_skin_url: item.result })
+            });
+            if (res.ok) {
+                setSkinSuccess(true);
+                window.dispatchEvent(new Event('user-updated'));
+                setTimeout(() => {
+                    setSkinSuccess(false);
+                }, 2000);
+            } else {
+                const errData = await res.json();
+                setSkinError(errData?.detail || (current.lang === 'zh-hans' ? '设置失败' : 'Failed to set'));
+            }
+        } catch (err) {
+            console.error('Failed to set Minecraft skin', err);
+            setSkinError(current.lang === 'zh-hans' ? '网络错误，请稍后重试' : 'Network error, please try again');
+        } finally {
+            setIsSettingSkin(false);
         }
     };
 
@@ -1139,6 +1174,39 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                         <span className="uppercase tracking-widest text-white/40">Created</span>
                                                                     </div>
                                                                     <div className="text-white/40">{formatDate(item.timestamp)}</div>
+                                                                </div>
+                                                            )}
+
+                                                            {currentUser && item.result && (
+                                                                <div className="flex flex-col gap-1.5 mt-2">
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={isSettingSkin}
+                                                                        onClick={handleSetMinecraftSkin}
+                                                                        className="w-full py-2 bg-[#4ea632]/20 hover:bg-[#4ea632]/30 active:bg-[#4ea632]/40 border border-[#4ea632]/40 hover:border-[#4ea632]/60 text-[#4ea632] text-xs font-bold font-pixel-hans transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait flex items-center justify-center gap-2"
+                                                                    >
+                                                                        {isSettingSkin ? (
+                                                                            <>
+                                                                                <Icon icon="pixelarticons:reload" className="text-sm shrink-0 animate-spin" />
+                                                                                <span>{current.lang === 'zh-hans' ? '设置中...' : 'Setting...'}</span>
+                                                                            </>
+                                                                        ) : setSkinSuccess ? (
+                                                                            <>
+                                                                                <Icon icon="pixelarticons:check" className="text-sm shrink-0" />
+                                                                                <span>{current.lang === 'zh-hans' ? '设置成功！' : 'Set successfully!'}</span>
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <Icon icon="pixelarticons:user animate-pulse" className="text-sm shrink-0" />
+                                                                                <span>{current.lang === 'zh-hans' ? '设为自己的形象' : 'Set as My Character'}</span>
+                                                                            </>
+                                                                        )}
+                                                                    </button>
+                                                                    {setSkinError && (
+                                                                        <span className="text-[10px] text-red-400 font-pixel-hans leading-tight block text-center">
+                                                                            {setSkinError}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             )}
 
