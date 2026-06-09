@@ -12,11 +12,11 @@ export default {
         pro: 'Pro订阅',
         public: '公开',
         monitor: '监控',
-        skin: '皮肤生成',
-        figure: '手办论坛',
-        discussions: '讨论交流',
-        showcase: '玩家晒图',
-        videos: '视频分享'
+        skin: '皮肤',
+        figure: '手办',
+        discussions: '讨论',
+        showcase: '晒图',
+        videos: '视频'
     },
     figureForum: {
         title: '3D 打印手办论坛',
