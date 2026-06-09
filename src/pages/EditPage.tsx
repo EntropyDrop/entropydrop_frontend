@@ -897,7 +897,6 @@ export function EditPage({ current }: EditPageProps) {
                                                 </div>
                                             </div>
 
-                                            <div className="w-full h-px bg-white/5 my-1" />
 
                                             {/* KMeans Color Quantization Section */}
                                             <div className="flex flex-col gap-3">
