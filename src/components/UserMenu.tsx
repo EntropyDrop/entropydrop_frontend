@@ -608,7 +608,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         {/* Avatar (Read-only) */}
                         <div className="flex flex-col gap-1.5">
                             <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
-                                {lang === 'zh-hans' ? '头像 (不可修改)' : 'Avatar (Read-only)'}
+                                {lang === 'zh-hans' ? '头像' : 'Avatar'}
                             </span>
                             <div className="flex items-center gap-3">
                                 <div className="w-12 h-12 bg-zinc-800 border border-white/10 flex items-center justify-center overflow-hidden">
@@ -630,7 +630,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         <div className="flex flex-col gap-1.5">
                             <div className="flex justify-between items-center">
                                 <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
-                                    {lang === 'zh-hans' ? '邮箱 (不可修改)' : 'Email (Read-only)'}
+                                    {lang === 'zh-hans' ? '邮箱' : 'Email'}
                                 </span>
                                 <span className={`text-[9px] text-[#4ea632]/80 flex items-center gap-1 ${current.fontClass}`}>
                                     <Icon icon="pixelarticons:lock" className="text-xs shrink-0" />
