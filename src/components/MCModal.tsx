@@ -204,8 +204,8 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const [, setFeedbackType] = useState<'good' | 'bad' | null>(null);
 
     const [isSettingSkin, setIsSettingSkin] = useState(false);
-    const [setSkinSuccess, setSkinSuccess] = useState(false);
-    const [setSkinError, setSkinError] = useState('');
+    const [skinSuccess, setSkinSuccess] = useState(false);
+    const [skinError, setSkinError] = useState('');
 
     useEffect(() => {
         if (!isLoggedIn) return;
@@ -1190,7 +1190,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                                 <Icon icon="pixelarticons:reload" className="text-sm shrink-0 animate-spin" />
                                                                                 <span>{current.lang === 'zh-hans' ? '设置中...' : 'Setting...'}</span>
                                                                             </>
-                                                                        ) : setSkinSuccess ? (
+                                                                        ) : skinSuccess ? (
                                                                             <>
                                                                                 <Icon icon="pixelarticons:check" className="text-sm shrink-0" />
                                                                                 <span>{current.lang === 'zh-hans' ? '设置成功！' : 'Set successfully!'}</span>
@@ -1202,9 +1202,9 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                             </>
                                                                         )}
                                                                     </button>
-                                                                    {setSkinError && (
+                                                                    {skinError && (
                                                                         <span className="text-[10px] text-red-400 font-pixel-hans leading-tight block text-center">
-                                                                            {setSkinError}
+                                                                            {skinError}
                                                                         </span>
                                                                     )}
                                                                 </div>
