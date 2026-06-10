@@ -298,7 +298,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             return
         }
 
-        if (genMode === 'aigc_text_to_skin' && !prompt.trim()) {
+        if ((genMode === 'aigc_text_to_skin' || genMode === 'aigc_image_edit_to_skin') && !prompt.trim()) {
             setInfoModal({ isOpen: true, title: current.generate.notice, message: current.generate.pleaseEnterDesc, type: 'info' })
             return
         }
