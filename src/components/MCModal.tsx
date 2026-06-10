@@ -40,17 +40,19 @@ export interface MCModalProps {
     textureUrl: string
     item: GenerationLogItem
     closeModal: () => void
-    onEdit?: (isPublic: boolean) => void
+    onEdit?: (textureUrl: string, id: string, isPublic: boolean) => void
     onAiEdit?: (source: string, id: string, isPublic: boolean, sourceType?: 'source' | 'intermediate') => void
     current: any // Use any temporarily to avoid import loops if needed, or LangData
+    onItemSelect?: (logId: string) => void
 }
 
-export function MCModal({ item: initialItem, closeModal: close, textureUrl: initialTextureUrl, onEdit, onAiEdit, current }: MCModalProps) {
+export function MCModal({ item: initialItem, closeModal: close, textureUrl: initialTextureUrl, onEdit, onAiEdit, current, onItemSelect }: MCModalProps) {
 
 
 
 
     const navigate = useNavigate();
+    const hasLoadedRef = useRef<string | null>(null);
     const [item, setItem] = useState<GenerationLogItem>(initialItem);
     const [isLoadingDetails, setIsLoadingDetails] = useState(true);
     const [parentItem, setParentItem] = useState<GenerationLogItem | null>(null);
@@ -113,6 +115,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
             setItem(data);
             setTextureUrl(data.result);
             setIsNotFound(false);
+            hasLoadedRef.current = id;
 
             if (data.parent) {
                 try {
@@ -168,6 +171,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     }, [setItem, setTextureUrl, setParentItem, setDerivedCount, setRelatedCollectionsCount]);
 
     useEffect(() => {
+        if (hasLoadedRef.current === initialItem.id) return;
         loadDetails(initialItem.id, true);
     }, [initialItem.id, loadDetails]);
 
@@ -643,6 +647,9 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const handleItemSelect = async (logId: string) => {
         await loadDetails(logId);
         if (window.innerWidth < 1024) setShowSidebar(false);
+        if (onItemSelect) {
+            onItemSelect(logId);
+        }
     };
 
     const handleLike = async () => {
@@ -836,7 +843,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                 setFbxUrl={setFbxUrl}
                                                 convertModel={convertModel}
                                                 togglePart={togglePart}
-                                                onEdit={onEdit ? () => onEdit(item.is_public === true) : undefined}
+                                                onEdit={onEdit ? () => onEdit(textureUrl, item.id, item.is_public === true) : undefined}
                                                 onPrint={handlePrint}
                                                 downloadFilename={item.id ? `skin_${item.id.toString().substring(0, 8)}.png` : 'skin.png'}
                                                 current={current}

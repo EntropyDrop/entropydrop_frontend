@@ -314,13 +314,16 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
                     closeModal={handleCloseModal}
                     textureUrl={selectedItem.result}
                     current={current}
-                    onEdit={(isPublic: boolean) => {
+                    onEdit={(texUrl, logId, isPublic) => {
                         setSelectedItem(null)
-                        navigate('/skin/edit', { state: { textureUrl: selectedItem.result, passedLogId: selectedItem.id, isPublic } })
+                        navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } })
                     }}
                     onAiEdit={(source: string, id: string, isPublic: boolean, sourceType?: 'source' | 'intermediate') => {
                         setSelectedItem(null)
                         navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic, sourceType } })
+                    }}
+                    onItemSelect={(logId) => {
+                        setSelectedItem(prev => prev ? { ...prev, id: logId } : { id: logId, result: '', is_public: true, prompt: '' });
                     }}
                 />
             )}

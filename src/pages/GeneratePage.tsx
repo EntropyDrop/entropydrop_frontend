@@ -1037,7 +1037,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                         current={current}
                         textureUrl={selectedHistory.result}
                         closeModal={() => setSelectedHistory(undefined)}
-                        onEdit={(isPublic: boolean) => navigate('/skin/edit', { state: { textureUrl: selectedHistory.result, passedLogId: selectedHistory.id, isPublic } })}
+                        onEdit={(texUrl, logId, isPublic) => navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } })}
                         onAiEdit={(source: string, id: string, isPublic: boolean, sourceType?: 'source' | 'intermediate') => navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic, sourceType } })}
                     />
                 )}

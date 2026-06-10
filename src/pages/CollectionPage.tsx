@@ -1158,7 +1158,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                             current={current}
                             textureUrl={selectedItem.data.result || selectedItem.data.url || ''}
                             closeModal={() => setSelectedItem(null)}
-                            onEdit={(isPublic: boolean) => navigate('/skin/edit', { state: { textureUrl: selectedItem.data.result || selectedItem.data.url, passedLogId: selectedItem.log_id, isPublic } })}
+                            onEdit={(texUrl, logId, isPublic) => navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } })}
 
                             onAiEdit={(source: string, id: string, isPublic: boolean, sourceType?: 'source' | 'intermediate') => navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic, sourceType } })}
                         />

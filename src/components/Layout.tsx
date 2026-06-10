@@ -176,13 +176,16 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                         closeModal={() => setSelectedDiscoveryItem(null)}
                         textureUrl={selectedDiscoveryItem.result}
                         current={current}
-                        onEdit={(isPublic: boolean) => {
+                        onEdit={(texUrl, logId, isPublic) => {
                             setSelectedDiscoveryItem(null);
-                            navigate('/skin/edit', { state: { textureUrl: selectedDiscoveryItem.result, passedLogId: selectedDiscoveryItem.id, isPublic } });
+                            navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } });
                         }}
                         onAiEdit={(source: string, id: string, isPublic: boolean, sourceType?: 'source' | 'intermediate') => {
                             setSelectedDiscoveryItem(null);
                             navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic, sourceType } });
+                        }}
+                        onItemSelect={(logId) => {
+                            setSelectedDiscoveryItem(prev => prev ? { ...prev, id: logId } : { id: logId, result: '', is_public: true, prompt: '' });
                         }}
                     />
                 </Suspense>
