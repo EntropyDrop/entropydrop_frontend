@@ -191,6 +191,7 @@ export default {
         hue: 'Hue',
         saturation: 'Saturation',
         brightness: 'Brightness',
+        contrast: 'Contrast',
         adjust: 'Adjust',
         kmeans: 'K-Means Quantization',
         kmeansClusters: 'Target Colors (K)',

@@ -191,6 +191,7 @@ export default {
         hue: '色相',
         saturation: '饱和度',
         brightness: '亮度',
+        contrast: '对比度',
         adjust: '调整',
         kmeans: 'K-Means 减色',
         kmeansClusters: '目标颜色数 (K)',

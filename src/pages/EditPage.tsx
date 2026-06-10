@@ -172,7 +172,7 @@ export function EditPage({ current }: EditPageProps) {
 
 
     // Undo/Redo state
-    const [history, setHistory] = useState<{ list: { data: ImageData, hsb: { h: number, s: number, b: number }, kmeansK: number }[], index: number }>({ list: [], index: -1 });
+    const [history, setHistory] = useState<{ list: { data: ImageData, hsb: { h: number, s: number, b: number, c: number }, kmeansK: number }[], index: number }>({ list: [], index: -1 });
     const hasChangedRef = useRef(false);
     const hoverRef = useRef<{ x: number, y: number, savedData: ImageData } | null>(null);
 
@@ -196,9 +196,9 @@ export function EditPage({ current }: EditPageProps) {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isSavingToCreation, setIsSavingToCreation] = useState(false);
     const [isAdjustPanelOpen, setIsAdjustPanelOpen] = useState(false);
-    const [hsb, setHsb] = useState({ h: 0, s: 0, b: 0 });
+    const [hsb, setHsb] = useState({ h: 0, s: 0, b: 0, c: 0 });
     const originalImageDataRef = useRef<ImageData | null>(null);
-    const startHsbRef = useRef({ h: 0, s: 0, b: 0 });
+    const startHsbRef = useRef({ h: 0, s: 0, b: 0, c: 0 });
 
     const handleHSBStart = () => {
         if (!ctx) return;
@@ -206,7 +206,7 @@ export function EditPage({ current }: EditPageProps) {
         startHsbRef.current = { ...hsb };
     };
 
-    const applyHSB = (h: number, s: number, b: number) => {
+    const applyHSB = (h: number, s: number, b: number, c: number) => {
         if (!ctx || !originalImageDataRef.current) return;
         const base = originalImageDataRef.current;
         const imgData = new ImageData(new Uint8ClampedArray(base.data), 64, 64);
@@ -215,6 +215,11 @@ export function EditPage({ current }: EditPageProps) {
         const dh = h - startHsbRef.current.h;
         const ds = s - startHsbRef.current.s;
         const db = b - startHsbRef.current.b;
+        const dc = c - startHsbRef.current.c;
+
+        // Compute contrast factor from relative offset dc
+        // dc is in range [-100, 100], representing the change in contrast during this drag.
+        const factor = (259 * (dc + 255)) / (255 * (259 - dc));
 
         for (let i = 0; i < imgData.data.length; i += 4) {
             const a = imgData.data[i + 3];
@@ -267,9 +272,19 @@ export function EditPage({ current }: EditPageProps) {
                 nb = hue2rgb(p, q, adjustedH - 1 / 3);
             }
 
-            imgData.data[i] = Math.round(nr * 255);
-            imgData.data[i + 1] = Math.round(ng * 255);
-            imgData.data[i + 2] = Math.round(nb * 255);
+            // Apply contrast factor
+            let cr = (nr - 0.5) * factor + 0.5;
+            let cg = (ng - 0.5) * factor + 0.5;
+            let cb = (nb - 0.5) * factor + 0.5;
+
+            // Clamp values
+            cr = Math.max(0, Math.min(1, cr));
+            cg = Math.max(0, Math.min(1, cg));
+            cb = Math.max(0, Math.min(1, cb));
+
+            imgData.data[i] = Math.round(cr * 255);
+            imgData.data[i + 1] = Math.round(cg * 255);
+            imgData.data[i + 2] = Math.round(cb * 255);
         }
 
         ctx.putImageData(imgData, 0, 0);
@@ -279,10 +294,10 @@ export function EditPage({ current }: EditPageProps) {
         }
     };
 
-    const handleHSBChange = (type: 'h' | 's' | 'b', val: number) => {
+    const handleHSBChange = (type: 'h' | 's' | 'b' | 'c', val: number) => {
         const newHsb = { ...hsb, [type]: val };
         setHsb(newHsb);
-        applyHSB(newHsb.h, newHsb.s, newHsb.b);
+        applyHSB(newHsb.h, newHsb.s, newHsb.b, newHsb.c);
     };
 
     const handleHSBEnd = () => {
@@ -400,7 +415,7 @@ export function EditPage({ current }: EditPageProps) {
             setIsEmptyModel(true);
             setModelType('steve');
             const initialData = c.getImageData(0, 0, 64, 64);
-            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: Math.min(48, Math.max(2, getUniqueColors(initialData).length)) }], index: 0 });
+            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0, c: 0 }, kmeansK: Math.min(48, Math.max(2, getUniqueColors(initialData).length)) }], index: 0 });
             const tex = new THREE.CanvasTexture(canvas);
             tex.magFilter = THREE.NearestFilter;
             tex.minFilter = THREE.NearestFilter;
@@ -427,7 +442,7 @@ export function EditPage({ current }: EditPageProps) {
 
             // Save initial state for undo
             const initialData = c.getImageData(0, 0, 64, 64);
-            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: Math.min(48, Math.max(2, getUniqueColors(initialData).length)) }], index: 0 });
+            setHistory({ list: [{ data: initialData, hsb: { h: 0, s: 0, b: 0, c: 0 }, kmeansK: Math.min(48, Math.max(2, getUniqueColors(initialData).length)) }], index: 0 });
 
             // Create CanvasTexture
             const tex = new THREE.CanvasTexture(canvas);
@@ -540,7 +555,7 @@ export function EditPage({ current }: EditPageProps) {
         }
     };
 
-    const saveState = (currentHsb = { h: 0, s: 0, b: 0 }, currentK = kmeansK) => {
+    const saveState = (currentHsb = { h: 0, s: 0, b: 0, c: 0 }, currentK = kmeansK) => {
         if (!ctx) return;
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -696,7 +711,7 @@ export function EditPage({ current }: EditPageProps) {
                 setBasedOnSkinRenderUrl(null);
                 setModelType(isSlim(img) ? 'alex' : 'steve');
                 const imageData = ctx.getImageData(0, 0, 64, 64);
-                setHistory({ list: [{ data: imageData, hsb: { h: 0, s: 0, b: 0 }, kmeansK: Math.min(48, Math.max(2, getUniqueColors(imageData).length)) }], index: 0 });
+                setHistory({ list: [{ data: imageData, hsb: { h: 0, s: 0, b: 0, c: 0 }, kmeansK: Math.min(48, Math.max(2, getUniqueColors(imageData).length)) }], index: 0 });
                 e.target.value = '';
             };
             img.src = event.target?.result as string;
@@ -891,6 +906,24 @@ export function EditPage({ current }: EditPageProps) {
                                                         value={hsb.b}
                                                         onPointerDown={handleHSBStart}
                                                         onChange={(e) => handleHSBChange('b', parseInt(e.target.value))}
+                                                        onPointerUp={handleHSBEnd}
+                                                        className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
+                                                    />
+                                                </div>
+
+                                                {/* Contrast */}
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex justify-between text-[11px] font-pixel-hans">
+                                                        <span className="text-white/60">{current.edit.contrast}</span>
+                                                        <span className="text-[#4ea632]">{hsb.c > 0 ? '+' : ''}{hsb.c}%</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="-100"
+                                                        max="100"
+                                                        value={hsb.c}
+                                                        onPointerDown={handleHSBStart}
+                                                        onChange={(e) => handleHSBChange('c', parseInt(e.target.value))}
                                                         onPointerUp={handleHSBEnd}
                                                         className="w-full h-1.5 bg-white/10 rounded-none appearance-none cursor-pointer accent-[#4ea632]"
                                                     />
