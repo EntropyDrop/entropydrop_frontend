@@ -19,6 +19,7 @@ export interface GenerationLogItem extends GenerationLogItemBrief {
     creator: {
         id: string
         username: string
+        avatar_url?: string
     }
     timestamp: string
     likes_count: number

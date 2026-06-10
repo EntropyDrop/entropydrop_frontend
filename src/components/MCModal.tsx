@@ -1041,8 +1041,16 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                         onClick={() => toggleSidebar('author')}
                                                                         className={`flex items-center gap-2 p-2 border cursor-pointer transition-all group ${showSidebar && sidebarType === 'author' ? 'bg-[#4ea632]/5 border-[#4ea632]/30' : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'}`}
                                                                     >
-                                                                        <div className="w-8 h-8 bg-[#222] rounded-full flex items-center justify-center border border-white/10 overflow-hidden group-hover:border-[#4ea632]/40 transition-colors shrink-0">
-                                                                            <Icon icon="pixelarticons:user" className="text-lg text-white/40 group-hover:text-[#4ea632] transition-colors" />
+                                                                        <div className="w-8 h-8 bg-[#222] flex items-center justify-center border border-white/10 overflow-hidden group-hover:border-[#4ea632]/40 transition-colors shrink-0">
+                                                                            {item.creator?.avatar_url ? (
+                                                                                <img 
+                                                                                    src={item.creator.avatar_url} 
+                                                                                    alt={item.creator.username || "Avatar"} 
+                                                                                    className="w-full h-full object-cover" 
+                                                                                />
+                                                                            ) : (
+                                                                                <Icon icon="pixelarticons:user" className="text-lg text-white/40 group-hover:text-[#4ea632] transition-colors" />
+                                                                            )}
                                                                         </div>
                                                                         <div className="min-w-0 flex-1">
                                                                             <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5">Author</div>
