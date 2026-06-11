@@ -95,8 +95,8 @@ export function PostDetailView({
                     <ArticleMarkdown content={selectedPost.content} />
                 </div>
 
-                {/* Image (if present, typical for Showcase or image-attached Discussion posts) */}
-                {selectedPost.image && (
+                {/* Image (if present, typical for Showcase or image-attached Discussion posts not already embedded in body) */}
+                {selectedPost.image && (selectedPost.category === 'showcase' || !selectedPost.content.includes(selectedPost.image)) && (
                     <div className="bg-zinc-950/60 border border-white/5 p-4 flex items-center justify-center overflow-hidden max-h-[450px] mb-4">
                         <img
                             src={selectedPost.image}
