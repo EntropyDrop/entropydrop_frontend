@@ -95,16 +95,7 @@ export function PostDetailView({
                     <ArticleMarkdown content={selectedPost.content} />
                 </div>
 
-                {/* Image (if present, typical for Showcase or image-attached Discussion posts not already embedded in body) */}
-                {selectedPost.image && (selectedPost.category === 'showcase' || !selectedPost.content.includes(selectedPost.image)) && (
-                    <div className="bg-zinc-950/60 border border-white/5 p-4 flex items-center justify-center overflow-hidden max-h-[450px] mb-4">
-                        <img
-                            src={selectedPost.image}
-                            alt={selectedPost.title}
-                            className="max-h-[400px] object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.6)]"
-                        />
-                    </div>
-                )}
+
 
                 {/* Interaction Row */}
                 <div className={`flex items-center gap-6 text-xs text-white/40 border-b border-white/5 pb-4 shrink-0 ${current.fontClass}`}>
