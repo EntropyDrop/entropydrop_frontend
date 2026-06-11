@@ -20,7 +20,6 @@ interface PostDetailViewProps {
     handleLikePost: (postId: string, e: React.MouseEvent) => void
     handleCommentReply: (parentCommentId: string, replyText: string) => void
     current: LangData
-    isZh: boolean
 }
 
 export function PostDetailView({
@@ -36,8 +35,7 @@ export function PostDetailView({
     commentPageSize,
     handleLikePost,
     handleCommentReply,
-    current,
-    isZh
+    current
 }: PostDetailViewProps) {
     const navigate = useNavigate()
 
@@ -50,7 +48,7 @@ export function PostDetailView({
                     className={`flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors bg-white/5 border border-white/10 px-3 py-1.5 cursor-pointer ${current.fontClass}`}
                 >
                     <Icon icon="pixelarticons:arrow-left" />
-                    <span>Back to Forum</span>
+                    <span>{current.figureForum.backToForum}</span>
                 </button>
             </div>
 
@@ -59,10 +57,10 @@ export function PostDetailView({
                 {/* Header Info */}
                 <div className={`flex items-center gap-2 flex-wrap text-xs text-white/40 ${current.fontClass}`}>
                     <span className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider">
-                        {selectedPost.category === 'showcase' ? 'Showcase' : 'Discussion'}
+                        {selectedPost.category === 'showcase' ? current.nav.showcase : current.nav.discussions}
                     </span>
                     <div className="flex items-center gap-1.5">
-                        <span>Posted by</span>
+                        <span>{current.figureForum.postedBy}</span>
                         <span className="text-white/70 font-semibold">@{selectedPost.author}</span>
                         <span>•</span>
                         <span>{selectedPost.createdAt}</span>
@@ -79,13 +77,13 @@ export function PostDetailView({
                     <div className={`flex flex-wrap gap-x-6 gap-y-2 text-xs border-b border-white/5 pb-4 mb-1 ${current.fontClass}`}>
                         {selectedPost.bodyType && (
                             <div className="flex items-center gap-2">
-                                <span className="text-white/40">{isZh ? '主体类型:' : 'Body Type:'}</span>
+                                <span className="text-white/40">{current.figureForum.bodyTypeLabel}</span>
                                 <span className="text-[#5cff5c] font-semibold bg-[#3c8527]/15 border border-[#3c8527]/30 px-2 py-0.5">{getBodyTypeLabel(selectedPost.bodyType, current)}</span>
                             </div>
                         )}
                         {selectedPost.multiColorType && (
                             <div className="flex items-center gap-2">
-                                <span className="text-white/40">{isZh ? '多色处理:' : 'Color Mode:'}</span>
+                                <span className="text-white/40">{current.figureForum.colorModeLabel}</span>
                                 <span className="text-cyan-400 font-semibold bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5">{getMultiColorTypeLabel(selectedPost.multiColorType, current)}</span>
                             </div>
                         )}
@@ -115,22 +113,22 @@ export function PostDetailView({
                         className="flex items-center gap-2 hover:text-red-500 transition-colors border-none bg-transparent cursor-pointer"
                     >
                         <Icon icon="pixelarticons:heart" className={`text-sm ${selectedPost.isLiked ? 'text-red-500' : ''}`} />
-                        <span className={selectedPost.isLiked ? 'text-red-500' : ''}>{selectedPost.likes} Likes</span>
+                        <span className={selectedPost.isLiked ? 'text-red-500' : ''}>{selectedPost.likes} {current.figureForum.likes}</span>
                     </button>
                     <div className="flex items-center gap-2">
                         <Icon icon="pixelarticons:comment" className="text-sm" />
-                        <span>{selectedPost.commentsCount} Comments</span>
+                        <span>{selectedPost.commentsCount} {current.figureForum.commentsCount}</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <Icon icon="pixelarticons:sun" className="text-sm" />
-                        <span>{selectedPost.views} Views</span>
+                        <span>{selectedPost.views} {current.figureForum.views}</span>
                     </div>
                 </div>
 
                 {/* Comments Section */}
                 <div className="flex flex-col gap-4 mt-2">
                     <h3 className={`text-xs font-bold text-white uppercase tracking-wider ${current.fontClass}`}>
-                        Comments
+                        {current.figureForum.comments}
                     </h3>
 
                     {/* Root comment form */}
@@ -154,7 +152,7 @@ export function PostDetailView({
                     <div className="flex flex-col gap-4">
                         {comments.length === 0 ? (
                             <div className={`text-center text-white/35 py-4 text-xs ${current.fontClass}`}>
-                                No comments yet. Be the first to reply!
+                                {current.figureForum.noComments}
                             </div>
                         ) : (
                             comments.map(c => (
@@ -180,7 +178,7 @@ export function PostDetailView({
                                 &lt;
                             </button>
                             <span className="select-none">
-                                {isZh ? `第 ${commentPage} 页，共 ${Math.ceil(totalComments / commentPageSize)} 页` : `Page ${commentPage} of ${Math.ceil(totalComments / commentPageSize)}`}
+                                {current.figureForum.forumPageLabel.replace('{page}', String(commentPage)).replace('{total}', String(Math.ceil(totalComments / commentPageSize)))}
                             </span>
                             <button
                                 type="button"

@@ -1,18 +1,19 @@
 import { Icon } from '@iconify/react'
 import type { YoutubeVideo } from './types'
+import type { LangData } from '../../constants/lang'
 
 interface VideoListProps {
     youtubeVideos: YoutubeVideo[]
     currentUser: any
     handleDeleteVideo: (videoId: string) => void
-    isZh: boolean
+    current: LangData
 }
 
 export function VideoList({
     youtubeVideos,
     currentUser,
     handleDeleteVideo,
-    isZh
+    current
 }: VideoListProps) {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
@@ -28,7 +29,7 @@ export function VideoList({
                                 handleDeleteVideo(video.id);
                             }}
                             className="absolute top-2 right-2 z-20 bg-red-700/80 hover:bg-red-600 text-white p-1 border border-white/10 transition-colors cursor-pointer"
-                            title={isZh ? '删除视频' : 'Delete Video'}
+                            title={current.figureForum.deleteVideo}
                         >
                             <Icon icon="pixelarticons:trash" className="text-xs" />
                         </button>

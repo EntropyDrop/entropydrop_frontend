@@ -226,7 +226,7 @@ export function FigurePage({ current }: FigurePageProps) {
     }
 
     const handleDeleteVideo = async (videoId: string) => {
-        if (!confirm(isZh ? '确定要删除这个视频吗？' : 'Are you sure you want to delete this video?')) return
+        if (!confirm(current.figureForum.confirmDeleteVideo)) return
 
         try {
             const res = await apiFetch(`/api/forum/videos/${videoId}`, {
@@ -256,7 +256,7 @@ export function FigurePage({ current }: FigurePageProps) {
     const handleLikePost = async (postId: string, e: React.MouseEvent) => {
         e.stopPropagation()
         if (!currentUser) {
-            triggerToast(isZh ? '请先登录！' : 'Please login first!')
+            triggerToast(current.common.authRequired + '!')
             return
         }
 
@@ -287,7 +287,7 @@ export function FigurePage({ current }: FigurePageProps) {
         if (!commentText.trim()) return
 
         if (!currentUser) {
-            triggerToast(isZh ? '请先登录！' : 'Please login first!')
+            triggerToast(current.common.authRequired + '!')
             return
         }
 
@@ -320,7 +320,7 @@ export function FigurePage({ current }: FigurePageProps) {
         if (!replyText.trim()) return
 
         if (!currentUser) {
-            triggerToast(isZh ? '请先登录！' : 'Please login first!')
+            triggerToast(current.common.authRequired + '!')
             return
         }
 
@@ -358,7 +358,7 @@ export function FigurePage({ current }: FigurePageProps) {
 
         const parsedImage = extractFirstImageUrl(newContent)
         if (newCategory === 'showcase' && !parsedImage) {
-            triggerToast(isZh ? '玩家晒图必须包含图片！' : 'Showcase posts must contain at least one image!')
+            triggerToast(current.figureForum.showcaseImgWarning)
             return
         }
 
@@ -397,7 +397,7 @@ export function FigurePage({ current }: FigurePageProps) {
         }
     }
 
-    const isZh = current.figureForum.title.includes('手办') || current.figureForum.cancel === '取消'
+
 
     return (
         <PageContainer className="relative">
@@ -422,7 +422,6 @@ export function FigurePage({ current }: FigurePageProps) {
                 setIsCreateFormOpen={setIsCreateFormOpen}
                 setIsAddVideoFormOpen={setIsAddVideoFormOpen}
                 current={current}
-                isZh={isZh}
             />
 
             {selectedPost ? (
@@ -440,11 +439,9 @@ export function FigurePage({ current }: FigurePageProps) {
                     handleLikePost={handleLikePost}
                     handleCommentReply={handleCommentReply}
                     current={current}
-                    isZh={isZh}
                 />
             ) : isCreateFormOpen ? (
                 <CreatePostForm
-                    isZh={isZh}
                     current={current}
                     handleCreatePost={handleCreatePost}
                     newTitle={newTitle}
@@ -461,7 +458,6 @@ export function FigurePage({ current }: FigurePageProps) {
                 />
             ) : isAddVideoFormOpen ? (
                 <AddVideoForm
-                    isZh={isZh}
                     current={current}
                     handleCreateVideo={handleCreateVideo}
                     newVideoUrl={newVideoUrl}
@@ -477,7 +473,7 @@ export function FigurePage({ current }: FigurePageProps) {
                             <div className="flex flex-col gap-4 animate-in fade-in duration-300">
                                 {posts.length === 0 ? (
                                     <div className={`text-center text-white/40 py-32 ${current.fontClass}`}>
-                                        No discussions found.
+                                        {current.figureForum.noDiscussions}
                                     </div>
                                 ) : (
                                     posts.map(post => (
@@ -498,7 +494,7 @@ export function FigurePage({ current }: FigurePageProps) {
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
                                 {posts.length === 0 ? (
                                     <div className={`text-center text-white/40 py-32 ${current.fontClass}`}>
-                                        No showcase creations found.
+                                        {current.figureForum.noShowcases}
                                     </div>
                                 ) : (
                                     posts.map(post => (
@@ -520,7 +516,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                 youtubeVideos={youtubeVideos}
                                 currentUser={currentUser}
                                 handleDeleteVideo={handleDeleteVideo}
-                                isZh={isZh}
+                                current={current}
                             />
                         )}
                     </div>
@@ -536,7 +532,7 @@ export function FigurePage({ current }: FigurePageProps) {
                                 &lt;&lt;
                             </button>
                             <span className="select-none">
-                                {isZh ? `第 ${postPage} 页，共 ${Math.ceil(totalPosts / postPageSize)} 页` : `Page ${postPage} of ${Math.ceil(totalPosts / postPageSize)}`}
+                                {current.figureForum.forumPageLabel.replace('{page}', String(postPage)).replace('{total}', String(Math.ceil(totalPosts / postPageSize)))}
                             </span>
                             <button
                                 onClick={() => setPostPage(p => Math.min(Math.ceil(totalPosts / postPageSize), p + 1))}

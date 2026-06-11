@@ -4,7 +4,6 @@ import { MarkdownEditor } from '../../components/MarkdownEditor'
 import { BODY_TYPES_EN, MULTICOLOR_TYPES_EN } from './helpers'
 
 interface CreatePostFormProps {
-    isZh: boolean
     current: LangData
     handleCreatePost: (e: React.FormEvent) => void
     newTitle: string
@@ -21,7 +20,6 @@ interface CreatePostFormProps {
 }
 
 export function CreatePostForm({
-    isZh,
     current,
     handleCreatePost,
     newTitle,
@@ -45,7 +43,7 @@ export function CreatePostForm({
                     className={`flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors bg-white/5 border border-white/10 px-3 py-1.5 cursor-pointer ${current.fontClass}`}
                 >
                     <Icon icon="pixelarticons:arrow-left" />
-                    <span>Back to Forum</span>
+                    <span>{current.figureForum.backToForum}</span>
                 </button>
             </div>
 
@@ -82,7 +80,7 @@ export function CreatePostForm({
                                 className={`py-2 border flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-bold ${current.fontClass} ${newCategory === 'discussions' ? 'bg-[#3c8527]/15 border-[#3c8527] text-white' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
                             >
                                 <Icon icon="pixelarticons:comment" />
-                                <span>Discussion</span>
+                                <span>{current.nav.discussions}</span>
                             </button>
                             <button
                                 type="button"
@@ -90,7 +88,7 @@ export function CreatePostForm({
                                 className={`py-2 border flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-bold ${current.fontClass} ${newCategory === 'showcase' ? 'bg-[#3c8527]/15 border-[#3c8527] text-white' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
                             >
                                 <Icon icon="pixelarticons:image-new" />
-                                <span>Showcase</span>
+                                <span>{current.nav.showcase}</span>
                             </button>
                         </div>
                     </div>
@@ -99,7 +97,7 @@ export function CreatePostForm({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {/* Body Type Selector */}
                         <div className="flex flex-col gap-1.5">
-                            <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? '主体类型' : 'Body Type'}</label>
+                            <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{current.figureForum.bodyTypeSelect}</label>
                             <select
                                 value={newBodyType}
                                 onChange={e => setNewBodyType(e.target.value)}
@@ -115,7 +113,7 @@ export function CreatePostForm({
 
                         {/* Multicolor Type Selector */}
                         <div className="flex flex-col gap-1.5">
-                            <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{isZh ? '多色处理' : 'Color Mode'}</label>
+                            <label className={`text-xs text-white/60 uppercase ${current.fontClass}`}>{current.figureForum.colorModeSelect}</label>
                             <select
                                 value={newMultiColorType}
                                 onChange={e => setNewMultiColorType(e.target.value)}

@@ -14,7 +14,6 @@ interface FigureHeaderProps {
     setIsCreateFormOpen: (open: boolean) => void
     setIsAddVideoFormOpen: (open: boolean) => void
     current: LangData
-    isZh: boolean
 }
 
 export function FigureHeader({
@@ -29,8 +28,7 @@ export function FigureHeader({
     setSortBy,
     setIsCreateFormOpen,
     setIsAddVideoFormOpen,
-    current,
-    isZh
+    current
 }: FigureHeaderProps) {
     if (selectedPost || isCreateFormOpen) return null;
 
@@ -55,7 +53,7 @@ export function FigureHeader({
                     <div className="flex items-center bg-black/40 border border-white/10 focus-within:border-white/30 transition-all p-1 w-full sm:w-48 md:w-52">
                         <input
                             type="text"
-                            placeholder={activeCategory === 'videos' ? "Search videos..." : "Search discussions..."}
+                            placeholder={activeCategory === 'videos' ? current.figureForum.searchVideosPlaceholder : current.figureForum.searchDiscussionsPlaceholder}
                             className="bg-transparent text-white px-2 py-0.5 text-xs outline-none flex-1 placeholder:text-white/30 font-pixel-hans"
                             value={searchInput}
                             onChange={e => setSearchInput(e.target.value)}
@@ -82,7 +80,7 @@ export function FigureHeader({
                         className={`px-3 py-1 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/10 transition-colors font-semibold flex items-center gap-1 cursor-pointer text-xs shrink-0 ${current.fontClass}`}
                     >
                         <Icon icon="pixelarticons:search" />
-                        <span>{isZh ? '搜索' : 'Search'}</span>
+                        <span>{current.figureForum.searchBtn}</span>
                     </button>
                 </div>
 
@@ -95,14 +93,14 @@ export function FigureHeader({
                                 className={`px-2.5 py-1 text-[10px] font-semibold cursor-pointer transition-colors flex items-center gap-1 border-none ${sortBy === 'latest' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white hover:bg-white/5'} ${current.fontClass}`}
                             >
                                 <Icon icon="pixelarticons:clock" className="text-xs" />
-                                <span>Latest</span>
+                                <span>{current.discovery.sortByTime}</span>
                             </button>
                             <button
                                 onClick={() => setSortBy('popular')}
                                 className={`px-2.5 py-1 text-[10px] font-semibold cursor-pointer transition-colors flex items-center gap-1 border-none ${sortBy === 'popular' ? 'bg-[#3c8527] text-white' : 'text-white/60 hover:text-white hover:bg-white/5'} ${current.fontClass}`}
                             >
                                 <Icon icon="pixelarticons:heart" className="text-xs" />
-                                <span>Popular</span>
+                                <span>{current.discovery.sortByLikes}</span>
                             </button>
                         </div>
                     </div>
@@ -134,7 +132,7 @@ export function FigureHeader({
                         className={`px-3 py-1.5 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 transition-all font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:scale-105 active:scale-95 text-xs ${current.fontClass}`}
                     >
                         <Icon icon="pixelarticons:plus" className="text-sm" />
-                        <span>{isZh ? '添加视频' : 'Add Video'}</span>
+                        <span>{current.figureForum.addVideoBtn}</span>
                     </button>
                 )}
             </div>
