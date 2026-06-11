@@ -246,6 +246,28 @@ export function FigurePage({ current }: FigurePageProps) {
         }
     }
 
+    const handleDeletePost = async (postId: string) => {
+        if (!confirm(current.figureForum.confirmDeletePost)) return
+
+        try {
+            const res = await apiFetch(`/api/forum/posts/${postId}`, {
+                method: 'DELETE'
+            })
+
+            if (res.ok) {
+                setPosts(prev => prev.filter(p => p.id !== postId))
+                triggerToast('Post deleted successfully!')
+                navigate(`/figure/${activeCategory}`)
+            } else {
+                const err = await res.json().catch(() => ({}))
+                triggerToast(err.detail || 'Failed to delete post')
+            }
+        } catch (err) {
+            console.error(err)
+            triggerToast('Network error, please try again')
+        }
+    }
+
     // Toast helper
     const triggerToast = (msg: string) => {
         setToastMessage(msg)
@@ -439,6 +461,8 @@ export function FigurePage({ current }: FigurePageProps) {
                     handleLikePost={handleLikePost}
                     handleCommentReply={handleCommentReply}
                     current={current}
+                    currentUser={currentUser}
+                    handleDeletePost={handleDeletePost}
                 />
             ) : isCreateFormOpen ? (
                 <CreatePostForm

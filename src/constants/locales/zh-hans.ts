@@ -50,6 +50,8 @@ export default {
         colorModes: ['贴纸', 'UV喷墨', '喷涂', 'fdm多色', '其他/未知'],
         deleteVideo: '删除视频',
         confirmDeleteVideo: '确定要删除这个视频吗？',
+        deletePost: '删除帖子',
+        confirmDeletePost: '确定要删除这个帖子吗？',
         backToVideos: '返回视频列表',
         addNewVideo: '添加新视频',
         youtubeUrlLabel: 'YouTube 链接或视频 ID',

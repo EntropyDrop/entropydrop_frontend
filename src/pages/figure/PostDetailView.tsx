@@ -20,6 +20,8 @@ interface PostDetailViewProps {
     handleLikePost: (postId: string, e: React.MouseEvent) => void
     handleCommentReply: (parentCommentId: string, replyText: string) => void
     current: LangData
+    currentUser: any
+    handleDeletePost: (postId: string) => void
 }
 
 export function PostDetailView({
@@ -35,14 +37,16 @@ export function PostDetailView({
     commentPageSize,
     handleLikePost,
     handleCommentReply,
-    current
+    current,
+    currentUser,
+    handleDeletePost
 }: PostDetailViewProps) {
     const navigate = useNavigate()
 
     return (
         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-16 min-h-0 animate-in fade-in duration-300 flex flex-col gap-6">
-            {/* Back Button */}
-            <div>
+            {/* Back Button and Actions */}
+            <div className="flex justify-between items-center">
                 <button
                     onClick={() => navigate(`/figure/${activeCategory}`)}
                     className={`flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors bg-white/5 border border-white/10 px-3 py-1.5 cursor-pointer ${current.fontClass}`}
@@ -50,6 +54,17 @@ export function PostDetailView({
                     <Icon icon="pixelarticons:arrow-left" />
                     <span>{current.figureForum.backToForum}</span>
                 </button>
+
+                {/* Show Delete Button only if user is author or admin */}
+                {(currentUser?.is_admin || (currentUser && currentUser.username === selectedPost.author)) && (
+                    <button
+                        onClick={() => handleDeletePost(selectedPost.id)}
+                        className={`flex items-center gap-2 text-xs text-red-400 hover:text-red-300 transition-colors bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 px-3 py-1.5 cursor-pointer ${current.fontClass}`}
+                    >
+                        <Icon icon="pixelarticons:trash" />
+                        <span>{current.figureForum.deletePost}</span>
+                    </button>
+                )}
             </div>
 
             {/* Inline Post Detail View */}

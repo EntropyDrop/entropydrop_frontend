@@ -50,6 +50,8 @@ export default {
         colorModes: ['Stickers', 'UV Inkjet', 'Spraying', 'FDM Multi-color', 'Other/Unknown'],
         deleteVideo: 'Delete Video',
         confirmDeleteVideo: 'Are you sure you want to delete this video?',
+        deletePost: 'Delete Post',
+        confirmDeletePost: 'Are you sure you want to delete this post?',
         backToVideos: 'Back to Videos',
         addNewVideo: 'Add New Video',
         youtubeUrlLabel: 'YouTube Link or Video ID',
