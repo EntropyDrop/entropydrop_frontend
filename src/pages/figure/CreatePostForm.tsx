@@ -35,7 +35,7 @@ export function CreatePostForm({
     setIsCreateFormOpen
 }: CreatePostFormProps) {
     return (
-        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 min-h-0 animate-in fade-in duration-300 flex flex-col gap-6">
+        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-16 min-h-0 animate-in fade-in duration-300 flex flex-col gap-6">
             {/* Back Button */}
             <div>
                 <button
