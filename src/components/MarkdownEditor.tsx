@@ -24,6 +24,7 @@ import {
     type MDXEditorMethods
 } from '@mdxeditor/editor'
 import { apiFetch } from '../utils/api'
+import { compressImage } from './utils'
 
 interface MarkdownEditorProps {
     value: string
@@ -50,9 +51,11 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
         }
     }, [value])
 
-    const uploadImageFile = async (file: File): Promise<string> => {
+    const uploadImageFile = async (rawFile: File): Promise<string> => {
         try {
             setUploadState({ isUploading: true, progress: 0 })
+
+            const file = await compressImage(rawFile)
 
             // 1. Get presigned URL
             const res = await apiFetch('/api/upload/presigned-url', {

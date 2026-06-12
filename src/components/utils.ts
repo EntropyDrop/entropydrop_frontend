@@ -437,3 +437,82 @@ export function convertSkinLayout(canvas: HTMLCanvasElement, target: 'steve' | '
 
     ctx.putImageData(newData, 0, 0);
 }
+
+export async function compressImage(file: File, maxSizeBytes: number = 512 * 1024): Promise<File> {
+    // Only compress actual images
+    if (!file.type.startsWith('image/')) {
+        return file;
+    }
+
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                // Cap maximum dimensions to 2048px to prevent extreme memory use
+                const maxDimension = 2048;
+                if (width > maxDimension || height > maxDimension) {
+                    if (width > height) {
+                        height = Math.round((height * maxDimension) / width);
+                        width = maxDimension;
+                    } else {
+                        width = Math.round((width * maxDimension) / height);
+                        height = maxDimension;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    resolve(file);
+                    return;
+                }
+
+                // Fill background with white (for transparency compatibility in JPEG)
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, width, height);
+                ctx.drawImage(img, 0, 0, width, height);
+
+                let quality = 0.9;
+                const checkAndResolve = () => {
+                    canvas.toBlob((blob) => {
+                        if (!blob) {
+                            resolve(file);
+                            return;
+                        }
+
+                        if (blob.size <= maxSizeBytes || quality <= 0.1) {
+                            const newFilename = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+                            const compressedFile = new File([blob], newFilename, {
+                                type: 'image/jpeg',
+                                lastModified: Date.now()
+                            });
+                            resolve(compressedFile);
+                        } else {
+                            quality -= 0.15;
+                            if (quality < 0.5) {
+                                canvas.width = Math.round(canvas.width * 0.85);
+                                canvas.height = Math.round(canvas.height * 0.85);
+                                ctx.fillStyle = '#FFFFFF';
+                                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            }
+                            checkAndResolve();
+                        }
+                    }, 'image/jpeg', quality);
+                };
+
+                checkAndResolve();
+            };
+            img.onerror = () => resolve(file); // Fallback
+            img.src = e.target?.result as string;
+        };
+        reader.onerror = () => resolve(file); // Fallback
+        reader.readAsDataURL(file);
+    });
+}
