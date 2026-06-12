@@ -19,6 +19,56 @@ interface FigurePageProps {
     current: LangData
 }
 
+function DiscussionSkeleton() {
+    return (
+        <div className="bg-black/30 border border-white/10 p-4 sm:p-5 flex justify-between items-start animate-pulse">
+            <div className="flex-1 flex flex-col min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                    <div className="w-3.5 h-3.5 bg-white/5 border border-white/10" />
+                    <div className="w-20 h-2.5 bg-white/5" />
+                    <span className="text-white/10">•</span>
+                    <div className="w-12 h-2.5 bg-white/5" />
+                </div>
+                <div className="w-2/3 h-4 bg-white/10 mt-1" />
+                <div className="w-full h-3 bg-white/5 mt-2.5" />
+                <div className="w-4/5 h-3 bg-white/5 mt-1.5" />
+                <div className="flex gap-4 mt-4 border-t border-white/5 pt-3">
+                    <div className="w-8 h-3 bg-white/5" />
+                    <div className="w-8 h-3 bg-white/5" />
+                    <div className="w-8 h-3 bg-white/5" />
+                </div>
+            </div>
+            <div className="w-20 h-20 bg-white/5 border border-white/10 shrink-0 ml-4 hidden sm:block" />
+        </div>
+    )
+}
+
+function ShowcaseSkeleton() {
+    return (
+        <div className="bg-black/30 border border-white/10 flex flex-col animate-pulse">
+            <div className="w-full aspect-square bg-white/5 border-b border-white/5" />
+            <div className="p-4 flex flex-col gap-3">
+                <div className="flex justify-between items-center mb-1">
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-4 h-4 bg-white/5 border border-white/10" />
+                        <div className="w-16 h-2.5 bg-white/5" />
+                    </div>
+                    <div className="w-10 h-2.5 bg-white/5" />
+                </div>
+                <div className="w-3/4 h-4 bg-white/10" />
+                <div className="w-full h-3 bg-white/5 mt-1" />
+                <div className="w-5/6 h-3 bg-white/5" />
+                <div className="flex justify-between items-center border-t border-white/5 pt-3 mt-1">
+                    <div className="flex gap-3">
+                        <div className="w-8 h-3 bg-white/5" />
+                        <div className="w-8 h-3 bg-white/5" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+}
+
 export function FigurePage({ current }: FigurePageProps) {
     const [searchParams] = useSearchParams()
     const { category } = useParams<{ category?: string }>()
@@ -86,6 +136,7 @@ export function FigurePage({ current }: FigurePageProps) {
     }, [searchQuery, sortBy])
 
     const [posts, setPosts] = useState<ForumPost[]>([])
+    const [isLoading, setIsLoading] = useState(false)
 
     // Pagination states
     const [postPage, setPostPage] = useState(1)
@@ -130,6 +181,7 @@ export function FigurePage({ current }: FigurePageProps) {
 
     // Fetch posts from backend
     const fetchPosts = async () => {
+        setIsLoading(true)
         try {
             const params = new URLSearchParams()
             if (activeCategory) params.append('category', activeCategory)
@@ -146,6 +198,8 @@ export function FigurePage({ current }: FigurePageProps) {
             }
         } catch (e) {
             console.error("Failed to fetch forum posts", e)
+        } finally {
+            setIsLoading(false)
         }
     }
 
@@ -518,7 +572,11 @@ export function FigurePage({ current }: FigurePageProps) {
                         {/* Category 1: Discussions */}
                         {activeCategory === 'discussions' && (
                             <div className="flex flex-col gap-4 animate-in fade-in duration-300">
-                                {posts.length === 0 ? (
+                                {isLoading ? (
+                                    Array.from({ length: 5 }).map((_, i) => (
+                                        <DiscussionSkeleton key={i} />
+                                    ))
+                                ) : posts.length === 0 ? (
                                     <div className={`text-center text-white/40 py-32 ${current.fontClass}`}>
                                         {current.figureForum.noDiscussions}
                                     </div>
@@ -539,7 +597,11 @@ export function FigurePage({ current }: FigurePageProps) {
                         {/* Category 2: Showcase */}
                         {activeCategory === 'showcase' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
-                                {posts.length === 0 ? (
+                                {isLoading ? (
+                                    Array.from({ length: 6 }).map((_, i) => (
+                                        <ShowcaseSkeleton key={i} />
+                                    ))
+                                ) : posts.length === 0 ? (
                                     <div className={`text-center text-white/40 py-32 ${current.fontClass}`}>
                                         {current.figureForum.noShowcases}
                                     </div>
