@@ -52,6 +52,8 @@ export default {
         confirmDeleteVideo: '确定要删除这个视频吗？',
         deletePost: '删除帖子',
         confirmDeletePost: '确定要删除这个帖子吗？',
+        changePostType: '修改帖子类型',
+        changePostTypePrompt: '选择帖子的分类：',
         backToVideos: '返回视频列表',
         addNewVideo: '添加新视频',
         youtubeUrlLabel: 'YouTube 链接或视频 ID',

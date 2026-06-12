@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '@iconify/react'
 import { useNavigate } from 'react-router-dom'
 import type { ForumPost, ForumComment } from './types'
@@ -45,6 +47,13 @@ export function PostDetailView({
     handleUpdatePostCategory
 }: PostDetailViewProps) {
     const navigate = useNavigate()
+    const [isTypeModalOpen, setIsTypeModalOpen] = useState(false)
+    const [selectedCategory, setSelectedCategory] = useState<'discussions' | 'showcase'>(selectedPost.category)
+
+    const handleOpenModal = () => {
+        setSelectedCategory(selectedPost.category)
+        setIsTypeModalOpen(true)
+    }
 
     return (
         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-16 min-h-0 animate-in fade-in duration-300 flex flex-col gap-6">
@@ -75,14 +84,14 @@ export function PostDetailView({
                 {/* Header Info */}
                 <div className={`flex items-center gap-2 flex-wrap text-xs text-white/40 ${current.fontClass}`}>
                     {(currentUser?.is_admin || (currentUser && currentUser.username === selectedPost.author)) ? (
-                        <select
-                            value={selectedPost.category}
-                            onChange={(e) => handleUpdatePostCategory(selectedPost.id, e.target.value as 'discussions' | 'showcase')}
-                            className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[9px] px-1 py-0.5 font-bold uppercase tracking-wider outline-none focus:outline-none cursor-pointer rounded-xs"
+                        <button
+                            type="button"
+                            onClick={handleOpenModal}
+                            className="bg-[#3c8527]/20 text-[#5cff5c] hover:bg-[#3c8527]/40 border border-[#3c8527]/30 text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
                         >
-                            <option value="discussions" className="bg-zinc-900 text-white">{current.nav.discussions}</option>
-                            <option value="showcase" className="bg-zinc-900 text-white">{current.nav.showcase}</option>
-                        </select>
+                            <span>{selectedPost.category === 'showcase' ? current.nav.showcase : current.nav.discussions}</span>
+                            <Icon icon="pixelarticons:edit" className="text-[10px]" />
+                        </button>
                     ) : (
                         <span className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider">
                             {selectedPost.category === 'showcase' ? current.nav.showcase : current.nav.discussions}
@@ -219,6 +228,77 @@ export function PostDetailView({
                     )}
                 </div>
             </div>
+
+            {isTypeModalOpen && createPortal(
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] backdrop-blur-sm pointer-events-auto animate-in fade-in duration-300">
+                    <div className="bg-[#1a1a1a] border border-white/10 p-5 max-w-sm w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-4">
+                        <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                            <h3 className={`text-white text-xs font-bold uppercase tracking-wider ${current.fontClass}`}>
+                                {current.figureForum.changePostType}
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setIsTypeModalOpen(false)}
+                                className="text-white/40 hover:text-white transition-colors cursor-pointer border-none bg-transparent"
+                            >
+                                <Icon icon="pixelarticons:close" className="text-sm" />
+                            </button>
+                        </div>
+                        
+                        <div className="flex flex-col gap-3 my-2">
+                            <span className={`text-[10px] text-white/50 ${current.fontClass}`}>
+                                {current.figureForum.changePostTypePrompt}
+                            </span>
+                            
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedCategory('discussions')}
+                                    className={`flex-1 py-3 text-center border text-xs font-bold transition-all cursor-pointer ${
+                                        selectedCategory === 'discussions'
+                                            ? 'bg-[#3c8527] border-[#5cff5c] text-white'
+                                            : 'bg-black/30 border-white/10 text-white/60 hover:bg-white/5 hover:text-white'
+                                    } ${current.fontClass}`}
+                                >
+                                    {current.nav.discussions}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedCategory('showcase')}
+                                    className={`flex-1 py-3 text-center border text-xs font-bold transition-all cursor-pointer ${
+                                        selectedCategory === 'showcase'
+                                            ? 'bg-[#3c8527] border-[#5cff5c] text-white'
+                                            : 'bg-black/30 border-white/10 text-white/60 hover:bg-white/5 hover:text-white'
+                                    } ${current.fontClass}`}
+                                >
+                                    {current.nav.showcase}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 pt-2 border-t border-white/5">
+                            <button
+                                type="button"
+                                onClick={() => setIsTypeModalOpen(false)}
+                                className={`flex-1 py-2 bg-transparent border border-white/10 hover:bg-white/5 text-white/50 hover:text-white text-xs transition-colors cursor-pointer ${current.fontClass}`}
+                            >
+                                {current.figureForum.cancel}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    handleUpdatePostCategory(selectedPost.id, selectedCategory)
+                                    setIsTypeModalOpen(false)
+                                }}
+                                className={`flex-1 py-2 bg-[#5cff5c] hover:bg-[#4ae04a] text-black font-bold text-xs transition-colors cursor-pointer border-none ${current.fontClass}`}
+                            >
+                                {current.modal.confirm}
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     )
 }
