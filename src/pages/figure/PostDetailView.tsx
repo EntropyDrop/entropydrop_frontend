@@ -5,6 +5,7 @@ import type { LangData } from '../../constants/lang'
 import { ArticleMarkdown } from '../../components/ArticleMarkdown'
 import { CommentNode } from './CommentNode'
 import { getBodyTypeLabel, getMultiColorTypeLabel } from './helpers'
+import { SkinAvatarImage } from '../../components/SkinAvatarImage'
 
 interface PostDetailViewProps {
     selectedPost: ForumPost
@@ -89,6 +90,13 @@ export function PostDetailView({
                     )}
                     <div className="flex items-center gap-1.5">
                         <span>{current.figureForum.postedBy}</span>
+                        <SkinAvatarImage
+                            textureUrl={selectedPost.authorMinecraftSkinUrl}
+                            fallbackSrc={selectedPost.authorAvatar}
+                            alt={selectedPost.author}
+                            className="w-4 h-4"
+                            framed={false}
+                        />
                         <span className="text-white/70 font-semibold">@{selectedPost.author}</span>
                         <span>•</span>
                         <span>{selectedPost.createdAt}</span>

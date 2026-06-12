@@ -2,6 +2,7 @@ import { Icon } from '@iconify/react'
 import type { ForumPost } from './types'
 import type { LangData } from '../../constants/lang'
 import { getBodyTypeLabel, getMultiColorTypeLabel } from './helpers'
+import { SkinAvatarImage } from '../../components/SkinAvatarImage'
 
 interface PostItemDiscussionsProps {
     post: ForumPost
@@ -25,13 +26,13 @@ export function PostItemDiscussions({
                 {/* Header Info */}
                 <div className="flex items-center flex-wrap gap-2 text-[10px] text-white/40 mb-2">
                     <div className="flex items-center gap-1">
-                        <div className="w-3.5 h-3.5 bg-zinc-700 overflow-hidden border border-white/15 flex items-center justify-center shrink-0">
-                            {post.authorAvatar ? (
-                                <img src={post.authorAvatar} alt={post.author} className="w-full h-full object-cover" />
-                            ) : (
-                                <Icon icon="pixelarticons:user" className="text-white/60 text-[10px]" />
-                            )}
-                        </div>
+                        <SkinAvatarImage
+                            textureUrl={post.authorMinecraftSkinUrl}
+                            fallbackSrc={post.authorAvatar}
+                            alt={post.author}
+                            className="w-3.5 h-3.5"
+                            framed={false}
+                        />
                         <span className={`text-white/60 font-semibold truncate max-w-[100px] ${current.fontClass}`}>@{post.author}</span>
                     </div>
                     <span>•</span>

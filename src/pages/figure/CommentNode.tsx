@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Icon } from '@iconify/react'
 import type { ForumComment } from './types'
 import type { LangData } from '../../constants/lang'
+import { SkinAvatarImage } from '../../components/SkinAvatarImage'
 
 interface CommentNodeProps {
     comment: ForumComment
@@ -26,13 +27,13 @@ export function CommentNode({ comment, current, onReply }: CommentNodeProps) {
             {/* Comment Body */}
             <div className="flex gap-3 items-start">
                 {/* Avatar icon */}
-                <div className="w-6 h-6 bg-zinc-800 overflow-hidden border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
-                    {comment.avatarUrl ? (
-                        <img src={comment.avatarUrl} alt={comment.author} className="w-full h-full object-cover" />
-                    ) : (
-                        <Icon icon="pixelarticons:user" className="text-white/40 text-xs" />
-                    )}
-                </div>
+                <SkinAvatarImage
+                    textureUrl={comment.minecraftSkinUrl}
+                    fallbackSrc={comment.avatarUrl}
+                    alt={comment.author}
+                    className="w-6 h-6 mt-0.5"
+                    framed={false}
+                />
 
                 {/* Comment Content Column */}
                 <div className="flex-1 flex flex-col gap-1 min-w-0">

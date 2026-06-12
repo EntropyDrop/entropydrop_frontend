@@ -44,6 +44,7 @@ interface GoogleCredentialResponse {
 interface NotificationInfo {
     id: string | number
     senderAvatar?: string
+    senderMinecraftSkinUrl?: string
     senderName: string
     type: string
     postId?: string | number
@@ -364,13 +365,13 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                 }}
                                                 className={`p-3 border-b border-white/5 hover:bg-white/5 flex gap-2.5 items-start cursor-pointer transition-colors ${!n.isRead ? 'bg-white/5' : ''} ${current.fontClass}`}
                                             >
-                                                <div className="w-6 h-6 bg-zinc-800 overflow-hidden border border-white/10 flex items-center justify-center shrink-0">
-                                                    {n.senderAvatar ? (
-                                                        <img src={n.senderAvatar} alt="avatar" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <Icon icon="pixelarticons:user" className="text-white/40 text-xs" />
-                                                    )}
-                                                </div>
+                                                <SkinAvatarImage
+                                                    textureUrl={n.senderMinecraftSkinUrl}
+                                                    fallbackSrc={n.senderAvatar}
+                                                    alt="avatar"
+                                                    className="w-6 h-6"
+                                                    framed={false}
+                                                />
                                                 <div className="flex-1 flex flex-col gap-0.5 min-w-0">
                                                     <p className="text-[11px] text-white/90 leading-tight m-0 break-words">
                                                         <strong className="text-white">@{n.senderName}</strong>{' '}

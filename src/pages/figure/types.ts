@@ -10,6 +10,7 @@ export interface ForumComment {
     id: string
     author: string
     avatarUrl?: string
+    minecraftSkinUrl?: string
     isPro?: boolean
     content: string
     createdAt: string
@@ -25,6 +26,7 @@ export interface ForumPost {
     tags: string[]
     author: string
     authorAvatar?: string
+    authorMinecraftSkinUrl?: string
     isPro?: boolean
     role?: string
     likes: number

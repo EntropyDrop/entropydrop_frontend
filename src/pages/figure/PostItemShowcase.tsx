@@ -2,6 +2,7 @@ import { Icon } from '@iconify/react'
 import type { ForumPost } from './types'
 import type { LangData } from '../../constants/lang'
 import { getBodyTypeLabel, getMultiColorTypeLabel } from './helpers'
+import { SkinAvatarImage } from '../../components/SkinAvatarImage'
 
 interface PostItemShowcaseProps {
     post: ForumPost
@@ -42,13 +43,13 @@ export function PostItemShowcase({
                 <div>
                     <div className="flex items-center justify-between text-[10px] text-white/40 mb-2">
                         <div className="flex items-center gap-1.5">
-                            <div className="w-4 h-4 bg-zinc-700 overflow-hidden border border-white/15 flex items-center justify-center">
-                                {post.authorAvatar ? (
-                                    <img src={post.authorAvatar} alt={post.author} className="w-full h-full object-cover" />
-                                ) : (
-                                    <Icon icon="pixelarticons:user" className="text-white/60 text-xs" />
-                                )}
-                            </div>
+                            <SkinAvatarImage
+                                textureUrl={post.authorMinecraftSkinUrl}
+                                fallbackSrc={post.authorAvatar}
+                                alt={post.author}
+                                className="w-4 h-4"
+                                framed={false}
+                            />
                             <span className={`text-white/60 truncate ${current.fontClass}`}>@{post.author}</span>
                         </div>
                         <span className="font-mono text-[9px]">{post.createdAt}</span>
