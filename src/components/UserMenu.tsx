@@ -184,7 +184,9 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
 
     const fetchNotifications = useCallback(async (page = notifPage) => {
         try {
-            const res = await apiFetch(`/api/forum/notifications?page=${page}&page_size=${notifPageSize}`)
+            const res = await apiFetch(`/api/forum/notifications?page=${page}&page_size=${notifPageSize}`, {
+                skipGlobalError: true
+            })
             if (res.ok) {
                 const data = await res.json() as NotificationsResponse
                 setNotifications(data.notifications)
@@ -209,7 +211,8 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
     const handleMarkAllRead = async () => {
         try {
             const res = await apiFetch('/api/forum/notifications/read-all', {
-                method: 'POST'
+                method: 'POST',
+                skipGlobalError: true
             })
             if (res.ok) {
                 setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
@@ -357,7 +360,8 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                     // Sync with backend
                                                     try {
                                                         await apiFetch(`/api/forum/notifications/${n.id}/read`, {
-                                                            method: 'POST'
+                                                            method: 'POST',
+                                                            skipGlobalError: true
                                                         });
                                                     } catch (err) {
                                                         console.error("Failed to mark notification as read", err);
