@@ -268,6 +268,28 @@ export function FigurePage({ current }: FigurePageProps) {
         }
     }
 
+    const handleUpdatePostCategory = async (postId: string, newCat: 'discussions' | 'showcase') => {
+        try {
+            const res = await apiFetch(`/api/forum/posts/${postId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ category: newCat })
+            })
+
+            if (res.ok) {
+                const updatedPost = await res.json()
+                setSelectedPost(updatedPost)
+                setPosts(prev => prev.map(p => p.id === postId ? updatedPost : p))
+                triggerToast('Post category updated successfully!')
+            } else {
+                const err = await res.json().catch(() => ({}))
+                triggerToast(err.detail || 'Failed to update category')
+            }
+        } catch (err) {
+            console.error(err)
+            triggerToast('Network error, please try again')
+        }
+    }
+
     // Toast helper
     const triggerToast = (msg: string) => {
         setToastMessage(msg)
@@ -463,6 +485,7 @@ export function FigurePage({ current }: FigurePageProps) {
                     current={current}
                     currentUser={currentUser}
                     handleDeletePost={handleDeletePost}
+                    handleUpdatePostCategory={handleUpdatePostCategory}
                 />
             ) : isCreateFormOpen ? (
                 <CreatePostForm

@@ -22,6 +22,7 @@ interface PostDetailViewProps {
     current: LangData
     currentUser: any
     handleDeletePost: (postId: string) => void
+    handleUpdatePostCategory: (postId: string, newCategory: 'discussions' | 'showcase') => void
 }
 
 export function PostDetailView({
@@ -39,7 +40,8 @@ export function PostDetailView({
     handleCommentReply,
     current,
     currentUser,
-    handleDeletePost
+    handleDeletePost,
+    handleUpdatePostCategory
 }: PostDetailViewProps) {
     const navigate = useNavigate()
 
@@ -71,9 +73,20 @@ export function PostDetailView({
             <div className="bg-black/20 border border-white/10 p-5 sm:p-6 flex flex-col gap-4">
                 {/* Header Info */}
                 <div className={`flex items-center gap-2 flex-wrap text-xs text-white/40 ${current.fontClass}`}>
-                    <span className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider">
-                        {selectedPost.category === 'showcase' ? current.nav.showcase : current.nav.discussions}
-                    </span>
+                    {(currentUser?.is_admin || (currentUser && currentUser.username === selectedPost.author)) ? (
+                        <select
+                            value={selectedPost.category}
+                            onChange={(e) => handleUpdatePostCategory(selectedPost.id, e.target.value as 'discussions' | 'showcase')}
+                            className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[9px] px-1 py-0.5 font-bold uppercase tracking-wider outline-none focus:outline-none cursor-pointer rounded-xs"
+                        >
+                            <option value="discussions" className="bg-zinc-900 text-white">{current.nav.discussions}</option>
+                            <option value="showcase" className="bg-zinc-900 text-white">{current.nav.showcase}</option>
+                        </select>
+                    ) : (
+                        <span className="bg-[#3c8527]/20 text-[#5cff5c] border border-[#3c8527]/30 text-[9px] px-2 py-0.5 font-bold uppercase tracking-wider">
+                            {selectedPost.category === 'showcase' ? current.nav.showcase : current.nav.discussions}
+                        </span>
+                    )}
                     <div className="flex items-center gap-1.5">
                         <span>{current.figureForum.postedBy}</span>
                         <span className="text-white/70 font-semibold">@{selectedPost.author}</span>
