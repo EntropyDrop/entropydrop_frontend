@@ -334,4 +334,4 @@ We also welcome anyone interested in Minecraft, generative models, data synthesi
 - Online generator: [https://entropydrop.com/skin/generate](https://entropydrop.com/skin/generate)
 - Hugging Face model: [https://huggingface.co/EntropyDrop/Sking](https://huggingface.co/EntropyDrop/Sking)
 - GitHub: [https://github.com/EntropyDrop](https://github.com/EntropyDrop)
-- Discord: [https://discord.gg/JHd2EecN](https://discord.gg/JHd2EecN)
+- Discord: [https://discord.gg/ByX7TwqDcw](https://discord.gg/ByX7TwqDcw)

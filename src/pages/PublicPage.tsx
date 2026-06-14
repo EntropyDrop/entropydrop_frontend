@@ -137,7 +137,7 @@ export function PublicPage({ current }: PublicPageProps) {
                                     <span>Hugging Face</span>
                                 </a>
                                 <a
-                                    href="https://discord.gg/JHd2EecN"
+                                    href="https://discord.gg/ByX7TwqDcw"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-[#5865F2]/20 border border-white/10 hover:border-[#5865F2]/50 text-white/60 hover:text-white transition-all text-sm font-medium self-start group"

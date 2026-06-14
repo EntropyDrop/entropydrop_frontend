@@ -7,7 +7,7 @@ This is the frontend codebase for [entropydrop.com](https://entropydrop.com).
 
 [![GitHub](https://img.shields.io/badge/GitHub-EntropyDrop-181717?logo=github&style=flat-square)](https://github.com/EntropyDrop)
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Sking-FFD21E?style=flat-square)](https://huggingface.co/EntropyDrop/Sking)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&style=flat-square)](https://discord.gg/JHd2EecN)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&style=flat-square)](https://discord.gg/ByX7TwqDcw)
 ![React 19](https://img.shields.io/badge/React-v19-61DAFB?logo=react&style=flat-square)
 ![Tailwind 4](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwind-css&style=flat-square)
 
@@ -138,7 +138,7 @@ npm run lint
 - **Main Website & Online Generator:** [entropydrop.com](https://entropydrop.com)
 - **Hugging Face Model:** [EntropyDrop/Sking](https://huggingface.co/EntropyDrop/Sking) — Access model weights, dataset descriptions, and fine-tuning details.
 - **Financial Ledger & Datasets:** [github.com/EntropyDrop/financial](https://github.com/EntropyDrop/financial)
-- **Discord Community:** [Join EntropyDrop Discord](https://discord.gg/JHd2EecN)
+- **Discord Community:** [Join EntropyDrop Discord](https://discord.gg/ByX7TwqDcw)
 
 ---
 
