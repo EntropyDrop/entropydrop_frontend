@@ -19,10 +19,17 @@ export const FIGURE_NAV_ITEMS = [
     { key: 'videos', icon: 'pixelarticons:device-laptop', path: '/figure/videos' },
 ] as const
 
+export const PUBLIC_NAV_ITEMS = [
+    { key: 'about', icon: 'pixelarticons:buildings', path: '/public/about' },
+    { key: 'blog', icon: 'pixelarticons:notes', path: '/public/blog' },
+] as const
+
 export type TopNavKey = typeof TOP_NAV_ITEMS[number]['key']
 export type SkinNavKey = typeof SKIN_NAV_ITEMS[number]['key']
 export type FigureNavKey = typeof FIGURE_NAV_ITEMS[number]['key']
+export type PublicNavKey = typeof PUBLIC_NAV_ITEMS[number]['key']
 
 // Keep NAV_ITEMS for backward compatibility
 export const NAV_ITEMS = SKIN_NAV_ITEMS
 export type NavKey = SkinNavKey
+

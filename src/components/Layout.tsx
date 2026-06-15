@@ -9,7 +9,7 @@ import { LoadingPlaceholder } from './LoadingPlaceholder'
 import { type LangKey, type LangData } from '../constants/lang'
 import type { GenerationLogItem, GenerationLogItemBrief } from '../types/log'
 
-import { SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS, TOP_NAV_ITEMS } from '../constants/nav'
+import { SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS, TOP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from '../constants/nav'
 
 // Lazy load heavy components
 const DiscoveryScene = lazy(() => import('./DiscoveryScene').then(m => ({ default: m.DiscoveryScene })))
@@ -36,12 +36,15 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
 
     const isFigureSection = location.pathname.startsWith('/figure')
     const isSkinSection = location.pathname.startsWith('/skin') || location.pathname === '/'
+    const isPublicSection = location.pathname.startsWith('/public')
 
     const activeSubNavItems = isFigureSection
         ? FIGURE_NAV_ITEMS
         : isSkinSection
             ? SKIN_NAV_ITEMS
-            : []
+            : isPublicSection
+                ? PUBLIC_NAV_ITEMS
+                : []
 
     const isDiscoveryPage = location.pathname === '/skin/' || location.pathname === '/skin' || location.pathname === '/'
 
@@ -116,7 +119,9 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                 {activeSubNavItems.map((item) => {
                                     const isActive = item.path === '/skin/'
                                         ? (location.pathname === '/skin/' || location.pathname === '/skin')
-                                        : location.pathname === item.path
+                                        : (item.key === 'blog' && location.pathname.startsWith('/public/blog/'))
+                                            ? true
+                                            : location.pathname === item.path
                                     const label = current.nav[item.key as keyof typeof current.nav]
                                     return (
                                         <Link

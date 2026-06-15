@@ -54,11 +54,11 @@ export function ArticlePage({ current }: ArticlePageProps) {
 
             {/* Navigation */}
             <button
-                onClick={() => navigate('/public')}
+                onClick={() => navigate('/public/blog')}
                 className="flex items-center gap-2 text-white/50 hover:text-green-500 transition-colors self-start group"
             >
                 <Icon icon="pixelarticons:arrow-left" className="text-xl transform group-hover:-translate-x-1 transition-transform" />
-                <span className="text-xs font-mono uppercase tracking-widest">Back to Mission</span>
+                <span className="text-xs font-mono uppercase tracking-widest">Back to Blog</span>
             </button>
 
             {loading ? (

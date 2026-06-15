@@ -190,7 +190,7 @@ export function LedgerPage({ current }: LedgerPageProps) {
         >
 
             <button
-                onClick={() => navigate('/public')}
+                onClick={() => navigate('/public/about')}
                 className="flex items-center gap-2 text-white/50 hover:text-green-500 transition-colors self-start group"
             >
                 <Icon icon="pixelarticons:arrow-left" className="text-xl transform group-hover:-translate-x-1 transition-transform" />

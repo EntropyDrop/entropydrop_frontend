@@ -72,8 +72,9 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/skin/collection/:userId/:collectionId" element={<CollectionPage current={currentLangData} />} />
         <Route path="/skin/orders" element={<OrdersPage current={currentLangData} />} />
         <Route path="/pro" element={<ProPage current={currentLangData} />} />
-        <Route path="/public" element={<PublicPage current={currentLangData} />} />
-        <Route path="/public/article/:id" element={<ArticlePage current={currentLangData} />} />
+        <Route path="/public" element={<Navigate to="/public/about" replace />} />
+        <Route path="/public/:section" element={<PublicPage current={currentLangData} />} />
+        <Route path="/public/blog/:id" element={<ArticlePage current={currentLangData} />} />
         <Route path="/skin/privacy" element={<PrivacyPolicyPage current={currentLangData} />} />
         <Route path="/skin/tos" element={<TermsOfServicePage current={currentLangData} />} />
         <Route path="/skin/monitor" element={<MonitorPage current={currentLangData} />} />

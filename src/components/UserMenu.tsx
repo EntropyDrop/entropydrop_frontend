@@ -487,7 +487,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             <Icon icon="pixelarticons:zap" className="text-sm shrink-0" /> {current.nav.pro}
                         </button>
                         <button
-                            onClick={() => { setIsOpen(false); navigate('/public'); }}
+                            onClick={() => { setIsOpen(false); navigate('/public/about'); }}
                             className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
                         >
                             <Icon icon="pixelarticons:binary" className="text-sm shrink-0" /> {current.nav.public}

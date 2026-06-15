@@ -11,6 +11,8 @@ export default {
         collection: 'Collections',
         pro: 'Pro',
         public: 'Public',
+        about: 'About Us',
+        blog: 'Blog',
         monitor: 'Monitor',
         skin: 'Skins',
         figure: 'Figures',

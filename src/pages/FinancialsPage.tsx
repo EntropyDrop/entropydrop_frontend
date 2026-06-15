@@ -145,7 +145,7 @@ export function FinancialsPage({ current }: FinancialsPageProps) {
             animate="animate-in fade-in slide-in-from-bottom-4 duration-500"
         >
             <button
-                onClick={() => navigate('/public')}
+                onClick={() => navigate('/public/about')}
                 className="flex items-center gap-2 text-white/50 hover:text-green-500 transition-colors self-start group"
             >
                 <Icon icon="pixelarticons:arrow-left" className="text-xl transform group-hover:-translate-x-1 transition-transform" />

@@ -11,6 +11,8 @@ export default {
         collection: '收藏',
         pro: 'Pro订阅',
         public: '公开',
+        about: '关于我们',
+        blog: '博客',
         monitor: '监控',
         skin: '皮肤',
         figure: '手办',
@@ -550,7 +552,7 @@ export default {
         setMyCharacterNetworkError: '网络错误，请稍后重试'
     },
     public_page: {
-        title: '开放生产',
+        title: '开放生产体系',
         introduction: {
             title: '关于我们',
             company: '上海齐秩科技有限公司',
