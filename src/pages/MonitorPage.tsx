@@ -95,6 +95,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [actionLoading, setActionLoading] = useState(false)
   const [isUnlimited, setIsUnlimited] = useState(false)
   const [settingLoading, setSettingLoading] = useState(false)
+  const [isAigcSkinEnabled, setIsAigcSkinEnabled] = useState(true)
+  const [aigcSkinSettingLoading, setAigcSkinSettingLoading] = useState(false)
 
   const isZh = current.lang === 'zh-hans'
 
@@ -163,9 +165,56 @@ export function MonitorPage({ current }: MonitorPageProps) {
     }
   }
 
+  const fetchAigcSkinEnabledStatus = async () => {
+    try {
+      const response = await apiFetch('/api/monitor/aigc_skin_enabled')
+      if (response.ok) {
+        const data = await response.json()
+        setIsAigcSkinEnabled(data.enabled)
+      }
+    } catch (e) {
+      console.error('Failed to fetch aigc skin enabled status', e)
+    }
+  }
+
+  const toggleAigcSkinEnabledStatus = async (checked: boolean) => {
+    setAigcSkinSettingLoading(true)
+    try {
+      const response = await apiFetch('/api/monitor/aigc_skin_enabled', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: checked })
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setIsAigcSkinEnabled(data.enabled)
+        setDeleteMessage({
+          type: 'success',
+          text: isZh 
+            ? (data.enabled ? '文生/图生皮肤功能已开启' : '文生/图生皮肤功能已关闭，用户将无法使用该功能。')
+            : (data.enabled ? 'AIGC Skin generation enabled!' : 'AIGC Skin generation disabled.')
+        })
+      } else {
+        const errData = await response.json().catch(() => ({}))
+        setDeleteMessage({
+          type: 'error',
+          text: errData.detail || (isZh ? '操作失败，请重试' : 'Operation failed, please try again')
+        })
+      }
+    } catch (e) {
+      setDeleteMessage({
+        type: 'error',
+        text: isZh ? '网络连接错误' : 'Network connection error'
+      })
+    } finally {
+      setAigcSkinSettingLoading(false)
+    }
+  }
+
   useEffect(() => {
     fetchStats()
     fetchUnlimitedStatus()
+    fetchAigcSkinEnabledStatus()
     const timer = setInterval(fetchStats, 3000)
     return () => clearInterval(timer)
   }, [])
@@ -354,38 +403,75 @@ export function MonitorPage({ current }: MonitorPageProps) {
         </div>
 
         {/* Global Settings & Operations Control */}
-        <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shrink-0 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="flex items-start gap-3.5">
-            <div className={`w-10 h-10 border flex items-center justify-center text-xl transition-all ${isUnlimited ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400 shadow-[0_0_15px_-3px_rgba(234,179,8,0.3)]' : 'bg-white/5 border-white/10 text-white/40'}`}>
-              <Icon icon="pixelarticons:gift" className={isUnlimited ? 'animate-bounce' : ''} />
+        <div className="flex flex-col gap-4 shrink-0">
+          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5">
+              <div className={`w-10 h-10 border flex items-center justify-center text-xl transition-all ${isUnlimited ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400 shadow-[0_0_15px_-3px_rgba(234,179,8,0.3)]' : 'bg-white/5 border-white/10 text-white/40'}`}>
+                <Icon icon="pixelarticons:gift" className={isUnlimited ? 'animate-bounce' : ''} />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {isZh ? '全局系统设置 • 活动控制' : 'Global Settings • Event Controller'}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {isZh ? '一键控制所有用户的生成额度限制。开启后，生成将不消耗额度且无任何限制。' : 'Toggle global quota limits. When enabled, skin generation is fully unlimited for all.'}
+                </p>
+              </div>
             </div>
-            <div className="flex flex-col gap-0.5">
-              <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
-                {isZh ? '全局系统设置 • 活动控制' : 'Global Settings • Event Controller'}
-              </h3>
-              <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
-                {isZh ? '一键控制所有用户的生成额度限制。开启后，生成将不消耗额度且无任何限制。' : 'Toggle global quota limits. When enabled, skin generation is fully unlimited for all.'}
-              </p>
+
+            <div className="flex items-center gap-3 self-end md:self-auto shrink-0 animate-pulse">
+              <span className={`text-[10px] sm:text-xs font-mono font-bold tracking-wider uppercase ${isUnlimited ? 'text-yellow-400' : 'text-white/30'}`}>
+                {isUnlimited ? (isZh ? '全局不限量已开启' : 'UNLIMITED QUOTA ACTIVE') : (isZh ? '标准额度检查中' : 'STANDARD LIMITS ACTIVE')}
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={isUnlimited}
+                  disabled={settingLoading}
+                  onChange={(e) => toggleUnlimitedStatus(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-white/10 border border-white/20 peer-focus:outline-none rounded-none transition-all peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-none after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500/20 peer-checked:border-green-500/40 peer-disabled:opacity-50"></div>
+              </label>
+              {settingLoading && (
+                <Icon icon="pixelarticons:reload" className="animate-spin text-green-500 text-sm" />
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-3 self-end md:self-auto shrink-0 animate-pulse">
-            <span className={`text-[10px] sm:text-xs font-mono font-bold tracking-wider uppercase ${isUnlimited ? 'text-yellow-400' : 'text-white/30'}`}>
-              {isUnlimited ? (isZh ? '全局不限量已开启' : 'UNLIMITED QUOTA ACTIVE') : (isZh ? '标准额度检查中' : 'STANDARD LIMITS ACTIVE')}
-            </span>
-            <label className="relative inline-flex items-center cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={isUnlimited}
-                disabled={settingLoading}
-                onChange={(e) => toggleUnlimitedStatus(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-white/10 border border-white/20 peer-focus:outline-none rounded-none transition-all peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-none after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500/20 peer-checked:border-green-500/40 peer-disabled:opacity-50"></div>
-            </label>
-            {settingLoading && (
-              <Icon icon="pixelarticons:reload" className="animate-spin text-green-500 text-sm" />
-            )}
+          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5">
+              <div className={`w-10 h-10 border flex items-center justify-center text-xl transition-all ${isAigcSkinEnabled ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+                <Icon icon="pixelarticons:slider" className="" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {isZh ? 'AI 皮肤生成功能开关' : 'AIGC Skin Generation Toggle'}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {isZh ? '控制 Generate 页面 text_to_skin 和 image_edit_to_skin 的生成按钮是否可点击。' : 'Toggle AIGC generation capability. When disabled, buttons will be unclickable.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
+              <span className={`text-[10px] sm:text-xs font-mono font-bold tracking-wider uppercase ${isAigcSkinEnabled ? 'text-green-400' : 'text-red-400'}`}>
+                {isAigcSkinEnabled ? (isZh ? '功能已开启' : 'ENABLED') : (isZh ? '功能已关闭' : 'DISABLED')}
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={isAigcSkinEnabled}
+                  disabled={aigcSkinSettingLoading}
+                  onChange={(e) => toggleAigcSkinEnabledStatus(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-white/10 border border-white/20 peer-focus:outline-none rounded-none transition-all peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-none after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500/20 peer-checked:border-green-500/40 peer-disabled:opacity-50"></div>
+              </label>
+              {aigcSkinSettingLoading && (
+                <Icon icon="pixelarticons:reload" className="animate-spin text-green-500 text-sm" />
+              )}
+            </div>
           </div>
         </div>
 
