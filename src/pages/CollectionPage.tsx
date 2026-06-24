@@ -473,13 +473,23 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         const response = await apiFetch(`/api/logs/${id}`, {
                             method: 'DELETE'
                         })
-                        if (response.ok) {
+                        if (response.error) {
+                            if (response.status === 403) {
+                                alert(current.locale === 'zh' ? '免费用户每月只能删除1张图，请升级Pro版获取无限制删除。' : 'Free users can only delete 1 skin per month. Please subscribe to Pro for unlimited deletions.');
+                                navigate('/skin/pro');
+                            } else {
+                                alert(response.error);
+                            }
+                            return;
+                        }
+                        if (response.ok || !response.error) {
                             if (currentCollection) {
                                 fetchItems(currentCollection.id, pageToFetch)
                             }
                         }
                     } catch (e) {
                         console.error('Failed to delete creation', e)
+                        alert(current.collection.deleteFailed)
                     }
                 }
             })
