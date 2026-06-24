@@ -464,7 +464,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
 
         if (currentCollection?.id === 'creations_public' || currentCollection?.id === 'creations_private') {
             const warnMsg = current.collection.confirmPermanentDelete + 
-                (!isPro ? (current.locale === 'zh' ? '\n\n(注意：免费用户每周只能删除1张图，Pro版无限制)' : '\n\n(Note: Free users can only delete 1 skin per week. Pro is unlimited)') : '');
+                (!isPro ? current.collection.freeDeleteWarning : '');
             
             setConfirmModal({
                 isOpen: true,
@@ -480,8 +480,8 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                 setTimeout(() => {
                                     setConfirmModal({
                                         isOpen: true,
-                                        title: current.locale === 'zh' ? '额度受限' : 'Quota Reached',
-                                        message: current.locale === 'zh' ? '免费用户每周只能删除1张图，请升级Pro版获取无限制删除。' : 'Free users can only delete 1 skin per week. Please subscribe to Pro for unlimited deletions.',
+                                        title: current.collection.deleteQuotaExceededTitle,
+                                        message: current.collection.deleteQuotaExceeded,
                                         onConfirm: () => {
                                             navigate('/skin/pro');
                                         }
@@ -531,11 +531,11 @@ export function CollectionPage({ current }: CollectionPageProps) {
 
     const handleMakePrivate = async (e: React.MouseEvent, id: any) => {
         e.stopPropagation();
-        const confirmMsg = current.locale === 'zh' ? '确定要将此公共创作转为私有吗？(仅Pro可用)' : 'Are you sure you want to make this public creation private? (Pro only)';
+        const confirmMsg = current.collection.confirmMakePrivate;
         
         setConfirmModal({
             isOpen: true,
-            title: current.locale === 'zh' ? '转为私有' : 'Make Private',
+            title: current.collection.makePrivateTitle,
             message: confirmMsg,
             onConfirm: async () => {
                 try {
@@ -545,7 +545,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                     
                     if (res.error) {
                         if (res.status === 403) {
-                            alert(current.locale === 'zh' ? '免费用户没有私有配额，请升级Pro版' : 'Free users have no private quota, please subscribe to Pro');
+                            alert(current.collection.privateQuotaExceeded);
                             navigate('/skin/pro');
                         } else {
                             alert(res.error);
@@ -999,7 +999,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                 <button
                                                     onClick={(e) => handleMakePrivate(e, item.log_id || item.id)}
                                                     className="absolute bottom-2 right-2 p-1 bg-yellow-900/40 hover:bg-yellow-600 text-white/60 hover:text-white border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                    title={current.locale === 'zh' ? '转为私有 (Pro)' : 'Make Private (Pro)'}
+                                                    title={current.collection.makePrivatePro}
                                                 >
                                                     <Icon icon="pixelarticons:lock" className="text-xs" />
                                                 </button>

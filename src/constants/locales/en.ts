@@ -189,7 +189,14 @@ export default {
         modeHumanEdit: 'Human Edited',
         modeHumanUpload: 'Human Uploaded',
         search: 'Search',
-        btnGenerate: 'AI Generate Skin'
+        btnGenerate: 'AI Generate Skin',
+        confirmMakePrivate: 'Are you sure you want to make this public creation private? (Pro only)',
+        makePrivateTitle: 'Make Private',
+        makePrivatePro: 'Make Private (Pro)',
+        privateQuotaExceeded: 'Free users have no private quota, please subscribe to Pro',
+        deleteQuotaExceededTitle: 'Quota Reached',
+        deleteQuotaExceeded: 'Free users can only delete 1 skin per week. Please subscribe to Pro for unlimited deletions.',
+        freeDeleteWarning: '\n\n(Note: Free users can only delete 1 skin per week. Pro is unlimited)'
     },
     edit: {
         importTitle: 'Import Skin Model',

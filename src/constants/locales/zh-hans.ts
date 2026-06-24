@@ -189,7 +189,14 @@ export default {
         modeHumanEdit: '人类编辑',
         modeHumanUpload: '人类上传',
         search: '搜索',
-        btnGenerate: 'AI生成皮肤'
+        btnGenerate: 'AI生成皮肤',
+        confirmMakePrivate: '确定要将此公共创作转为私有吗？(仅Pro可用)',
+        makePrivateTitle: '转为私有',
+        makePrivatePro: '转为私有 (Pro)',
+        privateQuotaExceeded: '免费用户没有私有配额，请升级Pro版',
+        deleteQuotaExceededTitle: '额度受限',
+        deleteQuotaExceeded: '免费用户每周只能删除1张图，请升级Pro版获取无限制删除。',
+        freeDeleteWarning: '\n\n(注意：免费用户每周只能删除1张图，Pro版无限制)'
     },
     edit: {
         importTitle: '导入模型文件',
