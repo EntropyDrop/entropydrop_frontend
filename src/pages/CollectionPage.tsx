@@ -475,8 +475,16 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         })
                         if (response.error) {
                             if (response.status === 403) {
-                                alert(current.locale === 'zh' ? '免费用户每月只能删除1张图，请升级Pro版获取无限制删除。' : 'Free users can only delete 1 skin per month. Please subscribe to Pro for unlimited deletions.');
-                                navigate('/skin/pro');
+                                setTimeout(() => {
+                                    setConfirmModal({
+                                        isOpen: true,
+                                        title: current.locale === 'zh' ? '额度受限' : 'Quota Reached',
+                                        message: current.locale === 'zh' ? '免费用户每周只能删除1张图，请升级Pro版获取无限制删除。' : 'Free users can only delete 1 skin per week. Please subscribe to Pro for unlimited deletions.',
+                                        onConfirm: () => {
+                                            navigate('/skin/pro');
+                                        }
+                                    });
+                                }, 200);
                             } else {
                                 alert(response.error);
                             }
