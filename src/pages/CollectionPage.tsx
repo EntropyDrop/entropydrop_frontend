@@ -513,11 +513,10 @@ export function CollectionPage({ current }: CollectionPageProps) {
         e.stopPropagation();
         const confirmMsg = current.locale === 'zh' ? '确定要将此公共创作转为私有吗？(仅Pro可用)' : 'Are you sure you want to make this public creation private? (Pro only)';
         
-        customConfirm({
+        setConfirmModal({
+            isOpen: true,
             title: current.locale === 'zh' ? '转为私有' : 'Make Private',
-            content: confirmMsg,
-            confirmText: current.modal.confirm,
-            cancelText: current.modal.cancel,
+            message: confirmMsg,
             onConfirm: async () => {
                 try {
                     const res = await apiFetch(`/api/logs/${id}/make_private`, {
