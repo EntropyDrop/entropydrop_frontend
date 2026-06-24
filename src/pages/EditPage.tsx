@@ -665,7 +665,7 @@ export function EditPage({ current }: EditPageProps) {
         reader.onload = (event) => {
             const img = new Image();
             img.onload = () => {
-                const isValidDimension = (img.width === 64 && img.height === 64);
+                const isValidDimension = (img.width === 64 && (img.height === 64 || img.height === 32));
                 if (!isValidDimension) {
                     showError(current.edit.invalidDimensions);
                     return;

@@ -257,8 +257,45 @@ export function CollectionPage({ current }: CollectionPageProps) {
             return;
         }
 
+        const processFile = async (): Promise<Blob> => {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    if (img.width === 64 && img.height === 32) {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 64;
+                        canvas.height = 64;
+                        const ctx = canvas.getContext('2d');
+                        if (ctx) {
+                            ctx.drawImage(img, 0, 0);
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = 64;
+                            tempCanvas.height = 32;
+                            const tempCtx = tempCanvas.getContext('2d');
+                            if (tempCtx) {
+                                tempCtx.drawImage(img, 0, 0);
+                                const armData = tempCtx.getImageData(40, 16, 16, 16);
+                                ctx.putImageData(armData, 32, 48);
+                                const legData = tempCtx.getImageData(0, 16, 16, 16);
+                                ctx.putImageData(legData, 16, 48);
+                            }
+                            canvas.toBlob((blob) => {
+                                if (blob) resolve(blob);
+                                else resolve(file);
+                            }, 'image/png');
+                            return;
+                        }
+                    }
+                    resolve(file);
+                };
+                img.onerror = () => resolve(file);
+                img.src = URL.createObjectURL(file);
+            });
+        };
+
         const formData = new FormData();
-        formData.append('file', file);
+        const finalBlob = await processFile();
+        formData.append('file', finalBlob, file.name);
 
         try {
             let uploadColId = currentCollection.id;
