@@ -475,7 +475,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         const response = await apiFetch(`/api/logs/${id}`, {
                             method: 'DELETE'
                         })
-                        if (response.error) {
+                        if (!response.ok) {
                             if (response.status === 403) {
                                 setTimeout(() => {
                                     setConfirmModal({
@@ -488,18 +488,19 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                     });
                                 }, 200);
                             } else {
-                                alert(response.error);
+                                const err = await response.json().catch(() => ({}));
+                                alert(err.detail || err.error || current.common.requestFailed);
                             }
                             return;
                         }
-                        if (response.ok || !response.error) {
+                        if (response.ok) {
                             if (currentCollection) {
                                 fetchItems(currentCollection.id, pageToFetch)
                             }
                         }
                     } catch (e) {
                         console.error('Failed to delete creation', e)
-                        alert(current.collection.deleteFailed)
+                        alert(current.common.requestFailed)
                     }
                 }
             })
@@ -543,12 +544,13 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         method: 'POST'
                     });
                     
-                    if (res.error) {
+                    if (!res.ok) {
                         if (res.status === 403) {
                             alert(current.collection.privateQuotaExceeded);
                             navigate('/skin/pro');
                         } else {
-                            alert(res.error);
+                            const err = await res.json().catch(() => ({}));
+                            alert(err.detail || err.error || current.common.requestFailed);
                         }
                         return;
                     }
