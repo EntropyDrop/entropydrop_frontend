@@ -509,6 +509,44 @@ export function CollectionPage({ current }: CollectionPageProps) {
         })
     }
 
+    const handleMakePrivate = async (e: React.MouseEvent, id: any) => {
+        e.stopPropagation();
+        const confirmMsg = current.locale === 'zh' ? '确定要将此公共创作转为私有吗？(仅Pro可用)' : 'Are you sure you want to make this public creation private? (Pro only)';
+        
+        customConfirm({
+            title: current.locale === 'zh' ? '转为私有' : 'Make Private',
+            content: confirmMsg,
+            confirmText: current.modal.confirm,
+            cancelText: current.modal.cancel,
+            onConfirm: async () => {
+                try {
+                    const res = await apiFetch(`/api/logs/${id}/make_private`, {
+                        method: 'POST'
+                    });
+                    
+                    if (res.error) {
+                        if (res.status === 403) {
+                            alert(current.locale === 'zh' ? '免费用户没有私有配额，请升级Pro版' : 'Free users have no private quota, please subscribe to Pro');
+                            navigate('/skin/pro');
+                        } else {
+                            alert(res.error);
+                        }
+                        return;
+                    }
+
+                    // Remove from current public view
+                    setItems(prev => prev.filter(item => item.id !== id));
+                    
+                    // Re-fetch collections to update counts
+                    fetchCollections();
+                } catch (e) {
+                    console.error('Failed to make private', e);
+                    alert('Failed to make private');
+                }
+            }
+        });
+    };
+
     const enterCollection = (col: Collection) => {
         const uid = userId || myUserId;
         if (uid) {
