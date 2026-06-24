@@ -463,7 +463,9 @@ export function CollectionPage({ current }: CollectionPageProps) {
         }
 
         if (currentCollection?.id === 'creations_public' || currentCollection?.id === 'creations_private') {
-            const warnMsg = current.collection.confirmPermanentDelete
+            const warnMsg = current.collection.confirmPermanentDelete + 
+                (!isPro ? (current.locale === 'zh' ? '\n\n(注意：免费用户每周只能删除1张图，Pro版无限制)' : '\n\n(Note: Free users can only delete 1 skin per week. Pro is unlimited)') : '');
+            
             setConfirmModal({
                 isOpen: true,
                 title: current.collection.confirmDeleteTitle,
@@ -1317,7 +1319,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                 {confirmModal.title}
                             </h3>
 
-                            <p className={`text-white/60 text-sm ${current.fontClass}`}>
+                            <p className={`text-white/60 text-sm whitespace-pre-wrap ${current.fontClass}`}>
                                 {confirmModal.message}
                             </p>
 
