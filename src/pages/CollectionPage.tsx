@@ -938,6 +938,15 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                     <Icon icon="pixelarticons:folder-minus" className="text-xs" />
                                                 </button>
                                             )}
+                                            {currentCollection && String(currentCollection.id) === 'creations_public' && (
+                                                <button
+                                                    onClick={(e) => handleMakePrivate(e, item.log_id || item.id)}
+                                                    className="absolute bottom-2 right-2 p-1 bg-yellow-900/40 hover:bg-yellow-600 text-white/60 hover:text-white border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    title={current.locale === 'zh' ? '转为私有 (Pro)' : 'Make Private (Pro)'}
+                                                >
+                                                    <Icon icon="pixelarticons:lock" className="text-xs" />
+                                                </button>
+                                            )}
                                             <div className="absolute inset-0 bg-green-500/0 group-hover:bg-green-500/5 transition-colors pointer-events-none" />
                                         </div>
                                         <div className="flex flex-col gap-0.5 px-1 pb-2">
