@@ -87,8 +87,15 @@ export function ProPage({ current }: ProPageProps) {
         const handleUserUpdate = () => {
             fetchUserProfile();
         };
+        const handleLogoutEvent = () => {
+            setUserProfile(null);
+        };
         window.addEventListener('user-updated', handleUserUpdate);
-        return () => window.removeEventListener('user-updated', handleUserUpdate);
+        window.addEventListener('logout', handleLogoutEvent);
+        return () => {
+            window.removeEventListener('user-updated', handleUserUpdate);
+            window.removeEventListener('logout', handleLogoutEvent);
+        };
     }, []);
 
     const handleCancelSubscription = async () => {

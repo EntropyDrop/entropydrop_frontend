@@ -195,8 +195,8 @@ export default {
         makePrivatePro: 'Make Private (Pro)',
         privateQuotaExceeded: 'Free users have no private quota, please subscribe to Pro',
         deleteQuotaExceededTitle: 'Quota Reached',
-        deleteQuotaExceeded: 'Free users can only delete 1 skin per week. Please subscribe to Pro for unlimited deletions.',
-        freeDeleteWarning: '\n\n(Note: Free users can only delete 1 skin per week. Pro is unlimited)'
+        deleteQuotaExceeded: 'Free users can only delete 1 skin per day. Please subscribe to Pro for unlimited deletions.',
+        freeDeleteWarning: '\n\n(Note: Free users can only delete 1 skin per day. Pro is unlimited)'
     },
     edit: {
         importTitle: 'Import Skin Model',

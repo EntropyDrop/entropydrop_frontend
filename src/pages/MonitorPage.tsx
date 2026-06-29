@@ -91,6 +91,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
   // Admin delete states
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [purgeIdInput, setPurgeIdInput] = useState('')
+  const [deletingEmail, setDeletingEmail] = useState<string | null>(null)
+  const [purgeEmailInput, setPurgeEmailInput] = useState('')
   const [deleteMessage, setDeleteMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [isUnlimited, setIsUnlimited] = useState(false)
@@ -287,6 +289,38 @@ export function MonitorPage({ current }: MonitorPageProps) {
     } finally {
       setActionLoading(false)
       setDeletingId(null)
+    }
+  }
+
+  const executeUserDelete = async (email: string) => {
+    setActionLoading(true)
+    try {
+      const response = await apiFetch(`/api/monitor/users/by-email?email=${encodeURIComponent(email)}`, {
+        method: 'DELETE'
+      })
+      if (response.ok) {
+        setDeleteMessage({
+          type: 'success',
+          text: isZh ? `成功彻底删除邮箱为 ${email} 的账号及其所有关联数据。` : `User account ${email} and all associated data successfully deleted.`
+        })
+        setPurgeEmailInput('')
+        // Refresh stats
+        fetchStats()
+      } else {
+        const errData = await response.json().catch(() => ({}))
+        setDeleteMessage({
+          type: 'error',
+          text: errData.detail || (isZh ? `删除账号失败：${response.status}` : `Failed to delete user account: ${response.status}`)
+        })
+      }
+    } catch (e) {
+      setDeleteMessage({
+        type: 'error',
+        text: isZh ? '网络连接错误，删除账号操作失败。' : 'Connection error. Deletion failed.'
+      })
+    } finally {
+      setActionLoading(false)
+      setDeletingEmail(null)
     }
   }
 
@@ -869,6 +903,40 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           </div>
 
+          {/* Admin User Account Purge Terminal */}
+          <div className="bg-red-500/5 border border-red-500/20 p-4 rounded flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-col gap-1">
+              <span className="text-red-400 text-xs font-bold font-mono tracking-wide uppercase flex items-center gap-1.5">
+                <Icon icon="pixelarticons:shield-attention" className="text-red-500" />
+                {isZh ? '账号紧急删除工具 (Admin)' : 'Emergency User Account Purge (Admin)'}
+              </span>
+              <span className="text-white/40 text-[9px] font-mono uppercase">
+                {isZh ? '输入邮箱地址彻底物理删除用户账号及其全部关联数据' : 'Enter user email to permanently delete account and all associated data'}
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-2 w-full sm:w-auto sm:max-w-md">
+              <input
+                type="text"
+                placeholder={isZh ? '输入邮箱 (如: user@example.com)' : 'Enter User Email...'}
+                value={purgeEmailInput}
+                onChange={(e) => setPurgeEmailInput(e.target.value.trim())}
+                className="flex-1 min-w-[200px] h-9 px-3 bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-red-500/50 transition-colors placeholder:text-white/20"
+              />
+              <button
+                onClick={() => {
+                  if (!purgeEmailInput) return
+                  setDeletingEmail(purgeEmailInput)
+                }}
+                disabled={!purgeEmailInput || actionLoading}
+                className="h-9 px-4 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-bold font-mono uppercase tracking-wider transition-all disabled:opacity-30 disabled:pointer-events-none active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                <Icon icon="pixelarticons:trash" />
+                {isZh ? '删除' : 'PURGE'}
+              </button>
+            </div>
+          </div>
+
           {loadingUnfinished && !unfinishedData ? (
             <div className="flex items-center justify-center p-12 bg-white/5 border border-dashed border-white/10 opacity-30">
               <Icon icon="pixelarticons:reload" className="text-4xl text-green-500 animate-spin" />
@@ -1032,6 +1100,59 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </button>
               <button
                 onClick={() => executeDelete(deletingId)}
+                disabled={actionLoading}
+                className="px-4 py-2 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95 flex items-center gap-1.5"
+              >
+                {actionLoading ? (
+                  <Icon icon="pixelarticons:reload" className="animate-spin text-red-500" />
+                ) : (
+                  <Icon icon="pixelarticons:trash" />
+                )}
+                {isZh ? '确认删除' : 'CONFIRM PURGE'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Deletion Confirmation Modal */}
+      {deletingEmail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
+          <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-red-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500 text-2xl shrink-0">
+                <Icon icon="pixelarticons:shield-attention" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <h4 className={`text-white text-base m-0 ${current.fontClass}`}>
+                  {isZh ? '确认要彻底删除该账号吗？' : 'Confirm Permanent Account Purge'}
+                </h4>
+                <p className="text-white/60 text-xs leading-relaxed mt-1">
+                  {isZh ? (
+                    <>
+                      您正在请求彻底删除账号 <strong>{deletingEmail}</strong>。
+                      这将永久注销该用户，并<b>彻底物理清除</b>其所有相关的生成日志、S3中的文件、收藏夹、订单、论坛帖子和回复等所有数据。此操作不可逆！
+                    </>
+                  ) : (
+                    <>
+                      Are you sure you want to permanently delete account <strong>{deletingEmail}</strong>?
+                      This will permanently delete the user profile and <b>physically erase</b> all associated generation logs, S3 assets, collections, orders, and forum posts/replies. This action is irreversible.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeletingEmail(null)}
+                disabled={actionLoading}
+                className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+              >
+                {isZh ? '取消' : 'Cancel'}
+              </button>
+              <button
+                onClick={() => executeUserDelete(deletingEmail)}
                 disabled={actionLoading}
                 className="px-4 py-2 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95 flex items-center gap-1.5"
               >

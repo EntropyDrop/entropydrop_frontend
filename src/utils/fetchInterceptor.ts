@@ -47,11 +47,13 @@ window.fetch = async (input, init) => {
         if (!response.ok && isApiRequest && !skipGlobalError) {
             const locale = await getCurrentLocale();
             if (response.status === 401) {
-                if (!isAlerting) {
+                const token = localStorage.getItem('token');
+                if (token && !isAlerting) {
                     isAlerting = true;
                     localStorage.removeItem('token');
                     alert(locale.common.sessionExpired);
-                    window.location.reload();
+                    isAlerting = false;
+                    window.dispatchEvent(new Event('logout'));
                 }
             } else {
                 // General error handling

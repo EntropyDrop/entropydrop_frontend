@@ -1,7 +1,7 @@
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { useState, useEffect, useRef, type ChangeEvent } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
 import { MC } from '../components/MC'
 import { Skin2D, isSlim, convertSkinLayout } from '../components/utils'
@@ -161,6 +161,7 @@ interface EditPageProps {
 
 export function EditPage({ current }: EditPageProps) {
     const location = useLocation();
+    const navigate = useNavigate();
     const passedTextureUrl = location.state?.textureUrl;
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [ctx, setCtx] = useState<CanvasRenderingContext2D | null>(null);
@@ -780,13 +781,22 @@ export function EditPage({ current }: EditPageProps) {
 
                         {isEmptyModel ? (
                             <div className="flex flex-col items-center gap-4 z-20">
-                                <button
-                                    onClick={() => document.getElementById('import-input')?.click()}
-                                    className="px-6 py-3 bg-[#3c8527] hover:bg-[#4ea632] text-white font-pixel-hans text-xs cursor-pointer flex items-center gap-2 transition-all shadow-lg border border-black active:translate-y-px"
-                                >
-                                    <Icon icon="pixelarticons:upload" className="text-base" />
-                                    {current.edit.importTitle}
-                                </button>
+                                <div className="flex flex-col sm:flex-row items-center gap-3">
+                                    <button
+                                        onClick={() => navigate('/skin/')}
+                                        className="px-6 py-3 bg-[#3c8527] hover:bg-[#4ea632] text-white font-pixel-hans text-xs cursor-pointer flex items-center gap-2 transition-all shadow-lg border border-black active:translate-y-px"
+                                    >
+                                        <Icon icon="pixelarticons:search" className="text-base" />
+                                        {current.lang === 'zh-hans' ? '发现皮肤' : 'Discover Skins'}
+                                    </button>
+                                    <button
+                                        onClick={() => document.getElementById('import-input')?.click()}
+                                        className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-pixel-hans text-xs cursor-pointer flex items-center gap-2 transition-all shadow-lg border border-black active:translate-y-px"
+                                    >
+                                        <Icon icon="pixelarticons:upload" className="text-base" />
+                                        {current.edit.importTitle}
+                                    </button>
+                                </div>
                                 <div className="text-white/40 font-pixel-hans text-[11px] text-center max-w-xs mt-2 leading-relaxed">
                                     {current.edit.importDesc}
                                 </div>

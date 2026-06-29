@@ -177,8 +177,26 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         }
         window.addEventListener('user-updated', handleUserUpdate)
 
+        const handleLogoutEvent = () => {
+            import('@react-oauth/google')
+                .then(({ googleLogout }) => googleLogout())
+                .catch(() => undefined)
+            setUser(null)
+            setIsOpen(false)
+            // Redirect to / (Discovery) on logout if we are on a protected page
+            const protectedRoutes = ['/skin/orders', '/skin/collection', '/skin/monitor', '/skin/generate']
+            const isProtected = protectedRoutes.some(route => 
+                window.location.pathname === route || window.location.pathname.startsWith(route + '/')
+            )
+            if (isProtected) {
+                navigate('/skin/')
+            }
+        }
+        window.addEventListener('logout', handleLogoutEvent)
+
         return () => {
             window.removeEventListener('user-updated', handleUserUpdate)
+            window.removeEventListener('logout', handleLogoutEvent)
         }
     }, [])
 
@@ -276,6 +294,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         localStorage.removeItem('token')
         setUser(null)
         setIsOpen(false)
+        window.dispatchEvent(new Event('logout'))
         navigate('/skin/') // Redirect to / (Discovery) on logout
     }
 
