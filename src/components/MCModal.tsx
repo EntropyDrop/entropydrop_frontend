@@ -8,6 +8,7 @@ import { MCModalSidebar } from './MCModalSidebar'
 import { MCModalPreview } from './MCModalPreview'
 import { MCModalDropdown } from './MCModalDropdown'
 import { Skin2DImg } from './Skin2DImg'
+import { SkinAvatarImage } from './SkinAvatarImage'
 import { Skin2D, isSlim, convertSkinLayout } from './utils'
 import { showError } from '../utils/alert'
 import { apiFetch } from '../utils/api'
@@ -1041,17 +1042,13 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                         onClick={() => toggleSidebar('author')}
                                                                         className={`flex items-center gap-2 p-2 border cursor-pointer transition-all group ${showSidebar && sidebarType === 'author' ? 'bg-[#4ea632]/5 border-[#4ea632]/30' : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'}`}
                                                                     >
-                                                                        <div className="w-8 h-8 bg-[#222] flex items-center justify-center border border-white/10 overflow-hidden group-hover:border-[#4ea632]/40 transition-colors shrink-0">
-                                                                            {item.creator?.avatar_url ? (
-                                                                                <img 
-                                                                                    src={item.creator.avatar_url} 
-                                                                                    alt={item.creator.username || "Avatar"} 
-                                                                                    className="w-full h-full object-cover" 
-                                                                                />
-                                                                            ) : (
-                                                                                <Icon icon="pixelarticons:user" className="text-lg text-white/40 group-hover:text-[#4ea632] transition-colors" />
-                                                                            )}
-                                                                        </div>
+                                                                        <SkinAvatarImage
+                                                                            textureUrl={item.creator?.minecraft_skin_url}
+                                                                            fallbackSrc={item.creator?.avatar_url}
+                                                                            alt={item.creator?.username || "Avatar"}
+                                                                            className="w-8 h-8 bg-[#222] border border-white/10 group-hover:border-[#4ea632]/40 transition-colors shrink-0"
+                                                                            framed={false}
+                                                                        />
                                                                         <div className="min-w-0 flex-1">
                                                                             <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5">Author</div>
                                                                             <div className="text-sm font-pixel-hans text-white/90 group-hover:text-[#4ea632] transition-colors truncate">{item.creator?.username || "Unknown"}</div>
