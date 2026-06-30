@@ -97,8 +97,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [actionLoading, setActionLoading] = useState(false)
   const [isUnlimited, setIsUnlimited] = useState(false)
   const [settingLoading, setSettingLoading] = useState(false)
-  const [isAigcSkinEnabled, setIsAigcSkinEnabled] = useState(true)
-  const [aigcSkinSettingLoading, setAigcSkinSettingLoading] = useState(false)
+  const [isTextToSkinEnabled, setIsTextToSkinEnabled] = useState(true)
+  const [textToSkinSettingLoading, setTextToSkinSettingLoading] = useState(false)
+  const [isImageToSkinEnabled, setIsImageToSkinEnabled] = useState(true)
+  const [imageToSkinSettingLoading, setImageToSkinSettingLoading] = useState(false)
+  const [isImageEditToSkinEnabled, setIsImageEditToSkinEnabled] = useState(true)
+  const [imageEditToSkinSettingLoading, setImageEditToSkinSettingLoading] = useState(false)
 
   const isZh = current.lang === 'zh-hans'
 
@@ -110,12 +114,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
         setStats(data)
         setError(null)
       } else if (response.status === 403) {
-        setError('Admin access required')
+        setError(current.monitor.adminAccessRequired)
       } else {
-        setError('Failed to fetch stats')
+        setError(current.monitor.failedFetchStats)
       }
     } catch (e) {
-      setError('Connection error')
+      setError(current.monitor.connectionError)
     } finally {
       setLoading(false)
     }
@@ -146,77 +150,91 @@ export function MonitorPage({ current }: MonitorPageProps) {
         setIsUnlimited(data.unlimited)
         setDeleteMessage({
           type: 'success',
-          text: isZh 
-            ? (data.unlimited ? '全局不限量生成额度功能已成功开启！' : '全局生成额度不限量已关闭，已恢复正常额度检查。')
-            : (data.unlimited ? 'Unlimited generation quota has been enabled globally!' : 'Unlimited generation quota disabled. Standard limits restored.')
+          text: data.unlimited ? current.monitor.unlimitedEnabledMsg : current.monitor.unlimitedDisabledMsg
         })
       } else {
         const errData = await response.json().catch(() => ({}))
         setDeleteMessage({
           type: 'error',
-          text: errData.detail || (isZh ? '操作失败，请重试' : 'Operation failed, please try again')
+          text: errData.detail || current.monitor.operationFailed
         })
       }
     } catch (e) {
       setDeleteMessage({
         type: 'error',
-        text: isZh ? '网络连接错误' : 'Network connection error'
+        text: current.monitor.networkError
       })
     } finally {
       setSettingLoading(false)
     }
   }
 
-  const fetchAigcSkinEnabledStatus = async () => {
+  const fetchModesStatus = async () => {
     try {
-      const response = await apiFetch('/api/monitor/aigc_skin_enabled')
+      const response = await apiFetch('/api/monitor/mode_status')
       if (response.ok) {
         const data = await response.json()
-        setIsAigcSkinEnabled(data.enabled)
+        setIsTextToSkinEnabled(data.text_to_skin_enabled)
+        setIsImageToSkinEnabled(data.image_to_skin_enabled)
+        setIsImageEditToSkinEnabled(data.image_edit_to_skin_enabled)
       }
     } catch (e) {
-      console.error('Failed to fetch aigc skin enabled status', e)
+      console.error('Failed to fetch mode status', e)
     }
   }
 
-  const toggleAigcSkinEnabledStatus = async (checked: boolean) => {
-    setAigcSkinSettingLoading(true)
+  const toggleModeStatus = async (mode: 'text_to_skin' | 'image_to_skin' | 'image_edit_to_skin', checked: boolean) => {
+    if (mode === 'text_to_skin') setTextToSkinSettingLoading(true)
+    else if (mode === 'image_to_skin') setImageToSkinSettingLoading(true)
+    else if (mode === 'image_edit_to_skin') setImageEditToSkinSettingLoading(true)
+
     try {
-      const response = await apiFetch('/api/monitor/aigc_skin_enabled', {
+      const response = await apiFetch(`/api/monitor/mode_status/${mode}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: checked })
       })
       if (response.ok) {
         const data = await response.json()
-        setIsAigcSkinEnabled(data.enabled)
+        let successMsg = ''
+        if (mode === 'text_to_skin') {
+          setIsTextToSkinEnabled(data.enabled)
+          successMsg = data.enabled ? current.monitor.textToSkinEnabledMsg : current.monitor.textToSkinDisabledMsg
+        } else if (mode === 'image_to_skin') {
+          setIsImageToSkinEnabled(data.enabled)
+          successMsg = data.enabled ? current.monitor.imageToSkinEnabledMsg : current.monitor.imageToSkinDisabledMsg
+        } else if (mode === 'image_edit_to_skin') {
+          setIsImageEditToSkinEnabled(data.enabled)
+          successMsg = data.enabled ? current.monitor.imageEditToSkinEnabledMsg : current.monitor.imageEditToSkinDisabledMsg
+        }
+
         setDeleteMessage({
           type: 'success',
-          text: isZh 
-            ? (data.enabled ? '文生/图生皮肤功能已开启' : '文生/图生皮肤功能已关闭，用户将无法使用该功能。')
-            : (data.enabled ? 'AIGC Skin generation enabled!' : 'AIGC Skin generation disabled.')
+          text: successMsg
         })
       } else {
         const errData = await response.json().catch(() => ({}))
         setDeleteMessage({
           type: 'error',
-          text: errData.detail || (isZh ? '操作失败，请重试' : 'Operation failed, please try again')
+          text: errData.detail || current.monitor.operationFailed
         })
       }
     } catch (e) {
       setDeleteMessage({
         type: 'error',
-        text: isZh ? '网络连接错误' : 'Network connection error'
+        text: current.monitor.networkError
       })
     } finally {
-      setAigcSkinSettingLoading(false)
+      if (mode === 'text_to_skin') setTextToSkinSettingLoading(false)
+      else if (mode === 'image_to_skin') setImageToSkinSettingLoading(false)
+      else if (mode === 'image_edit_to_skin') setImageEditToSkinSettingLoading(false)
     }
   }
 
   useEffect(() => {
     fetchStats()
     fetchUnlimitedStatus()
-    fetchAigcSkinEnabledStatus()
+    fetchModesStatus()
     const timer = setInterval(fetchStats, 3000)
     return () => clearInterval(timer)
   }, [])
@@ -301,7 +319,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
       if (response.ok) {
         setDeleteMessage({
           type: 'success',
-          text: isZh ? `成功彻底删除邮箱为 ${email} 的账号及其所有关联数据。` : `User account ${email} and all associated data successfully deleted.`
+          text: current.monitor.deleteUserSuccess.replace('{email}', email)
         })
         setPurgeEmailInput('')
         // Refresh stats
@@ -310,13 +328,13 @@ export function MonitorPage({ current }: MonitorPageProps) {
         const errData = await response.json().catch(() => ({}))
         setDeleteMessage({
           type: 'error',
-          text: errData.detail || (isZh ? `删除账号失败：${response.status}` : `Failed to delete user account: ${response.status}`)
+          text: errData.detail || (current.monitor.deleteUserFailed + response.status)
         })
       }
     } catch (e) {
       setDeleteMessage({
         type: 'error',
-        text: isZh ? '网络连接错误，删除账号操作失败。' : 'Connection error. Deletion failed.'
+        text: current.monitor.networkError
       })
     } finally {
       setActionLoading(false)
@@ -348,13 +366,13 @@ export function MonitorPage({ current }: MonitorPageProps) {
     let classes = 'bg-white/5 border-white/10 text-white/40'
     
     if (status === 'pending' || status === 'pending_skin') {
-      label = isZh ? '排队中' : 'QUEUED'
+      label = current.monitor.statusQueued
       classes = 'bg-orange-500/10 border-orange-500/30 text-orange-400'
     } else if (status === 'processing' || status === 'processing_skin') {
-      label = isZh ? '生成中' : 'PROCESSING'
+      label = current.monitor.statusProcessing
       classes = 'bg-green-500/10 border-green-500/30 text-green-400 font-bold'
     } else if (status === 'failed') {
-      label = isZh ? '失败' : 'FAILED'
+      label = current.monitor.statusFailed
       classes = 'bg-red-500/10 border-red-500/30 text-red-400 font-bold'
     }
     
@@ -371,21 +389,21 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const getModeLabel = (mode: string) => {
     switch (mode) {
       case 'aigc_text_to_image':
-        return isZh ? 'AI 文生图' : 'Text to Image'
+        return current.monitor.modeTextToImage
       case 'aigc_image_to_image':
-        return isZh ? 'AI 图生图' : 'Image to Image'
+        return current.monitor.modeImageToImage
       case 'aigc_image_edit':
-        return isZh ? 'AI 局部编辑' : 'Image Edit'
+        return current.monitor.modeImageEdit
       case 'aigc_image_to_skin':
-        return isZh ? 'AI 图生皮肤' : 'Image to Skin'
+        return current.monitor.modeImageToSkin
       case 'aigc_text_to_skin':
-        return isZh ? 'AI 文生皮肤' : 'Text to Skin'
+        return current.monitor.modeTextToSkin
       case 'aigc_image_edit_to_skin':
-        return isZh ? 'AI 编辑生皮肤' : 'Edit to Skin'
+        return current.monitor.modeEditToSkin
       case 'human_edit':
-        return isZh ? '人类编辑' : 'Human Edit'
+        return current.monitor.modeHumanEdit
       case 'human_upload':
-        return isZh ? '人类上传' : 'Human Upload'
+        return current.monitor.modeHumanUpload
       default:
         return mode
     }
@@ -417,7 +435,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
               Monitoring Center
             </h1>
             <p className="text-white/40 text-[10px] mt-1 font-mono uppercase tracking-widest">
-              Live System Status • Last sync: {stats?.timestamp ? new Date(stats.timestamp).toLocaleTimeString() : 'N/A'}
+              {current.monitor.liveSystemStatus}{stats?.timestamp ? new Date(stats.timestamp).toLocaleTimeString() : 'N/A'}
             </p>
           </div>
 
@@ -430,7 +448,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
             ) : (
               <div className="px-3 py-1 bg-green-500/10 border border-green-500/20 rounded flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-green-500 text-[10px] uppercase font-bold tracking-tight">System Online</span>
+                <span className="text-green-500 text-[10px] uppercase font-bold tracking-tight">{current.monitor.systemOnline}</span>
               </div>
             )}
           </div>
@@ -473,36 +491,109 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           </div>
 
+          {/* Text to Skin Maintenance Switch */}
           <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="flex items-start gap-3.5">
-              <div className={`w-10 h-10 border flex items-center justify-center text-xl transition-all ${isAigcSkinEnabled ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+              <div className={`w-10 h-10 border flex items-center justify-center text-xl transition-all ${!isTextToSkinEnabled ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
                 <Icon icon="pixelarticons:slider" className="" />
               </div>
               <div className="flex flex-col gap-0.5">
                 <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
-                  {isZh ? 'AI 皮肤生成功能开关' : 'AIGC Skin Generation Toggle'}
+                  {current.monitor.textToSkinToggleTitle}
                 </h3>
                 <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
-                  {isZh ? '控制 Generate 页面 text_to_skin 和 image_edit_to_skin 的生成按钮是否可点击。' : 'Toggle AIGC generation capability. When disabled, buttons will be unclickable.'}
+                  {current.monitor.textToSkinToggleDesc}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
-              <span className={`text-[10px] sm:text-xs font-mono font-bold tracking-wider uppercase ${isAigcSkinEnabled ? 'text-green-400' : 'text-red-400'}`}>
-                {isAigcSkinEnabled ? (isZh ? '功能已开启' : 'ENABLED') : (isZh ? '功能已关闭' : 'DISABLED')}
+              <span className={`text-[10px] sm:text-xs font-mono font-bold tracking-wider uppercase ${!isTextToSkinEnabled ? 'text-red-400' : 'text-green-400'}`}>
+                {!isTextToSkinEnabled ? current.monitor.underMaintenance : current.monitor.operational}
               </span>
               <label className="relative inline-flex items-center cursor-pointer select-none">
                 <input
                   type="checkbox"
-                  checked={isAigcSkinEnabled}
-                  disabled={aigcSkinSettingLoading}
-                  onChange={(e) => toggleAigcSkinEnabledStatus(e.target.checked)}
+                  checked={!isTextToSkinEnabled}
+                  disabled={textToSkinSettingLoading}
+                  onChange={(e) => toggleModeStatus('text_to_skin', !e.target.checked)}
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-white/10 border border-white/20 peer-focus:outline-none rounded-none transition-all peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-none after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500/20 peer-checked:border-green-500/40 peer-disabled:opacity-50"></div>
+                <div className="w-11 h-6 bg-white/10 border border-white/20 peer-focus:outline-none rounded-none transition-all peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-none after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500/20 peer-checked:border-red-500/40 peer-disabled:opacity-50"></div>
               </label>
-              {aigcSkinSettingLoading && (
+              {textToSkinSettingLoading && (
+                <Icon icon="pixelarticons:reload" className="animate-spin text-green-500 text-sm" />
+              )}
+            </div>
+          </div>
+
+          {/* Image to Skin Maintenance Switch */}
+          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5">
+              <div className={`w-10 h-10 border flex items-center justify-center text-xl transition-all ${!isImageToSkinEnabled ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
+                <Icon icon="pixelarticons:slider" className="" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {current.monitor.imageToSkinToggleTitle}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {current.monitor.imageToSkinToggleDesc}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
+              <span className={`text-[10px] sm:text-xs font-mono font-bold tracking-wider uppercase ${!isImageToSkinEnabled ? 'text-red-400' : 'text-green-400'}`}>
+                {!isImageToSkinEnabled ? current.monitor.underMaintenance : current.monitor.operational}
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!isImageToSkinEnabled}
+                  disabled={imageToSkinSettingLoading}
+                  onChange={(e) => toggleModeStatus('image_to_skin', !e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-white/10 border border-white/20 peer-focus:outline-none rounded-none transition-all peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-none after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500/20 peer-checked:border-red-500/40 peer-disabled:opacity-50"></div>
+              </label>
+              {imageToSkinSettingLoading && (
+                <Icon icon="pixelarticons:reload" className="animate-spin text-green-500 text-sm" />
+              )}
+            </div>
+          </div>
+
+          {/* Edit to Skin Maintenance Switch */}
+          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5">
+              <div className={`w-10 h-10 border flex items-center justify-center text-xl transition-all ${!isImageEditToSkinEnabled ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
+                <Icon icon="pixelarticons:slider" className="" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {current.monitor.imageEditToSkinToggleTitle}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {current.monitor.imageEditToSkinToggleDesc}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
+              <span className={`text-[10px] sm:text-xs font-mono font-bold tracking-wider uppercase ${!isImageEditToSkinEnabled ? 'text-red-400' : 'text-green-400'}`}>
+                {!isImageEditToSkinEnabled ? current.monitor.underMaintenance : current.monitor.operational}
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!isImageEditToSkinEnabled}
+                  disabled={imageEditToSkinSettingLoading}
+                  onChange={(e) => toggleModeStatus('image_edit_to_skin', !e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-white/10 border border-white/20 peer-focus:outline-none rounded-none transition-all peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-none after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500/20 peer-checked:border-red-500/40 peer-disabled:opacity-50"></div>
+              </label>
+              {imageEditToSkinSettingLoading && (
                 <Icon icon="pixelarticons:reload" className="animate-spin text-green-500 text-sm" />
               )}
             </div>

@@ -47,7 +47,9 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [lastSubmittedId, setLastSubmittedId] = useState<string | null>(null)
     const [quota, setQuota] = useState<{ remaining: number; limit: number } | null>(null)
     const [unlimitedQuota, setUnlimitedQuota] = useState(false)
-    const [isAigcSkinEnabled, setIsAigcSkinEnabled] = useState(true)
+    const [isTextToSkinEnabled, setIsTextToSkinEnabled] = useState(true)
+    const [isImageToSkinEnabled, setIsImageToSkinEnabled] = useState(true)
+    const [isImageEditToSkinEnabled, setIsImageEditToSkinEnabled] = useState(true)
     const [infoModal, setInfoModal] = useState<{ isOpen: boolean; title: string; message: string; type?: 'info' | 'error' | 'success' }>({ isOpen: false, title: '', message: '' })
     const [isHistoryLoading, setIsHistoryLoading] = useState(false)
 
@@ -181,7 +183,9 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 const data = await res.json()
                 setIsPro(data.is_pro)
                 setUnlimitedQuota(!!data.unlimited_quota)
-                setIsAigcSkinEnabled(data.aigc_skin_enabled !== false)
+                setIsTextToSkinEnabled(data.text_to_skin_enabled !== false)
+                setIsImageToSkinEnabled(data.image_to_skin_enabled !== false)
+                setIsImageEditToSkinEnabled(data.image_edit_to_skin_enabled !== false)
                 if (data.daily_generation_limit !== undefined) {
                     setQuota({
                         remaining: data.remaining_generation_quota,
@@ -295,8 +299,18 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const handleGenerate = async () => {
         if (isGenerating || modelVersion === 'unknown' || !modelVersion) return
 
-        if (!isAigcSkinEnabled && (genMode === 'aigc_text_to_skin' || genMode === 'aigc_image_edit_to_skin')) {
-            setInfoModal({ isOpen: true, title: current.generate.notice, message: current.lang === 'zh-hans' ? '该功能暂不可用，请稍后再试。' : 'This feature is temporarily unavailable.', type: 'info' })
+        if (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) {
+            setInfoModal({ isOpen: true, title: current.generate.notice, message: current.monitor.systemMaintenanceMsg, type: 'info' })
+            return
+        }
+
+        if (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) {
+            setInfoModal({ isOpen: true, title: current.generate.notice, message: current.monitor.systemMaintenanceMsg, type: 'info' })
+            return
+        }
+
+        if (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled) {
+            setInfoModal({ isOpen: true, title: current.generate.notice, message: current.monitor.systemMaintenanceMsg, type: 'info' })
             return
         }
 
@@ -996,7 +1010,14 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                 )}
 
                                 <button
-                                    disabled={isGenerating || modelVersion === 'unknown' || !modelVersion || (!isAigcSkinEnabled && (genMode === 'aigc_text_to_skin' || genMode === 'aigc_image_edit_to_skin'))}
+                                    disabled={
+                                        isGenerating ||
+                                        modelVersion === 'unknown' ||
+                                        !modelVersion ||
+                                        (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
+                                        (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
+                                        (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
+                                    }
                                     onClick={handleGenerate}
                                     className={`py-3 lg:py-4 bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-gray-700 text-white border-2 border-black cursor-pointer transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass}`}
                                 >
@@ -1010,10 +1031,10 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                             <Icon icon="pixelarticons:reload" className="animate-spin" />
                                             {current.generate.btnLoadingModel}
                                         </span>
-                                    ) : (!isAigcSkinEnabled && (genMode === 'aigc_text_to_skin' || genMode === 'aigc_image_edit_to_skin')) ? (
+                                    ) : ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)) ? (
                                         <span key="disabled" className="flex items-center justify-center gap-2 opacity-50">
                                             <Icon icon="pixelarticons:close" />
-                                            {current.lang === 'zh-hans' ? '功能暂不可用' : 'Temporarily Unavailable'}
+                                            {current.monitor.temporarilyUnavailable}
                                         </span>
                                     ) : (
                                         <span key="start" className="flex items-center justify-center gap-2">
