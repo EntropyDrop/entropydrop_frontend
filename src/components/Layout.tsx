@@ -67,7 +67,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
     return (
         <div className="relative w-screen h-screen bg-[#111] overflow-x-hidden overflow-y-auto overscroll-y-none">
             {/* Top Navigation */}
-            <div className="absolute top-0 left-0 right-0 z-30 py-3 sm:py-5 pointer-events-none">
+            <div className="absolute top-0 left-0 right-0 z-[9999] py-3 sm:py-5 pointer-events-none">
                 <div className="max-w-7xl mx-auto px-4 sm:px-8 flex flex-row justify-between items-center gap-4">
                     <div
                         className={`text-white text-left ${current.fontClass} flex flex-col justify-center`}

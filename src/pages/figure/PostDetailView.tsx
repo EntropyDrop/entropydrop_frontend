@@ -26,6 +26,7 @@ interface PostDetailViewProps {
     currentUser: any
     handleDeletePost: (postId: string) => void
     handleUpdatePostCategory: (postId: string, newCategory: 'discussions' | 'showcase') => void
+    handleUpdatePostTitle: (postId: string, newTitle: string) => void
 }
 
 export function PostDetailView({
@@ -44,11 +45,29 @@ export function PostDetailView({
     current,
     currentUser,
     handleDeletePost,
-    handleUpdatePostCategory
+    handleUpdatePostCategory,
+    handleUpdatePostTitle
 }: PostDetailViewProps) {
     const navigate = useNavigate()
     const [isTypeModalOpen, setIsTypeModalOpen] = useState(false)
     const [selectedCategory, setSelectedCategory] = useState<'discussions' | 'showcase'>(selectedPost.category)
+
+    const [isEditingTitle, setIsEditingTitle] = useState(false)
+    const [editedTitle, setEditedTitle] = useState(selectedPost.title)
+    const [isSavingTitle, setIsSavingTitle] = useState(false)
+
+    const handleSaveTitle = async () => {
+        if (!editedTitle.trim()) return
+        setIsSavingTitle(true)
+        try {
+            await handleUpdatePostTitle(selectedPost.id, editedTitle.trim())
+            setIsEditingTitle(false)
+        } catch (e) {
+            console.error(e)
+        } finally {
+            setIsSavingTitle(false)
+        }
+    }
 
     const handleOpenModal = () => {
         setSelectedCategory(selectedPost.category)
@@ -113,9 +132,60 @@ export function PostDetailView({
                 </div>
 
                 {/* Title */}
-                <h2 className={`text-lg sm:text-2xl font-bold leading-snug text-white ${current.fontClass}`}>
-                    {selectedPost.title}
-                </h2>
+                <div className="flex items-center gap-2 group/title my-1">
+                    {isEditingTitle ? (
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <input
+                                type="text"
+                                value={editedTitle}
+                                onChange={(e) => setEditedTitle(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSaveTitle();
+                                    if (e.key === 'Escape') setIsEditingTitle(false);
+                                }}
+                                className={`flex-1 bg-black/40 border border-white/20 px-3 py-1.5 text-base sm:text-xl font-bold text-white focus:outline-none focus:border-[#5cff5c] ${current.fontClass}`}
+                                maxLength={100}
+                                autoFocus
+                            />
+                            <button
+                                type="button"
+                                onClick={handleSaveTitle}
+                                disabled={isSavingTitle || !editedTitle.trim()}
+                                className="bg-[#3c8527] hover:bg-[#4ea632] disabled:opacity-50 text-white p-2 cursor-pointer border border-black shadow flex items-center justify-center shrink-0"
+                                title={current.modal.confirm}
+                            >
+                                <Icon icon={isSavingTitle ? 'pixelarticons:reload' : 'pixelarticons:check'} className={`text-sm ${isSavingTitle ? 'animate-spin' : ''}`} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIsEditingTitle(false)}
+                                className="bg-white/10 hover:bg-white/20 text-white/60 hover:text-white p-2 cursor-pointer border border-white/10 flex items-center justify-center shrink-0"
+                                title={current.figureForum.cancel}
+                            >
+                                <Icon icon="pixelarticons:close" className="text-sm" />
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <h2 className={`text-lg sm:text-2xl font-bold leading-snug text-white ${current.fontClass}`}>
+                                {selectedPost.title}
+                            </h2>
+                            {(currentUser?.is_admin || (currentUser && currentUser.username === selectedPost.author)) && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setEditedTitle(selectedPost.title);
+                                        setIsEditingTitle(true);
+                                    }}
+                                    className="opacity-100 lg:opacity-0 lg:group-hover/title:opacity-100 text-white/40 hover:text-[#5cff5c] transition-all cursor-pointer p-1 shrink-0 border-none bg-transparent"
+                                    title="Edit Title"
+                                >
+                                    <Icon icon="pixelarticons:edit" className="text-base" />
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
 
                 {/* Body Type and Multi-color details for Showcase posts */}
                 {(selectedPost.bodyType || selectedPost.multiColorType) && (

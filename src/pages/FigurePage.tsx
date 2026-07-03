@@ -344,6 +344,28 @@ export function FigurePage({ current }: FigurePageProps) {
         }
     }
 
+    const handleUpdatePostTitle = async (postId: string, title: string) => {
+        try {
+            const res = await apiFetch(`/api/forum/posts/${postId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ title })
+            })
+
+            if (res.ok) {
+                const updatedPost = await res.json()
+                setSelectedPost(updatedPost)
+                setPosts(prev => prev.map(p => p.id === postId ? updatedPost : p))
+                triggerToast('Post title updated successfully!')
+            } else {
+                const err = await res.json().catch(() => ({}))
+                triggerToast(err.detail || 'Failed to update title')
+            }
+        } catch (err) {
+            console.error(err)
+            triggerToast('Network error, please try again')
+        }
+    }
+
     // Toast helper
     const triggerToast = (msg: string) => {
         setToastMessage(msg)
@@ -540,6 +562,7 @@ export function FigurePage({ current }: FigurePageProps) {
                     currentUser={currentUser}
                     handleDeletePost={handleDeletePost}
                     handleUpdatePostCategory={handleUpdatePostCategory}
+                    handleUpdatePostTitle={handleUpdatePostTitle}
                 />
             ) : isCreateFormOpen ? (
                 <CreatePostForm

@@ -90,6 +90,10 @@ export function PostItemShowcase({
                             <Icon icon="pixelarticons:comment" className="text-sm" />
                             <span>{post.commentsCount}</span>
                         </div>
+                        <div className="flex items-center gap-1.5">
+                            <Icon icon="pixelarticons:sun" className="text-sm" />
+                            <span>{post.views}</span>
+                        </div>
                     </div>
                 </div>
             </div>
