@@ -838,7 +838,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                         {col.item_count}
                                                     </span>
 
-                                                    <div className="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                                                    <div className="absolute top-2 left-2 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity z-20">
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -928,7 +928,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                         {col.item_count}
                                                     </span>
 
-                                                    <div className="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                                                    <div className="absolute top-2 left-2 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity z-20">
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -984,14 +984,14 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                             </div>
                                             <button
                                                 onClick={(e) => handleDeleteItem(e, item.id)}
-                                                className="absolute top-2 left-2 p-1 bg-red-900/40 hover:bg-red-600 text-white/60 hover:text-white border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                className="absolute top-2 left-2 p-1 bg-red-900/40 hover:bg-red-600 text-white/60 hover:text-white border border-white/10 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
                                             >
                                                 <Icon icon="pixelarticons:close" className="text-xs" />
                                             </button>
                                             {currentCollection && !['liked', 'creations_public', 'creations_private'].includes(String(currentCollection.id)) && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); setItemToMove(item); setIsMoveModalOpen(true); }}
-                                                    className="absolute top-2 right-2 p-1 bg-green-900/40 hover:bg-green-600 text-white/60 hover:text-white border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    className="absolute top-2 right-2 p-1 bg-green-900/40 hover:bg-green-600 text-white/60 hover:text-white border border-white/10 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
                                                     title={current.collection.moveToCollection}
                                                 >
                                                     <Icon icon="pixelarticons:folder-minus" className="text-xs" />
@@ -1000,7 +1000,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                             {currentCollection && String(currentCollection.id) === 'creations_public' && (
                                                 <button
                                                     onClick={(e) => handleMakePrivate(e, item.log_id || item.id)}
-                                                    className="absolute bottom-2 right-2 p-1 bg-yellow-900/40 hover:bg-yellow-600 text-white/60 hover:text-white border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    className="absolute bottom-2 right-2 p-1 bg-yellow-900/40 hover:bg-yellow-600 text-white/60 hover:text-white border border-white/10 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
                                                     title={current.collection.makePrivatePro}
                                                 >
                                                     <Icon icon="pixelarticons:lock" className="text-xs" />
@@ -1042,91 +1042,90 @@ export function CollectionPage({ current }: CollectionPageProps) {
 
                 {/* Footer (Pagination & Actions) */}
                 {currentCollection && (
-                    <div className="mt-auto pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 w-full">
-                        <div className="flex items-center justify-center sm:justify-start gap-4 w-full sm:w-auto">
+                    <div className="mt-auto pt-3 sm:pt-6 border-t border-white/5 flex flex-row items-center justify-between gap-2 sm:gap-4 shrink-0 w-full">
+                        {/* Left: Pagination */}
+                        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                             {currentCollection && itemTotalPages > 1 && (
                                 <>
                                     <button
                                         disabled={isLoading || itemPage === 1}
                                         onClick={() => setItemPage(p => Math.max(1, p - 1))}
-                                        className="p-2 bg-white/5 hover:bg-white/10 disabled:opacity-20 text-white border border-white/10 cursor-pointer transition-colors"
+                                        className="p-1 sm:p-2 bg-white/5 hover:bg-white/10 disabled:opacity-20 text-white border border-white/10 cursor-pointer transition-colors"
                                     >
-                                        <Icon icon={isLoading ? "pixelarticons:reload" : "pixelarticons:chevron-left"} className={isLoading ? "animate-spin" : ""} />
+                                        <Icon icon={isLoading ? "pixelarticons:reload" : "pixelarticons:chevron-left"} className={`text-xs sm:text-base ${isLoading ? "animate-spin" : ""}`} />
                                     </button>
 
-                                    <div className={`text-white/40 text-xs ${current.fontClass}`}>
-                                        {`${itemPage} / ${itemTotalPages}`}
+                                    <div className={`text-white/40 text-[10px] sm:text-xs px-0.5 ${current.fontClass}`}>
+                                        {`${itemPage}/${itemTotalPages}`}
                                     </div>
 
                                     <button
                                         disabled={isLoading || itemPage === itemTotalPages}
                                         onClick={() => setItemPage(p => Math.min(itemTotalPages, p + 1))}
-                                        className="p-2 bg-white/5 hover:bg-white/10 disabled:opacity-20 text-white border border-white/10 cursor-pointer transition-colors"
+                                        className="p-1 sm:p-2 bg-white/5 hover:bg-white/10 disabled:opacity-20 text-white border border-white/10 cursor-pointer transition-colors"
                                     >
-                                        <Icon icon={isLoading ? "pixelarticons:reload" : "pixelarticons:chevron-right"} className={isLoading ? "animate-spin" : ""} />
+                                        <Icon icon={isLoading ? "pixelarticons:reload" : "pixelarticons:chevron-right"} className={`text-xs sm:text-base ${isLoading ? "animate-spin" : ""}`} />
                                     </button>
                                 </>
                             )}
                         </div>
 
-                        {/* Right Actions (Upload & Generate) */}
-                        <div className="w-full sm:w-auto flex justify-center sm:justify-end">
-                            <div className="flex flex-wrap items-center justify-center gap-3 w-full sm:w-auto">
-                                {currentCollection && (
-                                    <button
-                                        onClick={() => navigate('/skin/generate')}
-                                        className={`px-4 py-2 bg-[#1a1a1a] hover:bg-white/10 text-white border-2 border-white/10 cursor-pointer text-xs flex items-center justify-center gap-2 transition-all active:translate-y-0.5 w-full sm:w-auto ${current.fontClass}`}
-                                    >
-                                        <Icon icon="pixelarticons:zap" />
-                                        {current.collection.btnGenerate}
-                                    </button>
-                                )}
+                        {/* Right: Actions (Upload & Generate) */}
+                        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 ml-auto">
+                            {currentCollection && (
+                                <button
+                                    onClick={() => navigate('/skin/generate')}
+                                    className={`px-2 py-1.5 sm:px-4 sm:py-2 bg-[#1a1a1a] hover:bg-white/10 text-white border border-white/10 sm:border-2 cursor-pointer text-[10px] sm:text-xs flex items-center justify-center gap-1 sm:gap-2 transition-all active:translate-y-0.5 whitespace-nowrap ${current.fontClass}`}
+                                >
+                                    <Icon icon="pixelarticons:zap" className="text-xs sm:text-sm" />
+                                    <span>{current.collection.btnGenerate}</span>
+                                </button>
+                            )}
 
-                                {currentCollection && localStorage.getItem('token') && (
-                                    ['creations_public', 'creations_private'].includes(String(currentCollection.id)) ||
-                                    (!currentCollection.original_creation && myUserId && String(currentCollection.user_id) === String(myUserId))
-                                ) && (
-                                    <div className="flex items-center justify-center gap-3 w-full sm:w-auto">
-                                        <input
-                                            id="upload-item-input"
-                                            type="file"
-                                            accept="image/*"
-                                            style={{ display: 'none' }}
-                                            onChange={handleUploadItem}
-                                        />
-                                        {(!isPro && !currentCollection.is_public) ? (
-                                            <div className="flex flex-wrap items-center justify-center gap-3 w-full sm:w-auto">
-                                                <div
-                                                    onClick={() => navigate('/skin/pro')}
-                                                    className="flex items-center justify-center gap-1.5 px-2 py-1 bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 cursor-pointer hover:bg-yellow-400/20 transition-all animate-in fade-in slide-in-from-left-2 duration-300 w-full sm:w-auto"
-                                                >
-                                                    <Icon icon="pixelarticons:zap" className="text-xs" />
-                                                    <span className={`text-[9px] lg:text-[10px] font-bold ${current.fontClass}`}>
-                                                        {current.generate.privateTip}
-                                                    </span>
-                                                </div>
-                                                <button
-                                                    disabled
-                                                    className={`px-4 py-2 bg-gray-700 text-white/40 border-2 border-black cursor-not-allowed text-xs flex items-center justify-center gap-2 transition-all w-full sm:w-auto ${current.fontClass}`}
-                                                >
-                                                    <Icon icon="pixelarticons:upload" />
-                                                    {current.collection.upload}
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <button
-                                                onClick={() => {
-                                                    document.getElementById('upload-item-input')?.click();
-                                                }}
-                                                className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white border-2 border-black cursor-pointer text-xs flex items-center justify-center gap-2 transition-all active:translate-y-0.5 w-full sm:w-auto ${current.fontClass}`}
+                            {currentCollection && localStorage.getItem('token') && (
+                                ['creations_public', 'creations_private'].includes(String(currentCollection.id)) ||
+                                (!currentCollection.original_creation && myUserId && String(currentCollection.user_id) === String(myUserId))
+                            ) && (
+                                <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+                                    <input
+                                        id="upload-item-input"
+                                        type="file"
+                                        accept="image/*"
+                                        style={{ display: 'none' }}
+                                        onChange={handleUploadItem}
+                                    />
+                                    {(!isPro && !currentCollection.is_public) ? (
+                                        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+                                            <div
+                                                onClick={() => navigate('/skin/pro')}
+                                                className="flex items-center justify-center gap-1 px-1.5 py-1 sm:px-2 sm:py-1 bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 cursor-pointer hover:bg-yellow-400/20 transition-all animate-in fade-in slide-in-from-left-2 duration-300"
                                             >
-                                                <Icon icon="pixelarticons:upload" />
-                                                {current.collection.upload}
+                                                <Icon icon="pixelarticons:zap" className="text-[10px] sm:text-xs" />
+                                                <span className={`text-[8px] sm:text-[10px] font-bold ${current.fontClass}`}>
+                                                    {current.generate.privateTip}
+                                                </span>
+                                            </div>
+                                            <button
+                                                disabled
+                                                className={`px-2 py-1.5 sm:px-4 sm:py-2 bg-gray-700 text-white/40 border border-black sm:border-2 cursor-not-allowed text-[10px] sm:text-xs flex items-center justify-center gap-1 sm:gap-2 transition-all whitespace-nowrap ${current.fontClass}`}
+                                            >
+                                                <Icon icon="pixelarticons:upload" className="text-xs sm:text-sm" />
+                                                <span>{current.collection.upload}</span>
                                             </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => {
+                                                document.getElementById('upload-item-input')?.click();
+                                            }}
+                                            className={`px-2 py-1.5 sm:px-4 sm:py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-black sm:border-2 cursor-pointer text-[10px] sm:text-xs flex items-center justify-center gap-1 sm:gap-2 transition-all active:translate-y-0.5 whitespace-nowrap ${current.fontClass}`}
+                                        >
+                                            <Icon icon="pixelarticons:upload" className="text-xs sm:text-sm" />
+                                            <span>{current.collection.upload}</span>
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
