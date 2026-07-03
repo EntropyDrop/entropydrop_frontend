@@ -1278,7 +1278,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                             </h3>
 
                             <div className="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar">
-                                {allCustom.filter(c => c.id !== currentCollection?.id)
+                                {allCustom.filter(c => c.id !== currentCollection?.id && c.is_public === currentCollection?.is_public)
                                     .map(col => (
                                         <button
                                             key={col.id}
@@ -1290,7 +1290,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                             <Icon icon={col.is_public ? "pixelarticons:bullseye" : "pixelarticons:lock"} className="text-white/20" />
                                         </button>
                                     ))}
-                                {allCustom.filter(c => c.id !== currentCollection?.id).length === 0 && (
+                                {allCustom.filter(c => c.id !== currentCollection?.id && c.is_public === currentCollection?.is_public).length === 0 && (
                                     <div className="text-white/40 text-xs text-center py-4">
                                         {current.collection.noCollectionAvailable}
                                     </div>
