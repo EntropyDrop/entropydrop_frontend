@@ -95,6 +95,7 @@ export default {
         historyEmpty: '暂无记录',
         private: '私有',
         public: '公开',
+        visibility: '可见性',
         privateTip: 'Pro用户可使用',
         generationFailed: '生成失败: ',
         notice: '提示',

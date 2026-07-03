@@ -95,6 +95,7 @@ export default {
         historyEmpty: 'No records',
         private: 'Private',
         public: 'Public',
+        visibility: 'Visibility',
         privateTip: 'Available for Pro',
         generationFailed: 'Generation failed: ',
         notice: 'Notice',

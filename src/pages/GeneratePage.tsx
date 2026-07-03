@@ -52,6 +52,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [isImageEditToSkinEnabled, setIsImageEditToSkinEnabled] = useState(true)
     const [infoModal, setInfoModal] = useState<{ isOpen: boolean; title: string; message: string; type?: 'info' | 'error' | 'success' }>({ isOpen: false, title: '', message: '' })
     const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+    const [isAdvancedOpen, setIsAdvancedOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
 
     useEffect(() => {
         const loadStateImage = async () => {
@@ -844,87 +845,103 @@ export function GeneratePage({ current }: GeneratePageProps) {
                         {/* Area 2: Settings & Action */}
                         <div className="flex-1 flex flex-col gap-4 min-h-0">
                             {/* Advanced Settings */}
-                            <div className="flex-1 flex flex-col gap-3 bg-white/5 border border-white/10 p-4 overflow-y-auto custom-scrollbar pr-1">
-                                <h3 className={`text-white text-xs lg:text-sm m-0 opacity-80 flex items-center gap-2 ${current.fontClass}`}>
-                                    <Icon icon="pixelarticons:sliders" />
-                                    {current.generate.advancedSettings}
-                                </h3>
+                            <div className={`flex flex-col gap-3 bg-white/5 border border-white/10 p-4 overflow-y-auto custom-scrollbar pr-1 ${isAdvancedOpen ? 'flex-1' : 'shrink-0'}`}>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
+                                    className="w-full flex items-center justify-between text-left cursor-pointer focus:outline-none group select-none"
+                                >
+                                    <h3 className={`text-white text-xs lg:text-sm m-0 opacity-80 group-hover:opacity-100 flex items-center gap-2 ${current.fontClass}`}>
+                                        <Icon icon="pixelarticons:sliders" />
+                                        {current.generate.advancedSettings}
+                                    </h3>
+                                    <Icon
+                                        icon="pixelarticons:chevron-down"
+                                        className={`text-white/60 group-hover:text-white transition-transform duration-200 text-sm lg:text-base ${isAdvancedOpen ? 'rotate-180' : ''}`}
+                                    />
+                                </button>
 
-                                <div className="flex flex-col gap-4">
-                                    {/* Model Version Dropdown */}
-                                    <div className="flex flex-col gap-2">
-                                        <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
-                                            {current.generate.modelVersion}
-                                        </span>
-                                        <select
-                                            value={modelVersion}
-                                            onChange={(e) => setModelVersion(e.target.value)}
-                                            disabled={modelVersion === 'unknown' || !modelVersion}
-                                            className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors cursor-pointer ${current.fontClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                                        >
-                                            {(modelsConfig[genMode] || []).length === 0 ? (
-                                                <option value="unknown" className="bg-[#2a2a2a] text-white">
-                                                    {current.generate.loadingModels}
-                                                </option>
-                                            ) : (
-                                                (modelsConfig[genMode] || []).map(m => (
-                                                    <option key={m} value={m} className="bg-[#2a2a2a] text-white">{m}</option>
-                                                ))
-                                            )}
-                                        </select>
-                                    </div>
+                                {isAdvancedOpen && (
+                                    <div className="flex flex-col gap-4 animate-in fade-in duration-200 pt-1">
+                                        {/* Model Version Dropdown */}
+                                        <div className="flex flex-col gap-2">
+                                            <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
+                                                {current.generate.modelVersion}
+                                            </span>
+                                            <select
+                                                value={modelVersion}
+                                                onChange={(e) => setModelVersion(e.target.value)}
+                                                disabled={modelVersion === 'unknown' || !modelVersion}
+                                                className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors cursor-pointer ${current.fontClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                                            >
+                                                {(modelsConfig[genMode] || []).length === 0 ? (
+                                                    <option value="unknown" className="bg-[#2a2a2a] text-white">
+                                                        {current.generate.loadingModels}
+                                                    </option>
+                                                ) : (
+                                                    (modelsConfig[genMode] || []).map(m => (
+                                                        <option key={m} value={m} className="bg-[#2a2a2a] text-white">{m}</option>
+                                                    ))
+                                                )}
+                                            </select>
+                                        </div>
 
-                                    {/* Advanced Settings: Seed & Steps */}
-                                    <div className="flex flex-col gap-4 border-t border-white/10 pt-3">
-                                        <div className="flex flex-col gap-2">
-                                            <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
-                                                {current.generate.inferenceSteps}
-                                            </span>
-                                            <input
-                                                type="number"
-                                                min={20}
-                                                max={120}
-                                                placeholder={current.generate.default}
-                                                value={nStep ?? ''}
-                                                onChange={(e) => setNStep(e.target.value ? parseInt(e.target.value) : undefined)}
-                                                className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors ${current.fontClass}`}
-                                            />
-                                        </div>
-                                        <div className="flex flex-col gap-2">
-                                            <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
-                                                {current.generate.guidanceScale}
-                                            </span>
-                                            <input
-                                                type="number"
-                                                step="0.1"
-                                                min={0.1}
-                                                max={15}
-                                                placeholder={current.generate.default}
-                                                value={guidance ?? ''}
-                                                onChange={(e) => setGuidance(e.target.value ? parseFloat(e.target.value) : undefined)}
-                                                className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors ${current.fontClass}`}
-                                            />
-                                        </div>
-                                        <div className="flex flex-col gap-2">
-                                            <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
-                                                {current.generate.seed}
-                                            </span>
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                step={1}
-                                                max={max_seed}
-                                                placeholder={current.generate.random}
-                                                value={seed ?? ''}
-                                                onChange={(e) => setSeed(e.target.value ? parseInt(e.target.value) : undefined)}
-                                                className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors ${current.fontClass}`}
-                                            />
+                                        {/* Advanced Settings: Seed & Steps */}
+                                        <div className="flex flex-col gap-4 border-t border-white/10 pt-3">
+                                            <div className="flex flex-col gap-2">
+                                                <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
+                                                    {current.generate.inferenceSteps}
+                                                </span>
+                                                <input
+                                                    type="number"
+                                                    min={20}
+                                                    max={120}
+                                                    placeholder={current.generate.default}
+                                                    value={nStep ?? ''}
+                                                    onChange={(e) => setNStep(e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors ${current.fontClass}`}
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
+                                                    {current.generate.guidanceScale}
+                                                </span>
+                                                <input
+                                                    type="number"
+                                                    step="0.1"
+                                                    min={0.1}
+                                                    max={15}
+                                                    placeholder={current.generate.default}
+                                                    value={guidance ?? ''}
+                                                    onChange={(e) => setGuidance(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                                    className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors ${current.fontClass}`}
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
+                                                    {current.generate.seed}
+                                                </span>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    step={1}
+                                                    max={max_seed}
+                                                    placeholder={current.generate.random}
+                                                    value={seed ?? ''}
+                                                    onChange={(e) => setSeed(e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors ${current.fontClass}`}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
                             <div className="flex flex-col gap-3 mt-auto shrink-0">
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-3 lg:gap-4 flex-wrap">
+                                    <span className={`text-white/60 text-[10px] lg:text-xs shrink-0 ${current.fontClass}`}>
+                                        {current.generate.visibility}:
+                                    </span>
+
                                     {/* Public Option */}
                                     <label className={`flex items-center gap-2 cursor-pointer group ${sourceId ? 'opacity-60' : ''}`}>
                                         <div className="relative">
