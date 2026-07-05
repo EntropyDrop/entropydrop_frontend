@@ -85,7 +85,7 @@ export function PublicPage({ current }: PublicPageProps) {
                         HUGGING FACE
                     </a>
                     <a
-                        href="https://discord.gg/Vphxd9aqmX"
+                        href="https://discord.gg/zxd8RjUyYt"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-sm text-[#5865F2] font-mono tracking-wider bg-[#5865F2]/10 self-start px-2 py-0.5 border border-[#5865F2]/30 hover:bg-[#5865F2]/20 transition-colors flex items-center gap-1.5"
@@ -175,7 +175,7 @@ export function PublicPage({ current }: PublicPageProps) {
                                             <span>Hugging Face</span>
                                         </a>
                                         <a
-                                            href="https://discord.gg/Vphxd9aqmX"
+                                            href="https://discord.gg/zxd8RjUyYt"
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-[#5865F2]/20 border border-white/10 hover:border-[#5865F2]/50 text-white/60 hover:text-white transition-all text-sm font-medium self-start group"

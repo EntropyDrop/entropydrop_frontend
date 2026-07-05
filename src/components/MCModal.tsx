@@ -1248,7 +1248,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                     <div className="text-xs font-pixel-hans text-white/40 leading-relaxed border-t border-white/5 pt-2 mt-1">
                                                                         <span>{current.mcmodal.discordPrompt}</span>
                                                                         <a
-                                                                            href="https://discord.gg/ByX7TwqDcw"
+                                                                            href="https://discord.gg/zxd8RjUyYt"
                                                                             target="_blank"
                                                                             rel="noreferrer"
                                                                             className="text-[#5865F2] hover:underline inline-flex items-center gap-0.5 shrink-0"
