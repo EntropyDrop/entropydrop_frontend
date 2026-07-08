@@ -21,6 +21,7 @@ const FixedAssetsPage = lazy(() => import('./pages/FixedAssetsPage').then(m => (
 const LedgerPage = lazy(() => import('./pages/LedgerPage').then(m => ({ default: m.LedgerPage })))
 const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage').then(m => ({ default: m.DiscoveryPage })))
 const FigurePage = lazy(() => import('./pages/FigurePage').then(m => ({ default: m.FigurePage })))
+const CreditsPage = lazy(() => import('./pages/CreditsPage').then(m => ({ default: m.CreditsPage })))
 
 
 /**
@@ -65,6 +66,7 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/" element={<Navigate to="/skin/" replace />} />
         <Route path="/skin/" element={<DiscoveryPage current={currentLangData} />} />
         <Route path="/skin/generate" element={<GeneratePage current={currentLangData} />} />
+        <Route path="/credits" element={<CreditsPage current={currentLangData} />} />
         <Route path="/skin/edit" element={<EditPage current={currentLangData} />} />
         <Route path="/skin/print" element={<PrintPage current={currentLangData} />} />
         <Route path="/skin/collection" element={<CollectionPage current={currentLangData} />} />

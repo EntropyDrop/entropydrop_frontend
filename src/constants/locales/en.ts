@@ -133,8 +133,8 @@ export default {
         publicWarning: 'Generated skins from public must be public',
         ok: 'OK',
         dailyQuota: 'Daily Quota',
-        remainingQuota: 'Generations left today: ',
-        quotaExceeded: 'Daily quota exceeded',
+        remainingQuota: 'Credits: ',
+        quotaExceeded: 'Insufficient credits',
         proTag: 'Pro',
         loadingModels: 'Loading...',
         btnLoadingModel: 'Loading model...'
@@ -365,7 +365,7 @@ export default {
             free: {
                 title: 'Free',
                 price: '0',
-                quota: 'Up to 6 generations per day (dynamically adjusted based on capacity)',
+                quota: 'Claim 20 credits monthly.',
                 collections: 'Public collections only',
                 private: 'No private space',
                 priority: 'Regular priority',
@@ -375,7 +375,7 @@ export default {
             pro_plus: {
                 title: 'Pro-Plus',
                 price: '8',
-                quota: '12 generations per 5 hours',
+                quota: 'Claim 60 credits monthly.',
                 collections: 'Support private collections',
                 private: '1,000 private skins limit',
                 priority: 'High priority queue',
@@ -385,7 +385,7 @@ export default {
             pro_max: {
                 title: 'Pro-Max',
                 price: '20',
-                quota: '36 generations per 5 hours',
+                quota: 'Claim 180 credits monthly.',
                 collections: 'Support private collections',
                 private: '5,000 private skins limit',
                 priority: 'High priority queue',

@@ -133,8 +133,8 @@ export default {
         publicWarning: '公开皮肤生成的皮肤也必须公开',
         ok: '确定',
         dailyQuota: '每日额度',
-        remainingQuota: '今日剩余额度: ',
-        quotaExceeded: '今日额度已用完',
+        remainingQuota: 'Credit 额度: ',
+        quotaExceeded: 'Credit 额度不足',
         proTag: '加速',
         loadingModels: '加载中...',
         btnLoadingModel: '正在加载模型...'
@@ -365,7 +365,7 @@ export default {
             free: {
                 title: '免费版',
                 price: '0',
-                quota: '每日最多 6 次生成额度（根据算力动态调整）',
+                quota: '每月登录领取 20 Credit 额度',
                 collections: '仅支持公开收藏夹',
                 private: '不支持私有空间',
                 priority: '普通生成优先级',
@@ -375,7 +375,7 @@ export default {
             pro_plus: {
                 title: 'Pro-Plus',
                 price: '8',
-                quota: '每 5 小时 12 次生成额度',
+                quota: '每月登录领取 60 Credit 额度',
                 collections: '支持创建私有收藏夹',
                 private: '1,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
@@ -385,7 +385,7 @@ export default {
             pro_max: {
                 title: 'Pro-Max',
                 price: '20',
-                quota: '每 5 小时 36 次生成额度',
+                quota: '每月登录领取 180 Credit 额度',
                 collections: '支持创建私有收藏夹',
                 private: '5,000 个私有皮肤上限',
                 priority: '高优先级生成队列',

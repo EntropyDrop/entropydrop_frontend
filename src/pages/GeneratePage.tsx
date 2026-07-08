@@ -1,5 +1,5 @@
 import { PageContainer } from '../components/PageContainer';
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
@@ -33,6 +33,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [prompt, setPrompt] = useState('')
     const [imageFile, setImageFile] = useState<File | null>(null)
     const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+    const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
+    const modelDropdownRef = useRef<HTMLDivElement>(null)
 
     const [history, setHistory] = useState<GenerationLogItem[]>([])
     const [totalPages, setTotalPages] = useState(0)
@@ -45,14 +47,22 @@ export function GeneratePage({ current }: GeneratePageProps) {
     // editedImage state removed
     const [isSourcePrivate, setIsSourcePrivate] = useState(false)
     const [lastSubmittedId, setLastSubmittedId] = useState<string | null>(null)
-    const [quota, setQuota] = useState<{ remaining: number; limit: number } | null>(null)
-    const [unlimitedQuota, setUnlimitedQuota] = useState(false)
     const [isTextToSkinEnabled, setIsTextToSkinEnabled] = useState(true)
     const [isImageToSkinEnabled, setIsImageToSkinEnabled] = useState(true)
     const [isImageEditToSkinEnabled, setIsImageEditToSkinEnabled] = useState(true)
     const [infoModal, setInfoModal] = useState<{ isOpen: boolean; title: string; message: string; type?: 'info' | 'error' | 'success' }>({ isOpen: false, title: '', message: '' })
     const [isHistoryLoading, setIsHistoryLoading] = useState(false)
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (modelDropdownRef.current && !modelDropdownRef.current.contains(event.target as Node)) {
+                setIsModelDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
 
     useEffect(() => {
         const loadStateImage = async () => {
@@ -183,16 +193,9 @@ export function GeneratePage({ current }: GeneratePageProps) {
             if (res.ok) {
                 const data = await res.json()
                 setIsPro(data.is_pro)
-                setUnlimitedQuota(!!data.unlimited_quota)
                 setIsTextToSkinEnabled(data.text_to_skin_enabled !== false)
                 setIsImageToSkinEnabled(data.image_to_skin_enabled !== false)
                 setIsImageEditToSkinEnabled(data.image_edit_to_skin_enabled !== false)
-                if (data.daily_generation_limit !== undefined) {
-                    setQuota({
-                        remaining: data.remaining_generation_quota,
-                        limit: data.daily_generation_limit
-                    })
-                }
             }
         } catch (e) {
             console.error('Failed to fetch user status', e)
@@ -844,6 +847,60 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
                         {/* Area 2: Settings & Action */}
                         <div className="flex-1 flex flex-col gap-4 min-h-0">
+                            {/* Model Version Dropdown */}
+                             <div className="bg-white/5 border border-white/10 p-4 flex flex-col gap-3 relative" ref={modelDropdownRef}>
+                                 <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
+                                     {current.generate.modelVersion}
+                                 </span>
+                                 
+                                 <button
+                                     type="button"
+                                     onClick={() => {
+                                         if (modelVersion !== 'unknown' && modelVersion) {
+                                             setIsModelDropdownOpen(!isModelDropdownOpen);
+                                         }
+                                     }}
+                                     disabled={modelVersion === 'unknown' || !modelVersion}
+                                     className={`w-full flex items-center justify-between bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors cursor-pointer text-left ${current.fontClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                                 >
+                                     <span>
+                                         {modelVersion === 'unknown' ? current.generate.loadingModels : modelVersion}
+                                     </span>
+                                     <div className="flex items-center gap-2">
+                                         {modelVersion !== 'unknown' && modelVersion && (
+                                             <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
+                                                 1 <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                             </span>
+                                         )}
+                                         <Icon
+                                             icon="pixelarticons:chevron-down"
+                                             className={`text-white/60 transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`}
+                                         />
+                                     </div>
+                                 </button>
+
+                                 {isModelDropdownOpen && (
+                                     <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[#1a1a1a] border border-white/10 max-h-48 overflow-y-auto custom-scrollbar flex flex-col">
+                                         {(modelsConfig[genMode] || []).map(m => (
+                                             <button
+                                                 key={m}
+                                                 type="button"
+                                                 onClick={() => {
+                                                     setModelVersion(m);
+                                                     setIsModelDropdownOpen(false);
+                                                 }}
+                                                 className={`w-full flex items-center justify-between p-2 text-left text-white text-[11px] lg:text-xs hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent ${current.fontClass} ${m === modelVersion ? 'bg-white/5 font-bold text-green-400' : ''}`}
+                                             >
+                                                 <span>{m}</span>
+                                                 <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
+                                                     1 <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                 </span>
+                                             </button>
+                                         ))}
+                                     </div>
+                                 )}
+                             </div>
+
                             {/* Advanced Settings */}
                             <div className={`flex flex-col gap-3 bg-white/5 border border-white/10 p-4 overflow-y-auto custom-scrollbar pr-1 ${isAdvancedOpen ? 'flex-1' : 'shrink-0'}`}>
                                 <button
@@ -863,31 +920,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
                                 {isAdvancedOpen && (
                                     <div className="flex flex-col gap-4 animate-in fade-in duration-200 pt-1">
-                                        {/* Model Version Dropdown */}
-                                        <div className="flex flex-col gap-2">
-                                            <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
-                                                {current.generate.modelVersion}
-                                            </span>
-                                            <select
-                                                value={modelVersion}
-                                                onChange={(e) => setModelVersion(e.target.value)}
-                                                disabled={modelVersion === 'unknown' || !modelVersion}
-                                                className={`bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors cursor-pointer ${current.fontClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                                            >
-                                                {(modelsConfig[genMode] || []).length === 0 ? (
-                                                    <option value="unknown" className="bg-[#2a2a2a] text-white">
-                                                        {current.generate.loadingModels}
-                                                    </option>
-                                                ) : (
-                                                    (modelsConfig[genMode] || []).map(m => (
-                                                        <option key={m} value={m} className="bg-[#2a2a2a] text-white">{m}</option>
-                                                    ))
-                                                )}
-                                            </select>
-                                        </div>
-
                                         {/* Advanced Settings: Seed & Steps */}
-                                        <div className="flex flex-col gap-4 border-t border-white/10 pt-3">
+                                        <div className="flex flex-col gap-4">
                                             <div className="flex flex-col gap-2">
                                                 <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
                                                     {current.generate.inferenceSteps}
@@ -1011,55 +1045,42 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                     </div>
                                 )}
 
-                                {/* Quota Display */}
-                                {unlimitedQuota ? (
-                                    <div className={`text-[10px] lg:text-xs flex text-[#a6df7a] items-center gap-1.5 font-bold ${current.fontClass} -mb-1`}>
-                                        <Icon icon="pixelarticons:gift" className="text-yellow-400 animate-bounce" />
-                                        <span>{current.lang === 'zh-hans' ? '限时活动，生成不消耗额度' : 'Limited-time event, free generation'}</span>
-                                    </div>
-                                ) : (
-                                    !isPro && quota && (
-                                        <div className={`text-[10px] lg:text-xs flex text-[#a6df7a] items-center gap-1.5 opacity-60 ${current.fontClass} -mb-1`}>
-                                            <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
-                                            <span>{current.generate.remainingQuota}{quota.remaining} / {quota.limit}</span>
-                                        </div>
-                                    )
-                                )}
-
                                 <button
-                                    disabled={
-                                        isGenerating ||
-                                        modelVersion === 'unknown' ||
-                                        !modelVersion ||
-                                        (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
-                                        (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
-                                        (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
-                                    }
-                                    onClick={handleGenerate}
-                                    className={`py-3 lg:py-4 bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-gray-700 text-white border-2 border-black cursor-pointer transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass}`}
-                                >
-                                    {isGenerating ? (
-                                        <span key="generating" className="flex items-center justify-center gap-2">
-                                            <Icon icon="pixelarticons:reload" className="animate-spin" />
-                                            {current.generate.btnGenerating}
-                                        </span>
-                                    ) : (modelVersion === 'unknown' || !modelVersion) ? (
-                                        <span key="loading-model" className="flex items-center justify-center gap-2">
-                                            <Icon icon="pixelarticons:reload" className="animate-spin" />
-                                            {current.generate.btnLoadingModel}
-                                        </span>
-                                    ) : ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)) ? (
-                                        <span key="disabled" className="flex items-center justify-center gap-2 opacity-50">
-                                            <Icon icon="pixelarticons:close" />
-                                            {current.monitor.temporarilyUnavailable}
-                                        </span>
-                                    ) : (
-                                        <span key="start" className="flex items-center justify-center gap-2">
-                                            <Icon icon="pixelarticons:zap" />
-                                            {current.generate.btnStart}
-                                        </span>
-                                    )}
-                                </button>
+                                     disabled={
+                                         isGenerating ||
+                                         modelVersion === 'unknown' ||
+                                         !modelVersion ||
+                                         (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
+                                         (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
+                                         (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
+                                     }
+                                     onClick={handleGenerate}
+                                     className={`py-3 lg:py-4 bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-gray-700 text-white border-2 border-black cursor-pointer transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass}`}
+                                 >
+                                     {isGenerating ? (
+                                         <span key="generating" className="flex items-center justify-center gap-2">
+                                             <Icon icon="pixelarticons:reload" className="animate-spin" />
+                                             {current.generate.btnGenerating}
+                                         </span>
+                                     ) : (modelVersion === 'unknown' || !modelVersion) ? (
+                                         <span key="loading-model" className="flex items-center justify-center gap-2">
+                                             <Icon icon="pixelarticons:reload" className="animate-spin" />
+                                             {current.generate.btnLoadingModel}
+                                         </span>
+                                     ) : ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)) ? (
+                                         <span key="disabled" className="flex items-center justify-center gap-2 opacity-50">
+                                             <Icon icon="pixelarticons:close" />
+                                             {current.monitor.temporarilyUnavailable}
+                                         </span>
+                                     ) : (
+                                         <span key="start" className="flex items-center justify-center gap-1.5">
+                                             <span className="flex items-center gap-0.5 text-white font-mono">
+                                                 1 <Icon icon="pixelarticons:zap" className="text-white" />
+                                             </span>
+                                             <span>{current.generate.btnStart}</span>
+                                         </span>
+                                     )}
+                                 </button>
                             </div>
                         </div>
 

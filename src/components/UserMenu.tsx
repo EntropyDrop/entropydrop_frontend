@@ -35,6 +35,7 @@ interface UserInfo {
     pro_level: string
     paypal_subscription_status?: string
     minecraft_skin_url?: string | null
+    credits?: number
 }
 
 interface GoogleCredentialResponse {
@@ -331,6 +332,13 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         <div className="relative pointer-events-auto flex items-center gap-2" ref={menuRef}>
             {user ? (
                 <div className="flex items-center h-10 bg-black/40 border border-white/10 shrink-0">
+                    <button
+                        onClick={() => navigate('/credits')}
+                        className={`flex items-center gap-1 px-2.5 border-r border-white/10 h-full text-[10px] sm:text-xs text-[#a6df7a] hover:bg-white/5 transition-colors ${current.fontClass} select-none cursor-pointer border-none bg-transparent`}
+                    >
+                        <Icon icon="pixelarticons:zap" className="text-[#a6df7a] text-sm sm:text-base shrink-0" />
+                        <span>{user.credits ?? 0}</span>
+                    </button>
                     <div className="relative shrink-0" ref={notifRef}>
                         <button
                             onClick={handleToggleNotif}
@@ -367,7 +375,9 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                 key={n.id}
                                                 onClick={async () => {
                                                     setIsNotifOpen(false);
-                                                    if (n.postId) {
+                                                    if (n.type === 'daily_login' || n.type === 'monthly_login') {
+                                                        navigate('/credits');
+                                                    } else if (n.postId) {
                                                         navigate(`/figure?postId=${n.postId}`);
                                                     }
                                                     // Optimistically mark as read
@@ -397,12 +407,24 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                 />
                                                 <div className="flex-1 flex flex-col gap-0.5 min-w-0">
                                                     <p className="text-[11px] text-white/90 leading-tight m-0 break-words">
-                                                        <strong className="text-white">@{n.senderName}</strong>{' '}
-                                                        {getNotificationActionLabel(current, n.type)}
-                                                        {n.postId && (
-                                                            <span className={`text-white/50 italic block truncate mt-0.5 text-[10px] ${current.fontClass}`}>
-                                                                "{n.postTitle}"
+                                                        {n.type === 'daily_login' || n.type === 'monthly_login' ? (
+                                                            <span>
+                                                                {n.type === 'daily_login'
+                                                                    ? (current.lang === 'zh-hans' ? '每日登录奖励已到账！' : 'Daily login reward received!')
+                                                                    : (current.lang === 'zh-hans' ? '每月登录奖励已到账！' : 'Monthly login reward received!')
+                                                                }
+                                                                <span className="text-[#a6df7a] font-bold"> +{n.postTitle} Credits</span>
                                                             </span>
+                                                        ) : (
+                                                            <>
+                                                                <strong className="text-white">@{n.senderName}</strong>{' '}
+                                                                {getNotificationActionLabel(current, n.type)}
+                                                                {n.postId && (
+                                                                    <span className={`text-white/50 italic block truncate mt-0.5 text-[10px] ${current.fontClass}`}>
+                                                                        "{n.postTitle}"
+                                                                    </span>
+                                                                )}
+                                                            </>
                                                         )}
                                                     </p>
                                                     <span className={`text-[9px] text-white/30 mt-0.5 ${current.fontClass}`}>{n.createdAt}</span>
