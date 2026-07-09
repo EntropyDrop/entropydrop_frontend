@@ -74,7 +74,7 @@ export function ArticlePage({ current }: ArticlePageProps) {
             ) : (
                 <article className={`prose prose-invert max-w-none ${current.fontClass}`}>
                     <Suspense fallback={<div className="text-white/40 text-sm font-mono">RENDERING_ARTICLE...</div>}>
-                        <ArticleMarkdown content={content} />
+                        <ArticleMarkdown content={content} allowRawHtml />
                     </Suspense>
                 </article>
             )}

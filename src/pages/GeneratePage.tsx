@@ -869,7 +869,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                      <div className="flex items-center gap-2">
                                          {modelVersion !== 'unknown' && modelVersion && (
                                              <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
-                                                 1 <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                 3 <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
                                              </span>
                                          )}
                                          <Icon
@@ -893,7 +893,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                              >
                                                  <span>{m}</span>
                                                  <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
-                                                     1 <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                     3 <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
                                                  </span>
                                              </button>
                                          ))}
@@ -1075,7 +1075,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                      ) : (
                                          <span key="start" className="flex items-center justify-center gap-1.5">
                                              <span className="flex items-center gap-0.5 text-white font-mono">
-                                                 1 <Icon icon="pixelarticons:zap" className="text-white" />
+                                                 3 <Icon icon="pixelarticons:zap" className="text-white" />
                                              </span>
                                              <span>{current.generate.btnStart}</span>
                                          </span>

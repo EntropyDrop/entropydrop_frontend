@@ -5,6 +5,7 @@ import rehypeRaw from 'rehype-raw'
 
 interface ArticleMarkdownProps {
     content: string
+    allowRawHtml?: boolean
 }
 
 type MarkdownElementProps = {
@@ -24,7 +25,7 @@ function stripNode<T extends MarkdownElementProps>(props: T): Omit<T, 'node'> {
     return rest
 }
 
-export function ArticleMarkdown({ content }: ArticleMarkdownProps) {
+export function ArticleMarkdown({ content, allowRawHtml = false }: ArticleMarkdownProps) {
     return (
         <ReactMarkdown
             components={{
@@ -137,7 +138,7 @@ export function ArticleMarkdown({ content }: ArticleMarkdownProps) {
                 tr: (props) => <tr className="hover:bg-white/[0.02] transition-colors" {...stripNode(props)} />,
             }}
             remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeRaw]}
+            rehypePlugins={allowRawHtml ? [rehypeRaw] : []}
         >
             {content}
         </ReactMarkdown>
