@@ -375,7 +375,7 @@ export default {
             pro_plus: {
                 title: 'Pro-Plus',
                 price: '8',
-                quota: '每月自动获得 60 Credit 额度',
+                quota: '每月额外获得 60 Credit 额度',
                 collections: '支持创建私有收藏夹',
                 private: '1,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
@@ -385,7 +385,7 @@ export default {
             pro_max: {
                 title: 'Pro-Max',
                 price: '20',
-                quota: '每月自动获得 180 Credit 额度',
+                quota: '每月额外获得 180 Credit 额度',
                 collections: '支持创建私有收藏夹',
                 private: '5,000 个私有皮肤上限',
                 priority: '高优先级生成队列',

@@ -375,7 +375,7 @@ export default {
             pro_plus: {
                 title: 'Pro-Plus',
                 price: '8',
-                quota: 'Get 60 credits monthly.',
+                quota: 'Get extra 60 credits monthly.',
                 collections: 'Support private collections',
                 private: '1,000 private skins limit',
                 priority: 'High priority queue',
@@ -385,7 +385,7 @@ export default {
             pro_max: {
                 title: 'Pro-Max',
                 price: '20',
-                quota: 'Get 180 credits monthly.',
+                quota: 'Get extra 180 credits monthly.',
                 collections: 'Support private collections',
                 private: '5,000 private skins limit',
                 priority: 'High priority queue',
