@@ -375,7 +375,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                 key={n.id}
                                                 onClick={async () => {
                                                     setIsNotifOpen(false);
-                                                    if (n.type === 'daily_login' || n.type === 'monthly_login' || n.type === 'subscription_grant') {
+                                                    if (n.type === 'daily_login' || n.type === 'monthly_login' || n.type === 'subscription_grant' || n.type === 'system_gift') {
                                                         navigate('/credits');
                                                     } else if (n.postId) {
                                                         navigate(`/figure?postId=${n.postId}`);
@@ -407,15 +407,17 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                 />
                                                 <div className="flex-1 flex flex-col gap-0.5 min-w-0">
                                                     <p className="text-[11px] text-white/90 leading-tight m-0 break-words">
-                                                        {n.type === 'daily_login' || n.type === 'monthly_login' || n.type === 'subscription_grant' ? (
+                                                        {n.type === 'daily_login' || n.type === 'monthly_login' || n.type === 'subscription_grant' || n.type === 'system_gift' ? (
                                                             <span>
                                                                 {n.type === 'daily_login'
                                                                     ? (current.lang === 'zh-hans' ? '每日登录奖励已到账！' : 'Daily login reward received!')
                                                                     : n.type === 'monthly_login'
                                                                     ? (current.lang === 'zh-hans' ? '每月登录奖励已到账！' : 'Monthly login reward received!')
-                                                                    : (current.lang === 'zh-hans' ? '订阅会员奖励已到账！' : 'Pro subscription credits received!')
+                                                                    : n.type === 'subscription_grant'
+                                                                    ? (current.lang === 'zh-hans' ? '订阅会员奖励已到账！' : 'Pro subscription credits received!')
+                                                                    : (current.lang === 'zh-hans' ? `系统赠送：${(n.postTitle || '').split('|')[1] || ''}` : `System Gift: ${(n.postTitle || '').split('|')[1] || ''}`)
                                                                 }
-                                                                <span className="text-[#a6df7a] font-bold"> +{n.postTitle} Credits</span>
+                                                                <span className="text-[#a6df7a] font-bold"> +{n.type === 'system_gift' ? (n.postTitle || '').split('|')[0] : n.postTitle} Credits</span>
                                                             </span>
                                                         ) : (
                                                             <>
