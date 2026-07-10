@@ -196,6 +196,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 setIsTextToSkinEnabled(data.text_to_skin_enabled !== false)
                 setIsImageToSkinEnabled(data.image_to_skin_enabled !== false)
                 setIsImageEditToSkinEnabled(data.image_edit_to_skin_enabled !== false)
+                window.dispatchEvent(new Event('user-updated'))
             }
         } catch (e) {
             console.error('Failed to fetch user status', e)
