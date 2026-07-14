@@ -914,7 +914,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     );
 }
 
-export function MC({ textureUrl, texture, mode = 'voxel', action = 'idle', visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, printMode = false, onPaint, onPaintEnd, onHover, onHoverEnd }: { textureUrl?: string, texture?: THREE.Texture, mode?: 'voxel' | 'plane', action?: 'idle' | 'walking' | 'dance', visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onPaintEnd?: () => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void }) {
+export function MC({ textureUrl, texture, mode = 'voxel', action = 'idle', visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, printMode = false, onPaint, onPaintEnd, onHover, onHoverEnd, flatLighting = false }: { textureUrl?: string, texture?: THREE.Texture, mode?: 'voxel' | 'plane', action?: 'idle' | 'walking' | 'dance', visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onPaintEnd?: () => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void, flatLighting?: boolean }) {
     const isPaintingRef = useRef(false);
     const controlsRef = useRef<any>(null);
 
@@ -933,12 +933,17 @@ export function MC({ textureUrl, texture, mode = 'voxel', action = 'idle', visib
     return (
         <Canvas
             camera={{ position: [25, 25, 25], fov: 50 }}
-            shadows
+            shadows={!flatLighting}
+            flat={flatLighting}
         >
-            <ambientLight intensity={0.5} />
-            <pointLight position={[10, 10, 10]} />
+            {!flatLighting && (
+                <>
+                    <ambientLight intensity={0.5} />
+                    <pointLight position={[10, 10, 10]} />
+                </>
+            )}
             <Suspense fallback={null}>
-                <Stage environment={null} intensity={0.6} adjustCamera={false}>
+                <Stage environment={null} intensity={flatLighting ? 0 : 0.6} shadows={flatLighting ? false : "contact"} adjustCamera={false}>
                     <MinecraftCharacter
                         textureUrl={textureUrl}
                         texture={texture}

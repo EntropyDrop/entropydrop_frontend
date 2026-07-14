@@ -805,7 +805,7 @@ export function EditPage({ current }: EditPageProps) {
 
                         {!isEmptyModel && texture && (
                             <>
-                                <MC texture={texture} updateTrigger={updateTrigger} mode={previewMode} action={previewAction} visibleParts={visibleParts} showOverlay={showOverlay} onPaint={paintPixel} onPaintEnd={handlePaintEnd} onHover={handleHover} onHoverEnd={handleHoverEnd} />
+                                <MC texture={texture} updateTrigger={updateTrigger} mode={previewMode} action={previewAction} visibleParts={visibleParts} showOverlay={showOverlay} onPaint={paintPixel} onPaintEnd={handlePaintEnd} onHover={handleHover} onHoverEnd={handleHoverEnd} flatLighting={true} />
                                 {/* Floating Tools on Left-Center (Desktop) or Bottom-Left Above Palette (Mobile) */}
                                 <div className="absolute z-20 flex flex-col items-start gap-1.5 pointer-events-auto lg:left-4 lg:top-1/2 lg:-translate-y-1/2 max-lg:bottom-20 max-lg:left-4">
                                     <button
