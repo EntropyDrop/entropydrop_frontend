@@ -1,7 +1,8 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { LoadingPlaceholder } from './components/LoadingPlaceholder'
+import { RouteLoadingSkeleton } from './components/RouteLoadingSkeleton'
 import { type LangKey, type LangData, loadLangData, SUPPORTED_LANGUAGES } from './constants/lang'
 
 // Lazy load pages
@@ -50,6 +51,37 @@ function LegacyOpenRedirect() {
   return <Navigate to={target} replace />
 }
 
+function RouteReadySignal({ children, onReady }: { children: ReactNode, onReady: () => void }) {
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(onReady)
+    return () => window.cancelAnimationFrame(frame)
+  }, [onReady])
+
+  return children
+}
+
+function RouteTransition({ children, current }: { children: ReactNode, current: LangData }) {
+  const [isRouteReady, setIsRouteReady] = useState(false)
+  const [minimumElapsed, setMinimumElapsed] = useState(false)
+  const markRouteReady = useCallback(() => setIsRouteReady(true), [])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setMinimumElapsed(true), 450)
+    return () => window.clearTimeout(timeout)
+  }, [])
+
+  return (
+    <>
+      <Suspense fallback={null}>
+        <RouteReadySignal onReady={markRouteReady}>
+          {children}
+        </RouteReadySignal>
+      </Suspense>
+      {(!isRouteReady || !minimumElapsed) && <RouteLoadingSkeleton current={current} />}
+    </>
+  )
+}
+
 function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
   currentLangData: LangData,
   lang: LangKey,
@@ -61,7 +93,7 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
   const isPolicyPage = ['/skin/privacy', '/skin/tos'].includes(location.pathname)
 
   const routes = (
-    <Suspense fallback={<LoadingPlaceholder current={currentLangData} />}>
+    <RouteTransition key={location.pathname} current={currentLangData}>
       <Routes>
         <Route path="/" element={<Navigate to="/skin/" replace />} />
         <Route path="/skin/" element={<DiscoveryPage current={currentLangData} />} />
@@ -87,7 +119,7 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/figure" element={<FigureRedirect />} />
         <Route path="/figure/:category" element={<FigurePage current={currentLangData} />} />
       </Routes>
-    </Suspense>
+    </RouteTransition>
   )
 
   if (isPolicyPage) {

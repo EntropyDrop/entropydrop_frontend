@@ -178,7 +178,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
     }
   }
 
-  const executeGiftAll = async () => {
+  const executeActiveUserGift = async () => {
     if (giftAmount <= 0) {
       setDeleteMessage({
         type: 'error',
@@ -197,7 +197,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
     setGiftLoading(true)
     setShowGiftConfirmation(false)
     try {
-      const response = await apiFetch('/api/monitor/gift_all', {
+      const response = await apiFetch('/api/monitor/gift_active_users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1479,7 +1479,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
                 {isZh ? '取消' : 'Cancel'}
               </button>
               <button
-                onClick={executeGiftAll}
+                onClick={executeActiveUserGift}
                 disabled={giftLoading}
                 className="px-4 py-2 bg-purple-950/40 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 hover:border-purple-500 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95 flex items-center gap-1.5"
               >
