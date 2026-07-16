@@ -45,6 +45,7 @@ interface MonitorStats {
     date: string;
     total_users: number;
     total_pro: number;
+    active_users: number;
     gen_regular: number;
     gen_pro: number;
   }>;
@@ -205,11 +206,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
         })
       })
       if (response.ok) {
+        const data = await response.json()
         setDeleteMessage({
           type: 'success',
           text: isZh 
-            ? `成功赠送全员 ${giftAmount} Credits，备注: ${giftMessageInput.trim()}`
-            : `Successfully gifted ${giftAmount} credits to all users. Reason: ${giftMessageInput.trim()}`
+            ? `成功向 ${data.gifted_users} 位近 7 日活跃用户赠送 ${giftAmount} Credits，备注: ${giftMessageInput.trim()}`
+            : `Successfully gifted ${giftAmount} credits to ${data.gifted_users} seven-day active users. Reason: ${giftMessageInput.trim()}`
         })
         setGiftMessageInput('')
         fetchStats()
@@ -669,7 +671,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           </div>
 
-          {/* Gift Credits to All Users Panel */}
+          {/* Gift Credits to Seven-Day Active Users Panel */}
           <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="flex items-start gap-3.5 flex-1 w-full">
               <div className="w-10 h-10 border flex items-center justify-center text-xl bg-purple-500/10 border-purple-500/30 text-purple-400 shrink-0">
@@ -677,10 +679,10 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </div>
               <div className="flex flex-col gap-1.5 flex-1 min-w-0">
                 <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
-                  {isZh ? '全员 Credits 赠送 • 运营活动' : 'Gift Credits to All Users • Campaigns'}
+                  {isZh ? '7 日活跃用户 Credits 赠送 • 运营活动' : '7-Day Active User Credits • Campaigns'}
                 </h3>
                 <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
-                  {isZh ? '向所有注册用户赠送指定数量的 Credits，并发送系统通知。' : 'Gift a specific amount of credits and send a system notification to all users.'}
+                  {isZh ? '向近 7 个 UTC 自然日内至少登录一次的用户赠送 Credits，并发送系统通知。' : 'Gift credits and send a system notification to users who logged in during the last 7 UTC calendar days.'}
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2 mt-1 w-full max-w-2xl">
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -722,7 +724,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
                 ) : (
                   <Icon icon="pixelarticons:gift" className="text-sm" />
                 )}
-                {isZh ? '赠送' : 'GIFT ALL'}
+                {isZh ? '赠送' : 'GIFT ACTIVE'}
               </button>
             </div>
           </div>
@@ -886,6 +888,53 @@ export function MonitorPage({ current }: MonitorPageProps) {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+          </div>
+        </div>
+
+        {/* 7-day Daily Active Users Chart */}
+        <div className="bg-white/5 border border-white/10 p-4 flex flex-col gap-4 shrink-0 h-[250px]">
+          <h3 className={`text-white/60 text-sm m-0 flex items-center gap-2 ${current.fontClass}`}>
+            <Icon icon="pixelarticons:group" /> {isZh ? '每日活跃用户（近 7 天）' : 'Daily Active Users (7 Days)'}
+          </h3>
+          <div className="flex-1 min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={stats?.history || []}>
+                <defs>
+                  <linearGradient id="colorActiveUsers" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  stroke="#ffffff40"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  stroke="#ffffff40"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', fontSize: '10px' }}
+                  itemStyle={{ fontSize: '10px' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="active_users"
+                  name={isZh ? '活跃用户' : 'Active Users'}
+                  stroke="#22d3ee"
+                  fillOpacity={1}
+                  fill="url(#colorActiveUsers)"
+                  strokeWidth={2}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
@@ -1387,7 +1436,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
         </div>
       )}
 
-      {/* Gift All Confirmation Modal */}
+      {/* Seven-Day Active User Gift Confirmation Modal */}
       {showGiftConfirmation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
           <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-purple-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
@@ -1397,24 +1446,24 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </div>
               <div className="flex flex-col gap-1">
                 <h4 className={`text-white text-base m-0 ${current.fontClass}`}>
-                  {isZh ? '确认要赠送全员 Credits 吗？' : 'Confirm Bulk Gift'}
+                  {isZh ? '确认向 7 日活跃用户赠送 Credits 吗？' : 'Confirm Active User Gift'}
                 </h4>
                 <p className="text-white/60 text-xs leading-relaxed mt-1">
                   {isZh ? (
                     <>
-                      您正在请求向<b>所有注册用户</b>赠送 <strong>{giftAmount}</strong> Credits。
+                      您正在请求向<b>近 7 个 UTC 自然日内至少登录一次的用户</b>赠送 <strong>{giftAmount}</strong> Credits。
                       <br />
                       备注说明: <span className="text-purple-400 font-bold font-mono">"{giftMessageInput.trim()}"</span>
                       <br />
-                      此操作将立即修改所有用户的额度余额，并发送系统通知，无法批量撤销！
+                      此操作将立即修改符合条件用户的额度余额，并发送系统通知，无法批量撤销！
                     </>
                   ) : (
                     <>
-                      You are about to gift <strong>{giftAmount}</strong> credits to <b>all registered users</b>.
+                      You are about to gift <strong>{giftAmount}</strong> credits to users who logged in during the <b>last 7 UTC calendar days</b>.
                       <br />
                       Message: <span className="text-purple-400 font-bold font-mono">"{giftMessageInput.trim()}"</span>
                       <br />
-                      This will modify the credit balance for all users and send system notifications immediately. It cannot be bulk-reverted!
+                      This will modify matching users' credit balances and send system notifications immediately. It cannot be bulk-reverted!
                     </>
                   )}
                 </p>
