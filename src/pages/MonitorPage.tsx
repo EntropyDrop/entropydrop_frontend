@@ -98,6 +98,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [actionLoading, setActionLoading] = useState(false)
   const [dailyFreeCredits, setDailyFreeCredits] = useState<number>(6)
   const [freeCreditsLoading, setFreeCreditsLoading] = useState(false)
+  const [generationCreditCost, setGenerationCreditCost] = useState<number>(1)
+  const [generationCreditCostLoading, setGenerationCreditCostLoading] = useState(false)
   const [isTextToSkinEnabled, setIsTextToSkinEnabled] = useState(true)
   const [textToSkinSettingLoading, setTextToSkinSettingLoading] = useState(false)
   const [isImageToSkinEnabled, setIsImageToSkinEnabled] = useState(true)
@@ -175,6 +177,50 @@ export function MonitorPage({ current }: MonitorPageProps) {
       })
     } finally {
       setFreeCreditsLoading(false)
+    }
+  }
+
+  const fetchGenerationCreditCost = async () => {
+    try {
+      const response = await apiFetch('/api/monitor/generation_credit_cost')
+      if (response.ok) {
+        const data = await response.json()
+        setGenerationCreditCost(data.credits)
+      }
+    } catch (e) {
+      console.error('Failed to fetch generation credit cost', e)
+    }
+  }
+
+  const updateGenerationCreditCost = async (value: number) => {
+    setGenerationCreditCostLoading(true)
+    try {
+      const response = await apiFetch('/api/monitor/generation_credit_cost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credits: value })
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setGenerationCreditCost(data.credits)
+        setDeleteMessage({
+          type: 'success',
+          text: isZh ? `成功更新单次生成消耗为 ${data.credits} Credits。` : `Generation cost updated to ${data.credits} credits.`
+        })
+      } else {
+        const errData = await response.json().catch(() => ({}))
+        setDeleteMessage({
+          type: 'error',
+          text: errData.detail || current.monitor.operationFailed
+        })
+      }
+    } catch (e) {
+      setDeleteMessage({
+        type: 'error',
+        text: current.monitor.networkError
+      })
+    } finally {
+      setGenerationCreditCostLoading(false)
     }
   }
 
@@ -298,6 +344,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
     fetchStats()
     fetchModesStatus()
     fetchDailyFreeCredits()
+    fetchGenerationCreditCost()
     const timer = setInterval(fetchStats, 3000)
     return () => clearInterval(timer)
   }, [])
@@ -661,6 +708,49 @@ export function MonitorPage({ current }: MonitorPageProps) {
                   className="px-3 py-1 bg-green-500/20 border border-green-500/40 text-green-400 hover:bg-green-500/30 hover:border-green-500/50 transition-colors text-xs font-bold font-mono tracking-wide flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {freeCreditsLoading ? (
+                    <Icon icon="pixelarticons:reload" className="animate-spin text-sm" />
+                  ) : (
+                    <Icon icon="pixelarticons:check" className="text-sm" />
+                  )}
+                  {isZh ? '保存' : 'SAVE'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Generation Credit Cost Configuration Card */}
+          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 border flex items-center justify-center text-xl transition-all bg-orange-500/10 border-orange-500/30 text-orange-400">
+                <Icon icon="pixelarticons:zap" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {isZh ? '单次生成消耗 • Credits 控制' : 'Generation Cost • Credits Control'}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {isZh ? '设置 Generate 页面所有模型每次生成消耗的 Credits。设置为 0 时生成免费。' : 'Set the credit cost for every model on Generate. Set to 0 for free generation.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min="0"
+                  max="1000"
+                  value={generationCreditCost}
+                  onChange={(e) => setGenerationCreditCost(parseInt(e.target.value) || 0)}
+                  className="w-16 px-2.5 py-1 text-center bg-black/40 border border-white/20 text-white font-mono text-sm focus:outline-none focus:border-orange-500/50"
+                  disabled={generationCreditCostLoading}
+                />
+                <button
+                  onClick={() => updateGenerationCreditCost(generationCreditCost)}
+                  disabled={generationCreditCostLoading}
+                  className="px-3 py-1 bg-orange-500/20 border border-orange-500/40 text-orange-400 hover:bg-orange-500/30 hover:border-orange-500/50 transition-colors text-xs font-bold font-mono tracking-wide flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {generationCreditCostLoading ? (
                     <Icon icon="pixelarticons:reload" className="animate-spin text-sm" />
                   ) : (
                     <Icon icon="pixelarticons:check" className="text-sm" />

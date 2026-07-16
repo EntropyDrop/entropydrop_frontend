@@ -29,6 +29,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [isGenerating, setIsGenerating] = useState(false)
     const [isPrivate, setIsPrivate] = useState(false)
     const [isPro, setIsPro] = useState(false)
+    const [generationCreditCost, setGenerationCreditCost] = useState(1)
     // showResult state removed
     const [prompt, setPrompt] = useState('')
     const [imageFile, setImageFile] = useState<File | null>(null)
@@ -179,11 +180,24 @@ export function GeneratePage({ current }: GeneratePageProps) {
         }
     }
 
+    const fetchGenerationCreditCost = async () => {
+        try {
+            const response = await apiFetch('/api/generation_credit_cost')
+            if (response.ok) {
+                const data = await response.json()
+                setGenerationCreditCost(data.credits)
+            }
+        } catch (e) {
+            console.error('Failed to fetch generation credit cost', e)
+        }
+    }
+
 
     useEffect(() => {
         if (localStorage.getItem('token')) {
             fetchModels()
             fetchUserStatus()
+            fetchGenerationCreditCost()
         }
     }, [])
 
@@ -870,7 +884,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                      <div className="flex items-center gap-2">
                                          {modelVersion !== 'unknown' && modelVersion && (
                                              <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
-                                                 3 <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                 {generationCreditCost} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
                                              </span>
                                          )}
                                          <Icon
@@ -894,7 +908,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                              >
                                                  <span>{m}</span>
                                                  <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
-                                                     3 <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                     {generationCreditCost} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
                                                  </span>
                                              </button>
                                          ))}
@@ -1076,7 +1090,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                      ) : (
                                          <span key="start" className="flex items-center justify-center gap-1.5">
                                              <span className="flex items-center gap-0.5 text-white font-mono">
-                                                 3 <Icon icon="pixelarticons:zap" className="text-white" />
+                                                 {generationCreditCost} <Icon icon="pixelarticons:zap" className="text-white" />
                                              </span>
                                              <span>{current.generate.btnStart}</span>
                                          </span>
