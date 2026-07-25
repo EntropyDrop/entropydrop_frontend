@@ -354,6 +354,8 @@ export default {
         supportText: '订单疑问：',
         successMessage: '订阅成功！Pro 会员已激活。',
         upgrade: '升级',
+        buyCreditsTip: '可以根据需要直接购买 Credits 点数',
+        buyCreditsBtn: '直接购买 Credits',
         plansData: {
             free: '免费版',
             pro_plus: 'Pro-Plus 订阅',
@@ -392,6 +394,32 @@ export default {
                 commercial: '生成的皮肤支持商用'
             }
         }
+    },
+    credits: {
+        pageTitle: 'Credit 额度详情',
+        pageDesc: '查看您的 Credit 额度增加和消费记录。',
+        balanceLabel: '当前余额',
+        topUpTitle: '购买 Credits',
+        creditsFor: '{credits} Credits',
+        paypalButton: 'PayPal 支付',
+        waitingPayment: '等待支付完成...',
+        purchaseSuccess: '充值成功！',
+        purchaseSuccessMsg: '{credits} Credits 已添加到您的账户。',
+        tableTime: '时间',
+        tableType: '类型',
+        tableSource: '来源 / 详情',
+        tableAmount: '变动额度',
+        loading: '正在读取记录...',
+        empty: '暂无额度变动记录',
+        prevPage: '上一页',
+        nextPage: '下一页',
+        pageInfo: '第 {page} 页 / 共 {total} 页',
+        actionDailyLogin: '每日登录奖励',
+        actionMonthlyLogin: '每月登录奖励',
+        actionGeneration: '皮肤生成',
+        actionRefund: '失败退款',
+        actionSubscriptionGrant: '订阅赠送',
+        actionPurchase: '充值购买',
     },
     modal: {
         payOrder: '支付订单',

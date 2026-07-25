@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
 import { apiFetch } from '../utils/api'
-import { PayModal } from '../components/PayModal';
 
 interface ProPageProps {
     current: LangData
@@ -27,44 +26,86 @@ declare global {
 export function ProPage({ current }: ProPageProps) {
     const navigate = useNavigate();
     const [userProfile, setUserProfile] = useState<any>(null);
-    const [isCreatingOrder, _] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
-    const [payModalConfig, setPayModalConfig] = useState<{
-        isOpen: boolean;
-        orderId: string | null;
-        totalPrice: number | null;
-        tierKey: string | null;
-        isUpgrade?: boolean;
-        existingSubscriptionId?: string;
-    }>({
-        isOpen: false,
-        orderId: null,
-        totalPrice: null,
-        tierKey: null,
-        isUpgrade: false,
-        existingSubscriptionId: undefined
-    });
 
     const plans: Plan[] = [
         { key: 'pro_plus', duration: current.pro.plansData.pro_plus, price: 8, popular: true },
         { key: 'pro_max', duration: current.pro.plansData.pro_max, price: 20 }
     ];
 
-    const handleSubscribe = async (tier: any, isUpgrade: boolean = false) => {
+    const handleSubscribe = async (tier: any, _isUpgrade: boolean = false) => {
         const token = localStorage.getItem('token');
         if (!token) {
             alert(current.common.authRequired);
             return;
         }
 
-        setPayModalConfig({
-            isOpen: true,
-            orderId: null,
-            totalPrice: tier.price,
-            tierKey: tier.key,
-            isUpgrade,
-            existingSubscriptionId: isUpgrade ? userProfile?.paypal_subscription_id : undefined
-        });
+        setIsProcessing(true);
+        try {
+            const returnUrl = window.location.origin + '/credits?payment_redirect=1';
+            const res = await apiFetch('/api/orders/subscription/create', {
+                method: 'POST',
+                body: JSON.stringify({
+                    tier: tier.key,
+                    return_url: returnUrl
+                })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Failed to create subscription');
+            }
+
+            const data = await res.json(); // { approval_url, subscription_id }
+
+            const width = 600;
+            const height = 700;
+            const left = window.screenX + (window.innerWidth - width) / 2;
+            const top = window.screenY + (window.innerHeight - height) / 2;
+            const popup = window.open(
+                data.approval_url,
+                'paypal_checkout',
+                `width=${width},height=${height},left=${left},top=${top}`
+            );
+
+            if (!popup) {
+                alert('Please allow pop-ups to complete payment');
+                setIsProcessing(false);
+                return;
+            }
+
+            const subscriptionId = data.subscription_id;
+            const pollTimer = setInterval(async () => {
+                if (popup.closed) {
+                    clearInterval(pollTimer);
+                    try {
+                        const activateRes = await apiFetch('/api/orders/subscription/activate', {
+                            method: 'POST',
+                            body: JSON.stringify({ paypal_order_id: subscriptionId })
+                        });
+
+                        if (activateRes.ok) {
+                            window.dispatchEvent(new Event('user-updated'));
+                            alert(current.pro.successMessage);
+                            fetchUserProfile();
+                            navigate('/skin/');
+                        } else {
+                            const err = await activateRes.json();
+                            alert(err.detail || 'Activation Failed');
+                        }
+                    } catch (e) {
+                        alert('Payment Confirmation Failed');
+                    } finally {
+                        setIsProcessing(false);
+                    }
+                }
+            }, 1000);
+
+        } catch (e: any) {
+            alert(e.message || 'Payment initialization failed');
+            setIsProcessing(false);
+        }
     };
 
     const fetchUserProfile = async () => {
@@ -129,6 +170,7 @@ export function ProPage({ current }: ProPageProps) {
                         {current.pro.benefits}
                     </p>
                 </div>
+
 
                 {/* Tiers Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -251,43 +293,73 @@ export function ProPage({ current }: ProPageProps) {
                                     </div>
                                 </div>
 
-                                {tier.key === 'free' ? (
-                                    <></>
-                                ) : (
-                                    <button
-                                        onClick={() => {
-                                            if (tier.isCurrent) {
-                                                handleCancelSubscription();
-                                            } else {
-                                                // Find the plan data to pass it directly
-                                                const planData = plans.find(p => p.key === tier.key) || { key: tier.key, price: tier.key === 'pro_max' ? 20 : 8 };
-                                                handleSubscribe(planData, isUpgrade);
-                                            }
-                                        }}
-                                        disabled={isCancelling || isCreatingOrder || isLowerTier}
-                                        className={`w-full py-3 font-bold transition-all flex items-center justify-center gap-2 text-sm ${tier.isCurrent
-                                            ? 'bg-red-500 hover:bg-red-600 text-black border border-red-400'
-                                            : isLowerTier
-                                                ? 'bg-white/5 text-white/30 cursor-not-allowed border border-white/10'
-                                                : `${tier.styles.button} border border-black/10`
-                                            } ${current.fontClass}`}
-                                    >
-                                        {tier.isCurrent ? (
-                                            <>
-                                                <Icon icon="pixelarticons:close" className={isCancelling ? 'animate-spin' : ''} />
-                                                {current.pro.cancel}
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Icon icon="pixelarticons:check" />
-                                                {isUpgrade ? current.pro.upgrade : current.pro.subscribe}
-                                            </>
-                                        )}
-                                    </button>
-                                )}
+                                 {tier.key === 'free' ? (
+                                     <></>
+                                 ) : (
+                                     <div className="flex flex-col gap-1.5 mt-auto">
+                                         <button
+                                             onClick={() => {
+                                                 if (tier.isCurrent) {
+                                                     handleCancelSubscription();
+                                                 } else {
+                                                     // Find the plan data to pass it directly
+                                                     const planData = plans.find(p => p.key === tier.key) || { key: tier.key, price: tier.key === 'pro_max' ? 20 : 8 };
+                                                     handleSubscribe(planData, isUpgrade);
+                                                 }
+                                             }}
+                                             disabled={isCancelling || isProcessing || isLowerTier}
+                                             className={`w-full py-3 font-bold transition-all flex items-center justify-center gap-2 text-sm ${tier.isCurrent
+                                                 ? 'bg-red-500 hover:bg-red-600 text-black border border-red-400'
+                                                 : isLowerTier
+                                                     ? 'bg-white/5 text-white/30 cursor-not-allowed border border-white/10'
+                                                     : `${tier.styles.button} border border-black/10`
+                                                 } ${current.fontClass}`}
+                                         >
+                                             {tier.isCurrent ? (
+                                                 <>
+                                                     <Icon icon="pixelarticons:close" className={isCancelling ? 'animate-spin' : ''} />
+                                                     {current.pro.cancel}
+                                                 </>
+                                             ) : (
+                                                 <>
+                                                     {isProcessing ? (
+                                                         <Icon icon="pixelarticons:reload" className="animate-spin" />
+                                                     ) : (
+                                                         <Icon icon="pixelarticons:check" />
+                                                     )}
+                                                     {isUpgrade ? current.pro.upgrade : current.pro.subscribe}
+                                                 </>
+                                             )}
+                                         </button>
+                                         {!tier.isCurrent && !isLowerTier && (
+                                             <div className="flex items-center justify-end gap-1 px-1.5 py-0.5 opacity-40 hover:opacity-75 transition-opacity text-[10px] select-none font-mono">
+                                                 <span>via</span>
+                                                 <Icon icon="fa6-brands:paypal" className="text-[#0079C1] text-xs shrink-0" />
+                                                 <span className="font-bold">PayPal</span>
+                                             </div>
+                                         )}
+                                     </div>
+                                 )}
                             </div>
                         );
                     })}
+                </div>
+
+                {/* Credits Redirect Tip Banner */}
+                <div className="border border-[#a6df7a]/20 bg-[#a6df7a]/5 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mt-0 mb-6 relative overflow-hidden">
+                    <div className="flex items-center gap-3">
+                        <Icon icon="pixelarticons:zap" className="text-xl text-[#a6df7a] animate-pulse shrink-0" />
+                        <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>
+                            {current.pro.buyCreditsTip}
+                        </span>
+                    </div>
+                    <button
+                        onClick={() => navigate('/credits')}
+                        className={`flex items-center gap-1.5 border border-[#a6df7a]/40 bg-[#a6df7a]/12 hover:bg-[#a6df7a]/20 px-4 py-2 text-xs font-bold text-[#a6df7a] hover:text-[#a6df7a] hover:shadow-[0_0_12px_rgba(166,223,122,0.12)] cursor-pointer transition-all self-start sm:self-center shrink-0 ${current.fontClass}`}
+                    >
+                        <span>{current.pro.buyCreditsBtn}</span>
+                        <Icon icon="pixelarticons:arrow-right" className="text-xs" />
+                    </button>
                 </div>
 
                 {/* Footer Info */}
@@ -301,23 +373,6 @@ export function ProPage({ current }: ProPageProps) {
                     </div>
                 </div>
 
-                <PayModal
-                    isOpen={payModalConfig.isOpen}
-                    orderId={payModalConfig.orderId}
-                    totalPrice={payModalConfig.totalPrice}
-                    tierKey={payModalConfig.tierKey}
-                    current={current}
-                    isSubscription={true}
-                    isUpgrade={payModalConfig.isUpgrade}
-                    existingSubscriptionId={payModalConfig.existingSubscriptionId}
-                    userId={userProfile?.id}
-                    onClose={() => setPayModalConfig(prev => ({ ...prev, isOpen: false }))}
-                    onSuccess={() => {
-                        setPayModalConfig(prev => ({ ...prev, isOpen: false }));
-                        alert(current.pro.successMessage);
-                        navigate('/skin/');
-                    }}
-                />
         </PageContainer>
     );
 }

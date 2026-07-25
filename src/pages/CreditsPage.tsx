@@ -1,5 +1,5 @@
 import { PageContainer } from '../components/PageContainer';
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { motion } from 'framer-motion'
@@ -29,7 +29,15 @@ export function CreditsPage({ current }: CreditsPageProps) {
     const [pageSize] = useState(15)
     const [isLoading, setIsLoading] = useState(true)
 
-    // Load user profile & credits balance
+    const [preset, setPreset] = useState<number | null>(1) // preset amount, null=custom
+    const [customAmount, setCustomAmount] = useState(1)   // effective dollar amount
+    const [isProcessing, setIsProcessing] = useState(false)
+    const [purchaseSuccess, setPurchaseSuccess] = useState(false)
+
+    const customInputRef = useRef<HTMLInputElement>(null)
+
+    const c = current.credits
+
     const fetchUser = async () => {
         try {
             const res = await apiFetch('/api/users/me')
@@ -42,7 +50,6 @@ export function CreditsPage({ current }: CreditsPageProps) {
         }
     }
 
-    // Load credit logs
     const fetchHistory = async (p = page) => {
         setIsLoading(true)
         try {
@@ -60,9 +67,90 @@ export function CreditsPage({ current }: CreditsPageProps) {
     }
 
     useEffect(() => {
+        const params = new URLSearchParams(window.location.search)
+        if (params.get('payment_redirect') === '1') {
+            window.close()
+            return
+        }
+
         fetchUser()
         fetchHistory(page)
     }, [page])
+
+    const handlePay = async () => {
+        if (customAmount < 1 || isProcessing) return
+        setIsProcessing(true)
+        try {
+            const returnUrl = `${window.location.origin}/credits?payment_redirect=1`
+            const res = await apiFetch('/api/credits/purchase', {
+                method: 'POST',
+                body: JSON.stringify({
+                    amount: customAmount,
+                    return_url: returnUrl,
+                }),
+            })
+            if (!res.ok) {
+                const err = await res.json()
+                throw new Error(err.detail || 'Failed to create order')
+            }
+            const data = await res.json()
+
+            const width = 600
+            const height = 700
+            const left = window.screenX + (window.innerWidth - width) / 2
+            const top = window.screenY + (window.innerHeight - height) / 2
+            const popup = window.open(
+                data.approval_url,
+                'paypal_checkout',
+                `width=${width},height=${height},left=${left},top=${top}`,
+            )
+
+            if (!popup) {
+                alert('Please allow pop-ups to complete payment')
+                setIsProcessing(false)
+                return
+            }
+
+            const paypalOrderId = data.paypal_order_id
+            const pollTimer = setInterval(async () => {
+                if (popup.closed) {
+                    clearInterval(pollTimer)
+                    try {
+                        const captureRes = await apiFetch('/api/credits/capture', {
+                            method: 'POST',
+                            body: JSON.stringify({ paypal_order_id: paypalOrderId }),
+                        })
+                        if (captureRes.ok) {
+                            const result = await captureRes.json()
+                            setUser({ credits: result.new_balance })
+                            setPurchaseSuccess(true)
+                            setCustomAmount(0)
+                            fetchHistory(1)
+                            setTimeout(() => setPurchaseSuccess(false), 5000)
+                        } else {
+                            let errMsg = 'Payment confirmation failed'
+                            try {
+                                const err = await captureRes.json()
+                                errMsg = err.detail || errMsg
+                            } catch (parseErr) {
+                                // ignore JSON parse error
+                            }
+                            if (errMsg !== 'Payment not completed') {
+                                alert(errMsg)
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Capture after popup close failed', e)
+                    } finally {
+                        setIsProcessing(false)
+                    }
+                }
+            }, 500)
+        } catch (e: any) {
+            alert(e.message)
+            setIsProcessing(false)
+        }
+    }
 
     const getActionStyles = (amount: number) => {
         if (amount > 0) {
@@ -80,20 +168,20 @@ export function CreditsPage({ current }: CreditsPageProps) {
             border: 'border-red-400/20'
         }
     }
+
+    const actionLabels: Record<string, keyof typeof c> = {
+        daily_login: 'actionDailyLogin',
+        monthly_login: 'actionMonthlyLogin',
+        generation: 'actionGeneration',
+        refund: 'actionRefund',
+        subscription_grant: 'actionSubscriptionGrant',
+        purchase: 'actionPurchase',
+    }
+
     const formatActionName = (action: string) => {
-        if (current.lang === 'zh-hans') {
-            if (action === 'daily_login') return '每日登录奖励'
-            if (action === 'monthly_login') return '每月登录奖励'
-            if (action === 'generation') return '皮肤生成'
-            if (action === 'refund') return '失败退款'
-            return action
-        } else {
-            if (action === 'daily_login') return 'Daily Login'
-            if (action === 'monthly_login') return 'Monthly Login'
-            if (action === 'generation') return 'Generation'
-            if (action === 'refund') return 'Refund'
-            return action
-        }
+        const key = actionLabels[action]
+        if (key && key in c) return (c as any)[key] as string
+        return action
     }
 
     const totalPages = Math.ceil(total / pageSize)
@@ -109,20 +197,17 @@ export function CreditsPage({ current }: CreditsPageProps) {
                     <div className="flex items-center gap-3 text-[#a6df7a]">
                         <Icon icon="pixelarticons:zap" className="text-3xl animate-pulse" />
                         <h1 className="text-2xl sm:text-3xl font-bold">
-                            {current.lang === 'zh-hans' ? 'Credit 额度详情' : 'Credit Balance Details'}
+                            {c.pageTitle}
                         </h1>
                     </div>
                     <p className="text-white/60 text-sm max-w-xl">
-                        {current.lang === 'zh-hans' 
-                            ? '查看您的 Credit 额度增加和消费记录。额度用于生成独一无二的皮肤模型。' 
-                            : 'View your credit logs, including balance increases and generation consumption.'}
+                        {c.pageDesc}
                     </p>
                 </div>
 
-                {/* Balance Card */}
                 <div className="border border-white/10 bg-white/5 p-4 flex flex-col justify-between min-w-[200px] shrink-0">
                     <span className="text-[10px] text-white/40 uppercase tracking-wider">
-                        {current.lang === 'zh-hans' ? '当前余额' : 'Current Balance'}
+                        {c.balanceLabel}
                     </span>
                     <span className="text-3xl font-bold text-[#a6df7a] tabular-nums mt-1 flex items-center gap-2">
                         <Icon icon="pixelarticons:zap" className="text-2xl" />
@@ -131,26 +216,124 @@ export function CreditsPage({ current }: CreditsPageProps) {
                 </div>
             </div>
 
+            {/* Top-Up Section */}
+            <div className="border border-white/10 bg-white/5 p-4 mt-4">
+                <div className="flex items-center gap-2 mb-4">
+                    <Icon icon="pixelarticons:cart-plus" className="text-lg text-white/60" />
+                    <span className="text-sm font-bold text-white/80">{c.topUpTitle}</span>
+                </div>
+
+                {purchaseSuccess && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-center gap-2 border border-[#a6df7a]/30 bg-[#a6df7a]/10 p-3 mb-4 text-[#a6df7a] text-xs"
+                    >
+                        <Icon icon="pixelarticons:check" className="text-lg" />
+                        {c.purchaseSuccessMsg.replace('{credits}', '')}
+                    </motion.div>
+                )}
+
+                {/* Amount options */}
+                <div className="flex flex-wrap items-center gap-1.5 mb-4">
+                    {[1, 5, 10, 20].map((d) => {
+                        const active = preset === d
+                        return (
+                            <button
+                                key={d}
+                                onClick={() => { setPurchaseSuccess(false); setPreset(d); setCustomAmount(d) }}
+                                className={`relative flex flex-col items-center justify-center h-[58px] px-4 transition-all cursor-pointer border ${
+                                    active
+                                        ? 'border-[#a6df7a] bg-[#a6df7a]/12 text-[#a6df7a] shadow-[0_0_12px_rgba(166,223,122,0.12)]'
+                                        : 'border-white/10 bg-transparent text-white/45 hover:border-white/25 hover:text-white/70'
+                                }`}
+                            >
+                                <span className="text-lg font-bold leading-none font-pixel-hans">${d}</span>
+                                <span className="text-[9px] mt-0.5 opacity-60">+{d * 10} credits</span>
+                                {active && (
+                                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#a6df7a] shadow-[0_0_6px_rgba(166,223,122,0.6)]" />
+                                )}
+                            </button>
+                        )
+                    })}
+                    <div
+                        onClick={() => { setPurchaseSuccess(false); setPreset(null); if (preset !== null) { setCustomAmount(0) }; setTimeout(() => customInputRef.current?.focus(), 100) }}
+                        className={`relative flex flex-col items-center justify-center h-[58px] px-4 transition-all cursor-pointer border ${
+                            preset === null
+                                ? 'border-[#a6df7a] bg-[#a6df7a]/12 text-[#a6df7a] shadow-[0_0_12px_rgba(166,223,122,0.12)]'
+                                : 'border-white/10 bg-transparent text-white/45 hover:border-white/25 hover:text-white/70'
+                        }`}
+                    >
+                        <div className="flex items-center justify-center gap-0.5 leading-none">
+                            <span className="text-lg font-bold font-pixel-hans">$</span>
+                            <input
+                                ref={customInputRef}
+                                type="number"
+                                min={1}
+                                step={1}
+                                placeholder="?"
+                                value={preset === null ? (customAmount || '') : ''}
+                                onChange={(e) => {
+                                    const v = parseInt(e.target.value, 10)
+                                    if (v >= 1) { setPurchaseSuccess(false); setCustomAmount(v) }
+                                    else setCustomAmount(0)
+                                }}
+                                onFocus={() => { if (preset !== null) { setPreset(null); setCustomAmount(0) } }}
+                                className="bg-transparent w-8 text-center outline-none text-lg font-bold font-pixel-hans text-inherit placeholder:text-white/25 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none h-5 py-0"
+                            />
+                        </div>
+                        <span className="text-[9px] mt-0.5 opacity-60">
+                            +{preset === null && customAmount >= 1 ? (customAmount * 10) : '?'} credits
+                        </span>
+                        {preset === null && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#a6df7a] shadow-[0_0_6px_rgba(166,223,122,0.6)]" />
+                        )}
+                    </div>
+
+                    {/* Pay button */}
+                    {customAmount >= 1 && (
+                        <button
+                            onClick={handlePay}
+                            disabled={isProcessing}
+                            className="w-full sm:w-auto sm:ml-auto flex items-center justify-center gap-2 h-[58px] border border-[#a6df7a]/40 bg-[#a6df7a]/12 hover:bg-[#a6df7a]/20 disabled:opacity-40 disabled:pointer-events-none px-6 text-[#a6df7a] font-bold cursor-pointer transition-all hover:shadow-[0_0_12px_rgba(166,223,122,0.15)] animate-in fade-in slide-in-from-left-2 duration-200"
+                        >
+                            {isProcessing ? (
+                                <>
+                                    <Icon icon="pixelarticons:reload" className="animate-spin text-lg" />
+                                    {c.waitingPayment}
+                                </>
+                            ) : (
+                                <>
+                                    <Icon icon="logos:paypal" className="text-xl" />
+                                    {c.paypalButton}
+                                </>
+                            )}
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* History Table */}
             <div className="flex-1 overflow-hidden border border-white/10 bg-white/5 flex flex-col min-h-[450px] mt-4">
                 <div className="grid grid-cols-12 gap-3 p-4 border-b border-white/10 bg-white/5 text-[10px] text-white/40 uppercase tracking-widest">
-                    <span className="col-span-3">{current.lang === 'zh-hans' ? '时间' : 'Time'}</span>
-                    <span className="col-span-3">{current.lang === 'zh-hans' ? '类型' : 'Type'}</span>
-                    <span className="col-span-4">{current.lang === 'zh-hans' ? '来源 / 详情' : 'Source / Description'}</span>
-                    <span className="col-span-2 text-right">{current.lang === 'zh-hans' ? '变动额度' : 'Amount'}</span>
+                    <span className="col-span-3">{c.tableTime}</span>
+                    <span className="col-span-3">{c.tableType}</span>
+                    <span className="col-span-4">{c.tableSource}</span>
+                    <span className="col-span-2 text-right">{c.tableAmount}</span>
                 </div>
 
                 {isLoading ? (
                     <div className="flex-1 flex flex-col justify-center items-center gap-3 min-h-[300px]">
                         <Icon icon="pixelarticons:reload" className="text-4xl text-[#a6df7a] animate-spin" />
                         <span className="text-xs tracking-widest text-[#a6df7a]/80 animate-pulse uppercase">
-                            {current.lang === 'zh-hans' ? '正在读取记录...' : 'Loading transactions...'}
+                            {c.loading}
                         </span>
                     </div>
                 ) : items.length === 0 ? (
                     <div className="flex-1 flex flex-col justify-center items-center gap-3 min-h-[300px] text-white/35">
                         <Icon icon="pixelarticons:info-box" className="text-3xl" />
                         <span className="text-xs tracking-widest uppercase">
-                            {current.lang === 'zh-hans' ? '暂无额度变动记录' : 'No credit logs found'}
+                            {c.empty}
                         </span>
                     </div>
                 ) : (
@@ -193,7 +376,6 @@ export function CreditsPage({ current }: CreditsPageProps) {
                 )}
             </div>
 
-            {/* Pagination Controls */}
             {totalPages > 1 && (
                 <div className="p-2 flex justify-between items-center text-[10px] font-pixel-hans text-white/60">
                     <button
@@ -203,12 +385,10 @@ export function CreditsPage({ current }: CreditsPageProps) {
                         className="px-3 py-1 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white hover:text-white transition-colors flex items-center gap-1.5"
                     >
                         <Icon icon="pixelarticons:chevron-left" />
-                        <span>{current.lang === 'zh-hans' ? '上一页' : 'PREV'}</span>
+                        <span>{c.prevPage}</span>
                     </button>
                     <span className="select-none">
-                        {current.lang === 'zh-hans' 
-                            ? `第 ${page} 页 / 共 ${totalPages} 页` 
-                            : `PAGE ${page} OF ${totalPages}`}
+                        {c.pageInfo.replace('{page}', String(page)).replace('{total}', String(totalPages))}
                     </span>
                     <button
                         type="button"
@@ -216,7 +396,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
                         onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                         className="px-3 py-1 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none border border-white/10 cursor-pointer text-white hover:text-white transition-colors flex items-center gap-1.5"
                     >
-                        <span>{current.lang === 'zh-hans' ? '下一页' : 'NEXT'}</span>
+                        <span>{c.nextPage}</span>
                         <Icon icon="pixelarticons:chevron-right" />
                     </button>
                 </div>

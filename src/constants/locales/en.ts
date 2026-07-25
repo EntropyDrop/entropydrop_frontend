@@ -354,6 +354,8 @@ export default {
         supportText: 'Support: ',
         successMessage: 'Subscription Success! Pro Activated.',
         upgrade: 'Upgrade',
+        buyCreditsTip: 'You can purchase Credits directly as needed.',
+        buyCreditsBtn: 'Buy Credits Directly',
         plansData: {
             free: 'Free',
             pro_plus: 'Pro-Plus Subscription',
@@ -392,6 +394,32 @@ export default {
                 commercial: 'Generated skins support commercial use'
             }
         }
+    },
+    credits: {
+        pageTitle: 'Credit Balance Details',
+        pageDesc: 'View your credit logs, including balance increases and generation consumption.',
+        balanceLabel: 'Current Balance',
+        topUpTitle: 'Buy Credits',
+        creditsFor: '{credits} Credits',
+        paypalButton: 'Pay with PayPal',
+        waitingPayment: 'Waiting for payment...',
+        purchaseSuccess: 'Credits Added!',
+        purchaseSuccessMsg: '{credits} credits have been added to your account.',
+        tableTime: 'Time',
+        tableType: 'Type',
+        tableSource: 'Source / Description',
+        tableAmount: 'Amount',
+        loading: 'Loading transactions...',
+        empty: 'No credit logs found',
+        prevPage: 'PREV',
+        nextPage: 'NEXT',
+        pageInfo: 'PAGE {page} OF {total}',
+        actionDailyLogin: 'Daily Login',
+        actionMonthlyLogin: 'Monthly Login',
+        actionGeneration: 'Generation',
+        actionRefund: 'Refund',
+        actionSubscriptionGrant: 'Subscription Grant',
+        actionPurchase: 'Purchase',
     },
     modal: {
         payOrder: 'Pay Order',
