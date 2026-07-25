@@ -106,6 +106,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [imageToSkinSettingLoading, setImageToSkinSettingLoading] = useState(false)
   const [isImageEditToSkinEnabled, setIsImageEditToSkinEnabled] = useState(true)
   const [imageEditToSkinSettingLoading, setImageEditToSkinSettingLoading] = useState(false)
+  const [modelPrices, setModelPrices] = useState<Record<string, number>>({})
+  const [modelPricesLoading, setModelPricesLoading] = useState(false)
 
   // Gift Credits to All states
   const [giftAmount, setGiftAmount] = useState<number>(10)
@@ -221,6 +223,55 @@ export function MonitorPage({ current }: MonitorPageProps) {
       })
     } finally {
       setGenerationCreditCostLoading(false)
+    }
+  }
+
+  const fetchModelPrices = async () => {
+    setModelPricesLoading(true)
+    try {
+      const response = await apiFetch('/api/monitor/model_prices')
+      if (response.ok) {
+        const data = await response.json()
+        setModelPrices(data)
+      }
+    } catch (e) {
+      console.error('Failed to fetch model prices', e)
+    } finally {
+      setModelPricesLoading(false)
+    }
+  }
+
+  const updateModelPrice = async (modelName: string, value: number) => {
+    setModelPricesLoading(true)
+    try {
+      const response = await apiFetch('/api/monitor/model_prices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: modelName, credits: value })
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setModelPrices(prev => ({ ...prev, [modelName]: data.credits }))
+        setDeleteMessage({
+          type: 'success',
+          text: isZh 
+            ? `成功将模型 ${modelName} 消耗更新为 ${data.credits} Credits。` 
+            : `Model ${modelName} cost updated to ${data.credits} credits.`
+        })
+      } else {
+        const errData = await response.json().catch(() => ({}))
+        setDeleteMessage({
+          type: 'error',
+          text: errData.detail || current.monitor.operationFailed
+        })
+      }
+    } catch (e) {
+      setDeleteMessage({
+        type: 'error',
+        text: current.monitor.networkError
+      })
+    } finally {
+      setModelPricesLoading(false)
     }
   }
 
@@ -345,6 +396,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
     fetchModesStatus()
     fetchDailyFreeCredits()
     fetchGenerationCreditCost()
+    fetchModelPrices()
     const timer = setInterval(fetchStats, 3000)
     return () => clearInterval(timer)
   }, [])
@@ -758,6 +810,66 @@ export function MonitorPage({ current }: MonitorPageProps) {
                   {isZh ? '保存' : 'SAVE'}
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* Model Specific Pricing Configuration Card */}
+          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 border flex items-center justify-center text-xl transition-all bg-blue-500/10 border-blue-500/30 text-blue-400">
+                <Icon icon="pixelarticons:sliders" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {isZh ? '模型单独定价 • Model Specific Pricing' : 'Model Specific Pricing'}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {isZh ? '设置特定模型每次生成单独消耗的 Credits。留空或未设置时默认使用全局单次生成消耗。' : 'Set custom generation cost in Credits for specific models. Uses global default cost if unset.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="border border-white/10 bg-black/20 p-3 sm:p-4 flex flex-col gap-3 font-mono">
+              {modelPricesLoading ? (
+                <div className="text-white/40 text-xs py-2 flex items-center gap-2">
+                  <Icon icon="pixelarticons:reload" className="animate-spin" />
+                  {isZh ? '正在读取模型价格...' : 'Loading model prices...'}
+                </div>
+              ) : Object.keys(modelPrices).length === 0 ? (
+                <div className="text-white/40 text-xs py-2">
+                  {isZh ? '未找到可用模型' : 'No models available'}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {Object.keys(modelPrices).map((modelName) => (
+                    <div key={modelName} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                      <span className="text-white/80 text-xs truncate max-w-full sm:max-w-[300px]">
+                        {modelName}
+                      </span>
+                      <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                        <input
+                          type="number"
+                          min="0"
+                          max="1000"
+                          value={modelPrices[modelName] ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : (parseInt(e.target.value) || 0);
+                            setModelPrices(prev => ({ ...prev, [modelName]: val }));
+                          }}
+                          className="w-16 px-2 py-0.5 text-center bg-black/40 border border-white/20 text-white text-xs focus:outline-none focus:border-blue-500/50"
+                        />
+                        <button
+                          onClick={() => updateModelPrice(modelName, modelPrices[modelName] || 0)}
+                          className="px-2.5 py-0.5 bg-blue-500/20 border border-blue-500/40 text-blue-400 hover:bg-blue-500/30 hover:border-blue-500/50 transition-colors text-[10px] font-bold tracking-wide flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <Icon icon="pixelarticons:check" className="text-xs" />
+                          {isZh ? '保存' : 'SAVE'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

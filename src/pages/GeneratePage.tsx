@@ -180,9 +180,12 @@ export function GeneratePage({ current }: GeneratePageProps) {
         }
     }
 
-    const fetchGenerationCreditCost = async () => {
+    const fetchGenerationCreditCost = async (model?: string) => {
         try {
-            const response = await apiFetch('/api/generation_credit_cost')
+            const url = model && model !== 'unknown'
+                ? `/api/generation_credit_cost?model_name=${encodeURIComponent(model)}`
+                : '/api/generation_credit_cost'
+            const response = await apiFetch(url)
             if (response.ok) {
                 const data = await response.json()
                 setGenerationCreditCost(data.credits)
@@ -192,7 +195,6 @@ export function GeneratePage({ current }: GeneratePageProps) {
         }
     }
 
-
     useEffect(() => {
         if (localStorage.getItem('token')) {
             fetchModels()
@@ -200,6 +202,14 @@ export function GeneratePage({ current }: GeneratePageProps) {
             fetchGenerationCreditCost()
         }
     }, [])
+
+    useEffect(() => {
+        if (localStorage.getItem('token') && modelVersion && modelVersion !== 'unknown') {
+            const parts = modelVersion.split(' + ')
+            const cleanModelName = parts[parts.length - 1]
+            fetchGenerationCreditCost(cleanModelName)
+        }
+    }, [modelVersion])
 
     const fetchUserStatus = async () => {
         try {
