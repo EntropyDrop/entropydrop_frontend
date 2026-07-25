@@ -401,7 +401,7 @@ export default {
         balanceLabel: '当前余额',
         topUpTitle: '购买 Credits',
         creditsFor: '{credits} Credits',
-        paypalButton: '支付',
+        paypalButton: '购买',
         waitingPayment: '等待支付完成...',
         purchaseSuccess: '充值成功！',
         purchaseSuccessMsg: '{credits} Credits 已添加到您的账户。',
