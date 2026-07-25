@@ -292,12 +292,6 @@ export function ProPage({ current }: ProPageProps) {
 
                 {/* Footer Info */}
                 <div className="flex flex-col gap-4 border-t border-white/10 pt-6">
-                    {userProfile?.paypal_subscription_status === 'ACTIVE' && (
-                        <div className={`text-[10px] text-red-400/80 flex items-center gap-2 ${current.fontClass}`}>
-                            <Icon icon="pixelarticons:info-box" className="text-sm shrink-0" />
-                            {current.pro.cancelWarning}
-                        </div>
-                    )}
                     <div className={`text-[10px] text-white/40 flex items-center gap-2 ${current.fontClass}`}>
                         <Icon icon="pixelarticons:mail" className="text-sm shrink-0" />
                         <span>

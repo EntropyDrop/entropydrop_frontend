@@ -346,7 +346,6 @@ export default {
         plans: 'Choose Your Plan',
         currentPlan: 'Current Plan',
         subscribe: 'Subscribe Now',
-        cancelWarning: 'Note: If you cancel and resubscribe later, your remaining Pro time will not accumulate.',
         cancel: 'Cancel Subscription',
         cancelConfirm: 'Are you sure you want to cancel your active Pro subscription? You will still retain your Pro status until the end of your billing cycle.',
         cancelSuccess: 'Your subscription has been cancelled.',

@@ -346,7 +346,6 @@ export default {
         plans: '选择您的订阅计划',
         currentPlan: '当前套餐',
         subscribe: '立即订阅',
-        cancelWarning: '注意：如您取消后再次重新订阅，剩余的 Pro 时间将无法累加计算。',
         cancel: '取消订阅',
         cancelConfirm: '确定要取消您的 Pro 订阅吗？在当前计费周期结束前，您仍将保留 Pro 身份。',
         cancelSuccess: '您的订阅已取消。',
