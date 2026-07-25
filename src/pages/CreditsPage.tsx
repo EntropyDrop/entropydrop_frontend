@@ -292,23 +292,32 @@ export function CreditsPage({ current }: CreditsPageProps) {
 
                     {/* Pay button */}
                     {customAmount >= 1 && (
-                        <button
-                            onClick={handlePay}
-                            disabled={isProcessing}
-                            className="w-full sm:w-auto sm:ml-auto flex items-center justify-center gap-2 h-[58px] border border-[#a6df7a]/40 bg-[#a6df7a]/12 hover:bg-[#a6df7a]/20 disabled:opacity-40 disabled:pointer-events-none px-6 text-[#a6df7a] font-bold cursor-pointer transition-all hover:shadow-[0_0_12px_rgba(166,223,122,0.15)] animate-in fade-in slide-in-from-left-2 duration-200"
-                        >
-                            {isProcessing ? (
-                                <>
-                                    <Icon icon="pixelarticons:reload" className="animate-spin text-lg" />
-                                    {c.waitingPayment}
-                                </>
-                            ) : (
-                                <>
-                                    <Icon icon="logos:paypal" className="text-xl" />
-                                    {c.paypalButton}
-                                </>
+                        <div className="w-full sm:w-auto sm:ml-auto flex flex-col gap-1.5 align-end">
+                            <button
+                                onClick={handlePay}
+                                disabled={isProcessing}
+                                className="w-full flex items-center justify-center gap-2 h-[58px] border border-[#a6df7a]/40 bg-[#a6df7a]/12 hover:bg-[#a6df7a]/20 disabled:opacity-40 disabled:pointer-events-none px-6 text-[#a6df7a] font-bold cursor-pointer transition-all hover:shadow-[0_0_12px_rgba(166,223,122,0.15)] animate-in fade-in slide-in-from-left-2 duration-200"
+                            >
+                                {isProcessing ? (
+                                    <>
+                                        <Icon icon="pixelarticons:reload" className="animate-spin text-lg" />
+                                        {c.waitingPayment}
+                                    </>
+                                ) : (
+                                    <>
+                                        <Icon icon="pixelarticons:check" className="text-lg" />
+                                        {c.paypalButton}
+                                    </>
+                                )}
+                            </button>
+                            {!isProcessing && (
+                                <div className="flex items-center justify-end gap-1 px-1.5 py-0.5 opacity-40 hover:opacity-75 transition-opacity text-[10px] select-none font-mono">
+                                    <span>via</span>
+                                    <Icon icon="fa6-brands:paypal" className="text-[#0079C1] text-xs shrink-0" />
+                                    <span className="font-bold">PayPal</span>
+                                </div>
                             )}
-                        </button>
+                        </div>
                     )}
                 </div>
             </div>
