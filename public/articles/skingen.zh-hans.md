@@ -332,4 +332,4 @@ Minecraft 皮肤生成看似只是把参考图转换成像素风格角色，但�
 - 在线生成器：[https://entropydrop.com/skin/generate](https://entropydrop.com/skin/generate)
 - Hugging Face 模型：[https://huggingface.co/EntropyDrop/Sking](https://huggingface.co/EntropyDrop/Sking)
 - GitHub：[https://github.com/EntropyDrop](https://github.com/EntropyDrop)
-- Discord：[https://discord.gg/ByX7TwqDcw](https://discord.gg/ByX7TwqDcw)
+- Discord: [https://discord.gg/zxd8RjUyYt](https://discord.gg/zxd8RjUyYt)
