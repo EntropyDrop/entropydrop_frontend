@@ -14,27 +14,40 @@ To temporarily bypass this bottleneck while continuing to validate the downstrea
 
 The new end-to-end pipeline is as follows:
 
-```text
-Arbitrary character reference image
-    ↓
+
+Input arbitrary character reference image
+
+![input24|240](/articles/images/input24.png)
+
 Stage One: Generate normalized Minecraft front/back views
-    ↓
+
+![img24|480](/articles/images/img24_template41_51_52.png)
+
 Stage Two: Reconstruct UV map from renders
-    ↓
+
 Foreground extraction
-    ↓
+
+![cutout|480](/articles/images/img24_cutout.png)
+
 Fixed-view geometry fitting
-    ↓
+
+![img24_geo|480](/articles/images/img24_geo.png)
+
 Dense UV Parser: inner / outer / secondary surface semantic routing
-    ↓
-Direct color extraction from projection grids
-    ↓
-Verified local UV evidence
-    ↓
-Per-part, per-face deterministic inner-layer repair
-    ↓
-Complete 64×64 RGBA skin
-```
+
+![img24_routed|480](/articles/images/img24_routed.png)
+
+![img24_uv|480](/articles/images/parser_only_uv.png)
+
+Per-part, per-face inner-layer repair
+
+![img24_uv|480](/articles/images/parser_pred_uv_simple_inpainting.png)
+
+Re-render
+
+![img24_final|480](/articles/images/img24_final.png)
+
+
 
 This article covers the design, training sequence, debugging methodology, and current limitations of this new workflow.
 
