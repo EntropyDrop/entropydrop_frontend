@@ -401,7 +401,7 @@ export default {
         balanceLabel: 'Current Balance',
         topUpTitle: 'Buy Credits',
         creditsFor: '{credits} Credits',
-        paypalButton: 'Pay Now',
+        paypalButton: 'Pay',
         waitingPayment: 'Waiting for payment...',
         purchaseSuccess: 'Credits Added!',
         purchaseSuccessMsg: '{credits} credits have been added to your account.',
