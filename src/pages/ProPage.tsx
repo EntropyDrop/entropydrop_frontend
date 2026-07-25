@@ -331,13 +331,11 @@ export function ProPage({ current }: ProPageProps) {
                                                  </>
                                              )}
                                          </button>
-                                         {!tier.isCurrent && !isLowerTier && (
-                                             <div className="flex items-center justify-end gap-1 px-1.5 py-0.5 opacity-40 hover:opacity-75 transition-opacity text-[10px] select-none font-mono">
-                                                 <span>via</span>
-                                                 <Icon icon="fa6-brands:paypal" className="text-[#0079C1] text-xs shrink-0" />
-                                                 <span className="font-bold">PayPal</span>
-                                             </div>
-                                         )}
+                                         <div className="flex items-center justify-end gap-1 px-1.5 py-0.5 opacity-40 hover:opacity-75 transition-opacity text-[10px] select-none font-mono">
+                                             <span>via</span>
+                                             <Icon icon="fa6-brands:paypal" className="text-[#0079C1] text-xs shrink-0" />
+                                             <span className="font-bold">PayPal</span>
+                                         </div>
                                      </div>
                                  )}
                             </div>
