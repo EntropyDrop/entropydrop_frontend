@@ -14,27 +14,40 @@
 
 新的完整链路如下：
 
-```text
-任意角色参考图
-    ↓
+
+输入任意角色参考图
+
+![input24|240](/articles/images/input24.png)
+
 阶段一：生成规范化的 Minecraft 前后视图
-    ↓
+
+![img24|480](/articles/images/img24_template41_51_52.png)
+
 阶段二：从渲染图逆向还原 UV 贴图
-    ↓
+
 前景提取
-    ↓
+
+![cutout|480](/articles/images/img24_cutout.png)
+
 固定视角几何拟合
-    ↓
+
+![img24_geo|480](/articles/images/img24_geo.png)
+
 Dense UV Parser：内层 / 外层 / 次级表面语义路由
-    ↓
-从投影网格直接取得原始颜色
-    ↓
-parser_pred_uv：可信观测的局部 UV
-    ↓
-逐部件、逐表面的确定性内层修复
-    ↓
-完整 64×64 RGBA 皮肤
-```
+
+![img24_routed|480](/articles/images/img24_routed.png)
+
+![img24_uv|480](/articles/images/parser_only_uv.png)
+
+逐部件、逐表面的内层修复
+
+![img24_uv|480](/articles/images/parser_pred_uv_simple_inpainting.png)
+
+重新渲染
+
+![img24_final|480](/articles/images/img24_final.png)
+
+
 
 本文将介绍这条新工作流的设计、训练顺序、调试方法与当前局限。
 
