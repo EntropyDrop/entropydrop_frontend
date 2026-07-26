@@ -201,6 +201,15 @@ Prompt 的设计也围绕这两个目标展开：首先锁定 Minecraft 双图�
 
 尽管存在一些边缘情况使得背景出现在非联通区域，使得一些背景色混入前景，但通常这种错误在后续流程中会得到修正。如果未来有很强的准确性和通用性的需求，可以再专门训练一个分割模型。
 
+泛洪得到的 mask 和透明 cutout 保留在原始输入坐标中。进入几何路由前，parser 预测的全局 affine 会把图像、密集 logits 和前景 mask 一起对齐到固定渲染器的 canonical 坐标。这里不能直接对二值 mask 使用最近邻采样：即使只有很小的缩放误差，单像素帽沿、发梢或后脑外层凸起也可能在重采样时整体消失。当前实现改为对 mask 做双线性覆盖率重采样，只要 canonical 像素与变换后的源 mask 覆盖率超过极低阈值就予以保留；背景色边缘检查、网格覆盖率和每外层 texel 至少 15 个有效源像素的门控仍负责排除被一并带入的无效边缘。
+
+推理会同时保存两套诊断依据：
+
+- `foreground_cutout.png` 与 `foreground_mask.png`：affine 前、原始输入坐标中的泛洪结果；
+- `parser_debug_observed_canonical.png`：affine 后、路由前实际使用的前景 mask。
+
+日志中的 `canonical_foreground_coverage_rescued_pixels` 表示相对于旧的最近邻采样，新方法保住了多少个边缘像素。这样可以把“前景提取本身漏掉了像素”和“正确的原始 mask 在几何对齐时被侵蚀”区分开。
+
 ## 三、几何拟合：预计算 UV 投影映射
 
 前景分离后，系统不再对角色做任何形式的姿态估计或关键点检测，而是直接将已知的 Minecraft Steve 几何体通过固定相机参数投影到图像平面。这一步的核心数据结构是预计算的 UV 投影映射（precomputed UV mapping），由可微 Minecraft 渲染器离线生成并保存为 `.pt` 文件。
@@ -350,7 +359,7 @@ L_role = E[ (1 - p_correct)^γ * (-log(p_correct)) ]   分别对 role ∈ {0,1} 
 **（6）投影 texel 一致性损失**（λ=0.25）
 对渲染到同一 GT UV texel 的多个源像素，计算它们路由概率的方差，要求投票一致。分组键为 `(batch_item, GT_role, flat_uv_index)`。仅对包含多个源像素的 texel 计算，避免单个观测的真空损失。
 
-**（7）可见外层候选 alpha 监督与跨视角一致性**（λ=0.25）
+**（7）可见外层候选 alpha 监督与跨视角一致性**（λ=0.50）
 
 逐像素路由标签只能监督最终实际可见的表面，无法直接约束“本来应当透明、却被模型误认为外层”的几何候选。为此，训练会把每个视角的外层候选投影回 64×64 UV 图集，并直接使用 GT 外层 alpha 监督其 `p_outer`：
 
@@ -363,7 +372,7 @@ L_role = E[ (1 - p_correct)^γ * (-log(p_correct)) ]   分别对 role ∈ {0,1} 
 - 只有概率 disagreement 项限制在 78 个共同可见 texel 上，要求不同视角对同一外层 texel 给出接近的概率；
 - 不再要求一个 texel 必须同时被两个视角看到，正脸、眼睛和后脑等单视角区域也能获得外层正负监督。
 
-为了进一步抑制少量高置信度的 inner→outer 错误，系统会从透明外层候选中选取 `p_outer` 损失最高的 10% 作为 hard negatives，并以 0.50 的内部权重加入该损失。训练日志同时记录单视角并集覆盖率、交集占比、可见负样本数和 hard-negative 数量，避免只观察总 loss 而忽略实际监督覆盖范围。
+为了进一步抑制少量高置信度的 inner→outer 错误，系统会从透明外层候选中选取 `p_outer` 损失最高的 20% 作为 hard negatives，并以 0.75 的内部权重加入该损失。训练日志同时记录单视角并集覆盖率、交集占比、可见负样本数和 hard-negative 数量，避免只观察总 loss 而忽略实际监督覆盖范围。
 
 **（8）路由置信度损失**（λ=0.25）
 BCE with logits，target = `(predicted_role == GT_role)`。对次级像素，还额外要求 surface 分类也正确。
@@ -397,7 +406,7 @@ BCE with logits，target = `(predicted_role == GT_role)`。对次级像素，还
 | 训练 epoch | 1（大数据集下单 epoch 已足够收敛） |
 | 正则化 | `feature_dropout=0.10`（Dropout2d，训练时启用）；冻结 SigLIP2 视觉塔 |
 | 语义缓存 | SigLIP2 空间特征（768×14×8 per view）以 FP16 mmap 存储；180,000 样本约 58 GiB；仅当前 batch 读入显存 |
-| 外层候选监督 | 两视角可见并集 alpha 监督 λ=0.25；交集 disagreement 权重 0.25；最困难 10% 透明候选权重 0.50 |
+| 外层候选监督 | 两视角可见并集 alpha 监督 λ=0.50；交集 disagreement 权重 0.25；最困难 20% 透明候选权重 0.75 |
 | 默认随机模式 | `SEED=1234, REPRODUCIBLE=false, CUDNN_BENCHMARK=true`；初始化、数据划分、shuffle 与增强跟随 seed，但 CUDA 数值不保证逐位一致 |
 | 严格复现模式 | `REPRODUCIBLE=true` 时关闭 cuDNN benchmark 与 Flash Attention，并请求确定性 CUDA 算法；`STRICT_DETERMINISM=true` 可在遇到不支持的算子时直接终止，代价是训练明显变慢 |
 | checkpoint 选择 | 按 `loss_hard_uv_color_selection`（硬路由内/外层 IoU + RGB MAE）择优，防止稀疏或颜色错误的 UV 因 occupancy precision 虚高而胜出 |
@@ -406,7 +415,7 @@ BCE with logits，target = `(predicted_role == GT_role)`。对次级像素，还
 
 推理时，parser 的软概率输出经过多层门控才转化为最终的硬路由决策：
 
-1. **投影 texel 共识投票**：每个源像素的路由概率按中心加权方式投票到其投影的 UV texel 上。最终每 texel 的概率为局部像素概率（40%）与 texel 级聚合得分（60%）的软加权混合。孤立的弱外层标记可以被翻转为内层；强外层预测（置信度 ≥0.80，内外层 margin ≥0.35）被保留。
+1. **投影 texel 共识与非对称 outer 准入**：每个源像素的路由概率按中心加权方式投票到其投影的 UV texel 上。最终每 texel 的概率为局部像素概率（40%）与 texel 级聚合得分（60%）的软加权混合。所有普通 outer 决策必须同时通过本地 outer 证据（置信度 ≥0.80、margin ≥0.35）和 fused texel 证据（置信度 ≥0.80、margin ≥0.35）；高置信 raw outer 不再拥有绕过共识的通道。若 fused inner 明确胜出，候选会被改为 inner；若 outer 仍领先但没有达到准入门槛，则保留它的 outer UV 身份但将观测标记为未知，不把不确定颜色错误写入 inner 或 outer 图集。日志分别通过 `consensus_outer_to_inner_pixels`、`consensus_outer_gate_rejected_pixels` 和 `consensus_outer_gate_deferred_pixels` 记录这三类结果。
 
 2. **跨视角外层可见性检查**：对于 78 个共同可见的外层 texel，如果一个视角高置信支持外层，而另一个视角在同一 texel 上明确看到背景或高置信内层，则形成冲突并否决该外层候选。这项规则只处理确有共同可见证据的位置，不会拿后视图去强行裁决仅在正面可见的眼睛或衣服图案。
 
@@ -416,11 +425,13 @@ BCE with logits，target = `(predicted_role == GT_role)`。对次级像素，还
    - 每外层 texel 最少 15 个有效源像素；
    - 背景色边缘像素（与检测到的背景色差 ≤ 8/255）被排除。
 
-4. **几何救援**：当某个 texel 的源像素位于外层独有的轮廓区域（`outer_mask > 0` 且 `inner_mask == 0`），或路由到精确的次级/背向面槽位时，门控放宽至置信度 ≥ 0.60，margin ≥ 0.25，覆盖 ≥ 0.10。
+4. **几何救援**：当某个 texel 的源像素位于外层独有的轮廓区域（`outer_mask > 0` 且 `inner_mask == 0`），或路由到精确的次级/背向面槽位时，门控放宽至置信度 ≥ 0.60，margin ≥ 0.25，覆盖 ≥ 0.10。精确几何证据可以救回被 outer 准入门槛暂缓的观测。
 
-5. **语义救援**：parser 预测的部件级 `outer_presence` 和 `outer_coverage` 较高的部件，外层门控可进一步放宽。
+5. **语义救援**：parser 预测的部件级 `outer_presence` 和 `outer_coverage` 较高时，可以放宽已经通过 texel 准入的外层观测的后续置信度与覆盖率门控；这种宽泛的部件级语义不能绕过 fused texel gate，避免“头部存在帽子或头发”被错误解释为眼睛、脸部所有像素都应属于外层。
 
 默认配置为 precision-first：`保守 profile` 优先保证已输出的外层 texel 是正确的，而非追求尽可能多输出。未通过门控的外层像素在 UV 图集中保持透明——确定性修复不会凭空创建外层 texel。
+
+调试图也明确区分变换前后：`parser_debug_face_raw.png` 和 `parser_debug_layer_face_raw.png` 使用原始输入坐标中的 head logits 与未变换 flood mask，不再被 affine 或后续路由过滤制造出假孔洞；`parser_debug_face.png`、`parser_debug_layer_face.png` 和各类 routed overlay 则反映 canonical 坐标中的最终硬路由。排查时应先比较 raw head 与 `parser_debug_observed_canonical.png`，再检查最终 routed 输出。
 
 ## 五、UV 重建
 

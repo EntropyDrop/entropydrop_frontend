@@ -201,6 +201,15 @@ Since Stage One uses templates and prompt guidance to produce characters against
 
 There are edge cases where background appears in non-contiguous regions, causing some background colors to leak into the foreground, but such errors are typically corrected in subsequent pipeline stages. If strong accuracy and generality requirements arise in the future, a dedicated segmentation model can be trained.
 
+The flood-fill mask and transparent cutout remain in the original input coordinates. Before geometric routing, the parser's predicted global affine transform aligns the image, dense logits, and foreground mask together into the fixed renderer's canonical coordinates. A binary mask cannot simply be resampled with nearest-neighbor interpolation here: even a small scale error can erase an entire one-pixel hat brim, hair tip, or raised outer-layer silhouette at the back of the head. The current implementation instead resamples the mask as bilinear coverage and preserves a canonical pixel whenever its coverage by the transformed source mask exceeds a very low threshold. Background-color edge checks, grid coverage, and the minimum of 15 valid source pixels per outer texel still reject invalid boundary pixels carried along by this more recall-oriented transform.
+
+Inference saves both coordinate-space views for diagnosis:
+
+- `foreground_cutout.png` and `foreground_mask.png`: the flood-fill result in the original input coordinates, before affine alignment;
+- `parser_debug_observed_canonical.png`: the foreground mask actually used after affine alignment and before routing.
+
+The log field `canonical_foreground_coverage_rescued_pixels` reports how many boundary pixels the new method preserves relative to nearest-neighbor resampling. This makes it possible to distinguish pixels that were already missed during foreground extraction from pixels that existed in the correct raw mask but were eroded during geometric alignment.
+
 ## 3. Geometry Fitting: Precomputed UV Projection Mapping
 
 After foreground separation, the system performs no pose estimation or keypoint detection of any kind. Instead, it directly projects the known Minecraft Steve geometry onto the image plane using fixed camera parameters. The core data structure for this step is the precomputed UV projection mapping, generated offline by the differentiable Minecraft renderer and saved as `.pt` files.
@@ -350,7 +359,7 @@ This is a macro-averaged loss: compute the mean loss for inner and outer classes
 **(6) Projected Texel Consistency Loss** (λ=0.25)
 For multiple source pixels that project to the same GT UV texel, computes the variance of their routing probabilities, requiring consensus. Grouping key is `(batch_item, GT_role, flat_uv_index)`. Only computed for texels with multiple source pixels, avoiding vacuous loss on single observations.
 
-**(7) Visible Outer-Candidate Alpha Supervision and Cross-View Consistency** (λ=0.25)
+**(7) Visible Outer-Candidate Alpha Supervision and Cross-View Consistency** (λ=0.50)
 
 Per-pixel route labels supervise only the surface that is ultimately visible; by themselves, they do not directly constrain a geometric candidate that should be transparent but is incorrectly classified as outer. Training therefore projects every view's outer candidates back into the 64×64 atlas and supervises `p_outer` with ground-truth outer alpha:
 
@@ -363,7 +372,7 @@ Single-view visibility supervision and cross-view consistency have deliberately 
 - only the probability-disagreement term is restricted to the 78 texels visible in both views;
 - a texel no longer needs to be shared by both views, so single-view regions such as the face, eyes, and back of the head receive positive and negative outer-layer supervision.
 
-To suppress the remaining high-confidence inner→outer mistakes, the highest-loss 10% of transparent outer candidates are mined as hard negatives and added with an internal weight of 0.50. Training logs report union coverage, intersection ratio, visible-negative count, and hard-negative count so that actual supervision coverage is visible rather than hidden behind a total loss.
+To suppress the remaining high-confidence inner→outer mistakes, the highest-loss 20% of transparent outer candidates are mined as hard negatives and added with an internal weight of 0.75. Training logs report union coverage, intersection ratio, visible-negative count, and hard-negative count so that actual supervision coverage is visible rather than hidden behind a total loss.
 
 **(8) Route Confidence Loss** (λ=0.25)
 BCE with logits, target = `(predicted_role == GT_role)`. For secondary pixels, surface classification must also be correct.
@@ -397,7 +406,7 @@ All soft-UV and rendering loss λ values can be set to 0, in which case training
 | Training epochs | 1 (sufficient convergence on large datasets) |
 | Regularization | `feature_dropout=0.10` (Dropout2d, training only); frozen SigLIP2 vision tower |
 | Semantic cache | SigLIP2 spatial features (768×14×8 per view) stored as FP16 mmap; ~58 GiB for 180K samples; only current batch read into GPU memory |
-| Outer-candidate supervision | Visible-union alpha supervision λ=0.25; shared-view disagreement weight 0.25; hardest 10% transparent candidates weighted 0.50 |
+| Outer-candidate supervision | Visible-union alpha supervision λ=0.50; shared-view disagreement weight 0.25; hardest 20% transparent candidates weighted 0.75 |
 | Default random mode | `SEED=1234, REPRODUCIBLE=false, CUDNN_BENCHMARK=true`; initialization, split, shuffle, and augmentation follow the seed, but CUDA results are not guaranteed bitwise identical |
 | Strict reproducibility mode | `REPRODUCIBLE=true` disables cuDNN benchmark and Flash Attention and requests deterministic CUDA algorithms; `STRICT_DETERMINISM=true` aborts on an unsupported operation, at a substantial speed cost |
 | Checkpoint selection | Best by `loss_hard_uv_color_selection` (hard-routed inner/outer IoU + RGB MAE), preventing sparse or miscolored UVs from winning due to inflated occupancy precision |
@@ -406,7 +415,7 @@ All soft-UV and rendering loss λ values can be set to 0, in which case training
 
 At inference time, the parser's soft probability outputs pass through multiple gating layers before becoming final hard routing decisions:
 
-1. **Projected-texel consensus voting**: each source pixel's routing probability is center-weighted and voted into its projected UV texel. The final per-texel probability is a soft blend of the local pixel probability (40%) and the texel-level aggregate score (60%). Isolated weak outer markings can be flipped to inner; strong outer predictions (confidence ≥0.80, inner-outer margin ≥0.35) are preserved.
+1. **Projected-texel consensus and asymmetric outer admission**: each source pixel's routing probability is center-weighted and voted into its projected UV texel. The final per-texel probability is a soft blend of the local pixel probability (40%) and the texel-level aggregate score (60%). Every ordinary outer decision must pass both local outer evidence (confidence ≥0.80, margin ≥0.35) and fused texel evidence (confidence ≥0.80, margin ≥0.35); a high-confidence raw outer prediction can no longer bypass consensus. If fused inner evidence clearly wins, the candidate is changed to inner. If outer still leads but does not reach the admission thresholds, it retains its outer UV identity while the observation is marked unknown, preventing an uncertain color from being written incorrectly into either the inner or outer atlas. The log fields `consensus_outer_to_inner_pixels`, `consensus_outer_gate_rejected_pixels`, and `consensus_outer_gate_deferred_pixels` report these outcomes separately.
 
 2. **Cross-view outer-visibility check**: for the 78 shared outer texels, a conflict is formed when one view strongly supports outer while another view clearly observes background or a high-confidence inner route at the same texel. The candidate is then vetoed. This rule applies only where shared evidence actually exists; it does not use the back view to overrule eyes or clothing patterns visible only from the front.
 
@@ -416,11 +425,13 @@ At inference time, the parser's soft probability outputs pass through multiple g
    - Minimum 15 valid source pixels per outer texel;
    - Background-edge pixels (color difference from detected background ≤ 8/255) are excluded.
 
-4. **Geometry rescue**: when a texel's source pixels lie in an outer-only silhouette region (`outer_mask > 0` and `inner_mask == 0`), or are routed to a precise secondary/backface surface slot, gating relaxes to confidence ≥ 0.60, margin ≥ 0.25, coverage ≥ 0.10.
+4. **Geometry rescue**: when a texel's source pixels lie in an outer-only silhouette region (`outer_mask > 0` and `inner_mask == 0`), or are routed to a precise secondary/backface surface slot, gating relaxes to confidence ≥ 0.60, margin ≥ 0.25, coverage ≥ 0.10. Precise geometric evidence can rescue an observation deferred by the outer-admission thresholds.
 
-5. **Semantic rescue**: parts where the parser predicts higher `outer_presence` and `outer_coverage` receive relaxed outer gating.
+5. **Semantic rescue**: when the parser predicts high part-level `outer_presence` and `outer_coverage`, the downstream confidence and coverage gates may be relaxed for outer observations that have already passed texel admission. This broad part-level semantic signal cannot bypass the fused texel gate, preventing “the head contains a hat or hair” from being interpreted as “all eyes and face pixels should be outer.”
 
 The default configuration is precision-first: the conservative profile prioritizes correctness of output outer texels over maximizing their quantity. Outer pixels that fail gating remain transparent in the UV atlas—deterministic repair never fabricates outer-layer texels.
+
+Debug images now explicitly distinguish pre-transform and post-transform state. `parser_debug_face_raw.png` and `parser_debug_layer_face_raw.png` use head logits in the original input coordinates together with the unwarped flood mask, so affine alignment and later routing filters can no longer create misleading holes in the “raw” views. `parser_debug_face.png`, `parser_debug_layer_face.png`, and the routed overlays instead reflect final hard routing in canonical coordinates. When diagnosing a failure, compare the raw head output with `parser_debug_observed_canonical.png` first, then inspect the final routed outputs.
 
 ## 5. UV Reconstruction
 
