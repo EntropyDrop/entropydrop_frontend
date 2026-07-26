@@ -318,9 +318,9 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
                         setSelectedItem(null)
                         navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } })
                     }}
-                    onAiEdit={(source: string, id: string, isPublic: boolean, sourceType?: 'source' | 'intermediate') => {
+                    onAiEdit={(source: string, id: string, isPublic: boolean) => {
                         setSelectedItem(null)
-                        navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic, sourceType } })
+                        navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic } })
                     }}
                     onItemSelect={(logId) => {
                         setSelectedItem(prev => prev ? { ...prev, id: logId } : { id: logId, result: '', is_public: true, prompt: '' });

@@ -1194,7 +1194,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                         textureUrl={selectedHistory.result}
                         closeModal={() => setSelectedHistory(undefined)}
                         onEdit={(texUrl, logId, isPublic) => navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } })}
-                        onAiEdit={(source: string, id: string, isPublic: boolean, sourceType?: 'source' | 'intermediate') => navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic, sourceType } })}
+                        onAiEdit={(source: string, id: string, isPublic: boolean) => navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic } })}
                     />
                 )}
             </AnimatePresence>

@@ -42,7 +42,7 @@ export interface MCModalProps {
     item: GenerationLogItem
     closeModal: () => void
     onEdit?: (textureUrl: string, id: string, isPublic: boolean) => void
-    onAiEdit?: (source: string, id: string, isPublic: boolean, sourceType?: 'source' | 'intermediate') => void
+    onAiEdit?: (source: string, id: string, isPublic: boolean) => void
     current: any // Use any temporarily to avoid import loops if needed, or LangData
     onItemSelect?: (logId: string) => void
 }
@@ -60,10 +60,10 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const [isParentDeleted, setIsParentDeleted] = useState(false);
     const [isNotFound, setIsNotFound] = useState(false);
 
-    const handleEditImage = (src?: string, sourceType?: 'source' | 'intermediate') => {
+    const handleEditImage = (src?: string) => {
         close();
         if (onAiEdit && src) {
-            onAiEdit(src, item.id, item.is_public === true, sourceType);
+            onAiEdit(src, item.id, item.is_public === true);
         }
     };
 
@@ -900,7 +900,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                         onClick={async () => {
                                                                             try {
                                                                                 const canvas = await Skin2D(textureUrl);
-                                                                                handleEditImage(canvas.toDataURL(), 'intermediate');
+                                                                                handleEditImage(canvas.toDataURL());
                                                                             } catch (e) {
                                                                                 console.error("Failed to render 2D image for edit", e);
                                                                             }
@@ -935,7 +935,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                             />
                                                                         </div>
                                                                         <button
-                                                                            onClick={() => handleEditImage(item.edited_image_url, 'intermediate')}
+                                                                            onClick={() => handleEditImage(item.edited_image_url)}
                                                                             className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
                                                                             title="AI Edit"
                                                                         >
@@ -961,7 +961,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                             />
                                                                         </div>
                                                                         <button
-                                                                            onClick={() => handleEditImage(item.source, 'source')}
+                                                                            onClick={() => handleEditImage(item.source)}
                                                                             className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
                                                                             title="AI Edit"
                                                                         >
@@ -986,15 +986,6 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                                 alt="Source"
                                                                             />
                                                                         </div>
-                                                                        {(item.mode === "aigc_image_edit_to_skin") && (
-                                                                            <button
-                                                                                onClick={() => handleEditImage(item.source, "source")}
-                                                                                className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
-                                                                                title="AI Edit"
-                                                                            >
-                                                                                <Icon icon="pixelarticons:robot" className="text-[12px]" />
-                                                                                <span className="text-[10px] font-pixel-hans">AI Edit</span>
-                                                                            </button>)}
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1017,7 +1008,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                             />
                                                                         </div>
                                                                         <button
-                                                                            onClick={() => handleEditImage(item.edited_image_url, "intermediate")}
+                                                                            onClick={() => handleEditImage(item.edited_image_url)}
                                                                             className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
                                                                             title="AI Edit"
                                                                         >
