@@ -168,11 +168,35 @@ export function GeneratePage({ current }: GeneratePageProps) {
             const response = await apiFetch('/api/models')
             if (response.ok) {
                 const data = await response.json()
-                setModelsConfig(data)
+                
+                const textToSkin: string[] = []
+                for (const base of data.text_to_image_models || []) {
+                    for (const lora of data.image_to_skin_models || []) {
+                        textToSkin.push(`${base} + ${lora}`)
+                    }
+                }
+
+                const imageEditToSkin: string[] = []
+                for (const base of data.image_edit_models || []) {
+                    for (const lora of data.image_to_skin_models || []) {
+                        imageEditToSkin.push(`${base} + ${lora}`)
+                    }
+                }
+
+                const imageToSkin: string[] = data.image_to_skin_models || []
+
+                const formattedConfig = {
+                    aigc_text_to_skin: textToSkin,
+                    aigc_image_edit_to_skin: imageEditToSkin,
+                    aigc_image_to_skin: imageToSkin
+                }
+
+                setModelsConfig(formattedConfig)
+                
                 // Set initial model version based on current genMode
                 const currentMode = genMode
-                if (data[currentMode] && data[currentMode].length > 0) {
-                    setModelVersion(data[currentMode][0])
+                if (formattedConfig[currentMode] && formattedConfig[currentMode].length > 0) {
+                    setModelVersion(formattedConfig[currentMode][0])
                 }
             }
         } catch (e) {
