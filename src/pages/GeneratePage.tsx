@@ -211,7 +211,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 await Promise.all(
                     allUniqueModels.map(async (m) => {
                         try {
-                            const res = await apiFetch(`/api/generation_credit_cost?model_name=${encodeURIComponent(m)}`)
+                            const res = await apiFetch(`/api/generation_credit_cost?model_version=${encodeURIComponent(m)}`)
                             if (res.ok) {
                                 const costData = await res.json()
                                 costs[m] = costData.credits
@@ -230,9 +230,15 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
     const fetchGenerationCreditCost = async (model?: string) => {
         try {
-            const url = model && model !== 'unknown'
-                ? `/api/generation_credit_cost?model_name=${encodeURIComponent(model)}`
-                : '/api/generation_credit_cost'
+            let url = '/api/generation_credit_cost'
+            if (model && model !== 'unknown') {
+                if (model.includes(' + ')) {
+                    const parts = model.split(' + ')
+                    url = `/api/generation_credit_cost?aux_model_version=${encodeURIComponent(parts[0])}&model_version=${encodeURIComponent(parts[1])}`
+                } else {
+                    url = `/api/generation_credit_cost?model_version=${encodeURIComponent(model)}`
+                }
+            }
             const response = await apiFetch(url)
             if (response.ok) {
                 const data = await response.json()
