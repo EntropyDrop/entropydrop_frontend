@@ -328,7 +328,7 @@ Parser 从 32 通道的 feature map 出发，经 `feature_dropout`（`Dropout2d,
 **（2）路由角色损失**（λ=1.0）
 - 平衡交叉熵：按各类别有效像素数的 `1/sqrt(count)` 归一化为权重，内层权重下限 0.75，外层权重上限 0.90（防止稀少的外层主导梯度）。
 
-**（3）外层假阳性损失**（λ=0.75, focal γ=3.0）
+**（3）外层假阳性损失**（λ=1.0, focal γ=3.0）
 ```text
 L_fp = E[ p_outer^γ * (-log(1 - p_outer)) ]   对 target ≠ outer 的有效像素
 ```
@@ -350,13 +350,28 @@ L_role = E[ (1 - p_correct)^γ * (-log(p_correct)) ]   分别对 role ∈ {0,1} 
 **（6）投影 texel 一致性损失**（λ=0.25）
 对渲染到同一 GT UV texel 的多个源像素，计算它们路由概率的方差，要求投票一致。分组键为 `(batch_item, GT_role, flat_uv_index)`。仅对包含多个源像素的 texel 计算，避免单个观测的真空损失。
 
-**（7）路由置信度损失**（λ=0.25）
+**（7）可见外层候选 alpha 监督与跨视角一致性**（λ=0.25）
+
+逐像素路由标签只能监督最终实际可见的表面，无法直接约束“本来应当透明、却被模型误认为外层”的几何候选。为此，训练会把每个视角的外层候选投影回 64×64 UV 图集，并直接使用 GT 外层 alpha 监督其 `p_outer`：
+
+- GT alpha=1：该外层 texel 确实存在，鼓励模型保留外层；
+- GT alpha=0：该位置应当透明，惩罚内层、眼睛、脸部或背景被错误路由为外层。
+
+这里必须区分“单视角可见性监督”和“跨视角一致性”。在当前 `front_left + back_left`、256×512 映射中，每个视角直接看到 607 个外层 texel；两视角并集为 1136 个，占完整 1632 个外层 texel 的 69.6%；两视角交集只有 78 个，占可见并集的 6.9%（占完整外层图集的 4.8%）。因此：
+
+- alpha 监督作用于两个视角的全部 1214 次候选观测，对应 1136 个不重复的可见外层 texel；
+- 只有概率 disagreement 项限制在 78 个共同可见 texel 上，要求不同视角对同一外层 texel 给出接近的概率；
+- 不再要求一个 texel 必须同时被两个视角看到，正脸、眼睛和后脑等单视角区域也能获得外层正负监督。
+
+为了进一步抑制少量高置信度的 inner→outer 错误，系统会从透明外层候选中选取 `p_outer` 损失最高的 10% 作为 hard negatives，并以 0.50 的内部权重加入该损失。训练日志同时记录单视角并集覆盖率、交集占比、可见负样本数和 hard-negative 数量，避免只观察总 loss 而忽略实际监督覆盖范围。
+
+**（8）路由置信度损失**（λ=0.25）
 BCE with logits，target = `(predicted_role == GT_role)`。对次级像素，还额外要求 surface 分类也正确。
 
-**（8）路由先验正则化**（λ=0.001, TV weight=1.0）
+**（9）路由先验正则化**（λ=0.001, TV weight=1.0）
 `L_prior = ||prior||₂² + 1.0 * TV(prior)`，其中 TV 为空间维度的 total-variation（水平和垂直方向一阶差分的平方均值）。
 
-**（9）辅助损失**
+**（10）辅助损失**
 - `part` 交叉熵（λ=0.5）
 - `face` 交叉熵（λ=0.5）
 - `layer_face` 平衡交叉熵（λ=1.0）
@@ -375,13 +390,16 @@ BCE with logits，target = `(predicted_role == GT_role)`。对次级像素，还
 
 | 项目 | 值 |
 | :--- | :--- |
-| 优化器 | AdamW 8-bit |
+| 优化器 | AdamW |
 | 学习率 | 2e-4，余弦衰减至 5%（`min_lr_ratio=0.05`） |
 | 学习率调度 | 基于绝对 epoch 计算，可从任意 checkpoint 安全恢复 |
-| Batch size | 1（因每样本包含两个 256×512 视图，显存需求较高） |
+| Batch size | 32 个 skin；进入 parser 后展开为 64 张 256×512 视图 |
 | 训练 epoch | 1（大数据集下单 epoch 已足够收敛） |
 | 正则化 | `feature_dropout=0.10`（Dropout2d，训练时启用）；冻结 SigLIP2 视觉塔 |
 | 语义缓存 | SigLIP2 空间特征（768×14×8 per view）以 FP16 mmap 存储；180,000 样本约 58 GiB；仅当前 batch 读入显存 |
+| 外层候选监督 | 两视角可见并集 alpha 监督 λ=0.25；交集 disagreement 权重 0.25；最困难 10% 透明候选权重 0.50 |
+| 默认随机模式 | `SEED=1234, REPRODUCIBLE=false, CUDNN_BENCHMARK=true`；初始化、数据划分、shuffle 与增强跟随 seed，但 CUDA 数值不保证逐位一致 |
+| 严格复现模式 | `REPRODUCIBLE=true` 时关闭 cuDNN benchmark 与 Flash Attention，并请求确定性 CUDA 算法；`STRICT_DETERMINISM=true` 可在遇到不支持的算子时直接终止，代价是训练明显变慢 |
 | checkpoint 选择 | 按 `loss_hard_uv_color_selection`（硬路由内/外层 IoU + RGB MAE）择优，防止稀疏或颜色错误的 UV 因 occupancy precision 虚高而胜出 |
 
 ### 4.4 推理路由与门控
@@ -390,15 +408,17 @@ BCE with logits，target = `(predicted_role == GT_role)`。对次级像素，还
 
 1. **投影 texel 共识投票**：每个源像素的路由概率按中心加权方式投票到其投影的 UV texel 上。最终每 texel 的概率为局部像素概率（40%）与 texel 级聚合得分（60%）的软加权混合。孤立的弱外层标记可以被翻转为内层；强外层预测（置信度 ≥0.80，内外层 margin ≥0.35）被保留。
 
-2. **保守外层门控**（默认 `conservative` profile）：
+2. **跨视角外层可见性检查**：对于 78 个共同可见的外层 texel，如果一个视角高置信支持外层，而另一个视角在同一 texel 上明确看到背景或高置信内层，则形成冲突并否决该外层候选。这项规则只处理确有共同可见证据的位置，不会拿后视图去强行裁决仅在正面可见的眼睛或衣服图案。
+
+3. **保守外层门控**（默认 `conservative` profile）：
    - 外层置信度 ≥ 0.80，内外层 margin ≥ 0.55；
    - 外层几何覆盖（footprint coverage）≥ 0.25；
    - 每外层 texel 最少 15 个有效源像素；
    - 背景色边缘像素（与检测到的背景色差 ≤ 8/255）被排除。
 
-3. **几何救援**：当某个 texel 的源像素位于外层独有的轮廓区域（`outer_mask > 0` 且 `inner_mask == 0`），或路由到精确的次级/背向面槽位时，门控放宽至置信度 ≥ 0.60，margin ≥ 0.25，覆盖 ≥ 0.10。
+4. **几何救援**：当某个 texel 的源像素位于外层独有的轮廓区域（`outer_mask > 0` 且 `inner_mask == 0`），或路由到精确的次级/背向面槽位时，门控放宽至置信度 ≥ 0.60，margin ≥ 0.25，覆盖 ≥ 0.10。
 
-4. **语义救援**：parser 预测的部件级 `outer_presence` 和 `outer_coverage` 较高的部件，外层门控可进一步放宽。
+5. **语义救援**：parser 预测的部件级 `outer_presence` 和 `outer_coverage` 较高的部件，外层门控可进一步放宽。
 
 默认配置为 precision-first：`保守 profile` 优先保证已输出的外层 texel 是正确的，而非追求尽可能多输出。未通过门控的外层像素在 UV 图集中保持透明——确定性修复不会凭空创建外层 texel。
 
@@ -460,7 +480,7 @@ Dense UV Parser 的最终产物是一张局部 UV 贴图（输出文件 `parser_
 - 如果 simple inpainting 把大片区域扩散成单一颜色，说明该部件可用证据太少，需要改进视角覆盖、路由召回或后续生成模型，而不是寄希望于补全模型"猜"出合理结果。
 - 如果头部修复正确但手臂出现了跨部件污染，可以追查到拓扑定义本身。
 
-在完整的工作流中，确定性修复结果（`parser_pred_uv_simple_inpainting.png`）和最终输出的 64×64 皮肤文件（`pred_uv.png`）都会保留，方便对比确定性修复与后续生成补全的差异。当前版本中，最终皮肤直接取自确定性修复——还没有接入生成补全模型，这也让整个第二阶段成为一个纯粹的确定性系统。
+在完整的工作流中，确定性修复结果（`parser_pred_uv_simple_inpainting.png`）和最终输出的 64×64 皮肤文件（`pred_uv.png`）都会保留，方便对比确定性修复与后续生成补全的差异。当前版本中，最终皮肤直接取自确定性修复——还没有接入生成补全模型，因此固定 checkpoint 和运行环境后的推理链路不包含随机生成步骤；这与训练阶段默认采用的快速、非逐位确定 CUDA 模式是两个不同概念。
 
 ## 七、当前局限性
 

@@ -328,7 +328,7 @@ The loss function (`DenseUVParserLoss`) is composed of the following weighted co
 **(2) Route-Role Loss** (λ=1.0)
 - Balanced cross-entropy: class weights normalized by `1/sqrt(count)` of valid pixels per class, with inner class weight floor 0.75 and outer class weight cap 0.90 (preventing the rare outer class from dominating gradients).
 
-**(3) Outer False-Positive Loss** (λ=0.75, focal γ=3.0)
+**(3) Outer False-Positive Loss** (λ=1.0, focal γ=3.0)
 ```
 L_fp = E[ p_outer^γ * (-log(1 - p_outer)) ]   for pixels where target ≠ outer
 ```
@@ -350,13 +350,28 @@ This is a macro-averaged loss: compute the mean loss for inner and outer classes
 **(6) Projected Texel Consistency Loss** (λ=0.25)
 For multiple source pixels that project to the same GT UV texel, computes the variance of their routing probabilities, requiring consensus. Grouping key is `(batch_item, GT_role, flat_uv_index)`. Only computed for texels with multiple source pixels, avoiding vacuous loss on single observations.
 
-**(7) Route Confidence Loss** (λ=0.25)
+**(7) Visible Outer-Candidate Alpha Supervision and Cross-View Consistency** (λ=0.25)
+
+Per-pixel route labels supervise only the surface that is ultimately visible; by themselves, they do not directly constrain a geometric candidate that should be transparent but is incorrectly classified as outer. Training therefore projects every view's outer candidates back into the 64×64 atlas and supervises `p_outer` with ground-truth outer alpha:
+
+- GT alpha=1 means that the outer texel exists and should be preserved;
+- GT alpha=0 means that the candidate should be transparent, penalizing inner skin, eyes, face pixels, or background that are incorrectly routed to the outer layer.
+
+Single-view visibility supervision and cross-view consistency have deliberately different coverage. For the current 256×512 `front_left + back_left` mappings, each view directly observes 607 outer texels. Their union contains 1,136 texels—69.6% of the full 1,632-texel outer atlas—while their intersection contains only 78, or 6.9% of the visible union (4.8% of the full outer atlas). Consequently:
+
+- alpha supervision covers all 1,214 per-view candidate observations, corresponding to 1,136 unique visible outer texels;
+- only the probability-disagreement term is restricted to the 78 texels visible in both views;
+- a texel no longer needs to be shared by both views, so single-view regions such as the face, eyes, and back of the head receive positive and negative outer-layer supervision.
+
+To suppress the remaining high-confidence inner→outer mistakes, the highest-loss 10% of transparent outer candidates are mined as hard negatives and added with an internal weight of 0.50. Training logs report union coverage, intersection ratio, visible-negative count, and hard-negative count so that actual supervision coverage is visible rather than hidden behind a total loss.
+
+**(8) Route Confidence Loss** (λ=0.25)
 BCE with logits, target = `(predicted_role == GT_role)`. For secondary pixels, surface classification must also be correct.
 
-**(8) Route Prior Regularization** (λ=0.001, TV weight=1.0)
+**(9) Route Prior Regularization** (λ=0.001, TV weight=1.0)
 `L_prior = ||prior||₂² + 1.0 * TV(prior)`, where TV is total-variation over the spatial dimensions (mean squared first-order differences along horizontal and vertical axes).
 
-**(9) Auxiliary Losses**
+**(10) Auxiliary Losses**
 - `part` cross-entropy (λ=0.5)
 - `face` cross-entropy (λ=0.5)
 - `layer_face` balanced cross-entropy (λ=1.0)
@@ -375,13 +390,16 @@ All soft-UV and rendering loss λ values can be set to 0, in which case training
 
 | Item | Value |
 | :--- | :--- |
-| Optimizer | AdamW 8-bit |
+| Optimizer | AdamW |
 | Learning rate | 2e-4, cosine decay to 5% (`min_lr_ratio=0.05`) |
 | LR schedule | Based on absolute epoch; safe to resume from any checkpoint |
-| Batch size | 1 (two 256×512 views per sample, high memory demand) |
+| Batch size | 32 skins, expanded into 64 256×512 view tensors before entering the parser |
 | Training epochs | 1 (sufficient convergence on large datasets) |
 | Regularization | `feature_dropout=0.10` (Dropout2d, training only); frozen SigLIP2 vision tower |
 | Semantic cache | SigLIP2 spatial features (768×14×8 per view) stored as FP16 mmap; ~58 GiB for 180K samples; only current batch read into GPU memory |
+| Outer-candidate supervision | Visible-union alpha supervision λ=0.25; shared-view disagreement weight 0.25; hardest 10% transparent candidates weighted 0.50 |
+| Default random mode | `SEED=1234, REPRODUCIBLE=false, CUDNN_BENCHMARK=true`; initialization, split, shuffle, and augmentation follow the seed, but CUDA results are not guaranteed bitwise identical |
+| Strict reproducibility mode | `REPRODUCIBLE=true` disables cuDNN benchmark and Flash Attention and requests deterministic CUDA algorithms; `STRICT_DETERMINISM=true` aborts on an unsupported operation, at a substantial speed cost |
 | Checkpoint selection | Best by `loss_hard_uv_color_selection` (hard-routed inner/outer IoU + RGB MAE), preventing sparse or miscolored UVs from winning due to inflated occupancy precision |
 
 ### 4.4 Inference Routing and Gating
@@ -390,15 +408,17 @@ At inference time, the parser's soft probability outputs pass through multiple g
 
 1. **Projected-texel consensus voting**: each source pixel's routing probability is center-weighted and voted into its projected UV texel. The final per-texel probability is a soft blend of the local pixel probability (40%) and the texel-level aggregate score (60%). Isolated weak outer markings can be flipped to inner; strong outer predictions (confidence ≥0.80, inner-outer margin ≥0.35) are preserved.
 
-2. **Conservative outer gating** (default `conservative` profile):
+2. **Cross-view outer-visibility check**: for the 78 shared outer texels, a conflict is formed when one view strongly supports outer while another view clearly observes background or a high-confidence inner route at the same texel. The candidate is then vetoed. This rule applies only where shared evidence actually exists; it does not use the back view to overrule eyes or clothing patterns visible only from the front.
+
+3. **Conservative outer gating** (default `conservative` profile):
    - Outer confidence ≥ 0.80, inner-outer margin ≥ 0.55;
    - Outer footprint coverage ≥ 0.25;
    - Minimum 15 valid source pixels per outer texel;
    - Background-edge pixels (color difference from detected background ≤ 8/255) are excluded.
 
-3. **Geometry rescue**: when a texel's source pixels lie in an outer-only silhouette region (`outer_mask > 0` and `inner_mask == 0`), or are routed to a precise secondary/backface surface slot, gating relaxes to confidence ≥ 0.60, margin ≥ 0.25, coverage ≥ 0.10.
+4. **Geometry rescue**: when a texel's source pixels lie in an outer-only silhouette region (`outer_mask > 0` and `inner_mask == 0`), or are routed to a precise secondary/backface surface slot, gating relaxes to confidence ≥ 0.60, margin ≥ 0.25, coverage ≥ 0.10.
 
-4. **Semantic rescue**: parts where the parser predicts higher `outer_presence` and `outer_coverage` receive relaxed outer gating.
+5. **Semantic rescue**: parts where the parser predicts higher `outer_presence` and `outer_coverage` receive relaxed outer gating.
 
 The default configuration is precision-first: the conservative profile prioritizes correctness of output outer texels over maximizing their quantity. Outer pixels that fail gating remain transparent in the UV atlas—deterministic repair never fabricates outer-layer texels.
 
@@ -464,7 +484,7 @@ This algorithm, corresponding to the `simple_inpainting` module in the codebase 
 - If simple inpainting diffuses large areas into a single color, it indicates that the part has too little usable evidence, requiring improvements in view coverage, routing recall, or the downstream generative model—not hoping the completion model will "guess" a reasonable result.
 - If head repair is correct but arm repair shows cross-part contamination, the topology definition itself can be traced and corrected.
 
-In the full workflow, the deterministic repair result (`parser_pred_uv_simple_inpainting.png`) and the final output 64×64 skin file (`pred_uv.png`) are both preserved, allowing comparison between deterministic repair and future generative completion. In the current version, the final skin is taken directly from deterministic repair—no generative completion model has been connected yet, which makes the entire Stage Two a purely deterministic system.
+In the full workflow, the deterministic repair result (`parser_pred_uv_simple_inpainting.png`) and the final output 64×64 skin file (`pred_uv.png`) are both preserved, allowing comparison between deterministic repair and future generative completion. In the current version, the final skin is taken directly from deterministic repair—no generative completion model has been connected yet—so inference with a fixed checkpoint and runtime contains no stochastic generation step. This is distinct from the default fast training mode, whose CUDA numerics are not bitwise deterministic.
 
 ## 7. Current Limitations
 
