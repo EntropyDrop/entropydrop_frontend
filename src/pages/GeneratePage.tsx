@@ -437,7 +437,15 @@ export function GeneratePage({ current }: GeneratePageProps) {
             if (editSourceType) {
                 formData.append('edit_source_type', editSourceType)
             }
-            formData.append('model_version', modelVersion)
+            if (modelVersion && modelVersion !== 'unknown') {
+                if (modelVersion.includes(' + ')) {
+                    const parts = modelVersion.split(' + ')
+                    formData.append('aux_model_version', parts[0])
+                    formData.append('model_version', parts[1])
+                } else {
+                    formData.append('model_version', modelVersion)
+                }
+            }
             formData.append('seed', String(newSeed))
             if (nStep !== undefined) formData.append('n_step', String(nStep))
             if (guidance !== undefined) formData.append('guidance', String(guidance))
