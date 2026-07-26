@@ -162,6 +162,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
     }, [location.state]);
 
     const [modelsConfig, setModelsConfig] = useState<Record<string, string[]>>({})
+    const [modelCosts, setModelCosts] = useState<Record<string, number>>({})
 
     const fetchModels = async () => {
         try {
@@ -198,6 +199,29 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 if (formattedConfig[currentMode] && formattedConfig[currentMode].length > 0) {
                     setModelVersion(formattedConfig[currentMode][0])
                 }
+
+                // Fetch credit costs for all unique models in parallel
+                const allUniqueModels = Array.from(new Set([
+                    ...textToSkin,
+                    ...imageEditToSkin,
+                    ...imageToSkin
+                ]))
+                
+                const costs: Record<string, number> = {}
+                await Promise.all(
+                    allUniqueModels.map(async (m) => {
+                        try {
+                            const res = await apiFetch(`/api/generation_credit_cost?model_name=${encodeURIComponent(m)}`)
+                            if (res.ok) {
+                                const costData = await res.json()
+                                costs[m] = costData.credits
+                            }
+                        } catch (e) {
+                            console.error(`Failed to fetch cost for ${m}`, e)
+                        }
+                    })
+                )
+                setModelCosts(costs)
             }
         } catch (e) {
             console.error('Failed to fetch models', e)
@@ -940,7 +964,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                              >
                                                  <span>{m}</span>
                                                  <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
-                                                     {generationCreditCost} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                     {modelCosts[m] !== undefined ? modelCosts[m] : generationCreditCost} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
                                                  </span>
                                              </button>
                                          ))}
