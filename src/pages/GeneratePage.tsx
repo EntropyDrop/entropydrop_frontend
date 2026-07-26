@@ -229,9 +229,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
     useEffect(() => {
         if (localStorage.getItem('token') && modelVersion && modelVersion !== 'unknown') {
-            const parts = modelVersion.split(' + ')
-            const cleanModelName = parts[parts.length - 1]
-            fetchGenerationCreditCost(cleanModelName)
+            fetchGenerationCreditCost(modelVersion)
         }
     }, [modelVersion])
 
