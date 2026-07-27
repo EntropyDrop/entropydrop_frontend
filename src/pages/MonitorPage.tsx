@@ -1943,7 +1943,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
                           </span>
                           {log.mode && (
                             <span className="text-white/40">
-                              {isZh ? '模式: ' : 'MODE: '}<span className="text-white/80">{translateMode(log.mode)}</span>
+                              {isZh ? '模式: ' : 'MODE: '}<span className="text-white/80">{getModeLabel(log.mode)}</span>
                             </span>
                           )}
                         </div>
