@@ -98,8 +98,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [actionLoading, setActionLoading] = useState(false)
   const [dailyFreeCredits, setDailyFreeCredits] = useState<number>(6)
   const [freeCreditsLoading, setFreeCreditsLoading] = useState(false)
-  const [generationCreditCost, setGenerationCreditCost] = useState<number>(1)
-  const [generationCreditCostLoading, setGenerationCreditCostLoading] = useState(false)
+
   const [isTextToSkinEnabled, setIsTextToSkinEnabled] = useState(true)
   const [textToSkinSettingLoading, setTextToSkinSettingLoading] = useState(false)
   const [isImageToSkinEnabled, setIsImageToSkinEnabled] = useState(true)
@@ -114,6 +113,39 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [giftMessageInput, setGiftMessageInput] = useState<string>('')
   const [giftLoading, setGiftLoading] = useState(false)
   const [showGiftConfirmation, setShowGiftConfirmation] = useState(false)
+
+  // Gift Credits to Specific User states
+  const [singleGiftEmail, setSingleGiftEmail] = useState<string>('')
+  const [singleGiftAmount, setSingleGiftAmount] = useState<number>(10)
+  const [singleGiftMessage, setSingleGiftMessage] = useState<string>('')
+  const [singleGiftLoading, setSingleGiftLoading] = useState(false)
+  const [showSingleGiftConfirmation, setShowSingleGiftConfirmation] = useState(false)
+
+
+  // SKING_DDJ generations states
+  interface SkingDdjLogItem {
+    id: string;
+    prompt: string | null;
+    mode: string;
+    status: string;
+    model_version: string;
+    created_at: string | null;
+    source_url: string | null;
+    edited_image_url: string | null;
+    result_url: string | null;
+  }
+  interface SkingDdjData {
+    items: SkingDdjLogItem[];
+    total_count: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
+  }
+
+  const [showSkingDdjModal, setShowSkingDdjModal] = useState(false)
+  const [skingDdjData, setSkingDdjData] = useState<SkingDdjData | null>(null)
+  const [loadingSkingDdj, setLoadingSkingDdj] = useState(false)
+  const [skingDdjPage, setSkingDdjPage] = useState(1)
 
   const isZh = current.lang === 'zh-hans'
 
@@ -182,49 +214,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
     }
   }
 
-  const fetchGenerationCreditCost = async () => {
-    try {
-      const response = await apiFetch('/api/monitor/generation_credit_cost')
-      if (response.ok) {
-        const data = await response.json()
-        setGenerationCreditCost(data.credits)
-      }
-    } catch (e) {
-      console.error('Failed to fetch generation credit cost', e)
-    }
-  }
 
-  const updateGenerationCreditCost = async (value: number) => {
-    setGenerationCreditCostLoading(true)
-    try {
-      const response = await apiFetch('/api/monitor/generation_credit_cost', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credits: value })
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setGenerationCreditCost(data.credits)
-        setDeleteMessage({
-          type: 'success',
-          text: isZh ? `成功更新单次生成消耗为 ${data.credits} Credits。` : `Generation cost updated to ${data.credits} credits.`
-        })
-      } else {
-        const errData = await response.json().catch(() => ({}))
-        setDeleteMessage({
-          type: 'error',
-          text: errData.detail || current.monitor.operationFailed
-        })
-      }
-    } catch (e) {
-      setDeleteMessage({
-        type: 'error',
-        text: current.monitor.networkError
-      })
-    } finally {
-      setGenerationCreditCostLoading(false)
-    }
-  }
 
   const fetchModelPrices = async () => {
     setModelPricesLoading(true)
@@ -329,6 +319,69 @@ export function MonitorPage({ current }: MonitorPageProps) {
     }
   }
 
+  const executeSingleGift = async () => {
+    if (!singleGiftEmail.trim()) {
+      setDeleteMessage({
+        type: 'error',
+        text: isZh ? '必须填写用户邮箱' : 'User email is required'
+      })
+      return
+    }
+    if (singleGiftAmount <= 0) {
+      setDeleteMessage({
+        type: 'error',
+        text: isZh ? '赠送额度必须大于 0' : 'Gift amount must be greater than 0'
+      })
+      return
+    }
+    if (!singleGiftMessage.trim()) {
+      setDeleteMessage({
+        type: 'error',
+        text: isZh ? '必须填写赠送备注信息' : 'Gift message/reason is required'
+      })
+      return
+    }
+
+    setSingleGiftLoading(true)
+    setShowSingleGiftConfirmation(false)
+    try {
+      const response = await apiFetch('/api/monitor/gift_specific_user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: singleGiftEmail.trim(),
+          amount: singleGiftAmount,
+          message: singleGiftMessage.trim()
+        })
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setDeleteMessage({
+          type: 'success',
+          text: isZh 
+            ? `成功向用户 ${data.username} (${data.email}) 赠送 ${singleGiftAmount} Credits，当前余额: ${data.new_credits}`
+            : `Successfully gifted ${singleGiftAmount} credits to user ${data.username} (${data.email}). New balance: ${data.new_credits}`
+        })
+        setSingleGiftEmail('')
+        setSingleGiftMessage('')
+        fetchStats()
+      } else {
+        const errData = await response.json().catch(() => ({}))
+        setDeleteMessage({
+          type: 'error',
+          text: errData.detail || current.monitor.operationFailed
+        })
+      }
+    } catch (e) {
+      setDeleteMessage({
+        type: 'error',
+        text: current.monitor.networkError
+      })
+    } finally {
+      setSingleGiftLoading(false)
+    }
+  }
+
   const fetchModesStatus = async () => {
     try {
       const response = await apiFetch('/api/monitor/mode_status')
@@ -395,7 +448,6 @@ export function MonitorPage({ current }: MonitorPageProps) {
     fetchStats()
     fetchModesStatus()
     fetchDailyFreeCredits()
-    fetchGenerationCreditCost()
     fetchModelPrices()
     const timer = setInterval(fetchStats, 3000)
     return () => clearInterval(timer)
@@ -422,6 +474,56 @@ export function MonitorPage({ current }: MonitorPageProps) {
     }, 60000) // Poll every 60 seconds
     return () => clearInterval(timer)
   }, [page])
+
+  const fetchSkingDdj = async (p: number) => {
+    setLoadingSkingDdj(true)
+    try {
+      const response = await apiFetch(`/api/monitor/sking_ddj_generations?page=${p}&page_size=5`)
+      if (response.ok) {
+        const data = await response.json()
+        setSkingDdjData(data)
+      }
+    } catch (e) {
+      console.error('Failed to fetch SKING_DDJ generations', e)
+    } finally {
+      setLoadingSkingDdj(false)
+    }
+  }
+
+  useEffect(() => {
+    if (showSkingDdjModal) {
+      fetchSkingDdj(skingDdjPage)
+    }
+  }, [skingDdjPage, showSkingDdjModal])
+
+  const handleOpenSkingDdjModal = () => {
+    setSkingDdjPage(1)
+    setShowSkingDdjModal(true)
+  }
+
+  const downloadImage = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('Download failed:', error);
+      // Fallback to opening in new tab
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.target = '_blank';
+      link.click();
+    }
+  };
 
   useEffect(() => {
     const clockTimer = setInterval(() => {
@@ -770,48 +872,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           </div>
 
-          {/* Generation Credit Cost Configuration Card */}
-          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="flex items-start gap-3.5">
-              <div className="w-10 h-10 border flex items-center justify-center text-xl transition-all bg-orange-500/10 border-orange-500/30 text-orange-400">
-                <Icon icon="pixelarticons:zap" />
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
-                  {isZh ? '单次生成消耗 • Credits 控制' : 'Generation Cost • Credits Control'}
-                </h3>
-                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
-                  {isZh ? '设置 Generate 页面所有模型每次生成消耗的 Credits。设置为 0 时生成免费。' : 'Set the credit cost for every model on Generate. Set to 0 for free generation.'}
-                </p>
-              </div>
-            </div>
 
-            <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min="0"
-                  max="1000"
-                  value={generationCreditCost}
-                  onChange={(e) => setGenerationCreditCost(parseInt(e.target.value) || 0)}
-                  className="w-16 px-2.5 py-1 text-center bg-black/40 border border-white/20 text-white font-mono text-sm focus:outline-none focus:border-orange-500/50"
-                  disabled={generationCreditCostLoading}
-                />
-                <button
-                  onClick={() => updateGenerationCreditCost(generationCreditCost)}
-                  disabled={generationCreditCostLoading}
-                  className="px-3 py-1 bg-orange-500/20 border border-orange-500/40 text-orange-400 hover:bg-orange-500/30 hover:border-orange-500/50 transition-colors text-xs font-bold font-mono tracking-wide flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {generationCreditCostLoading ? (
-                    <Icon icon="pixelarticons:reload" className="animate-spin text-sm" />
-                  ) : (
-                    <Icon icon="pixelarticons:check" className="text-sm" />
-                  )}
-                  {isZh ? '保存' : 'SAVE'}
-                </button>
-              </div>
-            </div>
-          </div>
 
           {/* Model Specific Pricing Configuration Card */}
           <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -927,6 +988,76 @@ export function MonitorPage({ current }: MonitorPageProps) {
                   <Icon icon="pixelarticons:gift" className="text-sm" />
                 )}
                 {isZh ? '赠送' : 'GIFT ACTIVE'}
+              </button>
+            </div>
+          </div>
+
+          {/* Gift Credits to Specific User Panel */}
+          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5 flex-1 w-full">
+              <div className="w-10 h-10 border flex items-center justify-center text-xl bg-purple-500/10 border-purple-500/30 text-purple-400 shrink-0">
+                <Icon icon="pixelarticons:mail-flash" />
+              </div>
+              <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {isZh ? '指定用户 Credits 赠送 • 运营活动' : 'Gift Credits to Specific User • Admin'}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {isZh ? '向指定邮箱的用户赠送 Credits，并发送系统通知。' : 'Gift credits and send a system notification to a specific user by email.'}
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2 mt-1 w-full max-w-4xl">
+                  <div className="flex-1 min-w-[180px] flex items-center gap-1.5">
+                    <span className="text-[10px] font-mono text-white/50">{isZh ? '邮箱:' : 'Email:'}</span>
+                    <input
+                      type="email"
+                      placeholder={isZh ? '用户注册邮箱' : 'User registration email'}
+                      value={singleGiftEmail}
+                      onChange={(e) => setSingleGiftEmail(e.target.value)}
+                      className="flex-1 h-7 px-3 bg-black/40 border border-white/20 text-white font-mono text-xs focus:outline-none focus:border-purple-500/50 placeholder:text-white/20"
+                      disabled={singleGiftLoading}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] font-mono text-white/50">{isZh ? '额度:' : 'Amt:'}</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10000"
+                      value={singleGiftAmount}
+                      onChange={(e) => setSingleGiftAmount(parseInt(e.target.value) || 1)}
+                      className="w-16 px-2.5 py-1 text-center bg-black/40 border border-white/20 text-white font-mono text-xs focus:outline-none focus:border-purple-500/50"
+                      disabled={singleGiftLoading}
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder={isZh ? '赠送备注/信息 (如: 补偿 / 活动福利)' : 'Gift reason/message (e.g. Compensation / Campaign Gift)'}
+                    value={singleGiftMessage}
+                    onChange={(e) => setSingleGiftMessage(e.target.value)}
+                    className="flex-1 min-w-[200px] h-7 px-3 bg-black/40 border border-white/20 text-white font-mono text-xs focus:outline-none focus:border-purple-500/50 placeholder:text-white/20"
+                    disabled={singleGiftLoading}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
+              <button
+                onClick={() => {
+                  if (!singleGiftEmail.trim()) return
+                  if (singleGiftAmount <= 0) return
+                  if (!singleGiftMessage.trim()) return
+                  setShowSingleGiftConfirmation(true)
+                }}
+                disabled={singleGiftLoading || !singleGiftEmail.trim() || singleGiftAmount <= 0 || !singleGiftMessage.trim()}
+                className="px-4 py-1.5 bg-purple-500/20 border border-purple-500/40 text-purple-400 hover:bg-purple-500/30 hover:border-purple-500/50 transition-colors text-xs font-bold font-mono tracking-wide flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {singleGiftLoading ? (
+                  <Icon icon="pixelarticons:reload" className="animate-spin text-sm" />
+                ) : (
+                  <Icon icon="pixelarticons:gift" className="text-sm" />
+                )}
+                {isZh ? '赠送' : 'GIFT TO USER'}
               </button>
             </div>
           </div>
@@ -1308,6 +1439,15 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
             
             <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                onClick={handleOpenSkingDdjModal}
+                className="px-3 h-8 flex items-center justify-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 hover:text-white hover:bg-green-500/20 hover:border-green-500 hover:shadow-lg transition-all active:scale-95 text-xs font-mono font-bold uppercase cursor-pointer"
+                title={isZh ? '查看 SKING_DDJ 模型的生成状态' : 'View SKING_DDJ Generation Status'}
+              >
+                <Icon icon="pixelarticons:image" />
+                {isZh ? 'SKING_DDJ 历史' : 'SKING_DDJ History'}
+              </button>
+
               <button 
                 onClick={() => fetchUnfinished(page)}
                 disabled={loadingUnfinished}
@@ -1693,6 +1833,272 @@ export function MonitorPage({ current }: MonitorPageProps) {
                 {isZh ? '确认赠送' : 'CONFIRM GIFT'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Specific User Gift Confirmation Modal */}
+      {showSingleGiftConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
+          <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-purple-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-500 text-2xl shrink-0">
+                <Icon icon="pixelarticons:shield-attention" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <h4 className={`text-white text-base m-0 ${current.fontClass}`}>
+                  {isZh ? '确认向指定用户赠送 Credits 吗？' : 'Confirm Specific User Gift'}
+                </h4>
+                <p className="text-white/60 text-xs leading-relaxed mt-1">
+                  {isZh ? (
+                    <>
+                      您正在请求向用户 <b>{singleGiftEmail.trim()}</b> 赠送 <strong>{singleGiftAmount}</strong> Credits。
+                      <br />
+                      备注说明: <span className="text-purple-400 font-bold font-mono">"{singleGiftMessage.trim()}"</span>
+                      <br />
+                      此操作将立即修改该用户的额度余额，并发送系统通知！
+                    </>
+                  ) : (
+                    <>
+                      You are about to gift <strong>{singleGiftAmount}</strong> credits to user <b>{singleGiftEmail.trim()}</b>.
+                      <br />
+                      Message: <span className="text-purple-400 font-bold font-mono">"{singleGiftMessage.trim()}"</span>
+                      <br />
+                      This will modify the user's credit balance and send a system notification immediately.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowSingleGiftConfirmation(false)}
+                disabled={singleGiftLoading}
+                className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+              >
+                {isZh ? '取消' : 'Cancel'}
+              </button>
+              <button
+                onClick={executeSingleGift}
+                disabled={singleGiftLoading}
+                className="px-4 py-2 bg-purple-950/40 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 hover:border-purple-500 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95 flex items-center gap-1.5"
+              >
+                {singleGiftLoading ? (
+                  <Icon icon="pixelarticons:reload" className="animate-spin text-purple-500" />
+                ) : (
+                  <Icon icon="pixelarticons:gift" />
+                )}
+                {isZh ? '确认赠送' : 'CONFIRM GIFT'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SKING_DDJ Series Generations Modal */}
+      {showSkingDdjModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto p-4">
+          <div className="w-full max-w-4xl bg-[#0a0a0a]/95 border border-green-500/30 flex flex-col gap-5 animate-in zoom-in-95 duration-200 shadow-2xl max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-white/10 p-5 pb-4">
+              <div className="flex items-center gap-2.5">
+                <Icon icon="pixelarticons:device-tv" className="text-xl text-green-500" />
+                <h4 className={`text-white text-base font-bold m-0 ${current.fontClass}`}>
+                  {isZh ? 'SKING_DDJ 系列模型生成监控' : 'SKING_DDJ Series Generation Monitor'}
+                </h4>
+              </div>
+              <button
+                onClick={() => setShowSkingDdjModal(false)}
+                className="w-8 h-8 flex items-center justify-center bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 cursor-pointer"
+                title={isZh ? '关闭' : 'Close'}
+              >
+                <Icon icon="pixelarticons:close" className="text-lg" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-2 flex flex-col gap-4">
+              {loadingSkingDdj && !skingDdjData ? (
+                <div className="py-20 flex items-center justify-center">
+                  <Icon icon="pixelarticons:reload" className="text-4xl text-green-500 animate-spin" />
+                </div>
+              ) : !skingDdjData || skingDdjData.items.length === 0 ? (
+                <div className="py-20 flex flex-col items-center justify-center text-white/40">
+                  <Icon icon="pixelarticons:image" className="text-4xl" />
+                  <span className="text-xs mt-2">{isZh ? '暂无 SKING_DDJ 模型的生成记录' : 'No SKING_DDJ generation records found'}</span>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-5">
+                  {skingDdjData.items.map((log) => (
+                    <div key={log.id} className="bg-white/5 border border-white/10 p-4 flex flex-col gap-3">
+                      {/* Log Metadata Header */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2 text-[11px] font-mono">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-white/40">
+                            ID: <span className="text-white/80 font-bold">{log.id}</span>
+                          </span>
+                          <span className="text-white/40">
+                            {isZh ? '模型: ' : 'MODEL: '}<span className="text-white/80">{log.model_version}</span>
+                          </span>
+                          {log.mode && (
+                            <span className="text-white/40">
+                              {isZh ? '模式: ' : 'MODE: '}<span className="text-white/80">{translateMode(log.mode)}</span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-white/40">
+                            {log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A'}
+                          </span>
+                          <span className={`px-2 py-0.5 border text-[10px] uppercase font-bold tracking-wider ${
+                            log.status === 'success'
+                              ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                              : log.status === 'failed'
+                              ? 'bg-red-500/10 border-red-500/30 text-red-400'
+                              : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400 animate-pulse'
+                          }`}>
+                            {log.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Prompts, if present */}
+                      {log.prompt && (
+                        <div className="text-[11px] text-white/60 bg-black/40 p-2 border border-white/5 leading-relaxed font-mono">
+                          <span className="text-white/30 uppercase font-bold mr-1">{isZh ? '提示词:' : 'Prompt:'}</span>
+                          {log.prompt}
+                        </div>
+                      )}
+
+                      {/* Image Comparison Rows */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Original Image Card */}
+                        <div className="flex items-center gap-3 bg-black/30 border border-white/5 p-3 rounded">
+                          <div className="w-20 h-20 bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shrink-0 relative group">
+                            {log.source_url ? (
+                              <img
+                                src={log.source_url}
+                                alt="Original"
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              <Icon icon="pixelarticons:image" className="text-white/20 text-2xl" />
+                            )}
+                          </div>
+                          <div className="flex-1 flex flex-col justify-between h-20 py-0.5">
+                            <div>
+                              <span className="text-xs text-white font-bold block">{isZh ? '原图' : 'Original Image'}</span>
+                              <span className="text-[9px] font-mono text-white/40 block mt-1 break-all truncate max-w-[180px]">
+                                {log.source_url ? 'source.png' : (isZh ? '无原图' : 'No source image')}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => log.source_url && downloadImage(log.source_url, `source_${log.id}.png`)}
+                              disabled={!log.source_url}
+                              className="self-start px-2.5 py-1 bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 disabled:opacity-30 disabled:pointer-events-none text-[10px] font-mono font-bold text-white/80 hover:text-white uppercase transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                            >
+                              <Icon icon="pixelarticons:download" className="text-xs" />
+                              {isZh ? '下载' : 'Download'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Edited Result Card */}
+                        <div className="flex items-center gap-3 bg-black/30 border border-white/5 p-3 rounded">
+                          <div className="w-20 h-20 bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shrink-0 relative group">
+                            {log.edited_image_url ? (
+                              <img
+                                src={log.edited_image_url}
+                                alt="Edited Result"
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              <div className="flex flex-col items-center justify-center">
+                                {log.status === 'success' || log.status === 'failed' ? (
+                                  <Icon icon="pixelarticons:close" className="text-red-500/40 text-xl" />
+                                ) : (
+                                  <Icon icon="pixelarticons:reload" className="text-yellow-500/40 text-xl animate-spin" />
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 flex flex-col justify-between h-20 py-0.5">
+                            <div>
+                              <span className="text-xs text-white font-bold block">{isZh ? '处理后/编辑图' : 'Edited Result'}</span>
+                              <span className="text-[9px] font-mono text-white/40 block mt-1 break-all truncate max-w-[180px]">
+                                {log.edited_image_url ? 'edited_result.png' : (log.status === 'failed' ? (isZh ? '处理失败' : 'Failed') : (isZh ? '无处理图' : 'No edited result'))}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => log.edited_image_url && downloadImage(log.edited_image_url, `edited_${log.id}.png`)}
+                              disabled={!log.edited_image_url}
+                              className="self-start px-2.5 py-1 bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 disabled:opacity-30 disabled:pointer-events-none text-[10px] font-mono font-bold text-white/80 hover:text-white uppercase transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                            >
+                              <Icon icon="pixelarticons:download" className="text-xs" />
+                              {isZh ? '下载' : 'Download'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer (Pagination) */}
+            {skingDdjData && skingDdjData.total_pages > 1 && (
+              <div className="border-t border-white/10 p-5 flex items-center justify-between gap-4 font-mono shrink-0">
+                <span className="text-[10px] text-white/40">
+                  {isZh ? (
+                    <>共 <span className="text-white font-bold">{skingDdjData.total_count}</span> 项 • 第 <span className="text-white font-bold">{skingDdjPage}</span>/{skingDdjData.total_pages} 页</>
+                  ) : (
+                    <>Total <span className="text-white font-bold">{skingDdjData.total_count}</span> items • Page <span className="text-white font-bold">{skingDdjPage}</span> of {skingDdjData.total_pages}</>
+                  )}
+                </span>
+                
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setSkingDdjPage(p => Math.max(1, p - 1))}
+                    disabled={skingDdjPage === 1}
+                    className="px-3 py-1 bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer text-[10px]"
+                  >
+                    {isZh ? '上一页' : 'PREV'}
+                  </button>
+                  
+                  {Array.from({ length: skingDdjData.total_pages }, (_, i) => i + 1)
+                    .filter(p => Math.abs(p - skingDdjPage) <= 2 || p === 1 || p === skingDdjData.total_pages)
+                    .map((p, idx, arr) => {
+                      const showEllipsis = idx > 0 && p - arr[idx - 1] > 1;
+                      return (
+                        <div key={p} className="flex items-center gap-1.5">
+                          {showEllipsis && <span className="text-white/20 text-xs px-1">...</span>}
+                          <button
+                            onClick={() => setSkingDdjPage(p)}
+                            className={`w-6 h-6 flex items-center justify-center text-[10px] font-bold border transition-all active:scale-95 cursor-pointer ${
+                              skingDdjPage === p
+                                ? 'bg-green-500/10 border-green-500/40 text-green-400'
+                                : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </div>
+                      );
+                    })
+                  }
+
+                  <button
+                    onClick={() => setSkingDdjPage(p => Math.min(skingDdjData.total_pages, p + 1))}
+                    disabled={skingDdjPage === skingDdjData.total_pages}
+                    className="px-3 py-1 bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer text-[10px]"
+                  >
+                    {isZh ? '下一页' : 'NEXT'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
