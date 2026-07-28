@@ -2,8 +2,10 @@
 
 @font-face {
   font-family: 'Fusion-Pixel-Zh-Hans';
-  src: url('/fonts/fusion-pixel-12px-proportional-zh_hans.ttf.woff2') format('woff2'),
-       url('/fonts/fusion-pixel-12px-proportional-zh_hans.ttf') format('truetype');
+  src: url('/fonts/fusion-pixel-12px-proportional-zh_hans.ttf.woff2') format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
 }
 
 @theme {
@@ -356,4 +358,3 @@
   font-size: inherit !important;
   color: inherit !important;
 }
-

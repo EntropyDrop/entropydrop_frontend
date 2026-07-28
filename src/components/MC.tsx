@@ -606,6 +606,10 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     }, [processedTexture, uvMaps]);
 
     const voxels = useMemo(() => {
+        // Plane mode does not render voxel groups. Creating hundreds of meshes and
+        // materials here made opening and disposing MCModal unnecessarily expensive.
+        if (mode !== 'voxel') return null;
+
         let processedImageData: ImageData | null = null;
         const img = processedTexture.image as any;
         if (img && img.complete && img.width > 0) {
@@ -633,7 +637,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             rightLeg: createVoxelGroup(processedImageData, [shiftpos(uvMaps.rightLeg, 0, 16), 0.5, [4, 6, 4]], showEdges, printMode),
             rightLegLow: createVoxelGroup(processedImageData, [shiftpos(uvMaps.rightLegLow, 0, 16), 0.5, [4, 6, 4]], showEdges, printMode)
         };
-    }, [processedTexture, armConfig, uvMaps, updateTrigger, showEdges, printMode]);
+    }, [mode, processedTexture, armConfig, uvMaps, updateTrigger, showEdges, printMode]);
 
     const coreEdgeGeometries = useMemo(() => {
         const createEdges = (w: number, h: number, d: number) => {
@@ -737,7 +741,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         )}
                     </mesh>
                     {mode === 'voxel' ? (
-                        <primitive object={charData.voxels.body} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('body', e, true, true)} onPointerMove={(e: any) => handle3DClick('body', e, true)} />
+                        <primitive object={charData.voxels!.body} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('body', e, true, true)} onPointerMove={(e: any) => handle3DClick('body', e, true)} />
                     ) : (
                         <mesh material={charData.mats.bodyOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('body', e, true, true)} onPointerMove={(e) => handle3DClick('body', e, true)}>
                             <boxGeometry args={[8.5, 12.5, 4.5]} />
@@ -757,7 +761,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             )}
                         </mesh>
                         {mode === 'voxel' ? (
-                            <primitive object={charData.voxels.head} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('head', e, true, true)} onPointerMove={(e: any) => handle3DClick('head', e, true)} />
+                            <primitive object={charData.voxels!.head} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('head', e, true, true)} onPointerMove={(e: any) => handle3DClick('head', e, true)} />
                         ) : (
                             <mesh material={charData.mats.headOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('head', e, true, true)} onPointerMove={(e) => handle3DClick('head', e, true)}>
                                 <boxGeometry args={[9, 9, 9]} />
@@ -778,7 +782,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             )}
                         </mesh>
                         {mode === 'voxel' ? (
-                            <primitive object={charData.voxels.leftArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArm', e, true)} />
+                            <primitive object={charData.voxels!.leftArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArm', e, true)} />
                         ) : (
                             <mesh material={charData.mats.leftArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e) => handle3DClick('leftArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, 6.5, 4.5]} /></mesh>
                         )}
@@ -794,7 +798,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                                 )}
                             </mesh>
                             {mode === 'voxel' ? (
-                                <primitive object={charData.voxels.leftArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArmLow', e, true)} />
+                                <primitive object={charData.voxels!.leftArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArmLow', e, true)} />
                             ) : (
                                 <mesh material={charData.mats.leftArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, 6.5, 4.502]} /></mesh>
                             )}
@@ -814,7 +818,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             )}
                         </mesh>
                         {mode === 'voxel' ? (
-                            <primitive object={charData.voxels.rightArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArm', e, true)} />
+                            <primitive object={charData.voxels!.rightArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArm', e, true)} />
                         ) : (
                             <mesh material={charData.mats.rightArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e) => handle3DClick('rightArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, 6.5, 4.5]} /></mesh>
                         )}
@@ -830,7 +834,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                                 )}
                             </mesh>
                             {mode === 'voxel' ? (
-                                <primitive object={charData.voxels.rightArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArmLow', e, true)} />
+                                <primitive object={charData.voxels!.rightArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArmLow', e, true)} />
                             ) : (
                                 <mesh material={charData.mats.rightArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, 6.5, 4.502]} /></mesh>
                             )}
@@ -850,7 +854,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             )}
                         </mesh>
                         {mode === 'voxel' ? (
-                            <primitive object={charData.voxels.leftLeg} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftLeg', e, true)} />
+                            <primitive object={charData.voxels!.leftLeg} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftLeg', e, true)} />
                         ) : (
                             <mesh material={charData.mats.leftLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e) => handle3DClick('leftLeg', e, true)}><boxGeometry args={[4.5, 6.5, 4.5]} /></mesh>
                         )}
@@ -866,7 +870,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                                 )}
                             </mesh>
                             {mode === 'voxel' ? (
-                                <primitive object={charData.voxels.leftLegLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftLegLow', e, true)} />
+                                <primitive object={charData.voxels!.leftLegLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftLegLow', e, true)} />
                             ) : (
                                 <mesh material={charData.mats.leftLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftLegLow', e, true)}><boxGeometry args={[4.502, 6.5, 4.502]} /></mesh>
                             )}
@@ -886,7 +890,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             )}
                         </mesh>
                         {mode === 'voxel' ? (
-                            <primitive object={charData.voxels.rightLeg} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightLeg', e, true)} />
+                            <primitive object={charData.voxels!.rightLeg} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightLeg', e, true)} />
                         ) : (
                             <mesh material={charData.mats.rightLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e) => handle3DClick('rightLeg', e, true)}><boxGeometry args={[4.5, 6.5, 4.5]} /></mesh>
                         )}
@@ -902,7 +906,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                                 )}
                             </mesh>
                             {mode === 'voxel' ? (
-                                <primitive object={charData.voxels.rightLegLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightLegLow', e, true)} />
+                                <primitive object={charData.voxels!.rightLegLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightLegLow', e, true)} />
                             ) : (
                                 <mesh material={charData.mats.rightLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightLegLow', e, true)}><boxGeometry args={[4.502, 6.5, 4.502]} /></mesh>
                             )}

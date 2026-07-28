@@ -157,6 +157,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                             selected={selectedDiscoveryItem}
                             onSelect={setSelectedDiscoveryItem}
                             onLoading={setIsDiscoveryLoading}
+                            paused={selectedDiscoveryItem !== null}
                         />
                     </Suspense>
                 ) : (

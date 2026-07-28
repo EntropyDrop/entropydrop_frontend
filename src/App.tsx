@@ -62,11 +62,11 @@ function RouteReadySignal({ children, onReady }: { children: ReactNode, onReady:
 
 function RouteTransition({ children, current }: { children: ReactNode, current: LangData }) {
   const [isRouteReady, setIsRouteReady] = useState(false)
-  const [minimumElapsed, setMinimumElapsed] = useState(false)
+  const [showSkeleton, setShowSkeleton] = useState(false)
   const markRouteReady = useCallback(() => setIsRouteReady(true), [])
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setMinimumElapsed(true), 450)
+    const timeout = window.setTimeout(() => setShowSkeleton(true), 150)
     return () => window.clearTimeout(timeout)
   }, [])
 
@@ -77,7 +77,7 @@ function RouteTransition({ children, current }: { children: ReactNode, current: 
           {children}
         </RouteReadySignal>
       </Suspense>
-      {(!isRouteReady || !minimumElapsed) && <RouteLoadingSkeleton current={current} />}
+      {!isRouteReady && showSkeleton && <RouteLoadingSkeleton current={current} />}
     </>
   )
 }

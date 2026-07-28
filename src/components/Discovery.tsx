@@ -17,9 +17,11 @@ import type { GenerationLogItemBrief } from '../types/log'
 
 const DISCOVERY_SKIN_PREVIEW_SCALE = 4
 const DISCOVERY_SLOT_COUNT = 180
+const DISCOVERY_INITIAL_ITEM_COUNT = 24
 const DISCOVERY_LOAD_CONCURRENCY = 6
 const DISCOVERY_BATCH_SIZE = 2
 const DISCOVERY_LOAD_DELAY_MS = 70
+const DISCOVERY_BACKGROUND_LOAD_DELAY_MS = 350
 const DISCOVERY_BLOCK_SIZE = 3
 const DISCOVERY_RADIUS = 15
 
@@ -95,6 +97,11 @@ export function Discovery({
     const selectionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [loadedItems, setLoadedItems] = useState<LoadedDiscoveryItem[]>([])
     const isFirstRun = useRef(true);
+    const selectedRef = useRef(selected)
+
+    useEffect(() => {
+        selectedRef.current = selected
+    }, [selected])
 
     useEffect(() => {
         const url = new URL(window.location.href);
@@ -113,10 +120,20 @@ export function Discovery({
 
     useEffect(() => {
         let active = true;
+        let backgroundLoadId: number | null = null;
+        let backgroundLoadUsesIdleCallback = false;
+        const idleWindow = window as unknown as {
+            requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+            cancelIdleCallback?: (handle: number) => void;
+        };
         const textures = new Set<CanvasTexture>();
+        const controller = new AbortController();
         onLoading?.(true);
 
-        apiFetch('/api/discovery')
+        apiFetch('/api/discovery', {
+            signal: controller.signal,
+            skipGlobalError: true
+        })
             .then(res => res.json())
             .then(async (data: unknown) => {
                 if (!active) return;
@@ -154,49 +171,89 @@ export function Discovery({
                     }
                 };
 
-                // Load items in chunks to control concurrency
-                for (let i = 0; i < queuedItems.length; i += DISCOVERY_LOAD_CONCURRENCY) {
-                    if (!active) break;
-                    const chunk = queuedItems.slice(i, i + DISCOVERY_LOAD_CONCURRENCY);
+                const loadItems = async (items: typeof queuedItems) => {
+                    for (let i = 0; i < items.length; i += DISCOVERY_LOAD_CONCURRENCY) {
+                        if (!active) break;
 
-                    await Promise.all(chunk.map(async ({ log, slotIndex }) => {
-                        try {
-                            const canvas = await Skin2D(log.result, { scale: DISCOVERY_SKIN_PREVIEW_SCALE });
-                            if (!active) return;
-                            const tex = new CanvasTexture(canvas);
-                            tex.magFilter = NearestFilter;
-                            tex.minFilter = NearestFilter;
-                            tex.generateMipmaps = false;
-                            textures.add(tex);
-
-                            loadedBuffer.push({ log, tex, slotIndex });
-
-                            if (loadedBuffer.length >= DISCOVERY_BATCH_SIZE) {
-                                updateState();
-                            }
-                        } catch (err) {
-                            if (!active) return;
-                            console.warn("Failed to load skin for", log.result, err);
+                        // Keep texture decoding and canvas rendering from competing
+                        // with interactions inside the detail modal.
+                        while (active && selectedRef.current) {
+                            await new Promise(resolve => window.setTimeout(resolve, 100));
                         }
-                    }));
+                        if (!active) break;
 
-                    // Small delay to keep the UI responsive during intensive rendering
-                    if (active && i + DISCOVERY_LOAD_CONCURRENCY < queuedItems.length) {
-                        await new Promise(resolve => setTimeout(resolve, DISCOVERY_LOAD_DELAY_MS));
+                        const chunk = items.slice(i, i + DISCOVERY_LOAD_CONCURRENCY);
+
+                        await Promise.all(chunk.map(async ({ log, slotIndex }) => {
+                            try {
+                                const canvas = await Skin2D(log.result, { scale: DISCOVERY_SKIN_PREVIEW_SCALE });
+                                if (!active) return;
+                                const tex = new CanvasTexture(canvas);
+                                tex.magFilter = NearestFilter;
+                                tex.minFilter = NearestFilter;
+                                tex.generateMipmaps = false;
+                                textures.add(tex);
+
+                                loadedBuffer.push({ log, tex, slotIndex });
+
+                                if (loadedBuffer.length >= DISCOVERY_BATCH_SIZE) {
+                                    updateState();
+                                }
+                            } catch (err) {
+                                if (!active) return;
+                                console.warn("Failed to load skin for", log.result, err);
+                            }
+                        }));
+
+                        if (active && i + DISCOVERY_LOAD_CONCURRENCY < items.length) {
+                            await new Promise(resolve => window.setTimeout(resolve, DISCOVERY_LOAD_DELAY_MS));
+                        }
                     }
-                }
 
-                updateState();
+                    updateState();
+                };
+
+                const initialItems = queuedItems.slice(0, DISCOVERY_INITIAL_ITEM_COUNT);
+                const remainingItems = queuedItems.slice(DISCOVERY_INITIAL_ITEM_COUNT);
+
+                await loadItems(initialItems);
+                if (!active) return;
                 onLoading?.(false);
+
+                if (remainingItems.length === 0) return;
+
+                const loadRemainingItems = () => {
+                    backgroundLoadId = null;
+                    if (active) void loadItems(remainingItems);
+                };
+
+                if (idleWindow.requestIdleCallback) {
+                    backgroundLoadUsesIdleCallback = true;
+                    backgroundLoadId = idleWindow.requestIdleCallback(loadRemainingItems, { timeout: 1200 });
+                } else {
+                    backgroundLoadId = window.setTimeout(
+                        loadRemainingItems,
+                        DISCOVERY_BACKGROUND_LOAD_DELAY_MS
+                    );
+                }
             })
             .catch(err => {
                 if (!active) return;
+                if (err instanceof DOMException && err.name === 'AbortError') return;
                 console.error("Discovery fetch failed:", err);
                 onLoading?.(false);
             });
 
         return () => {
             active = false;
+            controller.abort();
+            if (backgroundLoadId !== null) {
+                if (backgroundLoadUsesIdleCallback && idleWindow.cancelIdleCallback) {
+                    idleWindow.cancelIdleCallback(backgroundLoadId);
+                } else {
+                    window.clearTimeout(backgroundLoadId);
+                }
+            }
             onLoading?.(false);
             textures.forEach(texture => texture.dispose());
             textures.clear();

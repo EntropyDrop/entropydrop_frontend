@@ -1,12 +1,14 @@
 import { PageContainer } from '../components/PageContainer';
-import { useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { apiFetch } from '../utils/api'
 import { Skin2DImg } from '../components/Skin2DImg'
-import { MCModal } from '../components/MCModal'
+import { LoadingPlaceholder } from '../components/LoadingPlaceholder'
 import type { GenerationLogItemBrief, GenerationLogItem } from '../types/log'
 import type { LangData } from '../constants/lang'
+
+const MCModal = lazy(() => import('../components/MCModal').then(m => ({ default: m.MCModal })))
 
 interface DiscoveryPageProps {
     current: LangData
@@ -98,24 +100,33 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
         window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`)
     }, [selectedItem])
 
-    const handleCloseModal = async () => {
-        if (selectedItem) {
-            try {
-                const res = await apiFetch(`/api/logs/${selectedItem.id}`)
-                if (res.ok) {
-                    const data = await res.json()
-                    setItems(prev => prev.map(x => x.id === selectedItem.id ? {
-                        ...x,
-                        name: data.name,
-                        likes_count: data.likes_count,
-                        is_liked: data.is_liked
-                    } : x))
-                }
-            } catch (e) {
-                console.error("Failed to sync item stats on close", e)
-            }
-        }
+    const handleCloseModal = () => {
+        const closingItemId = selectedItem?.id
+
+        // Closing the modal is an interaction-critical update. Do not hold it open
+        // while waiting for the detail request used to refresh list metadata.
         setSelectedItem(null)
+
+        if (closingItemId) {
+            void (async () => {
+                try {
+                    const res = await apiFetch(`/api/logs/${closingItemId}`, {
+                        skipGlobalError: true
+                    })
+                    if (res.ok) {
+                        const data = await res.json()
+                        setItems(prev => prev.map(x => x.id === closingItemId ? {
+                            ...x,
+                            name: data.name,
+                            likes_count: data.likes_count,
+                            is_liked: data.is_liked
+                        } : x))
+                    }
+                } catch (e) {
+                    console.error("Failed to sync item stats on close", e)
+                }
+            })()
+        }
     }
 
     const handleLike = async (item: GenerationLogItem) => {
@@ -309,23 +320,25 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
 
             {/* Skin Detail Modal Overlay */}
             {selectedItem && (
-                <MCModal
-                    item={selectedItem as GenerationLogItem}
-                    closeModal={handleCloseModal}
-                    textureUrl={selectedItem.result}
-                    current={current}
-                    onEdit={(texUrl, logId, isPublic) => {
-                        setSelectedItem(null)
-                        navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } })
-                    }}
-                    onAiEdit={(source: string, id: string, isPublic: boolean) => {
-                        setSelectedItem(null)
-                        navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic } })
-                    }}
-                    onItemSelect={(logId) => {
-                        setSelectedItem(prev => prev ? { ...prev, id: logId } : { id: logId, result: '', is_public: true, prompt: '' });
-                    }}
-                />
+                <Suspense fallback={<LoadingPlaceholder current={current} />}>
+                    <MCModal
+                        item={selectedItem as GenerationLogItem}
+                        closeModal={handleCloseModal}
+                        textureUrl={selectedItem.result}
+                        current={current}
+                        onEdit={(texUrl, logId, isPublic) => {
+                            setSelectedItem(null)
+                            navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } })
+                        }}
+                        onAiEdit={(source: string, id: string, isPublic: boolean) => {
+                            setSelectedItem(null)
+                            navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic } })
+                        }}
+                        onItemSelect={(logId) => {
+                            setSelectedItem(prev => prev ? { ...prev, id: logId } : { id: logId, result: '', is_public: true, prompt: '' });
+                        }}
+                    />
+                </Suspense>
             )}
         </PageContainer>
     )
