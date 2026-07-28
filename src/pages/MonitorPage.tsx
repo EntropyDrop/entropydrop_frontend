@@ -71,6 +71,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
     prompt: string | null;
     mode: string;
     status: string;
+    error_msg: string | null;
     created_at: string | null;
     user_id: string | null;
     user_email: string | null;
@@ -88,6 +89,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [loadingUnfinished, setLoadingUnfinished] = useState(true)
   const [page, setPage] = useState(1)
   const [now, setNow] = useState(new Date())
+  const [selectedErrorMsg, setSelectedErrorMsg] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   // Admin delete states
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -1565,6 +1568,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
                       <th className="pb-3 pl-2 font-semibold">{isZh ? '任务 ID' : 'Task ID'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '类型' : 'Mode'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '状态' : 'Status'}</th>
+                      <th className="pb-3 font-semibold">{isZh ? '错误原因' : 'Error Reason'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '用户信息' : 'User Info'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '创建时间' : 'Created At'}</th>
                       <th className="pb-3 font-semibold text-right">{isZh ? '等待时间' : 'Wait Time'}</th>
@@ -1582,6 +1586,20 @@ export function MonitorPage({ current }: MonitorPageProps) {
                         </td>
                         <td className="py-3">
                           {getStatusBadge(log.status)}
+                        </td>
+                        <td className="py-3 max-w-[200px]">
+                          {log.error_msg ? (
+                            <div 
+                              onClick={() => setSelectedErrorMsg(log.error_msg)}
+                              className="text-red-400 hover:text-red-300 cursor-pointer flex items-center gap-1 group/err text-[11px] select-none"
+                              title={isZh ? '点击查看完整错误信息' : 'Click to view full error details'}
+                            >
+                              <Icon icon="pixelarticons:warning-box" className="text-xs shrink-0 text-red-500/80" />
+                              <span className="truncate border-b border-dashed border-red-500/30 group-hover/err:border-red-400/60 font-mono">{log.error_msg}</span>
+                            </div>
+                          ) : (
+                            <span className="text-white/20">-</span>
+                          )}
                         </td>
                         <td className="py-3">
                           {log.user_email ? (
@@ -1719,6 +1737,63 @@ export function MonitorPage({ current }: MonitorPageProps) {
                   <Icon icon="pixelarticons:trash" />
                 )}
                 {isZh ? '确认删除' : 'CONFIRM PURGE'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Error Details Modal */}
+      {selectedErrorMsg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto p-4">
+          <div className="w-full max-w-2xl bg-[#0a0a0a]/95 border border-red-500/30 flex flex-col gap-5 animate-in zoom-in-95 duration-200 shadow-2xl max-h-[85vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-white/10 p-5 pb-4">
+              <div className="flex items-center gap-2.5">
+                <Icon icon="pixelarticons:warning-box" className="text-xl text-red-500" />
+                <h4 className={`text-white text-base font-bold m-0 ${current.fontClass}`}>
+                  {isZh ? '任务错误详情' : 'Task Error Details'}
+                </h4>
+              </div>
+              <button
+                onClick={() => setSelectedErrorMsg(null)}
+                className="w-8 h-8 flex items-center justify-center bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 cursor-pointer"
+                title={isZh ? '关闭' : 'Close'}
+              >
+                <Icon icon="pixelarticons:close" className="text-lg" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-2 flex flex-col gap-4">
+              <div className="text-[11px] text-white/40 uppercase font-mono tracking-wider font-bold">
+                {isZh ? '错误跟踪日志 / Stack Trace:' : 'Error Trace:'}
+              </div>
+              <pre className="bg-black/60 border border-white/10 p-4 rounded font-mono text-[11px] text-red-400/90 leading-relaxed overflow-x-auto whitespace-pre-wrap break-all max-h-[50vh] custom-scrollbar">
+                {selectedErrorMsg}
+              </pre>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="border-t border-white/10 p-5 pt-4 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  if (selectedErrorMsg) {
+                    navigator.clipboard.writeText(selectedErrorMsg);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }
+                }}
+                className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white text-xs font-mono font-bold uppercase transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
+              >
+                <Icon icon={copied ? "pixelarticons:check" : "pixelarticons:copy"} className={copied ? "text-green-400" : ""} />
+                {copied ? (isZh ? '已复制' : 'COPIED') : (isZh ? '复制日志' : 'COPY LOG')}
+              </button>
+              <button
+                onClick={() => setSelectedErrorMsg(null)}
+                className="px-4 py-2 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-mono font-bold uppercase transition-all cursor-pointer active:scale-95"
+              >
+                {isZh ? '关闭' : 'Close'}
               </button>
             </div>
           </div>
