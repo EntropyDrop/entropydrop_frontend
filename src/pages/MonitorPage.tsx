@@ -72,6 +72,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
     mode: string;
     status: string;
     error_msg: string | null;
+    model_version: string | null;
+    aux_model_version: string | null;
     created_at: string | null;
     user_id: string | null;
     user_email: string | null;
@@ -1582,7 +1584,14 @@ export function MonitorPage({ current }: MonitorPageProps) {
                           {log.id}
                         </td>
                         <td className="py-3 text-white/70">
-                          {getModeLabel(log.mode)}
+                          <div className="flex flex-col">
+                            <span>{getModeLabel(log.mode)}</span>
+                            {(log.model_version || log.aux_model_version) && (
+                              <span className="text-[10px] text-white/40 font-mono mt-0.5 select-none" title={`Model: ${log.model_version || 'N/A'} | Aux: ${log.aux_model_version || 'N/A'}`}>
+                                {log.model_version || '-'}{log.aux_model_version ? ` / ${log.aux_model_version}` : ''}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3">
                           {getStatusBadge(log.status)}
