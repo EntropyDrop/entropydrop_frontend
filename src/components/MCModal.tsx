@@ -757,7 +757,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     };
 
     const modalContent = (
-        <div className="fixed top-[64px] sm:top-0 inset-x-0 bottom-0 sm:inset-0 z-[100] pointer-events-auto flex items-center justify-center bg-black/60" onClick={closeModal}>
+        <div className="fixed top-[64px] sm:top-0 inset-x-0 bottom-0 sm:inset-0 z-[99999] pointer-events-auto flex items-center justify-center bg-black/60" onClick={closeModal}>
 
             <AnimatePresence>
                 {showShareToast && (
