@@ -1,5 +1,6 @@
 import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { apiFetch } from '../utils/api'
@@ -1700,7 +1701,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
         </div>
 
       {/* Deletion Confirmation Modal */}
-      {deletingId && (
+      {deletingId && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
           <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-red-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
             <div className="flex items-start gap-4">
@@ -1749,11 +1750,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Task Error Details Modal */}
-      {selectedErrorMsg && (
+      {selectedErrorMsg && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto p-4">
           <div className="w-full max-w-2xl bg-[#0a0a0a]/95 border border-red-500/30 flex flex-col gap-5 animate-in zoom-in-95 duration-200 shadow-2xl max-h-[85vh] overflow-hidden">
             {/* Modal Header */}
@@ -1806,11 +1808,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* User Deletion Confirmation Modal */}
-      {deletingEmail && (
+      {deletingEmail && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
           <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-red-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
             <div className="flex items-start gap-4">
@@ -1859,11 +1862,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Seven-Day Active User Gift Confirmation Modal */}
-      {showGiftConfirmation && (
+      {showGiftConfirmation && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
           <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-purple-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
             <div className="flex items-start gap-4">
@@ -1918,11 +1922,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Specific User Gift Confirmation Modal */}
-      {showSingleGiftConfirmation && (
+      {showSingleGiftConfirmation && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
           <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-purple-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
             <div className="flex items-start gap-4">
@@ -1977,11 +1982,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* SKING_DDJ Series Generations Modal */}
-      {showSkingDdjModal && (
+      {showSkingDdjModal && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto p-4">
           <div className="w-full max-w-4xl bg-[#0a0a0a]/95 border border-green-500/30 flex flex-col gap-5 animate-in zoom-in-95 duration-200 shadow-2xl max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
@@ -2184,7 +2190,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </PageContainer>
