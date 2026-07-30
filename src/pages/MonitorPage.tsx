@@ -1067,6 +1067,82 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </button>
             </div>
           </div>
+
+          {/* Admin Purge Terminal */}
+          <div className="bg-red-500/5 border border-red-500/20 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5 flex-1 w-full">
+              <div className="w-10 h-10 border flex items-center justify-center text-xl bg-red-500/10 border-red-500/30 text-red-400 shrink-0">
+                <Icon icon="pixelarticons:shield-attention" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <h3 className={`text-red-400 text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {isZh ? '皮肤紧急清理工具 (Admin)' : 'Emergency Skin Purge (Admin)'}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {isZh ? '输入任意 Generation Log ID 进行彻底物理删除 (清除 DB / S3)' : 'Enter any Generation Log ID for permanent DB & S3 deletion'}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 w-full md:w-auto md:max-w-md shrink-0 self-end md:self-auto">
+              <input
+                type="text"
+                placeholder={isZh ? '输入 ID (如: aBcd1234Efgh5678)' : 'Enter Log ID...'}
+                value={purgeIdInput}
+                onChange={(e) => setPurgeIdInput(e.target.value.trim())}
+                className="flex-1 min-w-[200px] h-9 px-3 bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-red-500/50 transition-colors placeholder:text-white/20"
+              />
+              <button
+                onClick={() => {
+                  if (!purgeIdInput) return
+                  setDeletingId(purgeIdInput)
+                }}
+                disabled={!purgeIdInput || actionLoading}
+                className="h-9 px-4 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-bold font-mono uppercase tracking-wider transition-all disabled:opacity-30 disabled:pointer-events-none active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                <Icon icon="pixelarticons:trash" />
+                {isZh ? '删除' : 'PURGE'}
+              </button>
+            </div>
+          </div>
+
+          {/* Admin User Account Purge Terminal */}
+          <div className="bg-red-500/5 border border-red-500/20 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5 flex-1 w-full">
+              <div className="w-10 h-10 border flex items-center justify-center text-xl bg-red-500/10 border-red-500/30 text-red-400 shrink-0">
+                <Icon icon="pixelarticons:shield-attention" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <h3 className={`text-red-400 text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {isZh ? '账号紧急删除工具 (Admin)' : 'Emergency User Account Purge (Admin)'}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {isZh ? '输入邮箱地址彻底物理删除用户账号及其全部关联数据' : 'Enter user email to permanently delete account and all associated data'}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 w-full md:w-auto md:max-w-md shrink-0 self-end md:self-auto">
+              <input
+                type="text"
+                placeholder={isZh ? '输入邮箱 (如: user@example.com)' : 'Enter User Email...'}
+                value={purgeEmailInput}
+                onChange={(e) => setPurgeEmailInput(e.target.value.trim())}
+                className="flex-1 min-w-[200px] h-9 px-3 bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-red-500/50 transition-colors placeholder:text-white/20"
+              />
+              <button
+                onClick={() => {
+                  if (!purgeEmailInput) return
+                  setDeletingEmail(purgeEmailInput)
+                }}
+                disabled={!purgeEmailInput || actionLoading}
+                className="h-9 px-4 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-bold font-mono uppercase tracking-wider transition-all disabled:opacity-30 disabled:pointer-events-none active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                <Icon icon="pixelarticons:trash" />
+                {isZh ? '删除' : 'PURGE'}
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -1485,73 +1561,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           )}
 
-          {/* Admin Purge Terminal */}
-          <div className="bg-red-500/5 border border-red-500/20 p-4 rounded flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex flex-col gap-1">
-              <span className="text-red-400 text-xs font-bold font-mono tracking-wide uppercase flex items-center gap-1.5">
-                <Icon icon="pixelarticons:shield-attention" className="text-red-500" />
-                {isZh ? '皮肤紧急清理工具 (Admin)' : 'Emergency Skin Purge (Admin)'}
-              </span>
-              <span className="text-white/40 text-[9px] font-mono uppercase">
-                {isZh ? '输入任意 Generation Log ID 进行彻底物理删除 (清除 DB / S3)' : 'Enter any Generation Log ID for permanent DB & S3 deletion'}
-              </span>
-            </div>
-            
-            <div className="flex items-center gap-2 w-full sm:w-auto sm:max-w-md">
-              <input
-                type="text"
-                placeholder={isZh ? '输入 ID (如: aBcd1234Efgh5678)' : 'Enter Log ID...'}
-                value={purgeIdInput}
-                onChange={(e) => setPurgeIdInput(e.target.value.trim())}
-                className="flex-1 min-w-[200px] h-9 px-3 bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-red-500/50 transition-colors placeholder:text-white/20"
-              />
-              <button
-                onClick={() => {
-                  if (!purgeIdInput) return
-                  setDeletingId(purgeIdInput)
-                }}
-                disabled={!purgeIdInput || actionLoading}
-                className="h-9 px-4 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-bold font-mono uppercase tracking-wider transition-all disabled:opacity-30 disabled:pointer-events-none active:scale-95 cursor-pointer flex items-center gap-1.5"
-              >
-                <Icon icon="pixelarticons:trash" />
-                {isZh ? '删除' : 'PURGE'}
-              </button>
-            </div>
-          </div>
 
-          {/* Admin User Account Purge Terminal */}
-          <div className="bg-red-500/5 border border-red-500/20 p-4 rounded flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex flex-col gap-1">
-              <span className="text-red-400 text-xs font-bold font-mono tracking-wide uppercase flex items-center gap-1.5">
-                <Icon icon="pixelarticons:shield-attention" className="text-red-500" />
-                {isZh ? '账号紧急删除工具 (Admin)' : 'Emergency User Account Purge (Admin)'}
-              </span>
-              <span className="text-white/40 text-[9px] font-mono uppercase">
-                {isZh ? '输入邮箱地址彻底物理删除用户账号及其全部关联数据' : 'Enter user email to permanently delete account and all associated data'}
-              </span>
-            </div>
-            
-            <div className="flex items-center gap-2 w-full sm:w-auto sm:max-w-md">
-              <input
-                type="text"
-                placeholder={isZh ? '输入邮箱 (如: user@example.com)' : 'Enter User Email...'}
-                value={purgeEmailInput}
-                onChange={(e) => setPurgeEmailInput(e.target.value.trim())}
-                className="flex-1 min-w-[200px] h-9 px-3 bg-black/60 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-red-500/50 transition-colors placeholder:text-white/20"
-              />
-              <button
-                onClick={() => {
-                  if (!purgeEmailInput) return
-                  setDeletingEmail(purgeEmailInput)
-                }}
-                disabled={!purgeEmailInput || actionLoading}
-                className="h-9 px-4 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-bold font-mono uppercase tracking-wider transition-all disabled:opacity-30 disabled:pointer-events-none active:scale-95 cursor-pointer flex items-center gap-1.5"
-              >
-                <Icon icon="pixelarticons:trash" />
-                {isZh ? '删除' : 'PURGE'}
-              </button>
-            </div>
-          </div>
 
           {loadingUnfinished && !unfinishedData ? (
             <div className="flex items-center justify-center p-12 bg-white/5 border border-dashed border-white/10 opacity-30">
