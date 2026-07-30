@@ -12,7 +12,7 @@ export function ErrorModal({ isOpen, title, message, onClose, current }: ErrorMo
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-auto">
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-auto">
             <div className="w-full max-w-sm bg-[#1a1a1a] border-2 border-white/10 p-6 flex flex-col gap-6 shadow-2xl">
                 <h3 className={`text-white text-xl m-0 ${current.fontClass}`}>
                     {title}

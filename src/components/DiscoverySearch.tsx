@@ -128,7 +128,7 @@ export function DiscoverySearch({ current, onSelect, selectedItem }: DiscoverySe
             </div>
 
             {isOpen && createPortal(
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 pointer-events-auto sm:px-8 sm:py-10">
+                <div className="fixed inset-0 z-[99990] flex items-center justify-center bg-black/90 pointer-events-auto sm:px-8 sm:py-10">
                     <div className="bg-[#121212] sm:border-2 border-white/10 sm:shadow-[0_0_50px_rgba(0,0,0,0.8)] w-full h-full sm:max-w-5xl sm:max-h-[85vh] flex flex-col relative animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <button
                             className="absolute top-4 right-4 text-white/50 hover:text-white p-2 cursor-pointer bg-black/60 backdrop-blur-md border border-white/10 z-20"
