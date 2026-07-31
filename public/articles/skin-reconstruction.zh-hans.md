@@ -320,6 +320,17 @@ Parser 从 32 通道的 feature map 出发，经 `feature_dropout`（`Dropout2d,
 - `outer_presence_logits`（6 类）：每个部件是否存在外层的 logits；
 - `outer_coverage`（6 类，sigmoid 后）：每个部件外层的大致覆盖率 [0,1]。
 
+**投影特征驱动的外层 UV occupancy 分支**
+
+逐像素 `layer` 头回答“这个屏幕像素更像内层还是外层”，但皇冠、眼镜、耳机和帽沿通常由一组连续的外层 texel 构成，不能只靠彼此独立的像素分类。新的 occupancy 分支因此直接在 64×64 UV 图集上预测外层 alpha：
+
+1. 将 U-Net 解码器特征压缩到 32 通道，并与逐像素 `p_outer`、前景覆盖一起，通过固定几何映射投影到外层 UV texel；
+2. 对前后视图的投影特征计算均值，同时保留最大 `p_outer`、前景均值和视图支持率，因而单视图可见区域不会被“两视图交集”限制；
+3. 只为 1632 个合法外层 texel 建图。图边依据同一部件表面的三维 texel 中心距离建立，因此不仅连接同一 UV 小岛中的相邻格，也正确跨越立方体面的 UV 接缝，同时不会把图集中偶然相邻、三维中无关的区域连在一起；
+4. 为每个节点加入部件、立方体面和面内坐标 embedding，再经过 3 层 64 通道图消息传递，输出 `outer_uv_occupancy_logits`。
+
+occupancy 分支读取的主干特征和全局摘要在入口处停止梯度；它先学习一个独立、结构化的外层先验，不用稀疏 alpha 损失直接扰乱已经较稳定的逐像素路由主干。训练后段再通过单向的 route–occupancy agreement，把这个结构先验逐渐传回 `layer` 路由头。
+
 **可学习的固定视角路由先验（route_role_spatial_prior）**
 
 这是一个独立的可学习参数张量，形状为 `[view_classes=2, layer_classes=3, H=32, W=16]`。它编码了在大量训练样本中，前视图和后视图的每个空间区域统计上更可能属于内层、外层还是次级表面。在推理时，该先验按视图索引取出，bilinear 上采样到与 `layer` 输出相同的空间尺寸，直接加到 `layer` logits 上。训练时以 10% 概率随机丢弃（per-sample），logit 值通过 `tanh` 限制在 `[-1.5, 1.5]` 范围内，同时施加 L2 和 total-variation 正则化以保持平滑。这一设计使先验成为软统计偏置——对常见结构（如刘海在头部正面上方、帽沿区域的外层分布）提供温和引导，但对罕见皮肤，图像条件化的 CNN 特征可以覆盖先验。
@@ -374,6 +385,16 @@ L_role = E[ (1 - p_correct)^γ * (-log(p_correct)) ]   分别对 role ∈ {0,1} 
 
 为了进一步抑制少量高置信度的 inner→outer 错误，系统会从透明外层候选中选取 `p_outer` 损失最高的 20% 作为 hard negatives，并以 0.75 的内部权重加入该损失。训练日志同时记录单视角并集覆盖率、交集占比、可见负样本数和 hard-negative 数量，避免只观察总 loss 而忽略实际监督覆盖范围。
 
+**（7b）投影外层 occupancy、拓扑组件与路由一致性损失**
+
+投影 occupancy 分支直接以完整 GT 外层 alpha 为目标，基础项为 BCE（λ=0.50，正样本权重使用受限的平方根逆频率）和 Dice（内部权重 0.25）。在此之上增加三类专门处理“小而连续的外层组件”的约束：
+
+- **困难正样本**：每个 batch 取损失最高的 25% 外层正 texel，内部权重 0.50，避免皇冠尖角、细眼镜框和耳机连接处被多数大面积组件淹没；
+- **组件均衡召回**（λ=0.25）：先按物理 UV 图求 GT 外层连通组件，再对每个组件分别计算平均 soft recall，最后宏平均；一个两像素眼镜腿与一大片外套在该项中拥有相同组件权重；
+- **拓扑连续性**（λ=0.10）：对同一 GT 正组件中的物理相邻节点约束 occupancy 概率接近，抑制同一饰品内部出现随机内外层碎块。
+
+另有 route–occupancy agreement（λ=0.25）：把逐像素 `p_outer` 投影到可见外层 UV，并拟合停止梯度后的 occupancy 概率。它在每个 epoch 的前 20% batch 保持关闭，随后逐渐升到完整权重，避免训练初期尚未校准的 occupancy 反向污染逐像素路由。
+
 **（8）路由置信度损失**（λ=0.25）
 BCE with logits，target = `(predicted_role == GT_role)`。对次级像素，还额外要求 surface 分类也正确。
 
@@ -407,6 +428,8 @@ BCE with logits，target = `(predicted_role == GT_role)`。对次级像素，还
 | 正则化 | `feature_dropout=0.10`（Dropout2d，训练时启用）；冻结 SigLIP2 视觉塔 |
 | 语义缓存 | SigLIP2 空间特征（768×14×8 per view）以 FP16 mmap 存储；180,000 样本约 58 GiB；仅当前 batch 读入显存 |
 | 外层候选监督 | 两视角可见并集 alpha 监督 λ=0.50；交集 disagreement 权重 0.25；最困难 20% 透明候选权重 0.75 |
+| 投影 occupancy | 32 通道投影特征；64 通道×3 层物理拓扑图；BCE λ=0.50、Dice 0.25、困难正样本 25%×0.50、组件召回 λ=0.25、拓扑连续性 λ=0.10 |
+| 路由—occupancy 一致性 | λ=0.25；每 epoch 前 20% batch 预热，之后线性增权 |
 | 默认随机模式 | `SEED=1234, REPRODUCIBLE=false, CUDNN_BENCHMARK=true`；初始化、数据划分、shuffle 与增强跟随 seed，但 CUDA 数值不保证逐位一致 |
 | 严格复现模式 | `REPRODUCIBLE=true` 时关闭 cuDNN benchmark 与 Flash Attention，并请求确定性 CUDA 算法；`STRICT_DETERMINISM=true` 可在遇到不支持的算子时直接终止，代价是训练明显变慢 |
 | checkpoint 选择 | 按 `loss_hard_uv_color_selection`（硬路由内/外层 IoU + RGB MAE）择优，防止稀疏或颜色错误的 UV 因 occupancy precision 虚高而胜出 |
@@ -415,23 +438,25 @@ BCE with logits，target = `(predicted_role == GT_role)`。对次级像素，还
 
 推理时，parser 的软概率输出经过多层门控才转化为最终的硬路由决策：
 
-1. **投影 texel 共识与非对称 outer 准入**：每个源像素的路由概率按中心加权方式投票到其投影的 UV texel 上。最终每 texel 的概率为局部像素概率（40%）与 texel 级聚合得分（60%）的软加权混合。所有普通 outer 决策必须同时通过本地 outer 证据（置信度 ≥0.80、margin ≥0.35）和 fused texel 证据（置信度 ≥0.80、margin ≥0.35）；高置信 raw outer 不再拥有绕过共识的通道。若 fused inner 明确胜出，候选会被改为 inner；若 outer 仍领先但没有达到准入门槛，则保留它的 outer UV 身份但将观测标记为未知，不把不确定颜色错误写入 inner 或 outer 图集。日志分别通过 `consensus_outer_to_inner_pixels`、`consensus_outer_gate_rejected_pixels` 和 `consensus_outer_gate_deferred_pixels` 记录这三类结果。
+1. **双阈值拓扑组件路由**：先在外层 UV 图上选取 occupancy ≥0.80 的高置信种子，再沿物理拓扑吸收与种子连通且 occupancy ≥0.50 的 texel；没有高阈值种子的低置信碎块不会被保留，少于 2 个 texel 的孤立组件也会被拒绝。被接纳的整组 texel 继承组件种子置信度，因此连续的皇冠、眼镜或耳机可以整体参与后续外层救援，而不是逐像素忽隐忽现。
 
-2. **跨视角外层可见性检查**：对于 78 个共同可见的外层 texel，如果一个视角高置信支持外层，而另一个视角在同一 texel 上明确看到背景或高置信内层，则形成冲突并否决该外层候选。这项规则只处理确有共同可见证据的位置，不会拿后视图去强行裁决仅在正面可见的眼睛或衣服图案。
+2. **投影 texel 共识与非对称 outer 准入**：每个源像素的路由概率按中心加权方式投票到其投影的 UV texel 上。最终每 texel 的概率为局部像素概率（40%）与 texel 级聚合得分（60%）的软加权混合，并融合上一步的组件 occupancy 先验。普通 outer 决策仍需通过本地和 texel 级证据；组件先验只在当前路由已有最低支持（默认 `p_outer` ≥0.30）时救援，不会把完全无关的内层像素强行升级为外层。
 
-3. **保守外层门控**（默认 `conservative` profile）：
+3. **跨视角外层可见性检查**：对于 78 个共同可见的外层 texel，如果一个视角高置信支持外层，而另一个视角在同一 texel 上明确看到背景或高置信内层，则形成冲突并否决该外层候选。这项规则只处理确有共同可见证据的位置，不会拿后视图去强行裁决仅在正面可见的眼睛或衣服图案。
+
+4. **保守外层门控**（默认 `conservative` profile）：
    - 外层置信度 ≥ 0.80，内外层 margin ≥ 0.55；
    - 外层几何覆盖（footprint coverage）≥ 0.25；
-   - 每外层 texel 最少 15 个有效源像素；
+   - 每外层 texel 最少 30 个有效源像素；
    - 背景色边缘像素（与检测到的背景色差 ≤ 8/255）被排除。
 
-4. **几何救援**：当某个 texel 的源像素位于外层独有的轮廓区域（`outer_mask > 0` 且 `inner_mask == 0`），或路由到精确的次级/背向面槽位时，门控放宽至置信度 ≥ 0.60，margin ≥ 0.25，覆盖 ≥ 0.10。精确几何证据可以救回被 outer 准入门槛暂缓的观测。
+5. **几何救援**：当某个 texel 的源像素位于外层独有的轮廓区域（`outer_mask > 0` 且 `inner_mask == 0`），或路由到精确的次级/背向面槽位时，门控放宽至置信度 ≥ 0.60，margin ≥ 0.25，覆盖 ≥ 0.10。精确几何证据可以救回被 outer 准入门槛暂缓的观测。
 
-5. **语义救援**：parser 预测的部件级 `outer_presence` 和 `outer_coverage` 较高时，可以放宽已经通过 texel 准入的外层观测的后续置信度与覆盖率门控；这种宽泛的部件级语义不能绕过 fused texel gate，避免“头部存在帽子或头发”被错误解释为眼睛、脸部所有像素都应属于外层。
+6. **语义救援**：parser 预测的部件级 `outer_presence` 和 `outer_coverage` 较高时，可以放宽已经通过 texel 准入的外层观测的后续置信度与覆盖率门控；这种宽泛的部件级语义不能绕过 fused texel gate，避免“头部存在帽子或头发”被错误解释为眼睛、脸部所有像素都应属于外层。
 
 默认配置为 precision-first：`保守 profile` 优先保证已输出的外层 texel 是正确的，而非追求尽可能多输出。未通过门控的外层像素在 UV 图集中保持透明——确定性修复不会凭空创建外层 texel。
 
-调试图也明确区分变换前后：`parser_debug_face_raw.png` 和 `parser_debug_layer_face_raw.png` 使用原始输入坐标中的 head logits 与未变换 flood mask，不再被 affine 或后续路由过滤制造出假孔洞；`parser_debug_face.png`、`parser_debug_layer_face.png` 和各类 routed overlay 则反映 canonical 坐标中的最终硬路由。排查时应先比较 raw head 与 `parser_debug_observed_canonical.png`，再检查最终 routed 输出。
+`parser_debug_outer_uv_occupancy.png` 横向给出原始 occupancy 概率、拓扑传播后的概率和组件路由状态（红=候选被拒绝、绿=组件被接纳、蓝=高置信种子），可直接判断错误来自 occupancy 组件预测还是后续屏幕像素路由。其他调试图也明确区分变换前后：`parser_debug_face_raw.png` 和 `parser_debug_layer_face_raw.png` 使用原始输入坐标中的 head logits 与未变换 flood mask，不再被 affine 或后续路由过滤制造出假孔洞；`parser_debug_face.png`、`parser_debug_layer_face.png` 和各类 routed overlay 则反映 canonical 坐标中的最终硬路由。
 
 ## 五、UV 重建
 

@@ -635,7 +635,7 @@ export default {
         articles: {
             title: '最新动态',
             list: [
-                { id: 'skin-reconstruction', title: '图生皮肤的新路径：从规范化渲染到 Minecraft UV 重建', date: '2026-07-22', tags: ['Minecraft', '计算机视觉', '几何重建', '生成模型'], summary: '将图片转皮肤拆分为规范化前后视图、确定性前景提取、固定视角几何拟合、Dense UV Parser 语义路由、原色取样与拓扑补全，并介绍如何积累数据，最终训练完全不依赖闭源模型的图生皮肤方案。' },
+                { id: 'skin-reconstruction', title: '图生皮肤的新路径：从规范化渲染到 Minecraft UV 重建', date: '2026-07-25', tags: ['Minecraft', '计算机视觉', '几何重建', '生成模型'], summary: '将图片转皮肤拆分为规范化前后视图、确定性前景提取、固定视角几何拟合、Dense UV Parser 语义路由、原色取样与拓扑补全，并介绍如何积累数据，最终训练完全不依赖闭源模型的图生皮肤方案。' },
                 { id: 'architecture', title: 'EntropyDrop 后端运行时架构与弹性伸缩边界', date: '2026-05-22', tags: ['架构', '后端', '扩展性'], summary: '基于当前后端代码与 AWS 部署脚本，说明 API readiness、连接池、ECS Service Auto Scaling、singleton 后台服务、一次性迁移任务，以及 GPU/RQ worker 仍未自动伸缩的真实边界。' },
                 { id: 'skingen', title: '从参考图到 Minecraft 皮肤：生成模型训练实践', date: '2026-05-12', tags: ['LoRA', '微调', '数据集', '开源'], summary: '基于 Flux2 Klein 4B 基础模型，梳理从参考图生成可用 Minecraft 皮肤的完整微调训练实践，涵盖皮肤结构解析、高质量 Control-Target 数据集构建、LoRA 训练配置以及 Alpha Marker 透明通道后处理提取技术。' },
                 { id: 'root-trust-governance', title: '根信任治理范式', date: '2026-04-29', tags: ['治理', '根信任'], summary: 'EntropyDrop 以去中心化决策协议为根信任底座，将代码、数据、算法、资产与生产过程纳入可验证、可审计、可共同治理的开放生产体系。' }

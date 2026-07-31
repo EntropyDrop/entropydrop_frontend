@@ -320,6 +320,17 @@ Additionally, the global semantic summary (`semantic_summary`) outputs part-leve
 - `outer_presence_logits` (6 classes): whether each body part has an outer layer;
 - `outer_coverage` (6 classes, after sigmoid): approximate outer-layer coverage ratio [0,1] per part.
 
+**Projected-feature outer-UV occupancy branch**
+
+The per-pixel `layer` head answers whether an individual screen pixel looks more like the inner or outer layer. Crowns, glasses, headphones, and hat brims, however, normally form connected groups of outer texels and should not be decided as independent pixels. The occupancy branch therefore predicts outer alpha directly in the 64×64 UV atlas:
+
+1. U-Net decoder features are compressed to 32 channels, concatenated with per-pixel `p_outer` and foreground coverage, then projected into outer UV texels through the fixed geometry mappings;
+2. Projected features are averaged across front and back views while retaining maximum `p_outer`, mean foreground, and view-support fraction, so single-view regions are not restricted to the tiny two-view intersection;
+3. A graph is built only for the 1,632 valid outer texels. Edges use same-part 3D texel-center distance, connecting both neighbors within a UV island and the correct neighbors across cube-face seams, without connecting atlas regions that merely touch in 2D;
+4. Each node receives part, cube-face, and local-face-coordinate embeddings, followed by three 64-channel graph message-passing blocks that output `outer_uv_occupancy_logits`.
+
+The occupancy branch receives detached backbone features and global context. It first learns an independent structural prior without letting sparse alpha loss disrupt the already stable per-pixel routing backbone. Later in training, a one-way route–occupancy agreement loss gradually transfers this structure back to the `layer` head.
+
 **Learned Fixed-View Route-Role Spatial Prior**
 
 This is an independent learnable parameter tensor of shape `[view_classes=2, layer_classes=3, H=32, W=16]`. It encodes the statistical likelihood, learned from a large number of training samples, that each spatial region in the front and back views belongs to inner, outer, or secondary surface. At inference time, this prior is selected by view index, bilinearly upsampled to the same spatial size as the `layer` output, and added directly to the `layer` logits. During training, it is randomly dropped for 10% of samples (per-sample), with logit values capped to `[-1.5, 1.5]` via `tanh`, and regularized with L2 and total-variation penalties to maintain smoothness. This design makes the prior a soft statistical bias—providing gentle guidance for common structures (such as bangs at the top-front of the head, or outer-layer distribution around hat brims), while the image-conditioned CNN can override it for uncommon skins.
@@ -374,6 +385,16 @@ Single-view visibility supervision and cross-view consistency have deliberately 
 
 To suppress the remaining high-confidence inner→outer mistakes, the highest-loss 20% of transparent outer candidates are mined as hard negatives and added with an internal weight of 0.75. Training logs report union coverage, intersection ratio, visible-negative count, and hard-negative count so that actual supervision coverage is visible rather than hidden behind a total loss.
 
+**(7b) Projected occupancy, topology-component, and route-agreement losses**
+
+The projected occupancy branch is supervised against the complete ground-truth outer alpha. Its base terms are BCE (λ=0.50, with bounded square-root inverse-frequency positive weighting) and Dice (internal weight 0.25). Three additional constraints target small but connected outer components:
+
+- **Hard positives**: the highest-loss 25% of positive outer texels per batch receive an internal weight of 0.50, preventing crown tips, thin glasses arms, and headphone connectors from being drowned out by large components;
+- **Component-balanced recall** (λ=0.25): ground-truth outer connected components are found on the physical UV graph, soft recall is computed per component, and the components are macro-averaged. A two-texel glasses arm therefore has the same component-level weight as a large jacket;
+- **Topology continuity** (λ=0.10): physically adjacent nodes within the same ground-truth positive component are encouraged to have similar occupancy probabilities, suppressing random inner/outer holes within one accessory.
+
+A route–occupancy agreement term (λ=0.25) projects per-pixel `p_outer` into visible outer UV and fits the detached occupancy probability. It stays disabled for the first 20% of batches in each epoch and then ramps to full strength, preventing an uncalibrated early occupancy head from contaminating per-pixel routing.
+
 **(8) Route Confidence Loss** (λ=0.25)
 BCE with logits, target = `(predicted_role == GT_role)`. For secondary pixels, surface classification must also be correct.
 
@@ -407,6 +428,8 @@ All soft-UV and rendering loss λ values can be set to 0, in which case training
 | Regularization | `feature_dropout=0.10` (Dropout2d, training only); frozen SigLIP2 vision tower |
 | Semantic cache | SigLIP2 spatial features (768×14×8 per view) stored as FP16 mmap; ~58 GiB for 180K samples; only current batch read into GPU memory |
 | Outer-candidate supervision | Visible-union alpha supervision λ=0.50; shared-view disagreement weight 0.25; hardest 20% transparent candidates weighted 0.75 |
+| Projected occupancy | 32-channel projected features; 64-channel × 3-layer physical-topology graph; BCE λ=0.50, Dice 0.25, hardest 25% positives ×0.50, component recall λ=0.25, topology continuity λ=0.10 |
+| Route–occupancy agreement | λ=0.25; warmup over the first 20% of batches in each epoch |
 | Default random mode | `SEED=1234, REPRODUCIBLE=false, CUDNN_BENCHMARK=true`; initialization, split, shuffle, and augmentation follow the seed, but CUDA results are not guaranteed bitwise identical |
 | Strict reproducibility mode | `REPRODUCIBLE=true` disables cuDNN benchmark and Flash Attention and requests deterministic CUDA algorithms; `STRICT_DETERMINISM=true` aborts on an unsupported operation, at a substantial speed cost |
 | Checkpoint selection | Best by `loss_hard_uv_color_selection` (hard-routed inner/outer IoU + RGB MAE), preventing sparse or miscolored UVs from winning due to inflated occupancy precision |
@@ -415,23 +438,25 @@ All soft-UV and rendering loss λ values can be set to 0, in which case training
 
 At inference time, the parser's soft probability outputs pass through multiple gating layers before becoming final hard routing decisions:
 
-1. **Projected-texel consensus and asymmetric outer admission**: each source pixel's routing probability is center-weighted and voted into its projected UV texel. The final per-texel probability is a soft blend of the local pixel probability (40%) and the texel-level aggregate score (60%). Every ordinary outer decision must pass both local outer evidence (confidence ≥0.80, margin ≥0.35) and fused texel evidence (confidence ≥0.80, margin ≥0.35); a high-confidence raw outer prediction can no longer bypass consensus. If fused inner evidence clearly wins, the candidate is changed to inner. If outer still leads but does not reach the admission thresholds, it retains its outer UV identity while the observation is marked unknown, preventing an uncertain color from being written incorrectly into either the inner or outer atlas. The log fields `consensus_outer_to_inner_pixels`, `consensus_outer_gate_rejected_pixels`, and `consensus_outer_gate_deferred_pixels` report these outcomes separately.
+1. **Dual-threshold topology-component routing**: occupancy ≥0.80 texels become high-confidence seeds, then physical-topology neighbors with occupancy ≥0.50 are absorbed when connected to a seed. Low-confidence fragments without a seed are not retained, and isolated components smaller than two texels are rejected. Every accepted texel inherits its component seed confidence, allowing a connected crown, glasses frame, or headset to participate in outer rescue as a unit instead of flickering pixel by pixel.
 
-2. **Cross-view outer-visibility check**: for the 78 shared outer texels, a conflict is formed when one view strongly supports outer while another view clearly observes background or a high-confidence inner route at the same texel. The candidate is then vetoed. This rule applies only where shared evidence actually exists; it does not use the back view to overrule eyes or clothing patterns visible only from the front.
+2. **Projected-texel consensus and asymmetric outer admission**: each source pixel's routing probability is center-weighted and voted into its projected UV texel. The final probability blends local pixel evidence (40%), texel-level consensus (60%), and the component occupancy prior. Ordinary outer decisions still need local and texel evidence. Component occupancy may rescue a route only when the current route already has minimum support (default `p_outer` ≥0.30), so it cannot promote an unrelated inner pixel by itself.
 
-3. **Conservative outer gating** (default `conservative` profile):
+3. **Cross-view outer-visibility check**: for the 78 shared outer texels, a conflict is formed when one view strongly supports outer while another view clearly observes background or a high-confidence inner route at the same texel. The candidate is then vetoed. This rule applies only where shared evidence actually exists; it does not use the back view to overrule eyes or clothing patterns visible only from the front.
+
+4. **Conservative outer gating** (default `conservative` profile):
    - Outer confidence ≥ 0.80, inner-outer margin ≥ 0.55;
    - Outer footprint coverage ≥ 0.25;
-   - Minimum 15 valid source pixels per outer texel;
+   - Minimum 30 valid source pixels per outer texel;
    - Background-edge pixels (color difference from detected background ≤ 8/255) are excluded.
 
-4. **Geometry rescue**: when a texel's source pixels lie in an outer-only silhouette region (`outer_mask > 0` and `inner_mask == 0`), or are routed to a precise secondary/backface surface slot, gating relaxes to confidence ≥ 0.60, margin ≥ 0.25, coverage ≥ 0.10. Precise geometric evidence can rescue an observation deferred by the outer-admission thresholds.
+5. **Geometry rescue**: when a texel's source pixels lie in an outer-only silhouette region (`outer_mask > 0` and `inner_mask == 0`), or are routed to a precise secondary/backface surface slot, gating relaxes to confidence ≥ 0.60, margin ≥ 0.25, coverage ≥ 0.10. Precise geometric evidence can rescue an observation deferred by the outer-admission thresholds.
 
-5. **Semantic rescue**: when the parser predicts high part-level `outer_presence` and `outer_coverage`, the downstream confidence and coverage gates may be relaxed for outer observations that have already passed texel admission. This broad part-level semantic signal cannot bypass the fused texel gate, preventing “the head contains a hat or hair” from being interpreted as “all eyes and face pixels should be outer.”
+6. **Semantic rescue**: when the parser predicts high part-level `outer_presence` and `outer_coverage`, the downstream confidence and coverage gates may be relaxed for outer observations that have already passed texel admission. This broad part-level semantic signal cannot bypass the fused texel gate, preventing “the head contains a hat or hair” from being interpreted as “all eyes and face pixels should be outer.”
 
 The default configuration is precision-first: the conservative profile prioritizes correctness of output outer texels over maximizing their quantity. Outer pixels that fail gating remain transparent in the UV atlas—deterministic repair never fabricates outer-layer texels.
 
-Debug images now explicitly distinguish pre-transform and post-transform state. `parser_debug_face_raw.png` and `parser_debug_layer_face_raw.png` use head logits in the original input coordinates together with the unwarped flood mask, so affine alignment and later routing filters can no longer create misleading holes in the “raw” views. `parser_debug_face.png`, `parser_debug_layer_face.png`, and the routed overlays instead reflect final hard routing in canonical coordinates. When diagnosing a failure, compare the raw head output with `parser_debug_observed_canonical.png` first, then inspect the final routed outputs.
+`parser_debug_outer_uv_occupancy.png` shows raw occupancy probability, topology-propagated probability, and component routing state side by side (red=rejected candidate, green=accepted component, blue=high-confidence seed). It separates occupancy-component failures from downstream screen-pixel routing failures. Other debug images continue to distinguish pre-transform and post-transform state: `parser_debug_face_raw.png` and `parser_debug_layer_face_raw.png` use head logits in original input coordinates with the unwarped flood mask, while `parser_debug_face.png`, `parser_debug_layer_face.png`, and routed overlays reflect final hard routing in canonical coordinates.
 
 ## 5. UV Reconstruction
 
