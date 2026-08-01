@@ -20,6 +20,50 @@ interface GeneratePageProps {
 }
 
 const max_seed = 100000000;
+const GENERATION_IMAGE_SIZE = 768;
+const MAX_GENERATION_IMAGE_BYTES = 480 * 1024;
+const INITIAL_JPEG_QUALITY = 0.82;
+const MIN_JPEG_QUALITY = 0.1;
+const JPEG_QUALITY_STEP = 0.08;
+
+async function encodeGenerationImage(
+    canvas: HTMLCanvasElement,
+    filename: string
+): Promise<{ file: File; quality: number }> {
+    let quality = INITIAL_JPEG_QUALITY;
+
+    while (true) {
+        const blob = await new Promise<Blob>((resolve, reject) => {
+            canvas.toBlob((result) => {
+                if (result) {
+                    resolve(result);
+                } else {
+                    reject(new Error('Failed to encode image as JPEG'));
+                }
+            }, 'image/jpeg', quality);
+        });
+
+        if (blob.size <= MAX_GENERATION_IMAGE_BYTES) {
+            return {
+                file: new File([blob], filename, {
+                    type: 'image/jpeg',
+                    lastModified: Date.now()
+                }),
+                quality
+            };
+        }
+
+        if (quality <= MIN_JPEG_QUALITY) {
+            throw new Error('Unable to compress image below the upload limit');
+        }
+
+        quality = Math.max(
+            MIN_JPEG_QUALITY,
+            Number((quality - JPEG_QUALITY_STEP).toFixed(2))
+        );
+    }
+}
+
 type GenMode = 'aigc_image_to_skin' | 'aigc_text_to_skin' | 'aigc_image_edit_to_skin'
 export function GeneratePage({ current }: GeneratePageProps) {
     const navigate = useNavigate()
@@ -71,6 +115,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 setGenMode('aigc_image_edit_to_skin');
                 setSourceId(location.state.sourceId || null);
                 setEditSourceType(location.state.sourceType || null);
+                setImageFile(null);
                 setImagePreviewUrl(location.state.sourceImage);
                 if (location.state.isPublic === false) {
                     setIsPrivate(true);
@@ -90,23 +135,19 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                 try {
                                     const skinCanvas = await Skin2D(url);
                                     const canvas = document.createElement('canvas');
-                                    canvas.width = 768;
-                                    canvas.height = 768;
+                                    canvas.width = GENERATION_IMAGE_SIZE;
+                                    canvas.height = GENERATION_IMAGE_SIZE;
                                     const ctx = canvas.getContext('2d');
                                     if (ctx) {
                                         ctx.fillStyle = '#FFFFFF';
-                                        ctx.fillRect(0, 0, 768, 768);
-                                        ctx.drawImage(skinCanvas, 0, 0, 768, 768);
+                                        ctx.fillRect(0, 0, GENERATION_IMAGE_SIZE, GENERATION_IMAGE_SIZE);
+                                        ctx.drawImage(skinCanvas, 0, 0, GENERATION_IMAGE_SIZE, GENERATION_IMAGE_SIZE);
 
-                                        canvas.toBlob((resizedBlob) => {
-                                            if (resizedBlob) {
-                                                const newName = filename.replace(/\.[^/.]+$/, "") + "_rendered.jpg";
-                                                const resizedFile = new File([resizedBlob], newName, { type: 'image/jpeg' });
-                                                setImageFile(resizedFile);
-                                                setImagePreviewUrl(canvas.toDataURL('image/jpeg', 0.82));
-                                            }
-                                            resolve();
-                                        }, 'image/jpeg', 0.82);
+                                        const newName = filename.replace(/\.[^/.]+$/, "") + "_rendered.jpg";
+                                        const encoded = await encodeGenerationImage(canvas, newName);
+                                        setImageFile(encoded.file);
+                                        setImagePreviewUrl(canvas.toDataURL('image/jpeg', encoded.quality));
+                                        resolve();
                                     } else {
                                         reject(new Error('Failed to get 2D context'));
                                     }
@@ -118,32 +159,28 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
                             // Normal image load logic
                             const canvas = document.createElement('canvas');
-                            canvas.width = 768;
-                            canvas.height = 768;
+                            canvas.width = GENERATION_IMAGE_SIZE;
+                            canvas.height = GENERATION_IMAGE_SIZE;
                             const ctx = canvas.getContext('2d');
                             if (ctx) {
                                 // Fill white background
                                 ctx.fillStyle = '#FFFFFF';
-                                ctx.fillRect(0, 0, 768, 768);
+                                ctx.fillRect(0, 0, GENERATION_IMAGE_SIZE, GENERATION_IMAGE_SIZE);
 
                                 // Calculate aspect ratio
-                                const scale = Math.min(768 / img.width, 768 / img.height);
-                                const x = (768 - img.width * scale) / 2;
-                                const y = (768 - img.height * scale) / 2;
+                                const scale = Math.min(GENERATION_IMAGE_SIZE / img.width, GENERATION_IMAGE_SIZE / img.height);
+                                const x = (GENERATION_IMAGE_SIZE - img.width * scale) / 2;
+                                const y = (GENERATION_IMAGE_SIZE - img.height * scale) / 2;
                                 const drawWidth = img.width * scale;
                                 const drawHeight = img.height * scale;
 
                                 ctx.drawImage(img, x, y, drawWidth, drawHeight);
 
-                                canvas.toBlob((resizedBlob) => {
-                                    if (resizedBlob) {
-                                        const newName = filename.replace(/\.[^/.]+$/, "") + ".jpg";
-                                        const resizedFile = new File([resizedBlob], newName, { type: 'image/jpeg' });
-                                        setImageFile(resizedFile);
-                                        setImagePreviewUrl(canvas.toDataURL('image/jpeg', 0.82));
-                                    }
-                                    resolve();
-                                }, 'image/jpeg', 0.82);
+                                const newName = filename.replace(/\.[^/.]+$/, "") + ".jpg";
+                                const encoded = await encodeGenerationImage(canvas, newName);
+                                setImageFile(encoded.file);
+                                setImagePreviewUrl(canvas.toDataURL('image/jpeg', encoded.quality));
+                                resolve();
                             } else {
                                 reject(new Error('Failed to get 2D context'));
                             }
@@ -397,6 +434,11 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
         if ((genMode === 'aigc_image_to_skin' || genMode === 'aigc_image_edit_to_skin') && !imageFile) {
             setInfoModal({ isOpen: true, title: current.generate.notice, message: current.generate.pleaseUploadImage, type: 'info' })
+            return
+        }
+
+        if (imageFile && imageFile.size > MAX_GENERATION_IMAGE_BYTES) {
+            showError(current.generate.fileTooLarge)
             return
         }
 
@@ -828,6 +870,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                     onChange={(e) => {
                                                         if (e.target.files && e.target.files[0]) {
                                                             const file = e.target.files[0];
+                                                            setImageFile(null);
                                                             const reader = new FileReader();
                                                             reader.onload = (ev) => {
                                                                 if (ev.target?.result) {
@@ -838,56 +881,54 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                             try {
                                                                                 const skinCanvas = await Skin2D(ev.target?.result as string);
                                                                                 const canvas = document.createElement('canvas');
-                                                                                canvas.width = 768;
-                                                                                canvas.height = 768;
+                                                                                canvas.width = GENERATION_IMAGE_SIZE;
+                                                                                canvas.height = GENERATION_IMAGE_SIZE;
                                                                                 const ctx = canvas.getContext('2d');
                                                                                 if (ctx) {
                                                                                     ctx.fillStyle = '#FFFFFF';
-                                                                                    ctx.fillRect(0, 0, 768, 768);
-                                                                                    ctx.drawImage(skinCanvas, 0, 0, 768, 768);
+                                                                                    ctx.fillRect(0, 0, GENERATION_IMAGE_SIZE, GENERATION_IMAGE_SIZE);
+                                                                                    ctx.drawImage(skinCanvas, 0, 0, GENERATION_IMAGE_SIZE, GENERATION_IMAGE_SIZE);
 
-                                                                                    canvas.toBlob((blob) => {
-                                                                                        if (blob) {
-                                                                                            const newName = file.name.replace(/\.[^/.]+$/, "") + "_rendered.jpg";
-                                                                                            const resizedFile = new File([blob], newName, { type: 'image/jpeg' });
-                                                                                            setImageFile(resizedFile);
-                                                                                        }
-                                                                                    }, 'image/jpeg', 0.82);
-                                                                                    setImagePreviewUrl(canvas.toDataURL('image/jpeg', 0.82));
+                                                                                    const newName = file.name.replace(/\.[^/.]+$/, "") + "_rendered.jpg";
+                                                                                    const encoded = await encodeGenerationImage(canvas, newName);
+                                                                                    setImageFile(encoded.file);
+                                                                                    setImagePreviewUrl(canvas.toDataURL('image/jpeg', encoded.quality));
                                                                                 }
                                                                             } catch (err) {
                                                                                 console.error("Failed to render skin via Skin2D:", err);
+                                                                                showError(current.generate.fileTooLarge);
                                                                             }
                                                                             return;
                                                                         }
 
                                                                         // Normal image load logic
                                                                         const canvas = document.createElement('canvas');
-                                                                        canvas.width = 768;
-                                                                        canvas.height = 768;
+                                                                        canvas.width = GENERATION_IMAGE_SIZE;
+                                                                        canvas.height = GENERATION_IMAGE_SIZE;
                                                                         const ctx = canvas.getContext('2d');
                                                                         if (ctx) {
                                                                             // Fill white background
                                                                             ctx.fillStyle = '#FFFFFF';
-                                                                            ctx.fillRect(0, 0, 768, 768);
+                                                                            ctx.fillRect(0, 0, GENERATION_IMAGE_SIZE, GENERATION_IMAGE_SIZE);
 
                                                                             // Calculate aspect ratio
-                                                                            const scale = Math.min(768 / img.width, 768 / img.height);
-                                                                            const x = (768 - img.width * scale) / 2;
-                                                                            const y = (768 - img.height * scale) / 2;
+                                                                            const scale = Math.min(GENERATION_IMAGE_SIZE / img.width, GENERATION_IMAGE_SIZE / img.height);
+                                                                            const x = (GENERATION_IMAGE_SIZE - img.width * scale) / 2;
+                                                                            const y = (GENERATION_IMAGE_SIZE - img.height * scale) / 2;
                                                                             const drawWidth = img.width * scale;
                                                                             const drawHeight = img.height * scale;
 
                                                                             ctx.drawImage(img, x, y, drawWidth, drawHeight);
 
-                                                                            canvas.toBlob((blob) => {
-                                                                                if (blob) {
-                                                                                    const newName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
-                                                                                    const resizedFile = new File([blob], newName, { type: 'image/jpeg' });
-                                                                                    setImageFile(resizedFile);
-                                                                                }
-                                                                            }, 'image/jpeg', 0.82);
-                                                                            setImagePreviewUrl(canvas.toDataURL('image/jpeg', 0.82));
+                                                                            try {
+                                                                                const newName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+                                                                                const encoded = await encodeGenerationImage(canvas, newName);
+                                                                                setImageFile(encoded.file);
+                                                                                setImagePreviewUrl(canvas.toDataURL('image/jpeg', encoded.quality));
+                                                                            } catch (err) {
+                                                                                console.error("Failed to compress uploaded image:", err);
+                                                                                showError(current.generate.fileTooLarge);
+                                                                            }
                                                                         }
                                                                     };
                                                                     img.src = ev.target.result as string;
