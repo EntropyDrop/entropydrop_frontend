@@ -1712,7 +1712,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
 
       {/* Deletion Confirmation Modal */}
       {deletingId && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
           <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-red-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
             <div className="flex items-start gap-4">
               <div className="w-10 h-10 bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500 text-2xl shrink-0">
@@ -1766,7 +1766,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
 
       {/* Task Error Details Modal */}
       {selectedErrorMsg && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto p-4">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto p-4">
           <div className="w-full max-w-2xl bg-[#0a0a0a]/95 border border-red-500/30 flex flex-col gap-5 animate-in zoom-in-95 duration-200 shadow-2xl max-h-[85vh] overflow-hidden">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-white/10 p-5 pb-4">
@@ -1824,7 +1824,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
 
       {/* User Deletion Confirmation Modal */}
       {deletingEmail && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
           <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-red-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
             <div className="flex items-start gap-4">
               <div className="w-10 h-10 bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500 text-2xl shrink-0">
@@ -1878,7 +1878,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
 
       {/* Seven-Day Active User Gift Confirmation Modal */}
       {showGiftConfirmation && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
           <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-purple-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
             <div className="flex items-start gap-4">
               <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-500 text-2xl shrink-0">
@@ -1938,7 +1938,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
 
       {/* Specific User Gift Confirmation Modal */}
       {showSingleGiftConfirmation && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
           <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-purple-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
             <div className="flex items-start gap-4">
               <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-500 text-2xl shrink-0">
@@ -1998,7 +1998,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
 
       {/* SKING_DDJ Series Generations Modal */}
       {showSkingDdjModal && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto p-4">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto p-4">
           <div className="w-full max-w-4xl bg-[#0a0a0a]/95 border border-green-500/30 flex flex-col gap-5 animate-in zoom-in-95 duration-200 shadow-2xl max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-white/10 p-5 pb-4">
