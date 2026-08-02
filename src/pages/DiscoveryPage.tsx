@@ -6,6 +6,7 @@ import { apiFetch } from '../utils/api'
 import { Skin2DImg } from '../components/Skin2DImg'
 import { LoadingPlaceholder } from '../components/LoadingPlaceholder'
 import type { GenerationLogItemBrief, GenerationLogItem } from '../types/log'
+import type { ModelSeries } from '../types/discovery'
 import type { LangData } from '../constants/lang'
 
 const MCModal = lazy(() => import('../components/MCModal').then(m => ({ default: m.MCModal })))
@@ -23,6 +24,7 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
     const [items, setItems] = useState<GenerationLogItem[]>([])
     const [searchQuery, setSearchQuery] = useState('')
     const [sortBy, setSortBy] = useState<'created_at' | 'likes'>('created_at')
+    const [modelSeries, setModelSeries] = useState<ModelSeries>('')
     const [page, setPage] = useState(1)
     const [total, setTotal] = useState(0)
     const [isLoading, setIsLoading] = useState(false)
@@ -48,11 +50,18 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
 
         setIsLoading(true)
         try {
-            let url = `/api/discovery/search?page=${pageNum}&page_size=${PAGE_SIZE}&sort_by=${sortBy}`
+            const params = new URLSearchParams({
+                page: String(pageNum),
+                page_size: String(PAGE_SIZE),
+                sort_by: sortBy,
+            })
             if (trimmedQuery) {
-                url += `&q=${encodeURIComponent(trimmedQuery)}`
+                params.set('q', trimmedQuery)
             }
-            const res = await apiFetch(url)
+            if (modelSeries) {
+                params.set('model_series', modelSeries)
+            }
+            const res = await apiFetch(`/api/discovery/search?${params.toString()}`)
             if (res.status === 429) {
                 window.dispatchEvent(new CustomEvent('global-error', {
                     detail: {
@@ -80,7 +89,7 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
         if (viewMode === 'list') {
             handleSearch(1)
         }
-    }, [sortBy, viewMode])
+    }, [sortBy, modelSeries, viewMode])
 
     // Deep linking for selection
     useEffect(() => {
@@ -197,6 +206,16 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
                             <Icon icon="pixelarticons:search" className="text-sm" />
                         </button>
                     </div>
+                    <select
+                        aria-label={current.discovery.modelSeries}
+                        value={modelSeries}
+                        onChange={e => setModelSeries(e.target.value as ModelSeries)}
+                        className={`bg-black/40 border border-white/10 px-3 py-2 text-white text-xs outline-none focus:border-[#3c8527] transition-colors cursor-pointer ${current.fontClass}`}
+                    >
+                        <option value="">{current.discovery.allModelSeries}</option>
+                        <option value="SKING_DDJ">SKING_DDJ</option>
+                        <option value="sking">sking</option>
+                    </select>
                 </div>
 
                 {/* Right: Sorting and View Toggle */}

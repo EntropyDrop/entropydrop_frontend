@@ -732,7 +732,9 @@ export default {
         modeList: '列表模式',
         mode3D: '3D 模式',
         sortByLikes: '最受欢迎',
-        sortByTime: '最新发布'
+        sortByTime: '最新发布',
+        modelSeries: '模型系列',
+        allModelSeries: '全部系列'
     },
     monitor: {
         adminAccessRequired: '需要管理员权限',

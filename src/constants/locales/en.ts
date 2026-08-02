@@ -732,7 +732,9 @@ export default {
         modeList: 'List View',
         mode3D: '3D View',
         sortByLikes: 'Most Liked',
-        sortByTime: 'Latest'
+        sortByTime: 'Latest',
+        modelSeries: 'Model Series',
+        allModelSeries: 'All Series'
     },
     monitor: {
         adminAccessRequired: 'Admin access required',
