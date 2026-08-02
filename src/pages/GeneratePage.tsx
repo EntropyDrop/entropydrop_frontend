@@ -200,6 +200,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
     const [modelsConfig, setModelsConfig] = useState<Record<string, string[]>>({})
     const [modelCosts, setModelCosts] = useState<Record<string, number>>({})
+    const [modelProStates, setModelProStates] = useState<Record<string, boolean>>({})
 
     const fetchModels = async () => {
         try {
@@ -245,13 +246,22 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 ]))
                 
                 const costs: Record<string, number> = {}
+                const proStates: Record<string, boolean> = {}
                 await Promise.all(
                     allUniqueModels.map(async (m) => {
                         try {
-                            const res = await apiFetch(`/api/generation_credit_cost?model_version=${encodeURIComponent(m)}`)
+                            let url = ''
+                            if (m.includes(' + ')) {
+                                const parts = m.split(' + ')
+                                url = `/api/generation_credit_cost?aux_model_version=${encodeURIComponent(parts[0])}&model_version=${encodeURIComponent(parts[1])}`
+                            } else {
+                                url = `/api/generation_credit_cost?model_version=${encodeURIComponent(m)}`
+                            }
+                            const res = await apiFetch(url)
                             if (res.ok) {
                                 const costData = await res.json()
                                 costs[m] = costData.credits
+                                proStates[m] = !!costData.is_pro
                             }
                         } catch (e) {
                             console.error(`Failed to fetch cost for ${m}`, e)
@@ -259,6 +269,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                     })
                 )
                 setModelCosts(costs)
+                setModelProStates(proStates)
             }
         } catch (e) {
             console.error('Failed to fetch models', e)
@@ -280,6 +291,9 @@ export function GeneratePage({ current }: GeneratePageProps) {
             if (response.ok) {
                 const data = await response.json()
                 setGenerationCreditCost(data.credits)
+                if (model && model !== 'unknown') {
+                    setModelProStates(prev => ({ ...prev, [model]: !!data.is_pro }))
+                }
             }
         } catch (e) {
             console.error('Failed to fetch generation credit cost', e)
@@ -422,6 +436,19 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
     const handleGenerate = async () => {
         if (isGenerating || modelVersion === 'unknown' || !modelVersion) return
+
+        const isModelPro = modelProStates[modelVersion]
+        if (isModelPro && !isPro) {
+            setInfoModal({
+                isOpen: true,
+                title: current.lang === 'zh-hans' ? 'PRO 专属模型' : 'PRO Exclusive Model',
+                message: current.lang === 'zh-hans' 
+                    ? '当前选择的模型仅限 PRO 会员使用，请订阅后使用。' 
+                    : 'The selected model is exclusive to PRO members. Please subscribe to use it.',
+                type: 'info'
+            })
+            return
+        }
 
         if (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) {
             setInfoModal({ isOpen: true, title: current.generate.notice, message: current.monitor.systemMaintenanceMsg, type: 'info' })
@@ -984,53 +1011,66 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                  <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
                                      {current.generate.modelVersion}
                                  </span>
-                                 
                                  <button
-                                     type="button"
-                                     onClick={() => {
-                                         if (modelVersion !== 'unknown' && modelVersion) {
-                                             setIsModelDropdownOpen(!isModelDropdownOpen);
-                                         }
-                                     }}
-                                     disabled={modelVersion === 'unknown' || !modelVersion}
-                                     className={`w-full flex items-center justify-between bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors cursor-pointer text-left ${current.fontClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                                 >
-                                     <span>
-                                         {modelVersion === 'unknown' ? current.generate.loadingModels : modelVersion}
-                                     </span>
-                                     <div className="flex items-center gap-2">
-                                         {modelVersion !== 'unknown' && modelVersion && (
-                                             <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
-                                                 {generationCreditCost !== null ? generationCreditCost : '...'} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
-                                             </span>
-                                         )}
-                                         <Icon
-                                             icon="pixelarticons:chevron-down"
-                                             className={`text-white/60 transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`}
-                                         />
-                                     </div>
-                                 </button>
+                                        type="button"
+                                        onClick={() => {
+                                            if (modelVersion !== 'unknown' && modelVersion) {
+                                                setIsModelDropdownOpen(!isModelDropdownOpen);
+                                            }
+                                        }}
+                                        disabled={modelVersion === 'unknown' || !modelVersion}
+                                        className={`w-full flex items-center justify-between bg-white/10 border border-white/10 p-2 text-white text-[11px] lg:text-xs focus:outline-none focus:border-green-500/30 transition-colors cursor-pointer text-left ${current.fontClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                                    >
+                                        <span className="flex items-center gap-1.5 min-w-0">
+                                            <span className="truncate">
+                                                {modelVersion === 'unknown' ? current.generate.loadingModels : modelVersion}
+                                            </span>
+                                            {modelVersion !== 'unknown' && modelVersion && modelProStates[modelVersion] && (
+                                                <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
+                                                    PRO
+                                                </span>
+                                            )}
+                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            {modelVersion !== 'unknown' && modelVersion && (
+                                                <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
+                                                    {generationCreditCost !== null ? generationCreditCost : '...'} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                </span>
+                                            )}
+                                            <Icon
+                                                icon="pixelarticons:chevron-down"
+                                                className={`text-white/60 transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`}
+                                            />
+                                        </div>
+                                    </button>
 
-                                 {isModelDropdownOpen && (
-                                     <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[#1a1a1a] border border-white/10 max-h-48 overflow-y-auto custom-scrollbar flex flex-col">
-                                         {(modelsConfig[genMode] || []).map(m => (
-                                             <button
-                                                 key={m}
-                                                 type="button"
-                                                 onClick={() => {
-                                                     setModelVersion(m);
-                                                     setIsModelDropdownOpen(false);
-                                                 }}
-                                                 className={`w-full flex items-center justify-between p-2 text-left text-white text-[11px] lg:text-xs hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent ${current.fontClass} ${m === modelVersion ? 'bg-white/5 font-bold text-green-400' : ''}`}
-                                             >
-                                                 <span>{m}</span>
-                                                 <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
-                                                     {modelCosts[m] !== undefined ? modelCosts[m] : (generationCreditCost !== null ? generationCreditCost : '...')} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
-                                                 </span>
-                                             </button>
-                                         ))}
-                                     </div>
-                                 )}
+                                    {isModelDropdownOpen && (
+                                        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[#1a1a1a] border border-white/10 max-h-48 overflow-y-auto custom-scrollbar flex flex-col">
+                                            {(modelsConfig[genMode] || []).map(m => (
+                                                <button
+                                                    key={m}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setModelVersion(m);
+                                                        setIsModelDropdownOpen(false);
+                                                    }}
+                                                    className={`w-full flex items-center justify-between p-2 text-left text-white text-[11px] lg:text-xs hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent ${current.fontClass} ${m === modelVersion ? 'bg-white/5 font-bold text-green-400' : ''}`}
+                                                >
+                                                    <span className="flex items-center gap-1.5 min-w-0">
+                                                        <span className="truncate">{m}</span>
+                                                        {modelProStates[m] && (
+                                                            <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
+                                                                PRO
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px] shrink-0">
+                                                        {modelCosts[m] !== undefined ? modelCosts[m] : (generationCreditCost !== null ? generationCreditCost : '...')} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                              </div>
 
                             {/* Advanced Settings */}
@@ -1179,16 +1219,34 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
                                 <button
                                      disabled={
-                                         isGenerating ||
-                                         modelVersion === 'unknown' ||
-                                         !modelVersion ||
-                                         generationCreditCost === null ||
-                                         (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
-                                         (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
-                                         (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
+                                         (!modelVersion || modelProStates[modelVersion] === undefined || !isPro) ? (
+                                             isGenerating ||
+                                             modelVersion === 'unknown' ||
+                                             !modelVersion ||
+                                             generationCreditCost === null ||
+                                             (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
+                                             (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
+                                             (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
+                                         ) : (
+                                             isGenerating ||
+                                             modelVersion === 'unknown' ||
+                                             !modelVersion ||
+                                             generationCreditCost === null ||
+                                             (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
+                                             (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
+                                             (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
+                                         )
                                      }
-                                     onClick={handleGenerate}
-                                     className={`py-3 lg:py-4 bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-gray-700 text-white border-2 border-black cursor-pointer disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass}`}
+                                     onClick={(() => {
+                                         const isModelPro = modelVersion ? !!modelProStates[modelVersion] : false;
+                                         const shouldSubscribe = isModelPro && !isPro;
+                                         return shouldSubscribe ? () => navigate('/skin/pro') : handleGenerate;
+                                     })()}
+                                     className={`py-3 lg:py-4 border-2 border-black cursor-pointer disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass} ${
+                                         (modelVersion && modelProStates[modelVersion] && !isPro)
+                                             ? 'bg-gradient-to-r from-yellow-600 via-amber-500 to-yellow-600 hover:from-yellow-500 hover:to-amber-400 text-black font-bold border-yellow-400'
+                                             : 'bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-gray-700 text-white'
+                                     }`}
                                  >
                                      {isGenerating ? (
                                          <span key="generating" className="flex items-center justify-center gap-2">
@@ -1199,6 +1257,11 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                          <span key="loading-model" className="flex items-center justify-center gap-2">
                                              <Icon icon="pixelarticons:reload" className="animate-spin" />
                                              {current.generate.btnLoadingModel}
+                                         </span>
+                                     ) : (modelVersion && modelProStates[modelVersion] && !isPro) ? (
+                                         <span key="subscribe" className="flex items-center justify-center gap-1.5">
+                                             <Icon icon="pixelarticons:gift" className="text-black" />
+                                             <span>{current.lang === 'zh-hans' ? '订阅 PRO 专属模型' : 'Subscribe for PRO Model'}</span>
                                          </span>
                                      ) : ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)) ? (
                                          <span key="disabled" className="flex items-center justify-center gap-2 opacity-50">
