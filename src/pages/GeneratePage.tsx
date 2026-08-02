@@ -73,7 +73,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [isGenerating, setIsGenerating] = useState(false)
     const [isPrivate, setIsPrivate] = useState(false)
     const [isPro, setIsPro] = useState(false)
-    const [generationCreditCost, setGenerationCreditCost] = useState(1)
+    const [generationCreditCost, setGenerationCreditCost] = useState<number | null>(null)
     // showResult state removed
     const [prompt, setPrompt] = useState('')
     const [imageFile, setImageFile] = useState<File | null>(null)
@@ -290,15 +290,21 @@ export function GeneratePage({ current }: GeneratePageProps) {
         if (localStorage.getItem('token')) {
             fetchModels()
             fetchUserStatus()
-            fetchGenerationCreditCost()
         }
     }, [])
 
     useEffect(() => {
         if (localStorage.getItem('token') && modelVersion && modelVersion !== 'unknown') {
-            fetchGenerationCreditCost(modelVersion)
+            if (modelCosts[modelVersion] !== undefined) {
+                setGenerationCreditCost(modelCosts[modelVersion])
+            } else {
+                setGenerationCreditCost(null)
+                fetchGenerationCreditCost(modelVersion)
+            }
+        } else {
+            setGenerationCreditCost(null)
         }
-    }, [modelVersion])
+    }, [modelVersion, modelCosts])
 
     const fetchUserStatus = async () => {
         try {
@@ -995,7 +1001,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                      <div className="flex items-center gap-2">
                                          {modelVersion !== 'unknown' && modelVersion && (
                                              <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
-                                                 {generationCreditCost} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                 {generationCreditCost !== null ? generationCreditCost : '...'} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
                                              </span>
                                          )}
                                          <Icon
@@ -1019,7 +1025,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                              >
                                                  <span>{m}</span>
                                                  <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
-                                                     {modelCosts[m] !== undefined ? modelCosts[m] : generationCreditCost} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                     {modelCosts[m] !== undefined ? modelCosts[m] : (generationCreditCost !== null ? generationCreditCost : '...')} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
                                                  </span>
                                              </button>
                                          ))}
@@ -1176,19 +1182,20 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                          isGenerating ||
                                          modelVersion === 'unknown' ||
                                          !modelVersion ||
+                                         generationCreditCost === null ||
                                          (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
                                          (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
                                          (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
                                      }
                                      onClick={handleGenerate}
-                                     className={`py-3 lg:py-4 bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-gray-700 text-white border-2 border-black cursor-pointer transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass}`}
+                                     className={`py-3 lg:py-4 bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-gray-700 text-white border-2 border-black cursor-pointer disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass}`}
                                  >
                                      {isGenerating ? (
                                          <span key="generating" className="flex items-center justify-center gap-2">
                                              <Icon icon="pixelarticons:reload" className="animate-spin" />
                                              {current.generate.btnGenerating}
                                          </span>
-                                     ) : (modelVersion === 'unknown' || !modelVersion) ? (
+                                     ) : (modelVersion === 'unknown' || !modelVersion || generationCreditCost === null) ? (
                                          <span key="loading-model" className="flex items-center justify-center gap-2">
                                              <Icon icon="pixelarticons:reload" className="animate-spin" />
                                              {current.generate.btnLoadingModel}
@@ -1201,7 +1208,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                      ) : (
                                          <span key="start" className="flex items-center justify-center gap-1.5">
                                              <span className="flex items-center gap-0.5 text-white font-mono">
-                                                 {generationCreditCost} <Icon icon="pixelarticons:zap" className="text-white" />
+                                                 {generationCreditCost !== null ? generationCreditCost : '...'} <Icon icon="pixelarticons:zap" className="text-white" />
                                              </span>
                                              <span>{current.generate.btnStart}</span>
                                          </span>
