@@ -366,7 +366,7 @@ export default {
             free: {
                 title: 'Free',
                 price: '0',
-                quota: 'Claim 20 credits monthly.',
+                quota: 'Claim 10 credits monthly.',
                 collections: 'Public collections only',
                 private: 'No private space',
                 priority: 'Regular priority',

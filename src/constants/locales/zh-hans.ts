@@ -366,7 +366,7 @@ export default {
             free: {
                 title: '免费版',
                 price: '0',
-                quota: '每月登录领取 20 Credit 额度',
+                quota: '每月登录领取 10 Credit 额度',
                 collections: '仅支持公开收藏夹',
                 private: '不支持私有空间',
                 priority: '普通生成优先级',
