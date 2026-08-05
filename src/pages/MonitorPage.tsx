@@ -6,7 +6,7 @@ import { type LangData } from '../constants/lang'
 import { apiFetch } from '../utils/api'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend
+  ResponsiveContainer, Legend, LineChart, Line
 } from 'recharts'
 
 interface MonitorStats {
@@ -57,6 +57,67 @@ interface MonitorStats {
   }>;
 }
 
+interface BackendInstance {
+  instance_id: string;
+  display_name: string;
+  hostname: string;
+  cluster: string | null;
+  availability_zone: string | null;
+  task_family: string | null;
+  task_revision: string | null;
+  runtime_status: string;
+  git_commit: string;
+  deploy_time: string;
+  started_at: string;
+  last_heartbeat: string;
+  heartbeat_age_seconds: number;
+  status: 'healthy' | 'unhealthy' | 'stale';
+  readiness: 'ready' | 'not_ready';
+  dependencies: Record<string, string>;
+  cpu: {
+    percent: number | null;
+    allocated_vcpus: number | null;
+  };
+  memory: {
+    used_bytes: number | null;
+    limit_bytes: number | null;
+    percent: number | null;
+  };
+  disk: {
+    used_bytes: number | null;
+    limit_bytes: number | null;
+    percent: number | null;
+  };
+}
+
+interface BackendInstancesData {
+  timestamp: string;
+  healthy_count: number;
+  total_instances: number;
+  instances: BackendInstance[];
+}
+
+interface BackendHistorySample {
+  timestamp: string;
+  instance_id: string;
+  display_name: string;
+  cpu_percent: number | null;
+  memory_percent: number | null;
+  disk_percent: number | null;
+  status: 'healthy' | 'unhealthy';
+}
+
+interface BackendHistoryData {
+  timestamp: string;
+  hours: number;
+  bucket_seconds: number;
+  series: Array<{
+    instance_id: string;
+    display_name: string;
+    samples: BackendHistorySample[];
+  }>;
+}
+
 interface MonitorPageProps {
   current: LangData
 }
@@ -65,6 +126,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [stats, setStats] = useState<MonitorStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [backendInstances, setBackendInstances] = useState<BackendInstancesData | null>(null)
+  const [backendInstancesLoading, setBackendInstancesLoading] = useState(true)
+  const [backendInstancesError, setBackendInstancesError] = useState(false)
+  const [backendHistory, setBackendHistory] = useState<BackendHistoryData | null>(null)
+  const [backendHistoryLoading, setBackendHistoryLoading] = useState(true)
+  const [backendHistoryError, setBackendHistoryError] = useState(false)
 
   // Unfinished logs additions
   interface UnfinishedLogItem {
@@ -175,6 +242,36 @@ export function MonitorPage({ current }: MonitorPageProps) {
       setError(current.monitor.connectionError)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchBackendInstances = async () => {
+    setBackendInstancesLoading(true)
+    try {
+      const response = await apiFetch('/api/monitor/backend-instances')
+      if (!response.ok) throw new Error(`Backend monitor returned ${response.status}`)
+      setBackendInstances(await response.json())
+      setBackendInstancesError(false)
+    } catch (e) {
+      console.error('Failed to fetch backend instances', e)
+      setBackendInstancesError(true)
+    } finally {
+      setBackendInstancesLoading(false)
+    }
+  }
+
+  const fetchBackendHistory = async () => {
+    setBackendHistoryLoading(true)
+    try {
+      const response = await apiFetch('/api/monitor/backend-instances/history')
+      if (!response.ok) throw new Error(`Backend history returned ${response.status}`)
+      setBackendHistory(await response.json())
+      setBackendHistoryError(false)
+    } catch (e) {
+      console.error('Failed to fetch backend instance history', e)
+      setBackendHistoryError(true)
+    } finally {
+      setBackendHistoryLoading(false)
     }
   }
 
@@ -466,6 +563,18 @@ export function MonitorPage({ current }: MonitorPageProps) {
     return () => clearInterval(timer)
   }, [])
 
+  useEffect(() => {
+    fetchBackendInstances()
+    const timer = setInterval(fetchBackendInstances, 15000)
+    return () => clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    fetchBackendHistory()
+    const timer = setInterval(fetchBackendHistory, 60000)
+    return () => clearInterval(timer)
+  }, [])
+
   const fetchUnfinished = async (p: number) => {
     try {
       const response = await apiFetch(`/api/monitor/unfinished?page=${p}&page_size=10`)
@@ -730,6 +839,218 @@ export function MonitorPage({ current }: MonitorPageProps) {
             )}
           </div>
         </div>
+
+        {/* Backend API instance resources */}
+        <section className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col gap-4 shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-xl">
+                <Icon icon="pixelarticons:server" />
+              </div>
+              <div>
+                <h2 className={`text-white text-sm sm:text-base m-0 ${current.fontClass}`}>
+                  {isZh ? '后端 API 实例资源' : 'Backend API Instance Resources'}
+                </h2>
+                <p className="text-white/35 text-[9px] sm:text-[10px] mt-1 font-mono uppercase tracking-wider">
+                  {isZh ? '每个运行实例的 CPU、内存与磁盘占用' : 'CPU, memory and disk utilization for every running instance'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <div className={`px-2.5 py-1 border flex items-center gap-2 font-mono text-[10px] font-bold uppercase ${
+                backendInstancesError
+                  ? 'bg-red-500/10 border-red-500/30 text-red-400'
+                  : backendInstances && backendInstances.total_instances > 0 && backendInstances.healthy_count === backendInstances.total_instances
+                    ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                    : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  backendInstancesError
+                    ? 'bg-red-400'
+                    : backendInstances && backendInstances.total_instances > 0 && backendInstances.healthy_count === backendInstances.total_instances
+                      ? 'bg-green-400 animate-pulse'
+                      : 'bg-yellow-400'
+                }`} />
+                {backendInstancesError
+                  ? (isZh ? '读取失败' : 'Unavailable')
+                  : `${backendInstances?.healthy_count ?? 0}/${backendInstances?.total_instances ?? 0} ${isZh ? '健康' : 'Healthy'}`}
+              </div>
+              <button
+                onClick={fetchBackendInstances}
+                disabled={backendInstancesLoading}
+                className="w-8 h-8 flex items-center justify-center bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                title={isZh ? '刷新实例资源' : 'Refresh instance resources'}
+              >
+                <Icon icon="pixelarticons:reload" className={backendInstancesLoading ? 'animate-spin text-cyan-400' : ''} />
+              </button>
+            </div>
+          </div>
+
+          {backendInstancesLoading && !backendInstances ? (
+            <div className="h-36 flex items-center justify-center border border-dashed border-white/10 text-white/30">
+              <Icon icon="pixelarticons:reload" className="animate-spin text-2xl text-cyan-400" />
+            </div>
+          ) : backendInstances?.instances.length ? (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              {backendInstances.instances.map(instance => (
+                <article
+                  key={instance.instance_id}
+                  className={`border p-4 flex flex-col gap-4 transition-colors ${
+                    instance.status === 'healthy'
+                      ? 'bg-black/20 border-white/10 hover:border-cyan-500/30'
+                      : instance.status === 'unhealthy'
+                        ? 'bg-red-500/5 border-red-500/30'
+                        : 'bg-yellow-500/5 border-yellow-500/30'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Icon
+                          icon="pixelarticons:server"
+                          className={instance.status === 'healthy'
+                            ? 'text-cyan-400 shrink-0'
+                            : instance.status === 'unhealthy'
+                              ? 'text-red-400 shrink-0'
+                              : 'text-yellow-400 shrink-0'}
+                        />
+                        <span className="font-mono text-sm text-white truncate">{instance.display_name}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[9px] text-white/35 font-mono uppercase">
+                        <span>{instance.availability_zone || (isZh ? '本地环境' : 'Local')}</span>
+                        {instance.task_family && (
+                          <span>{instance.task_family}:{instance.task_revision || '?'}</span>
+                        )}
+                        <span>{isZh ? '运行' : 'Uptime'} {calculateUptime(instance.started_at)}</span>
+                        {instance.git_commit && instance.git_commit !== 'unknown' && (
+                          <span>Commit {instance.git_commit.slice(0, 8)}</span>
+                        )}
+                      </div>
+                    </div>
+                    <span className={`px-2 py-0.5 text-[9px] font-bold font-mono uppercase shrink-0 ${
+                      instance.status === 'healthy'
+                        ? 'bg-green-500/15 text-green-400'
+                        : instance.status === 'unhealthy'
+                          ? 'bg-red-500/15 text-red-400'
+                          : 'bg-yellow-500/15 text-yellow-400'
+                    }`}>
+                      {instance.status === 'healthy'
+                        ? (isZh ? '健康' : 'Healthy')
+                        : instance.status === 'unhealthy'
+                          ? (isZh ? '异常' : 'Unhealthy')
+                          : (isZh ? '心跳延迟' : 'Stale')}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <ResourceMeter
+                      label="CPU"
+                      icon="pixelarticons:speed-fast"
+                      percent={instance.cpu.percent}
+                      detail={instance.cpu.allocated_vcpus
+                        ? `${instance.cpu.allocated_vcpus} vCPU`
+                        : (isZh ? '配额未知' : 'Limit unknown')}
+                    />
+                    <ResourceMeter
+                      label={isZh ? '内存' : 'Memory'}
+                      icon="pixelarticons:chip"
+                      percent={instance.memory.percent}
+                      detail={formatUsage(instance.memory.used_bytes, instance.memory.limit_bytes)}
+                    />
+                    <ResourceMeter
+                      label={isZh ? '磁盘' : 'Disk'}
+                      icon="pixelarticons:save"
+                      percent={instance.disk.percent}
+                      detail={formatUsage(instance.disk.used_bytes, instance.disk.limit_bytes)}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-white/5 pt-2 text-[8px] text-white/25 font-mono uppercase">
+                    <span className="truncate">{instance.hostname}</span>
+                    <div className="flex items-center gap-2">
+                      {Object.entries(instance.dependencies || {}).map(([name, value]) => (
+                        <span key={name} className={value === 'ok' ? 'text-green-500/60' : 'text-red-400'}>
+                          {name} {value === 'ok' ? 'OK' : 'ERROR'}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="shrink-0">
+                      {isZh ? '心跳' : 'Heartbeat'} {formatHeartbeatAge(instance.heartbeat_age_seconds, isZh)}
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="h-36 flex flex-col items-center justify-center border border-dashed border-white/10 text-white/30 gap-2">
+              <Icon icon="pixelarticons:server" className="text-3xl" />
+              <span className="text-[10px] font-mono uppercase tracking-wider">
+                {backendInstancesError
+                  ? (isZh ? '暂时无法读取实例指标' : 'Instance metrics are temporarily unavailable')
+                  : (isZh ? '等待实例首次上报指标' : 'Waiting for the first instance heartbeat')}
+              </span>
+            </div>
+          )}
+
+          <div className="border-t border-white/5 pt-4 flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className={`text-white/70 text-sm m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  <Icon icon="pixelarticons:chart" className="text-cyan-400" />
+                  {isZh ? '资源占用趋势 • 最近 12 小时' : 'Resource Utilization • Last 12 Hours'}
+                </h3>
+                <p className="text-white/25 text-[9px] mt-1 font-mono uppercase tracking-wider">
+                  {isZh ? '每 5 分钟一个采样点，多实例分别显示' : 'Five-minute samples, shown separately for every instance'}
+                </p>
+              </div>
+              <button
+                onClick={fetchBackendHistory}
+                disabled={backendHistoryLoading}
+                className="w-8 h-8 flex items-center justify-center bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
+                title={isZh ? '刷新历史趋势' : 'Refresh history charts'}
+              >
+                <Icon icon="pixelarticons:reload" className={backendHistoryLoading ? 'animate-spin text-cyan-400' : ''} />
+              </button>
+            </div>
+
+            {backendHistoryLoading && !backendHistory ? (
+              <div className="h-48 flex items-center justify-center border border-dashed border-white/10">
+                <Icon icon="pixelarticons:reload" className="animate-spin text-2xl text-cyan-400" />
+              </div>
+            ) : backendHistory?.series.some(series => series.samples.length > 0) ? (
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                <BackendHistoryChart
+                  title="CPU"
+                  icon="pixelarticons:speed-fast"
+                  metric="cpu_percent"
+                  history={backendHistory}
+                />
+                <BackendHistoryChart
+                  title={isZh ? '内存' : 'Memory'}
+                  icon="pixelarticons:chip"
+                  metric="memory_percent"
+                  history={backendHistory}
+                />
+                <BackendHistoryChart
+                  title={isZh ? '磁盘' : 'Disk'}
+                  icon="pixelarticons:save"
+                  metric="disk_percent"
+                  history={backendHistory}
+                />
+              </div>
+            ) : (
+              <div className="h-48 flex flex-col items-center justify-center border border-dashed border-white/10 text-white/30 gap-2">
+                <Icon icon="pixelarticons:chart" className="text-3xl" />
+                <span className="text-[10px] font-mono uppercase tracking-wider text-center px-4">
+                  {backendHistoryError
+                    ? (isZh ? '暂时无法读取历史指标' : 'Historical metrics are temporarily unavailable')
+                    : (isZh ? '历史数据将在部署后逐步积累' : 'Historical data will accumulate after deployment')}
+                </span>
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* Global Settings & Operations Control */}
         <div className="flex flex-col gap-4 shrink-0">
@@ -2280,6 +2601,195 @@ function StatCard({ icon, label, value, color }: { icon: string, label: string, 
       </div>
     </div>
   )
+}
+
+type BackendHistoryMetric = 'cpu_percent' | 'memory_percent' | 'disk_percent'
+
+const INSTANCE_CHART_COLORS = [
+  '#22d3ee',
+  '#a78bfa',
+  '#f59e0b',
+  '#34d399',
+  '#f472b6',
+  '#60a5fa',
+]
+
+function BackendHistoryChart({
+  title,
+  icon,
+  metric,
+  history,
+}: {
+  title: string;
+  icon: string;
+  metric: BackendHistoryMetric;
+  history: BackendHistoryData;
+}) {
+  const data = buildBackendHistoryChartData(history, metric)
+
+  return (
+    <div className="h-[260px] bg-black/20 border border-white/5 p-3 flex flex-col gap-3 min-w-0">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="m-0 text-[11px] text-white/60 font-mono uppercase flex items-center gap-1.5">
+          <Icon icon={icon} className="text-cyan-400" /> {title}
+        </h4>
+        <span className="text-[8px] text-white/20 font-mono uppercase">12H • %</span>
+      </div>
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#ffffff0d" vertical={false} />
+            <XAxis
+              dataKey="timestamp"
+              type="number"
+              domain={['dataMin', 'dataMax']}
+              scale="time"
+              stroke="#ffffff30"
+              fontSize={8}
+              tickLine={false}
+              axisLine={false}
+              minTickGap={28}
+              tickFormatter={formatHistoryTick}
+            />
+            <YAxis
+              domain={[0, 100]}
+              stroke="#ffffff30"
+              fontSize={8}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(value) => `${value}%`}
+            />
+            <Tooltip
+              contentStyle={{ backgroundColor: '#111', border: '1px solid #333', fontSize: '9px' }}
+              labelFormatter={(value) => new Date(Number(value)).toLocaleString()}
+              itemStyle={{ fontSize: '9px' }}
+            />
+            <Legend
+              verticalAlign="top"
+              height={24}
+              iconType="plainline"
+              wrapperStyle={{ fontSize: '8px', fontFamily: 'monospace' }}
+            />
+            {history.series.map((series, index) => (
+              <Line
+                key={`${metric}-${series.instance_id}`}
+                type="monotone"
+                dataKey={series.instance_id}
+                name={series.display_name}
+                stroke={INSTANCE_CHART_COLORS[index % INSTANCE_CHART_COLORS.length]}
+                strokeWidth={1.5}
+                dot={data.length <= 1 ? { r: 2 } : false}
+                connectNulls={false}
+                isAnimationActive={false}
+                unit="%"
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
+function buildBackendHistoryChartData(history: BackendHistoryData, metric: BackendHistoryMetric) {
+  const rows = new Map<number, Record<string, number>>()
+
+  history.series.forEach(series => {
+    series.samples.forEach(sample => {
+      const timestamp = new Date(sample.timestamp).getTime()
+      const value = sample[metric]
+      if (!Number.isFinite(timestamp) || value === null || !Number.isFinite(value)) return
+      const row = rows.get(timestamp) || { timestamp }
+      row[series.instance_id] = value
+      rows.set(timestamp, row)
+    })
+  })
+
+  return Array.from(rows.values()).sort((a, b) => a.timestamp - b.timestamp)
+}
+
+function formatHistoryTick(timestamp: number) {
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function ResourceMeter({
+  label,
+  icon,
+  percent,
+  detail,
+}: {
+  label: string;
+  icon: string;
+  percent: number | null;
+  detail: string;
+}) {
+  const safePercent = percent === null ? 0 : Math.max(0, Math.min(100, percent))
+  const barColor = percent === null
+    ? 'bg-white/20'
+    : percent >= 90
+      ? 'bg-red-500'
+      : percent >= 70
+        ? 'bg-yellow-500'
+        : 'bg-cyan-400'
+  const valueColor = percent === null
+    ? 'text-white/30'
+    : percent >= 90
+      ? 'text-red-400'
+      : percent >= 70
+        ? 'text-yellow-400'
+        : 'text-white'
+
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="flex items-center gap-1.5 text-[10px] text-white/45 font-mono uppercase">
+          <Icon icon={icon} /> {label}
+        </span>
+        <span className={`text-sm font-bold font-mono ${valueColor}`}>
+          {percent === null ? '--' : `${percent.toFixed(1)}%`}
+        </span>
+      </div>
+      <div
+        className="h-1.5 bg-white/5 overflow-hidden"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent === null ? undefined : safePercent}
+      >
+        <div
+          className={`h-full transition-all duration-500 ${barColor}`}
+          style={{ width: `${safePercent}%` }}
+        />
+      </div>
+      <div className="text-[8px] text-white/25 font-mono mt-1.5 truncate">{detail}</div>
+    </div>
+  )
+}
+
+function formatBytes(bytes: number | null) {
+  if (bytes === null || !Number.isFinite(bytes)) return '--'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = Math.max(0, bytes)
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  const digits = value >= 10 || unit === 0 ? 0 : 1
+  return `${value.toFixed(digits)} ${units[unit]}`
+}
+
+function formatUsage(used: number | null, limit: number | null) {
+  if (used === null) return '--'
+  return limit === null ? formatBytes(used) : `${formatBytes(used)} / ${formatBytes(limit)}`
+}
+
+function formatHeartbeatAge(seconds: number, isZh: boolean) {
+  if (seconds < 5) return isZh ? '刚刚' : 'now'
+  if (seconds < 60) return isZh ? `${seconds} 秒前` : `${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  return isZh ? `${minutes} 分钟前` : `${minutes}m ago`
 }
 
 function calculateUptime(birthDate: string) {
