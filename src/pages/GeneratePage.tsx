@@ -1218,65 +1218,69 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                 )}
 
                                 <button
-                                     disabled={
-                                         (!modelVersion || modelProStates[modelVersion] === undefined || !isPro) ? (
-                                             isGenerating ||
-                                             modelVersion === 'unknown' ||
-                                             !modelVersion ||
-                                             generationCreditCost === null ||
-                                             (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
-                                             (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
-                                             (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
-                                         ) : (
-                                             isGenerating ||
-                                             modelVersion === 'unknown' ||
-                                             !modelVersion ||
-                                             generationCreditCost === null ||
-                                             (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
-                                             (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
-                                             (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
-                                         )
-                                     }
-                                     onClick={(() => {
-                                         const isModelPro = modelVersion ? !!modelProStates[modelVersion] : false;
-                                         const shouldSubscribe = isModelPro && !isPro;
-                                         return shouldSubscribe ? () => navigate('/pro') : handleGenerate;
-                                     })()}
-                                     className={`py-3 lg:py-4 border-2 border-black cursor-pointer disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass} ${
-                                         (modelVersion && modelProStates[modelVersion] && !isPro)
-                                             ? 'bg-gradient-to-r from-yellow-600 via-amber-500 to-yellow-600 hover:from-yellow-500 hover:to-amber-400 text-black font-bold border-yellow-400'
-                                             : 'bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-gray-700 text-white'
-                                     }`}
-                                 >
-                                     {isGenerating ? (
-                                         <span key="generating" className="flex items-center justify-center gap-2">
-                                             <Icon icon="pixelarticons:reload" className="animate-spin" />
-                                             {current.generate.btnGenerating}
-                                         </span>
-                                     ) : (modelVersion === 'unknown' || !modelVersion || generationCreditCost === null) ? (
-                                         <span key="loading-model" className="flex items-center justify-center gap-2">
-                                             <Icon icon="pixelarticons:reload" className="animate-spin" />
-                                             {current.generate.btnLoadingModel}
-                                         </span>
-                                     ) : (modelVersion && modelProStates[modelVersion] && !isPro) ? (
-                                         <span key="subscribe" className="flex items-center justify-center gap-1.5">
-                                             <Icon icon="pixelarticons:gift" className="text-black" />
-                                             <span>{current.lang === 'zh-hans' ? '订阅 PRO 专属模型' : 'Subscribe for PRO Model'}</span>
-                                         </span>
-                                     ) : ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)) ? (
-                                         <span key="disabled" className="flex items-center justify-center gap-2 opacity-50">
-                                             <Icon icon="pixelarticons:close" />
-                                             {current.monitor.temporarilyUnavailable}
-                                         </span>
-                                     ) : (
-                                         <span key="start" className="flex items-center justify-center gap-1.5">
-                                             <span className="flex items-center gap-0.5 text-white font-mono">
-                                                 {generationCreditCost !== null ? generationCreditCost : '...'} <Icon icon="pixelarticons:zap" className="text-white" />
-                                             </span>
-                                             <span>{current.generate.btnStart}</span>
-                                         </span>
-                                     )}
-                                 </button>
+                                      disabled={
+                                          (!modelVersion || modelProStates[modelVersion] === undefined || !isPro) ? (
+                                              isGenerating ||
+                                              modelVersion === 'unknown' ||
+                                              !modelVersion ||
+                                              generationCreditCost === null ||
+                                              (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
+                                              (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
+                                              (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
+                                          ) : (
+                                              isGenerating ||
+                                              modelVersion === 'unknown' ||
+                                              !modelVersion ||
+                                              generationCreditCost === null ||
+                                              (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
+                                              (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
+                                              (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
+                                          )
+                                      }
+                                      onClick={(() => {
+                                          const isMaintenance = (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled);
+                                          if (isMaintenance) return () => {};
+                                          const isModelPro = modelVersion ? !!modelProStates[modelVersion] : false;
+                                          const shouldSubscribe = isModelPro && !isPro;
+                                          return shouldSubscribe ? () => navigate('/pro') : handleGenerate;
+                                      })()}
+                                      className={`py-3 lg:py-4 border-2 border-black cursor-pointer disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass} ${
+                                          ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled))
+                                              ? 'bg-gray-700 text-white/40 cursor-not-allowed border-black'
+                                              : (modelVersion && modelProStates[modelVersion] && !isPro)
+                                                  ? 'bg-gradient-to-r from-yellow-600 via-amber-500 to-yellow-600 hover:from-yellow-500 hover:to-amber-400 text-black font-bold border-yellow-400'
+                                                  : 'bg-[#3c8527] hover:bg-[#4ea632] disabled:bg-gray-700 text-white'
+                                      }`}
+                                  >
+                                      {isGenerating ? (
+                                          <span key="generating" className="flex items-center justify-center gap-2">
+                                              <Icon icon="pixelarticons:reload" className="animate-spin" />
+                                              {current.generate.btnGenerating}
+                                          </span>
+                                      ) : (modelVersion === 'unknown' || !modelVersion || generationCreditCost === null) ? (
+                                          <span key="loading-model" className="flex items-center justify-center gap-2">
+                                              <Icon icon="pixelarticons:reload" className="animate-spin" />
+                                              {current.generate.btnLoadingModel}
+                                          </span>
+                                      ) : ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)) ? (
+                                          <span key="disabled" className="flex items-center justify-center gap-2 opacity-50">
+                                              <Icon icon="pixelarticons:close" />
+                                              {current.monitor.temporarilyUnavailable}
+                                          </span>
+                                      ) : (modelVersion && modelProStates[modelVersion] && !isPro) ? (
+                                          <span key="subscribe" className="flex items-center justify-center gap-1.5">
+                                              <Icon icon="pixelarticons:gift" className="text-black" />
+                                              <span>{current.lang === 'zh-hans' ? '订阅 PRO 专属模型' : 'Subscribe for PRO Model'}</span>
+                                          </span>
+                                      ) : (
+                                          <span key="start" className="flex items-center justify-center gap-1.5">
+                                              <span className="flex items-center gap-0.5 text-white font-mono">
+                                                  {generationCreditCost !== null ? generationCreditCost : '...'} <Icon icon="pixelarticons:zap" className="text-white" />
+                                              </span>
+                                              <span>{current.generate.btnStart}</span>
+                                          </span>
+                                      )}
+                                  </button>
                             </div>
                         </div>
 
