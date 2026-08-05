@@ -1200,7 +1200,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
                                     {!isPro && (
                                         <div
-                                            onClick={() => navigate('/skin/pro')}
+                                            onClick={() => navigate('/pro')}
                                             className="flex items-center gap-1.5 px-2 py-1 bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 cursor-pointer hover:bg-yellow-400/20 transition-all animate-in fade-in slide-in-from-left-2 duration-300"
                                         >
                                             <Icon icon="pixelarticons:zap" className="text-xs" />
@@ -1240,7 +1240,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                      onClick={(() => {
                                          const isModelPro = modelVersion ? !!modelProStates[modelVersion] : false;
                                          const shouldSubscribe = isModelPro && !isPro;
-                                         return shouldSubscribe ? () => navigate('/skin/pro') : handleGenerate;
+                                         return shouldSubscribe ? () => navigate('/pro') : handleGenerate;
                                      })()}
                                      className={`py-3 lg:py-4 border-2 border-black cursor-pointer disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass} ${
                                          (modelVersion && modelProStates[modelVersion] && !isPro)

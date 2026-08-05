@@ -135,6 +135,10 @@ export function MonitorPage({ current }: MonitorPageProps) {
     mode: string;
     status: string;
     model_version: string;
+    provider_task_id: string | null;
+    provider_submission_state: string | null;
+    pipeline_version: string | null;
+    error_msg: string | null;
     created_at: string | null;
     source_url: string | null;
     edited_image_url: string | null;
@@ -2083,6 +2087,19 @@ export function MonitorPage({ current }: MonitorPageProps) {
                               {isZh ? '模式: ' : 'MODE: '}<span className="text-white/80">{getModeLabel(log.mode)}</span>
                             </span>
                           )}
+                          {log.provider_submission_state && (
+                            <span className="text-white/40">
+                              {isZh ? '提交状态: ' : 'SUBMIT: '}
+                              <span className={log.provider_submission_state === 'unknown' ? 'text-red-400 font-bold' : 'text-white/80'}>
+                                {log.provider_submission_state}
+                              </span>
+                            </span>
+                          )}
+                          {log.provider_task_id && (
+                            <span className="text-white/40">
+                              PROVIDER: <span className="text-white/80">{log.provider_task_id}</span>
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="text-white/40">
@@ -2105,6 +2122,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
                         <div className="text-[11px] text-white/60 bg-black/40 p-2 border border-white/5 leading-relaxed font-mono">
                           <span className="text-white/30 uppercase font-bold mr-1">{isZh ? '提示词:' : 'Prompt:'}</span>
                           {log.prompt}
+                        </div>
+                      )}
+                      {log.error_msg && (
+                        <div className="text-[11px] text-red-300 bg-red-950/30 p-2 border border-red-500/20 leading-relaxed font-mono whitespace-pre-wrap break-all">
+                          <span className="text-red-400/70 uppercase font-bold mr-1">ERROR:</span>
+                          {log.error_msg}
                         </div>
                       )}
 

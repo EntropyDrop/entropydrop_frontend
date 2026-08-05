@@ -483,7 +483,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                         title: current.collection.deleteQuotaExceededTitle,
                                         message: current.collection.deleteQuotaExceeded,
                                         onConfirm: () => {
-                                            navigate('/skin/pro');
+                                            navigate('/pro');
                                         }
                                     });
                                 }, 200);
@@ -547,7 +547,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                     if (!res.ok) {
                         if (res.status === 403) {
                             alert(current.collection.privateQuotaExceeded);
-                            navigate('/skin/pro');
+                            navigate('/pro');
                         } else {
                             const err = await res.json().catch(() => ({}));
                             alert(err.detail || err.error || current.common.requestFailed);
@@ -1097,7 +1097,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                     {(!isPro && !currentCollection.is_public) ? (
                                         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
                                             <div
-                                                onClick={() => navigate('/skin/pro')}
+                                                onClick={() => navigate('/pro')}
                                                 className="flex items-center justify-center gap-1 px-1.5 py-1 sm:px-2 sm:py-1 bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 cursor-pointer hover:bg-yellow-400/20 transition-all animate-in fade-in slide-in-from-left-2 duration-300"
                                             >
                                                 <Icon icon="pixelarticons:zap" className="text-[10px] sm:text-xs" />
