@@ -205,7 +205,6 @@ export function MonitorPage({ current }: MonitorPageProps) {
     model_version: string;
     provider_task_id: string | null;
     provider_submission_state: string | null;
-    pipeline_version: string | null;
     error_msg: string | null;
     created_at: string | null;
     source_url: string | null;
