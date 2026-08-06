@@ -146,6 +146,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
     user_id: string | null;
     user_email: string | null;
     user_username: string | null;
+    provider_submission_state: string | null;
   }
   interface UnfinishedData {
     items: UnfinishedLogItem[];
@@ -1943,6 +1944,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
                       <th className="pb-3 pl-2 font-semibold">{isZh ? '任务 ID' : 'Task ID'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '类型' : 'Mode'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '状态' : 'Status'}</th>
+                      <th className="pb-3 font-semibold">{isZh ? '提交状态' : 'Submit State'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '错误原因' : 'Error Reason'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '用户信息' : 'User Info'}</th>
                       <th className="pb-3 font-semibold">{isZh ? '创建时间' : 'Created At'}</th>
@@ -1968,6 +1970,15 @@ export function MonitorPage({ current }: MonitorPageProps) {
                         </td>
                         <td className="py-3">
                           {getStatusBadge(log.status)}
+                        </td>
+                        <td className="py-3">
+                          {log.provider_submission_state ? (
+                            <span className={log.provider_submission_state === 'unknown' ? 'text-red-400 font-bold' : 'text-white/70'}>
+                              {log.provider_submission_state}
+                            </span>
+                          ) : (
+                            <span className="text-white/20">-</span>
+                          )}
                         </td>
                         <td className="py-3 max-w-[200px]">
                           {log.error_msg ? (
