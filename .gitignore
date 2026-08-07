@@ -141,3 +141,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Generated at build time by scripts/generate-sitemap.js
+public/sitemap.xml

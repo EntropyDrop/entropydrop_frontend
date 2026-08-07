@@ -1,0 +1,10 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+Allow: /skin/
+Allow: /public/
+Disallow: /skin/monitor
+Disallow: /skin/edit
+Disallow: /skin/orders
+
+Sitemap: https://entropydrop.com/sitemap.xml

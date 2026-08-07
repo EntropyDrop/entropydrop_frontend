@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
 import { apiFetch } from '../utils/api'
+import { SEO } from '../components/SEO'
 
 interface ProPageProps {
     current: LangData
@@ -160,6 +161,7 @@ export function ProPage({ current }: ProPageProps) {
 
     return (
         <PageContainer>
+            <SEO title={current.nav.pro} description={current.pro.benefits} />
 
                 {/* Header */}
                 <div className="flex flex-col gap-2 border-b border-white/10 pb-6">

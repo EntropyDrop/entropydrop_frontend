@@ -634,6 +634,7 @@ export default {
         },
         articles: {
             title: 'Latest Updates',
+            description: 'Read the latest updates, research, architecture deep-dives and development notes from EntropyDrop.',
             list: [
                 { id: 'skin-reconstruction', title: 'From Rendering to Reconstruction: A New Workflow for Image-to-Minecraft-Skin', date: '2026-07-25', tags: ['Minecraft', 'Computer Vision', 'Geometry Reconstruction', 'Generative Model'], summary: 'Deconstructs the image-to-skin pipeline into normalized front/back views, deterministic foreground extraction, fixed-view geometry fitting, Dense UV Parser semantic routing, raw color sampling, and topological completion, and details data accumulation strategies for fully open-source model training.' },
                 { id: 'architecture', title: 'EntropyDrop Backend Runtime Architecture and Elastic Scaling Boundaries', date: '2026-05-22', tags: ['Architecture', 'Backend', 'Scalability'], summary: 'A code-grounded view of API readiness, connection pooling, ECS Service Auto Scaling, singleton background services, one-off migrations, and the remaining GPU/RQ worker scaling boundary.' },

@@ -2,6 +2,7 @@ import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { SEO } from '../components/SEO';
 
 interface PublicPageProps {
     current: LangData
@@ -60,8 +61,14 @@ export function PublicPage({ current }: PublicPageProps) {
         };
     };
 
+    const sectionTitle = activeSection === 'blog' ? data.articles.title : data.title;
+    const sectionDesc = activeSection === 'blog'
+        ? data.articles.description
+        : data.introduction.desc;
+
     return (
         <PageContainer>
+            <SEO title={sectionTitle} description={sectionDesc} />
 
             {/* Header */}
             <div className="flex flex-col gap-2 border-b border-white/10 pb-6 shrink-0">

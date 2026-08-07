@@ -48,6 +48,11 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
 
     const isDiscoveryPage = location.pathname === '/skin/' || location.pathname === '/skin' || location.pathname === '/'
 
+    // Keep <html lang> in sync with the current language
+    useEffect(() => {
+        document.documentElement.lang = lang === 'zh-hans' ? 'zh-Hans' : 'en'
+    }, [lang])
+
 
     useEffect(() => {
         const handleGlobalError = (e: Event) => {
@@ -73,8 +78,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                         className={`text-white text-left ${current.fontClass} flex flex-col justify-center`}
                         style={{ textShadow: '2px 2px 0px #000' }}
                     >
-                        <h1 className="m-0 text-3xl sm:text-5xl leading-tight hidden sm:block">{current.title}</h1>
-                        <h1 className="m-0 text-xl leading-tight sm:hidden">{current.title}</h1>
+                        <h1 className="m-0 text-xl sm:text-5xl leading-tight">{current.title}</h1>
                         <h2 className="m-0 text-base sm:text-2xl text-gray-400 hidden sm:block">{current.subtitle}</h2>
                     </div>
 

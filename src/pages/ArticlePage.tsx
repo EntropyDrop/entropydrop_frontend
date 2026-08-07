@@ -5,6 +5,8 @@ import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { LoadingSpinner } from '../components/LoadingPlaceholder'
 
+import { SEO } from '../components/SEO';
+
 const ArticleMarkdown = lazy(() => import('../components/ArticleMarkdown').then(m => ({ default: m.ArticleMarkdown })))
 
 interface ArticlePageProps {
@@ -45,12 +47,17 @@ export function ArticlePage({ current }: ArticlePageProps) {
         if (id) fetchArticle()
     }, [id, current.lang])
 
+    const articleInfo = current.public_page?.articles?.list?.find(a => a.id === id)
+    const articleTitle = articleInfo?.title || current.public_page?.articles?.title || id
+    const articleDesc = articleInfo ? articleInfo.summary : ''
+
     return (
         <PageContainer
             bg="bg-black/60 backdrop-blur-xl"
             animate="animate-in fade-in slide-in-from-bottom-4 duration-500"
             innerPadding="p-10"
         >
+            <SEO title={articleTitle} description={articleDesc} ogType="article" />
 
             {/* Navigation */}
             <button

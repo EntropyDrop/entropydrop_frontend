@@ -4,6 +4,7 @@ import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { motion } from 'framer-motion'
 import { apiFetch } from '../utils/api'
+import { SEO } from '../components/SEO'
 
 interface CreditsPageProps {
     current: LangData
@@ -192,6 +193,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
             animate="animate-in fade-in slide-in-from-bottom-4 duration-500"
             className={current.fontClass}
         >
+            <SEO title={c.pageTitle} description={c.pageDesc} />
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mt-2">
                 <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-3 text-[#a6df7a]">

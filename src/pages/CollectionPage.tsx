@@ -3,6 +3,7 @@ import { Icon } from '@iconify/react'
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
+import { SEO } from '../components/SEO'
 import { Skin2DImg } from '../components/Skin2DImg'
 import { AnimatePresence } from 'framer-motion'
 import { MCModal } from '../components/MCModal'
@@ -583,21 +584,27 @@ export function CollectionPage({ current }: CollectionPageProps) {
     if (!localStorage.getItem('token')) {
         return (
             <PageContainer className="items-center justify-center">
-                    <Icon icon="pixelarticons:lock" className="text-6xl opacity-30" />
-                    <div className="text-center flex flex-col gap-1">
-                        <h2 className={`text-xl font-bold ${current.fontClass}`}>
-                            {current.common.authRequired}
-                        </h2>
-                        <p className={`text-white/60 text-xs ${current.fontClass}`}>
-                            {current.collection.loginPrompt}
-                        </p>
-                    </div>
+                <SEO title={current.nav.collection} description={current.collection.loginPrompt} />
+                <Icon icon="pixelarticons:lock" className="text-6xl opacity-30" />
+                <div className="text-center flex flex-col gap-1">
+                    <h2 className={`text-xl font-bold ${current.fontClass}`}>
+                        {current.common.authRequired}
+                    </h2>
+                    <p className={`text-white/60 text-xs ${current.fontClass}`}>
+                        {current.collection.loginPrompt}
+                    </p>
+                </div>
             </PageContainer>
         )
     }
 
+    const collectionTitle = currentCollection
+        ? `${currentCollection.name} | ${current.nav.collection}`
+        : current.nav.collection;
+
     return (
         <PageContainer className="relative">
+            <SEO title={collectionTitle} description={current.collection.subtitle} />
 
                 {/* Header */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-white/10 pb-6 shrink-0 w-full">

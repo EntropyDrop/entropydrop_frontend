@@ -9,6 +9,8 @@ import type { GenerationLogItemBrief, GenerationLogItem } from '../types/log'
 import type { ModelSeries } from '../types/discovery'
 import type { LangData } from '../constants/lang'
 
+import { SEO } from '../components/SEO';
+
 const MCModal = lazy(() => import('../components/MCModal').then(m => ({ default: m.MCModal })))
 
 interface DiscoveryPageProps {
@@ -171,20 +173,24 @@ export function DiscoveryPage({ current }: DiscoveryPageProps) {
     // Render 3D Mode view (only renders switcher overlay since background canvas is in Layout)
     if (viewMode === '3d') {
         return (
-            <div className="absolute top-16 right-4 sm:top-auto sm:bottom-8 sm:right-8 z-30 pointer-events-auto">
-                <button
-                    onClick={() => setSearchParams({ view: 'list' })}
-                    className={`px-3 py-1.5 bg-black/60 backdrop-blur-md hover:bg-black/85 text-white border border-white/10 flex items-center gap-1.5 text-xs transition-colors cursor-pointer ${current.fontClass}`}
-                >
-                    <Icon icon="pixelarticons:list" className="text-base" />
-                    <span>{current.discovery.modeList}</span>
-                </button>
-            </div>
+            <>
+                <SEO title={current.nav.discover} description={current.subtitle} />
+                <div className="absolute top-16 right-4 sm:top-auto sm:bottom-8 sm:right-8 z-30 pointer-events-auto">
+                    <button
+                        onClick={() => setSearchParams({ view: 'list' })}
+                        className={`px-3 py-1.5 bg-black/60 backdrop-blur-md hover:bg-black/85 text-white border border-white/10 flex items-center gap-1.5 text-xs transition-colors cursor-pointer ${current.fontClass}`}
+                    >
+                        <Icon icon="pixelarticons:list" className="text-base" />
+                        <span>{current.discovery.modeList}</span>
+                    </button>
+                </div>
+            </>
         )
     }
 
     return (
         <PageContainer className="relative">
+            <SEO title={current.nav.discover} description={current.subtitle} />
 
             {/* Header Bar with Controls */}
             <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 border-b border-white/10 pb-6 shrink-0">

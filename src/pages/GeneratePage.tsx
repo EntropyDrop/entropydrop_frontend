@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
+import { SEO } from '../components/SEO'
 import { Skin2D } from '../components/utils'
 import { LoadingSpinner } from '../components/LoadingPlaceholder'
 // import { MC } removed
@@ -608,15 +609,16 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 animate="animate-in fade-in zoom-in duration-300"
                 className="items-center justify-center"
             >
-                    <Icon icon="pixelarticons:lock" className="text-6xl opacity-30" />
-                    <div className="text-center flex flex-col gap-1">
-                        <h2 className={`text-xl font-bold ${current.fontClass}`}>
-                            {current.common.authRequired}
-                        </h2>
-                        <p className={`text-white/60 text-xs ${current.fontClass}`}>
-                            {current.generate.loginPrompt}
-                        </p>
-                    </div>
+                <SEO title={current.nav.generate} description={current.generate.loginPrompt} />
+                <Icon icon="pixelarticons:lock" className="text-6xl opacity-30" />
+                <div className="text-center flex flex-col gap-1">
+                    <h2 className={`text-xl font-bold ${current.fontClass}`}>
+                        {current.common.authRequired}
+                    </h2>
+                    <p className={`text-white/60 text-xs ${current.fontClass}`}>
+                        {current.generate.loginPrompt}
+                    </p>
+                </div>
             </PageContainer>
         )
     }
@@ -633,6 +635,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             animate="animate-in fade-in zoom-in duration-300"
             className="flex-col lg:flex-row"
         >
+            <SEO title={current.nav.generate} description={current.subtitle} />
 
                 {/* Left: History Sidebar */}
                 <div className="w-full lg:w-80 flex flex-col gap-4 order-last lg:order-first border-t lg:border-t-0 lg:border-r border-white/10 pt-4 lg:pt-0 lg:pr-6 shrink-0 h-auto lg:h-full">
