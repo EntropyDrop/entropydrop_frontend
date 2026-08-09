@@ -213,7 +213,7 @@ export function MCModalPreview({
 
                 <div className="flex justify-between items-end">
                     <div className="flex flex-col gap-2 pointer-events-auto">
-                        <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 flex flex-row gap-1">
+                        <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 flex flex-col lg:flex-row gap-1">
                             {['idle', 'walking', 'dance'].map((a) => (
                                 <button
                                     key={a}
@@ -225,7 +225,7 @@ export function MCModalPreview({
                                 </button>
                             ))}
                             {action === 'dance' && (
-                                <div className="relative ml-1 border-l border-white/10 pl-1 flex items-center" ref={fbxDropdownRef}>
+                                <div className="relative border-t lg:border-t-0 lg:border-l border-white/10 pt-1.5 lg:pt-0 pb-1 lg:pb-0 px-4 lg:px-0 lg:pl-1 mt-1 lg:mt-0 ml-0 lg:ml-1 flex items-center" ref={fbxDropdownRef}>
                                     <button
                                         onClick={() => setIsFbxDropdownOpen(!isFbxDropdownOpen)}
                                         className="bg-transparent text-white font-pixel-hans text-[10px] outline-none cursor-pointer border-none uppercase flex items-center gap-1 hover:text-[#4ea632] transition-colors"
