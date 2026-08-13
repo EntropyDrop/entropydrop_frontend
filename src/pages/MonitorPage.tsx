@@ -179,7 +179,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [imageToSkinSettingLoading, setImageToSkinSettingLoading] = useState(false)
   const [isImageEditToSkinEnabled, setIsImageEditToSkinEnabled] = useState(true)
   const [imageEditToSkinSettingLoading, setImageEditToSkinSettingLoading] = useState(false)
-  const [modelPrices, setModelPrices] = useState<Record<string, { credits: number; is_pro: boolean }>>({})
+  const [modelPrices, setModelPrices] = useState<Record<string, { credits: number; is_pro: boolean; under_maintenance: boolean }>>({})
   const [modelPricesLoading, setModelPricesLoading] = useState(false)
 
   // Gift Credits to All states
@@ -338,25 +338,26 @@ export function MonitorPage({ current }: MonitorPageProps) {
     }
   }
 
-  const updateModelPrice = async (modelName: string, value: number, isPro: boolean) => {
+  const updateModelPrice = async (modelName: string, value: number, isPro: boolean, underMaintenance: boolean) => {
     setModelPricesLoading(true)
     try {
       const response = await apiFetch('/api/monitor/model_prices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name: modelName, credits: value, is_pro: isPro })
+        body: JSON.stringify({ model_name: modelName, credits: value, is_pro: isPro, under_maintenance: underMaintenance })
       })
       if (response.ok) {
         const data = await response.json()
         setModelPrices(prev => ({
           ...prev,
-          [modelName]: { credits: data.credits, is_pro: data.is_pro }
+          [modelName]: { credits: data.credits, is_pro: data.is_pro, under_maintenance: data.under_maintenance }
         }))
+        const maintenanceStr = data.under_maintenance ? (isZh ? ' (维护中)' : ' (Under Maintenance)') : ''
         setDeleteMessage({
           type: 'success',
           text: isZh 
-            ? `成功将模型 ${modelName} 配置更新为 ${data.credits} Credits${data.is_pro ? ' (PRO专属)' : ''}。` 
-            : `Model ${modelName} config updated to ${data.credits} credits${data.is_pro ? ' (PRO Only)' : ''}.`
+            ? `成功将模型 ${modelName} 配置更新为 ${data.credits} Credits${data.is_pro ? ' (PRO专属)' : ''}${maintenanceStr}。` 
+            : `Model ${modelName} config updated to ${data.credits} credits${data.is_pro ? ' (PRO Only)' : ''}${maintenanceStr}.`
         })
       } else {
         const errData = await response.json().catch(() => ({}))
@@ -1242,13 +1243,20 @@ export function MonitorPage({ current }: MonitorPageProps) {
                         <span className="text-white/80 text-xs truncate max-w-full sm:max-w-[300px]">
                           {modelName}
                         </span>
-                        {modelPrices[modelName]?.is_pro && (
-                          <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.5 rounded self-start mt-0.5 font-bold uppercase tracking-wider scale-90 origin-left">
-                            PRO ONLY
-                          </span>
-                        )}
+                        <div className="flex flex-row gap-1">
+                          {modelPrices[modelName]?.is_pro && (
+                            <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.5 rounded self-start mt-0.5 font-bold uppercase tracking-wider scale-90 origin-left">
+                              PRO ONLY
+                            </span>
+                          )}
+                          {modelPrices[modelName]?.under_maintenance && (
+                            <span className="text-[9px] bg-red-500/10 border border-red-500/20 text-red-500 px-1 py-0.5 rounded self-start mt-0.5 font-bold uppercase tracking-wider scale-90 origin-left">
+                              {isZh ? '维护中' : 'MAINTENANCE'}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3.5 self-end sm:self-auto shrink-0">
+                      <div className="flex items-center gap-3.5 self-end sm:self-auto shrink-0 flex-wrap sm:flex-nowrap justify-end">
                         <div className="flex items-center gap-1">
                           <span className="text-white/40 text-[10px] uppercase mr-1">Cost:</span>
                           <input
@@ -1287,8 +1295,33 @@ export function MonitorPage({ current }: MonitorPageProps) {
                           </button>
                         </div>
 
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-white/40 text-[10px] uppercase">{isZh ? '维护中' : 'MAINTENANCE'}:</span>
+                          <button
+                            onClick={() => {
+                              const currentVal = modelPrices[modelName];
+                              if (currentVal) {
+                                setModelPrices(prev => ({
+                                  ...prev,
+                                  [modelName]: { ...prev[modelName], under_maintenance: !currentVal.under_maintenance }
+                                }));
+                              }
+                            }}
+                            className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 focus:outline-none cursor-pointer flex items-center ${
+                              modelPrices[modelName]?.under_maintenance ? 'bg-red-500 justify-end' : 'bg-white/10 justify-start'
+                            }`}
+                          >
+                            <div className="w-3 h-3 rounded-full bg-black" />
+                          </button>
+                        </div>
+
                         <button
-                          onClick={() => updateModelPrice(modelName, modelPrices[modelName]?.credits || 0, modelPrices[modelName]?.is_pro || false)}
+                          onClick={() => updateModelPrice(
+                            modelName, 
+                            modelPrices[modelName]?.credits || 0, 
+                            modelPrices[modelName]?.is_pro || false,
+                            modelPrices[modelName]?.under_maintenance || false
+                          )}
                           className="px-2.5 py-0.5 bg-blue-500/20 border border-blue-500/40 text-blue-400 hover:bg-blue-500/30 hover:border-blue-500/50 transition-colors text-[10px] font-bold tracking-wide flex items-center gap-1 cursor-pointer disabled:opacity-50"
                         >
                           <Icon icon="pixelarticons:check" className="text-xs" />

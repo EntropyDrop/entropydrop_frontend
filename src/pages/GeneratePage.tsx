@@ -202,6 +202,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [modelsConfig, setModelsConfig] = useState<Record<string, string[]>>({})
     const [modelCosts, setModelCosts] = useState<Record<string, number>>({})
     const [modelProStates, setModelProStates] = useState<Record<string, boolean>>({})
+    const [modelMaintenanceStates, setModelMaintenanceStates] = useState<Record<string, boolean>>({})
 
     const fetchModels = async () => {
         try {
@@ -248,6 +249,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 
                 const costs: Record<string, number> = {}
                 const proStates: Record<string, boolean> = {}
+                const maintenanceStates: Record<string, boolean> = {}
                 await Promise.all(
                     allUniqueModels.map(async (m) => {
                         try {
@@ -263,6 +265,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                 const costData = await res.json()
                                 costs[m] = costData.credits
                                 proStates[m] = !!costData.is_pro
+                                maintenanceStates[m] = !!costData.under_maintenance
                             }
                         } catch (e) {
                             console.error(`Failed to fetch cost for ${m}`, e)
@@ -271,6 +274,15 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 )
                 setModelCosts(costs)
                 setModelProStates(proStates)
+                setModelMaintenanceStates(maintenanceStates)
+
+                // Select first non-maintenance model if possible
+                const initialMode = genMode
+                const currentConfig = formattedConfig[initialMode] || []
+                const activeModel = currentConfig.find(m => !maintenanceStates[m]) || currentConfig[0]
+                if (activeModel) {
+                    setModelVersion(activeModel)
+                }
             }
         } catch (e) {
             console.error('Failed to fetch models', e)
@@ -294,6 +306,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 setGenerationCreditCost(data.credits)
                 if (model && model !== 'unknown') {
                     setModelProStates(prev => ({ ...prev, [model]: !!data.is_pro }))
+                    setModelMaintenanceStates(prev => ({ ...prev, [model]: !!data.under_maintenance }))
                 }
             }
         } catch (e) {
@@ -339,12 +352,14 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
     useEffect(() => {
         const currentMode = genMode
-        if (modelsConfig[currentMode] && modelsConfig[currentMode].length > 0) {
-            setModelVersion(modelsConfig[currentMode][0])
+        const currentConfig = modelsConfig[currentMode] || []
+        if (currentConfig.length > 0) {
+            const activeModel = currentConfig.find(m => !modelMaintenanceStates[m]) || currentConfig[0]
+            setModelVersion(activeModel)
         } else {
             setModelVersion('unknown')
         }
-    }, [genMode, modelsConfig])
+    }, [genMode, modelsConfig, modelMaintenanceStates])
 
     // Pagination state
 
@@ -437,6 +452,19 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
     const handleGenerate = async () => {
         if (isGenerating || modelVersion === 'unknown' || !modelVersion) return
+
+        const isModelMaintenance = modelMaintenanceStates[modelVersion]
+        if (isModelMaintenance) {
+            setInfoModal({
+                isOpen: true,
+                title: current.lang === 'zh-hans' ? '模型维护中' : 'Model Under Maintenance',
+                message: current.lang === 'zh-hans' 
+                    ? '当前选择的模型正在维护中，请选择其他模型使用。' 
+                    : 'The selected model is under maintenance. Please choose another model.',
+                type: 'info'
+            })
+            return
+        }
 
         const isModelPro = modelProStates[modelVersion]
         if (isModelPro && !isPro) {
@@ -1033,11 +1061,20 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                     PRO
                                                 </span>
                                             )}
+                                            {modelVersion !== 'unknown' && modelVersion && modelMaintenanceStates[modelVersion] && (
+                                                <span className="text-[9px] bg-red-500/10 border border-red-500/20 text-red-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
+                                                    {current.monitor.underMaintenance}
+                                                </span>
+                                            )}
                                         </span>
                                         <div className="flex items-center gap-2">
                                             {modelVersion !== 'unknown' && modelVersion && (
                                                 <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px]">
-                                                    {generationCreditCost !== null ? generationCreditCost : '...'} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
+                                                    {modelMaintenanceStates[modelVersion] ? (
+                                                        <span className="text-red-500 font-bold uppercase tracking-wider scale-90">{current.monitor.underMaintenance}</span>
+                                                    ) : (
+                                                        <>{generationCreditCost !== null ? generationCreditCost : '...'} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" /></>
+                                                    )}
                                                 </span>
                                             )}
                                             <Icon
@@ -1049,29 +1086,44 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
                                     {isModelDropdownOpen && (
                                         <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[#1a1a1a] border border-white/10 max-h-48 overflow-y-auto custom-scrollbar flex flex-col">
-                                            {(modelsConfig[genMode] || []).map(m => (
-                                                <button
-                                                    key={m}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setModelVersion(m);
-                                                        setIsModelDropdownOpen(false);
-                                                    }}
-                                                    className={`w-full flex items-center justify-between p-2 text-left text-white text-[11px] lg:text-xs hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent ${current.fontClass} ${m === modelVersion ? 'bg-white/5 font-bold text-green-400' : ''}`}
-                                                >
-                                                    <span className="flex items-center gap-1.5 min-w-0">
-                                                        <span className="truncate">{m}</span>
-                                                        {modelProStates[m] && (
-                                                            <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
-                                                                PRO
-                                                            </span>
-                                                        )}
-                                                    </span>
-                                                    <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px] shrink-0">
-                                                        {modelCosts[m] !== undefined ? modelCosts[m] : (generationCreditCost !== null ? generationCreditCost : '...')} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" />
-                                                    </span>
-                                                </button>
-                                            ))}
+                                            {(modelsConfig[genMode] || []).map(m => {
+                                                const isUnderMaintenance = !!modelMaintenanceStates[m];
+                                                return (
+                                                    <button
+                                                        key={m}
+                                                        type="button"
+                                                        disabled={isUnderMaintenance}
+                                                        onClick={() => {
+                                                            if (!isUnderMaintenance) {
+                                                                setModelVersion(m);
+                                                                setIsModelDropdownOpen(false);
+                                                            }
+                                                        }}
+                                                        className={`w-full flex items-center justify-between p-2 text-left text-white text-[11px] lg:text-xs transition-colors border-none bg-transparent ${isUnderMaintenance ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white/5 cursor-pointer'} ${current.fontClass} ${m === modelVersion ? 'bg-white/5 font-bold text-green-400' : ''}`}
+                                                    >
+                                                        <span className="flex items-center gap-1.5 min-w-0">
+                                                            <span className="truncate">{m}</span>
+                                                            {modelProStates[m] && (
+                                                                <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
+                                                                    PRO
+                                                                </span>
+                                                            )}
+                                                            {isUnderMaintenance && (
+                                                                <span className="text-[9px] bg-red-500/10 border border-red-500/20 text-red-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
+                                                                    {current.monitor.underMaintenance}
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                        <span className="flex items-center gap-0.5 text-[#a6df7a] font-mono text-[10px] shrink-0">
+                                                            {isUnderMaintenance ? (
+                                                                <span className="text-red-500">{current.monitor.underMaintenance}</span>
+                                                            ) : (
+                                                                <>{modelCosts[m] !== undefined ? modelCosts[m] : (generationCreditCost !== null ? generationCreditCost : '...')} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" /></>
+                                                            )}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     )}
                              </div>
