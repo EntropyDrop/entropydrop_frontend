@@ -195,6 +195,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [singleGiftLoading, setSingleGiftLoading] = useState(false)
   const [showSingleGiftConfirmation, setShowSingleGiftConfirmation] = useState(false)
 
+  // Gift Credits to Pro Users states
+  const [giftProAmount, setGiftProAmount] = useState<number>(10)
+  const [giftProMessageInput, setGiftProMessageInput] = useState<string>('')
+  const [giftProLoading, setGiftProLoading] = useState(false)
+  const [showGiftProConfirmation, setShowGiftProConfirmation] = useState(false)
+
 
   // SKING_DDJ generations states
   interface SkingDdjLogItem {
@@ -373,6 +379,60 @@ export function MonitorPage({ current }: MonitorPageProps) {
       })
     } finally {
       setModelPricesLoading(false)
+    }
+  }
+
+  const executeProUserGift = async () => {
+    if (giftProAmount <= 0) {
+      setDeleteMessage({
+        type: 'error',
+        text: isZh ? '赠送额度必须大于 0' : 'Gift amount must be greater than 0'
+      })
+      return
+    }
+    if (!giftProMessageInput.trim()) {
+      setDeleteMessage({
+        type: 'error',
+        text: isZh ? '必须填写赠送备注信息' : 'Gift message/reason is required'
+      })
+      return
+    }
+
+    setGiftProLoading(true)
+    setShowGiftProConfirmation(false)
+    try {
+      const response = await apiFetch('/api/monitor/gift_pro_users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: giftProAmount,
+          message: giftProMessageInput.trim()
+        })
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setDeleteMessage({
+          type: 'success',
+          text: isZh 
+            ? `成功向 ${data.gifted_users} 位 Pro 会员赠送 ${giftProAmount} Credits，备注: ${giftProMessageInput.trim()}`
+            : `Successfully gifted ${giftProAmount} credits to ${data.gifted_users} Pro users. Reason: ${giftProMessageInput.trim()}`
+        })
+        setGiftProMessageInput('')
+        fetchStats()
+      } else {
+        const errData = await response.json().catch(() => ({}))
+        setDeleteMessage({
+          type: 'error',
+          text: errData.detail || current.monitor.operationFailed
+        })
+      }
+    } catch (e) {
+      setDeleteMessage({
+        type: 'error',
+        text: current.monitor.networkError
+      })
+    } finally {
+      setGiftProLoading(false)
     }
   }
 
@@ -1393,6 +1453,64 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           </div>
 
+          {/* Gift Credits to Pro Users Panel */}
+          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5 flex-1 w-full">
+              <div className="w-10 h-10 border flex items-center justify-center text-xl bg-purple-500/10 border-purple-500/30 text-purple-400 shrink-0">
+                <Icon icon="pixelarticons:award" />
+              </div>
+              <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {isZh ? 'Pro 会员 Credits 赠送 • 运营活动' : 'Gift Credits to Pro Users • Campaigns'}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {isZh ? '向所有处于有效订阅状态的 Pro 会员赠送 Credits，并发送系统通知。' : 'Gift credits and send a system notification to all active Pro users.'}
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2 mt-1 w-full max-w-2xl">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] font-mono text-white/50">{isZh ? '额度:' : 'Amt:'}</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10000"
+                      value={giftProAmount}
+                      onChange={(e) => setGiftProAmount(parseInt(e.target.value) || 1)}
+                      className="w-16 px-2.5 py-1 text-center bg-black/40 border border-white/20 text-white font-mono text-xs focus:outline-none focus:border-purple-500/50"
+                      disabled={giftProLoading}
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder={isZh ? '赠送备注/信息 (如: 会员福利 / 维护补偿)' : 'Gift reason/message (e.g. Pro Member Perks / Maintenance Compensation)'}
+                    value={giftProMessageInput}
+                    onChange={(e) => setGiftProMessageInput(e.target.value)}
+                    className="flex-1 min-w-[200px] h-7 px-3 bg-black/40 border border-white/20 text-white font-mono text-xs focus:outline-none focus:border-purple-500/50 placeholder:text-white/20"
+                    disabled={giftProLoading}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
+              <button
+                onClick={() => {
+                  if (giftProAmount <= 0) return
+                  if (!giftProMessageInput.trim()) return
+                  setShowGiftProConfirmation(true)
+                }}
+                disabled={giftProLoading || giftProAmount <= 0 || !giftProMessageInput.trim()}
+                className="px-4 py-1.5 bg-purple-500/20 border border-purple-500/40 text-purple-400 hover:bg-purple-500/30 hover:border-purple-500/50 transition-colors text-xs font-bold font-mono tracking-wide flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {giftProLoading ? (
+                  <Icon icon="pixelarticons:reload" className="animate-spin text-sm" />
+                ) : (
+                  <Icon icon="pixelarticons:gift" className="text-sm" />
+                )}
+                {isZh ? '赠送' : 'GIFT PRO USERS'}
+              </button>
+            </div>
+          </div>
+
           {/* Gift Credits to Specific User Panel */}
           <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="flex items-start gap-3.5 flex-1 w-full">
@@ -2329,6 +2447,66 @@ export function MonitorPage({ current }: MonitorPageProps) {
                 className="px-4 py-2 bg-purple-950/40 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 hover:border-purple-500 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95 flex items-center gap-1.5"
               >
                 {giftLoading ? (
+                  <Icon icon="pixelarticons:reload" className="animate-spin text-purple-500" />
+                ) : (
+                  <Icon icon="pixelarticons:gift" />
+                )}
+                {isZh ? '确认赠送' : 'CONFIRM GIFT'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Pro User Gift Confirmation Modal */}
+      {showGiftProConfirmation && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
+          <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-purple-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-500 text-2xl shrink-0">
+                <Icon icon="pixelarticons:shield-attention" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <h4 className={`text-white text-base m-0 ${current.fontClass}`}>
+                  {isZh ? '确认向所有 Pro 会员赠送 Credits 吗？' : 'Confirm Pro User Gift'}
+                </h4>
+                <p className="text-white/60 text-xs leading-relaxed mt-1">
+                  {isZh ? (
+                    <>
+                      您正在请求向<b>所有有效订阅状态的 Pro 会员</b>赠送 <strong>{giftProAmount}</strong> Credits。
+                      <br />
+                      备注说明: <span className="text-purple-400 font-bold font-mono">"{giftProMessageInput.trim()}"</span>
+                      <br />
+                      此操作将立即修改符合条件用户的额度余额，并发送系统通知，无法批量撤销！
+                    </>
+                  ) : (
+                    <>
+                      You are about to gift <strong>{giftProAmount}</strong> credits to <b>all active Pro users</b>.
+                      <br />
+                      Message: <span className="text-purple-400 font-bold font-mono">"{giftProMessageInput.trim()}"</span>
+                      <br />
+                      This will modify matching users' credit balances and send system notifications immediately. It cannot be bulk-reverted!
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowGiftProConfirmation(false)}
+                disabled={giftProLoading}
+                className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+              >
+                {isZh ? '取消' : 'Cancel'}
+              </button>
+              <button
+                onClick={executeProUserGift}
+                disabled={giftProLoading}
+                className="px-4 py-2 bg-purple-950/40 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 hover:border-purple-500 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95 flex items-center gap-1.5"
+              >
+                {giftProLoading ? (
                   <Icon icon="pixelarticons:reload" className="animate-spin text-purple-500" />
                 ) : (
                   <Icon icon="pixelarticons:gift" />
