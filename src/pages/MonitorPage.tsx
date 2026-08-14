@@ -166,6 +166,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
   // Admin delete states
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [purgeIdInput, setPurgeIdInput] = useState('')
+  const [showDeleteAllFailedModal, setShowDeleteAllFailedModal] = useState(false)
   const [deletingEmail, setDeletingEmail] = useState<string | null>(null)
   const [purgeEmailInput, setPurgeEmailInput] = useState('')
   const [deleteMessage, setDeleteMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
@@ -755,6 +756,42 @@ export function MonitorPage({ current }: MonitorPageProps) {
     } finally {
       setActionLoading(false)
       setDeletingId(null)
+    }
+  }
+
+  const executeDeleteAllFailed = async () => {
+    setActionLoading(true)
+    try {
+      const response = await apiFetch('/api/monitor/failed-tasks', {
+        method: 'DELETE'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        const count = data.deleted_count || 0
+        setDeleteMessage({
+          type: 'success',
+          text: isZh 
+            ? `成功软删除所有发生错误的生成任务（共 ${count} 个），相关 S3 资源已加入清理队列。` 
+            : `Successfully soft-deleted all failed tasks (${count} items), S3 resources queued for deletion.`
+        })
+        // Refresh data
+        fetchStats()
+        fetchUnfinished(1)
+      } else {
+        const errData = await response.json().catch(() => ({}))
+        setDeleteMessage({
+          type: 'error',
+          text: errData.detail || (isZh ? `删除失败：${response.status}` : `Deletion failed: ${response.status}`)
+        })
+      }
+    } catch (e) {
+      setDeleteMessage({
+        type: 'error',
+        text: isZh ? '网络连接错误，删除操作失败。' : 'Connection error. Deletion failed.'
+      })
+    } finally {
+      setActionLoading(false)
+      setShowDeleteAllFailedModal(false)
     }
   }
 
@@ -2044,6 +2081,15 @@ export function MonitorPage({ current }: MonitorPageProps) {
                 {isZh ? 'SKING_DDJ 历史' : 'SKING_DDJ History'}
               </button>
 
+              <button
+                onClick={() => setShowDeleteAllFailedModal(true)}
+                className="px-3 h-8 flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:text-white hover:bg-red-500/20 hover:border-red-500 hover:shadow-lg transition-all active:scale-95 text-xs font-mono font-bold uppercase cursor-pointer"
+                title={isZh ? '一键软删除所有发生错误的生成任务' : 'Soft delete all failed generation tasks'}
+              >
+                <Icon icon="pixelarticons:trash" />
+                {isZh ? '清理失败任务' : 'Clear Failed'}
+              </button>
+
               <button 
                 onClick={() => fetchUnfinished(page)}
                 disabled={loadingUnfinished}
@@ -2281,6 +2327,59 @@ export function MonitorPage({ current }: MonitorPageProps) {
                   <Icon icon="pixelarticons:trash" />
                 )}
                 {isZh ? '确认删除' : 'CONFIRM PURGE'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showDeleteAllFailedModal && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto">
+          <div className="w-full max-w-md bg-[#0a0a0a]/90 border border-red-500/30 p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500 text-2xl shrink-0">
+                <Icon icon="pixelarticons:shield-attention" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <h4 className={`text-white text-base m-0 ${current.fontClass}`}>
+                  {isZh ? '确认要清除所有失败任务吗？' : 'Confirm Bulk Purge'}
+                </h4>
+                <p className="text-white/60 text-xs leading-relaxed mt-1">
+                  {isZh ? (
+                    <>
+                      您正在请求<strong>一键软删除所有发生错误/失败的生成任务</strong>。
+                      这将把所有状态为失败的任务标记为删除，清理数据库记录，并<b>物理擦除</b> S3 中的源图与结果图等相关文件。此操作不可逆！
+                    </>
+                  ) : (
+                    <>
+                      Are you sure you want to <strong>soft-delete all failed/error tasks</strong>?
+                      This will mark all tasks with 'failed' status as deleted, clean database records, and <b>physically erase</b> associated source and result files from Amazon S3. This action is irreversible.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowDeleteAllFailedModal(false)}
+                disabled={actionLoading}
+                className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+              >
+                {isZh ? '取消' : 'Cancel'}
+              </button>
+              <button
+                onClick={executeDeleteAllFailed}
+                disabled={actionLoading}
+                className="px-4 py-2 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-white text-xs font-mono font-bold uppercase transition-all disabled:opacity-50 cursor-pointer active:scale-95 flex items-center gap-1.5"
+              >
+                {actionLoading ? (
+                  <Icon icon="pixelarticons:reload" className="animate-spin text-red-500" />
+                ) : (
+                  <Icon icon="pixelarticons:trash" />
+                )}
+                {isZh ? '确认清除' : 'CONFIRM PURGE ALL'}
               </button>
             </div>
           </div>
