@@ -11,6 +11,7 @@ export interface GenerationLogItem extends GenerationLogItemBrief {
     source: string
     result: string
     edited_image_url?: string
+    image_to_skin_edited_image_url?: string
     status?: 'pending' | 'processing' | 'pending_skin' | 'processing_skin' | 'success' | 'failed'
     queue_position?: number
     error_msg?: string

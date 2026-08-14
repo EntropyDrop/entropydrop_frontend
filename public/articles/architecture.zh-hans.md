@@ -134,7 +134,12 @@ worker 完成生成任务后，将结果写入 Redis `generate_results` 列表�
 - `status`
 - `result`
 - `edited_result`
+- `image_to_skin_edited_result`
 - `error_msg`
+
+`edited_result` 保存 text-to-skin / image-edit-to-skin 的第一阶段图；
+`image_to_skin_edited_result` 单独保存 SKING_DDJ image-to-skin 管线内部的
+real-to-render 中间图，避免多阶段任务相互覆盖。
 
 该设计将生成执行与状态写回解耦。用户刷新页面或查询历史记录时，API 从数据库读取最新任务状态，而不依赖原始请求连接。
 

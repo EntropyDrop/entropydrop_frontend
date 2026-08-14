@@ -215,6 +215,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
     created_at: string | null;
     source_url: string | null;
     edited_image_url: string | null;
+    image_to_skin_edited_image_url: string | null;
     result_url: string | null;
   }
   interface SkingDdjData {
@@ -2709,10 +2710,10 @@ export function MonitorPage({ current }: MonitorPageProps) {
                         {/* Edited Result Card */}
                         <div className="flex items-center gap-3 bg-black/30 border border-white/5 p-3 rounded">
                           <div className="w-20 h-20 bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shrink-0 relative group">
-                            {log.edited_image_url ? (
+                            {log.image_to_skin_edited_image_url ? (
                               <img
-                                src={log.edited_image_url}
-                                alt="Edited Result"
+                                src={log.image_to_skin_edited_image_url}
+                                alt="Image-to-skin Intermediate"
                                 className="w-full h-full object-contain"
                               />
                             ) : (
@@ -2727,14 +2728,14 @@ export function MonitorPage({ current }: MonitorPageProps) {
                           </div>
                           <div className="flex-1 flex flex-col justify-between h-20 py-0.5">
                             <div>
-                              <span className="text-xs text-white font-bold block">{isZh ? '处理后/编辑图' : 'Edited Result'}</span>
+                              <span className="text-xs text-white font-bold block">{isZh ? 'Image2Skin 中间图' : 'Image2Skin Intermediate'}</span>
                               <span className="text-[9px] font-mono text-white/40 block mt-1 break-all truncate max-w-[180px]">
-                                {log.edited_image_url ? 'edited_result.png' : (log.status === 'failed' ? (isZh ? '处理失败' : 'Failed') : (isZh ? '无处理图' : 'No edited result'))}
+                                {log.image_to_skin_edited_image_url ? 'image_to_skin_edited_result.png' : (log.status === 'failed' ? (isZh ? '处理失败' : 'Failed') : (isZh ? '无中间图' : 'No intermediate'))}
                               </span>
                             </div>
                             <button
-                              onClick={() => log.edited_image_url && downloadImage(log.edited_image_url, `edited_${log.id}.png`)}
-                              disabled={!log.edited_image_url}
+                              onClick={() => log.image_to_skin_edited_image_url && downloadImage(log.image_to_skin_edited_image_url, `image_to_skin_edited_${log.id}.png`)}
+                              disabled={!log.image_to_skin_edited_image_url}
                               className="self-start px-2.5 py-1 bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 disabled:opacity-30 disabled:pointer-events-none text-[10px] font-mono font-bold text-white/80 hover:text-white uppercase transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
                             >
                               <Icon icon="pixelarticons:download" className="text-xs" />

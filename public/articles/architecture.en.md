@@ -134,7 +134,13 @@ After completing a generation job, workers write results into the Redis `generat
 - `status`
 - `result`
 - `edited_result`
+- `image_to_skin_edited_result`
 - `error_msg`
+
+`edited_result` stores the first-stage text-to-skin or image-edit-to-skin
+artifact. `image_to_skin_edited_result` separately stores the SKING_DDJ
+image-to-skin pipeline's internal real-to-render artifact so multi-stage jobs
+do not overwrite one another.
 
 This decouples generation execution from durable state updates. When users refresh a page or query history, the API reads the latest task state from PostgreSQL rather than relying on the original request connection.
 
