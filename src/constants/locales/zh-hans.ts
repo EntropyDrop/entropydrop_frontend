@@ -204,7 +204,7 @@ export default {
         importDesc: '导入一张带有皮肤材质的PNG图片(64x64)，开启您的创作。',
         overlay: '外套 (Overlay)',
         pencil: '铅笔',
-        eraser: '橡配擦',
+        eraser: '橡皮擦',
         colorPicker: '取色',
         undo: '撤销',
         redo: '重做',

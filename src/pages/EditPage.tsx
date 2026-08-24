@@ -833,7 +833,7 @@ export function EditPage({ current }: EditPageProps) {
                                             className={`p-2 border cursor-pointer ${tool === 'eraser' ? 'bg-[#3c8527] border-black text-white' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
                                             title={current.edit.eraser}
                                         >
-                                            <Icon icon="pixelarticons:close" className="text-base" />
+                                            <Icon icon="pixelarticons:eraser" className="text-base" />
                                         </button>
                                         <button
                                             onClick={() => setTool('picker')}

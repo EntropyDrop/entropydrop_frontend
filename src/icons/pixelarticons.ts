@@ -107,6 +107,9 @@ const pixelarticons = {
       "body": "<path fill=\"currentColor\" d=\"M18 2h-2v2h-2v2h-2v2h-2v2H8v2H6v2H4v2H2v6h6v-2h2v-2h2v-2h2v-2h2v-2h2V8h2V6h-2V4h-2zm0 8h-2v2h-2v2h-2v2h-2v2H8v-2H6v-2h2v-2h2v-2h2V8h2V6h2v2h2zM6 16H4v4h4v-2H6z\"/>",
       "hidden": true
     },
+    "eraser": {
+      "body": "<path fill=\"currentColor\" d=\"M15 18h6v2H7v-2h6v-2h2v2zm-8 0H5v-2h2v2zm-2-2H3v-2h2v2zm12 0h-2v-2h2v2zM7 14H5v-2h2v2zm8 0h-2v-2h2v2zm4 0h-2v-2h2v2zM9 12H7v-2h2v2zm4 0h-2v-2h2v2zm8 0h-2v-2h2v2zm-10-2H9V8h2v2zm8 0h-2V8h2v2zm-6-2h-2V6h2v2zm4 0h-2V6h2v2zm-2-2h-2V4h2v2z\"/>"
+    },
     "eye": {
       "body": "<path fill=\"currentColor\" d=\"M16 20H8v-2h8zm-8-2H4v-2h4zm12 0h-4v-2h4zM4 16H2v-2h2zm10-6h-2v2h2zh2v4h-2v2h-4v-2H8v-4h2V8h4zm8 6h-2v-2h2zM2 14H0v-4h2zm22 0h-2v-4h2zM4 10H2V8h2zm18 0h-2V8h2zM8 8H4V6h4zm12 0h-4V6h4zm-4-2H8V4h8z\"/>"
     },
