@@ -6,7 +6,7 @@ import { MinecraftCharacter } from './MC'
 
 interface MCModalPreviewProps {
     textureUrl: string;
-    mode: 'voxel' | 'plane';
+    mode: 'voxel' | 'plane' | 'cute';
     action: 'idle' | 'walk' | 'dance';
     modelType: 'steve' | 'alex';
     visibleParts: {
@@ -17,7 +17,7 @@ interface MCModalPreviewProps {
         leftLeg: boolean;
         rightLeg: boolean;
     };
-    setMode: (m: 'voxel' | 'plane') => void;
+    setMode: (m: 'voxel' | 'plane' | 'cute') => void;
     setAction: (a: 'idle' | 'walk' | 'dance') => void;
     convertModel: (target: 'steve' | 'alex') => void;
     togglePart: (part: 'head' | 'body' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg') => void;
@@ -149,7 +149,13 @@ export function MCModalPreview({
                 {!previewFailed && (
                     <PreviewErrorBoundary key={textureUrl} onError={() => setPreviewFailed(true)}>
                         <Suspense fallback={null}>
-                            <Stage environment={null} intensity={0.5} shadows="contact" adjustCamera={false}>
+                            <Stage
+                                key={`${mode}-${modelType}`}
+                                environment={null}
+                                intensity={0.5}
+                                shadows={{ type: 'contact', opacity: 0.6, blur: 1.5, frames: Infinity }}
+                                adjustCamera={false}
+                            >
                                 <group position={[0, -0.5, 0]}>
                                     <MinecraftCharacter textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} />
                                 </group>
@@ -174,18 +180,15 @@ export function MCModalPreview({
                 <div className="flex justify-start items-start gap-2">
                     <div className="flex flex-col gap-2 pointer-events-auto">
                         <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 flex gap-1">
-                            <button
-                                onClick={() => setMode('voxel')}
-                                className={`px-3 py-1.5 text-[10px] font-pixel-hans transition-all cursor-pointer ${mode === 'voxel' ? 'bg-[#3c8527] text-white' : 'text-white/40 hover:text-white'}`}
-                            >
-                                VOXEL
-                            </button>
-                            <button
-                                onClick={() => setMode('plane')}
-                                className={`px-3 py-1.5 text-[10px] font-pixel-hans transition-all cursor-pointer ${mode === 'plane' ? 'bg-[#3c8527] text-white' : 'text-white/40 hover:text-white'}`}
-                            >
-                                PLANE
-                            </button>
+                            {(['voxel', 'plane', 'cute'] as const).map((m) => (
+                                <button
+                                    key={m}
+                                    onClick={() => setMode(m)}
+                                    className={`px-3 py-1.5 text-[10px] font-pixel-hans uppercase transition-all cursor-pointer ${mode === m ? 'bg-[#3c8527] text-white' : 'text-white/40 hover:text-white'}`}
+                                >
+                                    {m}
+                                </button>
+                            ))}
                         </div>
                     </div>
 

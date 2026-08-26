@@ -41,7 +41,12 @@ export function Skin3DModal({ isOpen, onClose, textureUrl, current }: Skin3DModa
                         <pointLight position={[-10, -10, -10]} intensity={0.5} />
 
                         <Suspense fallback={null}>
-                            <Stage environment={null} intensity={0.5} shadows="contact" adjustCamera={false}>
+                            <Stage
+                                environment={null}
+                                intensity={0.5}
+                                shadows={{ type: 'contact', opacity: 0.6, blur: 1.5, frames: Infinity }}
+                                adjustCamera={false}
+                            >
                                 <group position={[0, -0.5, 0]}>
                                     <MinecraftCharacter textureUrl={textureUrl} mode={'voxel'} action={action} />
                                 </group>
