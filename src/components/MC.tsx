@@ -146,10 +146,11 @@ function shiftpos(pos: Pos
     return res as Pos;
 }
 
-function uvTo3d(imageData: ImageData | null, pos: Pos) {
+function uvTo3d(imageData: ImageData | null, pos: Pos, targetBoxHeight?: number) {
     const box_width = pos.front![2];
     const box_depth = pos.right![2];
-    const box_height = pos.front![3];
+    const source_box_height = pos.front![3];
+    const box_height = targetBoxHeight ?? source_box_height;
 
     const result = {} as Pos;
     if (!imageData) return result;
@@ -163,13 +164,21 @@ function uvTo3d(imageData: ImageData | null, pos: Pos) {
         const startY = Math.floor(v);
         const faceWidth = Math.floor(w);
         const faceHeight = Math.floor(h);
+        const isVerticalSide = face === 'left' || face === 'right' || face === 'front' || face === 'back';
+        const outputHeight = isVerticalSide && targetBoxHeight && targetBoxHeight !== faceHeight
+            ? targetBoxHeight
+            : faceHeight;
 
         (result as any)[face] = [];
 
-        for (let y = 0; y < faceHeight; y++) {
+        for (let y = 0; y < outputHeight; y++) {
+            const sampledY = isVerticalSide && outputHeight !== faceHeight
+                ? Math.min(faceHeight - 1, Math.floor((y + 0.5) * faceHeight / outputHeight))
+                : y;
+
             for (let x = 0; x < faceWidth; x++) {
                 const readX = x_flip ? faceWidth - 1 - x : x;
-                const readY = y_flip ? faceHeight - 1 - y : y;
+                const readY = y_flip ? faceHeight - 1 - sampledY : sampledY;
 
                 const index = ((startY + readY) * width + (startX + readX)) * 4;
                 const r = data[index];
@@ -237,22 +246,119 @@ function createFaceMaterials(texture: THREE.Texture, textureSize: number, uvMap:
         materials.push(new THREE.MeshBasicMaterial({
             map: faceTexture,
             side: THREE.DoubleSide,
-            //transparent: true,
             alphaTest: 0.5,
         }));
     }
     return materials;
 }
 
+function createCuteFaceMaterials(imageData: ImageData | null, texture: THREE.Texture, textureSize: number, uvMap: Pos, missingColor?: { [face: string]: number }) {
+    if (!imageData) return createFaceMaterials(texture, textureSize, uvMap, missingColor);
+    const order = ['left', 'right', 'top', 'bottom', 'front', 'back'];
+    const materials = [];
+
+    for (const face of order) {
+        const uv = (uvMap as any)[face];
+        if (!uv) {
+            if (missingColor && missingColor[face] !== undefined) {
+                materials.push(new THREE.MeshBasicMaterial({ color: missingColor[face] }));
+            } else {
+                materials.push(new THREE.MeshStandardMaterial({ transparent: true, opacity: 0 }));
+            }
+            continue;
+        }
+
+        const [u, v, w, h, x_flip, y_flip] = uv;
+        const width = Math.floor(w);
+        const sourceHeight = Math.floor(h);
+        const isVerticalSide = face === 'left' || face === 'right' || face === 'front' || face === 'back';
+        const outputHeight = isVerticalSide && (sourceHeight === 12 || sourceHeight === 6)
+            ? (sourceHeight === 12 ? 8 : 4)
+            : sourceHeight;
+
+        if (!isVerticalSide || outputHeight === sourceHeight) {
+            const eps = 0.01;
+            const faceTexture = texture.clone();
+            faceTexture.needsUpdate = true;
+            const tw = width - 2 * eps;
+            const th = sourceHeight - 2 * eps;
+            faceTexture.repeat.set(tw / textureSize, th / textureSize);
+            faceTexture.offset.set((u + eps) / textureSize, (textureSize - v - sourceHeight + eps) / textureSize);
+            if (y_flip) {
+                faceTexture.repeat.y = -th / textureSize;
+                faceTexture.offset.y = ((textureSize - v) - eps) / textureSize;
+            }
+            if (x_flip) {
+                faceTexture.repeat.x = -tw / textureSize;
+                faceTexture.offset.x = (u + width - eps) / textureSize;
+            }
+            materials.push(new THREE.MeshBasicMaterial({
+                map: faceTexture,
+                side: THREE.DoubleSide,
+                alphaTest: 0.5,
+            }));
+            continue;
+        }
+
+        const pixels = new Uint8Array(width * outputHeight * 4);
+
+        for (let y = 0; y < outputHeight; y++) {
+            const sampledY = Math.min(sourceHeight - 1, Math.floor((y + 0.5) * sourceHeight / outputHeight));
+            for (let x = 0; x < width; x++) {
+                const srcIdx = ((v + sampledY) * imageData.width + u + x) * 4;
+                const dstIdx = (y * width + x) * 4;
+                pixels[dstIdx] = imageData.data[srcIdx];
+                pixels[dstIdx + 1] = imageData.data[srcIdx + 1];
+                pixels[dstIdx + 2] = imageData.data[srcIdx + 2];
+                pixels[dstIdx + 3] = imageData.data[srcIdx + 3];
+            }
+        }
+
+        const faceTexture = new THREE.DataTexture(
+            pixels,
+            width,
+            outputHeight,
+            THREE.RGBAFormat,
+            THREE.UnsignedByteType
+        );
+        faceTexture.colorSpace = THREE.SRGBColorSpace;
+        faceTexture.magFilter = THREE.NearestFilter;
+        faceTexture.minFilter = THREE.NearestFilter;
+        faceTexture.generateMipmaps = false;
+        faceTexture.flipY = true;
+        if (x_flip) {
+            faceTexture.repeat.x = -1;
+            faceTexture.offset.x = 1;
+        }
+        if (y_flip) {
+            faceTexture.repeat.y = -1;
+            faceTexture.offset.y = 1;
+        }
+        faceTexture.needsUpdate = true;
+
+        materials.push(new THREE.MeshBasicMaterial({
+            map: faceTexture,
+            side: THREE.DoubleSide,
+            alphaTest: 0.5
+        }));
+    }
+    return materials;
+}
+
 // Generate 3D voxel group based on pixel data (for performance, we do not generate meshes in bulk in JSX, but reuse native logic to generate Groups)
-function createVoxelGroup(imageData: ImageData | null, cfg: any, showEdges = false, printMode = false) {
+function createVoxelGroup(imageData: ImageData | null, cfg: any, showEdges = false, printMode = false, isCute = false) {
     const group = new THREE.Group();
     const [uvMap, extra_voxel, size] = cfg;
-    const scale_x = (size[0] + extra_voxel) / size[0];
-    const scale_y = (size[1] + extra_voxel) / size[1];
-    const scale_z = (size[2] + extra_voxel) / size[2];
+    const targetHeight = isCute && (size[1] === 12 || size[1] === 6)
+        ? (size[1] === 12 ? 8 : 4)
+        : size[1];
 
-    const voxel = uvTo3d(imageData, uvMap);
+    const actualSize: [number, number, number] = [size[0], targetHeight, size[2]];
+    const scale_x = (actualSize[0] + extra_voxel) / actualSize[0];
+    const scale_y = (actualSize[1] + extra_voxel) / actualSize[1];
+    const scale_z = (actualSize[2] + extra_voxel) / actualSize[2];
+
+    const voxel = uvTo3d(imageData, uvMap, targetHeight);
 
     // 将不同面的体素像素按 3D 坐标聚合
     const grid: { [key: string]: any } = {};
@@ -622,57 +728,62 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         };
     }, [armConfig]);
 
+    const rawImageData = useMemo(() => {
+        const img = processedTexture.image as any;
+        if (!img || !img.complete || img.width <= 0) return null;
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = img.width;
+        tempCanvas.height = img.height;
+        const ctx = tempCanvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(img, 0, 0);
+        ensureSkinVoxelModeConsistency(tempCanvas);
+        return ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+    }, [processedTexture, updateTrigger]);
+
     const mats = useMemo(() => {
-        return {
-            head: createFaceMaterials(processedTexture, 64, uvMaps.head),
-            body: createFaceMaterials(processedTexture, 64, uvMaps.body),
-            leftArm: createFaceMaterials(processedTexture, 64, uvMaps.leftArm, { bottom: 0xffffff }),
-            leftArmLow: createFaceMaterials(processedTexture, 64, uvMaps.leftArmLow, { top: 0xffffff }),
-            rightArm: createFaceMaterials(processedTexture, 64, uvMaps.rightArm, { bottom: 0xffffff }),
-            rightArmLow: createFaceMaterials(processedTexture, 64, uvMaps.rightArmLow, { top: 0xffffff }),
-            leftLeg: createFaceMaterials(processedTexture, 64, uvMaps.leftLeg, { bottom: 0xffffff }),
-            leftLegLow: createFaceMaterials(processedTexture, 64, uvMaps.leftLegLow, { top: 0xffffff }),
-            rightLeg: createFaceMaterials(processedTexture, 64, uvMaps.rightLeg, { bottom: 0xffffff }),
-            rightLegLow: createFaceMaterials(processedTexture, 64, uvMaps.rightLegLow, { top: 0xffffff }),
-            // Overlay mats
-            headOverlay: createFaceMaterials(processedTexture, 64, shiftpos(uvMaps.head, 32, 0)),
-            bodyOverlay: createFaceMaterials(processedTexture, 64, shiftpos(uvMaps.body, 0, 16)),
-            leftArmOverlay: createFaceMaterials(processedTexture, 64, shiftpos(uvMaps.leftArm, 16, 0)),
-            leftArmLowOverlay: createFaceMaterials(processedTexture, 64, shiftpos(uvMaps.leftArmLow, 16, 0)),
-            rightArmOverlay: createFaceMaterials(processedTexture, 64, shiftpos(uvMaps.rightArm, 0, 16)),
-            rightArmLowOverlay: createFaceMaterials(processedTexture, 64, shiftpos(uvMaps.rightArmLow, 0, 16)),
-            leftLegOverlay: createFaceMaterials(processedTexture, 64, shiftpos(uvMaps.leftLeg, -16, 0)),
-            leftLegLowOverlay: createFaceMaterials(processedTexture, 64, shiftpos(uvMaps.leftLegLow, -16, 0)),
-            rightLegOverlay: createFaceMaterials(processedTexture, 64, shiftpos(uvMaps.rightLeg, 0, 16)),
-            rightLegLowOverlay: createFaceMaterials(processedTexture, 64, shiftpos(uvMaps.rightLegLow, 0, 16))
+        const createMat = (map: Pos, missing?: any) => {
+            if (isCute && rawImageData) {
+                return createCuteFaceMaterials(rawImageData, processedTexture, 64, map, missing);
+            }
+            return createFaceMaterials(processedTexture, 64, map, missing);
         };
-    }, [processedTexture, uvMaps]);
+        return {
+            head: createMat(uvMaps.head),
+            body: createMat(uvMaps.body),
+            leftArm: createMat(uvMaps.leftArm, { bottom: 0xffffff }),
+            leftArmLow: createMat(uvMaps.leftArmLow, { top: 0xffffff }),
+            rightArm: createMat(uvMaps.rightArm, { bottom: 0xffffff }),
+            rightArmLow: createMat(uvMaps.rightArmLow, { top: 0xffffff }),
+            leftLeg: createMat(uvMaps.leftLeg, { bottom: 0xffffff }),
+            leftLegLow: createMat(uvMaps.leftLegLow, { top: 0xffffff }),
+            rightLeg: createMat(uvMaps.rightLeg, { bottom: 0xffffff }),
+            rightLegLow: createMat(uvMaps.rightLegLow, { top: 0xffffff }),
+            // Overlay mats
+            headOverlay: createMat(shiftpos(uvMaps.head, 32, 0)),
+            bodyOverlay: createMat(shiftpos(uvMaps.body, 0, 16)),
+            leftArmOverlay: createMat(shiftpos(uvMaps.leftArm, 16, 0)),
+            leftArmLowOverlay: createMat(shiftpos(uvMaps.leftArmLow, 16, 0)),
+            rightArmOverlay: createMat(shiftpos(uvMaps.rightArm, 0, 16)),
+            rightArmLowOverlay: createMat(shiftpos(uvMaps.rightArmLow, 0, 16)),
+            leftLegOverlay: createMat(shiftpos(uvMaps.leftLeg, -16, 0)),
+            leftLegLowOverlay: createMat(shiftpos(uvMaps.leftLegLow, -16, 0)),
+            rightLegOverlay: createMat(shiftpos(uvMaps.rightLeg, 0, 16)),
+            rightLegLowOverlay: createMat(shiftpos(uvMaps.rightLegLow, 0, 16))
+        };
+    }, [processedTexture, rawImageData, uvMaps, isCute]);
 
     const voxels = useMemo(() => {
         // Plane mode does not render voxel groups. Creating hundreds of meshes and
         // materials here made opening and disposing MCModal unnecessarily expensive.
         if (mode !== 'voxel' && mode !== 'cute') return null;
 
-        let processedImageData: ImageData | null = null;
-        const img = processedTexture.image as any;
-        if (img && img.complete && img.width > 0) {
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = img.width;
-            tempCanvas.height = img.height;
-            const ctx = tempCanvas.getContext('2d');
-            if (ctx) {
-                ctx.drawImage(img, 0, 0);
-                ensureSkinVoxelModeConsistency(tempCanvas);
-                processedImageData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-            }
-        }
-
         const { armWidth } = armConfig;
-        const bodyVoxelGroup = createVoxelGroup(processedImageData, [shiftpos(uvMaps.body, 0, 16), 0.5, [8, 12, 4]], showEdges, printMode);
+        const bodyVoxelGroup = createVoxelGroup(rawImageData, [shiftpos(uvMaps.body, 0, 16), 0.5, [8, isCute ? 8 : 12, 4]], showEdges, printMode, isCute);
         if (isCute && isAlex && bodyVoxelGroup) {
             bodyVoxelGroup.children.forEach((child: any) => {
                 if (child instanceof THREE.Mesh && child.position) {
-                    const t = Math.max(0, Math.min(1, (child.position.y + 6) / 12));
+                    const t = Math.max(0, Math.min(1, (child.position.y + 4) / 8));
                     const scale = 1.0 - 0.3 * t;
                     child.position.x *= scale;
                     child.scale.x *= scale;
@@ -680,7 +791,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                     const pos = child.geometry.attributes.position;
                     for (let i = 0; i < pos.count; i++) {
                         const vy = pos.getY(i);
-                        const t = Math.max(0, Math.min(1, (vy + 6) / 12));
+                        const t = Math.max(0, Math.min(1, (vy + 4) / 8));
                         const scale = 1.0 - 0.3 * t;
                         pos.setX(i, pos.getX(i) * scale);
                     }
@@ -689,27 +800,29 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             });
         }
 
+        const limbH = isCute ? 4 : 6;
         return {
-            head: createVoxelGroup(processedImageData, [shiftpos(uvMaps.head, 32, 0), 1, [8, 8, 8]], showEdges, printMode),
+            head: createVoxelGroup(rawImageData, [shiftpos(uvMaps.head, 32, 0), 1, [8, 8, 8]], showEdges, printMode, isCute),
             body: bodyVoxelGroup,
-            leftArm: createVoxelGroup(processedImageData, [shiftpos(uvMaps.leftArm, 16, 0), 0.5, [armWidth, 6, 4]], showEdges, printMode),
-            leftArmLow: createVoxelGroup(processedImageData, [shiftpos(uvMaps.leftArmLow, 16, 0), 0.5, [armWidth, 6, 4]], showEdges, printMode),
-            rightArm: createVoxelGroup(processedImageData, [shiftpos(uvMaps.rightArm, 0, 16), 0.5, [armWidth, 6, 4]], showEdges, printMode),
-            rightArmLow: createVoxelGroup(processedImageData, [shiftpos(uvMaps.rightArmLow, 0, 16), 0.5, [armWidth, 6, 4]], showEdges, printMode),
-            leftLeg: createVoxelGroup(processedImageData, [shiftpos(uvMaps.leftLeg, -16, 0), 0.5, [4, 6, 4]], showEdges, printMode),
-            leftLegLow: createVoxelGroup(processedImageData, [shiftpos(uvMaps.leftLegLow, -16, 0), 0.5, [4, 6, 4]], showEdges, printMode),
-            rightLeg: createVoxelGroup(processedImageData, [shiftpos(uvMaps.rightLeg, 0, 16), 0.5, [4, 6, 4]], showEdges, printMode),
-            rightLegLow: createVoxelGroup(processedImageData, [shiftpos(uvMaps.rightLegLow, 0, 16), 0.5, [4, 6, 4]], showEdges, printMode)
+            leftArm: createVoxelGroup(rawImageData, [shiftpos(uvMaps.leftArm, 16, 0), 0.5, [armWidth, limbH, 4]], showEdges, printMode, isCute),
+            leftArmLow: createVoxelGroup(rawImageData, [shiftpos(uvMaps.leftArmLow, 16, 0), 0.5, [armWidth, limbH, 4]], showEdges, printMode, isCute),
+            rightArm: createVoxelGroup(rawImageData, [shiftpos(uvMaps.rightArm, 0, 16), 0.5, [armWidth, limbH, 4]], showEdges, printMode, isCute),
+            rightArmLow: createVoxelGroup(rawImageData, [shiftpos(uvMaps.rightArmLow, 0, 16), 0.5, [armWidth, limbH, 4]], showEdges, printMode, isCute),
+            leftLeg: createVoxelGroup(rawImageData, [shiftpos(uvMaps.leftLeg, -16, 0), 0.5, [4, limbH, 4]], showEdges, printMode, isCute),
+            leftLegLow: createVoxelGroup(rawImageData, [shiftpos(uvMaps.leftLegLow, -16, 0), 0.5, [4, limbH, 4]], showEdges, printMode, isCute),
+            rightLeg: createVoxelGroup(rawImageData, [shiftpos(uvMaps.rightLeg, 0, 16), 0.5, [4, limbH, 4]], showEdges, printMode, isCute),
+            rightLegLow: createVoxelGroup(rawImageData, [shiftpos(uvMaps.rightLegLow, 0, 16), 0.5, [4, limbH, 4]], showEdges, printMode, isCute)
         };
-    }, [mode, processedTexture, armConfig, uvMaps, updateTrigger, showEdges, printMode, isCute, isAlex]);
+    }, [mode, rawImageData, armConfig, uvMaps, showEdges, printMode, isCute, isAlex]);
 
     const bodyGeometry = useMemo(() => {
-        const geo = new THREE.BoxGeometry(8, 12, 4, 8, 12, 4);
+        const h = isCute ? 8 : 12;
+        const geo = new THREE.BoxGeometry(8, h, 4, 8, h, 4);
         if (isCute && isAlex) {
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
                 const y = pos.getY(i);
-                const t = Math.max(0, Math.min(1, (y + 6) / 12));
+                const t = Math.max(0, Math.min(1, (y + h / 2) / h));
                 const scale = 1.0 - 0.3 * t;
                 pos.setX(i, pos.getX(i) * scale);
             }
@@ -720,12 +833,13 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     }, [isCute, isAlex]);
 
     const bodyOverlayGeometry = useMemo(() => {
-        const geo = new THREE.BoxGeometry(8.5, 12.5, 4.5, 8, 12, 4);
+        const h = isCute ? 8.5 : 12.5;
+        const geo = new THREE.BoxGeometry(8.5, h, 4.5, 8, isCute ? 8 : 12, 4);
         if (isCute && isAlex) {
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
                 const y = pos.getY(i);
-                const t = Math.max(0, Math.min(1, (y + 6.25) / 12.5));
+                const t = Math.max(0, Math.min(1, (y + h / 2) / h));
                 const scale = 1.0 - 0.3 * t;
                 pos.setX(i, pos.getX(i) * scale);
             }
@@ -743,12 +857,13 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             return edges;
         };
         const createBodyEdges = () => {
-            const box = new THREE.BoxGeometry(8, 12, 4);
+            const h = isCute ? 8 : 12;
+            const box = new THREE.BoxGeometry(8, h, 4);
             if (isCute && isAlex) {
                 const pos = box.attributes.position;
                 for (let i = 0; i < pos.count; i++) {
                     const y = pos.getY(i);
-                    const t = Math.max(0, Math.min(1, (y + 6) / 12));
+                    const t = Math.max(0, Math.min(1, (y + h / 2) / h));
                     const scale = 1.0 - 0.3 * t;
                     pos.setX(i, pos.getX(i) * scale);
                 }
@@ -759,14 +874,15 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             return edges;
         };
         const aw = armConfig.armWidth;
+        const limbH = isCute ? 4 : 6;
         return {
             head: createEdges(8, 8, 8),
             body: createBodyEdges(),
-            arm: createEdges(aw, 6, 4),
-            armLow: createEdges(aw + 0.002, 6, 4.002),
-            leg: createEdges(4, 6, 4),
-            legLow: createEdges(4.002, 6, 4.002),
-            rightLegLow: createEdges(4.003, 6, 4.003)
+            arm: createEdges(aw, limbH, 4),
+            armLow: createEdges(aw + 0.002, limbH, 4.002),
+            leg: createEdges(4, limbH, 4),
+            legLow: createEdges(4.002, limbH, 4.002),
+            rightLegLow: createEdges(4.003, limbH, 4.003)
         };
     }, [armConfig.armWidth, isCute, isAlex]);
 
@@ -855,14 +971,14 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         }
         return {
             bodyPosY: 8.5,
-            bodyScale: [0.85, 0.55, 1] as [number, number, number],
-            headPosY: 3.3,
+            bodyScale: [0.85, 0.85, 1] as [number, number, number],
+            headPosY: 3.4,
             headScale: [1, 1, 1] as [number, number, number],
-            armScale: [0.85, 0.55, 1] as [number, number, number],
-            legScale: [0.85, 0.55, 1] as [number, number, number],
-            shoulderPosY: 3.3,
+            armScale: [0.85, 0.85, 1] as [number, number, number],
+            legScale: [0.85, 0.85, 1] as [number, number, number],
+            shoulderPosY: 3.4,
             shoulderPosX: isAlex ? 3.3 : 4.8,
-            hipPosY: -3.3,
+            hipPosY: -3.4,
             hipPosX: 1.7,
         };
     }, [isCute, isAlex, armConfig.armPositionX]);
@@ -903,7 +1019,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.head} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('head', e, true, true)} onPointerMove={(e: any) => handle3DClick('head', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.headOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('head', e, true, true)} onPointerMove={(e) => handle3DClick('head', e, true)}>
+                            <mesh material={charData.mats.headOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('head', e, true, true)} onPointerMove={(e) => handle3DClick('head', e)}>
                                 <boxGeometry args={[9, 9, 9]} />
                             </mesh>
                         )}
@@ -912,9 +1028,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
                 {/* Left Arm & Left Lower Arm */}
                 <group ref={setPartRef('left_arm')} position={[cuteConfig.shoulderPosX, cuteConfig.shoulderPosY, 0]} scale={cuteConfig.armScale} visible={visibleParts.leftArm !== false}>
-                    <group position={[0, -3, 0]}>
+                    <group position={[0, isCute ? -2 : -3, 0]}>
                         <mesh material={charData.mats.leftArm} onPointerDown={(e) => handle3DClick('leftArm', e, false, true)} onPointerMove={(e) => handle3DClick('leftArm', e)}>
-                            <boxGeometry args={[charData.armWidth, 6, 4]} />
+                            <boxGeometry args={[charData.armWidth, isCute ? 4 : 6, 4]} />
                             {showEdges && (
                                 <lineSegments geometry={coreEdgeGeometries.arm}>
                                     <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -924,13 +1040,13 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.leftArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArm', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.leftArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e) => handle3DClick('leftArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, 6.5, 4.5]} /></mesh>
+                            <mesh material={charData.mats.leftArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e) => handle3DClick('leftArm', e)}><boxGeometry args={[charData.armWidth + 0.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
                         )}
                     </group>
-                    <group ref={setPartRef('left_low_arm')} position={[0, -6, 0]}>
-                        <group position={[0, -2.95, 0]}>
+                    <group ref={setPartRef('left_low_arm')} position={[0, isCute ? -4 : -6, 0]}>
+                        <group position={[0, isCute ? -1.95 : -2.95, 0]}>
                             <mesh material={charData.mats.leftArmLow} onPointerDown={(e) => handle3DClick('leftArmLow', e, false, true)} onPointerMove={(e) => handle3DClick('leftArmLow', e)}>
-                                <boxGeometry args={[charData.armWidth + 0.002, 6, 4.002]} />
+                                <boxGeometry args={[charData.armWidth + 0.002, isCute ? 4 : 6, 4.002]} />
                                 {showEdges && (
                                     <lineSegments geometry={coreEdgeGeometries.armLow}>
                                         <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -940,7 +1056,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             {mode === 'voxel' || mode === 'cute' ? (
                                 <primitive object={charData.voxels!.leftArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArmLow', e, true)} />
                             ) : (
-                                <mesh material={charData.mats.leftArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, 6.5, 4.502]} /></mesh>
+                                <mesh material={charData.mats.leftArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftArmLow', e)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
                             )}
                         </group>
                     </group>
@@ -948,9 +1064,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
                 {/* Right Arm & Right Lower Arm */}
                 <group ref={setPartRef('right_arm')} position={[-cuteConfig.shoulderPosX, cuteConfig.shoulderPosY, 0]} scale={cuteConfig.armScale} visible={visibleParts.rightArm !== false}>
-                    <group position={[0, -3, 0]}>
+                    <group position={[0, isCute ? -2 : -3, 0]}>
                         <mesh material={charData.mats.rightArm} onPointerDown={(e) => handle3DClick('rightArm', e, false, true)} onPointerMove={(e) => handle3DClick('rightArm', e)}>
-                            <boxGeometry args={[charData.armWidth, 6, 4]} />
+                            <boxGeometry args={[charData.armWidth, isCute ? 4 : 6, 4]} />
                             {showEdges && (
                                 <lineSegments geometry={coreEdgeGeometries.arm}>
                                     <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -960,13 +1076,13 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.rightArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArm', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.rightArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e) => handle3DClick('rightArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, 6.5, 4.5]} /></mesh>
+                            <mesh material={charData.mats.rightArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e) => handle3DClick('rightArm', e)}><boxGeometry args={[charData.armWidth + 0.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
                         )}
                     </group>
-                    <group ref={setPartRef('right_low_arm')} position={[0, -6, 0]}>
-                        <group position={[0, -2.95, 0]}>
+                    <group ref={setPartRef('right_low_arm')} position={[0, isCute ? -4 : -6, 0]}>
+                        <group position={[0, isCute ? -1.95 : -2.95, 0]}>
                             <mesh material={charData.mats.rightArmLow} onPointerDown={(e) => handle3DClick('rightArmLow', e, false, true)} onPointerMove={(e) => handle3DClick('rightArmLow', e)}>
-                                <boxGeometry args={[charData.armWidth + 0.002, 6, 4.002]} />
+                                <boxGeometry args={[charData.armWidth + 0.002, isCute ? 4 : 6, 4.002]} />
                                 {showEdges && (
                                     <lineSegments geometry={coreEdgeGeometries.armLow}>
                                         <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -976,7 +1092,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             {mode === 'voxel' || mode === 'cute' ? (
                                 <primitive object={charData.voxels!.rightArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArmLow', e, true)} />
                             ) : (
-                                <mesh material={charData.mats.rightArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, 6.5, 4.502]} /></mesh>
+                                <mesh material={charData.mats.rightArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightArmLow', e)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
                             )}
                         </group>
                     </group>
@@ -984,9 +1100,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
                 {/* Left Leg & Left Lower Leg */}
                 <group ref={setPartRef('left_leg')} position={[cuteConfig.hipPosX, cuteConfig.hipPosY, 0]} scale={cuteConfig.legScale} visible={visibleParts.leftLeg !== false}>
-                    <group position={[0, -3, 0]}>
+                    <group position={[0, isCute ? -2 : -3, 0]}>
                         <mesh material={charData.mats.leftLeg} onPointerDown={(e) => handle3DClick('leftLeg', e, false, true)} onPointerMove={(e) => handle3DClick('leftLeg', e)}>
-                            <boxGeometry args={[4, 6, 4]} />
+                            <boxGeometry args={[4, isCute ? 4 : 6, 4]} />
                             {showEdges && (
                                 <lineSegments geometry={coreEdgeGeometries.leg}>
                                     <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -996,13 +1112,13 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.leftLeg} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftLeg', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.leftLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e) => handle3DClick('leftLeg', e, true)}><boxGeometry args={[4.5, 6.5, 4.5]} /></mesh>
+                            <mesh material={charData.mats.leftLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e) => handle3DClick('leftLeg', e)}><boxGeometry args={[4.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
                         )}
                     </group>
-                    <group ref={setPartRef('left_low_leg')} position={[0, -6, 0]}>
-                        <group position={[0, -2.95, 0]}>
+                    <group ref={setPartRef('left_low_leg')} position={[0, isCute ? -4 : -6, 0]}>
+                        <group position={[0, isCute ? -1.95 : -2.95, 0]}>
                             <mesh material={charData.mats.leftLegLow} onPointerDown={(e) => handle3DClick('leftLegLow', e, false, true)} onPointerMove={(e) => handle3DClick('leftLegLow', e)}>
-                                <boxGeometry args={[4.002, 6, 4.002]} />
+                                <boxGeometry args={[4.002, isCute ? 4 : 6, 4.002]} />
                                 {showEdges && (
                                     <lineSegments geometry={coreEdgeGeometries.legLow}>
                                         <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -1012,7 +1128,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             {mode === 'voxel' || mode === 'cute' ? (
                                 <primitive object={charData.voxels!.leftLegLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftLegLow', e, true)} />
                             ) : (
-                                <mesh material={charData.mats.leftLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftLegLow', e, true)}><boxGeometry args={[4.502, 6.5, 4.502]} /></mesh>
+                                <mesh material={charData.mats.leftLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftLegLow', e)}><boxGeometry args={[4.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
                             )}
                         </group>
                     </group>
@@ -1020,9 +1136,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
                 {/* Right Leg & Right Lower Leg */}
                 <group ref={setPartRef('right_leg')} position={[-cuteConfig.hipPosX, cuteConfig.hipPosY, 0]} scale={cuteConfig.legScale} visible={visibleParts.rightLeg !== false}>
-                    <group position={[0, -3, 0]}>
+                    <group position={[0, isCute ? -2 : -3, 0]}>
                         <mesh material={charData.mats.rightLeg} onPointerDown={(e) => handle3DClick('rightLeg', e, false, true)} onPointerMove={(e) => handle3DClick('rightLeg', e)}>
-                            <boxGeometry args={[4, 6, 4]} />
+                            <boxGeometry args={[4, isCute ? 4 : 6, 4]} />
                             {showEdges && (
                                 <lineSegments geometry={coreEdgeGeometries.leg}>
                                     <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -1032,13 +1148,13 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.rightLeg} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightLeg', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.rightLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e) => handle3DClick('rightLeg', e, true)}><boxGeometry args={[4.5, 6.5, 4.5]} /></mesh>
+                            <mesh material={charData.mats.rightLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e) => handle3DClick('rightLeg', e)}><boxGeometry args={[4.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
                         )}
                     </group>
-                    <group ref={setPartRef('right_low_leg')} position={[0, -6, 0]}>
-                        <group position={[0, -2.95, 0]}>
+                    <group ref={setPartRef('right_low_leg')} position={[0, isCute ? -4 : -6, 0]}>
+                        <group position={[0, isCute ? -1.95 : -2.95, 0]}>
                             <mesh material={charData.mats.rightLegLow} onPointerDown={(e) => handle3DClick('rightLegLow', e, false, true)} onPointerMove={(e) => handle3DClick('rightLegLow', e)}>
-                                <boxGeometry args={[4.003, 6, 4.003]} />
+                                <boxGeometry args={[4.003, isCute ? 4 : 6, 4.003]} />
                                 {showEdges && (
                                     <lineSegments geometry={coreEdgeGeometries.rightLegLow}>
                                         <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -1048,7 +1164,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             {mode === 'voxel' || mode === 'cute' ? (
                                 <primitive object={charData.voxels!.rightLegLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightLegLow', e, true)} />
                             ) : (
-                                <mesh material={charData.mats.rightLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightLegLow', e, true)}><boxGeometry args={[4.502, 6.5, 4.502]} /></mesh>
+                                <mesh material={charData.mats.rightLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightLegLow', e)}><boxGeometry args={[4.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
                             )}
                         </group>
                     </group>
