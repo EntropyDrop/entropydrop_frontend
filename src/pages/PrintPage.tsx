@@ -34,7 +34,7 @@ export function PrintPage({ current }: PrintPageProps) {
     const [isAddressOpen, setIsAddressOpen] = useState(false);
 
     const [mode] = useState<'voxel' | 'plane'>('voxel');
-    const [action] = useState<'idle' | 'walking'>('idle');
+    const [action] = useState<'idle' | 'walk'>('idle');
 
     const [visibleParts, setVisibleParts] = useState({
         head: true,

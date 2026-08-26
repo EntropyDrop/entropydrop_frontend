@@ -13,7 +13,7 @@ interface Skin3DModalProps {
 }
 
 export function Skin3DModal({ isOpen, onClose, textureUrl, current }: Skin3DModalProps) {
-    const [action, setAction] = useState<'idle' | 'walking'>('idle');
+    const [action, setAction] = useState<'idle' | 'walk'>('idle');
 
     if (!isOpen || !textureUrl) return null;
 
@@ -56,7 +56,7 @@ export function Skin3DModal({ isOpen, onClose, textureUrl, current }: Skin3DModa
                 <div className="p-3 border-t border-white/10 flex justify-between items-center bg-black/20">
                     {/* Actions */}
                     <div className="flex gap-1 bg-black/40 p-1 border border-white/5">
-                        {['idle', 'walking'].map((a) => (
+                        {['idle', 'walk'].map((a) => (
                             <button
                                 key={a}
                                 onClick={() => setAction(a as any)}

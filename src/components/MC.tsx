@@ -395,7 +395,7 @@ export type VisibleParts = {
     rightLeg?: boolean;
 };
 
-export function MinecraftCharacter({ textureUrl, texture, mode = 'voxel', action = 'idle', fbxUrl, visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, printMode = false, onPaint, onHover, onHoverEnd }: { textureUrl?: string, texture?: THREE.Texture, mode?: 'voxel' | 'plane', action?: 'idle' | 'walking' | 'dance', fbxUrl?: string, visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void }) {
+export function MinecraftCharacter({ textureUrl, texture, mode = 'voxel', action = 'idle', fbxUrl, visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, printMode = false, onPaint, onHover, onHoverEnd }: { textureUrl?: string, texture?: THREE.Texture, mode?: 'voxel' | 'plane', action?: 'idle' | 'walk' | 'walking' | 'dance', fbxUrl?: string, visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void }) {
     if (texture) {
         return <MinecraftCharacterInner texture={texture} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} showOverlay={showOverlay} updateTrigger={updateTrigger} showEdges={showEdges} printMode={printMode} onPaint={onPaint} onHover={onHover} onHoverEnd={onHoverEnd} />
     }
@@ -403,12 +403,12 @@ export function MinecraftCharacter({ textureUrl, texture, mode = 'voxel', action
     return <MinecraftCharacterWithUrl textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} showOverlay={showOverlay} showEdges={showEdges} printMode={printMode} onPaint={onPaint} onHover={onHover} onHoverEnd={onHoverEnd} />
 }
 
-function MinecraftCharacterWithUrl({ textureUrl, mode, action, fbxUrl, visibleParts, showOverlay = true, showEdges = false, printMode = false, onPaint, onHover, onHoverEnd }: { textureUrl: string, mode: 'voxel' | 'plane', action: 'idle' | 'walking' | 'dance', fbxUrl?: string, visibleParts: VisibleParts, showOverlay?: boolean, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void }) {
+function MinecraftCharacterWithUrl({ textureUrl, mode, action, fbxUrl, visibleParts, showOverlay = true, showEdges = false, printMode = false, onPaint, onHover, onHoverEnd }: { textureUrl: string, mode: 'voxel' | 'plane', action: 'idle' | 'walk' | 'walking' | 'dance', fbxUrl?: string, visibleParts: VisibleParts, showOverlay?: boolean, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void }) {
     const loadedTexture = useTexture(textureUrl);
     return <MinecraftCharacterInner texture={loadedTexture} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} showOverlay={showOverlay} showEdges={showEdges} printMode={printMode} onPaint={onPaint} onHover={onHover} onHoverEnd={onHoverEnd} />
 }
 
-export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idle', fbxUrl, visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, printMode = false, onPaint, onHover, onHoverEnd }: { texture: THREE.Texture, mode?: 'voxel' | 'plane', action?: 'idle' | 'walking' | 'dance', fbxUrl?: string, visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void }) {
+export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idle', fbxUrl, visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, printMode = false, onPaint, onHover, onHoverEnd }: { texture: THREE.Texture, mode?: 'voxel' | 'plane', action?: 'idle' | 'walk' | 'walking' | 'dance', fbxUrl?: string, visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void }) {
     // Refs
     const characterRef = useRef(null);
     const partsRefs = useRef({});
@@ -517,7 +517,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                 (characterRef.current as any).position.set(0, 0, 0);
                 (characterRef.current as any).rotation.set(0, 0, 0);
             }
-        } else if (action === 'walking') {
+        } else if (action === 'walk' || action === 'walking') {
             const swing = Math.sin(t * 0.5) * 0.8;
             setRot('left_arm', -swing, 0, 0);
             setRot('right_arm', swing, 0, 0);
@@ -918,7 +918,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     );
 }
 
-export function MC({ textureUrl, texture, mode = 'voxel', action = 'idle', visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, printMode = false, onPaint, onPaintEnd, onHover, onHoverEnd, flatLighting = false }: { textureUrl?: string, texture?: THREE.Texture, mode?: 'voxel' | 'plane', action?: 'idle' | 'walking' | 'dance', visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onPaintEnd?: () => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void, flatLighting?: boolean }) {
+export function MC({ textureUrl, texture, mode = 'voxel', action = 'idle', visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, printMode = false, onPaint, onPaintEnd, onHover, onHoverEnd, flatLighting = false }: { textureUrl?: string, texture?: THREE.Texture, mode?: 'voxel' | 'plane', action?: 'idle' | 'walk' | 'walking' | 'dance', visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onPaintEnd?: () => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void, flatLighting?: boolean }) {
     const isPaintingRef = useRef(false);
     const controlsRef = useRef<any>(null);
 

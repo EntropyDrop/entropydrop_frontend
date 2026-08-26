@@ -7,7 +7,7 @@ import { MinecraftCharacter } from './MC'
 interface MCModalPreviewProps {
     textureUrl: string;
     mode: 'voxel' | 'plane';
-    action: 'idle' | 'walking' | 'dance';
+    action: 'idle' | 'walk' | 'dance';
     modelType: 'steve' | 'alex';
     visibleParts: {
         head: boolean;
@@ -18,7 +18,7 @@ interface MCModalPreviewProps {
         rightLeg: boolean;
     };
     setMode: (m: 'voxel' | 'plane') => void;
-    setAction: (a: 'idle' | 'walking' | 'dance') => void;
+    setAction: (a: 'idle' | 'walk' | 'dance') => void;
     convertModel: (target: 'steve' | 'alex') => void;
     togglePart: (part: 'head' | 'body' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg') => void;
     onEdit?: () => void;
@@ -214,7 +214,7 @@ export function MCModalPreview({
                 <div className="flex justify-between items-end">
                     <div className="flex flex-col gap-2 pointer-events-auto">
                         <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 flex flex-col lg:flex-row gap-1">
-                            {['idle', 'walking', 'dance'].map((a) => (
+                            {['idle', 'walk', 'dance'].map((a) => (
                                 <button
                                     key={a}
                                     onClick={() => setAction(a as any)}

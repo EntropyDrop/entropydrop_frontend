@@ -74,7 +74,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
     const [textureUrl, setTextureUrl] = useState(initialTextureUrl);
     const [mode, setMode] = useState<'voxel' | 'plane'>('plane');
-    const [action, setAction] = useState<'idle' | 'walking' | 'dance'>('walking');
+    const [action, setAction] = useState<'idle' | 'walk' | 'dance'>('walk');
     const [fbxUrl, setFbxUrl] = useState('/fbx/Breakdance 1990.fbx');
     const [modelType, setModelType] = useState<'steve' | 'alex'>('steve');
     const [isLiked, setIsLiked] = useState(false);

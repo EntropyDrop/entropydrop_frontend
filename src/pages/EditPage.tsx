@@ -183,7 +183,7 @@ export function EditPage({ current }: EditPageProps) {
     const [tool, setTool] = useState<'pencil' | 'eraser' | 'picker'>('pencil');
     const [recentColors, setRecentColors] = useState<string[]>([]);
     const previewMode = 'plane';
-    const [previewAction] = useState<'idle' | 'walking' | 'dance'>('idle');
+    const [previewAction] = useState<'idle' | 'walk' | 'dance'>('idle');
 
     const [visibleParts, setVisibleParts] = useState({
         head: true,
