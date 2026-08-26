@@ -8,7 +8,6 @@ interface ProfileSkinPreviewProps {
     textureUrl: string
     current: LangData
     className?: string
-    modelType?: 'steve' | 'alex'
 }
 
 interface PreviewBoundaryProps {
@@ -53,7 +52,7 @@ function SkinImageFallback({ textureUrl, current }: ProfileSkinPreviewProps) {
     )
 }
 
-export function ProfileSkinPreview({ textureUrl, current, className = 'w-24 h-28', modelType }: ProfileSkinPreviewProps) {
+export function ProfileSkinPreview({ textureUrl, current, className = 'w-24 h-28' }: ProfileSkinPreviewProps) {
     const fallback = <SkinImageFallback textureUrl={textureUrl} current={current} />
 
     return (
