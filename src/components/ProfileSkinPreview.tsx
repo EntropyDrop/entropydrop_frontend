@@ -8,6 +8,7 @@ interface ProfileSkinPreviewProps {
     textureUrl: string
     current: LangData
     className?: string
+    modelType?: 'steve' | 'alex'
 }
 
 interface PreviewBoundaryProps {
@@ -52,7 +53,7 @@ function SkinImageFallback({ textureUrl, current }: ProfileSkinPreviewProps) {
     )
 }
 
-export function ProfileSkinPreview({ textureUrl, current, className = 'w-24 h-28' }: ProfileSkinPreviewProps) {
+export function ProfileSkinPreview({ textureUrl, current, className = 'w-24 h-28', modelType }: ProfileSkinPreviewProps) {
     const fallback = <SkinImageFallback textureUrl={textureUrl} current={current} />
 
     return (
@@ -69,9 +70,14 @@ export function ProfileSkinPreview({ textureUrl, current, className = 'w-24 h-28
                     <pointLight position={[-10, 4, -10]} intensity={0.35} />
 
                     <Suspense fallback={null}>
-                        <Stage environment={null} intensity={0.45} adjustCamera={false}>
-                            <group position={[0, -10, 0]} rotation={[0, -0.35, 0]}>
-                                <MinecraftCharacter textureUrl={textureUrl} mode="voxel" action="idle" />
+                        <Stage
+                            environment={null}
+                            intensity={0.5}
+                            shadows={{ type: 'contact', opacity: 0.6, blur: 1.5, frames: Infinity }}
+                            adjustCamera={false}
+                        >
+                            <group position={[0, -0.5, 0]} rotation={[0, -0.35, 0]}>
+                                <MinecraftCharacter textureUrl={textureUrl} mode="cute" action="walk" />
                             </group>
                         </Stage>
                     </Suspense>

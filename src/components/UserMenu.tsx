@@ -35,6 +35,7 @@ interface UserInfo {
     pro_level: string
     paypal_subscription_status?: string
     minecraft_skin_url?: string | null
+    minecraft_skin_model?: string | null
     credits?: number
 }
 
@@ -806,6 +807,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                     <Suspense fallback={<ProfileSkinPreviewFallback textureUrl={user.minecraft_skin_url} />}>
                                         <ProfileSkinPreview
                                             textureUrl={user.minecraft_skin_url}
+                                            modelType={user.minecraft_skin_model === 'slim' ? 'alex' : 'steve'}
                                             current={current}
                                             className="w-full h-72 sm:h-80"
                                         />

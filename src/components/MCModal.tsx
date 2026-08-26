@@ -312,12 +312,16 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         setSkinSuccess(false);
         setSkinError('');
         try {
+            const skinModel = modelType === 'alex' ? 'slim' : 'strong';
             const res = await apiFetch('/api/users/me/minecraft_skin', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ minecraft_skin_url: item.result })
+                body: JSON.stringify({
+                    minecraft_skin_url: item.result,
+                    minecraft_skin_model: skinModel
+                })
             });
             if (res.ok) {
                 setSkinSuccess(true);
