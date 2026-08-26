@@ -409,6 +409,8 @@ function MinecraftCharacterWithUrl({ textureUrl, mode, action, fbxUrl, visiblePa
 }
 
 export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idle', fbxUrl, visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, printMode = false, onPaint, onHover, onHoverEnd }: { texture: THREE.Texture, mode?: 'voxel' | 'plane' | 'cute', action?: 'idle' | 'walk' | 'walking' | 'dance', fbxUrl?: string, visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, printMode?: boolean, onPaint?: (x: number, y: number) => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void }) {
+    const isCute = mode === 'cute';
+
     // Refs
     const characterRef = useRef(null);
     const partsRefs = useRef({});
@@ -816,8 +818,6 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             });
         });
     }, [updateTrigger, mats]);
-
-    const isCute = mode === 'cute';
 
     const cuteConfig = useMemo(() => {
         if (!isCute) {
