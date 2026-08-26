@@ -73,9 +73,67 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     };
 
     const [textureUrl, setTextureUrl] = useState(initialTextureUrl);
-    const [mode, setMode] = useState<'voxel' | 'plane' | 'cute'>('plane');
-    const [action, setAction] = useState<'idle' | 'walk' | 'dance'>('walk');
-    const [fbxUrl, setFbxUrl] = useState('/fbx/Breakdance 1990.fbx');
+    const [mode, setModeState] = useState<'voxel' | 'plane' | 'cute'>(() => {
+        try {
+            const saved = localStorage.getItem('mcmodal_mode');
+            if (saved === 'voxel' || saved === 'plane' || saved === 'cute') {
+                return saved;
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        return 'plane';
+    });
+    const setMode = useCallback((m: 'voxel' | 'plane' | 'cute') => {
+        setModeState(m);
+        try {
+            localStorage.setItem('mcmodal_mode', m);
+        } catch (e) {
+            console.error(e);
+        }
+    }, []);
+
+    const [action, setActionState] = useState<'idle' | 'walk' | 'dance'>(() => {
+        try {
+            const saved = localStorage.getItem('mcmodal_action');
+            if (saved === 'idle' || saved === 'walk' || saved === 'dance') {
+                return saved;
+            }
+            if (saved === 'walking') {
+                return 'walk';
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        return 'walk';
+    });
+    const setAction = useCallback((a: 'idle' | 'walk' | 'dance') => {
+        setActionState(a);
+        try {
+            localStorage.setItem('mcmodal_action', a);
+        } catch (e) {
+            console.error(e);
+        }
+    }, []);
+
+    const [fbxUrl, setFbxUrlState] = useState<string>(() => {
+        try {
+            const saved = localStorage.getItem('mcmodal_fbx_url');
+            if (saved) return saved;
+        } catch (e) {
+            console.error(e);
+        }
+        return '/fbx/Thriller Part 3.fbx';
+    });
+    const setFbxUrl = useCallback((url: string) => {
+        setFbxUrlState(url);
+        try {
+            localStorage.setItem('mcmodal_fbx_url', url);
+        } catch (e) {
+            console.error(e);
+        }
+    }, []);
+
     const [modelType, setModelType] = useState<'steve' | 'alex'>('steve');
     const [isLiked, setIsLiked] = useState(false);
     const [likesCount, setLikesCount] = useState(0);

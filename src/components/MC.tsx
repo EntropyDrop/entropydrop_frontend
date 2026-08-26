@@ -9,7 +9,7 @@ function DanceController({ action, partsRefs, fbxUrl }: { action: string, partsR
     return <DanceControllerInner key={fbxUrl} partsRefs={partsRefs} fbxUrl={fbxUrl} />;
 }
 
-function DanceControllerInner({ partsRefs, fbxUrl = '/fbx/Breakdance 1990.fbx' }: { partsRefs: any, fbxUrl?: string }) {
+function DanceControllerInner({ partsRefs, fbxUrl = '/fbx/Thriller Part 3.fbx' }: { partsRefs: any, fbxUrl?: string }) {
     const fbx = useFBX(fbxUrl);
     const { actions } = useAnimations(fbx.animations, fbx);
     const initialPosRef = useRef<THREE.Vector3 | null>(null);
