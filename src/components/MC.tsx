@@ -671,15 +671,18 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         const bodyVoxelGroup = createVoxelGroup(processedImageData, [shiftpos(uvMaps.body, 0, 16), 0.5, [8, 12, 4]], showEdges, printMode);
         if (isCute && isAlex && bodyVoxelGroup) {
             bodyVoxelGroup.children.forEach((child: any) => {
-                if (child instanceof THREE.Mesh && child.position && child.position.y > 0) {
-                    child.position.x *= 0.7;
-                    child.scale.x *= 0.7;
+                if (child instanceof THREE.Mesh && child.position) {
+                    const t = Math.max(0, Math.min(1, (child.position.y + 6) / 12));
+                    const scale = 1.0 - 0.3 * t;
+                    child.position.x *= scale;
+                    child.scale.x *= scale;
                 } else if (child instanceof THREE.LineSegments && child.geometry?.attributes?.position) {
                     const pos = child.geometry.attributes.position;
                     for (let i = 0; i < pos.count; i++) {
-                        if (pos.getY(i) > 0) {
-                            pos.setX(i, pos.getX(i) * 0.7);
-                        }
+                        const vy = pos.getY(i);
+                        const t = Math.max(0, Math.min(1, (vy + 6) / 12));
+                        const scale = 1.0 - 0.3 * t;
+                        pos.setX(i, pos.getX(i) * scale);
                     }
                     pos.needsUpdate = true;
                 }
@@ -701,14 +704,14 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     }, [mode, processedTexture, armConfig, uvMaps, updateTrigger, showEdges, printMode, isCute, isAlex]);
 
     const bodyGeometry = useMemo(() => {
-        const geo = new THREE.BoxGeometry(8, 12, 4, 1, 2, 1);
+        const geo = new THREE.BoxGeometry(8, 12, 4);
         if (isCute && isAlex) {
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
                 const y = pos.getY(i);
-                if (y > 0.01) {
-                    pos.setX(i, pos.getX(i) * 0.7);
-                }
+                const t = Math.max(0, Math.min(1, (y + 6) / 12));
+                const scale = 1.0 - 0.3 * t;
+                pos.setX(i, pos.getX(i) * scale);
             }
             pos.needsUpdate = true;
             geo.computeVertexNormals();
@@ -717,14 +720,14 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     }, [isCute, isAlex]);
 
     const bodyOverlayGeometry = useMemo(() => {
-        const geo = new THREE.BoxGeometry(8.5, 12.5, 4.5, 1, 2, 1);
+        const geo = new THREE.BoxGeometry(8.5, 12.5, 4.5);
         if (isCute && isAlex) {
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
                 const y = pos.getY(i);
-                if (y > 0.01) {
-                    pos.setX(i, pos.getX(i) * 0.7);
-                }
+                const t = Math.max(0, Math.min(1, (y + 6.25) / 12.5));
+                const scale = 1.0 - 0.3 * t;
+                pos.setX(i, pos.getX(i) * scale);
             }
             pos.needsUpdate = true;
             geo.computeVertexNormals();
