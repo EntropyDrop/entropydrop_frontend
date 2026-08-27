@@ -25,6 +25,14 @@ class MemoryStorage implements WorldEditStorage {
   }
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 1_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for asynchronous world-edit sync');
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+}
+
 test('standard and micro terrain edits survive constructing a fresh world after refresh', () => {
   const storage = new MemoryStorage();
   const persistence = { worldId: 'refresh-test-world', storage };
@@ -72,4 +80,66 @@ test('world edit storage is isolated by world id and solid cells remove stale mi
   const otherWorld = new WorldEditPersistence({ worldId: 'world-b', storage });
   assert.deepEqual([...otherWorld.getStandardEditsForChunk(0, 1)], []);
   assert.deepEqual([...otherWorld.getMicroEdits()], []);
+});
+
+test('remote terrain mutations are split into stable batches of at most 256 operations', async () => {
+  const storage = new MemoryStorage();
+  const sent: { batchId: string; mutations: any[] }[] = [];
+  const persistence = new WorldEditPersistence({
+    worldId: 'remote-batch-world',
+    storage,
+    saveDelayMs: 0,
+    remote: {
+      chunks: [],
+      async sendBatch(batchId, mutations) {
+        sent.push({ batchId, mutations: structuredClone(mutations) });
+      }
+    }
+  });
+
+  for (let index = 0; index < 257; index++) {
+    persistence.recordStandard(index, 80, 10, BlockTypes.COLOR_BLOCK, index);
+  }
+  await waitFor(() => sent.length === 2);
+
+  assert.deepEqual(sent.map(batch => batch.mutations.length), [256, 1]);
+  assert.equal(new Set(sent.map(batch => batch.batchId)).size, 2);
+  const cached = JSON.parse(storage.getItem(worldEditStorageKey('remote-batch-world'))!);
+  assert.deepEqual(cached.pendingBatches, []);
+});
+
+test('legacy browser-local edits are replayed over the server snapshot and uploaded once', async () => {
+  const storage = new MemoryStorage();
+  const worldId = 'legacy-upload-world';
+  storage.setItem(`space.world-edits.v1.${encodeURIComponent(worldId)}`, JSON.stringify({
+    version: 1,
+    worldId,
+    standard: [[10, 80, 20, BlockTypes.COLOR_BLOCK, 0x123456]],
+    micro: [[56, 401, 106, 0xabcdef]],
+    savedAt: Date.now()
+  }));
+  const sent: any[] = [];
+
+  const persistence = new WorldEditPersistence({
+    worldId,
+    storage,
+    saveDelayMs: 0,
+    remote: {
+      chunks: [{
+        chunk_x: 0,
+        chunk_z: 1,
+        revision: 1,
+        standard: [[9, 80, 20, BlockTypes.COLOR_BLOCK, 0x999999]],
+        micro: []
+      }],
+      async sendBatch(batchId, mutations) {
+        sent.push({ batchId, mutations: structuredClone(mutations) });
+      }
+    }
+  });
+  await waitFor(() => sent.length === 1);
+
+  assert.equal([...persistence.getStandardEditsForChunk(0, 1)].length, 2);
+  assert.deepEqual(sent[0].mutations.map(item => item.kind), ['set_standard', 'set_micro']);
+  assert.equal(storage.getItem(`space.world-edits.v1.${encodeURIComponent(worldId)}`), null);
 });

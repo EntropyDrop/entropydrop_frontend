@@ -1,3 +1,9 @@
+import type {
+  TerrainEditChunk,
+  TerrainMutation,
+  WorldEditRemote,
+} from '../engine/voxel/WorldEditPersistence.ts';
+
 export type MinecraftSkinModel = 'strong' | 'slim';
 
 export interface SpaceBootstrapPayload {
@@ -26,6 +32,7 @@ export interface SpaceBootstrapPayload {
 
 export interface ReadySpaceSession extends SpaceBootstrapPayload {
   skin_object_url: string;
+  terrain_edit_remote: WorldEditRemote;
 }
 
 export type SpaceEntryErrorCode =
@@ -139,6 +146,88 @@ async function downloadSkinPng(url: string) {
   return URL.createObjectURL(blob);
 }
 
+export async function loadTerrainEditRemote(
+  apiOrigin: string,
+  token: string,
+  worldId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<WorldEditRemote> {
+  const baseUrl = `${apiOrigin}/space/api/v2/worlds/${encodeURIComponent(worldId)}/terrain-edits`;
+  const retryUrl = typeof window === 'undefined' ? '/' : window.location.href;
+  const chunks: TerrainEditChunk[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+
+  do {
+    const url = new URL(
+      baseUrl,
+      typeof window === 'undefined' ? 'http://localhost' : window.location.href
+    );
+    url.searchParams.set('limit', '256');
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const response = await fetchImpl(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json'
+      },
+      cache: 'no-store'
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new SpaceEntryError(
+        response.status === 401 || response.status === 403 ? 'LOGIN_REQUIRED' : 'BOOTSTRAP_FAILED',
+        '无法加载 Space 世界修改，请检查后端版本和网络连接。',
+        response.status === 401 || response.status === 403 ? '/skin/' : retryUrl,
+        response.status === 401 || response.status === 403 ? '返回主站登录' : '重试'
+      );
+    }
+    if (!Array.isArray(body?.chunks)) {
+      throw new SpaceEntryError(
+        'BOOTSTRAP_FAILED',
+        'Space 世界修改响应格式无效。',
+        retryUrl,
+        '重试'
+      );
+    }
+    chunks.push(...body.chunks);
+    const nextCursor = typeof body.next_cursor === 'string' ? body.next_cursor : null;
+    if (nextCursor && seenCursors.has(nextCursor)) {
+      throw new SpaceEntryError(
+        'BOOTSTRAP_FAILED',
+        'Space 世界修改分页游标重复。',
+        retryUrl,
+        '重试'
+      );
+    }
+    if (nextCursor) seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  } while (cursor);
+
+  return {
+    chunks,
+    async sendBatch(batchId: string, mutations: TerrainMutation[]) {
+      if (mutations.length < 1 || mutations.length > 256) {
+        throw new Error('Space terrain mutation batches must contain 1-256 operations.');
+      }
+      const response = await fetchImpl(`${baseUrl}/batches`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ batch_id: batchId, mutations })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const code = body?.detail?.code || `HTTP_${response.status}`;
+        throw new Error(`Space terrain batch was not accepted: ${code}`);
+      }
+      return response.json();
+    }
+  };
+}
+
 export async function bootstrapSpace(): Promise<ReadySpaceSession> {
   const token = localStorage.getItem('token');
   if (!token) {
@@ -171,8 +260,15 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
     );
   }
 
-  const skinObjectUrl = await downloadSkinPng(payload.player.minecraft_skin_url);
-  return { ...payload, skin_object_url: skinObjectUrl };
+  const [skinObjectUrl, terrainEditRemote] = await Promise.all([
+    downloadSkinPng(payload.player.minecraft_skin_url),
+    loadTerrainEditRemote(apiOrigin, token, payload.world.id)
+  ]);
+  return {
+    ...payload,
+    skin_object_url: skinObjectUrl,
+    terrain_edit_remote: terrainEditRemote
+  };
 }
 
 function renderEntryError(error: unknown) {

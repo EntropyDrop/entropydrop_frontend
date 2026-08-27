@@ -44,7 +44,10 @@ class Game {
       this.sceneRenderer.scene,
       session.world.seed,
       distantLodCache,
-      { worldId: session.world.id }
+      {
+        worldId: session.world.id,
+        remote: session.terrain_edit_remote
+      }
     );
     this.sceneRenderer.setWorld(this.world);
     this.soundManager = new SoundManager();

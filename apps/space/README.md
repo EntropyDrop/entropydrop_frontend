@@ -9,10 +9,11 @@ loads the existing EntropyDrop user's durable birth point, and downloads that
 user's immutable `minecraft_skin_url` PNG. A user without a configured skin is
 blocked and sent to `/skin/edit`. Backpack data remains browser-local under
 `space.backpack.v2` and is never uploaded by this app. Player-authored standard
-and micro-voxel terrain overlays are also browser-local, keyed by `world.id`
-under `space.world-edits.v1.*`; additions, colors, subdivisions, and AIR
-tombstones over generated terrain are restored after a same-browser refresh.
-They are not yet synchronized between browsers or players.
+and micro-voxel terrain overlays are loaded from the authenticated Space API and
+sent back in idempotent batches of at most 256 mutations. A durable browser
+outbox under `space.world-edits.v2.*` preserves unacknowledged batches across a
+refresh; the earlier `space.world-edits.v1.*` local-only overlay is migrated and
+uploaded on first entry after this version.
 
 The default world's distant torus uses a build-time, versioned binary cache.
 Its `512x64` height lattice and `1024x256` RGBA albedo are fetched once through
@@ -20,10 +21,11 @@ the normal content-hashed Vite asset URL, so the browser/CDN HTTP cache can
 reuse them for later entrants. The albedo base level is exactly 1 MiB. The
 client validates the cache schema, seed, terrain-generator version, dimensions,
 and expanded size before use; a miss or mismatch falls back to deterministic
-local generation. Shared server-authored distant edits will be layered on later
-as revisioned zone-tile deltas rather than rebuilding the whole torus per join.
-The current browser-local overlays update the existing deferred distant shell
-in the same way as live edits after their affected chunks load.
+local generation. Server-authored edits currently arrive as paginated chunk
+overlays over REST and update the existing deferred distant shell after their
+affected chunks load. The multiplayer worker can later deliver the same chunk
+revisions and reliable deltas over WebSocket without changing the local world
+overlay model.
 
 An AI-native programmable voxel physics prototype:
 

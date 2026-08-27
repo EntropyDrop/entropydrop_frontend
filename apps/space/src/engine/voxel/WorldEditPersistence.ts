@@ -9,9 +9,12 @@ import {
   wrapZ,
 } from '../torus/TorusWorld.ts';
 
-const STORAGE_SCHEMA_VERSION = 1;
-const STORAGE_PREFIX = 'space.world-edits.v1';
+const STORAGE_SCHEMA_VERSION = 2;
+const STORAGE_PREFIX = 'space.world-edits.v2';
+const LEGACY_STORAGE_PREFIX = 'space.world-edits.v1';
 const DEFAULT_SAVE_DELAY_MS = 75;
+const REMOTE_RETRY_DELAY_MS = 2_000;
+const MAX_MUTATIONS_PER_BATCH = 256;
 const MAX_STORED_STANDARD_EDITS = 250_000;
 const MAX_STORED_MICRO_EDITS = 500_000;
 
@@ -21,10 +24,30 @@ export interface WorldEditStorage {
   removeItem(key: string): void;
 }
 
+export type TerrainMutation =
+  | { kind: 'set_standard'; x: number; y: number; z: number; block: number; color: number }
+  | { kind: 'set_micro'; mx: number; my: number; mz: number; color: number; part?: string | null }
+  | { kind: 'remove_micro'; mx: number; my: number; mz: number }
+  | { kind: 'clear_micro_cell'; x: number; y: number; z: number };
+
+export interface TerrainEditChunk {
+  chunk_x: number;
+  chunk_z: number;
+  revision: number;
+  standard: unknown[];
+  micro: unknown[];
+}
+
+export interface WorldEditRemote {
+  chunks: TerrainEditChunk[];
+  sendBatch(batchId: string, mutations: TerrainMutation[]): Promise<unknown>;
+}
+
 export interface WorldEditPersistenceOptions {
   worldId: string;
   storage?: WorldEditStorage | null;
   saveDelayMs?: number;
+  remote?: WorldEditRemote | null;
 }
 
 export interface PersistedStandardEdit {
@@ -41,6 +64,11 @@ export interface PersistedMicroEdit {
   mz: number;
   color: number;
   part: string | null;
+}
+
+interface PersistedMutationBatch {
+  batchId: string;
+  mutations: TerrainMutation[];
 }
 
 function standardKey(x: number, y: number, z: number) {
@@ -68,39 +96,70 @@ function resolveDefaultStorage(): WorldEditStorage | null {
   }
 }
 
+function createBatchId() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, marker => {
+    const random = Math.floor(Math.random() * 16);
+    const value = marker === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 export function worldEditStorageKey(worldId: string) {
   return `${STORAGE_PREFIX}.${encodeURIComponent(worldId)}`;
 }
 
+function legacyWorldEditStorageKey(worldId: string) {
+  return `${LEGACY_STORAGE_PREFIX}.${encodeURIComponent(worldId)}`;
+}
+
 /**
- * A compact browser-local overlay for player-authored terrain changes.
+ * Sparse local cache plus durable remote outbox for player-authored terrain.
  *
- * Standard AIR entries are deliberately retained: they are tombstones over the
- * deterministic generated terrain and prevent mined blocks from reappearing on
- * the next page load. Micro voxels need no tombstones because the base generator
- * never creates them.
+ * Standard AIR entries are tombstones over deterministic generated terrain.
+ * Remote mutations are grouped into stable, idempotent batches of at most 256;
+ * a batch is written to localStorage before transmission and removed only after
+ * the server acknowledges it.
  */
 export class WorldEditPersistence {
   readonly worldId: string;
   readonly storageKey: string;
+  private readonly legacyStorageKey: string;
   private readonly storage: WorldEditStorage | null;
   private readonly saveDelayMs: number;
+  private readonly remote: WorldEditRemote | null;
   private readonly standardEdits = new Map<string, PersistedStandardEdit>();
   private readonly standardEditsByChunk = new Map<string, Map<string, PersistedStandardEdit>>();
   private readonly microEdits = new Map<string, PersistedMicroEdit>();
+  private readonly pendingBatches: PersistedMutationBatch[] = [];
+  /** A transmitted (or reload-restored) batch id must never gain new mutations. */
+  private readonly sealedBatchIds = new Set<string>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private remoteRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private sendingBatchId: string | null = null;
   private dirty = false;
 
   constructor(options: WorldEditPersistenceOptions) {
     this.worldId = String(options.worldId || '').trim();
     this.storageKey = worldEditStorageKey(this.worldId);
+    this.legacyStorageKey = legacyWorldEditStorageKey(this.worldId);
     this.storage = options.storage === undefined ? resolveDefaultStorage() : options.storage;
+    this.remote = options.remote ?? null;
     const configuredSaveDelay = Number(options.saveDelayMs);
     this.saveDelayMs = Number.isFinite(configuredSaveDelay)
       ? Math.max(0, configuredSaveDelay)
       : DEFAULT_SAVE_DELAY_MS;
-    this.load();
+
+    if (this.remote) this.loadRemoteChunks(this.remote.chunks);
+    this.loadLocalState();
+    this.reconcileStandardMicroExclusion();
     this.installLifecycleFlush();
+
+    if (this.remote) {
+      this.dirty = true;
+      this.scheduleSave();
+      this.scheduleRemoteFlush();
+    }
   }
 
   getStandardEditsForChunk(cx: number, cz: number) {
@@ -112,61 +171,58 @@ export class WorldEditPersistence {
   }
 
   recordStandard(x: number, y: number, z: number, block: number, color: number) {
-    const normalizedX = Math.floor(wrapX(x));
-    const normalizedY = Math.floor(y);
-    const normalizedZ = Math.floor(wrapZ(z));
-    if (normalizedY < 0 || normalizedY >= CHUNK_SIZE_Y) return;
-    const edit = {
-      x: normalizedX,
-      y: normalizedY,
-      z: normalizedZ,
-      block: Math.max(0, Math.min(255, Math.floor(Number(block) || 0))),
-      color: Number(color) & 0xffffff,
-    };
+    const edit = this.normalizeStandardEdit(x, y, z, block, color);
+    if (!edit) return;
     this.addStandardEdit(edit);
-    if (edit.block !== 0) this.removeMicroStandardCell(normalizedX, normalizedY, normalizedZ, false);
-    this.scheduleSave();
+    if (edit.block !== 0) this.removeMicroStandardCell(edit.x, edit.y, edit.z, false);
+    this.enqueueMutation({
+      kind: 'set_standard',
+      x: edit.x,
+      y: edit.y,
+      z: edit.z,
+      block: edit.block,
+      color: edit.color,
+    });
   }
 
   recordMicro(mx: number, my: number, mz: number, color: number, part: unknown = null) {
-    const normalizedX = Math.floor(wrapMicroX(mx));
-    const normalizedY = Math.floor(my);
-    const normalizedZ = Math.floor(wrapMicroZ(mz));
-    if (normalizedY < 0 || normalizedY >= CHUNK_SIZE_Y * MICRO_DIVISIONS) return;
-    const edit = {
-      mx: normalizedX,
-      my: normalizedY,
-      mz: normalizedZ,
-      color: Number(color) & 0xffffff,
-      part: typeof part === 'string' ? part : null,
-    };
-    this.microEdits.set(microKey(normalizedX, normalizedY, normalizedZ), edit);
-    this.scheduleSave();
+    const edit = this.normalizeMicroEdit(mx, my, mz, color, part);
+    if (!edit) return;
+    this.microEdits.set(microKey(edit.mx, edit.my, edit.mz), edit);
+    this.enqueueMutation({
+      kind: 'set_micro',
+      mx: edit.mx,
+      my: edit.my,
+      mz: edit.mz,
+      color: edit.color,
+      ...(edit.part ? { part: edit.part } : {}),
+    });
   }
 
   removeMicro(mx: number, my: number, mz: number) {
-    const removed = this.microEdits.delete(microKey(
-      Math.floor(wrapMicroX(mx)),
-      Math.floor(my),
-      Math.floor(wrapMicroZ(mz))
-    ));
-    if (removed) this.scheduleSave();
+    const normalizedX = Math.floor(wrapMicroX(mx));
+    const normalizedY = Math.floor(my);
+    const normalizedZ = Math.floor(wrapMicroZ(mz));
+    const removed = this.microEdits.delete(microKey(normalizedX, normalizedY, normalizedZ));
+    if (removed) {
+      this.enqueueMutation({ kind: 'remove_micro', mx: normalizedX, my: normalizedY, mz: normalizedZ });
+    }
     return removed;
   }
 
-  removeMicroStandardCell(wx: number, wy: number, wz: number, schedule = true) {
-    const baseX = Math.floor(wrapX(wx)) * MICRO_DIVISIONS;
-    const baseY = Math.floor(wy) * MICRO_DIVISIONS;
-    const baseZ = Math.floor(wrapZ(wz)) * MICRO_DIVISIONS;
-    let removed = 0;
-    for (let dx = 0; dx < MICRO_DIVISIONS; dx++) {
-      for (let dy = 0; dy < MICRO_DIVISIONS; dy++) {
-        for (let dz = 0; dz < MICRO_DIVISIONS; dz++) {
-          if (this.microEdits.delete(microKey(baseX + dx, baseY + dy, baseZ + dz))) removed++;
-        }
-      }
+  removeMicroStandardCell(wx: number, wy: number, wz: number, enqueue = true) {
+    const normalizedX = Math.floor(wrapX(wx));
+    const normalizedY = Math.floor(wy);
+    const normalizedZ = Math.floor(wrapZ(wz));
+    const removed = this.removeMicroStandardCellLocal(normalizedX, normalizedY, normalizedZ);
+    if (removed > 0 && enqueue) {
+      this.enqueueMutation({
+        kind: 'clear_micro_cell',
+        x: normalizedX,
+        y: normalizedY,
+        z: normalizedZ,
+      });
     }
-    if (removed > 0 && schedule) this.scheduleSave();
     return removed;
   }
 
@@ -178,7 +234,11 @@ export class WorldEditPersistence {
     if (!this.dirty || !this.storage || !this.worldId) return false;
 
     try {
-      if (this.standardEdits.size === 0 && this.microEdits.size === 0) {
+      if (
+        this.standardEdits.size === 0
+        && this.microEdits.size === 0
+        && this.pendingBatches.length === 0
+      ) {
         this.storage.removeItem(this.storageKey);
       } else {
         const payload = {
@@ -192,9 +252,11 @@ export class WorldEditPersistence {
               ? [edit.mx, edit.my, edit.mz, edit.color, edit.part]
               : [edit.mx, edit.my, edit.mz, edit.color]
           )),
+          pendingBatches: this.pendingBatches,
           savedAt: Date.now(),
         };
         this.storage.setItem(this.storageKey, JSON.stringify(payload));
+        this.storage.removeItem(this.legacyStorageKey);
       }
       this.dirty = false;
       return true;
@@ -202,6 +264,36 @@ export class WorldEditPersistence {
       console.warn('Space could not persist world edits in browser storage.', error);
       return false;
     }
+  }
+
+  private normalizeStandardEdit(x: number, y: number, z: number, block: number, color: number) {
+    if (![x, y, z, block, color].every(value => Number.isFinite(Number(value)))) return null;
+    const normalizedX = Math.floor(wrapX(x));
+    const normalizedY = Math.floor(y);
+    const normalizedZ = Math.floor(wrapZ(z));
+    if (normalizedY < 0 || normalizedY >= CHUNK_SIZE_Y) return null;
+    return {
+      x: normalizedX,
+      y: normalizedY,
+      z: normalizedZ,
+      block: Math.max(0, Math.min(255, Math.floor(Number(block) || 0))),
+      color: Number(color) & 0xffffff,
+    };
+  }
+
+  private normalizeMicroEdit(mx: number, my: number, mz: number, color: number, part: unknown = null) {
+    if (![mx, my, mz, color].every(value => Number.isFinite(Number(value)))) return null;
+    const normalizedX = Math.floor(wrapMicroX(mx));
+    const normalizedY = Math.floor(my);
+    const normalizedZ = Math.floor(wrapMicroZ(mz));
+    if (normalizedY < 0 || normalizedY >= CHUNK_SIZE_Y * MICRO_DIVISIONS) return null;
+    return {
+      mx: normalizedX,
+      my: normalizedY,
+      mz: normalizedZ,
+      color: Number(color) & 0xffffff,
+      part: typeof part === 'string' ? part.slice(0, 64) : null,
+    };
   }
 
   private addStandardEdit(edit: PersistedStandardEdit) {
@@ -216,6 +308,44 @@ export class WorldEditPersistence {
     chunkEdits.set(key, edit);
   }
 
+  private removeMicroStandardCellLocal(wx: number, wy: number, wz: number) {
+    const baseX = wx * MICRO_DIVISIONS;
+    const baseY = wy * MICRO_DIVISIONS;
+    const baseZ = wz * MICRO_DIVISIONS;
+    let removed = 0;
+    for (let dx = 0; dx < MICRO_DIVISIONS; dx++) {
+      for (let dy = 0; dy < MICRO_DIVISIONS; dy++) {
+        for (let dz = 0; dz < MICRO_DIVISIONS; dz++) {
+          if (this.microEdits.delete(microKey(baseX + dx, baseY + dy, baseZ + dz))) removed++;
+        }
+      }
+    }
+    return removed;
+  }
+
+  private reconcileStandardMicroExclusion() {
+    for (const edit of this.standardEdits.values()) {
+      if (edit.block !== 0) this.removeMicroStandardCellLocal(edit.x, edit.y, edit.z);
+    }
+  }
+
+  private enqueueMutation(mutation: TerrainMutation) {
+    if (this.remote) {
+      let batch = this.pendingBatches[this.pendingBatches.length - 1];
+      if (
+        !batch
+        || batch.mutations.length >= MAX_MUTATIONS_PER_BATCH
+        || this.sealedBatchIds.has(batch.batchId)
+      ) {
+        batch = { batchId: createBatchId(), mutations: [] };
+        this.pendingBatches.push(batch);
+      }
+      batch.mutations.push(mutation);
+      this.scheduleRemoteFlush();
+    }
+    this.scheduleSave();
+  }
+
   private scheduleSave() {
     this.dirty = true;
     if (!this.storage || !this.worldId || this.saveTimer !== null) return;
@@ -225,64 +355,247 @@ export class WorldEditPersistence {
     }, this.saveDelayMs);
   }
 
-  private load() {
-    if (!this.storage || !this.worldId) return;
-    let raw: string | null = null;
+  private scheduleRemoteFlush(delay = this.saveDelayMs) {
+    if (!this.remote || this.sendingBatchId || this.pendingBatches.length === 0) return;
+    if (this.remoteRetryTimer !== null) return;
+    this.remoteRetryTimer = setTimeout(() => {
+      this.remoteRetryTimer = null;
+      void this.flushNextRemoteBatch();
+    }, delay);
+  }
+
+  private async flushNextRemoteBatch() {
+    if (!this.remote || this.sendingBatchId || this.pendingBatches.length === 0) return;
+    const batch = this.pendingBatches[0];
+    this.flush();
+    this.sealedBatchIds.add(batch.batchId);
+    this.sendingBatchId = batch.batchId;
     try {
-      raw = this.storage.getItem(this.storageKey);
-      if (!raw) return;
-      const payload = JSON.parse(raw);
-      if (payload?.version !== STORAGE_SCHEMA_VERSION || payload?.worldId !== this.worldId) return;
+      await this.remote.sendBatch(batch.batchId, batch.mutations);
+      const index = this.pendingBatches.findIndex(item => item.batchId === batch.batchId);
+      if (index >= 0) this.pendingBatches.splice(index, 1);
+      this.sealedBatchIds.delete(batch.batchId);
+      this.dirty = true;
+      this.flush();
+      this.sendingBatchId = null;
+      this.scheduleRemoteFlush(0);
+    } catch (error) {
+      this.sendingBatchId = null;
+      console.warn('Space terrain batch remains queued for retry.', error);
+      this.scheduleRemoteFlush(REMOTE_RETRY_DELAY_MS);
+    }
+  }
 
-      const standard = Array.isArray(payload.standard)
-        ? payload.standard.slice(0, MAX_STORED_STANDARD_EDITS)
-        : [];
-      for (const packed of standard) {
-        if (!Array.isArray(packed) || packed.length < 5) continue;
-        const x = finiteInteger(packed[0]);
-        const y = finiteInteger(packed[1]);
-        const z = finiteInteger(packed[2]);
-        const block = finiteInteger(packed[3]);
-        const color = finiteInteger(packed[4]);
-        if (x === null || y === null || z === null || block === null || color === null) continue;
-        if (x < 0 || x >= TORUS_SIZE_X || y < 0 || y >= CHUNK_SIZE_Y || z < 0 || z >= TORUS_SIZE_Z) continue;
-        this.addStandardEdit({ x, y, z, block: Math.max(0, Math.min(255, block)), color: color & 0xffffff });
+  private loadRemoteChunks(chunks: TerrainEditChunk[]) {
+    for (const chunk of Array.isArray(chunks) ? chunks : []) {
+      this.loadPackedEdits(chunk.standard, chunk.micro);
+    }
+  }
+
+  private loadPackedEdits(standardInput: unknown, microInput: unknown) {
+    const standard = Array.isArray(standardInput)
+      ? standardInput.slice(0, MAX_STORED_STANDARD_EDITS)
+      : [];
+    for (const packed of standard) {
+      if (!Array.isArray(packed) || packed.length < 5) continue;
+      const x = finiteInteger(packed[0]);
+      const y = finiteInteger(packed[1]);
+      const z = finiteInteger(packed[2]);
+      const block = finiteInteger(packed[3]);
+      const color = finiteInteger(packed[4]);
+      if (x === null || y === null || z === null || block === null || color === null) continue;
+      if (x < 0 || x >= TORUS_SIZE_X || y < 0 || y >= CHUNK_SIZE_Y || z < 0 || z >= TORUS_SIZE_Z) continue;
+      this.addStandardEdit({ x, y, z, block: Math.max(0, Math.min(255, block)), color: color & 0xffffff });
+    }
+
+    const micro = Array.isArray(microInput)
+      ? microInput.slice(0, MAX_STORED_MICRO_EDITS)
+      : [];
+    for (const packed of micro) {
+      if (!Array.isArray(packed) || packed.length < 4) continue;
+      const mx = finiteInteger(packed[0]);
+      const my = finiteInteger(packed[1]);
+      const mz = finiteInteger(packed[2]);
+      const color = finiteInteger(packed[3]);
+      if (mx === null || my === null || mz === null || color === null) continue;
+      if (
+        mx < 0 || mx >= TORUS_SIZE_X * MICRO_DIVISIONS
+        || my < 0 || my >= CHUNK_SIZE_Y * MICRO_DIVISIONS
+        || mz < 0 || mz >= TORUS_SIZE_Z * MICRO_DIVISIONS
+      ) continue;
+      this.microEdits.set(microKey(mx, my, mz), {
+        mx,
+        my,
+        mz,
+        color: color & 0xffffff,
+        part: typeof packed[4] === 'string' ? packed[4].slice(0, 64) : null,
+      });
+    }
+  }
+
+  private loadLocalState() {
+    if (!this.storage || !this.worldId) return;
+    try {
+      const currentRaw = this.storage.getItem(this.storageKey);
+      if (currentRaw) {
+        const payload = JSON.parse(currentRaw);
+        if (payload?.version !== STORAGE_SCHEMA_VERSION || payload?.worldId !== this.worldId) return;
+        if (!this.remote) this.loadPackedEdits(payload.standard, payload.micro);
+        this.loadPendingBatches(payload.pendingBatches);
+        this.replayPendingBatches();
+        return;
       }
 
-      const micro = Array.isArray(payload.micro)
-        ? payload.micro.slice(0, MAX_STORED_MICRO_EDITS)
-        : [];
-      for (const packed of micro) {
-        if (!Array.isArray(packed) || packed.length < 4) continue;
-        const mx = finiteInteger(packed[0]);
-        const my = finiteInteger(packed[1]);
-        const mz = finiteInteger(packed[2]);
-        const color = finiteInteger(packed[3]);
-        if (mx === null || my === null || mz === null || color === null) continue;
-        if (
-          mx < 0 || mx >= TORUS_SIZE_X * MICRO_DIVISIONS
-          || my < 0 || my >= CHUNK_SIZE_Y * MICRO_DIVISIONS
-          || mz < 0 || mz >= TORUS_SIZE_Z * MICRO_DIVISIONS
-        ) continue;
-        this.microEdits.set(microKey(mx, my, mz), {
-          mx,
-          my,
-          mz,
-          color: color & 0xffffff,
-          part: typeof packed[4] === 'string' ? packed[4] : null,
-        });
-      }
-
-      // A solid standard edit is authoritative over any stale micro entries in
-      // the same 1 m cell, matching World.setBlock's standard/micro exclusion.
-      for (const edit of this.standardEdits.values()) {
-        if (edit.block !== 0) this.removeMicroStandardCell(edit.x, edit.y, edit.z, false);
-      }
+      const legacyRaw = this.storage.getItem(this.legacyStorageKey);
+      if (!legacyRaw) return;
+      const legacy = JSON.parse(legacyRaw);
+      if (legacy?.version !== 1 || legacy?.worldId !== this.worldId) return;
+      this.loadPackedEdits(legacy.standard, legacy.micro);
+      if (this.remote) this.queueLegacyOverlay(legacy.standard, legacy.micro);
     } catch (error) {
       console.warn('Space ignored an invalid persisted world-edit payload.', error);
-      this.standardEdits.clear();
-      this.standardEditsByChunk.clear();
-      this.microEdits.clear();
+      if (!this.remote) {
+        this.standardEdits.clear();
+        this.standardEditsByChunk.clear();
+        this.microEdits.clear();
+      }
+      this.pendingBatches.length = 0;
+    }
+  }
+
+  private loadPendingBatches(input: unknown) {
+    if (!Array.isArray(input)) return;
+    for (const item of input) {
+      if (
+        !item
+        || typeof item.batchId !== 'string'
+        || !Array.isArray(item.mutations)
+        || item.mutations.length < 1
+        || item.mutations.length > MAX_MUTATIONS_PER_BATCH
+      ) continue;
+      const mutations = item.mutations
+        .map((mutation: any) => this.sanitizeMutation(mutation))
+        .filter(Boolean) as TerrainMutation[];
+      if (mutations.length > 0) {
+        this.pendingBatches.push({ batchId: item.batchId, mutations });
+        this.sealedBatchIds.add(item.batchId);
+      }
+    }
+  }
+
+  private sanitizeMutation(mutation: any): TerrainMutation | null {
+    if (mutation?.kind === 'set_standard') {
+      const edit = this.normalizeStandardEdit(
+        mutation.x, mutation.y, mutation.z, mutation.block, mutation.color
+      );
+      return edit ? { kind: 'set_standard', ...edit } : null;
+    }
+    if (mutation?.kind === 'set_micro') {
+      const edit = this.normalizeMicroEdit(
+        mutation.mx, mutation.my, mutation.mz, mutation.color, mutation.part
+      );
+      return edit ? {
+        kind: 'set_micro',
+        mx: edit.mx,
+        my: edit.my,
+        mz: edit.mz,
+        color: edit.color,
+        ...(edit.part ? { part: edit.part } : {}),
+      } : null;
+    }
+    if (mutation?.kind === 'remove_micro') {
+      if (![mutation.mx, mutation.my, mutation.mz].every(value => Number.isFinite(Number(value)))) return null;
+      const my = Math.floor(Number(mutation.my));
+      if (my < 0 || my >= CHUNK_SIZE_Y * MICRO_DIVISIONS) return null;
+      return {
+        kind: 'remove_micro',
+        mx: Math.floor(wrapMicroX(Number(mutation.mx))),
+        my,
+        mz: Math.floor(wrapMicroZ(Number(mutation.mz))),
+      };
+    }
+    if (mutation?.kind === 'clear_micro_cell') {
+      if (![mutation.x, mutation.y, mutation.z].every(value => Number.isFinite(Number(value)))) return null;
+      const y = Math.floor(Number(mutation.y));
+      if (y < 0 || y >= CHUNK_SIZE_Y) return null;
+      return {
+        kind: 'clear_micro_cell',
+        x: Math.floor(wrapX(Number(mutation.x))),
+        y,
+        z: Math.floor(wrapZ(Number(mutation.z))),
+      };
+    }
+    return null;
+  }
+
+  private replayPendingBatches() {
+    for (const batch of this.pendingBatches) {
+      for (const mutation of batch.mutations) this.applyMutationLocally(mutation);
+    }
+  }
+
+  private applyMutationLocally(mutation: TerrainMutation) {
+    if (mutation.kind === 'set_standard') {
+      const edit = this.normalizeStandardEdit(
+        mutation.x, mutation.y, mutation.z, mutation.block, mutation.color
+      );
+      if (!edit) return;
+      this.addStandardEdit(edit);
+      if (edit.block !== 0) this.removeMicroStandardCellLocal(edit.x, edit.y, edit.z);
+      return;
+    }
+    if (mutation.kind === 'set_micro') {
+      const edit = this.normalizeMicroEdit(
+        mutation.mx, mutation.my, mutation.mz, mutation.color, mutation.part
+      );
+      if (edit) this.microEdits.set(microKey(edit.mx, edit.my, edit.mz), edit);
+      return;
+    }
+    if (mutation.kind === 'remove_micro') {
+      this.microEdits.delete(microKey(
+        Math.floor(wrapMicroX(mutation.mx)),
+        Math.floor(mutation.my),
+        Math.floor(wrapMicroZ(mutation.mz))
+      ));
+      return;
+    }
+    this.removeMicroStandardCellLocal(
+      Math.floor(wrapX(mutation.x)),
+      Math.floor(mutation.y),
+      Math.floor(wrapZ(mutation.z))
+    );
+  }
+
+  private queueLegacyOverlay(standardInput: unknown, microInput: unknown) {
+    const mutations: TerrainMutation[] = [];
+    for (const packed of Array.isArray(standardInput) ? standardInput : []) {
+      if (!Array.isArray(packed) || packed.length < 5) continue;
+      const edit = this.normalizeStandardEdit(
+        Number(packed[0]), Number(packed[1]), Number(packed[2]), Number(packed[3]), Number(packed[4])
+      );
+      if (edit) mutations.push({ kind: 'set_standard', ...edit });
+    }
+    for (const packed of Array.isArray(microInput) ? microInput : []) {
+      if (!Array.isArray(packed) || packed.length < 4) continue;
+      const edit = this.normalizeMicroEdit(
+        Number(packed[0]), Number(packed[1]), Number(packed[2]), Number(packed[3]), packed[4]
+      );
+      if (!edit) continue;
+      mutations.push({
+        kind: 'set_micro',
+        mx: edit.mx,
+        my: edit.my,
+        mz: edit.mz,
+        color: edit.color,
+        ...(edit.part ? { part: edit.part } : {}),
+      });
+    }
+    for (let start = 0; start < mutations.length; start += MAX_MUTATIONS_PER_BATCH) {
+      this.pendingBatches.push({
+        batchId: createBatchId(),
+        mutations: mutations.slice(start, start + MAX_MUTATIONS_PER_BATCH),
+      });
+      this.sealedBatchIds.add(this.pendingBatches[this.pendingBatches.length - 1].batchId);
     }
   }
 
