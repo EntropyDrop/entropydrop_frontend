@@ -211,7 +211,7 @@ class Game {
 
     // 1. Update Player & Controls
     this.controller.update(dt);
-    if (now - this.lastPlayerPositionSyncAt >= 2000) {
+    if (now - this.lastPlayerPositionSyncAt >= 1000) {
       this.lastPlayerPositionSyncAt = now;
       this.queuePlayerPositionSave();
     }
