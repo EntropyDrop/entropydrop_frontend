@@ -1603,34 +1603,67 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
           lastSeen: now,
           skinUrl: p.minecraft_skin_url,
           skinModel: p.minecraft_skin_model || 'strong',
-          speed: 0
+          speed: 0,
+          loadingSkin: false
         };
 
         this.remotePlayers.set(id, record);
         this.remotePlayersGroup.add(group);
+      } else {
+        record.targetPosition.set(p.x, p.y, p.z);
+        record.targetYaw = p.yaw || 0;
+        record.lastSeen = now;
+      }
 
+      if (!record.character && !record.loadingSkin) {
+        record.loadingSkin = true;
         void loadCuteCharacter(record.skinUrl, {
           model: record.skinModel,
           height: 1.8,
           showOverlay: true,
           castShadow: true
         }).then(character => {
+          record.loadingSkin = false;
           if (!this.remotePlayers?.has(id)) {
             character.dispose();
             return;
           }
           record.character = character;
-          group.add(character.object3d);
+          record.group.add(character.object3d);
           hookSceneMaterials(character.object3d);
           disposeRemotePlayerFallback(record.fallback);
           record.fallback = null;
         }).catch(err => {
+          record.loadingSkin = false;
           console.warn('Failed to load remote player skin:', err);
         });
-      } else {
-        record.targetPosition.set(p.x, p.y, p.z);
-        record.targetYaw = p.yaw || 0;
-        record.lastSeen = now;
+      } else if (p.minecraft_skin_url && record.skinUrl !== p.minecraft_skin_url && !record.loadingSkin) {
+        record.loadingSkin = true;
+        record.skinUrl = p.minecraft_skin_url;
+        record.skinModel = p.minecraft_skin_model || 'strong';
+        void loadCuteCharacter(record.skinUrl, {
+          model: record.skinModel,
+          height: 1.8,
+          showOverlay: true,
+          castShadow: true
+        }).then(character => {
+          record.loadingSkin = false;
+          if (!this.remotePlayers?.has(id)) {
+            character.dispose();
+            return;
+          }
+          if (record.character) {
+            record.character.dispose();
+          }
+          record.character = character;
+          record.group.add(character.object3d);
+          hookSceneMaterials(character.object3d);
+          disposeRemotePlayerFallback(record.fallback);
+          record.fallback = null;
+        }).catch(err => {
+          record.loadingSkin = false;
+          console.warn('Failed to reload remote player skin:', err);
+        });
       }
 
       // Smoothly interpolate position with toroidal wrap

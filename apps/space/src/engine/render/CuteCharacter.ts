@@ -724,24 +724,124 @@ export class CuteCharacter {
   }
 }
 
-export async function loadCuteCharacter(url: string, options: CuteCharacterOptions = {}) {
-  const texture = await new THREE.TextureLoader().loadAsync(url);
-  const image = texture.image as CanvasImageSource & { width: number; height: number };
-  if (!image?.width || !image?.height) {
-    texture.dispose();
-    throw new Error('Loaded skin has no drawable image data');
+function createDefaultSteveSkinCanvas(): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.fillStyle = '#2c3e50';
+    ctx.fillRect(0, 0, 64, 64);
+    // Head / Face
+    ctx.fillStyle = '#f5cd79';
+    ctx.fillRect(0, 8, 32, 8);
+    ctx.fillRect(8, 0, 8, 8);
+    // Hair
+    ctx.fillStyle = '#4b2c11';
+    ctx.fillRect(8, 0, 8, 3);
+    ctx.fillRect(0, 8, 8, 2);
+    ctx.fillRect(24, 8, 8, 2);
+    // Eyes
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(10, 12, 2, 1);
+    ctx.fillRect(14, 12, 2, 1);
+    ctx.fillStyle = '#2980b9';
+    ctx.fillRect(11, 12, 1, 1);
+    ctx.fillRect(14, 12, 1, 1);
+    // Torso / Shirt
+    ctx.fillStyle = '#00cec9';
+    ctx.fillRect(16, 20, 24, 12);
+    ctx.fillRect(20, 16, 8, 4);
+    // Arms
+    ctx.fillStyle = '#f5cd79';
+    ctx.fillRect(40, 20, 16, 12);
+    ctx.fillRect(32, 52, 16, 12);
+    // Pants / Legs
+    ctx.fillStyle = '#3867d6';
+    ctx.fillRect(0, 20, 16, 12);
+    ctx.fillRect(16, 52, 16, 12);
   }
+  return canvas;
+}
 
+export async function loadCuteCharacter(url: string, options: CuteCharacterOptions = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = 64;
   canvas.height = 64;
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) {
-    texture.dispose();
     throw new Error('Unable to create a canvas context for the player skin');
   }
   context.imageSmoothingEnabled = false;
-  context.drawImage(image, 0, 0, 64, 64);
+
+  let loaded = false;
+  let objectUrlToRevoke: string | null = null;
+
+  if (url && typeof url === 'string') {
+    try {
+      let fetchUrl = url.trim();
+      if (typeof window !== 'undefined' && fetchUrl.startsWith('/')) {
+        fetchUrl = `${window.location.origin}${fetchUrl}`;
+      }
+
+      if (fetchUrl.startsWith('blob:') || fetchUrl.startsWith('data:')) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error('Failed to load blob image'));
+          img.src = fetchUrl;
+        });
+        context.drawImage(img, 0, 0, 64, 64);
+        loaded = true;
+      } else {
+        // Fetch via fetch with CORS mode to completely avoid canvas taint
+        try {
+          const response = await fetch(fetchUrl, { mode: 'cors', cache: 'force-cache' });
+          if (response.ok) {
+            const blob = await response.blob();
+            objectUrlToRevoke = URL.createObjectURL(blob);
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => resolve();
+              img.onerror = () => reject(new Error('Failed to decode skin image'));
+              img.src = objectUrlToRevoke!;
+            });
+            context.drawImage(img, 0, 0, 64, 64);
+            loaded = true;
+          }
+        } catch {
+          // Fallback to Image loading with crossOrigin
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('Failed to load skin image'));
+            img.src = fetchUrl;
+          });
+          context.drawImage(img, 0, 0, 64, 64);
+          loaded = true;
+        }
+      }
+    } catch (error) {
+      console.warn(`Could not load skin "${url}", using default skin fallback.`, error);
+    } finally {
+      if (objectUrlToRevoke) {
+        URL.revokeObjectURL(objectUrlToRevoke);
+      }
+    }
+  }
+
+  if (!loaded) {
+    const fallbackCanvas = createDefaultSteveSkinCanvas();
+    context.drawImage(fallbackCanvas, 0, 0);
+  }
+
   const imageData = context.getImageData(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
   return new CuteCharacter(texture, imageData, options);
 }
