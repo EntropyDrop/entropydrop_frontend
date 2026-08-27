@@ -993,11 +993,11 @@ canvas {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-subtle);
-  padding: 8px 10px;
+  padding: 6px 10px;
   box-shadow: var(--card-shadow);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   box-sizing: border-box;
   user-select: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -1015,9 +1015,17 @@ canvas {
   text-shadow: 1px 1px 0px #000;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
   letter-spacing: 0.5px;
+}
+
+.nav-badge-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--accent-active);
+  box-shadow: 0 0 6px var(--accent-active);
+  flex-shrink: 0;
 }
 
 .nav-coord-inputs {
@@ -1031,7 +1039,7 @@ canvas {
   align-items: center;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
-  padding: 2px 4px;
+  padding: 1px 4px;
   gap: 3px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -1057,9 +1065,9 @@ canvas {
   font-size: 10px;
   font-family: 'JetBrains Mono', monospace;
   outline: none;
-  padding: 1px 0;
+  padding: 2px 0;
   min-width: 0;
-  text-align: center;
+  text-align: right;
 }
 
 .nav-number-input::placeholder {
@@ -1068,54 +1076,62 @@ canvas {
 }
 
 .nav-action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 5px 0;
+  width: 96px;
+  height: 20px;
+  padding: 0;
+  line-height: 18px;
+  border-radius: 0;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  color: #ffffff;
-  border: 2px solid #000000;
-  box-shadow: 2px 2px 0px #000000;
-  text-shadow: 1px 1px 0px #000000;
+  text-shadow: 1px 1px 0px #000;
   cursor: pointer;
   box-sizing: border-box;
   text-align: center;
-  transition: all 0.1s ease;
-  margin: 2px auto 0 auto;
+  align-self: center;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
 }
 
 .nav-action-btn.start-btn {
   background: var(--accent-base);
+  border: 1px solid var(--accent-hover);
+  color: #ffffff;
 }
 
 .nav-action-btn.start-btn:hover {
   background: var(--accent-hover);
-  transform: translate(-1px, -1px);
-  box-shadow: 3px 3px 0px #000000;
+  border-color: var(--accent-active);
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 
 .nav-action-btn.start-btn:active {
-  transform: translate(1px, 1px);
-  box-shadow: 1px 1px 0px #000000;
+  transform: translateY(1px);
 }
 
 .nav-action-btn.stop-btn {
   background: var(--color-danger);
+  border: 1px solid var(--color-danger-hover);
+  color: #ffffff;
+  animation: nav-stop-pulse 1.6s infinite alternate ease-in-out;
 }
 
 .nav-action-btn.stop-btn:hover {
   background: var(--color-danger-hover);
-  transform: translate(-1px, -1px);
-  box-shadow: 3px 3px 0px #000000;
+  box-shadow: 0 0 10px rgba(220, 38, 38, 0.5);
 }
 
-.nav-action-btn.stop-btn:active {
-  transform: translate(1px, 1px);
-  box-shadow: 1px 1px 0px #000000;
+@keyframes nav-stop-pulse {
+  0% {
+    box-shadow: 0 0 0 rgba(220, 38, 38, 0);
+  }
+  100% {
+    box-shadow: 0 0 8px rgba(220, 38, 38, 0.6);
+  }
 }
 
 @media (max-width: 900px) {
@@ -1123,7 +1139,7 @@ canvas {
     left: 10px;
     bottom: 10px;
     width: 160px;
-    padding: 6px 8px;
+    padding: 5px 8px;
   }
 }
 

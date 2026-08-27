@@ -51,7 +51,7 @@ export class NavigationSystem {
   private render() {
     this.container.innerHTML = `
       <div class="nav-badge">
-        <span class="hud-badge-dot"></span>
+        <span class="nav-badge-dot"></span>
         <span>AUTO PILOT</span>
       </div>
       <div class="nav-coord-inputs">
