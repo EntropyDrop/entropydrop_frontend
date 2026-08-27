@@ -9,6 +9,7 @@ import { SoundManager } from './engine/audio/SoundManager.ts';
 import { ParticleSystem } from './engine/render/ParticleSystem.ts';
 import { UIManager } from './ui/UIManager.ts';
 import { Minimap } from './ui/Minimap.ts';
+import { NavigationSystem } from './ui/NavigationSystem.ts';
 import {
   encodePlayerPosition,
   enterSpace,
@@ -31,6 +32,7 @@ class Game {
   playerPhysics: any;
   uiManager: UIManager;
   minimap: Minimap;
+  navigationSystem: NavigationSystem;
   controller: PlayerController;
   clock: THREE.Clock;
   frameCount: number;
@@ -105,6 +107,12 @@ class Game {
     this.uiManager.setWorld(this.world);
     this.uiManager.setContraptions(this.contraptionManager);
     this.uiManager.setSceneRenderer(this.sceneRenderer);
+    this.navigationSystem = new NavigationSystem(
+      document.body,
+      this.playerPhysics,
+      this.controller,
+      this.uiManager
+    );
 
     // 4. Clock & FPS tracking
     this.clock = new THREE.Clock();
@@ -299,6 +307,9 @@ class Game {
       this.controller.isDriving,
       this.controller.drivenContraption
     );
+
+    // 7c. Autopilot Navigation System (bottom-left)
+    this.navigationSystem.update(dt);
 
     // 8. Render 3D Scene
     this.sceneRenderer.render();

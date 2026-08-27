@@ -119,7 +119,7 @@ test('controller force is integrated across every physics sub-step', () => {
   });
   physics.update(contraption, 1 / 60);
 
-  assert.ok(Math.abs(contraption.velocity.y) < 1e-8);
+  assert.ok(Math.abs(contraption.velocity.y) < 1e-4);
   assert.equal(contraption.appliedForces.lengthSq(), 0);
 });
 

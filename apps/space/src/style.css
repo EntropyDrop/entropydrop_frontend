@@ -980,6 +980,329 @@ canvas {
 }
 
 /* =========================================================================
+   NAVIGATION AUTOPILOT SYSTEM (Bottom-left)
+   ========================================================================= */
+
+.nav-system-container {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  width: 252px;
+  z-index: 60;
+  background: var(--bg-surface-glass, rgba(14, 18, 26, 0.88));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 12px rgba(0, 240, 255, 0.08);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  color: var(--text-primary, #ffffff);
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.nav-system-container.navigating {
+  border-color: rgba(0, 240, 255, 0.55);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55), 0 0 20px rgba(0, 240, 255, 0.25);
+}
+
+.nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.nav-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-primary, #ffffff);
+}
+
+.nav-status-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.nav-status-badge.ready {
+  background: rgba(0, 240, 255, 0.15);
+  color: #00f0ff;
+  border: 1px solid rgba(0, 240, 255, 0.3);
+}
+
+.nav-status-badge.active {
+  background: rgba(255, 184, 0, 0.2);
+  color: #ffb800;
+  border: 1px solid rgba(255, 184, 0, 0.45);
+  animation: navPulseGlow 1.5s infinite alternate;
+}
+
+@keyframes navPulseGlow {
+  0% { opacity: 0.8; }
+  100% { opacity: 1; box-shadow: 0 0 8px rgba(255, 184, 0, 0.6); }
+}
+
+.nav-toggle-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.nav-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.nav-system-container.collapsed #nav-body {
+  display: none;
+}
+
+.nav-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Coordinates Input Form */
+.nav-input-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nav-coord-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.nav-input-field {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  padding: 2px 5px;
+  transition: border-color 0.15s;
+}
+
+.nav-input-field:focus-within {
+  border-color: #00f0ff;
+  box-shadow: 0 0 6px rgba(0, 240, 255, 0.25);
+}
+
+.nav-coord-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #00f0ff;
+  margin-right: 4px;
+  user-select: none;
+}
+
+.nav-number-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.nav-number-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 10px;
+}
+
+/* Presets */
+.nav-presets-row {
+  display: flex;
+  gap: 5px;
+}
+
+.nav-preset-chip {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 10px;
+  font-family: inherit;
+  padding: 4px 2px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.nav-preset-chip:hover {
+  background: rgba(0, 240, 255, 0.12);
+  border-color: rgba(0, 240, 255, 0.3);
+  color: #00f0ff;
+}
+
+.nav-preset-chip.fill-curr:hover {
+  background: rgba(255, 184, 0, 0.12);
+  border-color: rgba(255, 184, 0, 0.3);
+  color: #ffb800;
+}
+
+/* Action Buttons */
+.nav-action-btn {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 5px;
+  border: none;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: inherit;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.nav-action-btn.start-btn {
+  background: linear-gradient(135deg, #00f0ff, #0077fe);
+  color: #05101a;
+  box-shadow: 0 4px 12px rgba(0, 240, 255, 0.25);
+}
+
+.nav-action-btn.start-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 240, 255, 0.4);
+}
+
+.nav-action-btn.stop-btn {
+  background: linear-gradient(135deg, #ff4b2b, #ff416c);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(255, 75, 43, 0.3);
+}
+
+.nav-action-btn.stop-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(255, 75, 43, 0.45);
+}
+
+/* Active Nav Info HUD */
+.nav-active-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nav-dest-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 5px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 240, 255, 0.15);
+}
+
+.nav-dest-tag {
+  font-size: 9px;
+  font-weight: 700;
+  color: #00f0ff;
+  background: rgba(0, 240, 255, 0.12);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.nav-dest-coords {
+  font-size: 10px;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.nav-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 5px;
+}
+
+.nav-metric-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px 3px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.nav-metric-label {
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
+  letter-spacing: 0.05em;
+}
+
+.nav-metric-val {
+  font-size: 11px;
+  font-weight: 700;
+  color: #00f0ff;
+  margin-top: 1px;
+}
+
+.nav-hint-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 3px 0;
+}
+
+.nav-hint-pulse {
+  color: #ffb800;
+  font-size: 8px;
+  animation: navPulseGlow 1s infinite alternate;
+}
+
+.nav-hint-text {
+  font-size: 9px;
+  color: #e2e8f0;
+}
+
+@media (max-width: 900px) {
+  .nav-system-container {
+    left: 10px;
+    bottom: 10px;
+    width: 200px;
+  }
+}
+
+/* =========================================================================
    MODAL SYSTEM (Backpack, Blueprints, API Docs)
    ========================================================================= */
 
