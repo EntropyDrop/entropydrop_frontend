@@ -36,6 +36,7 @@ class Game {
   frameCount: number;
   lastFpsTime: number;
   currentFps: number;
+  latencyMonitor: ReadySpaceSession['latency_monitor'];
   playerPositionRemote: PlayerPositionRemote;
   lastSavedPlayerPosition: string;
   pendingPlayerPosition: PlayerPositionPayload | null;
@@ -110,6 +111,7 @@ class Game {
     this.frameCount = 0;
     this.lastFpsTime = performance.now();
     this.currentFps = 60;
+    this.latencyMonitor = session.latency_monitor;
     this.playerPositionRemote = session.player_position_remote;
     this.pendingPlayerPosition = null;
     this.playerPositionSaveInFlight = false;
@@ -287,7 +289,8 @@ class Game {
       this.currentFps,
       playerPos,
       this.controller.currentRaycast,
-      this.controller.hoveredContraption
+      this.controller.hoveredContraption,
+      this.latencyMonitor?.getPing() ?? null
     );
 
     // 7b. Minimap (bottom-right)

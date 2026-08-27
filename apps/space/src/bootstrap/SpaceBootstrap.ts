@@ -5,6 +5,13 @@ import type {
 } from '../engine/voxel/WorldEditPersistence.ts';
 import { TORUS_SIZE_X, TORUS_SIZE_Z } from '../engine/torus/TorusWorld.ts';
 
+import {
+  LatencyMonitor,
+  type LatencyMonitorOptions,
+} from './LatencyMonitor.ts';
+
+export { LatencyMonitor, type LatencyMonitorOptions };
+
 export type MinecraftSkinModel = 'strong' | 'slim';
 
 export interface SpaceBootstrapPayload {
@@ -44,9 +51,11 @@ export interface PlayerPositionRemote {
 }
 
 export interface ReadySpaceSession extends SpaceBootstrapPayload {
+  api_origin: string;
   skin_object_url: string;
   terrain_edit_remote: WorldEditRemote;
   player_position_remote: PlayerPositionRemote;
+  latency_monitor: LatencyMonitor;
 }
 
 export type SpaceEntryErrorCode =
@@ -193,7 +202,8 @@ export async function loadTerrainEditRemote(
   apiOrigin: string,
   token: string,
   worldId: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  latencyMonitor?: LatencyMonitor
 ): Promise<WorldEditRemote> {
   const baseUrl = `${apiOrigin}/space/api/v2/worlds/${encodeURIComponent(worldId)}/terrain-edits`;
   const retryUrl = typeof window === 'undefined' ? '/' : window.location.href;
@@ -208,6 +218,7 @@ export async function loadTerrainEditRemote(
     );
     url.searchParams.set('limit', '256');
     if (cursor) url.searchParams.set('cursor', cursor);
+    const start = performance.now();
     const response = await fetchImpl(url.toString(), {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -215,6 +226,9 @@ export async function loadTerrainEditRemote(
       },
       cache: 'no-store'
     });
+    if (response.ok) {
+      latencyMonitor?.recordPing(performance.now() - start);
+    }
     const body = await response.json().catch(() => null);
     if (!response.ok) {
       throw new SpaceEntryError(
@@ -252,6 +266,7 @@ export async function loadTerrainEditRemote(
       if (mutations.length < 1 || mutations.length > 256) {
         throw new Error('Space terrain mutation batches must contain 1-256 operations.');
       }
+      const start = performance.now();
       const response = await fetchImpl(`${baseUrl}/batches`, {
         method: 'POST',
         headers: {
@@ -261,6 +276,9 @@ export async function loadTerrainEditRemote(
         },
         body: JSON.stringify({ batch_id: batchId, mutations })
       });
+      if (response.ok) {
+        latencyMonitor?.recordPing(performance.now() - start);
+      }
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         const code = body?.detail?.code || `HTTP_${response.status}`;
@@ -275,11 +293,13 @@ export function createPlayerPositionRemote(
   apiOrigin: string,
   token: string,
   worldId: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  latencyMonitor?: LatencyMonitor
 ): PlayerPositionRemote {
   const url = `${apiOrigin}/space/api/v2/worlds/${encodeURIComponent(worldId)}/players/me/position`;
   return {
     async save(position: PlayerPositionPayload, keepalive = false) {
+      const start = performance.now();
       const response = await fetchImpl(url, {
         method: 'PUT',
         headers: {
@@ -290,6 +310,9 @@ export function createPlayerPositionRemote(
         body: JSON.stringify(position),
         keepalive
       });
+      if (response.ok) {
+        latencyMonitor?.recordPing(performance.now() - start);
+      }
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         const code = body?.detail?.code || `HTTP_${response.status}`;
@@ -311,6 +334,9 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
   }
 
   const apiOrigin = resolveApiOrigin(import.meta.env.VITE_API_BASE_URL, window.location.origin);
+  const latencyMonitor = new LatencyMonitor({ apiOrigin });
+  latencyMonitor.start();
+
   const response = await fetch(`${apiOrigin}/space/api/v2/bootstrap`, {
     method: 'POST',
     headers: {
@@ -333,13 +359,15 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
 
   const [skinObjectUrl, terrainEditRemote] = await Promise.all([
     downloadSkinPng(payload.player.minecraft_skin_url),
-    loadTerrainEditRemote(apiOrigin, token, payload.world.id)
+    loadTerrainEditRemote(apiOrigin, token, payload.world.id, fetch, latencyMonitor)
   ]);
   return {
     ...payload,
+    api_origin: apiOrigin,
     skin_object_url: skinObjectUrl,
     terrain_edit_remote: terrainEditRemote,
-    player_position_remote: createPlayerPositionRemote(apiOrigin, token, payload.world.id)
+    player_position_remote: createPlayerPositionRemote(apiOrigin, token, payload.world.id, fetch, latencyMonitor),
+    latency_monitor: latencyMonitor
   };
 }
 

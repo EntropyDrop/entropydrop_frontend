@@ -33,6 +33,7 @@ export class UIManager {
 
   // DOM Elements
   fpsVal: HTMLElement | null = null;
+  pingVal: HTMLElement | null = null;
   posVal: HTMLElement | null = null;
   targetVal: HTMLElement | null = null;
   hotbarContainer: HTMLElement | null = null;
@@ -177,6 +178,7 @@ export class UIManager {
 
     // DOM Elements
     this.fpsVal = document.getElementById('fps-val');
+    this.pingVal = document.getElementById('ping-val');
     this.posVal = document.getElementById('pos-val');
     this.targetVal = document.getElementById('target-val');
     this.hotbarContainer = document.getElementById('hotbar');
@@ -2229,8 +2231,19 @@ export class UIManager {
     }, 2800);
   }
 
-  updateHUD(fps, playerPos, raycast, hoveredContraption) {
+  updateHUD(fps, playerPos, raycast, hoveredContraption, pingMs: number | null = null) {
     if (this.fpsVal) this.fpsVal.textContent = `${Math.round(fps)} FPS`;
+    if (this.pingVal) {
+      if (typeof pingMs === 'number' && Number.isFinite(pingMs) && pingMs >= 0) {
+        const rounded = Math.max(1, Math.round(pingMs));
+        this.pingVal.textContent = `${rounded} ms`;
+        const quality = rounded < 80 ? 'ping-good' : (rounded < 180 ? 'ping-medium' : 'ping-poor');
+        this.pingVal.className = `hud-ping ${quality}`;
+      } else {
+        this.pingVal.textContent = '-- ms';
+        this.pingVal.className = 'hud-ping ping-unknown';
+      }
+    }
     if (this.posVal) {
       this.posVal.textContent = `X: ${playerPos.x.toFixed(1)} | Y: ${playerPos.y.toFixed(1)} | Z: ${playerPos.z.toFixed(1)}`;
     }

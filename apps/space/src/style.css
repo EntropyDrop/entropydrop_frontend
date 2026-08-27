@@ -261,9 +261,45 @@ canvas {
   animation: pixel-pulse 1.8s infinite ease-in-out;
 }
 
+.hud-metrics-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.hud-metric-sep {
+  color: var(--text-dim);
+  font-size: 10px;
+  user-select: none;
+}
+
 #fps-val {
   color: var(--accent-active);
   font-weight: 700;
+}
+
+.hud-ping {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.2s ease;
+}
+
+.hud-ping.ping-good {
+  color: var(--accent-active);
+}
+
+.hud-ping.ping-medium {
+  color: var(--color-warning-hover);
+}
+
+.hud-ping.ping-poor {
+  color: var(--color-danger-hover);
+}
+
+.hud-ping.ping-unknown {
+  color: var(--text-dim);
 }
 
 #pos-val {
