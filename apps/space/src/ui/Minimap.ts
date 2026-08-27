@@ -1,8 +1,9 @@
 import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../engine/voxel/Chunk.ts';
 import { MICRO_DIVISIONS } from '../engine/voxel/MicroVoxelLayer.ts';
+import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ, wrapChunkX, wrapChunkZ } from '../engine/torus/TorusWorld.ts';
 
 /**
- * Bottom-right minimap rendered on a top-down 2D canvas.
+ * Bottom-right minimap rendered on a top-down 2D canvas with seamless Torus wrap.
  * - Terrain: scans the highest standard or microblock in each loaded chunk column
  *   and draws its actual color; unloaded regions appear dark as fog of war.
  * - Entities: contraptions are dots, with the driven vehicle highlighted.
@@ -25,8 +26,8 @@ export class Minimap {
   terrainCanvas: HTMLCanvasElement;
   terrainCtx: CanvasRenderingContext2D;
   size = Minimap.SIZE;
-  gridMinX = 0;
-  gridMinZ = 0;
+  gridCenterX = 0;
+  gridCenterZ = 0;
   lastVersion = -1;
   lastGridX = 0;
   lastGridZ = 0;
@@ -54,10 +55,13 @@ export class Minimap {
     this.imageData = this.terrainCtx.createImageData(Minimap.CELLS, Minimap.CELLS);
 
     this.applySize();
-    window.addEventListener('resize', () => this.applySize());
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', () => this.applySize());
+    }
   }
 
   applySize() {
+    if (typeof window === 'undefined') return;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.size = Math.max(96, Math.min(Minimap.SIZE, this.container.clientWidth - 8 || Minimap.SIZE));
     const size = this.size;
@@ -83,7 +87,7 @@ export class Minimap {
     // 150 ms so scripts that edit every frame cannot force continuous rebuilds.
     const gridX = Math.floor(px);
     const gridZ = Math.floor(pz);
-    const version = this.world.terrainVersion || 0;
+    const version = this.world?.terrainVersion || 0;
     if ((gridX !== this.lastGridX || gridZ !== this.lastGridZ || version !== this.lastVersion || this.lastRecompute === 0) &&
         (now - this.lastRecompute >= 150 || this.lastRecompute === 0)) {
       this.recomputeTerrain(gridX, gridZ);
@@ -101,13 +105,21 @@ export class Minimap {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.terrainCanvas, 0, 0, Minimap.CELLS, Minimap.CELLS, 0, 0, size, size);
 
-    // Entity dots.
+    // Entity dots with toroidal shortest displacement
     const scale = size / Minimap.CELLS;
     const list = this.contraptionManager?.contraptions || [];
     for (const c of list) {
       if (!c || !c.position) continue;
-      const cx = (c.position.x - this.gridMinX) * scale;
-      const cz = (c.position.z - this.gridMinZ) * scale;
+      let dx = wrapX(c.position.x) - wrapX(px);
+      if (dx > TORUS_SIZE_X / 2) dx -= TORUS_SIZE_X;
+      else if (dx < -TORUS_SIZE_X / 2) dx += TORUS_SIZE_X;
+
+      let dz = wrapZ(c.position.z) - wrapZ(pz);
+      if (dz > TORUS_SIZE_Z / 2) dz -= TORUS_SIZE_Z;
+      else if (dz < -TORUS_SIZE_Z / 2) dz += TORUS_SIZE_Z;
+
+      const cx = (dx + Minimap.RANGE) * scale;
+      const cz = (dz + Minimap.RANGE) * scale;
       if (cx < 0 || cx > size || cz < 0 || cz > size) continue;
       const driven = isDriving && drivenContraption === c;
       ctx.beginPath();
@@ -151,57 +163,93 @@ export class Minimap {
     ctx.fillText('N', size / 2, 5);
   }
 
-  /** Rebuild the terrain layer on an offscreen canvas aligned to integer world coordinates. */
+  /** Rebuild the terrain layer on an offscreen canvas with toroidal wrap around integer world coordinates. */
   recomputeTerrain(centerX, centerZ) {
     const C = Minimap.CELLS;
-    const minX = centerX - Minimap.RANGE;
-    const minZ = centerZ - Minimap.RANGE;
-    const maxX = minX + C - 1;
-    const maxZ = minZ + C - 1;
-    this.gridMinX = minX;
-    this.gridMinZ = minZ;
+    const halfRange = Minimap.RANGE;
+    this.gridCenterX = centerX;
+    this.gridCenterZ = centerZ;
 
     this.heights.fill(0);
     this.colors.fill(0);
 
     const world = this.world;
-    // 1) Standard blocks: scan downward and keep the highest non-empty block per column.
-    for (const chunk of world.chunks.values()) {
-      const ox = chunk.cx * CHUNK_SIZE_X;
-      const oz = chunk.cz * CHUNK_SIZE_Z;
-      if (ox + CHUNK_SIZE_X - 1 < minX || ox > maxX || oz + CHUNK_SIZE_Z - 1 < minZ || oz > maxZ) continue;
-      for (let lx = 0; lx < CHUNK_SIZE_X; lx++) {
-        for (let lz = 0; lz < CHUNK_SIZE_Z; lz++) {
-          const wx = ox + lx;
-          const wz = oz + lz;
-          const i = (wz - minZ) * C + (wx - minX);
-          let topY = -1;
-          let color = 0;
-          for (let y = CHUNK_SIZE_Y - 1; y >= 0; y--) {
-            if (chunk.getLocalBlock(lx, y, lz) !== 0) {
-              topY = y;
-              color = chunk.getLocalColor(lx, y, lz);
-              break;
+    if (!world || !world.chunks) return;
+
+    const wrappedCenterX = wrapX(centerX);
+    const wrappedCenterZ = wrapZ(centerZ);
+
+    const centerChunkX = Math.floor(wrappedCenterX / CHUNK_SIZE_X);
+    const centerChunkZ = Math.floor(wrappedCenterZ / CHUNK_SIZE_Z);
+    const chunkRadius = Math.ceil(halfRange / CHUNK_SIZE_X); // 6 chunks covers ±96m
+
+    // 1) Standard blocks: iterate chunks around the player using toroidal wrapping
+    for (let dcx = -chunkRadius; dcx <= chunkRadius; dcx++) {
+      const cx = wrapChunkX(centerChunkX + dcx);
+      for (let dcz = -chunkRadius; dcz <= chunkRadius; dcz++) {
+        const cz = wrapChunkZ(centerChunkZ + dcz);
+        const chunk = world.getChunk ? world.getChunk(cx, cz) : world.chunks.get(`${cx},${cz}`);
+        if (!chunk) continue;
+
+        for (let lx = 0; lx < CHUNK_SIZE_X; lx++) {
+          const cellWx = cx * CHUNK_SIZE_X + lx;
+          let dx = cellWx - wrappedCenterX;
+          if (dx > TORUS_SIZE_X / 2) dx -= TORUS_SIZE_X;
+          else if (dx < -TORUS_SIZE_X / 2) dx += TORUS_SIZE_X;
+
+          const gx = Math.round(dx + halfRange);
+          if (gx < 0 || gx >= C) continue;
+
+          for (let lz = 0; lz < CHUNK_SIZE_Z; lz++) {
+            const cellWz = cz * CHUNK_SIZE_Z + lz;
+            let dz = cellWz - wrappedCenterZ;
+            if (dz > TORUS_SIZE_Z / 2) dz -= TORUS_SIZE_Z;
+            else if (dz < -TORUS_SIZE_Z / 2) dz += TORUS_SIZE_Z;
+
+            const gz = Math.round(dz + halfRange);
+            if (gz < 0 || gz >= C) continue;
+
+            const i = gz * C + gx;
+            let topY = -1;
+            let color = 0;
+            for (let y = CHUNK_SIZE_Y - 1; y >= 0; y--) {
+              if (chunk.getLocalBlock(lx, y, lz) !== 0) {
+                topY = y;
+                color = chunk.getLocalColor(lx, y, lz);
+                break;
+              }
             }
-          }
-          if (topY >= 0) {
-            this.heights[i] = topY + 1; // 0 means no block.
-            this.colors[i] = color;
+            if (topY >= 0) {
+              this.heights[i] = topY + 1; // 0 means no block.
+              this.colors[i] = color;
+            }
           }
         }
       }
     }
 
-    // 2) Microblocks: one pass records the highest microblock in each column.
+    // 2) Microblocks: one pass records the highest microblock in each column using toroidal wrapping
     const micros = world.microVoxels?.cells;
     if (micros && micros.size > 0) {
       for (const [key, color] of micros) {
         const parts = key.split(',');
         if (parts.length !== 3) continue;
-        const wx = Math.floor(Number(parts[0]) / MICRO_DIVISIONS);
-        const wz = Math.floor(Number(parts[2]) / MICRO_DIVISIONS);
-        if (wx < minX || wx > maxX || wz < minZ || wz > maxZ) continue;
-        const i = (wz - minZ) * C + (wx - minX);
+        const cellWx = Math.floor(Number(parts[0]) / MICRO_DIVISIONS);
+        const cellWz = Math.floor(Number(parts[2]) / MICRO_DIVISIONS);
+
+        let dx = wrapX(cellWx) - wrappedCenterX;
+        if (dx > TORUS_SIZE_X / 2) dx -= TORUS_SIZE_X;
+        else if (dx < -TORUS_SIZE_X / 2) dx += TORUS_SIZE_X;
+
+        let dz = wrapZ(cellWz) - wrappedCenterZ;
+        if (dz > TORUS_SIZE_Z / 2) dz -= TORUS_SIZE_Z;
+        else if (dz < -TORUS_SIZE_Z / 2) dz += TORUS_SIZE_Z;
+
+        const gx = Math.round(dx + halfRange);
+        const gz = Math.round(dz + halfRange);
+        if (gx < 0 || gx >= C || gz < 0 || gz >= C) continue;
+
+        const i = gz * C + gx;
         const my = Number(parts[1]) + 1;
         if (my > this.heights[i]) {
           this.heights[i] = my;
@@ -211,7 +259,8 @@ export class Minimap {
     }
 
     // 3) Fill ImageData with height shading.
-    const data = this.imageData!.data;
+    if (!this.imageData) return;
+    const data = this.imageData.data;
     const voidR = Minimap.VOID_COLOR[0], voidG = Minimap.VOID_COLOR[1], voidB = Minimap.VOID_COLOR[2];
     for (let i = 0; i < C * C; i++) {
       const h = this.heights[i];
@@ -228,6 +277,6 @@ export class Minimap {
       data[o + 3] = 255;
     }
 
-    this.terrainCtx.putImageData(this.imageData!, 0, 0);
+    this.terrainCtx.putImageData(this.imageData, 0, 0);
   }
 }

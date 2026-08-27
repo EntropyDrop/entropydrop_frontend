@@ -1,0 +1,141 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { Minimap } from '../src/ui/Minimap.ts';
+import { TORUS_SIZE_X, TORUS_SIZE_Z } from '../src/engine/torus/TorusWorld.ts';
+
+function createMockElement(tag = 'div'): any {
+  const children: any[] = [];
+  const el: any = {
+    tagName: tag.toUpperCase(),
+    style: {},
+    clientWidth: 192,
+    children,
+    childNodes: children,
+    appendChild(child: any) { children.push(child); return child; },
+    querySelector(sel: string) {
+      if (sel === 'canvas') return createMockCanvas();
+      return null;
+    }
+  };
+  return el;
+}
+
+function createMockCanvas() {
+  const el: any = {
+    width: 192,
+    height: 192,
+    style: {},
+    getContext: () => ({
+      createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+      putImageData: () => {},
+      clearRect: () => {},
+      drawImage: () => {},
+      beginPath: () => {},
+      arc: () => {},
+      fill: () => {},
+      stroke: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      closePath: () => {},
+      fillText: () => {},
+      setTransform: () => {},
+    })
+  };
+  return el;
+}
+
+function setupMockDOM() {
+  (globalThis as any).document = {
+    createElement: (tag: string) => {
+      if (tag === 'canvas') return createMockCanvas();
+      return createMockElement(tag);
+    }
+  };
+  (globalThis as any).window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {}
+  };
+  return {
+    cleanup() {
+      (globalThis as any).document = undefined;
+      (globalThis as any).window = undefined;
+    }
+  };
+}
+
+function makeMockChunk(cx: number, cz: number, blockHeight = 10, color = 0x3c8527) {
+  return {
+    cx,
+    cz,
+    getLocalBlock: (lx: number, y: number, lz: number) => (y <= blockHeight ? 1 : 0),
+    getLocalColor: (lx: number, y: number, lz: number) => color
+  };
+}
+
+test('Minimap seamlessly renders across toroidal boundary at (1, 1, 1)', () => {
+  const dom = setupMockDOM();
+  const parent = createMockElement('div');
+
+  const chunks = new Map<string, any>();
+  // Chunk at (0, 0)
+  chunks.set('0,0', makeMockChunk(0, 0, 15, 0x112233));
+  // Chunk wrapped on negative X side: (1023, 0)
+  chunks.set('1023,0', makeMockChunk(1023, 0, 18, 0x445566));
+  // Chunk wrapped on negative Z side: (0, 127)
+  chunks.set('0,127', makeMockChunk(0, 127, 20, 0x778899));
+  // Chunk wrapped on both negative X and Z: (1023, 127)
+  chunks.set('1023,127', makeMockChunk(1023, 127, 22, 0xaabbcc));
+
+  const world = {
+    chunks,
+    getChunk: (cx: number, cz: number) => chunks.get(`${cx},${cz}`) || null,
+    terrainVersion: 1,
+    microVoxels: { cells: new Map() }
+  };
+
+  const minimap = new Minimap(parent, world, null);
+  // Recompute at player position (1, 1)
+  minimap.recomputeTerrain(1, 1);
+
+  // Center pixel is at index gz = 96, gx = 96 (where player is at 1,1)
+  const centerIdx = 96 * Minimap.CELLS + 96;
+  assert.equal(minimap.heights[centerIdx], 16); // 15 + 1
+  assert.equal(minimap.colors[centerIdx], 0x112233);
+
+  // 3 pixels to the left across the wrapped X boundary (x = 16382)
+  // dx = 16382 - 1 = -3, gx = 96 - 3 = 93
+  const leftWrappedIdx = 96 * Minimap.CELLS + 93;
+  assert.equal(minimap.heights[leftWrappedIdx], 19); // 18 + 1
+  assert.equal(minimap.colors[leftWrappedIdx], 0x445566);
+
+  // 3 pixels up across the wrapped Z boundary (z = 2046)
+  // dz = 2046 - 1 = -3, gz = 96 - 3 = 93
+  const topWrappedIdx = 93 * Minimap.CELLS + 96;
+  assert.equal(minimap.heights[topWrappedIdx], 21); // 20 + 1
+  assert.equal(minimap.colors[topWrappedIdx], 0x778899);
+
+  dom.cleanup();
+});
+
+test('Minimap correctly wraps entity positions near toroidal boundaries', () => {
+  const dom = setupMockDOM();
+  const parent = createMockElement('div');
+  const world = { chunks: new Map(), getChunk: () => null, terrainVersion: 1 };
+
+  // Contraption at x = 16380 (4 meters to the left of player at x = 0)
+  const contraption = {
+    position: { x: 16380, y: 20, z: 0 }
+  };
+  const contraptionManager = {
+    contraptions: [contraption]
+  };
+
+  const minimap = new Minimap(parent, world, contraptionManager);
+
+  // When player is at (0, 0), the update call should not throw and correctly process entity
+  assert.doesNotThrow(() => {
+    minimap.update({ x: 0, z: 0 }, 0, false, null);
+  });
+
+  dom.cleanup();
+});

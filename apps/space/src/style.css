@@ -987,17 +987,17 @@ canvas {
   position: fixed;
   left: 20px;
   bottom: 20px;
-  width: 216px;
+  width: 176px;
   z-index: 60;
   background: var(--bg-surface-glass);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-subtle);
-  padding: 10px 14px;
+  padding: 6px 10px;
   box-shadow: var(--card-shadow);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
   box-sizing: border-box;
   user-select: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -1005,24 +1005,24 @@ canvas {
 
 .nav-system-container.navigating {
   border-color: var(--accent-border);
-  box-shadow: 0 0 16px var(--accent-bg-subtle), var(--card-shadow);
+  box-shadow: 0 0 14px var(--accent-bg-subtle), var(--card-shadow);
 }
 
 .nav-badge {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--text-main);
-  text-shadow: 2px 2px 0px #000;
+  text-shadow: 1px 1px 0px #000;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   letter-spacing: 0.5px;
 }
 
 .nav-coord-inputs {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 6px;
+  gap: 4px;
 }
 
 .nav-input-field {
@@ -1030,18 +1030,18 @@ canvas {
   align-items: center;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
-  padding: 2px 6px;
-  gap: 4px;
+  padding: 1px 4px;
+  gap: 3px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .nav-input-field:focus-within {
   border-color: var(--accent-hover);
-  box-shadow: 0 0 8px var(--accent-glow);
+  box-shadow: 0 0 6px var(--accent-glow);
 }
 
 .nav-coord-label {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   color: var(--accent-light);
   font-family: 'JetBrains Mono', monospace;
@@ -1053,25 +1053,27 @@ canvas {
   background: transparent;
   border: none;
   color: var(--text-main);
-  font-size: 11px;
+  font-size: 10px;
   font-family: 'JetBrains Mono', monospace;
   outline: none;
-  padding: 3px 0;
+  padding: 2px 0;
   min-width: 0;
   text-align: right;
 }
 
 .nav-number-input::placeholder {
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .nav-action-btn {
   width: 100%;
-  padding: 6px 0;
+  height: 20px;
+  padding: 0;
+  line-height: 18px;
   border-radius: 0;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-shadow: 1px 1px 0px #000;
@@ -1090,7 +1092,7 @@ canvas {
 .nav-action-btn.start-btn:hover {
   background: var(--accent-hover);
   border-color: var(--accent-active);
-  box-shadow: 0 0 10px var(--accent-glow);
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 
 .nav-action-btn.start-btn:active {
@@ -1106,7 +1108,7 @@ canvas {
 
 .nav-action-btn.stop-btn:hover {
   background: var(--color-danger-hover);
-  box-shadow: 0 0 12px rgba(220, 38, 38, 0.5);
+  box-shadow: 0 0 10px rgba(220, 38, 38, 0.5);
 }
 
 @keyframes nav-stop-pulse {
@@ -1114,7 +1116,7 @@ canvas {
     box-shadow: 0 0 0 rgba(220, 38, 38, 0);
   }
   100% {
-    box-shadow: 0 0 10px rgba(220, 38, 38, 0.6);
+    box-shadow: 0 0 8px rgba(220, 38, 38, 0.6);
   }
 }
 
@@ -1122,8 +1124,8 @@ canvas {
   .nav-system-container {
     left: 10px;
     bottom: 10px;
-    width: 180px;
-    padding: 8px 10px;
+    width: 160px;
+    padding: 5px 8px;
   }
 }
 
