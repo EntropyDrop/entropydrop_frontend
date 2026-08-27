@@ -1691,9 +1691,19 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       record.group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), record.currentYaw);
 
       if (record.character) {
+        const forwardX = -Math.sin(record.currentYaw);
+        const forwardZ = -Math.cos(record.currentYaw);
+        const rightX = Math.cos(record.currentYaw);
+        const rightZ = -Math.sin(record.currentYaw);
+        const vx = dx / Math.max(0.001, dt);
+        const vz = dz / Math.max(0.001, dt);
+        const forwardSpeed = vx * forwardX + vz * forwardZ;
+        const sideSpeed = vx * rightX + vz * rightZ;
+
         record.character.update(dt, {
           speed: record.speed,
-          forwardSpeed: record.speed,
+          forwardSpeed,
+          sideSpeed,
           grounded: true,
           flying: false
         });

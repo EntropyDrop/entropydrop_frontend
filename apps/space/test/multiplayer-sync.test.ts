@@ -80,8 +80,53 @@ test('MultiplayerSync polls heartbeat and dispatches player and terrain updates'
     assert.equal(capturedBody.x_cm, 5000);
     assert.equal(capturedBody.y_cm, 6400);
     assert.equal(capturedBody.z_cm, 7500);
+    assert.equal(capturedBody.yaw_q15, Math.round((0.5 / Math.PI) * 32767));
     assert.deepEqual(receivedPlayers, mockPlayers);
     assert.deepEqual(receivedChunks, mockChunks);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('MultiplayerSync normalizes large accumulated yaw angles without clamping', async () => {
+  let capturedBody: any = null;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (init?.body) {
+      capturedBody = JSON.parse(String(init.body));
+    }
+    return new Response(JSON.stringify({
+      world_id: 'world-123',
+      players: [],
+      terrain_chunks: [],
+      max_terrain_revision: 0
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+
+  try {
+    const sync = new MultiplayerSync({
+      apiOrigin: 'http://localhost:8000',
+      token: 'jwt-test-token',
+      worldId: 'world-123',
+      currentUserId: 'user_alice',
+      heartbeatIntervalMs: 50
+    });
+
+    // 4 full turns + 0.5 rad (approx 25.63 rad)
+    sync.getPlayerPosition = () => ({
+      x: 10,
+      y: 20,
+      z: 30,
+      yaw: Math.PI * 8 + 0.5
+    });
+
+    sync.start();
+    await new Promise(resolve => setTimeout(resolve, 80));
+    sync.stop();
+
+    // Should normalize cleanly to 0.5 rad instead of clamping to 32767
+    const expectedYawQ15 = Math.round((0.5 / Math.PI) * 32767);
+    assert.equal(capturedBody.yaw_q15, expectedYawQ15);
   } finally {
     globalThis.fetch = originalFetch;
   }

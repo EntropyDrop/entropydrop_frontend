@@ -1,4 +1,5 @@
 import { wrapX, wrapZ } from '../torus/TorusWorld.ts';
+import { encodePlayerPosition } from '../../bootstrap/SpaceBootstrap.ts';
 
 export interface RemotePlayerInfo {
   user_id: string;
@@ -102,10 +103,11 @@ export class MultiplayerSync {
       };
 
       if (pose && Number.isFinite(pose.x) && Number.isFinite(pose.y) && Number.isFinite(pose.z)) {
-        body.x_cm = Math.round(wrapX(pose.x) * 100);
-        body.y_cm = Math.round(pose.y * 100);
-        body.z_cm = Math.round(wrapZ(pose.z) * 100);
-        body.yaw_q15 = Math.max(-32767, Math.min(32767, Math.round((pose.yaw / Math.PI) * 32767)));
+        const encoded = encodePlayerPosition(pose, pose.yaw || 0);
+        body.x_cm = encoded.x_cm;
+        body.y_cm = encoded.y_cm;
+        body.z_cm = encoded.z_cm;
+        body.yaw_q15 = encoded.yaw_q15;
       }
 
       const url = `${this.apiOrigin}/space/api/v2/worlds/${encodeURIComponent(this.worldId)}/heartbeat`;
