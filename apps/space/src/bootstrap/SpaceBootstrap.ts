@@ -3,6 +3,7 @@ import type {
   TerrainMutation,
   WorldEditRemote,
 } from '../engine/voxel/WorldEditPersistence.ts';
+import { TORUS_SIZE_X, TORUS_SIZE_Z } from '../engine/torus/TorusWorld.ts';
 
 export type MinecraftSkinModel = 'strong' | 'slim';
 
@@ -27,12 +28,28 @@ export interface SpaceBootstrapPayload {
     spawn_y_cm: number;
     spawn_z_cm: number;
     spawn_yaw_q15: number;
+    resume_x_cm: number | null;
+    resume_y_cm: number | null;
+    resume_z_cm: number | null;
+    resume_yaw_q15: number | null;
   };
+}
+
+export interface PlayerPositionPayload {
+  x_cm: number;
+  y_cm: number;
+  z_cm: number;
+  yaw_q15: number;
+}
+
+export interface PlayerPositionRemote {
+  save(position: PlayerPositionPayload, keepalive?: boolean): Promise<void>;
 }
 
 export interface ReadySpaceSession extends SpaceBootstrapPayload {
   skin_object_url: string;
   terrain_edit_remote: WorldEditRemote;
+  player_position_remote: PlayerPositionRemote;
 }
 
 export type SpaceEntryErrorCode =
@@ -69,6 +86,46 @@ export function resolveApiOrigin(configuredBase: string | undefined, pageOrigin:
 export function hasPngSignature(bytes: Uint8Array) {
   const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
   return signature.every((value, index) => bytes[index] === value);
+}
+
+export function resolveInitialPlayerPose(player: SpaceBootstrapPayload['player']) {
+  const hasResumePosition = [
+    player.resume_x_cm,
+    player.resume_y_cm,
+    player.resume_z_cm,
+  ].every(value => typeof value === 'number' && Number.isFinite(value));
+  const xCm = hasResumePosition ? player.resume_x_cm! : player.spawn_x_cm;
+  const yCm = hasResumePosition ? player.resume_y_cm! : player.spawn_y_cm;
+  const zCm = hasResumePosition ? player.resume_z_cm! : player.spawn_z_cm;
+  const yawQ15 = typeof player.resume_yaw_q15 === 'number' && Number.isFinite(player.resume_yaw_q15)
+    ? player.resume_yaw_q15
+    : player.spawn_yaw_q15;
+  return {
+    x: xCm / 100,
+    y: yCm / 100,
+    z: zCm / 100,
+    yaw: (yawQ15 / 32767) * Math.PI,
+    resumed: hasResumePosition,
+  };
+}
+
+function wrapCentimeters(valueMeters: number, sizeMeters: number) {
+  const sizeCm = sizeMeters * 100;
+  const valueCm = Math.round(valueMeters * 100);
+  return ((valueCm % sizeCm) + sizeCm) % sizeCm;
+}
+
+export function encodePlayerPosition(
+  position: { x: number; y: number; z: number },
+  yaw: number
+): PlayerPositionPayload {
+  const normalizedYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+  return {
+    x_cm: wrapCentimeters(position.x, TORUS_SIZE_X),
+    y_cm: Math.round(position.y * 100),
+    z_cm: wrapCentimeters(position.z, TORUS_SIZE_Z),
+    yaw_q15: Math.max(-32767, Math.min(32767, Math.round((normalizedYaw / Math.PI) * 32767))),
+  };
 }
 
 function entryErrorFromResponse(status: number, body: any) {
@@ -228,6 +285,34 @@ export async function loadTerrainEditRemote(
   };
 }
 
+export function createPlayerPositionRemote(
+  apiOrigin: string,
+  token: string,
+  worldId: string,
+  fetchImpl: typeof fetch = fetch
+): PlayerPositionRemote {
+  const url = `${apiOrigin}/space/api/v2/worlds/${encodeURIComponent(worldId)}/players/me/position`;
+  return {
+    async save(position: PlayerPositionPayload, keepalive = false) {
+      const response = await fetchImpl(url, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(position),
+        keepalive
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const code = body?.detail?.code || `HTTP_${response.status}`;
+        throw new Error(`Space player position was not saved: ${code}`);
+      }
+    }
+  };
+}
+
 export async function bootstrapSpace(): Promise<ReadySpaceSession> {
   const token = localStorage.getItem('token');
   if (!token) {
@@ -267,7 +352,8 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
   return {
     ...payload,
     skin_object_url: skinObjectUrl,
-    terrain_edit_remote: terrainEditRemote
+    terrain_edit_remote: terrainEditRemote,
+    player_position_remote: createPlayerPositionRemote(apiOrigin, token, payload.world.id)
   };
 }
 

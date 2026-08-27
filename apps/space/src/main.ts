@@ -9,7 +9,14 @@ import { SoundManager } from './engine/audio/SoundManager.ts';
 import { ParticleSystem } from './engine/render/ParticleSystem.ts';
 import { UIManager } from './ui/UIManager.ts';
 import { Minimap } from './ui/Minimap.ts';
-import { enterSpace, type ReadySpaceSession } from './bootstrap/SpaceBootstrap.ts';
+import {
+  encodePlayerPosition,
+  enterSpace,
+  resolveInitialPlayerPose,
+  type PlayerPositionPayload,
+  type PlayerPositionRemote,
+  type ReadySpaceSession,
+} from './bootstrap/SpaceBootstrap.ts';
 import { loadDistantLodCache } from './bootstrap/DistantLodCache.ts';
 import type { DistantLodCacheData } from './engine/render/DistantLodCacheFormat.ts';
 
@@ -29,6 +36,11 @@ class Game {
   frameCount: number;
   lastFpsTime: number;
   currentFps: number;
+  playerPositionRemote: PlayerPositionRemote;
+  lastSavedPlayerPosition: string;
+  pendingPlayerPosition: PlayerPositionPayload | null;
+  playerPositionSaveInFlight: boolean;
+  lastPlayerPositionSyncAt: number;
 
   constructor(session: ReadySpaceSession, distantLodCache: DistantLodCacheData | null) {
     this.canvasContainer = document.getElementById('canvas-container');
@@ -98,9 +110,15 @@ class Game {
     this.frameCount = 0;
     this.lastFpsTime = performance.now();
     this.currentFps = 60;
+    this.playerPositionRemote = session.player_position_remote;
+    this.pendingPlayerPosition = null;
+    this.playerPositionSaveInFlight = false;
 
     // 5. Initial Spawn & Worldgen
     this.initializeSpawn(session);
+    this.lastSavedPlayerPosition = JSON.stringify(this.currentPlayerPosition());
+    this.lastPlayerPositionSyncAt = performance.now();
+    this.installPlayerPositionPersistence();
 
     // 6. Start Loop
     this.animate = this.animate.bind(this);
@@ -108,24 +126,66 @@ class Game {
   }
 
   initializeSpawn(session: ReadySpaceSession) {
-    // The server creates this random birth point once and returns the same
-    // durable profile on every later entry. Reconnect position is a separate
-    // real-time concern and must never overwrite the birth point.
-    const spawnX = session.player.spawn_x_cm / 100;
-    const spawnY = session.player.spawn_y_cm / 100;
-    const spawnZ = session.player.spawn_z_cm / 100;
+    // A durable reconnect snapshot takes precedence. The immutable birth point
+    // remains the fallback for first entry or a missing/invalid snapshot.
+    const pose = resolveInitialPlayerPose(session.player);
 
-    // Pre-generate initial chunks around spawn
-    this.world.updateChunksAround(spawnX, spawnZ);
+    // Pre-generate initial chunks around the restored position.
+    this.world.updateChunksAround(pose.x, pose.z);
 
-    this.playerPhysics.position.set(spawnX, spawnY, spawnZ);
+    this.playerPhysics.position.set(pose.x, pose.y, pose.z);
     this.sceneRenderer.camera.position.copy(this.playerPhysics.getEyePosition());
 
     // The initial view follows the inner-ring horizon; look up through the central hole to see the opposite surface.
-    this.controller.yaw = (session.player.spawn_yaw_q15 / 32767) * Math.PI;
+    this.controller.yaw = pose.yaw;
     this.controller.pitch = 0;
     this.sceneRenderer.camera.rotation.set(this.controller.pitch, this.controller.yaw, 0, 'YXZ');
 
+  }
+
+  currentPlayerPosition() {
+    return encodePlayerPosition(this.playerPhysics.position, this.controller.yaw);
+  }
+
+  queuePlayerPositionSave(force = false, keepalive = false) {
+    const position = this.currentPlayerPosition();
+    const serialized = JSON.stringify(position);
+    if (!force && serialized === this.lastSavedPlayerPosition) return;
+
+    if (keepalive) {
+      // A keepalive fetch is deliberately sent immediately instead of waiting
+      // behind an older request that may not finish before the page is frozen.
+      void this.playerPositionRemote.save(position, true).catch(() => undefined);
+      return;
+    }
+
+    this.pendingPlayerPosition = position;
+    if (!this.playerPositionSaveInFlight) void this.drainPlayerPositionSave();
+  }
+
+  async drainPlayerPositionSave() {
+    const position = this.pendingPlayerPosition;
+    if (!position) return;
+    this.pendingPlayerPosition = null;
+    this.playerPositionSaveInFlight = true;
+    try {
+      await this.playerPositionRemote.save(position);
+      this.lastSavedPlayerPosition = JSON.stringify(position);
+    } catch (error) {
+      console.warn('Space player position sync failed; it will be retried.', error);
+    } finally {
+      this.playerPositionSaveInFlight = false;
+      if (this.pendingPlayerPosition) void this.drainPlayerPositionSave();
+    }
+  }
+
+  installPlayerPositionPersistence() {
+    const persistBeforeSuspension = () => this.queuePlayerPositionSave(true, true);
+    window.addEventListener('pagehide', persistBeforeSuspension);
+    window.addEventListener('beforeunload', persistBeforeSuspension);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') persistBeforeSuspension();
+    });
   }
 
   animate() {
@@ -144,6 +204,10 @@ class Game {
 
     // 1. Update Player & Controls
     this.controller.update(dt);
+    if (now - this.lastPlayerPositionSyncAt >= 2000) {
+      this.lastPlayerPositionSyncAt = now;
+      this.queuePlayerPositionSave();
+    }
 
     // 2. Stream World Chunks around Player. Entity streaming consumes this
     // exact active window below, so chunks must be current before entities run.

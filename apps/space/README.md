@@ -5,9 +5,11 @@ independent `/space/` document. It shares the repository's Three.js version and
 the main site's `localStorage` login token. It does not own an account system.
 
 Before constructing the Three.js scene it calls `POST /space/api/v2/bootstrap`,
-loads the existing EntropyDrop user's durable birth point, and downloads that
-user's immutable `minecraft_skin_url` PNG. A user without a configured skin is
-blocked and sent to `/skin/edit`. Backpack data remains browser-local under
+loads the existing EntropyDrop user's latest backend reconnect position (or the
+durable birth point on first entry), and downloads that user's immutable
+`minecraft_skin_url` PNG. The client checkpoints wrapped position/yaw every two
+seconds and before page suspension. A user without a configured skin is blocked
+and sent to `/skin/edit`. Backpack data remains browser-local under
 `space.backpack.v2` and is never uploaded by this app. Player-authored standard
 and micro-voxel terrain overlays are loaded from the authenticated Space API and
 sent back in idempotent batches of at most 256 mutations. A durable browser

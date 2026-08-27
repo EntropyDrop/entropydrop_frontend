@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  createPlayerPositionRemote,
+  encodePlayerPosition,
   hasPngSignature,
   loadTerrainEditRemote,
   resolveApiOrigin,
+  resolveInitialPlayerPose,
 } from '../src/bootstrap/SpaceBootstrap.ts';
 
 test('Space derives the API origin from the main frontend API configuration', () => {
@@ -61,4 +64,74 @@ test('Space loads every terrain snapshot page and posts authenticated mutation b
     batch_id: '00000000-0000-4000-8000-000000000001',
     mutations: [{ kind: 'set_standard', x: 1, y: 80, z: 1, block: 1, color: 0x123456 }]
   });
+});
+
+test('Space restores a backend resume pose and keeps birth point as fallback', () => {
+  const player = {
+    user_id: 'player',
+    username: 'Player',
+    player_entity_id: 'entity',
+    minecraft_skin_url: 'https://example.com/skin.png',
+    minecraft_skin_model: 'strong' as const,
+    spawn_x_cm: 100,
+    spawn_y_cm: 3200,
+    spawn_z_cm: 200,
+    spawn_yaw_q15: 0,
+    resume_x_cm: 12345,
+    resume_y_cm: 6789,
+    resume_z_cm: 23456,
+    resume_yaw_q15: 16384,
+  };
+
+  assert.deepEqual(resolveInitialPlayerPose(player), {
+    x: 123.45,
+    y: 67.89,
+    z: 234.56,
+    yaw: (16384 / 32767) * Math.PI,
+    resumed: true,
+  });
+  assert.deepEqual(resolveInitialPlayerPose({
+    ...player,
+    resume_x_cm: null,
+    resume_y_cm: null,
+    resume_z_cm: null,
+    resume_yaw_q15: null,
+  }), {
+    x: 1,
+    y: 32,
+    z: 2,
+    yaw: 0,
+    resumed: false,
+  });
+});
+
+test('Space wraps and saves a small authenticated position checkpoint with keepalive', async () => {
+  const requests: { url: string; options: RequestInit }[] = [];
+  const fetchImpl = async (url: string | URL | Request, options: RequestInit = {}) => {
+    requests.push({ url: String(url), options });
+    return new Response(JSON.stringify({ revision: 1 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+  const remote = createPlayerPositionRemote(
+    'https://api.entropydrop.com',
+    'test-token',
+    '00000000-0000-0000-0000-000000000001',
+    fetchImpl as typeof fetch
+  );
+  const position = encodePlayerPosition({ x: -0.01, y: 45.678, z: 2048.01 }, Math.PI / 2);
+  await remote.save(position, true);
+
+  assert.deepEqual(position, {
+    x_cm: 1638399,
+    y_cm: 4568,
+    z_cm: 1,
+    yaw_q15: 16384,
+  });
+  assert.equal(requests[0].options.method, 'PUT');
+  assert.equal(requests[0].options.keepalive, true);
+  assert.equal((requests[0].options.headers as any).Authorization, 'Bearer test-token');
+  assert.deepEqual(JSON.parse(String(requests[0].options.body)), position);
+  assert.match(requests[0].url, /players\/me\/position$/);
 });
