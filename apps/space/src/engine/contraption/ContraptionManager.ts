@@ -13,6 +13,13 @@ import {
 import { MICRO_DIVISIONS } from '../voxel/MicroVoxelLayer.ts';
 import { ActionDomain, executeBasicAction } from '../actions/BasicActions.ts';
 
+export const ENTITY_STORAGE_PREFIX = 'entropydrop_space_entities';
+export const ENTITY_STORAGE_VERSION = 1;
+
+export function worldEntitiesStorageKey(worldId: string) {
+  return `${ENTITY_STORAGE_PREFIX}.${encodeURIComponent(worldId || 'default')}`;
+}
+
 function isFiniteVector3Array(value: any): boolean {
   return Array.isArray(value)
     && value.length >= 3
@@ -73,6 +80,8 @@ export class ContraptionManager {
   declare scriptSelectionApi: any;
   declare entitySelection: any;
   declare selectionHost: any;
+  declare worldId: string;
+  declare lastEntitySaveTime: number;
 
   constructor(scene, world, soundManager, particleSystem) {
     this.scene = scene;
@@ -84,6 +93,8 @@ export class ContraptionManager {
     this.dormantContraptions = new Map();
     this.lastEntityChunkWindow = null;
     this.nextId = 1;
+    this.worldId = 'default';
+    this.lastEntitySaveTime = 0;
 
     // Selection State
     this.selectionCornerA = null;
@@ -703,6 +714,101 @@ export class ContraptionManager {
 
   setRuntimeContextProvider(provider) {
     this.runtimeContextProvider = typeof provider === 'function' ? provider : null;
+  }
+
+  setWorldId(worldId: string) {
+    this.worldId = String(worldId || 'default');
+  }
+
+  entityStorage(): Storage | null {
+    try {
+      return typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Persist all active and dormant entities to browser storage.
+   */
+  saveEntitiesToStorage(storage = this.entityStorage()): boolean {
+    if (!storage) return false;
+    try {
+      const entityRecords: any[] = [];
+      const seenPublicIds = new Set<string>();
+
+      // 1. Active contraptions
+      for (const c of this.contraptions) {
+        if (!c || !c.publicId) continue;
+        const chunk = this.getContraptionChunk(c) || { id: '0,0', cx: 0, cz: 0 };
+        const record = this.captureContraptionForStreaming(c, chunk);
+        if (record) {
+          entityRecords.push(record);
+          seenPublicIds.add(String(record.publicId));
+        }
+      }
+
+      // 2. Dormant contraptions
+      for (const records of this.dormantContraptions.values()) {
+        for (const record of records.values()) {
+          if (record?.publicId && !seenPublicIds.has(String(record.publicId))) {
+            entityRecords.push(record);
+            seenPublicIds.add(String(record.publicId));
+          }
+        }
+      }
+
+      const payload = {
+        type: 'space-entities',
+        version: ENTITY_STORAGE_VERSION,
+        worldId: this.worldId,
+        entities: entityRecords
+      };
+
+      storage.setItem(worldEntitiesStorageKey(this.worldId), JSON.stringify(payload));
+      return true;
+    } catch (err) {
+      console.warn('Could not save entities to storage:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Load and restore all saved entities from browser storage on world startup.
+   */
+  loadEntitiesFromStorage(storage = this.entityStorage()): number {
+    if (!storage) return 0;
+    try {
+      const raw = storage.getItem(worldEntitiesStorageKey(this.worldId));
+      if (!raw) return 0;
+      const data = JSON.parse(raw);
+      if (data?.type !== 'space-entities' || data?.version !== ENTITY_STORAGE_VERSION || !Array.isArray(data.entities)) {
+        return 0;
+      }
+
+      while (this.contraptions.length > 0) {
+        this.removeContraption(this.contraptions[0], { preserveDormant: true, skipSave: true });
+      }
+      this.dormantContraptions.clear();
+
+      let loadedCount = 0;
+      for (const record of data.entities) {
+        if (!record?.slot) continue;
+        const origin = new THREE.Vector3().fromArray(record.constructorOrigin || record.position || [0, 0, 0]);
+        const contraption = this.buildFromSlot(record.slot, origin, record, false);
+        if (contraption) {
+          loadedCount++;
+          const chunk = this.getContraptionChunk(contraption);
+          if (chunk && !this.isEntityChunkLoaded(chunk.id)) {
+            this.unloadContraption(contraption);
+          }
+        }
+      }
+      return loadedCount;
+    } catch (err) {
+      console.warn('Could not load entities from storage:', err);
+      return 0;
+    }
   }
 
   // =========================================================================
@@ -1459,6 +1565,8 @@ export class ContraptionManager {
     // Clear selection
     this.clearSelection();
 
+    this.saveEntitiesToStorage();
+
     return contraption;
   }
 
@@ -1468,7 +1576,7 @@ export class ContraptionManager {
    * - A null rootId denotes a multi-root range; component ids remain and attach to the new root.
    * @returns The registered entity, or null for an empty slot.
    */
-  buildFromSlot(slot, position, restoreState = null) {
+  buildFromSlot(slot, position, restoreState = null, autoSave = true) {
     if (!slot || !Array.isArray(slot.blocks) || slot.blocks.length === 0) return null;
 
     const singleRoot = slot.rootId && slot.rootId !== null;
@@ -1549,9 +1657,12 @@ export class ContraptionManager {
       try {
         this.restoreContraptionStreamingState(contraption, restoreState);
       } catch (error) {
-        this.removeContraption(contraption, { preserveDormant: true });
+        this.removeContraption(contraption, { preserveDormant: true, skipSave: true });
         throw error;
       }
+    }
+    if (autoSave) {
+      this.saveEntitiesToStorage();
     }
     return contraption;
   }
@@ -1631,6 +1742,9 @@ export class ContraptionManager {
     if (!options.preserveDormant) this.deleteDormantContraption(contraption.publicId);
     contraption.setActionContext?.(null);
     contraption.dispose();
+    if (!options.skipSave) {
+      this.saveEntitiesToStorage();
+    }
   }
 
   // =========================================================================
@@ -1719,5 +1833,14 @@ export class ContraptionManager {
 
     // 4. Entity vs entity collisions (dynamic-dynamic + dynamic-static)
     this.physics?.resolveContraptionPairs?.(this.contraptions);
+
+    // 5. Periodic entity persistence
+    this.lastEntitySaveTime = (this.lastEntitySaveTime || 0) + dt;
+    if (this.lastEntitySaveTime >= 2.0) {
+      this.lastEntitySaveTime = 0;
+      if (this.contraptions.length > 0 || this.getDormantContraptionCount() > 0) {
+        this.saveEntitiesToStorage();
+      }
+    }
   }
 }

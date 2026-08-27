@@ -75,6 +75,8 @@ class Game {
       this.particleSystem
     );
     this.contraptionManager.setPhysics(this.contraptionPhysics);
+    this.contraptionManager.setWorldId(session.world.id);
+    this.contraptionManager.loadEntitiesFromStorage();
 
     this.playerPhysics = new PlayerPhysics(this.world, this.contraptionManager);
     this.uiManager = new UIManager();
@@ -194,7 +196,10 @@ class Game {
   }
 
   installPlayerPositionPersistence() {
-    const persistBeforeSuspension = () => this.queuePlayerPositionSave(true, true);
+    const persistBeforeSuspension = () => {
+      this.queuePlayerPositionSave(true, true);
+      this.contraptionManager?.saveEntitiesToStorage?.();
+    };
     window.addEventListener('pagehide', persistBeforeSuspension);
     window.addEventListener('beforeunload', persistBeforeSuspension);
     document.addEventListener('visibilitychange', () => {
