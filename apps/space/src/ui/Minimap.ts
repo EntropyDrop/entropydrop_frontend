@@ -53,6 +53,7 @@ export class Minimap {
     this.terrainCanvas.height = Minimap.CELLS;
     this.terrainCtx = this.terrainCanvas.getContext('2d')!;
     this.imageData = this.terrainCtx.createImageData(Minimap.CELLS, Minimap.CELLS);
+    this.remotePlayers = [];
 
     this.applySize();
     if (typeof window !== 'undefined') {
@@ -69,6 +70,10 @@ export class Minimap {
     this.canvas.height = size * this.dpr;
     this.canvas.style.width = `${size}px`;
     this.canvas.style.height = `${size}px`;
+  }
+
+  setRemotePlayers(players: any[]) {
+    this.remotePlayers = Array.isArray(players) ? players : [];
   }
 
   /**
@@ -135,6 +140,41 @@ export class Minimap {
         ctx.strokeStyle = 'rgba(255, 224, 102, 0.7)';
         ctx.stroke();
       }
+    }
+
+    // Remote Players (cyan dots)
+    for (const rp of this.remotePlayers) {
+      if (rp.is_self) continue;
+      let rdx = wrapX(rp.x) - wrapX(px);
+      if (rdx > TORUS_SIZE_X / 2) rdx -= TORUS_SIZE_X;
+      else if (rdx < -TORUS_SIZE_X / 2) rdx += TORUS_SIZE_X;
+
+      let rdz = wrapZ(rp.z) - wrapZ(pz);
+      if (rdz > TORUS_SIZE_Z / 2) rdz -= TORUS_SIZE_Z;
+      else if (rdz < -TORUS_SIZE_Z / 2) rdz += TORUS_SIZE_Z;
+
+      const rcx = (rdx + Minimap.RANGE) * scale;
+      const rcz = (rdz + Minimap.RANGE) * scale;
+      if (rcx < 0 || rcx > size || rcz < 0 || rcz > size) continue;
+
+      ctx.beginPath();
+      ctx.arc(rcx, rcz, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#00d2d3';
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = 'rgba(10, 12, 18, 0.9)';
+      ctx.stroke();
+
+      // Heading tick
+      const ryaw = Number(rp.yaw) || 0;
+      const hx = -Math.sin(ryaw) * 5;
+      const hz = -Math.cos(ryaw) * 5;
+      ctx.beginPath();
+      ctx.moveTo(rcx, rcz);
+      ctx.lineTo(rcx + hx, rcz + hz);
+      ctx.strokeStyle = '#00d2d3';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
 
     // Player arrow: world +X is right, +Z is down; camera heading is -sin(yaw), -cos(yaw).

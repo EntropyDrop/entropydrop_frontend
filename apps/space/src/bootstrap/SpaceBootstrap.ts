@@ -60,6 +60,7 @@ export interface PlayerPositionRemote {
 
 export interface ReadySpaceSession extends SpaceBootstrapPayload {
   api_origin: string;
+  token: string;
   skin_object_url: string;
   terrain_edit_remote: WorldEditRemote;
   player_position_remote: PlayerPositionRemote;
@@ -396,6 +397,7 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
   return {
     ...payload,
     api_origin: apiOrigin,
+    token,
     skin_object_url: skinObjectUrl,
     terrain_edit_remote: terrainEditRemote,
     player_position_remote: createPlayerPositionRemote(apiOrigin, token, payload.world.id, fetch, latencyMonitor),

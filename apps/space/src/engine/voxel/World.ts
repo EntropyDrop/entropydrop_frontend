@@ -1248,4 +1248,63 @@ export class World {
   flushPersistedEdits() {
     return this.editPersistence?.flush() ?? false;
   }
+
+  /**
+   * Apply incoming remote chunk updates from other players in real-time.
+   */
+  applyRemoteChunkUpdates(updates: Array<{ chunk_x: number; chunk_z: number; revision: number; standard: any[]; micro: any[] }>) {
+    if (!Array.isArray(updates) || updates.length === 0) return;
+
+    for (const update of updates) {
+      const cx = wrapChunkX(update.chunk_x);
+      const cz = wrapChunkZ(update.chunk_z);
+
+      const minX = cx * CHUNK_SIZE_X;
+      const maxX = (cx + 1) * CHUNK_SIZE_X - 1;
+      const minZ = cz * CHUNK_SIZE_Z;
+      const maxZ = (cz + 1) * CHUNK_SIZE_Z - 1;
+
+      // Clear existing microcells in this chunk bounding box
+      this.microVoxels.extractRegion(minX, 0, minZ, maxX, CHUNK_SIZE_Y - 1, maxZ);
+
+      // Apply updated microcells
+      if (Array.isArray(update.micro)) {
+        for (const m of update.micro) {
+          if (!Array.isArray(m) || m.length < 4) continue;
+          const [mx, my, mz, color, part] = m;
+          this.microVoxels.set(mx, my, mz, color, part || null);
+          this.editPersistence?.recordMicro(mx, my, mz, color, part || null);
+        }
+      }
+
+      // If chunk is currently loaded in memory, regenerate and apply standard blocks
+      const key = World.getChunkKey(cx, cz);
+      const chunk = this.chunks.get(key);
+      if (chunk) {
+        this.terrainGen.generateChunk(chunk);
+        if (Array.isArray(update.standard)) {
+          for (const s of update.standard) {
+            if (!Array.isArray(s) || s.length < 5) continue;
+            const [wx, wy, wz, block, color] = s;
+            const lx = wx - cx * CHUNK_SIZE_X;
+            const lz = wz - cz * CHUNK_SIZE_Z;
+            chunk.setLocalBlock(lx, wy, lz, block, color);
+            this.editPersistence?.recordStandard(wx, wy, wz, block, color);
+            this.queueDistantSurfaceUpdate(wx, wz);
+          }
+        }
+        chunk.hasUserEdits = true;
+        chunk.isDirty = true;
+        this.dirtyChunks.add(chunk);
+      } else if (Array.isArray(update.standard)) {
+        for (const s of update.standard) {
+          if (!Array.isArray(s) || s.length < 5) continue;
+          const [wx, wy, wz, block, color] = s;
+          this.editPersistence?.recordStandard(wx, wy, wz, block, color);
+          this.queueDistantSurfaceUpdate(wx, wz);
+        }
+      }
+      this.terrainVersion++;
+    }
+  }
 }

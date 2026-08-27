@@ -1,13 +1,53 @@
 import * as THREE from 'three';
 import {
   applyCameraBend, hookSceneMaterials, cullChunks,
-  bendPoint, bendDirection, unbendPoint, unbendDirection
+  bendPoint, bendDirection, unbendPoint, unbendDirection,
+  TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ
 } from '../torus/TorusWorld.ts';
 import { CuteCharacter, loadCuteCharacter, type SkinModel } from './CuteCharacter.ts';
 
 export const ENTITY_PREVIEW_LAYER = 1;
 export const ENTITY_PREVIEW_FORCE_LIMIT_RATIO = 0.72;
 const MAX_SELECTION_BEND_SEGMENTS = 64;
+
+function createPlayerNameTag(username: string): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    // Glassmorphism dark rounded badge
+    ctx.fillStyle = 'rgba(12, 18, 28, 0.78)';
+    const r = 12;
+    ctx.beginPath();
+    ctx.roundRect(6, 6, 244, 52, r);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 210, 211, 0.6)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Player name text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 22px "Inter", "Outfit", -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(username.slice(0, 16), 128, 32);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(1.4, 0.35, 1);
+  sprite.position.set(0, 2.05, 0);
+  sprite.renderOrder = 50;
+  return sprite;
+}
 
 interface PlayerAppearance {
   skinUrl: string;
@@ -265,9 +305,11 @@ export class SceneRenderer {
   declare boxSelectionFill: THREE.Mesh;
   declare boxSelectionEdges: THREE.LineSegments;
   declare wrenchTetherLine: THREE.Line;
-  declare playerAvatar: THREE.Group | null;
+  declare playerAvatar: THREE.Group;
   declare playerAvatarCharacter: CuteCharacter | null;
   declare playerFirstPersonHand: THREE.Group | null;
+  declare remotePlayersGroup: THREE.Group;
+  declare remotePlayers: Map<string, any>;
   declare inventoryPlacementGroup: THREE.Group;
   declare inventoryPlacementFill: THREE.InstancedMesh | null;
   declare inventoryPlacementWire: THREE.LineSegments | null;
@@ -366,6 +408,7 @@ export class SceneRenderer {
     this.setupInventoryPlacementPreview();
     this.setupSelectionHologram();
     this.setupPlayerAvatar();
+    this.setupRemotePlayers();
 
     // 5. Lighting state — fixed daytime, no day/night cycle.
     this.timeOfDay = 10.0; // 10:00 AM, permanently
@@ -1478,6 +1521,120 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     }).catch(error => {
       console.error('Failed to load the EntropyDrop player skin:', error);
     });
+  }
+
+  setupRemotePlayers() {
+    this.remotePlayersGroup = new THREE.Group();
+    this.remotePlayersGroup.name = 'RemotePlayers';
+    this.remotePlayers = new Map();
+    this.scene.add(this.remotePlayersGroup);
+  }
+
+  updateRemotePlayers(players: any[], dt = 0.016) {
+    if (!this.remotePlayersGroup || !this.remotePlayers) return;
+
+    const seenIds = new Set<string>();
+    const now = performance.now();
+
+    for (const p of players) {
+      if (p.is_self) continue;
+      const id = String(p.user_id || p.player_entity_id);
+      seenIds.add(id);
+
+      let record = this.remotePlayers.get(id);
+      if (!record) {
+        const group = new THREE.Group();
+        group.name = `RemotePlayer_${id}`;
+        group.position.set(p.x, p.y, p.z);
+        group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.yaw || 0);
+
+        const nameTag = createPlayerNameTag(p.username || 'Player');
+        group.add(nameTag);
+
+        record = {
+          id,
+          group,
+          character: null,
+          nameTag,
+          targetPosition: new THREE.Vector3(p.x, p.y, p.z),
+          targetYaw: p.yaw || 0,
+          currentYaw: p.yaw || 0,
+          lastSeen: now,
+          skinUrl: p.minecraft_skin_url,
+          skinModel: p.minecraft_skin_model || 'strong',
+          speed: 0
+        };
+
+        this.remotePlayers.set(id, record);
+        this.remotePlayersGroup.add(group);
+
+        void loadCuteCharacter(record.skinUrl, {
+          model: record.skinModel,
+          height: 1.8,
+          showOverlay: true,
+          castShadow: true
+        }).then(character => {
+          if (!this.remotePlayers?.has(id)) {
+            character.dispose();
+            return;
+          }
+          record.character = character;
+          group.add(character.object3d);
+          hookSceneMaterials(character.object3d);
+        }).catch(err => {
+          console.warn('Failed to load remote player skin:', err);
+        });
+      } else {
+        record.targetPosition.set(p.x, p.y, p.z);
+        record.targetYaw = p.yaw || 0;
+        record.lastSeen = now;
+      }
+
+      // Smoothly interpolate position with toroidal wrap
+      let dx = wrapX(record.targetPosition.x) - wrapX(record.group.position.x);
+      if (dx > TORUS_SIZE_X / 2) dx -= TORUS_SIZE_X;
+      else if (dx < -TORUS_SIZE_X / 2) dx += TORUS_SIZE_X;
+
+      let dz = wrapZ(record.targetPosition.z) - wrapZ(record.group.position.z);
+      if (dz > TORUS_SIZE_Z / 2) dz -= TORUS_SIZE_Z;
+      else if (dz < -TORUS_SIZE_Z / 2) dz += TORUS_SIZE_Z;
+
+      const dy = record.targetPosition.y - record.group.position.y;
+      const dist = Math.hypot(dx, dz);
+      record.speed = THREE.MathUtils.lerp(record.speed, dist / Math.max(0.001, dt), Math.min(1, dt * 8));
+
+      const lerpFactor = Math.min(1, dt * 12);
+      record.group.position.x = wrapX(record.group.position.x + dx * lerpFactor);
+      record.group.position.y = record.group.position.y + dy * lerpFactor;
+      record.group.position.z = wrapZ(record.group.position.z + dz * lerpFactor);
+
+      let dyaw = record.targetYaw - record.currentYaw;
+      while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+      while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+      record.currentYaw += dyaw * lerpFactor;
+      record.group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), record.currentYaw);
+
+      if (record.character) {
+        record.character.update(dt, {
+          speed: record.speed,
+          forwardSpeed: record.speed,
+          grounded: true,
+          flying: false
+        });
+      }
+      record.group.updateMatrixWorld(true);
+    }
+
+    // Clean up offline/inactive players (> 15 seconds)
+    for (const [id, record] of this.remotePlayers.entries()) {
+      if (!seenIds.has(id) && now - record.lastSeen > 15000) {
+        if (record.character) record.character.dispose();
+        if (record.nameTag?.material?.map) record.nameTag.material.map.dispose();
+        if (record.nameTag?.material) record.nameTag.material.dispose();
+        record.group.removeFromParent();
+        this.remotePlayers.delete(id);
+      }
+    }
   }
 
   setPlayerAvatarVisible(visible: boolean) {

@@ -20,6 +20,7 @@ import {
 } from './bootstrap/SpaceBootstrap.ts';
 import { loadDistantLodCache } from './bootstrap/DistantLodCache.ts';
 import type { DistantLodCacheData } from './engine/render/DistantLodCacheFormat.ts';
+import { MultiplayerSync, type RemotePlayerInfo } from './engine/network/MultiplayerSync.ts';
 
 class Game {
   canvasContainer: HTMLElement | null;
@@ -44,6 +45,8 @@ class Game {
   pendingPlayerPosition: PlayerPositionPayload | null;
   playerPositionSaveInFlight: boolean;
   lastPlayerPositionSyncAt: number;
+  multiplayerSync: MultiplayerSync;
+  remotePlayers: RemotePlayerInfo[];
 
   constructor(session: ReadySpaceSession, distantLodCache: DistantLodCacheData | null) {
     this.canvasContainer = document.getElementById('canvas-container');
@@ -93,14 +96,21 @@ class Game {
       this.uiManager
     );
     this.controller.setSceneRenderer(this.sceneRenderer);
+    this.remotePlayers = [];
     this.contraptionManager.setRuntimeContextProvider(() => {
       const eye = this.playerPhysics.getEyePosition();
-      return {
-        // Player list (reserved for multiplayer); the local player uses the id 'local'.
-        players: [{
+      const allPlayers = [
+        {
           id: 'local',
           position: [eye.x, eye.y, eye.z]
-        }]
+        },
+        ...(this.remotePlayers || []).filter(p => !p.is_self).map(p => ({
+          id: p.user_id,
+          position: [p.x, p.y + 1.62, p.z]
+        }))
+      ];
+      return {
+        players: allPlayers
       };
     });
 
@@ -135,6 +145,29 @@ class Game {
     this.installPlayerPositionPersistence();
     // A random first-entry position is sampled on the client; persist it immediately to DB.
     if (!session.player.resumed) this.queuePlayerPositionSave(true);
+
+    // 5b. Multiplayer Synchronizer (Real-time player presence & terrain updates)
+    this.multiplayerSync = new MultiplayerSync({
+      apiOrigin: session.api_origin,
+      token: session.token,
+      worldId: session.world.id,
+      currentUserId: session.player.user_id,
+      heartbeatIntervalMs: 300,
+      onPlayersUpdate: (players) => {
+        this.remotePlayers = players;
+        this.minimap.setRemotePlayers(players);
+      },
+      onTerrainUpdate: (chunks) => {
+        this.world.applyRemoteChunkUpdates(chunks);
+      }
+    });
+    this.multiplayerSync.getPlayerPosition = () => ({
+      x: this.playerPhysics.position.x,
+      y: this.playerPhysics.position.y,
+      z: this.playerPhysics.position.z,
+      yaw: this.controller.yaw
+    });
+    this.multiplayerSync.start();
 
     // 6. Start Loop
     this.animate = this.animate.bind(this);
@@ -261,6 +294,7 @@ class Game {
         : (this.playerPhysics.isSprinting ? this.playerPhysics.sprintSpeed : this.playerPhysics.walkSpeed),
       lookPitch: this.controller.pitch
     });
+    this.sceneRenderer.updateRemotePlayers(this.remotePlayers || [], dt);
 
     // 6. Update Cursor Highlight
     const cursor = this.controller.getCursorHighlight();
