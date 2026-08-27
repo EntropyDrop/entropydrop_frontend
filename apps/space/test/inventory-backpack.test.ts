@@ -1,0 +1,563 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import * as THREE from 'three';
+import { Contraption } from '../src/engine/contraption/Contraption.ts';
+import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import {
+  MAX_INVENTORY_BLOCKS,
+  MAX_INVENTORY_IMPORT_BYTES,
+  MAX_INVENTORY_SCRIPT_BYTES,
+  PlayerController,
+  SpecialTool
+} from '../src/engine/controls/PlayerController.ts';
+import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { World } from '../src/engine/voxel/World.ts';
+import { UIManager } from '../src/ui/UIManager.ts';
+
+/**
+ * Backpack: three categories of 9 items each (block sets, entities, color sets),
+ * per-category selection, JSON serialize/parse, caps, and deletion.
+ */
+
+function makeController(overrides: any = {}) {
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectedSubtree = null;
+  controller.selectedBlockSelection = null;
+  controller.selectorLevel = null;
+  controller.selectorRange = null;
+  controller.contraptions = overrides.manager || null;
+  controller.world = overrides.world || null;
+  controller.keys = {};
+  controller.sound = { playBlockPlace() {}, playAssemblyClack() {}, playGlueApply() {}, playWrenchClick() {} };
+  const toasts: string[] = [];
+  const appliedSets: any[] = [];
+  controller.ui = {
+    showToast: m => toasts.push(m),
+    renderInventoryBar() {},
+    applyColorSetToPalette: set => appliedSets.push(set)
+  };
+  Object.assign(controller, overrides);
+  controller.inventoryCategory(); // lazy 3×9 bootstrap (prototype instances skip the constructor)
+  controller.__toasts = toasts;
+  controller.__appliedColorSets = appliedSets;
+  return controller;
+}
+
+function makeMemoryStorage() {
+  const values = new Map<string, string>();
+  return {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, String(value)); },
+    removeItem(key) { values.delete(key); }
+  };
+}
+
+function makeEntity() {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    1,
+    [
+      { localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0xff0000, entityId: 'root' },
+      { localX: 1, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0x00ff00, entityId: 'arm' }
+    ],
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { childEntities: [{ id: 'arm', parentId: 'root', pivot: [1.5, 0.5, 0.5], blockKeys: [['1', '0', '0']] }] }
+  );
+  const manager = new ContraptionManager(scene, {}, null, null);
+  manager.registerContraption(contraption);
+  return { contraption, manager, scene };
+}
+
+test('R copies into the entity category, T into the blockset category', () => {
+  const { contraption, manager } = makeEntity();
+  const controller = makeController({ manager, world: {} as any });
+  controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm']) };
+
+  controller.copySelectionToInventory();
+  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 1, 'R should fill an entity slot');
+  assert.equal(typeof controller.inventories.entity.items.find(Boolean).name, 'string');
+  assert.equal(controller.inventories.blockset.items.filter(Boolean).length, 0);
+  assert.equal(controller.activeInventoryCategory, 'entity', 'the bar should switch to entities after R');
+
+  const controller2 = makeController({ manager, world: {} as any });
+  controller2.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm']) };
+  controller2.copySelectionAsBlockSet();
+  const blockset = controller2.inventories.blockset.items.find(Boolean);
+  assert.ok(blockset, 'T should fill a blockset slot');
+  assert.equal(blockset.kind, 'blockset');
+  assert.equal(typeof blockset.name, 'string');
+  assert.equal(controller2.inventories.entity.items.filter(Boolean).length, 0);
+  assert.equal(controller2.activeInventoryCategory, 'blockset');
+});
+
+test('each category caps at 9 items and the copy reports the limit', () => {
+  const { contraption, manager } = makeEntity();
+  const controller = makeController({ manager, world: {} as any });
+  for (let i = 0; i < 9; i++) {
+    controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm']) };
+    assert.ok(controller.copySelectionToInventory(), 'copy ' + (i + 1) + ' should be accepted');
+  }
+  controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm']) };
+  const tenth = controller.copySelectionToInventory();
+  assert.equal(tenth, null, 'the tenth entity copy must be rejected');
+  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 9);
+  assert.ok(controller.__toasts.some(m => m.includes('full (9)')));
+});
+
+test('deleteInventoryItem frees a slot and keeps a valid selection', () => {
+  const controller = makeController();
+  controller.inventories.blockset.items[0] = { kind: 'blockset', blocks: [], blockCount: 0, name: 'a' };
+  controller.inventories.blockset.items[1] = { kind: 'blockset', blocks: [], blockCount: 0, name: 'b' };
+  controller.inventories.blockset.selected = 1;
+  assert.equal(controller.deleteInventoryItem('blockset', 0), true);
+  assert.equal(controller.inventories.blockset.items[0], null);
+  assert.equal(controller.inventories.blockset.selected, 1, 'selection stays when the kept slot still exists');
+  assert.equal(controller.deleteInventoryItem('blockset', 1), true);
+  assert.equal(controller.inventories.blockset.selected, 0, 'selection falls back when the list empties');
+  assert.equal(controller.deleteInventoryItem('blockset', 0), false);
+  assert.equal(controller.deleteInventoryItem('nope' as any, 0), false);
+
+  controller.inventories.entity.items[2] = { blocks: [{}], blockCount: 1 };
+  controller.inventories.entity.items[7] = { blocks: [{}], blockCount: 1 };
+  controller.inventories.entity.selected = 7;
+  assert.equal(controller.deleteInventoryItem('entity', 2), true);
+  assert.equal(controller.inventories.entity.selected, 7, 'deleting another item preserves the active slot');
+});
+
+test('inventory slots bridge to the active category', () => {
+  const controller = makeController();
+  assert.equal(controller.activeInventoryCategory, 'blockset');
+  assert.equal(controller.inventorySlots.length, 9);
+  controller.inventorySlots[0] = { kind: 'blockset', blocks: [], blockCount: 0, name: 'x' };
+  assert.equal(controller.selectedInventoryIndex, 0);
+  controller.selectedInventoryIndex = 4;
+  controller.setActiveInventoryCategory('entity');
+  assert.equal(controller.selectedInventoryIndex, 0, 'each category keeps its own cursor');
+  assert.equal(controller.inventories.blockset.selected, 4, 'the blockset cursor is preserved');
+  assert.equal(controller.inventorySlots[0], null, 'the entity list is empty');
+  controller.selectedInventoryIndex = 99;
+  assert.equal(controller.selectedInventoryIndex, 0, 'out-of-range indices reset to 0');
+
+  controller.inventorySlots = new Array(20).fill({ blocks: [{}], blockCount: 1 });
+  assert.equal(controller.inventorySlots.length, 9, 'the compatibility setter cannot exceed the 9-item cap');
+});
+
+test('the backpack workbench no longer renders tool cards', () => {
+  const uiSource = readFileSync(new URL('../src/ui/UIManager.ts', import.meta.url), 'utf8');
+  const styleSource = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const indexSource = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(uiSource, /inventory-card tool-card/);
+  assert.doesNotMatch(uiSource, /const tools = \[/);
+  assert.doesNotMatch(uiSource, /KEYBOARD PALETTE \(9\)/);
+  assert.doesNotMatch(uiSource, /CURRENT BUILD COLOR/);
+  assert.match(uiSource, /Add current palette/);
+  assert.match(uiSource, /colorset-preview-grid/);
+  assert.doesNotMatch(uiSource, /teleConsoleLogs\.innerHTML/);
+  assert.doesNotMatch(uiSource, /applyAgentCode\(code, targetId, true\)/);
+  assert.match(styleSource, /\.colorset-colors\s*\{[^}]*grid-template-columns:\s*repeat\(3,/s);
+  assert.match(indexSource, /Content-Security-Policy/);
+  assert.match(indexSource, /object-src 'none'/);
+});
+
+test('all categories support duplicate editable names', () => {
+  const controller = makeController();
+  const blockA = { kind: 'blockset', name: 'Shared', blocks: [{}], blockCount: 1 };
+  const blockB = { kind: 'blockset', name: 'Shared', blocks: [{}], blockCount: 1 };
+  assert.equal(controller.addInventoryItem('blockset', blockA), 0);
+  assert.equal(controller.addInventoryItem('blockset', blockB), 1);
+  assert.equal(controller.renameInventoryItem('blockset', 1, 'Shared'), 'Shared');
+
+  assert.equal(controller.addInventoryItem('entity', { name: 'Shared', blocks: [{}], blockCount: 1 }), 0);
+  assert.equal(controller.addInventoryItem('colorset', { name: 'Shared', colors: new Array(9).fill('#123456') }), 0);
+  assert.equal(controller.inventories.blockset.items[0].name, 'Shared');
+  assert.equal(controller.inventories.blockset.items[1].name, 'Shared');
+  assert.equal(controller.inventories.entity.items[0].name, 'Shared');
+  assert.equal(controller.inventories.colorset.items[0].name, 'Shared');
+
+  assert.equal(controller.renameInventoryItem('entity', 0, '  Renamed  '), 'Renamed');
+  assert.equal(controller.renameInventoryItem('entity', 0, '   '), null, 'empty names are rejected');
+  assert.equal(controller.inventories.entity.items[0].name, 'Renamed');
+});
+
+test('serialize/parse round-trips block sets', () => {
+  const controller = makeController();
+  const slot = {
+    kind: 'blockset',
+    name: 'my set',
+    blockCount: 3,
+    blocks: [
+      { dx: 0, dy: 0, dz: 0, size: 1, block: 1, color: 0xff0000 },
+      { dx: 1.2, dy: 0.4, dz: 2.8, size: 0.2, block: 1, color: 0x00ff00, part: 'tip' },
+      { dx: -0.2, dy: -1.4, dz: -2, size: 0.2, block: 1, color: 0x0000ff }
+    ]
+  };
+  const serialized = controller.serializeInventoryItem('blockset', slot);
+  assert.equal(serialized.version, 2);
+  assert.equal('label' in serialized, false);
+  assert.deepEqual(
+    serialized.blocks.map(({ dx, dy, dz, mx, my, mz }) => ({ dx, dy, dz, mx, my, mz })),
+    [
+      { dx: 0, dy: 0, dz: 0, mx: undefined, my: undefined, mz: undefined },
+      { dx: 1, dy: 0, dz: 2, mx: 1, my: 2, mz: 4 },
+      { dx: -1, dy: -2, dz: -2, mx: 4, my: 3, mz: 0 }
+    ]
+  );
+  for (const block of serialized.blocks) {
+    assert.equal('size' in block, false, 'v2 infers standard/micro from mx/my/mz');
+    for (const key of ['dx', 'dy', 'dz', 'mx', 'my', 'mz']) {
+      if (block[key] !== undefined) assert.equal(Number.isInteger(block[key]), true, `${key} must be an integer`);
+    }
+  }
+
+  const text = JSON.stringify(serialized);
+  const parsed = controller.parseInventoryImport(text, 'blockset');
+  assert.equal(parsed.ok, true, parsed.error);
+  assert.equal(parsed.item.blocks.length, 3);
+  assert.equal(parsed.item.blocks[1].dx, 1.2);
+  assert.equal(parsed.item.blocks[1].dy, 0.4);
+  assert.equal(parsed.item.blocks[1].dz, 2.8);
+  assert.equal(parsed.item.blocks[0].size, 1);
+  assert.equal(parsed.item.blocks[1].size, 0.2);
+  assert.equal(parsed.item.blocks[1].part, 'tip');
+  assert.equal(parsed.item.blocks[2].dx, -0.2);
+  assert.equal(parsed.item.blocks[2].dy, -1.4);
+  assert.equal(parsed.item.name, 'my set');
+
+  // Old, untyped and localX-style files are intentionally unsupported.
+  const local = JSON.stringify({ blocks: [{ localX: 1, localY: 2, localZ: 3, size: 1, color: 0x123456 }] });
+  const localParsed = controller.parseInventoryImport(local, 'blockset');
+  assert.equal(localParsed.ok, false);
+
+  const legacy = JSON.stringify({ type: 'space-blockset', version: 1, name: 'old', blocks: [{ dx: 0.2, dy: 1.4, dz: 0, size: 0.2 }] });
+  const legacyParsed = controller.parseInventoryImport(legacy, 'blockset');
+  assert.equal(legacyParsed.ok, false);
+
+  assert.equal(controller.parseInventoryImport('{"type":"space-blockset","version":2,"name":"bad","blocks":[{"dx":0.2,"dy":0,"dz":0}]}', 'blockset').ok, false);
+  assert.equal(controller.parseInventoryImport('{"type":"space-blockset","version":2,"name":"bad","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0,"mz":5}]}', 'blockset').ok, false);
+  assert.equal(controller.parseInventoryImport('{"type":"space-blockset","version":2,"name":"bad","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0}]}', 'blockset').ok, false);
+  const inferredMicro = controller.parseInventoryImport('{"type":"space-blockset","version":2,"name":"micro","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0,"mz":0}]}', 'blockset');
+  assert.equal(inferredMicro.ok, true);
+  assert.equal(inferredMicro.item.blocks[0].size, 0.2);
+
+  assert.equal(controller.parseInventoryImport('{"blocks": []}', 'blockset').ok, false);
+  assert.equal(controller.parseInventoryImport('not json', 'blockset').ok, false);
+  assert.equal(controller.parseInventoryImport('{"colors": ["#123456"]}', 'blockset').ok, false);
+});
+
+test('serialize/parse round-trips entities with scripts and hierarchy', () => {
+  const controller = makeController();
+  const slot = {
+    name: 'robot',
+    rootId: 'root',
+    blockCount: 4,
+    blocks: [
+      { localX: 0, localY: 0, localZ: 0, size: 1, block: 1, color: 0xff0000, entityId: 'root' },
+      { localX: 1, localY: 0, localZ: 0, size: 1, block: 1, color: 0x00ff00, entityId: 'arm' },
+      { localX: 1.2, localY: 0.4, localZ: 2.8, size: 0.2, block: 1, color: 0x123456, entityId: 'arm', part: 'tip' },
+      { localX: -0.2, localY: -1.4, localZ: -2, size: 0.2, block: 1, color: 0x654321, entityId: 'root' }
+    ],
+    childEntities: [{ id: 'arm', parentId: 'root', pivot: [1.5, 0.5, 0.5] }],
+    scripts: [{ id: 'arm', code: 'self.applyForce([0,1,0]);' }],
+    enabled: [{ id: 'root', enabled: true }],
+    constraints: [],
+    mode: 'programmable',
+    bodyType: 'dynamic'
+  };
+  const serialized = controller.serializeInventoryItem('entity', slot);
+  assert.equal(serialized.version, 2);
+  assert.deepEqual(
+    serialized.blocks.map(({ dx, dy, dz, mx, my, mz }) => ({ dx, dy, dz, mx, my, mz })),
+    [
+      { dx: 0, dy: 0, dz: 0, mx: undefined, my: undefined, mz: undefined },
+      { dx: 1, dy: 0, dz: 0, mx: undefined, my: undefined, mz: undefined },
+      { dx: 1, dy: 0, dz: 2, mx: 1, my: 2, mz: 4 },
+      { dx: -1, dy: -2, dz: -2, mx: 4, my: 3, mz: 0 }
+    ]
+  );
+  for (const block of serialized.blocks) {
+    assert.equal('localX' in block || 'localY' in block || 'localZ' in block, false);
+    assert.equal('size' in block, false, 'v2 infers standard/micro from mx/my/mz');
+    for (const key of ['dx', 'dy', 'dz', 'mx', 'my', 'mz']) {
+      if (block[key] !== undefined) assert.equal(Number.isInteger(block[key]), true, `${key} must be an integer`);
+    }
+  }
+
+  const text = JSON.stringify(serialized);
+  const parsed = controller.parseInventoryImport(text, 'entity');
+  assert.equal(parsed.ok, true, parsed.error);
+  assert.equal(parsed.item.blocks.length, 4);
+  assert.deepEqual(
+    [parsed.item.blocks[2].localX, parsed.item.blocks[2].localY, parsed.item.blocks[2].localZ],
+    [1.2, 0.4, 2.8]
+  );
+  assert.deepEqual(
+    [parsed.item.blocks[3].localX, parsed.item.blocks[3].localY, parsed.item.blocks[3].localZ],
+    [-0.2, -1.4, -2]
+  );
+  assert.equal(parsed.item.blocks[0].size, 1);
+  assert.equal(parsed.item.blocks[2].size, 0.2);
+  assert.equal(parsed.item.blocks[2].part, 'tip');
+  assert.deepEqual(parsed.item.scripts, [{ id: 'arm', code: 'self.applyForce([0,1,0]);' }]);
+  assert.equal(parsed.item.childEntities.length, 1);
+  assert.equal(parsed.item.mode, 'programmable');
+  assert.equal(parsed.item.name, 'robot');
+
+  // The parsed entity can actually build through buildFromSlot.
+  const { manager } = makeEntity();
+  const built = manager.buildFromSlot(parsed.item, new THREE.Vector3(20, 0, 20));
+  assert.ok(built, 'the imported entity should build');
+  assert.equal(built.blocks.length, 4);
+  assert.ok(built.entityNodes.has('arm'));
+
+  // Legacy entity files are intentionally unsupported.
+  const legacy = JSON.stringify({
+    type: 'space-entity',
+    version: 1,
+    rootId: 'root',
+    blocks: [{ localX: 0.2, localY: 1.4, localZ: 0, size: 0.2, entityId: 'root' }]
+  });
+  const legacyParsed = controller.parseInventoryImport(legacy, 'entity');
+  assert.equal(legacyParsed.ok, false);
+
+  assert.equal(controller.parseInventoryImport('{"rootId":"root"}', 'entity').ok, false);
+  assert.equal(controller.parseInventoryImport('{"blocks":[{"localX":"x","localY":0,"localZ":0}]}', 'entity').ok, false);
+  assert.equal(controller.parseInventoryImport('{"type":"space-entity","version":2,"name":"bad","blocks":[{"dx":0.2,"dy":0,"dz":0}]}', 'entity').ok, false);
+  assert.equal(controller.parseInventoryImport('{"type":"space-entity","version":2,"name":"bad","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0,"mz":5}]}', 'entity').ok, false);
+  assert.equal(controller.parseInventoryImport('{"type":"space-entity","version":2,"name":"bad","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0}]}', 'entity').ok, false);
+  const inferredMicro = controller.parseInventoryImport('{"type":"space-entity","version":2,"name":"micro","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0,"mz":0}]}', 'entity');
+  assert.equal(inferredMicro.ok, true);
+  assert.equal(inferredMicro.item.blocks[0].size, 0.2);
+});
+
+test('serialize/parse round-trips color sets and enforces 9 valid hex colors', () => {
+  const controller = makeController();
+  const set = { name: 'sunset', colors: ['#f1c40f', '#ff6b81', '#a55eea', '#48dbfb', '#2ed573', '#eb4d4b', '#f5f6fa', '#2f3542', '#f2a93b'] };
+  const parsed = controller.parseInventoryImport(JSON.stringify(controller.serializeInventoryItem('colorset', set)), 'colorset');
+  assert.equal(parsed.ok, true, parsed.error);
+  assert.equal(controller.serializeInventoryItem('colorset', set).version, 2);
+  assert.equal(parsed.item.colors.length, 9);
+  assert.equal(parsed.item.colors[0], '#f1c40f');
+  assert.equal(parsed.item.name, 'sunset');
+
+  // Bare arrays and short sets belong to the removed legacy format.
+  const bare = controller.parseInventoryImport(JSON.stringify(['#111111', '#222222']), 'colorset');
+  assert.equal(bare.ok, false);
+  const short = controller.parseInventoryImport(JSON.stringify({ type: 'space-colorset', version: 2, name: 'short', colors: ['#111111', '#222222'] }), 'colorset');
+  assert.equal(short.ok, false);
+
+  // Invalid colors are rejected.
+  assert.equal(controller.parseInventoryImport('{"type":"space-colorset","version":2,"name":"bad","colors":["#12345","x"]}', 'colorset').ok, false);
+  assert.equal(controller.parseInventoryImport('{"blocks":1}', 'colorset').ok, false);
+  const tooMany = controller.parseInventoryImport(JSON.stringify({ colors: new Array(10).fill('#123456') }), 'colorset');
+  assert.equal(tooMany.ok, false);
+});
+
+test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budgets', () => {
+  const controller = makeController();
+  assert.equal(controller.parseInventoryImport('x'.repeat(MAX_INVENTORY_IMPORT_BYTES + 1), 'entity').ok, false);
+
+  const baseEntity = {
+    type: 'space-entity',
+    version: 2,
+    name: 'bounded',
+    rootId: 'root',
+    blocks: [{ dx: 0, dy: 0, dz: 0, entityId: 'root' }]
+  };
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    ...baseEntity,
+    blocks: [{ dx: 0, dy: 0, dz: 0 }, { dx: 64, dy: 0, dz: 0 }]
+  }), 'entity').ok, false, 'a 65-cell AABB must be rejected');
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    ...baseEntity,
+    childEntities: [{ id: '<img_onerror>', parentId: 'root' }]
+  }), 'entity').ok, false, 'component ids are restricted to portable characters');
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    ...baseEntity,
+    scripts: [{ id: 'root', code: 'x'.repeat(MAX_INVENTORY_SCRIPT_BYTES + 1) }]
+  }), 'entity').ok, false, 'oversized scripts must be rejected');
+
+  const repeatedBlock = { dx: 0, dy: 0, dz: 0 };
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    type: 'space-blockset',
+    version: 2,
+    name: 'too many',
+    blocks: new Array(MAX_INVENTORY_BLOCKS + 1).fill(repeatedBlock)
+  }), 'blockset').ok, false, 'oversized voxel arrays must be rejected');
+});
+
+test('backpack persists all categories and seeds the default palette', () => {
+  const storage = makeMemoryStorage();
+  const controller = makeController();
+  controller.inventoryStorage = () => storage;
+
+  assert.equal(controller.loadInventoriesFromLocalStorage(storage), false);
+  const defaultSet = controller.inventories.colorset.items.find(Boolean);
+  assert.equal(defaultSet.name, 'Default palette');
+  assert.equal(defaultSet.colors.length, 9);
+
+  controller.addInventoryItem('blockset', {
+    kind: 'blockset',
+    name: 'Stored shape',
+    blocks: [{ dx: 0.2, dy: 0, dz: 0, size: 0.2, block: 1, color: 0x123456 }],
+    blockCount: 1
+  });
+  controller.addInventoryItem('entity', {
+    name: 'Stored entity',
+    rootId: 'root',
+    blocks: [{ localX: 0, localY: 0, localZ: 0, size: 1, block: 1, color: 0xabcdef, entityId: 'root' }],
+    blockCount: 1
+  });
+  controller.addInventoryItem('colorset', { name: 'Stored colors', colors: new Array(9).fill('#123456') });
+  controller.renameInventoryItem('blockset', 0, 'Renamed shape');
+  controller.setActiveInventoryCategory('entity');
+  controller.selectedInventoryIndex = 0;
+
+  const stored = JSON.parse(storage.getItem('space.backpack.v2'));
+  assert.equal(stored.type, 'space-backpack');
+  assert.equal(stored.activeCategory, 'entity');
+  assert.equal(stored.categories.blockset.items[0].name, 'Renamed shape');
+  assert.equal('label' in stored.categories.blockset.items[0], false);
+  assert.equal('size' in stored.categories.blockset.items[0].blocks[0], false);
+
+  const restored = makeController();
+  restored.inventoryStorage = () => storage;
+  assert.equal(restored.loadInventoriesFromLocalStorage(storage), true);
+  assert.equal(restored.activeInventoryCategory, 'entity');
+  assert.equal(restored.inventories.blockset.items[0].name, 'Renamed shape');
+  assert.equal(restored.inventories.blockset.items[0].blocks[0].dx, 0.2);
+  assert.equal(restored.inventories.entity.items[0].name, 'Stored entity');
+  assert.equal(restored.inventories.colorset.items.filter(Boolean).length, 2);
+});
+
+test('inventory export filenames use the item name', () => {
+  const ui = Object.create(UIManager.prototype);
+  assert.equal(ui.inventoryJsonFilename('My Palette'), 'My Palette.json');
+  assert.equal(ui.inventoryJsonFilename('robot/body?.json'), 'robot_body_.json');
+});
+
+test('Tab toggles the hammer bar between block sets and entities', () => {
+  const controller = makeController();
+  const renders: string[] = [];
+  controller.ui.renderInventoryBar = () => renders.push(controller.activeInventoryCategory);
+
+  assert.equal(controller.toggleHammerCategory(), 'entity', 'the default block-set focus toggles to entities');
+  assert.equal(controller.activeInventoryCategory, 'entity');
+  assert.equal(controller.toggleHammerCategory(), 'blockset', 'the entity focus toggles back to block sets');
+  assert.deepEqual(renders, ['entity', 'blockset'], 'the bar re-renders on every toggle');
+  assert.ok(controller.__toasts.some(m => m.includes('ENTITIES')));
+  assert.ok(controller.__toasts.some(m => m.includes('BLOCK SETS')));
+
+  // A legacy color-set focus still resolves into the two hammer-bar categories.
+  controller.setActiveInventoryCategory('colorset');
+  assert.equal(controller.toggleHammerCategory(), 'entity');
+});
+
+test('hammer left-click applies a selected color set to the palette', () => {
+  const controller = makeController();
+  controller.activeTool = SpecialTool.HAMMER;
+  const set = { name: 'test set', colors: new Array(9).fill('#123456') };
+  controller.setActiveInventoryCategory('colorset');
+  controller.inventories.colorset.items[2] = set;
+  controller.selectedInventoryIndex = 2;
+
+  assert.equal(controller.pasteInventorySlot(), true);
+  assert.equal(controller.__appliedColorSets.length, 1);
+  assert.equal(controller.__appliedColorSets[0], set);
+  assert.ok(controller.__toasts.some(m => m.includes('Applied color set')));
+
+  // An empty color-set slot reports empty instead of applying.
+  controller.selectedInventoryIndex = 5;
+  assert.equal(controller.pasteInventorySlot(), false);
+  assert.ok(controller.__toasts.some(m => m.includes('slot is empty')));
+});
+
+test('assembleSelection creates the contraption without automatically writing to backpack', () => {
+  const scene = new THREE.Scene();
+  const world = new World(scene) as any;
+  world.setBlock(10, 10, 10, BlockTypes.COLOR_BLOCK, false, 0xff0000);
+  const manager = new ContraptionManager(scene, world, null, null);
+  const controller = makeController({ manager, world });
+  manager.selectionHost = controller;
+
+  manager.setCornerA({ x: 10, y: 10, z: 10 });
+  manager.setCornerB({ x: 10, y: 10, z: 10 });
+  assert.equal(manager.hasValidSelection(), true);
+
+  const contraption = controller.assembleSelection();
+  assert.ok(contraption, 'contraption should be assembled');
+  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 0, 'assembly does not write to backpack');
+  assert.ok(controller.__toasts.some(m => m.includes('assembled as root body')));
+});
+
+test('copySelectionToInventory reports an error toast and rejects writing when entity inventory is full (9)', () => {
+  const { contraption, manager } = makeEntity();
+  const controller = makeController({ manager, world: {} as any });
+
+  // Fill all 9 entity slots
+  for (let i = 0; i < 9; i++) {
+    controller.inventories.entity.items[i] = { rootId: 'root', blockCount: 1, blocks: [{}], name: `E${i + 1}` };
+  }
+  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 9);
+
+  controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm']) };
+  const result = controller.copySelectionToInventory();
+  assert.equal(result, null, 'copy must be rejected when entity inventory is full');
+  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 9);
+  assert.ok(controller.__toasts.some(m => m.includes('full (9)')), 'toast must report that entity inventory is full');
+});
+
+test('copySelectionAsBlockSet reports an error toast and rejects writing when blockset inventory is full (9)', () => {
+  const scene = new THREE.Scene();
+  const world = new World(scene) as any;
+  world.setBlock(5, 5, 5, BlockTypes.COLOR_BLOCK, false, 0x0000ff);
+  const manager = new ContraptionManager(scene, {}, null, null);
+  const controller = makeController({ manager, world });
+  manager.selectionHost = controller;
+
+  // Fill all 9 blockset slots
+  for (let i = 0; i < 9; i++) {
+    controller.inventories.blockset.items[i] = { kind: 'blockset', blockCount: 1, blocks: [{}], name: `B${i + 1}` };
+  }
+  assert.equal(controller.inventories.blockset.items.filter(Boolean).length, 9);
+
+  manager.setCornerA({ x: 5, y: 5, z: 5 });
+  manager.setCornerB({ x: 5, y: 5, z: 5 });
+
+  const result = controller.copySelectionAsBlockSet();
+  assert.equal(result, null, 'copy must be rejected when blockset inventory is full');
+  assert.equal(controller.inventories.blockset.items.filter(Boolean).length, 9);
+  assert.ok(controller.__toasts.some(m => m.includes('full (9)')), 'toast must report that block set inventory is full');
+});
+
+test('copySelectionSmart handles both entity and world block selection with unified R key', () => {
+  const { contraption, manager } = makeEntity();
+  const scene = new THREE.Scene();
+  const world = new World(scene) as any;
+  world.setBlock(2, 2, 2, BlockTypes.COLOR_BLOCK, false, 0x00ff00);
+  const controller = makeController({ manager, world });
+  manager.selectionHost = controller;
+
+  // 1. Entity selection -> copySelectionSmart writes to entity inventory
+  controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm']) };
+  const entSlot = controller.copySelectionSmart();
+  assert.ok(entSlot, 'should copy entity subtree');
+  assert.equal(controller.activeInventoryCategory, 'entity');
+  assert.equal(controller.inventories.entity.items[0].nodeCount, 2);
+
+  // 2. World selection -> copySelectionSmart writes to blockset inventory
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectedSubtree = null;
+  controller.selectedBlockSelection = null;
+  manager.setCornerA({ x: 2, y: 2, z: 2 });
+  manager.setCornerB({ x: 2, y: 2, z: 2 });
+  assert.equal(manager.hasValidSelection(), true);
+
+  const blockSlot = controller.copySelectionSmart();
+  assert.ok(blockSlot, 'should copy world block set');
+  assert.equal(controller.activeInventoryCategory, 'blockset');
+  assert.equal(controller.inventories.blockset.items[0].blockCount, 1);
+});
+

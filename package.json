@@ -3,9 +3,16 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && node scripts/generate-sitemap.js && vite build",
+    "build": "npm run build:site && npm run build:space && node scripts/merge-space-dist.js",
+    "build:site": "tsc -b && node scripts/generate-sitemap.js && vite build",
+    "build:space": "npm run build --workspace @entropydrop/space",
+    "test:space": "npm test --workspace @entropydrop/space",
+    "check:space": "npm run check --workspace @entropydrop/space",
     "lint": "eslint .",
     "preview": "vite preview"
   },

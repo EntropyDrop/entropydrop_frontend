@@ -1,5 +1,6 @@
 export const TOP_NAV_ITEMS = [
     { key: 'skin', icon: 'pixelarticons:avatar', path: '/skin/' },
+    { key: 'space', icon: 'pixelarticons:zap', path: '/space' },
     { key: 'figure', icon: 'pixelarticons:box', path: '/figure' },
     { key: 'pro', icon: 'pixelarticons:zap', path: '/pro' },
     { key: 'public', icon: 'pixelarticons:binary', path: '/public' },
@@ -32,4 +33,3 @@ export type PublicNavKey = typeof PUBLIC_NAV_ITEMS[number]['key']
 // Keep NAV_ITEMS for backward compatibility
 export const NAV_ITEMS = SKIN_NAV_ITEMS
 export type NavKey = SkinNavKey
-

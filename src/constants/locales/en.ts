@@ -15,6 +15,7 @@ export default {
         blog: 'Blog',
         monitor: 'Monitor',
         skin: 'Skins',
+        space: 'Space',
         figure: 'Figures',
         discussions: 'Discussions',
         showcase: 'Showcase',

@@ -1,0 +1,3760 @@
+import * as THREE from 'three';
+import { BlockTypes, DEFAULT_BLOCK_COLOR } from '../voxel/BlockTypes.ts';
+import { ActionDomain, executeBasicAction } from '../actions/BasicActions.ts';
+import {
+  bendPoint,
+  TORUS_GREF,
+  TORUS_K_PHI,
+  TORUS_MAX_RHO,
+  TORUS_R,
+  TORUS_RHO,
+  TORUS_SIZE_X,
+  TORUS_SIZE_Z
+} from '../torus/TorusWorld.ts';
+import { MICRO_DIVISIONS, MICRO_SIZE } from '../voxel/MicroVoxelLayer.ts';
+import {
+  EntityScriptRuntimeClient,
+  validateEntityScriptSyntax
+} from '../scripting/EntityScriptRuntime.ts';
+
+// Must match createVoxelMesh(): the GPU bends these exact face vertices before
+// rasterization, so bent-space picking intersects the same two triangles shown
+// under the crosshair instead of approximating them in one flat tangent frame.
+const COLLISION_RAYCAST_FACES = [
+  { normal: [0, 1, 0], quad: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] },
+  { normal: [0, -1, 0], quad: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] },
+  { normal: [0, 0, -1], quad: [[1, 1, 0], [1, 0, 0], [0, 0, 0], [0, 1, 0]] },
+  { normal: [0, 0, 1], quad: [[0, 1, 1], [0, 0, 1], [1, 0, 1], [1, 1, 1]] },
+  { normal: [-1, 0, 0], quad: [[0, 1, 0], [0, 0, 0], [0, 0, 1], [0, 1, 1]] },
+  { normal: [1, 0, 0], quad: [[1, 1, 1], [1, 0, 1], [1, 0, 0], [1, 1, 0]] }
+];
+
+function intersectCollisionTriangleInclusive(ray, a, b, c, point, barycentric) {
+  const plane = new THREE.Plane().setFromCoplanarPoints(a, b, c);
+  if (!ray.intersectPlane(plane, point)) return false;
+  THREE.Triangle.getBarycoord(point, a, b, c, barycentric);
+  const epsilon = 1e-5;
+  return barycentric.x >= -epsilon
+    && barycentric.y >= -epsilon
+    && barycentric.z >= -epsilon;
+}
+
+function asVector3(value: any, fallback: THREE.Vector3 = new THREE.Vector3()): THREE.Vector3 {
+  if (value?.isVector3) return value.clone();
+  if (Array.isArray(value)) {
+    return new THREE.Vector3(Number(value[0]) || 0, Number(value[1]) || 0, Number(value[2]) || 0);
+  }
+  if (value && typeof value === 'object') {
+    return new THREE.Vector3(Number(value.x) || 0, Number(value.y) || 0, Number(value.z) || 0);
+  }
+  return fallback.clone();
+}
+
+function asQuaternion(value: any, fallback: THREE.Quaternion = new THREE.Quaternion()): THREE.Quaternion {
+  if (value?.isQuaternion) return value.clone().normalize();
+  if (Array.isArray(value) && value.length >= 4) {
+    return new THREE.Quaternion(
+      Number(value[0]) || 0,
+      Number(value[1]) || 0,
+      Number(value[2]) || 0,
+      Number(value[3]) || 1
+    ).normalize();
+  }
+  if (Array.isArray(value) && value.length >= 3) {
+    return new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      Number(value[0]) || 0,
+      Number(value[1]) || 0,
+      Number(value[2]) || 0,
+      'YXZ'
+    ));
+  }
+  return fallback.clone();
+}
+
+function collisionCellKey(block: any): string {
+  return `${Math.floor(block.localX + 1e-6)},${Math.floor(block.localY + 1e-6)},${Math.floor(block.localZ + 1e-6)}`;
+}
+
+function isFiniteVector3Array(value: any): boolean {
+  return Array.isArray(value)
+    && value.length >= 3
+    && Number.isFinite(Number(value[0]))
+    && Number.isFinite(Number(value[1]))
+    && Number.isFinite(Number(value[2]));
+}
+
+function isMicroOffset(value: any): boolean {
+  return isFiniteVector3Array(value)
+    && value.slice(0, 3).every(part => Number.isInteger(Number(part))
+      && Number(part) >= 0 && Number(part) <= 4);
+}
+
+function scriptEditResult(field: 'placed' | 'removed', count: number, reason: string) {
+  return Object.freeze({
+    ok: count > 0,
+    [field]: count,
+    reason
+  });
+}
+
+const SLOW_SCRIPT_THRESHOLD_MS = 5;
+const SLOW_SCRIPT_CONSECUTIVE_LIMIT = 3;
+const DEFAULT_BLOCK_MASS_KG = 10;
+const MIN_BODY_MASS_KG = 0.1;
+// This is deliberately independent from the legacy ctx.limits control budget.
+// Component bodies may exceed that gameplay budget, but still need a finite
+// safety ceiling so repeated untrusted script calls cannot poison physics with
+// Infinity/NaN. The ceiling remains three orders of magnitude above the
+// largest force used by the built-in controllers and tests.
+const MAX_BODY_VECTOR_COMPONENT = 1e12;
+const COMPILED_SCRIPT_SENTINEL = function compiledEntityScript(_self, _ctx) {};
+const SCRIPT_STATE_LIMIT_BYTES = 64 * 1024;
+
+function boundedBodyVector(value: any): THREE.Vector3 | null {
+  if (!Array.isArray(value) || value.length < 3) return null;
+  const components = value.slice(0, 3).map(Number);
+  if (components.some(component => !Number.isFinite(component)
+    || Math.abs(component) > MAX_BODY_VECTOR_COMPONENT)) return null;
+  return new THREE.Vector3(components[0], components[1], components[2]);
+}
+
+const SCRIPT_COMPONENT_COMMANDS = new Set([
+  'applyThrust', 'setLocalPosition', 'setLocalRotation', 'setLocalEuler', 'setLocalSpin', 'setPivot',
+  'applyForce', 'applyLocalForce', 'applyForceAt', 'applyTorque', 'setCockpitPosition', 'setVehicle',
+  'body.setType', 'body.setMass', 'body.setMaterial', 'body.applyForce', 'body.applyLocalForce',
+  'body.applyTorque', 'constraints.create', 'constraints.remove', 'voxels.set', 'voxels.clear',
+  'voxels.paint', 'voxels.clearCell', 'voxels.subdivide', 'microVoxels.set', 'microVoxels.clear',
+  'microVoxels.paint'
+]);
+const SCRIPT_WORLD_COMMANDS = new Set([
+  'voxels.set', 'voxels.clear', 'voxels.paint', 'voxels.clearCell', 'voxels.subdivide',
+  'microVoxels.set', 'microVoxels.clear', 'microVoxels.paint'
+]);
+const SCRIPT_SELECTION_COMMANDS = new Set([
+  'clear', 'cornerA', 'cornerB', 'box', 'cells', 'toggle', 'entity', 'entityBox',
+  'delete', 'assemble', 'createChild'
+]);
+
+function cloneScriptData(value: any, fallback: any = null, maxBytes = SCRIPT_STATE_LIMIT_BYTES) {
+  try {
+    const json = JSON.stringify(value);
+    if (json === undefined || json.length > maxBytes) return fallback;
+    return JSON.parse(json);
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function scriptInputCodes(inputState: any, phase: string): string[] {
+  const values = inputState?.[phase];
+  if (values instanceof Set) return [...values].map(String);
+  if (Array.isArray(values)) return values.map(String);
+  return [];
+}
+
+function normalizeBodyMass(value: any, fallback: number | null = null): number | null {
+  const mass = Number(value);
+  return Number.isFinite(mass) && mass > 0
+    ? Math.max(MIN_BODY_MASS_KG, mass)
+    : fallback;
+}
+
+function defaultBodyMass(blocks: any[]): number {
+  if (!Array.isArray(blocks) || blocks.length === 0) return MIN_BODY_MASS_KG;
+  const totalMass = blocks.reduce(
+    (sum, b) => sum + Math.pow(b?.size || 1, 3) * DEFAULT_BLOCK_MASS_KG,
+    0
+  );
+  return Math.max(MIN_BODY_MASS_KG, Number(totalMass.toFixed(3)));
+}
+
+/** Public, non-sequential identity used by scripts, chunk queries, and UI. */
+export function createEntityPublicId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') {
+    return `ent_${cryptoApi.randomUUID()}`;
+  }
+  // Browser fallback for contexts without randomUUID. The internal numeric id
+  // remains separate, so this value is never used as an array/map index.
+  const hex = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, token => {
+    const value = Math.floor(Math.random() * 16);
+    return (token === 'x' ? value : (value & 0x3) | 0x8).toString(16);
+  });
+  return `ent_${hex}`;
+}
+
+export const ContraptionMode = {
+  FREE_PHYSICS: 'free_physics', // Free rigid-body physics
+  BEARING: 'bearing',           // Bearing rotation
+  PISTON: 'piston',             // Piston push/pull
+  DRIVABLE: 'drivable',         // Drivable vehicle
+  PROJECTILE: 'projectile',      // Ballistic projectile
+  PROGRAMMABLE: 'programmable'  // Programmable force entity
+};
+
+/** Maximum AABB edge, in standard cells (1 m each), for one entity and for any
+ * selection that can become an entity. */
+export const MAX_ENTITY_BOUNDS = 64;
+export const MAX_ENTITY_COMPONENTS = 64;
+export const MAX_COMPONENT_ID_LENGTH = 64;
+const COMPONENT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+/** Component ids are used in script maps and UI datasets, so keep them small
+ * and portable instead of accepting arbitrary imported strings. */
+export function isValidComponentId(value: unknown, allowRoot = true): boolean {
+  if (typeof value !== 'string' || value.length < 1 || value.length > MAX_COMPONENT_ID_LENGTH) return false;
+  if (!COMPONENT_ID_PATTERN.test(value)) return false;
+  return allowRoot || value !== 'root';
+}
+
+/** World voxels are the only static collision layer. Entity bodies are either
+ * script-driven kinematic bodies or force-driven dynamic bodies. */
+export const BodyType = Object.freeze({
+  KINEMATIC: 'kinematic',
+  DYNAMIC: 'dynamic'
+} as const);
+
+export type BodyTypeValue = 'kinematic' | 'dynamic';
+
+function normalizeBodyType(value: any, fallback: any = BodyType.DYNAMIC): any {
+  return value === BodyType.KINEMATIC || value === BodyType.DYNAMIC ? value : fallback;
+}
+
+function clampUnit(value: any, fallback: number) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : fallback;
+}
+
+function angularVelocityBetween(previous: THREE.Quaternion, current: THREE.Quaternion, dt: number) {
+  if (!(dt > 0)) return new THREE.Vector3();
+  const delta = current.clone().multiply(previous.clone().invert()).normalize();
+  if (delta.w < 0) delta.set(-delta.x, -delta.y, -delta.z, -delta.w);
+  const angle = 2 * Math.acos(Math.max(-1, Math.min(1, delta.w)));
+  const sinHalf = Math.sqrt(Math.max(0, 1 - delta.w * delta.w));
+  if (angle < 1e-8 || sinHalf < 1e-8) return new THREE.Vector3();
+  return new THREE.Vector3(delta.x, delta.y, delta.z).divideScalar(sinHalf).multiplyScalar(angle / dt);
+}
+
+/**
+ * A node in the entity hierarchy. The tree describes ownership and authored
+ * parent-relative transforms; each node also owns a kinematic or dynamic body.
+ */
+export interface EntityNode {
+  id: string;
+  parentId: string | null;
+  pivotLocal: THREE.Vector3;
+  localPosition: THREE.Vector3;
+  localQuaternion: THREE.Quaternion;
+  localAngularVelocity: THREE.Vector3;
+  commandedThisFrame?: boolean;
+  initialLocalPosition?: THREE.Vector3;
+  initialLocalQuaternion?: THREE.Quaternion;
+  group: THREE.Group;
+  children: Set<string>;
+  kind?: string;
+  previousWorldMatrix?: THREE.Matrix4;
+  bodyType: string;
+}
+
+export interface EntityRigidBody {
+  id: string;
+  nodeId: string;
+  type: string;
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  velocity: THREE.Vector3;
+  angularVelocity: THREE.Vector3;
+  appliedForces: THREE.Vector3;
+  appliedTorques: THREE.Vector3;
+  mass: number;
+  inverseInertia: number;
+  restitution: number;
+  friction: number;
+  linearDamping: number;
+  angularDamping: number;
+  centerOfMassLocal: THREE.Vector3;
+  previousKinematicPosition: THREE.Vector3;
+  previousKinematicQuaternion: THREE.Quaternion;
+  isOnGround: boolean;
+}
+
+export class Contraption {
+  // --- Identity & data ---
+  id: string;
+  publicId: string;
+  blocks: any[];
+  scene: any;
+  originWorldPos: THREE.Vector3;
+
+  // --- Spatial / 3D hierarchy ---
+  rootGroup: THREE.Group;
+  meshGroup: THREE.Group;
+  entityNodes: Map<string, EntityNode>;
+  childDefinitions: Map<string, any>;
+  rigidBodies: Map<string, EntityRigidBody>;
+  constraintDefinitions: Map<string, any>;
+  childScriptApis: Map<string, any>;
+  nextChildId: number;
+  glueSelectionGroup: THREE.Group | null;
+  glueHighlightEntries: Array<{ container: THREE.Group; role: string; cell: { x: number; y: number; z: number }; entityId: string }>;
+  glueHighlightMaterials: { selectedLine: THREE.LineBasicMaterial; selectedFill: THREE.MeshBasicMaterial } | null;
+  glueHighlightGeometries: { boxGeometry: THREE.BoxGeometry; edgeGeometry: THREE.EdgesGeometry } | null;
+  focusHighlightEntries: Array<{ container: THREE.Group; ownerNode: EntityNode; isChild: boolean }>;
+  focusHighlightGeometries: THREE.BufferGeometry[];
+  focusHighlightMaterials: {
+    focusedLine: THREE.LineBasicMaterial;
+    focusedFill: THREE.MeshBasicMaterial;
+    childLine: THREE.LineBasicMaterial;
+    childFill: THREE.MeshBasicMaterial;
+  } | null;
+  focusedHighlightNodeId: string | null;
+  nodeHighlightBox: THREE.Group | null;
+  nodeHighlightGeometries: { box: THREE.BoxGeometry; edges: THREE.EdgesGeometry } | null;
+  nodeHighlightMaterials: { lineMat: THREE.LineBasicMaterial; fillMat: THREE.MeshBasicMaterial; pivotMat?: any } | null;
+  subtreeHighlightBoxes: any[];
+  selectedNodeId: string | null;
+  highlightBox: any;
+  isHighlighted: boolean;
+
+  // --- Physics state ---
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  velocity: THREE.Vector3;
+  angularVelocity: THREE.Vector3;
+  voxelVolume: number;
+  mass: number;
+  massOverride: number | null;
+  restitution: number;
+  friction: number;
+  linearDamping: number;
+  angularDamping: number;
+  bodyType: string;
+  useGravity: boolean;
+  isOnGround: boolean;
+  groundDistance: number;
+  maxForce: number;
+  maxTorque: number;
+  powerUtilization: number;
+  boundingRadius: number;
+  minLocal: THREE.Vector3;
+  maxLocal: THREE.Vector3;
+  size: THREE.Vector3;
+  localCenter: THREE.Vector3;
+  blockMap: Map<string, any>;
+  /** Collision boxes quantized to the 0.2 micro grid: x/y/z are micro-cell
+   *  indices and span is the box edge length in micro cells (5 for a standard
+   *  voxel, 1 for a micro voxel). */
+  collisionCells: Array<{ x: number; y: number; z: number; span: number }>;
+  collisionEntries: Array<{ x: number; y: number; z: number; span: number; entityId: string }>;
+  collisionCellCount: number;
+
+  // --- Applied forces ---
+  appliedForces: THREE.Vector3;
+  appliedTorques: THREE.Vector3;
+  lastAppliedForce: THREE.Vector3;
+  lastAppliedTorque: THREE.Vector3;
+
+  // --- Operational mode ---
+  mode: string;
+
+  // --- Programmable script state ---
+  scriptCode: string;
+  compiledScript: Function | null;
+  scriptError: string | null;
+  scriptStatus: string;
+  nodeScripts: Map<string, string>;
+  compiledNodeScripts: Map<string, Function>;
+  nodeScriptErrors: Map<string, string>;
+  nodeScriptEnabled: Map<string, boolean>;
+  componentVariables: Map<string, Record<string, any>>;
+  slowScriptFrames: Map<string, number>;
+  blocksChangedThisFrame: boolean;
+  lastBlocksChangedEvent: any;
+  /** Rotation-center override for a kinematic root, set by setPivot; null uses center of mass. */
+  rootPivotOverride: THREE.Vector3 | null;
+  /** Cockpit position relative to the root pivot; the driver is seated here. */
+  cockpitPosition: [number, number, number];
+  /** Whether V can drive this entity; defaults to true. */
+  isVehicle: boolean;
+  scriptLogs: string[];
+  lastExecutionTimeMs: number;
+  tickCount: number;
+  scriptRuntime: number;
+  totalRuntime: number;
+  scriptRuntimeClient: EntityScriptRuntimeClient;
+  behaviorPrompt: string;
+  agentInterpretation: string;
+  scriptApi: any;
+  particleSystem: any;
+  actionContext: any;
+
+  // --- Bearing / piston mode parameters ---
+  bearingAxis: THREE.Vector3;
+  bearingRpm: number;
+  bearingAngle: number;
+  pistonAxis: THREE.Vector3;
+  pistonDistance: number;
+  pistonSpeed: number;
+  pistonProgress: number;
+  pistonDirection: number;
+  pistonBasePos: THREE.Vector3;
+
+  constructor(id: any, blocks: any[], originWorldPos: any, scene: any, options: any = {}) {
+    this.id = id;
+    this.publicId = typeof options.publicId === 'string' && options.publicId.trim()
+      ? options.publicId.trim()
+      : createEntityPublicId();
+    this.blocks = blocks; // [{ localX, localY, localZ, size, color, block, part }]
+    for (const block of this.blocks) {
+      block.entityId = block.entityId || block.part?.id || 'root';
+    }
+    this.scene = scene;
+    this.originWorldPos = originWorldPos.clone();
+
+    // Collision is a union of per-voxel boxes quantized to the 0.2 micro
+    // grid, so micro voxels keep their own 0.2-size collision shape instead of
+    // inflating their whole 1x1x1 parent cell.
+    this.buildCollisionCells();
+    this.calculateBoundsAndCenter();
+
+    // 3D Object Hierarchy
+    this.rootGroup = new THREE.Group();
+    this.rootGroup.name = `Contraption_${id}`;
+    this.rootGroup.position.copy(originWorldPos).add(this.localCenter);
+
+    // Physics Transform
+    this.position = this.rootGroup.position;
+    this.quaternion = this.rootGroup.quaternion;
+    this.velocity = new THREE.Vector3(0, 0, 0);
+    this.angularVelocity = new THREE.Vector3(0, 0, 0);
+
+    // Physics Properties
+    this.voxelVolume = this.blocks.reduce((sum, block) => sum + Math.pow(block.size || 1, 3), 0);
+    this.massOverride = normalizeBodyMass(options.mass);
+    this.mass = this.massOverride ?? defaultBodyMass(this.blocks);
+    this.restitution = clampUnit(options.restitution, 0.01);
+    this.friction = clampUnit(options.friction, 0.7);
+    this.linearDamping = 0.98;
+    this.angularDamping = 0.92;
+    // `fixed` is accepted only while loading old data. Its previous behavior
+    // allowed scripted transforms, so kinematic is the lossless migration.
+    this.bodyType = normalizeBodyType(
+      options.bodyType,
+      options.fixed ? BodyType.KINEMATIC : BodyType.DYNAMIC
+    );
+    this.useGravity = options.useGravity !== undefined
+      ? !!options.useGravity
+      : this.bodyType === BodyType.DYNAMIC;
+    this.isOnGround = false;
+    this.groundDistance = 0;
+
+    // The legacy top-level root-force surface has a finite, shape-aware control
+    // budget. Per-component self.body.apply* commands intentionally bypass it.
+    this.maxForce = Math.max(80, this.mass * 65);
+    this.maxTorque = Math.max(40, this.maxForce * Math.max(0.75, this.boundingRadius));
+    this.powerUtilization = 0;
+
+    // Operational Mode
+    this.mode = options.mode || ContraptionMode.FREE_PHYSICS;
+
+    // Force accumulators for custom/programmable forces
+    this.appliedForces = new THREE.Vector3(0, 0, 0);
+    this.appliedTorques = new THREE.Vector3(0, 0, 0);
+    this.lastAppliedForce = new THREE.Vector3(0, 0, 0);
+    this.lastAppliedTorque = new THREE.Vector3(0, 0, 0);
+
+    // Programmable Script State
+    this.scriptCode = options.scriptCode || '';
+    this.compiledScript = null;
+    this.scriptError = null;
+    this.scriptStatus = 'stopped'; // 'running' | 'error' | 'stopped'
+    this.nodeScripts = new Map();
+    this.compiledNodeScripts = new Map();
+    this.nodeScriptErrors = new Map();
+    this.nodeScriptEnabled = new Map();
+    this.componentVariables = new Map([['root', {}]]);
+    this.slowScriptFrames = new Map();
+    this.blocksChangedThisFrame = false;
+    this.lastBlocksChangedEvent = null;
+    this.rootPivotOverride = null;
+    this.cockpitPosition = [0, 0, 0];
+    this.isVehicle = true;
+    this.scriptLogs = [];
+    this.lastExecutionTimeMs = 0;
+    this.tickCount = 0;
+    this.scriptRuntime = 0;
+    this.totalRuntime = 0;
+    this.scriptRuntimeClient = new EntityScriptRuntimeClient();
+    this.scriptRuntimeClient.onCompileResult = result => this.handleWorkerCompileResult(result);
+    this.behaviorPrompt = options.behaviorPrompt || '';
+    this.agentInterpretation = options.agentInterpretation || '';
+
+    // Mode-specific parameters
+    // Bearing (Rotation)
+    this.bearingAxis = asVector3(options.bearingAxis, new THREE.Vector3(0, 1, 0)).normalize();
+    this.bearingRpm = options.bearingRpm !== undefined ? options.bearingRpm : 16.0;
+    this.bearingAngle = 0;
+
+    // Piston (Translation)
+    this.pistonAxis = asVector3(options.pistonAxis, new THREE.Vector3(0, 1, 0)).normalize();
+    this.pistonDistance = options.pistonDistance !== undefined ? options.pistonDistance : 4.0;
+    this.pistonSpeed = options.pistonSpeed !== undefined ? options.pistonSpeed : 2.0;
+    this.pistonProgress = 0;
+    this.pistonDirection = 1;
+    this.pistonBasePos = this.position.clone();
+
+    // Optional particle system reference
+    this.particleSystem = options.particleSystem || null;
+
+    // Component node highlight state
+    this.nodeHighlightBox = null;
+    this.nodeHighlightGeometries = null;
+    this.nodeHighlightMaterials = null;
+    this.subtreeHighlightBoxes = [];
+    this.selectedNodeId = null;
+
+    // Entity hierarchy. Every node owns blocks, an authored parent-relative
+    // transform, and an independent kinematic or dynamic rigid body.
+    this.meshGroup = new THREE.Group();
+    this.rootGroup.add(this.meshGroup);
+    this.entityNodes = new Map();
+    this.childDefinitions = new Map();
+    this.rigidBodies = new Map();
+    this.constraintDefinitions = new Map();
+    this.childScriptApis = new Map();
+    this.nextChildId = 1;
+    this.glueSelectionGroup = null;
+    this.glueHighlightEntries = [];
+    this.glueHighlightMaterials = null;
+    this.glueHighlightGeometries = null;
+    this.initializeEntityHierarchy(options.childEntities || []);
+    this.initializeConstraints(options.constraints || []);
+
+    // Every component (root included) receives the same unified `self` API
+    // (script signature `(self, ctx)`). State is read from ctx; motion writes
+    // are forces or per-component kinematics, depending on the node type.
+    this.scriptApi = this.getComponentApi('root');
+
+    // Add to Scene
+    this.scene.add(this.rootGroup);
+
+    // Selection/Highlight Box
+    this.createHighlightBox();
+
+    // Programming is a capability, not an exclusive physical mode. Dynamic
+    // and kinematic entities may both run code.
+    if (this.scriptCode) {
+      this.setScript(this.scriptCode);
+    }
+  }
+
+  // =========================================================================
+  // SPATIAL TRANSFORMS & SPATIAL QUERIES
+  // =========================================================================
+
+  worldToLocal(worldPos) {
+    const diff = worldPos.clone().sub(this.position);
+    diff.applyQuaternion(this.quaternion.clone().invert());
+    return diff.add(this.localCenter);
+  }
+
+  localToWorld(localPos) {
+    const diff = localPos.clone().sub(this.localCenter);
+    diff.applyQuaternion(this.quaternion);
+    return diff.add(this.position);
+  }
+
+  getEntityNode(nodeId = 'root') {
+    return this.entityNodes.get(nodeId) || null;
+  }
+
+  entityLocalToWorld(nodeId, localPos) {
+    const node = this.getEntityNode(nodeId) || this.getEntityNode('root');
+    if (!node?.group) return this.localToWorld(localPos);
+    node.group.updateWorldMatrix(true, false);
+    return node.group.localToWorld(localPos.clone().sub(node.pivotLocal));
+  }
+
+  worldToEntityLocal(nodeId, worldPos) {
+    const node = this.getEntityNode(nodeId) || this.getEntityNode('root');
+    if (!node?.group) return this.worldToLocal(worldPos);
+    node.group.updateWorldMatrix(true, false);
+    return node.group.worldToLocal(worldPos.clone()).add(node.pivotLocal);
+  }
+
+  getEntityNodeWorldQuaternion(nodeId) {
+    const node = this.getEntityNode(nodeId) || this.getEntityNode('root');
+    return node?.group?.getWorldQuaternion(new THREE.Quaternion()) || this.quaternion.clone();
+  }
+
+  getEntityNodeWorldPosition(nodeId) {
+    const node = this.getEntityNode(nodeId) || this.getEntityNode('root');
+    return node?.group?.getWorldPosition(new THREE.Vector3()) || this.position.clone();
+  }
+
+  /** V2 persistent state is scoped to one component instead of shared by the entity. */
+  getComponentState(nodeId) {
+    const id = String(nodeId || 'root');
+    if (!this.componentVariables.has(id)) this.componentVariables.set(id, {});
+    return this.componentVariables.get(id);
+  }
+
+  resolveComponentBlockColor(nodeId, options = null) {
+    const ownBlocks = this.blocks.filter(blk => (blk.entityId || 'root') === nodeId);
+    const inherited = ownBlocks.length > 0 ? ownBlocks[0].color : DEFAULT_BLOCK_COLOR;
+    if (options === null || options === undefined) return inherited;
+    if (Number.isFinite(Number(options?.color))) return Number(options.color) & 0xffffff;
+    if (options?.r !== undefined || options?.g !== undefined || options?.b !== undefined) {
+      return ((Number(options.r) || 0) & 255) << 16
+        | ((Number(options.g) || 0) & 255) << 8
+        | ((Number(options.b) || 0) & 255);
+    }
+    return inherited;
+  }
+
+  getComponentStandardCell(node, location) {
+    if (!isFiniteVector3Array(location)) return null;
+    return {
+      x: Math.floor(Number(location[0]) + node.pivotLocal.x + 1e-6),
+      y: Math.floor(Number(location[1]) + node.pivotLocal.y + 1e-6),
+      z: Math.floor(Number(location[2]) + node.pivotLocal.z + 1e-6)
+    };
+  }
+
+  /** Bind the entity to the engine command context used by UI and scripts. */
+  setActionContext(context) {
+    this.actionContext = context || null;
+    return this;
+  }
+
+  /** The sole entity mutation entry used by self.*, mouse controls and editor actions. */
+  performBasicAction(command) {
+    return executeBasicAction(
+      { contraption: this, ...(this.actionContext || {}) },
+      { domain: ActionDomain.ENTITY, target: { contraption: this }, ...command }
+    );
+  }
+
+  setComponentMicroVoxel(nodeId, node, location, microOffset, options = null) {
+    const cell = this.getComponentStandardCell(node, location);
+    if (!cell || !isMicroOffset(microOffset)) {
+      return scriptEditResult('placed', 0, 'invalid_position');
+    }
+    const result = this.performBasicAction({
+      action: 'place-micro',
+      nodeId,
+      micro: [
+        cell.x * 5 + Number(microOffset[0]),
+        cell.y * 5 + Number(microOffset[1]),
+        cell.z * 5 + Number(microOffset[2])
+      ],
+      options
+    });
+    return scriptEditResult('placed', result.placed || 0, result.reason);
+  }
+
+  setComponentStandardVoxel(nodeId, node, location, options = null) {
+    const cell = this.getComponentStandardCell(node, location);
+    if (!cell) return scriptEditResult('placed', 0, 'invalid_position');
+    const result = this.performBasicAction({ action: 'place-standard', nodeId, cell, options });
+    return scriptEditResult('placed', result.placed || 0, result.reason);
+  }
+
+  clearComponentStandardVoxel(nodeId, node, location) {
+    const cell = this.getComponentStandardCell(node, location);
+    if (!cell) return scriptEditResult('removed', 0, 'invalid_position');
+    const result = this.performBasicAction({ action: 'remove-standard', nodeId, cell });
+    return scriptEditResult('removed', result.removed || 0, result.reason);
+  }
+
+  clearComponentMicroVoxel(nodeId, node, location, microOffset) {
+    const cell = this.getComponentStandardCell(node, location);
+    if (!cell || !isMicroOffset(microOffset)) {
+      return scriptEditResult('removed', 0, 'invalid_position');
+    }
+    const result = this.performBasicAction({
+      action: 'remove-micro',
+      nodeId,
+      micro: [
+        cell.x * 5 + Number(microOffset[0]),
+        cell.y * 5 + Number(microOffset[1]),
+        cell.z * 5 + Number(microOffset[2])
+      ]
+    });
+    return scriptEditResult('removed', result.removed || 0, result.reason);
+  }
+
+  /** Cockpit world position after transforming the pivot-relative offset through the entity rotation. */
+  getCockpitWorldPosition() {
+    const rootNode = this.entityNodes.get('root');
+    const pivot = rootNode ? rootNode.pivotLocal : this.localCenter;
+    return this.entityLocalToWorld('root', new THREE.Vector3(
+      this.cockpitPosition[0] + pivot.x,
+      this.cockpitPosition[1] + pivot.y,
+      this.cockpitPosition[2] + pivot.z
+    ));
+  }
+
+  /**
+   * Unified component API (`self`): roots and child components share one abstraction.
+   * Scripts use the V2 (self, ctx) signature.
+   * - A Common: transform queries, applyThrust, and getBounds work for every component.
+   * - B Kinematic: pose controls work only on kinematic component bodies.
+   * - C Rigid body: every component exposes its own body/material/constraint API.
+   */
+  getComponentApi(nodeId) {
+    const id = String(nodeId || 'root');
+    const node = this.entityNodes.get(id);
+    if (!node) return null;
+    const isRoot = id === 'root';
+    const noop = () => {};
+
+    const api: any = {
+      apiVersion: 2,
+      id,
+      parentId: node.parentId,
+
+      // ---------- A. Common ----------
+      /**
+       * Apply thrust at this component along a root-entity local direction.
+       * - Root: force at center of mass, matching applyLocalForce.
+       * - Child: force at the component position, producing τ = r × F off-center.
+       * Direction is independent of spin, follows root orientation, respects the
+       * legacy root-body force budget, and has no effect on a kinematic root body.
+       */
+      applyThrust: (force) => {
+        if (!Array.isArray(force) || force.length < 3) return;
+        const worldForce = new THREE.Vector3(
+          Number(force[0]) || 0,
+          Number(force[1]) || 0,
+          Number(force[2]) || 0
+        ).applyQuaternion(this.quaternion);
+        const componentWorldPos = this.getEntityNodeWorldPosition(id);
+        const rootLocalPivot = this.worldToLocal(componentWorldPos);
+        this.applyForceAt(
+          [worldForce.x, worldForce.y, worldForce.z],
+          [rootLocalPivot.x, rootLocalPivot.y, rootLocalPivot.z]
+        );
+      },
+      getWorldPosition: () => Object.freeze(this.getEntityNodeWorldPosition(id).toArray()),
+      /** World-orientation quaternion [x,y,z,w], including all ancestor rotations. */
+      getWorldRotation: () => Object.freeze(this.getEntityNodeWorldQuaternion(id).toArray()),
+      /** Current pivot in entity-local coordinates, shared by getBounds and setPivot. */
+      getPivot: () => Object.freeze([node.pivotLocal.x, node.pivotLocal.y, node.pivotLocal.z]),
+      localToWorldDirection: direction => {
+        const localDirection = asVector3(direction, new THREE.Vector3());
+        const worldDirection = localDirection.applyQuaternion(this.getEntityNodeWorldQuaternion(id));
+        return Object.freeze(worldDirection.toArray());
+      },
+      /** Entity-local block bounds {min, max, size, center}, or null when empty. */
+      getBounds: () => this.getNodeBlocksBounds(id),
+
+      // ---------- B. Kinematic pose control ----------
+      setLocalPosition: isRoot ? value => {
+        // A kinematic root has no parent, so its local frame is world space.
+        if (this.bodyType !== BodyType.KINEMATIC) return;
+        this.position.copy(asVector3(value, this.position));
+      } : value => {
+        if (node.bodyType !== BodyType.KINEMATIC) return;
+        node.localPosition.copy(asVector3(value, node.localPosition));
+        node.group.position.copy(node.localPosition);
+      },
+      setLocalRotation: isRoot ? value => {
+        if (this.bodyType !== BodyType.KINEMATIC) return;
+        this.quaternion.copy(asQuaternion(value, this.quaternion));
+        this.updateTransform();
+      } : value => {
+        if (node.bodyType !== BodyType.KINEMATIC) return;
+        node.localQuaternion.copy(asQuaternion(value, node.localQuaternion));
+        node.group.quaternion.copy(node.localQuaternion);
+      },
+      setLocalEuler: isRoot ? value => {
+        if (this.bodyType !== BodyType.KINEMATIC || !Array.isArray(value) || value.length < 3) return;
+        this.quaternion.setFromEuler(new THREE.Euler(
+          Number(value[0]) || 0,
+          Number(value[1]) || 0,
+          Number(value[2]) || 0,
+          'YXZ'
+        ));
+        this.updateTransform();
+      } : value => {
+        if (node.bodyType !== BodyType.KINEMATIC) return;
+        if (!Array.isArray(value) || value.length < 3) return;
+        node.localQuaternion.setFromEuler(new THREE.Euler(
+          Number(value[0]) || 0,
+          Number(value[1]) || 0,
+          Number(value[2]) || 0,
+          'YXZ'
+        ));
+        node.group.quaternion.copy(node.localQuaternion);
+      },
+      setLocalSpin: isRoot ? (axis, rpm) => {
+        if (this.bodyType !== BodyType.KINEMATIC) return;
+        const safeRpm = Number(rpm);
+        const spinAxis = asVector3(axis, new THREE.Vector3(0, 1, 0));
+        node.commandedThisFrame = true;
+        if (!Number.isFinite(safeRpm) || spinAxis.lengthSq() < 1e-9) {
+          node.localAngularVelocity.set(0, 0, 0);
+          return;
+        }
+        node.localAngularVelocity.copy(spinAxis.normalize()).multiplyScalar(safeRpm * Math.PI * 2 / 60);
+      } : (axis, rpm) => {
+        if (node.bodyType !== BodyType.KINEMATIC) return;
+        const safeRpm = Number(rpm);
+        const spinAxis = asVector3(axis, new THREE.Vector3(0, 1, 0));
+        node.commandedThisFrame = true;
+        if (!Number.isFinite(safeRpm) || spinAxis.lengthSq() < 1e-9) {
+          node.localAngularVelocity.set(0, 0, 0);
+          return;
+        }
+        node.localAngularVelocity.copy(spinAxis.normalize()).multiplyScalar(safeRpm * Math.PI * 2 / 60);
+      },
+      getLocalPosition: () => Object.freeze(isRoot ? [0, 0, 0] : node.localPosition.toArray()),
+      getLocalRotation: () => Object.freeze(isRoot ? this.quaternion.toArray() : node.localQuaternion.toArray()),
+      /**
+       * Update the pivot in the same entity-local coordinates as getBounds. Pivots
+       * do not follow bounds automatically; setting one shifts the node or entity so
+       * blocks keep their world positions. Kinematic bodies support this; dynamic
+       * bodies use their physical center of mass.
+       */
+      setPivot: isRoot ? (value) => {
+        if (this.bodyType !== BodyType.KINEMATIC) return;
+        const target = asVector3(value, this.rootPivotOverride || this.localCenter);
+        if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z)) return;
+        const oldPivot = (this.rootPivotOverride || this.localCenter).clone();
+        const delta = target.clone().sub(oldPivot);
+        if (delta.lengthSq() < 1e-12) return;
+        this.rootPivotOverride = target.clone();
+        // Shift entity position to cancel the pivot change and preserve block world positions.
+        this.position.add(delta);
+        this.rebuildEntityHierarchy();
+      } : (value) => {
+        if (node.bodyType !== BodyType.KINEMATIC) return;
+        const target = asVector3(value, node.pivotLocal);
+        if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z)) return;
+        const definition = this.childDefinitions.get(id);
+        if (!definition) return;
+        const delta = target.clone().sub(node.pivotLocal);
+        if (delta.lengthSq() < 1e-12) return;
+        definition.pivot = target.toArray();
+        // Shift node position to cancel the pivot change and preserve block positions.
+        node.localPosition.add(delta);
+        node.group.position.copy(node.localPosition);
+        this.rebuildEntityHierarchy();
+      },
+
+      // ---------- C. Legacy root force surface. Component-local arguments are
+      // converted to root entity space; self.body targets the component body. ----------
+      applyForce: force => {
+        if (!Array.isArray(force) || force.length < 3) return;
+        // World-space force is identical for every component and applies at COM.
+        this.applyForce(force);
+      },
+      applyLocalForce: force => {
+        if (!Array.isArray(force) || force.length < 3) return;
+        if (isRoot) {
+          this.applyLocalForce(force);
+          return;
+        }
+        // Component-local to root-local using the component's relative rotation.
+        const local = new THREE.Vector3(
+          Number(force[0]) || 0,
+          Number(force[1]) || 0,
+          Number(force[2]) || 0
+        );
+        const worldQuat = this.getEntityNodeWorldQuaternion(id);
+        const relQuat = this.quaternion.clone().invert().multiply(worldQuat);
+        local.applyQuaternion(relQuat);
+        this.applyLocalForce([local.x, local.y, local.z]);
+      },
+      applyForceAt: (force, localPosition) => {
+        if (!Array.isArray(force) || force.length < 3) return;
+        if (!Array.isArray(localPosition) || localPosition.length < 3) return;
+        if (isRoot) {
+          this.applyForceAt(force, localPosition);
+          return;
+        }
+        // Component-local application point through hierarchy to world, then back to root-local.
+        const componentPoint = new THREE.Vector3(
+          Number(localPosition[0]) + node.pivotLocal.x,
+          Number(localPosition[1]) + node.pivotLocal.y,
+          Number(localPosition[2]) + node.pivotLocal.z
+        );
+        const worldPoint = this.entityLocalToWorld(id, componentPoint);
+        const rootLocalPoint = this.worldToLocal(worldPoint);
+        this.applyForceAt(force, rootLocalPoint.toArray());
+      },
+      applyTorque: torque => {
+        if (!Array.isArray(torque) || torque.length < 3) return;
+        // World-space torque is identical for every component.
+        this.applyTorque(torque);
+      },
+      /**
+       * Set the cockpit relative to the root pivot. The driver sits here and rotates
+       * with the entity. Available only on the root component.
+       */
+      setCockpitPosition: isRoot ? value => {
+        if (!Array.isArray(value) || value.length < 3) return;
+        const x = Number(value[0]);
+        const y = Number(value[1]);
+        const z = Number(value[2]);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+        this.cockpitPosition = [x, y, z];
+      } : noop,
+      /** Enable or disable driving with V. Root-only; defaults to true. */
+      setVehicle: isRoot ? vehicle => {
+        this.isVehicle = !!vehicle;
+      } : noop,
+      /** Stop every script and reset runtime state. Root-only; children are a no-op. */
+      stop: isRoot ? () => {
+        this.performBasicAction({ action: 'stop-scripts' });
+        return true;
+      } : noop,
+      /** Read cockpit position relative to the root pivot. */
+      getCockpitPosition: isRoot ? () => Object.freeze([...this.cockpitPosition]) : noop,
+      /** Read whether the entity is driveable. */
+      getVehicle: isRoot ? () => this.isVehicle : noop,
+      /**
+       * Find a direct child from any component, with chaining such as
+       * root.child('arm').child('hand'). child('root') returns the root component.
+       */
+      child: childId => {
+        const targetId = String(childId || '');
+        if (targetId === 'root') return this.scriptApi;
+        const childNode = node.children.has(targetId) ? this.entityNodes.get(targetId) : null;
+        return childNode ? this.getChildScriptApi(targetId) : null;
+      }
+    };
+
+    // ---------- V2: tree traversal + component-scoped state + explicit namespaces ----------
+    api.state = this.getComponentState(id);
+    api.children = () => Object.freeze(
+      [...node.children]
+        .map(childId => this.getChildScriptApi(childId))
+        .filter(Boolean)
+    );
+    api.body = Object.freeze({
+      getType: () => this.getNodeBodyType(id),
+      setType: type => {
+        const result = this.performBasicAction({
+          domain: ActionDomain.PHYSICS,
+          action: 'set-body-type',
+          nodeId: id,
+          bodyType: type
+        });
+        return Object.freeze({ ok: result.ok, type: result.bodyType || this.getNodeBodyType(id), reason: result.reason });
+      },
+      getMass: () => this.getNodeBodyMass(id),
+      setMass: mass => {
+        const result = this.performBasicAction({
+          domain: ActionDomain.PHYSICS,
+          action: 'set-body-mass',
+          nodeId: id,
+          mass
+        });
+        return Object.freeze({ ok: result.ok, mass: result.mass ?? this.getNodeBodyMass(id), reason: result.reason });
+      },
+      getMaterial: () => this.getNodeBodyMaterial(id),
+      setMaterial: material => {
+        const result = this.performBasicAction({
+          domain: ActionDomain.PHYSICS,
+          action: 'set-body-material',
+          nodeId: id,
+          material
+        });
+        return Object.freeze({ ok: result.ok, material: result.material || this.getNodeBodyMaterial(id), reason: result.reason });
+      },
+      getVelocity: () => Object.freeze(this.getRigidBody(id)?.velocity.toArray() || [0, 0, 0]),
+      getAngularVelocity: () => Object.freeze(this.getRigidBody(id)?.angularVelocity.toArray() || [0, 0, 0]),
+      applyForce: force => {
+        const result = this.performBasicAction({
+          domain: ActionDomain.PHYSICS,
+          action: 'apply-body-force',
+          nodeId: id,
+          force
+        });
+        return result.ok;
+      },
+      applyLocalForce: force => {
+        if (!Array.isArray(force) || force.length < 3) return false;
+        const worldForce = new THREE.Vector3(
+          Number(force[0]) || 0,
+          Number(force[1]) || 0,
+          Number(force[2]) || 0
+        ).applyQuaternion(this.getRigidBody(id)?.quaternion || new THREE.Quaternion());
+        const result = this.performBasicAction({
+          domain: ActionDomain.PHYSICS,
+          action: 'apply-body-force',
+          nodeId: id,
+          force: worldForce.toArray()
+        });
+        return result.ok;
+      },
+      applyTorque: torque => {
+        const result = this.performBasicAction({
+          domain: ActionDomain.PHYSICS,
+          action: 'apply-body-torque',
+          nodeId: id,
+          torque
+        });
+        return result.ok;
+      }
+    });
+    api.constraints = Object.freeze({
+      all: () => this.getConstraints(id),
+      create: options => {
+        const result = this.performBasicAction({
+          domain: ActionDomain.PHYSICS,
+          action: 'create-constraint',
+          definition: { ...(options || {}), bodyB: id }
+        });
+        return Object.freeze({ ok: result.ok, id: result.constraint?.id || null, reason: result.reason });
+      },
+      remove: constraintId => {
+        const result = this.performBasicAction({
+          domain: ActionDomain.PHYSICS,
+          action: 'remove-constraint',
+          constraintId
+        });
+        return result.ok;
+      }
+    });
+    api.voxels = Object.freeze({
+      set: (location, options = null) => this.setComponentStandardVoxel(id, node, location, options),
+      clear: location => this.clearComponentStandardVoxel(id, node, location),
+      paint: (location, options = null) => {
+        const cell = this.getComponentStandardCell(node, location);
+        if (!cell) return Object.freeze({ ok: false, painted: 0, reason: 'invalid_position' });
+        const result = this.performBasicAction({ action: 'paint-standard', nodeId: id, cell, options });
+        return Object.freeze({ ok: result.ok, painted: result.painted || 0, reason: result.reason });
+      },
+      clearCell: location => {
+        const cell = this.getComponentStandardCell(node, location);
+        if (!cell) return scriptEditResult('removed', 0, 'invalid_position');
+        const result = this.performBasicAction({ action: 'clear-cell', nodeId: id, cell });
+        return scriptEditResult('removed', result.removed || 0, result.reason);
+      },
+      subdivide: (location, clearOffset = null) => {
+        const cell = this.getComponentStandardCell(node, location);
+        if (!cell || (clearOffset !== null && !isMicroOffset(clearOffset))) {
+          return Object.freeze({ ok: false, subdivided: 0, removed: 0, reason: 'invalid_position' });
+        }
+        const micro = clearOffset === null ? null : [
+          cell.x * 5 + Number(clearOffset[0]),
+          cell.y * 5 + Number(clearOffset[1]),
+          cell.z * 5 + Number(clearOffset[2])
+        ];
+        const result = this.performBasicAction({ action: 'subdivide-standard', nodeId: id, cell, micro });
+        return Object.freeze({
+          ok: result.ok,
+          subdivided: result.subdivided || 0,
+          removed: result.removed || 0,
+          reason: result.reason
+        });
+      }
+    });
+    api.microVoxels = Object.freeze({
+      set: (location, microOffset, options = null) => (
+        this.setComponentMicroVoxel(id, node, location, microOffset, options)
+      ),
+      clear: (location, microOffset) => this.clearComponentMicroVoxel(id, node, location, microOffset),
+      paint: (location, microOffset, options = null) => {
+        const cell = this.getComponentStandardCell(node, location);
+        if (!cell || !isMicroOffset(microOffset)) {
+          return Object.freeze({ ok: false, painted: 0, reason: 'invalid_position' });
+        }
+        const result = this.performBasicAction({
+          action: 'paint-micro',
+          nodeId: id,
+          micro: [
+            cell.x * 5 + Number(microOffset[0]),
+            cell.y * 5 + Number(microOffset[1]),
+            cell.z * 5 + Number(microOffset[2])
+          ],
+          options
+        });
+        return Object.freeze({ ok: result.ok, painted: result.painted || 0, reason: result.reason });
+      }
+    });
+    return Object.freeze(api);
+  }
+
+  /** Component API entry point; child('id') looks up a child and child('root') returns root. */
+  getChildScriptApi(childId) {
+    const id = String(childId || '');
+    if (id === 'root') return this.scriptApi;
+    if (this.childScriptApis.has(id)) return this.childScriptApis.get(id);
+    const api = this.getComponentApi(id);
+    if (api) this.childScriptApis.set(id, api);
+    return api;
+  }
+
+  getLocalBlock(lx, ly, lz) {
+    // A standard voxel fills its whole 1x1 cell, so the parent cell wins for
+    // any point inside it; otherwise fall back to the exact 0.2 micro cell.
+    const standardKey = `s:${Math.floor(lx + 1e-6)},${Math.floor(ly + 1e-6)},${Math.floor(lz + 1e-6)}`;
+    const standard = this.blockMap.get(standardKey);
+    if (standard !== undefined) return standard;
+    const microKey = `m:${Math.floor(lx / MICRO_SIZE + 1e-6)},${Math.floor(ly / MICRO_SIZE + 1e-6)},${Math.floor(lz / MICRO_SIZE + 1e-6)}`;
+    return this.blockMap.get(microKey) || 0;
+  }
+
+  getVelocityAtPoint(worldPos) {
+    const r = worldPos.clone().sub(this.position);
+    const tangentialVel = this.angularVelocity.clone().cross(r);
+    return this.velocity.clone().add(tangentialVel);
+  }
+
+  // =========================================================================
+  // SCRIPT COMPILATION & EXECUTION (programmable script engine - each component runs its own code)
+  // =========================================================================
+
+  setNodeScript(nodeId, code) {
+    const id = String(nodeId || 'root');
+    this.nodeScripts.set(id, code || '');
+    this.nodeScriptErrors.delete(id);
+    this.slowScriptFrames.delete(id);
+
+    if (id === 'root') {
+      this.scriptCode = code || '';
+    }
+
+    if (!code || code.trim() === '') {
+      this.compiledNodeScripts.delete(id);
+      this.scriptRuntimeClient.setScript(id, '');
+      if (id === 'root') {
+        this.compiledScript = null;
+        if (this.compiledNodeScripts.size === 0) {
+          this.scriptStatus = 'stopped';
+        }
+      }
+      return true;
+    }
+
+    const syntaxError = validateEntityScriptSyntax(code);
+    if (!syntaxError) {
+      const compileResult = this.scriptRuntimeClient.setScript(id, code);
+      if (compileResult && compileResult.ok === false) {
+        return this.handleWorkerCompileResult(compileResult);
+      }
+      if (id === 'root') {
+        this.compiledScript = COMPILED_SCRIPT_SENTINEL;
+        this.compiledNodeScripts.set('root', COMPILED_SCRIPT_SENTINEL);
+      } else {
+        this.compiledNodeScripts.set(id, COMPILED_SCRIPT_SENTINEL);
+      }
+      this.scriptStatus = [...this.compiledNodeScripts.keys()]
+        .some(nodeId => this.isNodeScriptEnabled(nodeId)) ? 'running' : 'stopped';
+      this.scriptError = null;
+      this.log(`[OK] [${id}] Script compiled and loaded successfully!`);
+      return true;
+    }
+
+    // A failed recompile must not keep the previous version running in either realm.
+    this.scriptRuntimeClient.setScript(id, '');
+    this.nodeScriptErrors.set(id, syntaxError);
+    if (id === 'root') {
+      this.compiledScript = null;
+      this.scriptError = syntaxError;
+    }
+    this.scriptStatus = 'error';
+    this.compiledNodeScripts.delete(id);
+    this.log(`[ERR] [${id}] Compile error: ${syntaxError}`);
+    return false;
+  }
+
+  handleWorkerCompileResult(result) {
+    if (!result || result.ok !== false) return true;
+    const id = String(result.nodeId || 'root');
+    const message = result.error || 'QuickJS compile failed';
+    this.compiledNodeScripts.delete(id);
+    this.nodeScriptErrors.set(id, message);
+    if (id === 'root') {
+      this.compiledScript = null;
+      this.scriptError = message;
+    }
+    this.scriptStatus = 'error';
+    this.log(`[ERR] [${id}] Compile error: ${message}`);
+    return false;
+  }
+
+  getNodeScript(nodeId = 'root') {
+    const id = String(nodeId || 'root');
+    if (this.nodeScripts.has(id)) {
+      return this.nodeScripts.get(id);
+    }
+    if (id === 'root') {
+      return this.scriptCode || '';
+    }
+    return '';
+  }
+
+  setScript(code, nodeId = 'root') {
+    return this.setNodeScript(nodeId, code);
+  }
+
+  isNodeScriptEnabled(nodeId = 'root') {
+    const id = String(nodeId || 'root');
+    if (this.nodeScriptEnabled.has(id)) {
+      return !!this.nodeScriptEnabled.get(id);
+    }
+    return true; // Default enabled
+  }
+
+  setNodeScriptEnabled(nodeId = 'root', enabled = true) {
+    const id = String(nodeId || 'root');
+    const state = !!enabled;
+    this.nodeScriptEnabled.set(id, state);
+
+    if (!state) {
+      const node = this.entityNodes.get(id);
+      if (node && id !== 'root') {
+        node.localAngularVelocity.set(0, 0, 0);
+      }
+    }
+
+    if (state && this.scriptStatus === 'stopped' && (this.compiledScript || this.compiledNodeScripts.size > 0)) {
+      this.scriptStatus = 'running';
+    }
+
+    this.log(`[SW] [${id}] Code switch: ${state ? 'ON (RUN)' : 'OFF (PAUSE)'}`);
+    return state;
+  }
+
+  enableAllNodeScripts() {
+    this.nodeScriptEnabled.set('root', true);
+    for (const id of this.entityNodes.keys()) {
+      this.nodeScriptEnabled.set(id, true);
+    }
+    if (this.compiledScript || this.compiledNodeScripts.size > 0) {
+      this.scriptStatus = 'running';
+    }
+    this.log(`[ON] All component scripts enabled`);
+  }
+
+  disableAllNodeScripts() {
+    this.nodeScriptEnabled.set('root', false);
+    for (const id of this.entityNodes.keys()) {
+      this.nodeScriptEnabled.set(id, false);
+      const node = this.entityNodes.get(id);
+      if (node && id !== 'root') {
+        node.localAngularVelocity.set(0, 0, 0);
+      }
+    }
+    this.appliedForces.set(0, 0, 0);
+    this.appliedTorques.set(0, 0, 0);
+    for (const body of this.rigidBodies.values()) {
+      body.appliedForces.set(0, 0, 0);
+      body.appliedTorques.set(0, 0, 0);
+    }
+    this.log(`[OFF] All component scripts paused and disabled`);
+  }
+
+  /**
+   * Reset all component state: clear component-owned state and the script clock,
+   * stop child rotations, restore child transforms, and clear pending forces.
+   * Script content and component switches are preserved.
+   */
+  resetAllComponentState() {
+    for (const state of this.componentVariables.values()) {
+      for (const key of Object.keys(state)) delete state[key];
+    }
+    for (const node of this.entityNodes.values()) {
+      node.localAngularVelocity.set(0, 0, 0);
+      node.commandedThisFrame = false;
+      if (node.id === 'root') continue;
+      node.localPosition.copy(node.initialLocalPosition);
+      node.localQuaternion.copy(node.initialLocalQuaternion);
+      node.group.position.copy(node.localPosition);
+      node.group.quaternion.copy(node.localQuaternion);
+    }
+    this.rootGroup.updateMatrixWorld(true);
+    for (const body of this.rigidBodies.values()) {
+      body.appliedForces.set(0, 0, 0);
+      body.appliedTorques.set(0, 0, 0);
+      if (body.id === 'root') continue;
+      const node = this.entityNodes.get(body.id);
+      if (!node) continue;
+      body.position.copy(node.group.localToWorld(body.centerOfMassLocal.clone()));
+      body.quaternion.copy(node.group.getWorldQuaternion(new THREE.Quaternion()));
+      body.velocity.set(0, 0, 0);
+      body.angularVelocity.set(0, 0, 0);
+      body.previousKinematicPosition.copy(body.position);
+      body.previousKinematicQuaternion.copy(body.quaternion);
+    }
+
+    this.appliedForces.set(0, 0, 0);
+    this.appliedTorques.set(0, 0, 0);
+    this.lastAppliedForce.set(0, 0, 0);
+    this.lastAppliedTorque.set(0, 0, 0);
+    this.scriptRuntime = 0;
+    this.tickCount = 0;
+    this.lastExecutionTimeMs = 0;
+    this.slowScriptFrames.clear();
+    this.scriptRuntimeClient.reset(this.getSerializableComponentStates());
+    this.log('[RESET] All component state reset (state/clock/transforms/forces cleared)');
+    return true;
+  }
+
+  /** The single implementation used by both the UI Stop button and root self.stop(). */
+  stopAllNodeScripts() {
+    this.disableAllNodeScripts();
+    this.resetAllComponentState();
+    this.scriptStatus = 'stopped';
+    this.log('[STOP] All component scripts stopped');
+    return true;
+  }
+
+  /**
+   * Structural edits use authored node-local voxel coordinates. Only Stop
+   * restores every child to that construction pose; Pause intentionally keeps
+   * the current runtime pose and therefore is not safe for component/block
+   * selection.
+   */
+  canEditInternalSelection() {
+    return this.scriptStatus === 'stopped';
+  }
+
+  /**
+   * Serialize the component subtree rooted at rootNodeId, including block ownership,
+   * microblocks, colors, child definitions, scripts, and enabled state. The result can
+   * be passed directly to ContraptionManager.buildFromSlot to create an independent entity.
+   */
+  serializeSubtree(rootNodeId = 'root') {
+    const rootId = String(rootNodeId || 'root');
+    const nodeIds = this.collectSubtreeNodeIds(rootId);
+    const massOverride = rootId === 'root'
+      ? this.massOverride
+      : normalizeBodyMass(this.childDefinitions.get(rootId)?.mass);
+
+    const blocks = this.blocks
+      .filter(b => nodeIds.has(b.entityId || 'root'))
+      .map(b => ({
+        localX: b.localX,
+        localY: b.localY,
+        localZ: b.localZ,
+        size: b.size || 1,
+        color: b.color,
+        block: b.block,
+        part: b.part,
+        entityId: b.entityId || 'root'
+      }));
+
+    const childEntities = [...this.childDefinitions.values()]
+      .filter(d => nodeIds.has(d.id))
+      .map(d => ({ ...d }));
+
+    const scripts = [...this.nodeScripts.entries()]
+      .filter(([id]) => nodeIds.has(id))
+      .map(([id, code]) => ({ id, code }));
+
+    const enabled = [...this.entityNodes.keys()]
+      .filter(id => nodeIds.has(id))
+      .map(id => ({ id, enabled: this.isNodeScriptEnabled(id) }));
+    const constraints = [...this.constraintDefinitions.values()]
+      .filter(constraint => nodeIds.has(constraint.bodyB) && (constraint.bodyA === 'world' || nodeIds.has(constraint.bodyA)))
+      .map(constraint => ({ ...constraint, limits: constraint.limits ? { ...constraint.limits } : null }));
+
+    return {
+      rootId,
+      nodeCount: nodeIds.size,
+      blockCount: blocks.length,
+      blocks,
+      childEntities,
+      scripts,
+      enabled,
+      constraints,
+      mode: this.mode,
+      bodyType: rootId === 'root' ? this.bodyType : this.getNodeBodyType(rootId),
+      ...(massOverride !== null ? { mass: massOverride } : {}),
+      restitution: rootId === 'root' ? this.restitution : this.getRigidBody(rootId)?.restitution,
+      friction: rootId === 'root' ? this.friction : this.getRigidBody(rootId)?.friction,
+      useGravity: this.useGravity,
+      bearingAxis: this.bearingAxis.toArray(),
+      bearingRpm: this.bearingRpm,
+      pistonAxis: this.pistonAxis.toArray(),
+      pistonDistance: this.pistonDistance,
+      pistonSpeed: this.pistonSpeed,
+      cockpitPosition: [...this.cockpitPosition],
+      isVehicle: this.isVehicle
+    };
+  }
+
+  /**
+   * Serialize the union of several component roots and all descendants into one slot.
+   * rootId is null, rootIds records each root, and paste preserves original hierarchy.
+   */
+  serializeSubtrees(rootIds) {
+    const roots = (rootIds || []).filter(Boolean);
+    if (roots.length === 0) return null;
+
+    const nodeIds = new Set();
+    for (const id of roots) {
+      for (const sub of this.collectSubtreeNodeIds(id)) nodeIds.add(sub);
+    }
+
+    const blocks = this.blocks
+      .filter(b => nodeIds.has(b.entityId || 'root'))
+      .map(b => ({
+        localX: b.localX,
+        localY: b.localY,
+        localZ: b.localZ,
+        size: b.size || 1,
+        color: b.color,
+        block: b.block,
+        part: b.part,
+        entityId: b.entityId || 'root'
+      }));
+
+    const childEntities = [...this.childDefinitions.values()]
+      .filter(d => nodeIds.has(d.id))
+      .map(d => ({ ...d }));
+
+    const scripts = [...this.nodeScripts.entries()]
+      .filter(([id]) => nodeIds.has(id))
+      .map(([id, code]) => ({ id, code }));
+
+    const enabled = [...this.entityNodes.keys()]
+      .filter(id => nodeIds.has(id))
+      .map(id => ({ id, enabled: this.isNodeScriptEnabled(id) }));
+    const constraints = [...this.constraintDefinitions.values()]
+      .filter(constraint => nodeIds.has(constraint.bodyB) && (constraint.bodyA === 'world' || nodeIds.has(constraint.bodyA)))
+      .map(constraint => ({ ...constraint, limits: constraint.limits ? { ...constraint.limits } : null }));
+
+    return {
+      rootId: null,
+      rootIds: [...roots],
+      nodeCount: nodeIds.size,
+      blockCount: blocks.length,
+      blocks,
+      childEntities,
+      scripts,
+      enabled,
+      constraints,
+      mode: this.mode,
+      bodyType: this.bodyType,
+      restitution: this.restitution,
+      friction: this.friction,
+      useGravity: this.useGravity,
+      bearingAxis: this.bearingAxis.toArray(),
+      bearingRpm: this.bearingRpm,
+      pistonAxis: this.pistonAxis.toArray(),
+      pistonDistance: this.pistonDistance,
+      pistonSpeed: this.pistonSpeed,
+      cockpitPosition: [...this.cockpitPosition],
+      isVehicle: this.isVehicle
+    };
+  }
+
+  /** Collect the ids of a node and all descendants. */
+  collectSubtreeNodeIds(rootNodeId: string): Set<string> {
+    const ids = new Set<string>();
+    const walk = (id: string) => {
+      if (ids.has(id)) return;
+      ids.add(id);
+      for (const node of this.entityNodes.values()) {
+        if (node.parentId === id) walk(node.id);
+      }
+    };
+    walk(rootNodeId);
+    return ids;
+  }
+
+  /**
+   * Remove a child component and every descendant owned by it.
+   *
+   * The root is owned by ContraptionManager and must be removed there so the
+   * scene, physics registry, active controls, and public entity queries are all
+   * cleaned up together. This method therefore handles child subtrees only.
+   */
+  removeComponentSubtree(rootNodeId) {
+    const rootId = String(rootNodeId || '');
+    if (!rootId || rootId === 'root' || !this.entityNodes.has(rootId)) return null;
+
+    const nodeIds = this.collectSubtreeNodeIds(rootId);
+    const removedBlocks = this.blocks.filter(block => nodeIds.has(block.entityId || 'root'));
+    const standard = removedBlocks.filter(block => (block.size || 1) >= 1).length;
+    const micro = removedBlocks.length - standard;
+
+    this.clearSubtreeHighlight();
+    if (this.selectedNodeId && nodeIds.has(this.selectedNodeId)) this.setHighlightedNode(null);
+    if (this.focusedHighlightNodeId && nodeIds.has(this.focusedHighlightNodeId)) this.clearGlueSelection();
+
+    this.blocks = this.blocks.filter(block => !nodeIds.has(block.entityId || 'root'));
+    for (const id of nodeIds) {
+      this.scriptRuntimeClient.setScript(id, '');
+      this.childDefinitions.delete(id);
+      this.nodeScripts.delete(id);
+      this.compiledNodeScripts.delete(id);
+      this.nodeScriptErrors.delete(id);
+      this.nodeScriptEnabled.delete(id);
+      this.componentVariables.delete(id);
+      this.childScriptApis.delete(id);
+    }
+    for (const [id, constraint] of this.constraintDefinitions) {
+      if (nodeIds.has(constraint.bodyA) || nodeIds.has(constraint.bodyB)) {
+        this.constraintDefinitions.delete(id);
+      }
+    }
+
+    this.rebuildAfterBlockChange('remove', rootId);
+    return Object.freeze({
+      nodeId: rootId,
+      removed: removedBlocks.length,
+      standard,
+      micro,
+      components: nodeIds.size
+    });
+  }
+
+  getNodeProperties(nodeId = 'root') {
+    const id = String(nodeId || 'root');
+    const node = this.entityNodes.get(id);
+    if (!node) return null;
+    const blocks = this.blocks.filter(b => (b.entityId || 'root') === id);
+    const volume = blocks.reduce((sum, b) => sum + Math.pow(b.size || 1, 3), 0);
+    const euler = new THREE.Euler().setFromQuaternion(node.localQuaternion, 'YXZ');
+
+    return {
+      id: node.id,
+      parentId: node.parentId,
+      kind: node.kind || (node.id === 'root' ? 'root' : 'child'),
+      bodyType: this.getNodeBodyType(id),
+      mass: this.getNodeBodyMass(id),
+      restitution: this.getRigidBody(id)?.restitution ?? this.restitution,
+      friction: this.getRigidBody(id)?.friction ?? this.friction,
+      constraintCount: this.getConstraints(id).length,
+      blockCount: blocks.length,
+      volume: Number(volume.toFixed(2)),
+      pivot: [Number(node.pivotLocal.x.toFixed(2)), Number(node.pivotLocal.y.toFixed(2)), Number(node.pivotLocal.z.toFixed(2))],
+      localPosition: [Number(node.localPosition.x.toFixed(2)), Number(node.localPosition.y.toFixed(2)), Number(node.localPosition.z.toFixed(2))],
+      localEuler: [
+        Number((euler.x * 180 / Math.PI).toFixed(1)),
+        Number((euler.y * 180 / Math.PI).toFixed(1)),
+        Number((euler.z * 180 / Math.PI).toFixed(1))
+      ],
+      rpm: Math.round(node.localAngularVelocity.length() * 60 / (Math.PI * 2)),
+      hasScript: !!(this.getNodeScript(id) && this.getNodeScript(id).trim().length > 0),
+      isScriptEnabled: this.isNodeScriptEnabled(id)
+    };
+  }
+
+  /** Rename a globally unique component id; the root id is fixed as 'root'. */
+  renameChildEntity(oldId, newId) {
+    if (!oldId || !newId || oldId === newId || oldId === 'root') return false;
+    const cleanNewId = String(newId).trim();
+    if (!isValidComponentId(cleanNewId, false)
+      || this.entityNodes.has(cleanNewId)
+      || this.childDefinitions.has(cleanNewId)) return false;
+
+    const node = this.entityNodes.get(oldId);
+    const def = this.childDefinitions.get(oldId);
+    if (!node) return false;
+
+    // Update blocks
+    for (const block of this.blocks) {
+      if (block.entityId === oldId) block.entityId = cleanNewId;
+    }
+
+    // Update child definition
+    if (def) {
+      this.childDefinitions.delete(oldId);
+      def.id = cleanNewId;
+      this.childDefinitions.set(cleanNewId, def);
+    }
+
+    // Update scripts
+    if (this.nodeScripts.has(oldId)) {
+      const s = this.nodeScripts.get(oldId);
+      this.nodeScripts.delete(oldId);
+      this.nodeScripts.set(cleanNewId, s);
+      this.scriptRuntimeClient.setScript(oldId, '');
+      this.scriptRuntimeClient.setScript(cleanNewId, s || '');
+    }
+    if (this.compiledNodeScripts.has(oldId)) {
+      const c = this.compiledNodeScripts.get(oldId);
+      this.compiledNodeScripts.delete(oldId);
+      this.compiledNodeScripts.set(cleanNewId, c);
+    }
+    if (this.nodeScriptEnabled.has(oldId)) {
+      const en = this.nodeScriptEnabled.get(oldId);
+      this.nodeScriptEnabled.delete(oldId);
+      this.nodeScriptEnabled.set(cleanNewId, en);
+    }
+    if (this.componentVariables.has(oldId)) {
+      const state = this.componentVariables.get(oldId);
+      this.componentVariables.delete(oldId);
+      this.componentVariables.set(cleanNewId, state);
+    }
+
+    // Update children's parentId
+    for (const childDef of this.childDefinitions.values()) {
+      if (childDef.parentId === oldId) childDef.parentId = cleanNewId;
+    }
+    for (const constraint of this.constraintDefinitions.values()) {
+      if (constraint.bodyA === oldId) constraint.bodyA = cleanNewId;
+      if (constraint.bodyB === oldId) constraint.bodyB = cleanNewId;
+    }
+
+    this.rebuildEntityHierarchy();
+    if (this.selectedNodeId === oldId) {
+      this.selectedNodeId = cleanNewId;
+      this.setHighlightedNode(cleanNewId);
+    }
+    return true;
+  }
+
+  restartScript() {
+    if (this.scriptCode) {
+      this.setScript(this.scriptCode);
+    }
+  }
+
+  log(message) {
+    const timeStr = (this.scriptRuntime || 0).toFixed(2);
+    this.scriptLogs.push(`[${timeStr}s] ${message}`);
+    if (this.scriptLogs.length > 40) {
+      this.scriptLogs.shift();
+    }
+  }
+
+  // =========================================================================
+  // PROGRAMMABLE FORCES API (force interface exposed to scripts)
+  // =========================================================================
+
+  /**
+   * Apply a force in World Coordinates (Newtons)
+   */
+  applyForce(forceVec) {
+    if (this.bodyType !== BodyType.DYNAMIC) return;
+    const force = boundedBodyVector(forceVec);
+    if (!force) return;
+    this.appliedForces.add(force);
+    this.clampControlOutput();
+  }
+
+  /**
+   * Apply a force in Entity Local Coordinates (Newtons)
+   * Local axes: +X Right, +Y Up, -Z Forward (head of ship)
+   */
+  applyLocalForce(localForceVec) {
+    if (this.bodyType !== BodyType.DYNAMIC) return;
+    const local = boundedBodyVector(localForceVec);
+    if (!local) return;
+    // Rotate to world coordinates
+    local.applyQuaternion(this.quaternion);
+    this.appliedForces.add(local);
+    this.clampControlOutput();
+  }
+
+  /**
+   * Apply a world-space force at an entity-local point. The off-center force
+   * produces torque using tau = r x F, so translation and rotation share one
+   * physically meaningful primitive.
+   */
+  applyForceAt(forceVec, localPosition) {
+    if (this.bodyType !== BodyType.DYNAMIC) return;
+    const force = boundedBodyVector(forceVec);
+    const localPoint = boundedBodyVector(localPosition);
+    if (!force || !localPoint) return;
+    const worldLever = localPoint.sub(this.localCenter).applyQuaternion(this.quaternion);
+
+    this.appliedForces.add(force);
+    this.appliedTorques.add(worldLever.cross(force));
+    this.clampControlOutput();
+  }
+
+  /**
+   * Apply rotational Torque (N*m)
+   * [torqueX (Pitch), torqueY (Yaw), torqueZ (Roll)]
+   */
+  applyTorque(torqueVec) {
+    if (this.bodyType !== BodyType.DYNAMIC) return;
+    const torque = boundedBodyVector(torqueVec);
+    if (!torque) return;
+    this.appliedTorques.add(torque);
+    this.clampControlOutput();
+  }
+
+  clampControlOutput() {
+    const forceLength = this.appliedForces.length();
+    if (!Number.isFinite(forceLength)) {
+      this.appliedForces.set(0, 0, 0);
+    }
+    else if (forceLength > this.maxForce) {
+      this.appliedForces.multiplyScalar(this.maxForce / forceLength);
+    }
+
+    const torqueLength = this.appliedTorques.length();
+    if (!Number.isFinite(torqueLength)) {
+      this.appliedTorques.set(0, 0, 0);
+    }
+    else if (torqueLength > this.maxTorque) {
+      this.appliedTorques.multiplyScalar(this.maxTorque / torqueLength);
+    }
+
+    this.powerUtilization = Math.max(
+      this.appliedForces.length() / this.maxForce,
+      this.appliedTorques.length() / this.maxTorque
+    );
+  }
+
+  // =========================================================================
+  // BOUNDS & MESH GENERATION
+  // =========================================================================
+
+  buildCollisionCells() {
+    this.blockMap = new Map();
+    const cells = new Map();
+    const entries = new Map();
+    for (const block of this.blocks) {
+      const size = block.size || 1;
+      const span = Math.max(1, Math.round(size / MICRO_SIZE));
+      const x = Math.floor(block.localX / MICRO_SIZE + 1e-6);
+      const y = Math.floor(block.localY / MICRO_SIZE + 1e-6);
+      const z = Math.floor(block.localZ / MICRO_SIZE + 1e-6);
+      const entityId = block.entityId || 'root';
+      // Whole voxels fill their 1x1 cell, micro voxels only their 0.2 cell.
+      const cellKey = span > 1
+        ? `s:${Math.floor(x / MICRO_DIVISIONS)},${Math.floor(y / MICRO_DIVISIONS)},${Math.floor(z / MICRO_DIVISIONS)}`
+        : `m:${x},${y},${z}`;
+      this.blockMap.set(cellKey, block.block);
+      const boxKey = `${x},${y},${z}:${span}`;
+      if (!cells.has(boxKey)) cells.set(boxKey, { x, y, z, span });
+      const entryKey = `${entityId}:${boxKey}`;
+      if (!entries.has(entryKey)) entries.set(entryKey, { x, y, z, span, entityId });
+    }
+    this.collisionCells = [...cells.values()];
+    this.collisionEntries = [...entries.values()];
+    this.collisionCellCount = this.collisionCells.length;
+  }
+
+  calculateBoundsAndCenter() {
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+    for (const cell of this.collisionCells) {
+      const x0 = cell.x * MICRO_SIZE, x1 = (cell.x + cell.span) * MICRO_SIZE;
+      const y0 = cell.y * MICRO_SIZE, y1 = (cell.y + cell.span) * MICRO_SIZE;
+      const z0 = cell.z * MICRO_SIZE, z1 = (cell.z + cell.span) * MICRO_SIZE;
+      if (x0 < minX) minX = x0;
+      if (y0 < minY) minY = y0;
+      if (z0 < minZ) minZ = z0;
+      if (x1 > maxX) maxX = x1;
+      if (y1 > maxY) maxY = y1;
+      if (z1 > maxZ) maxZ = z1;
+    }
+
+    if (!Number.isFinite(minX)) {
+      minX = minY = minZ = 0;
+      maxX = maxY = maxZ = 1;
+    }
+
+    this.minLocal = new THREE.Vector3(minX, minY, minZ);
+    this.maxLocal = new THREE.Vector3(maxX, maxY, maxZ);
+    this.size = new THREE.Vector3(
+      this.maxLocal.x - this.minLocal.x,
+      this.maxLocal.y - this.minLocal.y,
+      this.maxLocal.z - this.minLocal.z
+    );
+
+    // Initial center offset from origin
+    if (!this.localCenter) {
+      this.localCenter = new THREE.Vector3(
+        (this.minLocal.x + this.maxLocal.x) / 2,
+        (this.minLocal.y + this.maxLocal.y) / 2,
+        (this.minLocal.z + this.maxLocal.z) / 2
+      );
+    }
+
+    this.boundingRadius = this.size.length() / 2;
+  }
+
+  initializeEntityHierarchy(childEntities = []) {
+    const definitions = Array.isArray(childEntities)
+      ? childEntities.slice(0, MAX_ENTITY_COMPONENTS - 1)
+      : [];
+    for (const definition of definitions) {
+      const id = typeof definition?.id === 'string' ? definition.id : '';
+      if (!isValidComponentId(id, false) || this.childDefinitions.has(id)) continue;
+      const requestedParent = String(definition.parentId || definition.parent || 'root');
+      const parentId = isValidComponentId(requestedParent) && requestedParent !== id
+        ? requestedParent
+        : 'root';
+      this.childDefinitions.set(id, {
+        ...definition,
+        id,
+        parentId,
+        bodyType: normalizeBodyType(definition.bodyType, BodyType.KINEMATIC),
+        restitution: clampUnit(definition.restitution, this.restitution),
+        friction: clampUnit(definition.friction, this.friction)
+      });
+    }
+
+    // Explicit definitions may claim whole 1x1 collision cells. This is used
+    // by standard-block blueprints such as the programmable windmill.
+    for (const definition of this.childDefinitions.values()) {
+      if (!Array.isArray(definition.blockKeys)) continue;
+      const ownedCells = new Set(definition.blockKeys.map(key => Array.isArray(key) ? key.join(',') : String(key)));
+      for (const block of this.blocks) {
+        if (ownedCells.has(collisionCellKey(block))) block.entityId = definition.id;
+      }
+    }
+
+    this.rebuildEntityHierarchy();
+  }
+
+  disposeGroupChildren(group) {
+    if (!group) return;
+    group.traverse(child => {
+      if (child === group) return;
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) child.material.forEach(material => material.dispose());
+        else child.material.dispose();
+      }
+    });
+    group.clear();
+  }
+
+  rebuildEntityHierarchy() {
+    const previousBodies = this.rigidBodies || new Map();
+    const previousState = new Map();
+    for (const [id, node] of this.entityNodes || []) {
+      previousState.set(id, {
+        localPosition: node.localPosition?.clone(),
+        localQuaternion: node.localQuaternion?.clone(),
+        localAngularVelocity: node.localAngularVelocity?.clone()
+      });
+    }
+
+    this.disposeGroupChildren(this.meshGroup);
+    this.entityNodes = new Map();
+    this.childScriptApis.clear();
+
+    const rootNode = {
+      id: 'root',
+      parentId: null,
+      // Rotation center defaults to entity-local COM; kinematic-root scripts may override it with setPivot.
+      pivotLocal: (this.rootPivotOverride || this.localCenter).clone(),
+      localPosition: new THREE.Vector3(),
+      localQuaternion: new THREE.Quaternion(),
+      localAngularVelocity: new THREE.Vector3(),
+      commandedThisFrame: false,
+      initialLocalPosition: new THREE.Vector3(),
+      initialLocalQuaternion: new THREE.Quaternion(),
+      group: this.meshGroup,
+      children: new Set<string>(),
+      bodyType: this.bodyType
+    };
+    this.entityNodes.set('root', rootNode);
+
+    const pending = [...this.childDefinitions.values()];
+    let guard = pending.length + 1;
+    while (pending.length > 0 && guard-- > 0) {
+      let progressed = false;
+      for (let index = pending.length - 1; index >= 0; index--) {
+        const definition = pending[index];
+        const parent = this.entityNodes.get(definition.parentId || 'root');
+        if (!parent) continue;
+
+        const pivotLocal = asVector3(definition.pivot, this.localCenter);
+        const defaultPosition = pivotLocal.clone().sub(parent.pivotLocal);
+        const saved = previousState.get(definition.id);
+        const localPosition = saved?.localPosition
+          || asVector3(definition.localPosition, defaultPosition);
+        const localQuaternion = saved?.localQuaternion
+          || asQuaternion(definition.localRotation);
+        const group = new THREE.Group();
+        group.name = `Entity_${definition.id}`;
+        group.position.copy(localPosition);
+        group.quaternion.copy(localQuaternion);
+        parent.group.add(group);
+
+        const node = {
+          id: definition.id,
+          parentId: parent.id,
+          pivotLocal,
+          localPosition,
+          localQuaternion,
+          localAngularVelocity: saved?.localAngularVelocity || new THREE.Vector3(),
+          commandedThisFrame: false,
+          initialLocalPosition: localPosition.clone(),
+          initialLocalQuaternion: localQuaternion.clone(),
+          group,
+          children: new Set<string>(),
+          kind: definition.kind || 'child',
+          bodyType: normalizeBodyType(definition.bodyType, BodyType.KINEMATIC)
+        };
+        this.entityNodes.set(node.id, node);
+        parent.children.add(node.id);
+        pending.splice(index, 1);
+        progressed = true;
+      }
+      if (!progressed) break;
+    }
+
+    // Invalid or cyclic parents fall back to root instead of making their
+    // blocks disappear. The editor never creates cycles, but imported data
+    // should remain inspectable.
+    for (const definition of pending) {
+      definition.parentId = 'root';
+      const pivotLocal = asVector3(definition.pivot, this.localCenter);
+      const group = new THREE.Group();
+      group.name = `Entity_${definition.id}`;
+      group.position.copy(pivotLocal).sub(this.localCenter);
+      this.meshGroup.add(group);
+      const node = {
+        id: definition.id,
+        parentId: 'root',
+        pivotLocal,
+        localPosition: group.position.clone(),
+        localQuaternion: new THREE.Quaternion(),
+        localAngularVelocity: new THREE.Vector3(),
+        group,
+        children: new Set<string>(),
+        kind: definition.kind || 'child',
+        bodyType: normalizeBodyType(definition.bodyType, BodyType.KINEMATIC)
+      };
+      this.entityNodes.set(node.id, node);
+      rootNode.children.add(node.id);
+    }
+
+    for (const node of this.entityNodes.values()) {
+      const nodeBlocks = this.blocks.filter(block => (block.entityId || 'root') === node.id);
+      this.createVoxelMesh(nodeBlocks, node.pivotLocal, node.group);
+    }
+
+    this.buildCollisionCells();
+    this.updateTransform();
+    this.rebuildRigidBodies(previousBodies);
+    for (const node of this.entityNodes.values()) {
+      node.group.updateWorldMatrix(true, false);
+      node.previousWorldMatrix = node.group.matrixWorld.clone();
+    }
+    // Refresh the root self API after rebuilding nodes because old node closures are stale.
+    this.scriptApi = this.getComponentApi('root');
+  }
+
+  rebuildRigidBodies(previousBodies = new Map()) {
+    const nextBodies = new Map();
+    this.rootGroup.updateMatrixWorld(true);
+
+    for (const node of this.entityNodes.values()) {
+      const previous = previousBodies.get(node.id);
+      const definition = node.id === 'root' ? null : this.childDefinitions.get(node.id);
+      const ownedBlocks = this.blocks.filter(block => (block.entityId || 'root') === node.id);
+      let volume = 0;
+      const weightedCenter = new THREE.Vector3();
+      let maxRadiusSq = 0;
+      for (const block of ownedBlocks) {
+        const size = block.size || 1;
+        const blockVolume = Math.pow(size, 3);
+        const center = new THREE.Vector3(
+          block.localX + size / 2,
+          block.localY + size / 2,
+          block.localZ + size / 2
+        );
+        weightedCenter.addScaledVector(center, blockVolume);
+        volume += blockVolume;
+      }
+      const centerEntity = volume > 0
+        ? weightedCenter.divideScalar(volume)
+        : node.pivotLocal.clone();
+      const centerOfMassLocal = node.id === 'root'
+        ? new THREE.Vector3()
+        : centerEntity.sub(node.pivotLocal);
+      for (const block of ownedBlocks) {
+        const size = block.size || 1;
+        const localCenter = new THREE.Vector3(
+          block.localX + size / 2,
+          block.localY + size / 2,
+          block.localZ + size / 2
+        ).sub(node.pivotLocal).sub(centerOfMassLocal);
+        maxRadiusSq = Math.max(maxRadiusSq, localCenter.lengthSq() + size * size * 0.75);
+      }
+
+      const type = node.id === 'root'
+        ? this.bodyType
+        : normalizeBodyType(definition?.bodyType, BodyType.KINEMATIC);
+      node.bodyType = type;
+      node.group.updateWorldMatrix(true, false);
+      const authoredPosition = node.id === 'root'
+        ? this.position
+        : node.group.localToWorld(centerOfMassLocal.clone());
+      const authoredQuaternion = node.id === 'root'
+        ? this.quaternion
+        : node.group.getWorldQuaternion(new THREE.Quaternion());
+      const configuredMass = node.id === 'root'
+        ? this.massOverride
+        : normalizeBodyMass(definition?.mass);
+      const mass = configuredMass ?? defaultBodyMass(ownedBlocks);
+      const inertia = mass * Math.max(0.5, maxRadiusSq * 0.4);
+
+      const body: EntityRigidBody = {
+        id: node.id,
+        nodeId: node.id,
+        type,
+        position: node.id === 'root'
+          ? this.position
+          : (previous?.type === BodyType.DYNAMIC ? previous.position.clone() : authoredPosition.clone()),
+        quaternion: node.id === 'root'
+          ? this.quaternion
+          : (previous?.type === BodyType.DYNAMIC ? previous.quaternion.clone() : authoredQuaternion.clone()),
+        velocity: node.id === 'root' ? this.velocity : (previous?.velocity?.clone() || new THREE.Vector3()),
+        angularVelocity: node.id === 'root'
+          ? this.angularVelocity
+          : (previous?.angularVelocity?.clone() || new THREE.Vector3()),
+        appliedForces: node.id === 'root'
+          ? this.appliedForces
+          : (previous?.appliedForces?.clone() || new THREE.Vector3()),
+        appliedTorques: node.id === 'root'
+          ? this.appliedTorques
+          : (previous?.appliedTorques?.clone() || new THREE.Vector3()),
+        mass,
+        inverseInertia: inertia > 1e-9 ? 1 / inertia : 0,
+        restitution: node.id === 'root'
+          ? this.restitution
+          : clampUnit(definition?.restitution, this.restitution),
+        friction: node.id === 'root'
+          ? this.friction
+          : clampUnit(definition?.friction, this.friction),
+        linearDamping: node.id === 'root' ? this.linearDamping : 0.98,
+        angularDamping: node.id === 'root' ? this.angularDamping : 0.92,
+        centerOfMassLocal,
+        previousKinematicPosition: previous?.previousKinematicPosition?.clone() || authoredPosition.clone(),
+        previousKinematicQuaternion: previous?.previousKinematicQuaternion?.clone() || authoredQuaternion.clone(),
+        isOnGround: previous?.isOnGround || false
+      };
+      nextBodies.set(node.id, body);
+    }
+
+    this.rigidBodies = nextBodies;
+    const rootBody = this.rigidBodies.get('root');
+    if (rootBody) {
+      this.mass = rootBody.mass;
+      this.maxForce = Math.max(80, this.mass * 65);
+      this.maxTorque = Math.max(40, this.maxForce * Math.max(0.75, this.boundingRadius));
+    }
+    for (const body of this.rigidBodies.values()) {
+      if (body.id !== 'root' && body.type === BodyType.DYNAMIC) this.syncBodyToNode(body);
+    }
+
+    // Imported or edited hierarchies can drop a body while retaining an old
+    // joint definition. Keep the solver input self-consistent after every
+    // hierarchy rebuild instead of leaving a permanently dangling constraint.
+    for (const [id, constraint] of this.constraintDefinitions) {
+      const hasBodyA = constraint.bodyA === 'world' || this.rigidBodies.has(constraint.bodyA);
+      const hasBodyB = this.rigidBodies.has(constraint.bodyB);
+      if (!hasBodyA || !hasBodyB) this.constraintDefinitions.delete(id);
+    }
+  }
+
+  getRigidBody(nodeId = 'root') {
+    return this.rigidBodies.get(String(nodeId || 'root')) || null;
+  }
+
+  getRigidBodies() {
+    return [...this.rigidBodies.values()];
+  }
+
+  getNodeBodyType(nodeId = 'root') {
+    return this.getRigidBody(nodeId)?.type || null;
+  }
+
+  setNodeBodyType(nodeId, value) {
+    const id = String(nodeId || 'root');
+    const body = this.getRigidBody(id);
+    const type = normalizeBodyType(value, null);
+    if (!body || !type) return false;
+    if (body.type === type) return true;
+
+    if (body.id !== 'root' && body.type === BodyType.KINEMATIC && type === BodyType.DYNAMIC) {
+      const node = this.entityNodes.get(id);
+      node?.group?.updateWorldMatrix(true, false);
+      if (node?.group) {
+        body.position.copy(node.group.localToWorld(body.centerOfMassLocal.clone()));
+        body.quaternion.copy(node.group.getWorldQuaternion(new THREE.Quaternion()));
+      }
+    }
+    body.type = type;
+    body.velocity.set(0, 0, 0);
+    body.angularVelocity.set(0, 0, 0);
+    body.appliedForces.set(0, 0, 0);
+    body.appliedTorques.set(0, 0, 0);
+    body.previousKinematicPosition.copy(body.position);
+    body.previousKinematicQuaternion.copy(body.quaternion);
+    const node = this.entityNodes.get(id);
+    if (node) node.bodyType = type;
+    if (id === 'root') {
+      this.bodyType = type;
+      this.useGravity = type === BodyType.DYNAMIC;
+    } else {
+      const definition = this.childDefinitions.get(id);
+      if (definition) definition.bodyType = type;
+    }
+    return true;
+  }
+
+  setBodyType(value) {
+    return this.setNodeBodyType('root', value) ? this.bodyType : null;
+  }
+
+  getNodeBodyMass(nodeId = 'root') {
+    return this.getRigidBody(nodeId)?.mass ?? null;
+  }
+
+  setNodeBodyMass(nodeId, value) {
+    const id = String(nodeId || 'root');
+    const body = this.getRigidBody(id);
+    const mass = normalizeBodyMass(value);
+    if (!body || mass === null) return null;
+
+    const previousMass = body.mass;
+    body.mass = mass;
+    if (body.inverseInertia > 0 && previousMass > 0) {
+      // Shape is unchanged, so inertia scales linearly with mass.
+      body.inverseInertia *= previousMass / mass;
+    }
+
+    if (id === 'root') {
+      this.massOverride = mass;
+      this.mass = mass;
+      this.maxForce = Math.max(80, this.mass * 65);
+      this.maxTorque = Math.max(40, this.maxForce * Math.max(0.75, this.boundingRadius));
+    } else {
+      const definition = this.childDefinitions.get(id);
+      if (definition) definition.mass = mass;
+    }
+    return mass;
+  }
+
+  getNodeBodyMaterial(nodeId = 'root') {
+    const body = this.getRigidBody(nodeId);
+    return body ? Object.freeze({ restitution: body.restitution, friction: body.friction }) : null;
+  }
+
+  setNodeBodyMaterial(nodeId, material: any = {}) {
+    const id = String(nodeId || 'root');
+    const body = this.getRigidBody(id);
+    if (!body) return null;
+    if (material.restitution !== undefined) body.restitution = clampUnit(material.restitution, body.restitution);
+    if (material.friction !== undefined) body.friction = clampUnit(material.friction, body.friction);
+    if (id === 'root') {
+      this.restitution = body.restitution;
+      this.friction = body.friction;
+    } else {
+      const definition = this.childDefinitions.get(id);
+      if (definition) {
+        definition.restitution = body.restitution;
+        definition.friction = body.friction;
+      }
+    }
+    return this.getNodeBodyMaterial(id);
+  }
+
+  applyNodeBodyForce(nodeId, force) {
+    const body = this.getRigidBody(nodeId);
+    const safeForce = boundedBodyVector(force);
+    if (!body || body.type !== BodyType.DYNAMIC || !safeForce) return false;
+    body.appliedForces.add(safeForce);
+    return true;
+  }
+
+  applyNodeBodyTorque(nodeId, torque) {
+    const body = this.getRigidBody(nodeId);
+    const safeTorque = boundedBodyVector(torque);
+    if (!body || body.type !== BodyType.DYNAMIC || !safeTorque) return false;
+    body.appliedTorques.add(safeTorque);
+    return true;
+  }
+
+  syncKinematicBodies(dt, dynamicParentsOnly = false) {
+    this.rootGroup.updateMatrixWorld(true);
+    for (const body of this.rigidBodies.values()) {
+      if (body.type !== BodyType.KINEMATIC) continue;
+      const node = this.entityNodes.get(body.nodeId);
+      if (!node) continue;
+      if (dynamicParentsOnly) {
+        let parentId = node.parentId;
+        let hasDynamicParent = false;
+        while (parentId) {
+          if (this.getRigidBody(parentId)?.type === BodyType.DYNAMIC) {
+            hasDynamicParent = true;
+            break;
+          }
+          parentId = this.entityNodes.get(parentId)?.parentId || null;
+        }
+        if (!hasDynamicParent) continue;
+      }
+      const position = body.id === 'root'
+        ? this.position.clone()
+        : node.group.localToWorld(body.centerOfMassLocal.clone());
+      const quaternion = body.id === 'root'
+        ? this.quaternion.clone()
+        : node.group.getWorldQuaternion(new THREE.Quaternion());
+      if (dt > 0) {
+        body.velocity.copy(position).sub(body.previousKinematicPosition).divideScalar(dt);
+        body.angularVelocity.copy(angularVelocityBetween(body.previousKinematicQuaternion, quaternion, dt));
+      } else {
+        body.velocity.set(0, 0, 0);
+        body.angularVelocity.set(0, 0, 0);
+      }
+      if (body.id !== 'root') {
+        body.position.copy(position);
+        body.quaternion.copy(quaternion);
+      }
+      body.previousKinematicPosition.copy(position);
+      body.previousKinematicQuaternion.copy(quaternion);
+      body.appliedForces.set(0, 0, 0);
+      body.appliedTorques.set(0, 0, 0);
+    }
+  }
+
+  syncBodyToNode(body) {
+    if (!body) return;
+    if (body.id === 'root') {
+      this.updateTransform();
+      return;
+    }
+    const node = this.entityNodes.get(body.nodeId);
+    const parent = node && this.entityNodes.get(node.parentId || 'root');
+    if (!node || !parent) return;
+    parent.group.updateWorldMatrix(true, false);
+    const parentQuaternion = parent.group.getWorldQuaternion(new THREE.Quaternion());
+    const pivotWorld = body.centerOfMassLocal.clone()
+      .applyQuaternion(body.quaternion)
+      .multiplyScalar(-1)
+      .add(body.position);
+    node.localPosition.copy(parent.group.worldToLocal(pivotWorld.clone()));
+    node.localQuaternion.copy(parentQuaternion.invert().multiply(body.quaternion).normalize());
+    node.group.position.copy(node.localPosition);
+    node.group.quaternion.copy(node.localQuaternion);
+    node.group.updateWorldMatrix(true, true);
+  }
+
+  syncAllBodyTransforms() {
+    this.updateTransform();
+    for (const body of this.rigidBodies.values()) {
+      if (body.id !== 'root' && body.type === BodyType.DYNAMIC) this.syncBodyToNode(body);
+    }
+  }
+
+  initializeConstraints(constraints = []) {
+    this.constraintDefinitions.clear();
+    for (const definition of constraints) this.createConstraint(definition);
+  }
+
+  createConstraint(definition: any = {}) {
+    const bodyBId = String(definition.bodyB || definition.nodeId || '');
+    const bodyB = this.getRigidBody(bodyBId);
+    const bodyAId = String(definition.bodyA || definition.other || definition.parentId || this.entityNodes.get(bodyBId)?.parentId || 'world');
+    const bodyA = bodyAId === 'world' ? null : this.getRigidBody(bodyAId);
+    if (!bodyB || (bodyAId !== 'world' && !bodyA) || bodyAId === bodyBId) return null;
+    const type = ['point', 'hinge', 'weld'].includes(definition.type) ? definition.type : 'point';
+    let id = String(definition.id || `${type}_${bodyAId}_${bodyBId}`);
+    let suffix = 2;
+    while (this.constraintDefinitions.has(id)) id = `${definition.id || `${type}_${bodyAId}_${bodyBId}`}_${suffix++}`;
+
+    const nodeB = this.entityNodes.get(bodyBId);
+    const pivotWorld = nodeB?.group?.getWorldPosition(new THREE.Vector3()) || bodyB.position.clone();
+    const toLocal = (body, world) => world.clone().sub(body.position).applyQuaternion(body.quaternion.clone().invert());
+    const anchorA = Array.isArray(definition.anchorA)
+      ? asVector3(definition.anchorA)
+      : (bodyA ? toLocal(bodyA, pivotWorld) : pivotWorld.clone());
+    const anchorB = Array.isArray(definition.anchorB)
+      ? asVector3(definition.anchorB)
+      : toLocal(bodyB, pivotWorld);
+    const axisA = asVector3(definition.axisA, new THREE.Vector3(0, 0, 1)).normalize();
+    const axisB = asVector3(definition.axisB, new THREE.Vector3(0, 0, 1)).normalize();
+    const perpendicular = Math.abs(axisA.y) < 0.9
+      ? new THREE.Vector3(0, 1, 0)
+      : new THREE.Vector3(1, 0, 0);
+    const referenceA = asVector3(definition.referenceA, perpendicular.clone().addScaledVector(axisA, -perpendicular.dot(axisA)).normalize());
+    const referenceWorld = bodyA ? referenceA.clone().applyQuaternion(bodyA.quaternion) : referenceA.clone();
+    const referenceB = asVector3(
+      definition.referenceB,
+      referenceWorld.applyQuaternion(bodyB.quaternion.clone().invert()).normalize()
+    );
+    const limitMin = Number(definition.limits?.min);
+    const limitMax = Number(definition.limits?.max);
+    const limits = Number.isFinite(limitMin) && Number.isFinite(limitMax)
+      ? { min: Math.min(limitMin, limitMax), max: Math.max(limitMin, limitMax) }
+      : null;
+    const requestedStiffness = Number(definition.stiffness ?? 0.9);
+    const constraint = {
+      id,
+      type,
+      bodyA: bodyAId,
+      bodyB: bodyBId,
+      anchorA: anchorA.toArray(),
+      anchorB: anchorB.toArray(),
+      axisA: axisA.toArray(),
+      axisB: axisB.toArray(),
+      referenceA: referenceA.toArray(),
+      referenceB: referenceB.toArray(),
+      limits,
+      stiffness: Number.isFinite(requestedStiffness)
+        ? Math.max(0, Math.min(1, requestedStiffness))
+        : 0.9,
+      collideConnected: !!definition.collideConnected
+    };
+    this.constraintDefinitions.set(id, constraint);
+    return constraint;
+  }
+
+  removeConstraint(id) {
+    return this.constraintDefinitions.delete(String(id || ''));
+  }
+
+  getConstraints(nodeId = null) {
+    const constraints = [...this.constraintDefinitions.values()]
+      .filter(constraint => !nodeId || constraint.bodyA === nodeId || constraint.bodyB === nodeId)
+      .map(constraint => ({ ...constraint, limits: constraint.limits ? { ...constraint.limits } : null }));
+    return Object.freeze(constraints.map(constraint => Object.freeze(constraint)));
+  }
+
+  rebuildAfterBlockChange(type = 'change', nodeId = null) {
+    this.buildCollisionCells();
+    this.calculateBoundsAndCenter();
+    this.voxelVolume = this.blocks.reduce((sum, block) => sum + Math.pow(block.size || 1, 3), 0);
+    this.rebuildEntityHierarchy();
+    if (this.scriptStatus !== 'running') {
+      this.appliedForces.set(0, 0, 0);
+      this.appliedTorques.set(0, 0, 0);
+      for (const node of this.entityNodes.values()) {
+        if (node.id !== 'root') node.localAngularVelocity.set(0, 0, 0);
+      }
+    }
+    this.createHighlightBox();
+    if (this.selectedNodeId) {
+      this.setHighlightedNode(this.selectedNodeId);
+    }
+    // Block-change events fire even when bounds do not change, including color edits.
+    // Scripts query them through ctx.blocks.pressed()/event(), mirroring ctx.input.
+    // Pivots do not follow bounds automatically; use getBounds then setPivot when needed.
+    this.notifyBlocksChanged(type, nodeId);
+  }
+
+  /**
+   * Record a block edit between render frames. Types are place, remove, color, and
+   * subdivide. Scripts observe it through ctx.blocks.pressed(type?) on the next frame;
+   * the event clears at frame end.
+   */
+  notifyBlocksChanged(type, nodeId = null) {
+    this.blocksChangedThisFrame = true;
+    this.lastBlocksChangedEvent = Object.freeze({
+      type,
+      nodeId,
+      blockCount: this.blocks.length
+    });
+  }
+
+  /** Entity-local block bounds for a component, or null when it has no blocks. */
+  getNodeBlocksBounds(nodeId) {
+    const id = String(nodeId || 'root');
+    const nodeBlocks = this.blocks.filter(b => (b.entityId || 'root') === id);
+    if (nodeBlocks.length === 0) return null;
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (const b of nodeBlocks) {
+      const size = b.size || 1;
+      minX = Math.min(minX, b.localX); minY = Math.min(minY, b.localY); minZ = Math.min(minZ, b.localZ);
+      maxX = Math.max(maxX, b.localX + size); maxY = Math.max(maxY, b.localY + size); maxZ = Math.max(maxZ, b.localZ + size);
+    }
+    return Object.freeze({
+      min: Object.freeze([minX, minY, minZ]),
+      max: Object.freeze([maxX, maxY, maxZ]),
+      size: Object.freeze([maxX - minX, maxY - minY, maxZ - minZ]),
+      center: Object.freeze([(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2])
+    });
+  }
+
+  createChildEntity(parentId, cellKeysOrBlocks, requestedId = null) {
+    const parent = this.entityNodes.get(parentId);
+    if (!parent || !cellKeysOrBlocks || this.childDefinitions.size >= MAX_ENTITY_COMPONENTS - 1) return null;
+    if (requestedId !== null && !isValidComponentId(String(requestedId), false)) return null;
+
+    let selectedBlocks = [];
+    if (Array.isArray(cellKeysOrBlocks) && cellKeysOrBlocks.length > 0 && typeof cellKeysOrBlocks[0] === 'object' && cellKeysOrBlocks[0] !== null && 'localX' in cellKeysOrBlocks[0]) {
+      const blockSet = new Set(cellKeysOrBlocks);
+      selectedBlocks = this.blocks.filter(block => (
+        (block.entityId || 'root') === parentId && blockSet.has(block)
+      ));
+    } else if (cellKeysOrBlocks instanceof Set && cellKeysOrBlocks.size > 0 && typeof [...cellKeysOrBlocks][0] === 'object' && [...cellKeysOrBlocks][0] !== null && 'localX' in ([...cellKeysOrBlocks][0] as any)) {
+      const blockSet = cellKeysOrBlocks as Set<any>;
+      selectedBlocks = this.blocks.filter(block => (
+        (block.entityId || 'root') === parentId && blockSet.has(block)
+      ));
+    } else {
+      const selectedCells = new Set([...cellKeysOrBlocks].map(String));
+      selectedBlocks = this.blocks.filter(block => (
+        (block.entityId || 'root') === parentId && selectedCells.has(collisionCellKey(block))
+      ));
+    }
+    if (selectedBlocks.length === 0) return null;
+
+    let id = String(requestedId || `child_${this.nextChildId++}`);
+    while (this.entityNodes.has(id) || this.childDefinitions.has(id)) {
+      id = `child_${this.nextChildId++}`;
+    }
+
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (const b of selectedBlocks) {
+      const s = b.size || 1;
+      minX = Math.min(minX, b.localX);
+      minY = Math.min(minY, b.localY);
+      minZ = Math.min(minZ, b.localZ);
+      maxX = Math.max(maxX, b.localX + s);
+      maxY = Math.max(maxY, b.localY + s);
+      maxZ = Math.max(maxZ, b.localZ + s);
+    }
+    const pivot = new THREE.Vector3(
+      (minX + maxX) / 2,
+      (minY + maxY) / 2,
+      (minZ + maxZ) / 2
+    );
+
+    for (const block of selectedBlocks) block.entityId = id;
+    this.childDefinitions.set(id, {
+      id,
+      parentId,
+      pivot: pivot.toArray(),
+      kind: 'child',
+      bodyType: BodyType.KINEMATIC,
+      restitution: this.restitution,
+      friction: this.friction
+    });
+    this.rebuildEntityHierarchy();
+    return this.entityNodes.get(id) || null;
+  }
+
+  /** Whole-voxel (1x1) parent-cell keys of one component, used by the child
+   *  selection UI. Collision itself runs on the finer 0.2 micro boxes. */
+  getEntityCollisionCellKeys(nodeId, bounds = null) {
+    const keys = new Set();
+    for (const block of this.blocks) {
+      if ((block.entityId || 'root') !== nodeId) continue;
+      const x = Math.floor(block.localX + 1e-6);
+      const y = Math.floor(block.localY + 1e-6);
+      const z = Math.floor(block.localZ + 1e-6);
+      if (bounds && (
+        x < bounds.minX || x > bounds.maxX
+        || y < bounds.minY || y > bounds.maxY
+        || z < bounds.minZ || z > bounds.maxZ
+      )) continue;
+      keys.add(`${x},${y},${z}`);
+    }
+    return keys;
+  }
+
+  isEntityDescendantOf(nodeId, ancestorId) {
+    let node = this.entityNodes.get(nodeId);
+    while (node?.parentId) {
+      if (node.parentId === ancestorId) return true;
+      node = this.entityNodes.get(node.parentId);
+    }
+    return false;
+  }
+
+  setFocusHighlight(nodeId) {
+    if (nodeId === this.focusedHighlightNodeId) return;
+    this.clearFocusHighlight();
+    if (!nodeId) return;
+
+    const node = this.entityNodes.get(nodeId);
+    if (!node) return;
+    this.focusedHighlightNodeId = nodeId;
+
+    const materials = {
+      focusedLine: new THREE.LineBasicMaterial({ color: 0x00d2d3, transparent: true, opacity: 0.85 }),
+      focusedFill: new THREE.MeshBasicMaterial({ color: 0x00d2d3, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide }),
+      childLine: new THREE.LineBasicMaterial({ color: 0x2ed573, transparent: true, opacity: 0.85 }),
+      childFill: new THREE.MeshBasicMaterial({ color: 0x2ed573, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide })
+    };
+    this.focusHighlightMaterials = materials;
+    this.focusHighlightGeometries = [];
+
+    const createBoxForBlocks = (ownerNode, blocks, isChild = false) => {
+      if (!blocks || blocks.length === 0) return;
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (const b of blocks) {
+        const s = b.size || 1;
+        minX = Math.min(minX, b.localX); minY = Math.min(minY, b.localY); minZ = Math.min(minZ, b.localZ);
+        maxX = Math.max(maxX, b.localX + s); maxY = Math.max(maxY, b.localY + s); maxZ = Math.max(maxZ, b.localZ + s);
+      }
+      const sx = maxX - minX;
+      const sy = maxY - minY;
+      const sz = maxZ - minZ;
+      const cx = (minX + maxX) / 2 - ownerNode.pivotLocal.x;
+      const cy = (minY + maxY) / 2 - ownerNode.pivotLocal.y;
+      const cz = (minZ + maxZ) / 2 - ownerNode.pivotLocal.z;
+
+      const segX = Math.max(1, Math.min(64, Math.round(sx)));
+      const segY = Math.max(1, Math.min(64, Math.round(sy)));
+      const segZ = Math.max(1, Math.min(64, Math.round(sz)));
+      const boxGeo = new THREE.BoxGeometry(sx, sy, sz, segX, segY, segZ);
+      const edgeGeo = new THREE.EdgesGeometry(boxGeo);
+      this.focusHighlightGeometries.push(boxGeo, edgeGeo);
+
+      const container = new THREE.Group();
+      container.name = isChild ? 'ChildBreathingHighlight' : 'FocusedNodeHighlight';
+      container.position.set(cx, cy, cz);
+
+      const fill = new THREE.Mesh(boxGeo, isChild ? materials.childFill : materials.focusedFill);
+      const lines = new THREE.LineSegments(edgeGeo, isChild ? materials.childLine : materials.focusedLine);
+      fill.renderOrder = 22;
+      lines.renderOrder = 23;
+      container.add(fill, lines);
+      ownerNode.group.add(container);
+      this.focusHighlightEntries.push({ container, ownerNode, isChild });
+    };
+
+    // 1. Focused node bounding box (non-descendant blocks of this node)
+    const focusedBlocks = this.blocks.filter(b => (b.entityId || 'root') === nodeId);
+    createBoxForBlocks(node, focusedBlocks, false);
+
+    // 2. Direct child components (ONLY 1 layer below - node.children) with green breathing light
+    if (node.children) {
+      for (const childId of node.children) {
+        const childNode = this.entityNodes.get(childId);
+        if (!childNode) continue;
+        const childBlocks = this.blocks.filter(b => (b.entityId || 'root') === childId);
+        createBoxForBlocks(childNode, childBlocks, true);
+      }
+    }
+  }
+
+  clearFocusHighlight() {
+    if (this.focusHighlightEntries) {
+      for (const entry of this.focusHighlightEntries) entry.container.removeFromParent();
+    }
+    this.focusHighlightEntries = [];
+    if (this.focusHighlightGeometries) {
+      for (const geo of this.focusHighlightGeometries) geo.dispose();
+    }
+    this.focusHighlightGeometries = [];
+    if (this.focusHighlightMaterials) {
+      for (const mat of Object.values(this.focusHighlightMaterials)) mat.dispose();
+    }
+    this.focusHighlightMaterials = null;
+    this.focusedHighlightNodeId = null;
+  }
+
+  setGlueSelection(nodeId, cellKeys) {
+    this.clearGlueSelection();
+    const node = this.entityNodes.get(nodeId);
+    if (!node || !cellKeys) return;
+
+    // Show focused node + direct child green breathing boxes
+    this.setFocusHighlight(nodeId);
+
+    const boxGeometry = new THREE.BoxGeometry(1, 1, 1, 5, 5, 5);
+    const edgeGeometry = new THREE.EdgesGeometry(boxGeometry);
+    const materials = {
+      selectedLine: new THREE.LineBasicMaterial({ color: 0xff9f43, transparent: true, opacity: 0.95 }),
+      selectedFill: new THREE.MeshBasicMaterial({
+        color: 0xff9f43,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      })
+    };
+    this.glueHighlightMaterials = materials;
+    this.glueHighlightGeometries = { boxGeometry, edgeGeometry };
+
+    for (const key of cellKeys) {
+      const [x, y, z] = key.split(',').map(Number);
+      const container = new THREE.Group();
+      container.name = 'GluePendingChildHighlight';
+      container.position.set(
+        x + 0.5 - node.pivotLocal.x,
+        y + 0.5 - node.pivotLocal.y,
+        z + 0.5 - node.pivotLocal.z
+      );
+      const fill = new THREE.Mesh(boxGeometry, materials.selectedFill);
+      const lines = new THREE.LineSegments(edgeGeometry, materials.selectedLine);
+      fill.renderOrder = 24;
+      lines.renderOrder = 25;
+      container.add(fill, lines);
+      node.group.add(container);
+      this.glueHighlightEntries.push({ container, role: 'selected', cell: { x, y, z }, entityId: node.id });
+    }
+    this.glueSelectionGroup = node.group;
+    this.updateGlueSelectionPulse();
+  }
+
+  clearGlueSelection() {
+    for (const entry of this.glueHighlightEntries) entry.container.removeFromParent();
+    this.glueHighlightEntries = [];
+    this.glueHighlightGeometries?.boxGeometry?.dispose();
+    this.glueHighlightGeometries?.edgeGeometry?.dispose();
+    if (this.glueHighlightMaterials) {
+      for (const material of Object.values(this.glueHighlightMaterials)) material.dispose();
+    }
+    this.glueHighlightGeometries = null;
+    this.glueHighlightMaterials = null;
+    this.glueSelectionGroup = null;
+    this.clearFocusHighlight();
+  }
+
+  updateGlueSelectionPulse() {
+    const wave = (Math.sin(this.totalRuntime * 4.4) + 1) * 0.5;
+    const counterWave = (Math.sin(this.totalRuntime * 4.4 + Math.PI * 0.55) + 1) * 0.5;
+    if (this.glueHighlightMaterials) {
+      this.glueHighlightMaterials.selectedLine.opacity = 0.52 + counterWave * 0.46;
+      this.glueHighlightMaterials.selectedFill.opacity = 0.07 + counterWave * 0.17;
+    }
+    if (this.focusHighlightMaterials) {
+      // Green breathing light on direct children bounding boxes
+      this.focusHighlightMaterials.childLine.opacity = 0.35 + wave * 0.60;
+      this.focusHighlightMaterials.childFill.opacity = 0.04 + wave * 0.16;
+      // Focused node bounding box steady or subtle pulse
+      this.focusHighlightMaterials.focusedLine.opacity = 0.7 + counterWave * 0.25;
+      this.focusHighlightMaterials.focusedFill.opacity = 0.04 + counterWave * 0.06;
+    }
+  }
+
+  createVoxelMesh(blocks, coordinateOrigin, parentGroup) {
+    if (blocks.length === 0) return null;
+    const positions = [];
+    const normals = [];
+    const colors = [];
+
+    const faces = [
+      { dir: [0, 1, 0], norm: [0, 1, 0], quad: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]], face: 'top' },
+      { dir: [0, -1, 0], norm: [0, -1, 0], quad: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], face: 'bottom' },
+      { dir: [0, 0, -1], norm: [0, 0, -1], quad: [[1, 1, 0], [1, 0, 0], [0, 0, 0], [0, 1, 0]], face: 'side' },
+      { dir: [0, 0, 1], norm: [0, 0, 1], quad: [[0, 1, 1], [0, 0, 1], [1, 0, 1], [1, 1, 1]], face: 'side' },
+      { dir: [-1, 0, 0], norm: [-1, 0, 0], quad: [[0, 1, 0], [0, 0, 0], [0, 0, 1], [0, 1, 1]], face: 'side' },
+      { dir: [1, 0, 0], norm: [1, 0, 0], quad: [[1, 1, 1], [1, 0, 1], [1, 0, 0], [1, 1, 0]], face: 'side' }
+    ];
+
+    const meshCellMap = new Map();
+    const meshKey = (x, y, z, size) => `${Math.round(x * 5)},${Math.round(y * 5)},${Math.round(z * 5)},${Math.round(size * 5)}`;
+    for (const b of blocks) {
+      const size = b.size || 1;
+      meshCellMap.set(meshKey(b.localX, b.localY, b.localZ, size), b);
+    }
+
+    const tempColor = new THREE.Color();
+
+    for (const b of blocks) {
+      const blockSize = b.size || 1;
+
+      const ox = b.localX - coordinateOrigin.x;
+      const oy = b.localY - coordinateOrigin.y;
+      const oz = b.localZ - coordinateOrigin.z;
+
+      for (const f of faces) {
+        const nx = b.localX + f.dir[0] * blockSize;
+        const ny = b.localY + f.dir[1] * blockSize;
+        const nz = b.localZ + f.dir[2] * blockSize;
+
+        if (meshCellMap.has(meshKey(nx, ny, nz, blockSize))) continue;
+
+        const hexColor = b.color ?? DEFAULT_BLOCK_COLOR;
+        tempColor.set(hexColor);
+        const shade = f.face === 'top' ? 1.0 : f.face === 'bottom' ? 0.6 : 0.85;
+        const r = tempColor.r * shade;
+        const g = tempColor.g * shade;
+        const bCol = tempColor.b * shade;
+
+        const q = f.quad;
+        const v0 = [ox + q[0][0] * blockSize, oy + q[0][1] * blockSize, oz + q[0][2] * blockSize];
+        const v1 = [ox + q[1][0] * blockSize, oy + q[1][1] * blockSize, oz + q[1][2] * blockSize];
+        const v2 = [ox + q[2][0] * blockSize, oy + q[2][1] * blockSize, oz + q[2][2] * blockSize];
+        const v3 = [ox + q[3][0] * blockSize, oy + q[3][1] * blockSize, oz + q[3][2] * blockSize];
+
+        positions.push(...v0, ...v1, ...v2);
+        normals.push(...f.norm, ...f.norm, ...f.norm);
+        colors.push(r, g, bCol, r, g, bCol, r, g, bCol);
+
+        positions.push(...v0, ...v2, ...v3);
+        normals.push(...f.norm, ...f.norm, ...f.norm);
+        colors.push(r, g, bCol, r, g, bCol, r, g, bCol);
+      }
+    }
+
+    if (positions.length > 0) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+      const mat = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        flatShading: true,
+        roughness: 0.65,
+        metalness: 0.15
+      });
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parentGroup.add(mesh);
+      return mesh;
+    }
+    return null;
+  }
+
+  createHighlightBox() {
+    const wasVisible = this.isHighlighted || (this.highlightBox?.material?.opacity > 0);
+    if (this.highlightBox) {
+      this.highlightBox.removeFromParent();
+      if (this.highlightBox.geometry) this.highlightBox.geometry.dispose();
+      if (this.highlightBox.material) this.highlightBox.material.dispose();
+      this.highlightBox = null;
+    }
+    if (!this.blocks || this.blocks.length === 0) return;
+
+    const currentCenter = new THREE.Vector3(
+      (this.minLocal.x + this.maxLocal.x) / 2,
+      (this.minLocal.y + this.maxLocal.y) / 2,
+      (this.minLocal.z + this.maxLocal.z) / 2
+    );
+    const boxOffset = currentCenter.sub(this.localCenter);
+
+    const segX = Math.max(1, Math.min(64, Math.round(this.size.x)));
+    const segY = Math.max(1, Math.min(64, Math.round(this.size.y)));
+    const segZ = Math.max(1, Math.min(64, Math.round(this.size.z)));
+    const geo = new THREE.BoxGeometry(
+      Math.max(0.1, this.size.x),
+      Math.max(0.1, this.size.y),
+      Math.max(0.1, this.size.z),
+      segX, segY, segZ
+    );
+    const edges = new THREE.EdgesGeometry(geo);
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xf1c40f,
+      linewidth: 2,
+      transparent: true,
+      opacity: wasVisible ? 0.9 : 0.0
+    });
+
+    this.highlightBox = new THREE.LineSegments(edges, mat);
+    this.highlightBox.position.copy(boxOffset);
+    this.rootGroup.add(this.highlightBox);
+  }
+
+  setHighlighted(highlighted) {
+    this.isHighlighted = !!highlighted;
+    if (this.highlightBox) {
+      this.highlightBox.material.opacity = highlighted ? 0.9 : 0.0;
+    }
+  }
+
+  getHierarchyTree() {
+    const buildNode = (id) => {
+      const node = this.entityNodes.get(id);
+      if (!node) return null;
+      const blocks = this.blocks.filter(b => (b.entityId || 'root') === id);
+      const voxelVolume = blocks.reduce((sum, b) => sum + Math.pow(b.size || 1, 3), 0);
+      const childArray = [];
+      if (node.children) {
+        for (const childId of node.children) {
+          const childTree = buildNode(childId);
+          if (childTree) childArray.push(childTree);
+        }
+      }
+      return {
+        id: node.id,
+        parentId: node.parentId,
+        kind: node.kind || (id === 'root' ? 'root' : 'child'),
+        bodyType: this.getNodeBodyType(id),
+        blockCount: blocks.length,
+        volume: Number(voxelVolume.toFixed(2)),
+        pivot: [node.pivotLocal.x, node.pivotLocal.y, node.pivotLocal.z],
+        localPosition: node.localPosition.toArray(),
+        children: childArray
+      };
+    };
+
+    return buildNode('root');
+  }
+
+  setHighlightedNode(nodeId) {
+    if (this.nodeHighlightBox) {
+      this.nodeHighlightBox.removeFromParent();
+      if (this.nodeHighlightGeometries) {
+        for (const g of Object.values(this.nodeHighlightGeometries)) (g as any)?.dispose?.();
+      }
+      if (this.nodeHighlightMaterials) {
+        for (const m of Object.values(this.nodeHighlightMaterials)) (m as any)?.dispose?.();
+      }
+      this.nodeHighlightBox = null;
+      this.nodeHighlightGeometries = null;
+      this.nodeHighlightMaterials = null;
+    }
+    this.selectedNodeId = nodeId || null;
+    if (!nodeId) return;
+
+    const built = this.buildNodeHighlightBox(nodeId);
+    if (built) {
+      this.nodeHighlightBox = built.group;
+      this.nodeHighlightGeometries = built.geometries;
+      this.nodeHighlightMaterials = built.materials;
+    }
+  }
+
+  /**
+   * Create highlight boxes for subtree nodes; each box follows its node.
+   */
+  highlightSubtree(nodeIds) {
+    this.clearSubtreeHighlight();
+    if (!nodeIds || nodeIds.length === 0) return;
+    for (const id of nodeIds) {
+      const built = this.buildNodeHighlightBox(id);
+      if (!built) continue;
+      this.subtreeHighlightBoxes.push({ nodeId: id, ...built });
+    }
+  }
+
+  clearSubtreeHighlight() {
+    for (const entry of this.subtreeHighlightBoxes) {
+      entry.group.removeFromParent();
+      if (entry.geometries) {
+        for (const g of Object.values(entry.geometries)) (g as any)?.dispose?.();
+      }
+      if (entry.materials) {
+        for (const m of Object.values(entry.materials)) (m as any)?.dispose?.();
+      }
+    }
+    this.subtreeHighlightBoxes = [];
+  }
+
+  /**
+   * Highlight concrete blocks selected by a two-point box. Each wireframe attaches
+   * to its owning node group and follows entity transforms.
+   */
+  highlightBlocks(blockList) {
+    this.clearSubtreeHighlight();
+    if (!blockList || blockList.length === 0) return;
+
+    const nodeMap = new Map<string, any[]>();
+    for (const b of blockList) {
+      const nodeId = b.entityId || 'root';
+      let list = nodeMap.get(nodeId);
+      if (!list) {
+        list = [];
+        nodeMap.set(nodeId, list);
+      }
+      list.push(b);
+    }
+
+    const faces = [
+      { dir: [0, 1, 0], quad: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] },
+      { dir: [0, -1, 0], quad: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] },
+      { dir: [0, 0, -1], quad: [[1, 1, 0], [1, 0, 0], [0, 0, 0], [0, 1, 0]] },
+      { dir: [0, 0, 1], quad: [[0, 1, 1], [0, 0, 1], [1, 0, 1], [1, 1, 1]] },
+      { dir: [-1, 0, 0], quad: [[0, 1, 0], [0, 0, 0], [0, 0, 1], [0, 1, 1]] },
+      { dir: [1, 0, 0], quad: [[1, 1, 1], [1, 0, 1], [1, 0, 0], [1, 1, 0]] }
+    ];
+
+    for (const [nodeId, blocks] of nodeMap) {
+      const node = this.entityNodes.get(nodeId) || this.entityNodes.get('root');
+      if (!node) continue;
+
+      const blockSet = new Set<string>();
+      const key = (x: number, y: number, z: number, s: number) =>
+        `${Math.round(x * 5)},${Math.round(y * 5)},${Math.round(z * 5)},${Math.round(s * 5)}`;
+
+      for (const b of blocks) {
+        const s = b.size || 1;
+        blockSet.add(key(b.localX, b.localY, b.localZ, s));
+      }
+
+      const edgePositions: number[] = [];
+      const edgeSet = new Set<string>();
+      const pivot = node.pivotLocal;
+
+      for (const b of blocks) {
+        const s = b.size || 1;
+        for (const f of faces) {
+          const nx = b.localX + f.dir[0] * s;
+          const ny = b.localY + f.dir[1] * s;
+          const nz = b.localZ + f.dir[2] * s;
+          if (blockSet.has(key(nx, ny, nz, s))) continue; // Cull internal overlapping face!
+
+          const q = f.quad;
+          const v0 = [b.localX + q[0][0] * s - pivot.x, b.localY + q[0][1] * s - pivot.y, b.localZ + q[0][2] * s - pivot.z];
+          const v1 = [b.localX + q[1][0] * s - pivot.x, b.localY + q[1][1] * s - pivot.y, b.localZ + q[1][2] * s - pivot.z];
+          const v2 = [b.localX + q[2][0] * s - pivot.x, b.localY + q[2][1] * s - pivot.y, b.localZ + q[2][2] * s - pivot.z];
+          const v3 = [b.localX + q[3][0] * s - pivot.x, b.localY + q[3][1] * s - pivot.y, b.localZ + q[3][2] * s - pivot.z];
+
+          const quadEdges = [[v0, v1], [v1, v2], [v2, v3], [v3, v0]];
+          for (const [p1, p2] of quadEdges) {
+            const k1 = `${Math.round(p1[0] * 1000)},${Math.round(p1[1] * 1000)},${Math.round(p1[2] * 1000)}`;
+            const k2 = `${Math.round(p2[0] * 1000)},${Math.round(p2[1] * 1000)},${Math.round(p2[2] * 1000)}`;
+            const edgeKey = k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+            if (!edgeSet.has(edgeKey)) {
+              edgeSet.add(edgeKey);
+              edgePositions.push(...p1, ...p2);
+            }
+          }
+        }
+      }
+
+      if (edgePositions.length > 0) {
+        const edgeGeo = new THREE.BufferGeometry();
+        edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
+        const lineMat = new THREE.LineBasicMaterial({
+          color: 0xff9f43,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false
+        });
+        const lines = new THREE.LineSegments(edgeGeo, lineMat);
+        lines.renderOrder = 33;
+        node.group.add(lines);
+        this.subtreeHighlightBoxes.push({ group: lines, geometries: { edges: edgeGeo }, materials: { lineMat } });
+      }
+    }
+  }
+
+  /** Build a cyan highlight attached to one node group, including a red pivot indicator. */
+  buildNodeHighlightBox(nodeId) {
+    const node = this.entityNodes.get(nodeId);
+    if (!node) return null;
+
+    const group = new THREE.Group();
+    group.name = `NodeHighlight_${nodeId}`;
+    group.position.set(0, 0, 0);
+
+    const geometries: any = {};
+    const materials: any = {};
+
+    // Red pivot indicator dot at node origin (0, 0, 0)
+    // Fixed 3px screen-space square point without wireframe or mesh distortion
+    const pivotGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0)]);
+    const pivotMat = new THREE.PointsMaterial({
+      color: 0xff2222,
+      size: 3,
+      sizeAttenuation: false,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 1.0
+    });
+
+    const pivotPoint = new THREE.Points(pivotGeo, pivotMat);
+    pivotPoint.name = `NodePivotPoint_${nodeId}`;
+    pivotPoint.renderOrder = 99;
+    pivotPoint.position.set(0, 0, 0);
+
+    group.add(pivotPoint);
+
+    geometries.pivotGeo = pivotGeo;
+    materials.pivotMat = pivotMat;
+
+    const nodeBlocks = this.blocks.filter(b => (b.entityId || 'root') === nodeId);
+    if (nodeBlocks.length > 0) {
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (const b of nodeBlocks) {
+        const s = b.size || 1;
+        minX = Math.min(minX, b.localX);
+        minY = Math.min(minY, b.localY);
+        minZ = Math.min(minZ, b.localZ);
+        maxX = Math.max(maxX, b.localX + s);
+        maxY = Math.max(maxY, b.localY + s);
+        maxZ = Math.max(maxZ, b.localZ + s);
+      }
+
+      const sx = maxX - minX;
+      const sy = maxY - minY;
+      const sz = maxZ - minZ;
+      const cx = (minX + maxX) / 2 - node.pivotLocal.x;
+      const cy = (minY + maxY) / 2 - node.pivotLocal.y;
+      const cz = (minZ + maxZ) / 2 - node.pivotLocal.z;
+
+      const segX = Math.max(1, Math.min(64, Math.round(sx)));
+      const segY = Math.max(1, Math.min(64, Math.round(sy)));
+      const segZ = Math.max(1, Math.min(64, Math.round(sz)));
+      const box = new THREE.BoxGeometry(sx, sy, sz, segX, segY, segZ);
+      const edges = new THREE.EdgesGeometry(box);
+      const lineMat = new THREE.LineBasicMaterial({
+        color: 0x00d2d3,
+        linewidth: 2,
+        transparent: true,
+        opacity: 0.95
+      });
+      const fillMat = new THREE.MeshBasicMaterial({
+        color: 0x48dbfb,
+        transparent: true,
+        opacity: 0.16,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+
+      const lines = new THREE.LineSegments(edges, lineMat);
+      const fill = new THREE.Mesh(box, fillMat);
+      lines.renderOrder = 32;
+      fill.renderOrder = 31;
+
+      lines.position.set(cx, cy, cz);
+      fill.position.set(cx, cy, cz);
+
+      group.add(fill, lines);
+
+      geometries.box = box;
+      geometries.edges = edges;
+      materials.lineMat = lineMat;
+      materials.fillMat = fillMat;
+    }
+
+    node.group.add(group);
+
+    return { group, geometries, materials };
+  }
+
+  // =========================================================================
+  // UPDATE LOOP (dispatch motion by mode)
+  // =========================================================================
+
+  update(dt, inputState = null, runtimeContext = null) {
+    this.capturePreviousEntityTransforms();
+    this.totalRuntime += dt;
+
+    if (this.nodeHighlightMaterials) {
+      const pulse = (Math.sin(this.totalRuntime * 5.0) + 1) * 0.5;
+      if (this.nodeHighlightMaterials.lineMat) {
+        this.nodeHighlightMaterials.lineMat.opacity = 0.6 + pulse * 0.38;
+      }
+      if (this.nodeHighlightMaterials.fillMat) {
+        this.nodeHighlightMaterials.fillMat.opacity = 0.08 + pulse * 0.14;
+      }
+      if (this.nodeHighlightMaterials.pivotMat) {
+        this.nodeHighlightMaterials.pivotMat.opacity = 0.85 + pulse * 0.15;
+      }
+    }
+
+    // A controller may drive child entities regardless of the root motion mode.
+    this.updateProgrammable(dt, inputState, runtimeContext);
+
+    switch (this.mode) {
+      case ContraptionMode.PROGRAMMABLE:
+        break;
+
+      case ContraptionMode.BEARING:
+        this.updateBearing(dt);
+        break;
+
+      case ContraptionMode.PISTON:
+        this.updatePiston(dt);
+        break;
+
+      case ContraptionMode.DRIVABLE:
+        // Legacy mode name retained for saved worlds. Motion is no longer
+        // hardcoded here: entity code applies every force and torque.
+        break;
+
+      case ContraptionMode.FREE_PHYSICS:
+      case ContraptionMode.PROJECTILE:
+      default:
+        // Handled by physics engine
+        break;
+    }
+
+    this.updateChildEntities(dt);
+    // Kinematic-root spin integrates directly into entity orientation and,
+    // like child kinematics, advances only on frames where the script commands it.
+    if (this.bodyType === BodyType.KINEMATIC) {
+      const rootNode = this.entityNodes.get('root');
+      if (rootNode?.commandedThisFrame) {
+        const spinSpeed = rootNode.localAngularVelocity.length();
+        if (spinSpeed > 1e-8) {
+          const spinRotation = new THREE.Quaternion().setFromAxisAngle(
+            rootNode.localAngularVelocity.clone().normalize(),
+            spinSpeed * dt
+          );
+          this.quaternion.multiply(spinRotation).normalize();
+        }
+      }
+      this.velocity.set(0, 0, 0);
+      this.angularVelocity.set(0, 0, 0);
+      this.appliedForces.set(0, 0, 0);
+      this.appliedTorques.set(0, 0, 0);
+    }
+    this.updateGlueSelectionPulse();
+    this.updateTransform();
+
+    // Component command flags are consumed by updateChildEntities above, then
+    // reset for the next frame. A component may only keep spinning while code
+    // re-commands it each frame: no command this frame (switch off, code
+    // cleared, compile error) leaves its angular velocity at the default 0,
+    // mirroring how forces are cleared by physics.
+    for (const node of this.entityNodes.values()) {
+      node.commandedThisFrame = false;
+    }
+    // Blocks-changed edge is a one-frame snapshot (ctx.blocks.pressed()).
+    // Edits happen between rendered frames, so the flag survives exactly one
+    // script evaluation and is cleared at frame end.
+    this.blocksChangedThisFrame = false;
+  }
+
+  updateChildEntities(dt) {
+    for (const node of this.entityNodes.values()) {
+      if (node.id === 'root') continue;
+      if (node.bodyType !== BodyType.KINEMATIC) {
+        node.localAngularVelocity.set(0, 0, 0);
+        continue;
+      }
+      // A component only rotates while code actually commanded it this frame.
+      // Turning the switch off, clearing its code, or a compile error in the
+      // driving script all leave the angular velocity at its default of 0.
+      if (!this.isNodeScriptEnabled(node.id) || !node.commandedThisFrame) {
+        node.localAngularVelocity.set(0, 0, 0);
+        continue;
+      }
+      const speed = node.localAngularVelocity.length();
+      if (speed < 1e-8) continue;
+      const rotation = new THREE.Quaternion().setFromAxisAngle(
+        node.localAngularVelocity.clone().normalize(),
+        speed * dt
+      );
+      node.localQuaternion.multiply(rotation).normalize();
+      node.group.quaternion.copy(node.localQuaternion);
+    }
+  }
+
+  capturePreviousEntityTransforms() {
+    this.rootGroup.updateMatrixWorld(true);
+    for (const node of this.entityNodes.values()) {
+      node.group.updateWorldMatrix(true, false);
+      if (!node.previousWorldMatrix) node.previousWorldMatrix = new THREE.Matrix4();
+      node.previousWorldMatrix.copy(node.group.matrixWorld);
+    }
+  }
+
+  getSerializableComponentStates() {
+    const states = {};
+    for (const [id, state] of this.componentVariables) {
+      states[id] = cloneScriptData(state, {});
+    }
+    return states;
+  }
+
+  buildScriptRuntimeSnapshot(dt, inputState, runtimeContext, time, tick) {
+    const euler = new THREE.Euler().setFromQuaternion(this.quaternion, 'YXZ');
+    const rawPlayers = Array.isArray(runtimeContext?.players) ? runtimeContext.players : [];
+    const players = rawPlayers.map(player => ({
+      id: String(player?.id || 'player'),
+      position: [
+        Number(player?.position?.[0]) || 0,
+        Number(player?.position?.[1]) || 0,
+        Number(player?.position?.[2]) || 0
+      ]
+    }));
+    const components = [...this.entityNodes.values()].map(node => {
+      const body = this.getRigidBody(node.id);
+      return {
+        id: node.id,
+        parentId: node.parentId,
+        children: [...node.children],
+        worldPosition: this.getEntityNodeWorldPosition(node.id).toArray(),
+        worldRotation: this.getEntityNodeWorldQuaternion(node.id).toArray(),
+        localPosition: node.id === 'root' ? [0, 0, 0] : node.localPosition.toArray(),
+        localRotation: node.id === 'root' ? this.quaternion.toArray() : node.localQuaternion.toArray(),
+        pivot: node.pivotLocal.toArray(),
+        bounds: this.getNodeBlocksBounds(node.id),
+        constraints: this.getConstraints(node.id),
+        body: {
+          type: this.getNodeBodyType(node.id),
+          mass: this.getNodeBodyMass(node.id),
+          material: this.getNodeBodyMaterial(node.id),
+          velocity: body?.velocity.toArray() || [0, 0, 0],
+          angularVelocity: body?.angularVelocity.toArray() || [0, 0, 0]
+        }
+      };
+    });
+    let nearbyEntities = [];
+    try {
+      if ([...this.nodeScripts.values()].some(code => code?.includes('ctx.world'))) {
+        nearbyEntities = runtimeContext?.world?.entities?.(this.position.toArray(), 64) || [];
+      }
+    } catch (_) {}
+    let selection = null;
+    try {
+      if ([...this.nodeScripts.values()].some(code => code?.includes('ctx.selection'))) {
+        selection = runtimeContext?.selection?.get?.() || null;
+      }
+    } catch (_) {}
+    return cloneScriptData({
+      entityId: this.publicId,
+      time,
+      deltaTime: dt,
+      tick,
+      position: this.position.toArray(),
+      velocity: this.velocity.toArray(),
+      rotation: [euler.x, euler.y, euler.z],
+      angularVelocity: this.angularVelocity.toArray(),
+      groundDistance: this.groundDistance,
+      mass: this.mass,
+      bodyType: this.bodyType,
+      gravity: runtimeContext?.gravity || [0, -18, 0],
+      limits: { maxForce: this.maxForce, maxTorque: this.maxTorque },
+      cockpitPosition: [...this.cockpitPosition],
+      isVehicle: this.isVehicle,
+      input: {
+        down: scriptInputCodes(inputState, 'down'),
+        pressed: scriptInputCodes(inputState, 'pressed'),
+        released: scriptInputCodes(inputState, 'released')
+      },
+      blocks: {
+        changed: this.blocksChangedThisFrame,
+        event: this.lastBlocksChangedEvent
+      },
+      players,
+      components,
+      states: this.getSerializableComponentStates(),
+      enabled: Object.fromEntries([...this.compiledNodeScripts.keys()].map(id => [id, this.isNodeScriptEnabled(id)])),
+      scriptOrder: [...this.compiledNodeScripts.keys()],
+      world: {
+        entities: nearbyEntities,
+        size: [TORUS_SIZE_X, TORUS_SIZE_Z]
+      },
+      selection
+    }, {}, 2 * 1024 * 1024);
+  }
+
+  syncComponentStatesFromWorker(states, frozenPaths = []) {
+    if (!states || typeof states !== 'object') return;
+    for (const nodeId of this.entityNodes.keys()) {
+      const next = cloneScriptData(states[nodeId], {});
+      const target = this.getComponentState(nodeId);
+      for (const key of Object.keys(target)) delete target[key];
+      if (next && typeof next === 'object' && !Array.isArray(next)) Object.assign(target, next);
+    }
+    const sortedPaths = Array.isArray(frozenPaths)
+      ? [...frozenPaths].sort((a, b) => b.length - a.length)
+      : [];
+    for (const path of sortedPaths) {
+      if (!Array.isArray(path) || path.length < 2) continue;
+      let value: any = this.componentVariables.get(String(path[0]));
+      for (const key of path.slice(1)) value = value?.[key];
+      if (value && typeof value === 'object') Object.freeze(value);
+    }
+  }
+
+  resolveScriptCommandTarget(root, path) {
+    let target = root;
+    const parts = String(path || '').split('.');
+    for (let index = 0; index < parts.length - 1; index++) {
+      target = target?.[parts[index]];
+    }
+    const method = target?.[parts[parts.length - 1]];
+    return typeof method === 'function' ? { target, method } : null;
+  }
+
+  applyScriptRuntimeResult(result, runtimeContext) {
+    if (!result) return;
+    this.lastExecutionTimeMs = Number(result.elapsedMs) || 0;
+    if (result.fatal) {
+      const message = result.error || 'QuickJS runtime failed';
+      this.scriptStatus = 'error';
+      this.scriptError = message;
+      this.disableAllNodeScripts();
+      this.log(`[ERR] [runtime] ${message}`);
+      return;
+    }
+
+    this.syncComponentStatesFromWorker(result.states, result.frozenStatePaths);
+    for (const [nodeId, elapsed] of Object.entries(result.executionTimes || {})) {
+      this.lastExecutionTimeMs = Math.max(this.lastExecutionTimeMs, Number(elapsed) || 0);
+      this.recordScriptExecutionTime(nodeId, Number(elapsed) || 0);
+    }
+
+    for (const entry of result.errors || []) {
+      const nodeId = String(entry?.nodeId || 'root');
+      const message = String(entry?.error || 'QuickJS runtime error');
+      this.nodeScriptErrors.set(nodeId, message);
+      this.nodeScriptEnabled.set(nodeId, false);
+      if (nodeId === 'root') this.scriptError = message;
+      const node = this.entityNodes.get(nodeId);
+      if (node && nodeId !== 'root') node.localAngularVelocity.set(0, 0, 0);
+      this.scriptStatus = 'error';
+      this.log(`[ERR] [${nodeId}] Runtime error: ${message}`);
+    }
+
+    for (const command of (result.commands || []).slice(0, 256)) {
+      const args = Array.isArray(command?.args) ? command.args : [];
+      if (command?.scope === 'log') {
+        this.log(String(args[0] ?? '').slice(0, 1000));
+        continue;
+      }
+      if (command?.scope === 'control' && command.path === 'stop') {
+        this.stopAllNodeScripts();
+        break;
+      }
+      if (command?.scope === 'component' && SCRIPT_COMPONENT_COMMANDS.has(command.path)) {
+        const api = this.getChildScriptApi(String(command.nodeId || 'root'));
+        const resolved = this.resolveScriptCommandTarget(api, command.path);
+        try { resolved?.method.apply(resolved.target, args); } catch (_) {}
+        continue;
+      }
+      if (command?.scope === 'world' && SCRIPT_WORLD_COMMANDS.has(command.path)) {
+        const resolved = this.resolveScriptCommandTarget(runtimeContext?.world, command.path);
+        try { resolved?.method.apply(resolved.target, args); } catch (_) {}
+        continue;
+      }
+      if (command?.scope === 'selection' && SCRIPT_SELECTION_COMMANDS.has(command.path)) {
+        const resolved = this.resolveScriptCommandTarget(runtimeContext?.selection, command.path);
+        try { resolved?.method.apply(resolved.target, args); } catch (_) {}
+      }
+    }
+
+    // `stopped` is an out-of-band control result, so a full ordinary command
+    // buffer cannot turn self.stop() into a silent no-op.
+    if (result.stopped && this.scriptStatus !== 'stopped') {
+      this.stopAllNodeScripts();
+    }
+
+    this.lastAppliedForce.copy(this.appliedForces);
+    this.lastAppliedTorque.copy(this.appliedTorques);
+  }
+
+  updateProgrammable(dt, inputState, runtimeContext) {
+    if (this.scriptStatus === 'stopped') {
+      this.appliedForces.set(0, 0, 0);
+      this.appliedTorques.set(0, 0, 0);
+      return;
+    }
+    const hasEnabledScript = [...this.compiledNodeScripts.keys()]
+      .some(nodeId => this.isNodeScriptEnabled(nodeId));
+    if (!hasEnabledScript) {
+      this.appliedForces.set(0, 0, 0);
+      this.appliedTorques.set(0, 0, 0);
+      return;
+    }
+
+    this.powerUtilization = 0;
+    this.applyScriptRuntimeResult(this.scriptRuntimeClient.takePendingResult(), runtimeContext);
+    if (this.scriptStatus === 'stopped') return;
+
+    const nextTime = this.scriptRuntime + dt;
+    const nextTick = this.tickCount + 1;
+    const snapshot = this.buildScriptRuntimeSnapshot(dt, inputState, runtimeContext, nextTime, nextTick);
+    const submission = this.scriptRuntimeClient.tick(snapshot);
+    if (!submission.submitted) return;
+    this.scriptRuntime = nextTime;
+    this.tickCount = nextTick;
+    if (submission.result) this.applyScriptRuntimeResult(submission.result, runtimeContext);
+  }
+
+  recordScriptExecutionTime(nodeId, elapsedMs) {
+    const id = String(nodeId || 'root');
+    if (!(elapsedMs > SLOW_SCRIPT_THRESHOLD_MS)) {
+      this.slowScriptFrames.delete(id);
+      return false;
+    }
+
+    const consecutive = (this.slowScriptFrames.get(id) || 0) + 1;
+    this.slowScriptFrames.set(id, consecutive);
+    if (consecutive === 1) {
+      this.log(`[WARN] [${id}] Slow script frame: ${elapsedMs.toFixed(2)} ms (limit ${SLOW_SCRIPT_THRESHOLD_MS} ms)`);
+    }
+    if (consecutive < SLOW_SCRIPT_CONSECUTIVE_LIMIT) return false;
+
+    const message = `Script exceeded ${SLOW_SCRIPT_THRESHOLD_MS} ms for ${SLOW_SCRIPT_CONSECUTIVE_LIMIT} consecutive frames and was disabled`;
+    this.nodeScriptEnabled.set(id, false);
+    this.nodeScriptErrors.set(id, message);
+    this.slowScriptFrames.delete(id);
+    if (id === 'root') this.scriptError = message;
+    const node = this.entityNodes.get(id);
+    if (node && id !== 'root') node.localAngularVelocity.set(0, 0, 0);
+    this.scriptStatus = 'error';
+    this.log(`[ERR] [${id}] ${message}`);
+    return true;
+  }
+
+  updateBearing(dt) {
+    const radPerSec = (this.bearingRpm * Math.PI * 2) / 60;
+    const deltaAngle = radPerSec * dt;
+    this.bearingAngle += deltaAngle;
+
+    const rotQuat = new THREE.Quaternion().setFromAxisAngle(this.bearingAxis, deltaAngle);
+    this.quaternion.multiply(rotQuat);
+    this.quaternion.normalize();
+  }
+
+  updatePiston(dt) {
+    const speed = this.pistonSpeed * this.pistonDirection;
+    this.pistonProgress += speed * dt;
+
+    if (this.pistonProgress >= this.pistonDistance) {
+      this.pistonProgress = this.pistonDistance;
+      this.pistonDirection = -1;
+    } else if (this.pistonProgress <= 0) {
+      this.pistonProgress = 0;
+      this.pistonDirection = 1;
+    }
+
+    this.position.copy(this.pistonBasePos).addScaledVector(this.pistonAxis, this.pistonProgress);
+  }
+
+  getCenterOfMassWorld() {
+    return this.position.clone();
+  }
+
+  /**
+   * Node ids rigidly attached to `nodeId`'s body: descendants reachable
+   * through kinematic (or body-less) parts only. Dynamic parts integrate on
+   * their own, so their cells never count as the ancestor's collision shape.
+   */
+  getAttachedNodeIds(nodeId) {
+    const attached = new Set([nodeId]);
+    const stack = [nodeId];
+    while (stack.length) {
+      const id = stack.pop();
+      const node = this.entityNodes.get(id);
+      if (!node?.children) continue;
+      for (const childId of node.children) {
+        const body = this.rigidBodies?.get(childId);
+        if (body && body.type === BodyType.DYNAMIC) continue;
+        attached.add(childId);
+        stack.push(childId);
+      }
+    }
+    return attached;
+  }
+
+  getCollisionSamplePoints(bodyId = null, includeAttached = false) {
+    const points = [];
+    const low = 0.001;
+    const high = 0.999;
+    const attached = bodyId && includeAttached ? this.getAttachedNodeIds(bodyId) : null;
+
+    for (const cell of this.collisionEntries) {
+      if (bodyId && cell.entityId !== bodyId && (!attached || !attached.has(cell.entityId))) continue;
+      // Box corners in flat entity-local space, inset one millimetre so the
+      // samples stay strictly inside the 0.2-quantized collision box.
+      const sx = cell.span * MICRO_SIZE;
+      const sy = cell.span * MICRO_SIZE;
+      const sz = cell.span * MICRO_SIZE;
+      const x0 = cell.x * MICRO_SIZE, y0 = cell.y * MICRO_SIZE, z0 = cell.z * MICRO_SIZE;
+      for (const dx of [low, high]) {
+        for (const dy of [low, high]) {
+          for (const dz of [low, high]) {
+            points.push(this.entityLocalToWorld(cell.entityId, new THREE.Vector3(
+              x0 + dx * sx,
+              y0 + dy * sy,
+              z0 + dz * sz
+            )));
+          }
+        }
+      }
+      points.push(this.entityLocalToWorld(cell.entityId, new THREE.Vector3(
+        x0 + 0.5 * sx,
+        y0 + low * sy,
+        z0 + 0.5 * sz
+      )));
+    }
+
+    return points;
+  }
+
+  /**
+   * Return one world-space AABB per 0.2-quantized collision box. Micro voxels
+   * keep their 0.2-size shape; standard voxels span five micro cells per edge.
+   * The entity itself may be rotated, so all eight corners are transformed
+   * independently instead of treating the whole contraption as one box.
+   */
+  getCollisionWorldAABBs() {
+    const boxes = [];
+
+    for (const cell of this.collisionEntries) {
+      const node = this.entityNodes.get(cell.entityId) || this.entityNodes.get('root');
+      const x0 = cell.x * MICRO_SIZE, x1 = (cell.x + cell.span) * MICRO_SIZE;
+      const y0 = cell.y * MICRO_SIZE, y1 = (cell.y + cell.span) * MICRO_SIZE;
+      const z0 = cell.z * MICRO_SIZE, z1 = (cell.z + cell.span) * MICRO_SIZE;
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+      for (const cx of [x0, x1]) {
+        for (const cy of [y0, y1]) {
+          for (const cz of [z0, z1]) {
+            const corner = this.entityLocalToWorld(cell.entityId, new THREE.Vector3(cx, cy, cz));
+            minX = Math.min(minX, corner.x);
+            minY = Math.min(minY, corner.y);
+            minZ = Math.min(minZ, corner.z);
+            maxX = Math.max(maxX, corner.x);
+            maxY = Math.max(maxY, corner.y);
+            maxZ = Math.max(maxZ, corner.z);
+            if (node?.previousWorldMatrix) {
+              const previousCorner = new THREE.Vector3(cx, cy, cz)
+                .sub(node.pivotLocal).applyMatrix4(node.previousWorldMatrix);
+              minX = Math.min(minX, previousCorner.x);
+              minY = Math.min(minY, previousCorner.y);
+              minZ = Math.min(minZ, previousCorner.z);
+              maxX = Math.max(maxX, previousCorner.x);
+              maxY = Math.max(maxY, previousCorner.y);
+              maxZ = Math.max(maxZ, previousCorner.z);
+            }
+          }
+        }
+      }
+
+      boxes.push({
+        minX, minY, minZ,
+        maxX, maxY, maxZ,
+        cell,
+        entityId: cell.entityId,
+        bodyId: cell.entityId,
+        contraption: this
+      });
+    }
+
+    return boxes;
+  }
+
+  raycastCollisionCells(rayOrigin, rayDirection, maxDistance = 15) {
+    let closest = null;
+    let closestDistance = maxDistance;
+    const nodeRays = new Map();
+
+    for (const block of this.blocks) {
+      const entityId = block.entityId || 'root';
+      const node = this.entityNodes.get(entityId) || this.entityNodes.get('root');
+      if (!node) continue;
+
+      let nodeRay = nodeRays.get(node.id);
+      if (!nodeRay) {
+        node.group.updateWorldMatrix(true, false);
+        const localOrigin = node.group.worldToLocal(rayOrigin.clone());
+        const worldRotation = node.group.getWorldQuaternion(new THREE.Quaternion());
+        const localDirection = rayDirection.clone().applyQuaternion(worldRotation.invert()).normalize();
+        nodeRay = { ray: new THREE.Ray(localOrigin, localDirection), node };
+        nodeRays.set(node.id, nodeRay);
+      }
+
+      const size = block.size || 1;
+      const min = new THREE.Vector3(block.localX, block.localY, block.localZ).sub(node.pivotLocal);
+      const max = min.clone().addScalar(size);
+      const localPoint = nodeRay.ray.intersectBox(new THREE.Box3(min, max), new THREE.Vector3());
+      if (!localPoint) continue;
+
+      const worldPoint = node.group.localToWorld(localPoint.clone());
+      const distance = rayOrigin.distanceTo(worldPoint);
+      if (distance <= closestDistance) {
+        closestDistance = distance;
+
+        // Calculate face normal in local node space
+        const dMinX = Math.abs(localPoint.x - min.x);
+        const dMaxX = Math.abs(localPoint.x - max.x);
+        const dMinY = Math.abs(localPoint.y - min.y);
+        const dMaxY = Math.abs(localPoint.y - max.y);
+        const dMinZ = Math.abs(localPoint.z - min.z);
+        const dMaxZ = Math.abs(localPoint.z - max.z);
+        const minDist = Math.min(dMinX, dMaxX, dMinY, dMaxY, dMinZ, dMaxZ);
+        const localNormal = new THREE.Vector3();
+        if (minDist === dMinX) localNormal.set(-1, 0, 0);
+        else if (minDist === dMaxX) localNormal.set(1, 0, 0);
+        else if (minDist === dMinY) localNormal.set(0, -1, 0);
+        else if (minDist === dMaxY) localNormal.set(0, 1, 0);
+        else if (minDist === dMinZ) localNormal.set(0, 0, -1);
+        else if (minDist === dMaxZ) localNormal.set(0, 0, 1);
+        closest = this.buildCollisionRaycastHit(
+          block, node, localPoint, worldPoint, distance, localNormal
+        );
+      }
+    }
+    return closest;
+  }
+
+  /**
+   * Pick entity voxels in the same bent coordinate space used by the renderer.
+   * Each face is split exactly like createVoxelMesh, then its transformed flat
+   * vertices are passed through bendPoint just as the vertex shader does.
+   */
+  raycastBentCollisionCells(rayOriginBent, rayDirectionBent, maxDistance = 15) {
+    const ray = new THREE.Ray(rayOriginBent.clone(), rayDirectionBent.clone().normalize());
+    const barycentric = new THREE.Vector3();
+    let closest = null;
+    let closestDistance = maxDistance;
+
+    for (const block of this.blocks) {
+      const node = this.entityNodes.get(block.entityId || 'root') || this.entityNodes.get('root');
+      if (!node) continue;
+      node.group.updateWorldMatrix(true, false);
+
+      const size = block.size || 1;
+      const baseX = block.localX - node.pivotLocal.x;
+      const baseY = block.localY - node.pivotLocal.y;
+      const baseZ = block.localZ - node.pivotLocal.z;
+      // Most voxels are nowhere near the crosshair. A conservative bent-space
+      // sphere avoids building twelve triangles for those cells. Its radius is
+      // scaled by the local torus Jacobian so picking remains correct even for
+      // flying entities far above the terrain, where tube-direction stretching
+      // is larger than it is at normal building height.
+      const flatCenter = new THREE.Vector3(
+        baseX + size / 2,
+        baseY + size / 2,
+        baseZ + size / 2
+      ).applyMatrix4(node.group.matrixWorld);
+      const bentCenter = bendPoint(flatCenter.x, flatCenter.y, flatCenter.z);
+      const rho = Math.min(TORUS_RHO + flatCenter.y - TORUS_GREF, TORUS_MAX_RHO);
+      const thetaScale = Math.abs((TORUS_R + rho * Math.cos(flatCenter.z * TORUS_K_PHI)) / TORUS_R);
+      const phiScale = Math.abs(rho / TORUS_RHO);
+      const maxLocalScale = Math.max(1, thetaScale, phiScale);
+      const pickRadius = size * Math.sqrt(3) * 0.5 * maxLocalScale * 1.02 + 0.02;
+      const centerDistance = bentCenter.clone().sub(rayOriginBent).dot(ray.direction);
+      if (centerDistance < -pickRadius || centerDistance > closestDistance + pickRadius) continue;
+      if (ray.distanceSqToPoint(bentCenter) > pickRadius * pickRadius) continue;
+
+      for (const face of COLLISION_RAYCAST_FACES) {
+        const localCorners = face.quad.map(([x, y, z]) => new THREE.Vector3(
+          baseX + x * size,
+          baseY + y * size,
+          baseZ + z * size
+        ));
+        const flatCorners = localCorners.map(corner => corner.clone().applyMatrix4(node.group.matrixWorld));
+        const bentCorners = flatCorners.map(corner => bendPoint(corner.x, corner.y, corner.z));
+
+        for (const [ia, ib, ic] of [[0, 1, 2], [0, 2, 3]]) {
+          const bentPoint = new THREE.Vector3();
+          if (!intersectCollisionTriangleInclusive(
+            ray, bentCorners[ia], bentCorners[ib], bentCorners[ic], bentPoint, barycentric
+          )) continue;
+          const distance = rayOriginBent.distanceTo(bentPoint);
+          if (distance > closestDistance) continue;
+          const localPoint = localCorners[ia].clone().multiplyScalar(barycentric.x)
+            .addScaledVector(localCorners[ib], barycentric.y)
+            .addScaledVector(localCorners[ic], barycentric.z);
+          const worldPoint = flatCorners[ia].clone().multiplyScalar(barycentric.x)
+            .addScaledVector(flatCorners[ib], barycentric.y)
+            .addScaledVector(flatCorners[ic], barycentric.z);
+          const localNormal = new THREE.Vector3(...face.normal);
+
+          closestDistance = distance;
+          closest = this.buildCollisionRaycastHit(
+            block, node, localPoint, worldPoint, distance, localNormal
+          );
+        }
+      }
+    }
+    return closest;
+  }
+
+  buildCollisionRaycastHit(block, node, localPoint, worldPoint, distance, localNormal) {
+    const size = block.size || 1;
+    const worldNormal = localNormal.clone()
+      .applyQuaternion(node.group.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+    const cellX = Math.floor(block.localX + 1e-6);
+    const cellY = Math.floor(block.localY + 1e-6);
+    const cellZ = Math.floor(block.localZ + 1e-6);
+    const placeCell = {
+      x: cellX + localNormal.x,
+      y: cellY + localNormal.y,
+      z: cellZ + localNormal.z
+    };
+
+    let placeMicroX, placeMicroY, placeMicroZ;
+    if (size < 1) {
+      placeMicroX = block.localX + localNormal.x * 0.2;
+      placeMicroY = block.localY + localNormal.y * 0.2;
+      placeMicroZ = block.localZ + localNormal.z * 0.2;
+    } else {
+      const rawBlockLocal = localPoint.clone().add(node.pivotLocal);
+      placeMicroX = localNormal.x !== 0
+        ? (localNormal.x > 0 ? block.localX + 1 : block.localX - 0.2)
+        : Math.floor(rawBlockLocal.x * 5) / 5;
+      placeMicroY = localNormal.y !== 0
+        ? (localNormal.y > 0 ? block.localY + 1 : block.localY - 0.2)
+        : Math.floor(rawBlockLocal.y * 5) / 5;
+      placeMicroZ = localNormal.z !== 0
+        ? (localNormal.z > 0 ? block.localZ + 1 : block.localZ - 0.2)
+        : Math.floor(rawBlockLocal.z * 5) / 5;
+    }
+
+    return {
+      contraption: this,
+      entityNode: node,
+      entityId: node.id,
+      distance,
+      point: worldPoint,
+      cell: { x: cellX, y: cellY, z: cellZ },
+      block,
+      kind: size < 1 ? 'micro' : 'standard',
+      normal: localNormal,
+      worldNormal,
+      placeCell,
+      placeMicroPos: {
+        localX: Math.round(placeMicroX * 5) / 5,
+        localY: Math.round(placeMicroY * 5) / 5,
+        localZ: Math.round(placeMicroZ * 5) / 5
+      },
+      color: block.color
+    };
+  }
+
+  getBlockWorldCenter(block) {
+    const size = block.size || 1;
+    return this.entityLocalToWorld(block.entityId || 'root', new THREE.Vector3(
+      block.localX + size / 2,
+      block.localY + size / 2,
+      block.localZ + size / 2
+    ));
+  }
+
+  /**
+   * Return the world-axis-aligned bounds of the visible block after applying
+   * the complete root -> child -> descendant transform chain.
+   *
+   * A transformed block cannot be represented by worldCenter +/- size / 2:
+   * rotation makes its world extents wider on some axes. Selector range tests
+   * use these eight transformed corners so moving/rotating nested components
+   * remain selectable, including 0.2 micro voxels.
+   */
+  getBlockWorldBounds(block, target = new THREE.Box3()) {
+    target.makeEmpty();
+    const entityId = block.entityId || 'root';
+    const node = this.entityNodes.get(entityId) || this.entityNodes.get('root');
+    if (!node) return target;
+
+    node.group.updateWorldMatrix(true, false);
+    const size = block.size || 1;
+    const corner = new THREE.Vector3();
+    for (const dx of [0, size]) {
+      for (const dy of [0, size]) {
+        for (const dz of [0, size]) {
+          corner.set(
+            block.localX + dx - node.pivotLocal.x,
+            block.localY + dy - node.pivotLocal.y,
+            block.localZ + dz - node.pivotLocal.z
+          ).applyMatrix4(node.group.matrixWorld);
+          target.expandByPoint(corner);
+        }
+      }
+    }
+    return target;
+  }
+
+  updateTransform() {
+    this.rootGroup.position.copy(this.position);
+    this.rootGroup.quaternion.copy(this.quaternion);
+    this.rootGroup.updateMatrixWorld(true);
+  }
+
+  dispose() {
+    this.scriptRuntimeClient.dispose();
+    this.setHighlightedNode(null);
+    this.clearGlueSelection();
+    if (this.rootGroup && this.scene) {
+      this.scene.remove(this.rootGroup);
+      this.rootGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+            else child.material.dispose();
+          }
+        }
+      });
+    }
+  }
+}

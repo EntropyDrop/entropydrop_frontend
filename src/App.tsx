@@ -51,6 +51,16 @@ function LegacyOpenRedirect() {
   return <Navigate to={target} replace />
 }
 
+function SpaceRedirect() {
+  useEffect(() => {
+    // Keep the same browser origin so Space shares the main site's token.
+    // During development Vite proxies /space to the independent app server.
+    const target = import.meta.env.VITE_SPACE_URL || '/space/'
+    window.location.replace(target)
+  }, [])
+  return <LoadingPlaceholder />
+}
+
 function RouteReadySignal({ children, onReady }: { children: ReactNode, onReady: () => void }) {
   useEffect(() => {
     const frame = window.requestAnimationFrame(onReady)
@@ -118,6 +128,7 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/skin/open/*" element={<LegacyOpenRedirect />} />
         <Route path="/figure" element={<FigureRedirect />} />
         <Route path="/figure/:category" element={<FigurePage current={currentLangData} />} />
+        <Route path="/space/*" element={<SpaceRedirect />} />
       </Routes>
     </RouteTransition>
   )

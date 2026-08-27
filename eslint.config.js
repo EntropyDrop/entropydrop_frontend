@@ -6,7 +6,9 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // Space is a framework-independent TypeScript workspace with its own
+  // typecheck/test pipeline; the React lint rules do not apply to it.
+  globalIgnores(['dist', 'apps/space/dist', 'apps/space/src', 'apps/space/test', 'apps/space/tools']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

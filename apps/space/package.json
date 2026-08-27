@@ -1,0 +1,33 @@
+{
+  "name": "@entropydrop/space",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=20.19.0",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "generate:lod": "node tools/generate-distant-lod-cache.mjs",
+    "build": "npm run generate:lod && vite build",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test && npm run build",
+    "audit:deps": "npm audit --audit-level=high",
+    "preview": "vite preview",
+    "test": "npm run generate:lod && node --import ./test/setup.ts --test --test-concurrency=1 \"test/*.test.ts\""
+  },
+  "dependencies": {
+    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
+    "acorn": "^8.18.0",
+    "quickjs-emscripten-core": "^0.32.0",
+    "simplex-noise": "^4.0.3",
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/three": "^0.183.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1"
+  }
+}

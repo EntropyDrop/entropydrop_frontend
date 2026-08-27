@@ -526,6 +526,12 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                     <div className="lg:hidden border-b border-black/10 pb-1 pt-1 bg-black/10 flex flex-col gap-1">
                         {/* Global Platform Links: Pro & Public */}
                         <button
+                            onClick={() => { setIsOpen(false); navigate('/space'); }}
+                            className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                        >
+                            <Icon icon="pixelarticons:zap" className="text-sm shrink-0" /> {current.nav.space}
+                        </button>
+                        <button
                             onClick={() => { setIsOpen(false); navigate('/pro'); }}
                             className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
                         >

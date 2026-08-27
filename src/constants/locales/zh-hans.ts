@@ -15,6 +15,7 @@ export default {
         blog: '博客',
         monitor: '监控',
         skin: '皮肤',
+        space: 'Space',
         figure: '手办',
         discussions: '讨论',
         showcase: '晒图',
