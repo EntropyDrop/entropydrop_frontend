@@ -1,0 +1,75 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { World } from '../src/engine/voxel/World.ts';
+import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import {
+  WorldEditPersistence,
+  worldEditStorageKey,
+  type WorldEditStorage,
+} from '../src/engine/voxel/WorldEditPersistence.ts';
+
+class MemoryStorage implements WorldEditStorage {
+  readonly values = new Map<string, string>();
+
+  getItem(key: string) {
+    return this.values.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string) {
+    this.values.set(key, value);
+  }
+
+  removeItem(key: string) {
+    this.values.delete(key);
+  }
+}
+
+test('standard and micro terrain edits survive constructing a fresh world after refresh', () => {
+  const storage = new MemoryStorage();
+  const persistence = { worldId: 'refresh-test-world', storage };
+  const first = new World(new THREE.Scene(), 1337, null, persistence) as any;
+
+  // Added/recolored cells and AIR tombstones over generated terrain must both
+  // survive. Without the tombstone, the y=0 block would regenerate on refresh.
+  assert.equal(first.setBlock(40, 80, 48, BlockTypes.COLOR_BLOCK, false, 0x123456), true);
+  assert.equal(first.setBlock(41, 0, 48, BlockTypes.AIR, false), true);
+
+  // Persist standalone micro cells as well as the 125-cell subdivision path.
+  assert.equal(first.setMicroBlock(42 * 5 + 1, 80 * 5 + 2, 48 * 5 + 3, 0xabcdef, 'tip'), true);
+  assert.equal(first.setBlock(43, 80, 48, BlockTypes.COLOR_BLOCK, false, 0x55aa33), true);
+  assert.equal(first.subdivideBlock(43, 80, 48), 125);
+  assert.equal(first.removeMicroBlock(43 * 5 + 4, 80 * 5 + 4, 48 * 5 + 4), true);
+  assert.equal(first.flushPersistedEdits(), true);
+
+  const second = new World(new THREE.Scene(), 1337, null, persistence) as any;
+  second.getOrCreateChunk(2, 3);
+
+  assert.equal(second.getBlock(40, 80, 48), BlockTypes.COLOR_BLOCK);
+  assert.equal(second.getBlockColor(40, 80, 48), 0x123456);
+  assert.equal(second.getBlock(41, 0, 48), BlockTypes.AIR);
+  assert.deepEqual(
+    second.getMicroBlock(42 * 5 + 1, 80 * 5 + 2, 48 * 5 + 3),
+    { block: BlockTypes.COLOR_BLOCK, color: 0xabcdef }
+  );
+  assert.equal(second.microVoxels.parts.get(`${42 * 5 + 1},${80 * 5 + 2},${48 * 5 + 3}`), 'tip');
+  assert.equal(second.getBlock(43, 80, 48), BlockTypes.AIR);
+  assert.equal(second.getMicroBlock(43 * 5, 80 * 5, 48 * 5)?.color, 0x55aa33);
+  assert.equal(second.getMicroBlock(43 * 5 + 4, 80 * 5 + 4, 48 * 5 + 4), null);
+});
+
+test('world edit storage is isolated by world id and solid cells remove stale micro entries', () => {
+  const storage = new MemoryStorage();
+  const first = new WorldEditPersistence({ worldId: 'world-a', storage });
+  first.recordMicro(51, 101, 151, 0xabcdef);
+  first.recordStandard(10, 20, 30, BlockTypes.COLOR_BLOCK, 0x123456);
+  assert.equal(first.flush(), true);
+
+  const payload = JSON.parse(storage.getItem(worldEditStorageKey('world-a'))!);
+  assert.deepEqual(payload.standard, [[10, 20, 30, BlockTypes.COLOR_BLOCK, 0x123456]]);
+  assert.deepEqual(payload.micro, [], 'solid standard edit must clear micro cells in its parent cell');
+
+  const otherWorld = new WorldEditPersistence({ worldId: 'world-b', storage });
+  assert.deepEqual([...otherWorld.getStandardEditsForChunk(0, 1)], []);
+  assert.deepEqual([...otherWorld.getMicroEdits()], []);
+});

@@ -40,7 +40,12 @@ class Game {
     });
     // Procedural terrain and every derived LOD/cache must use the durable,
     // server-authoritative seed so all players reconstruct the same base world.
-    this.world = new World(this.sceneRenderer.scene, session.world.seed, distantLodCache);
+    this.world = new World(
+      this.sceneRenderer.scene,
+      session.world.seed,
+      distantLodCache,
+      { worldId: session.world.id }
+    );
     this.sceneRenderer.setWorld(this.world);
     this.soundManager = new SoundManager();
     this.particleSystem = new ParticleSystem(this.sceneRenderer.scene);

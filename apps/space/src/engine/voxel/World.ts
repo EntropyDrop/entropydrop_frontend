@@ -5,6 +5,10 @@ import { TerrainGenerator } from '../worldgen/TerrainGenerator.ts';
 import { LowPolyMesher } from '../mesher/LowPolyMesher.ts';
 import { MicroVoxelLayer, MICRO_DIVISIONS } from './MicroVoxelLayer.ts';
 import {
+  WorldEditPersistence,
+  type WorldEditPersistenceOptions,
+} from './WorldEditPersistence.ts';
+import {
   applyDistantTerrainMaterial,
   bakeDistantTerrainTexture,
   createDistantTerrainTexture,
@@ -63,6 +67,8 @@ export class World {
   distantTexture: THREE.DataTexture;
   distantLodSource: 'shared-cache' | 'generated';
   microVoxels: MicroVoxelLayer;
+  /** Browser-local sparse overlay that survives a page refresh for this world. */
+  editPersistence: WorldEditPersistence | null;
   dirtyChunks: Set<Chunk>;
   activeChunkKeys: Set<string>;
   lastStreamCenterKey: string;
@@ -87,7 +93,12 @@ export class World {
   private distantNeighborA: THREE.Vector3;
   private distantNeighborB: THREE.Vector3;
 
-  constructor(scene, seed = 1337, distantCache: DistantLodCacheData | null = null) {
+  constructor(
+    scene,
+    seed = 1337,
+    distantCache: DistantLodCacheData | null = null,
+    persistenceOptions: WorldEditPersistenceOptions | null = null
+  ) {
     this.scene = scene;
     this.chunks = new Map(); // key: "cx,cz" -> Chunk on the wrapped 1024x128 chunk grid.
     this.terrainGen = new TerrainGenerator(seed);
@@ -123,6 +134,27 @@ export class World {
     this.worldGroup.add(this.distantSurface);
     this.microVoxels = new MicroVoxelLayer();
     this.worldGroup.add(this.microVoxels.group);
+    this.editPersistence = persistenceOptions?.worldId
+      ? new WorldEditPersistence(persistenceOptions)
+      : null;
+
+    // Generated terrain contains no micro voxels, so its sparse authored layer
+    // can be restored immediately. Standard edits are applied lazily below when
+    // their chunks stream in.
+    if (this.editPersistence) {
+      const restoredColumns = new Set<string>();
+      let restoredMicro = 0;
+      for (const edit of this.editPersistence.getMicroEdits()) {
+        if (!this.microVoxels.set(edit.mx, edit.my, edit.mz, edit.color, edit.part)) continue;
+        restoredMicro++;
+        restoredColumns.add(`${Math.floor(edit.mx / MICRO_DIVISIONS)},${Math.floor(edit.mz / MICRO_DIVISIONS)}`);
+      }
+      this.terrainVersion += restoredMicro;
+      for (const column of restoredColumns) {
+        const [x, z] = column.split(',').map(Number);
+        this.queueDistantSurfaceUpdate(x, z);
+      }
+    }
 
     // Dirty chunks queue for mesh regeneration
     this.dirtyChunks = new Set();
@@ -496,6 +528,19 @@ export class World {
       chunk = new Chunk(cx, cz, this);
       this.chunks.set(key, chunk);
       this.terrainGen.generateChunk(chunk);
+      let restoredStandard = 0;
+      for (const edit of this.editPersistence?.getStandardEditsForChunk(cx, cz) ?? []) {
+        const lx = edit.x - cx * CHUNK_SIZE_X;
+        const lz = edit.z - cz * CHUNK_SIZE_Z;
+        if (chunk.setLocalBlock(lx, edit.y, lz, edit.block, edit.color)) {
+          restoredStandard++;
+          this.queueDistantSurfaceUpdate(edit.x, edit.z);
+        }
+      }
+      if (restoredStandard > 0) {
+        chunk.hasUserEdits = true;
+        this.terrainVersion += restoredStandard;
+      }
       this.dirtyChunks.add(chunk);
     }
     return chunk;
@@ -534,7 +579,8 @@ export class World {
     if (blockType !== BlockTypes.AIR && this.microVoxels.cells.size > 0) {
       clearedMicro = this.microVoxels.clearStandardCell(wrapX(wx), wy, wrapZ(wz));
     }
-    const changed = chunk.setLocalBlock(lx, wy, lz, blockType, normalizeColor(color));
+    const normalizedColor = normalizeColor(color);
+    const changed = chunk.setLocalBlock(lx, wy, lz, blockType, normalizedColor);
     if (changed || clearedMicro > 0) chunk.hasUserEdits = true;
     if (changed && updateMesh) {
       this.dirtyChunks.add(chunk);
@@ -542,6 +588,12 @@ export class World {
     if (changed || clearedMicro > 0) {
       this.terrainVersion++;
       this.queueDistantSurfaceUpdate(wx, wz);
+    }
+    if (changed) {
+      this.editPersistence?.recordStandard(wx, wy, wz, blockType, normalizedColor);
+    }
+    if (clearedMicro > 0) {
+      this.editPersistence?.removeMicroStandardCell(wx, wy, wz);
     }
     return changed;
   }
@@ -560,7 +612,19 @@ export class World {
     const color = this.getBlockColor(wx, wy, wz);
     this.setBlock(wx, wy, wz, BlockTypes.AIR, true);
     const n = this.microVoxels.subdivide(wx, wy, wz, color);
-    if (n > 0) this.terrainVersion++;
+    if (n > 0) {
+      const baseX = wrapX(wx) * MICRO_DIVISIONS;
+      const baseY = wy * MICRO_DIVISIONS;
+      const baseZ = wrapZ(wz) * MICRO_DIVISIONS;
+      for (let dx = 0; dx < MICRO_DIVISIONS; dx++) {
+        for (let dy = 0; dy < MICRO_DIVISIONS; dy++) {
+          for (let dz = 0; dz < MICRO_DIVISIONS; dz++) {
+            this.editPersistence?.recordMicro(baseX + dx, baseY + dy, baseZ + dz, color);
+          }
+        }
+      }
+      this.terrainVersion++;
+    }
     return n;
   }
 
@@ -574,6 +638,8 @@ export class World {
     if (this.getBlock(wx, wy, wz) !== BlockTypes.AIR) return false;
     const ok = this.microVoxels.set(mx, my, mz, color, part);
     if (ok) {
+      const persistedColor = this.microVoxels.get(mx, my, mz);
+      this.editPersistence?.recordMicro(mx, my, mz, persistedColor, part);
       this.terrainVersion++;
       this.queueDistantSurfaceUpdate(wx, wz);
     }
@@ -592,6 +658,7 @@ export class World {
     mz = wrapMicroZ(mz);
     const removed = this.microVoxels.delete(mx, my, mz);
     if (removed) {
+      this.editPersistence?.removeMicro(mx, my, mz);
       this.terrainVersion++;
       this.queueDistantSurfaceUpdate(
         Math.floor(mx / MICRO_DIVISIONS),
@@ -604,6 +671,7 @@ export class World {
   clearMicroStandardCell(wx, wy, wz) {
     const removed = this.microVoxels.clearStandardCell(wrapX(wx), wy, wrapZ(wz));
     if (removed) {
+      this.editPersistence?.removeMicroStandardCell(wx, wy, wz);
       this.terrainVersion++;
       this.queueDistantSurfaceUpdate(wx, wz);
     }
@@ -1138,6 +1206,7 @@ export class World {
     if (extracted.length > 0) {
       const columns = new Set<string>();
       for (const cell of extracted) {
+        this.editPersistence?.removeMicro(cell.mx, cell.my, cell.mz);
         const x = Math.floor(cell.mx / MICRO_DIVISIONS);
         const z = Math.floor(cell.mz / MICRO_DIVISIONS);
         columns.add(`${x},${z}`);
@@ -1161,6 +1230,7 @@ export class World {
     if (extracted.length > 0) {
       const columns = new Set<string>();
       for (const cell of extracted) {
+        this.editPersistence?.removeMicro(cell.mx, cell.my, cell.mz);
         const x = Math.floor(cell.mx / MICRO_DIVISIONS);
         const z = Math.floor(cell.mz / MICRO_DIVISIONS);
         columns.add(`${x},${z}`);
@@ -1172,5 +1242,10 @@ export class World {
       this.terrainVersion++;
     }
     return extracted;
+  }
+
+  /** Force pending browser-local terrain edits to durable storage. */
+  flushPersistedEdits() {
+    return this.editPersistence?.flush() ?? false;
   }
 }
