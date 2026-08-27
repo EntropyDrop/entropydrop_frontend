@@ -123,9 +123,8 @@ class Game {
       : '';
     this.lastPlayerPositionSyncAt = performance.now();
     this.installPlayerPositionPersistence();
-    // A random first-entry position is ephemeral until it becomes the first
-    // player snapshot, so persist it immediately even before the player moves.
-    if (!session.player.resumed) this.queuePlayerPositionSave();
+    // A random first-entry position is sampled on the client; persist it immediately to DB.
+    if (!session.player.resumed) this.queuePlayerPositionSave(true);
 
     // 6. Start Loop
     this.animate = this.animate.bind(this);

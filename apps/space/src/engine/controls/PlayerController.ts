@@ -389,13 +389,10 @@ export class PlayerController {
           this.physics.isSprinting = true;
           break;
 
-        case 'KeyR': // R key: unified smart copy selection (entity or world blocks) / reset to spawn
+        case 'KeyR': // R key: unified smart copy selection (entity or world blocks)
         case 'KeyT': // T key: alias for copy selection
           if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
             this.copySelectionSmart();
-          } else if (e.code === 'KeyR') {
-            this.physics.position.set(TORUS_SPAWN_X, TORUS_GREF + 4, TORUS_SPAWN_Z);
-            this.physics.velocity.set(0, 0, 0);
           }
           break;
 

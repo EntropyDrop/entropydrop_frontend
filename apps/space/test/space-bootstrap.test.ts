@@ -66,12 +66,12 @@ test('Space loads every terrain snapshot page and posts authenticated mutation b
   });
 });
 
-test('Space consumes one unified backend start pose for random entry or resume', () => {
+test('Space consumes one unified backend start pose for resume or samples random spawn when not resumed', () => {
   const player = {
-    user_id: 'player',
-    username: 'Player',
-    player_entity_id: 'entity',
-    minecraft_skin_url: 'https://example.com/skin.png',
+    user_id: 'user-001',
+    username: 'alice',
+    player_entity_id: 'entity-001',
+    minecraft_skin_url: 'https://cdn.entropydrop.com/skins/alice.png',
     minecraft_skin_model: 'strong' as const,
     start_x_cm: 12345,
     start_y_cm: 6789,
@@ -87,17 +87,19 @@ test('Space consumes one unified backend start pose for random entry or resume',
     yaw: (16384 / 32767) * Math.PI,
     resumed: true,
   });
+
+  const mockRandom = () => 0.5;
   assert.deepEqual(resolveInitialPlayerPose({
     ...player,
-    start_x_cm: 100,
-    start_y_cm: 3200,
-    start_z_cm: 200,
-    start_yaw_q15: 0,
+    start_x_cm: null,
+    start_y_cm: null,
+    start_z_cm: null,
+    start_yaw_q15: null,
     resumed: false,
-  }), {
-    x: 1,
-    y: 32,
-    z: 2,
+  }, mockRandom), {
+    x: 8192,
+    y: 18,
+    z: 1024,
     yaw: 0,
     resumed: false,
   });

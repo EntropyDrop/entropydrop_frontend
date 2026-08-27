@@ -3,7 +3,15 @@ import type {
   TerrainMutation,
   WorldEditRemote,
 } from '../engine/voxel/WorldEditPersistence.ts';
-import { TORUS_SIZE_X, TORUS_SIZE_Z } from '../engine/torus/TorusWorld.ts';
+import {
+  TORUS_GREF,
+  TORUS_SIZE_X,
+  TORUS_SIZE_Z,
+  TORUS_SPAWN_X,
+  TORUS_SPAWN_Z,
+  wrapX,
+  wrapZ,
+} from '../engine/torus/TorusWorld.ts';
 
 import {
   LatencyMonitor,
@@ -31,10 +39,10 @@ export interface SpaceBootstrapPayload {
     player_entity_id: string;
     minecraft_skin_url: string;
     minecraft_skin_model: MinecraftSkinModel;
-    start_x_cm: number;
-    start_y_cm: number;
-    start_z_cm: number;
-    start_yaw_q15: number;
+    start_x_cm: number | null;
+    start_y_cm: number | null;
+    start_z_cm: number | null;
+    start_yaw_q15: number | null;
     resumed: boolean;
   };
 }
@@ -94,13 +102,37 @@ export function hasPngSignature(bytes: Uint8Array) {
   return signature.every((value, index) => bytes[index] === value);
 }
 
-export function resolveInitialPlayerPose(player: SpaceBootstrapPayload['player']) {
+export function resolveInitialPlayerPose(
+  player: SpaceBootstrapPayload['player'],
+  randomFn: () => number = Math.random
+) {
+  if (
+    player.resumed &&
+    typeof player.start_x_cm === 'number' &&
+    typeof player.start_y_cm === 'number' &&
+    typeof player.start_z_cm === 'number' &&
+    typeof player.start_yaw_q15 === 'number'
+  ) {
+    return {
+      x: player.start_x_cm / 100,
+      y: player.start_y_cm / 100,
+      z: player.start_z_cm / 100,
+      yaw: (player.start_yaw_q15 / 32767) * Math.PI,
+      resumed: true,
+    };
+  }
+
+  // Sample a random spawn point on the safe inner-ring spawn plain
+  const offsetX = (randomFn() * 20 - 10);
+  const offsetZ = (randomFn() * 20 - 10);
+  const randomYaw = (randomFn() * 2 - 1) * Math.PI;
+
   return {
-    x: player.start_x_cm / 100,
-    y: player.start_y_cm / 100,
-    z: player.start_z_cm / 100,
-    yaw: (player.start_yaw_q15 / 32767) * Math.PI,
-    resumed: player.resumed,
+    x: wrapX(TORUS_SPAWN_X + offsetX),
+    y: TORUS_GREF + 2,
+    z: wrapZ(TORUS_SPAWN_Z + offsetZ),
+    yaw: randomYaw,
+    resumed: false,
   };
 }
 
