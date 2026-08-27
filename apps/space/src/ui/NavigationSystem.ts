@@ -50,27 +50,25 @@ export class NavigationSystem {
 
   private render() {
     this.container.innerHTML = `
-      <div class="nav-header">
-        <span class="nav-icon">✈</span>
-        <span class="nav-title">AUTO PILOT</span>
+      <div class="nav-badge">
+        <span class="hud-badge-dot"></span>
+        <span>AUTO PILOT</span>
       </div>
-      <div class="nav-body">
-        <div class="nav-coord-inputs">
-          <div class="nav-input-field">
-            <span class="nav-coord-label">X</span>
-            <input type="number" id="nav-input-x" class="nav-number-input" placeholder="X" step="any" />
-          </div>
-          <div class="nav-input-field">
-            <span class="nav-coord-label">Y</span>
-            <input type="number" id="nav-input-y" class="nav-number-input" placeholder="Y" step="any" />
-          </div>
-          <div class="nav-input-field">
-            <span class="nav-coord-label">Z</span>
-            <input type="number" id="nav-input-z" class="nav-number-input" placeholder="Z" step="any" />
-          </div>
+      <div class="nav-coord-inputs">
+        <div class="nav-input-field">
+          <span class="nav-coord-label">X</span>
+          <input type="number" id="nav-input-x" class="nav-number-input" placeholder="0" step="any" />
         </div>
-        <button type="button" id="nav-start-btn" class="nav-action-btn start-btn">START</button>
+        <div class="nav-input-field">
+          <span class="nav-coord-label">Y</span>
+          <input type="number" id="nav-input-y" class="nav-number-input" placeholder="20" step="any" />
+        </div>
+        <div class="nav-input-field">
+          <span class="nav-coord-label">Z</span>
+          <input type="number" id="nav-input-z" class="nav-number-input" placeholder="0" step="any" />
+        </div>
       </div>
+      <button type="button" id="nav-start-btn" class="nav-action-btn start-btn">START</button>
     `;
 
     this.inputX = this.container.querySelector('#nav-input-x');
