@@ -49,6 +49,44 @@ function createPlayerNameTag(username: string): THREE.Sprite {
   return sprite;
 }
 
+function createRemotePlayerFallback() {
+  const group = new THREE.Group();
+  group.name = 'RemotePlayerFallback';
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x00d2d3,
+    roughness: 0.72,
+    metalness: 0.05,
+  });
+  const addBox = (size: [number, number, number], position: [number, number, number]) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+    mesh.position.set(...position);
+    mesh.castShadow = true;
+    group.add(mesh);
+  };
+  addBox([0.62, 0.78, 0.34], [0, 1.05, 0]);
+  addBox([0.52, 0.52, 0.52], [0, 1.72, 0]);
+  addBox([0.2, 0.72, 0.2], [-0.42, 1.06, 0]);
+  addBox([0.2, 0.72, 0.2], [0.42, 1.06, 0]);
+  addBox([0.24, 0.76, 0.24], [-0.18, 0.38, 0]);
+  addBox([0.24, 0.76, 0.24], [0.18, 0.38, 0]);
+  hookSceneMaterials(group);
+  return group;
+}
+
+function disposeRemotePlayerFallback(group: THREE.Group | null | undefined) {
+  if (!group) return;
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  group.traverse((object: any) => {
+    if (object.geometry) geometries.add(object.geometry);
+    const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of objectMaterials) if (material) materials.add(material);
+  });
+  geometries.forEach(geometry => geometry.dispose());
+  materials.forEach(material => material.dispose());
+  group.removeFromParent();
+}
+
 interface PlayerAppearance {
   skinUrl: string;
   skinModel: SkinModel;
@@ -1550,11 +1588,14 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
 
         const nameTag = createPlayerNameTag(p.username || 'Player');
         group.add(nameTag);
+        const fallback = createRemotePlayerFallback();
+        group.add(fallback);
 
         record = {
           id,
           group,
           character: null,
+          fallback,
           nameTag,
           targetPosition: new THREE.Vector3(p.x, p.y, p.z),
           targetYaw: p.yaw || 0,
@@ -1581,6 +1622,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
           record.character = character;
           group.add(character.object3d);
           hookSceneMaterials(character.object3d);
+          disposeRemotePlayerFallback(record.fallback);
+          record.fallback = null;
         }).catch(err => {
           console.warn('Failed to load remote player skin:', err);
         });
@@ -1629,6 +1672,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     for (const [id, record] of this.remotePlayers.entries()) {
       if (!seenIds.has(id) && now - record.lastSeen > 15000) {
         if (record.character) record.character.dispose();
+        disposeRemotePlayerFallback(record.fallback);
         if (record.nameTag?.material?.map) record.nameTag.material.map.dispose();
         if (record.nameTag?.material) record.nameTag.material.dispose();
         record.group.removeFromParent();

@@ -1264,44 +1264,49 @@ export class World {
       const minZ = cz * CHUNK_SIZE_Z;
       const maxZ = (cz + 1) * CHUNK_SIZE_Z - 1;
 
+      this.editPersistence?.replaceRemoteChunk({
+        chunk_x: cx,
+        chunk_z: cz,
+        revision: update.revision,
+        standard: update.standard,
+        micro: update.micro,
+      });
+
       // Clear existing microcells in this chunk bounding box
       this.microVoxels.extractRegion(minX, 0, minZ, maxX, CHUNK_SIZE_Y - 1, maxZ);
 
-      // Apply updated microcells
-      if (Array.isArray(update.micro)) {
-        for (const m of update.micro) {
-          if (!Array.isArray(m) || m.length < 4) continue;
-          const [mx, my, mz, color, part] = m;
-          this.microVoxels.set(mx, my, mz, color, part || null);
-          this.editPersistence?.recordMicro(mx, my, mz, color, part || null);
-        }
+      const microEdits = this.editPersistence
+        ? [...this.editPersistence.getMicroEditsForChunk(cx, cz)]
+        : (Array.isArray(update.micro) ? update.micro : [])
+          .filter(edit => Array.isArray(edit) && edit.length >= 4)
+          .map(edit => ({ mx: edit[0], my: edit[1], mz: edit[2], color: edit[3], part: edit[4] || null }));
+      for (const edit of microEdits) {
+        this.microVoxels.set(edit.mx, edit.my, edit.mz, edit.color, edit.part);
       }
+
+      const standardEdits = this.editPersistence
+        ? [...this.editPersistence.getStandardEditsForChunk(cx, cz)]
+        : (Array.isArray(update.standard) ? update.standard : [])
+          .filter(edit => Array.isArray(edit) && edit.length >= 5)
+          .map(edit => ({ x: edit[0], y: edit[1], z: edit[2], block: edit[3], color: edit[4] }));
 
       // If chunk is currently loaded in memory, regenerate and apply standard blocks
       const key = World.getChunkKey(cx, cz);
       const chunk = this.chunks.get(key);
       if (chunk) {
         this.terrainGen.generateChunk(chunk);
-        if (Array.isArray(update.standard)) {
-          for (const s of update.standard) {
-            if (!Array.isArray(s) || s.length < 5) continue;
-            const [wx, wy, wz, block, color] = s;
-            const lx = wx - cx * CHUNK_SIZE_X;
-            const lz = wz - cz * CHUNK_SIZE_Z;
-            chunk.setLocalBlock(lx, wy, lz, block, color);
-            this.editPersistence?.recordStandard(wx, wy, wz, block, color);
-            this.queueDistantSurfaceUpdate(wx, wz);
-          }
+        for (const edit of standardEdits) {
+          const lx = edit.x - cx * CHUNK_SIZE_X;
+          const lz = edit.z - cz * CHUNK_SIZE_Z;
+          chunk.setLocalBlock(lx, edit.y, lz, edit.block, edit.color);
+          this.queueDistantSurfaceUpdate(edit.x, edit.z);
         }
         chunk.hasUserEdits = true;
         chunk.isDirty = true;
         this.dirtyChunks.add(chunk);
-      } else if (Array.isArray(update.standard)) {
-        for (const s of update.standard) {
-          if (!Array.isArray(s) || s.length < 5) continue;
-          const [wx, wy, wz, block, color] = s;
-          this.editPersistence?.recordStandard(wx, wy, wz, block, color);
-          this.queueDistantSurfaceUpdate(wx, wz);
+      } else {
+        for (const edit of standardEdits) {
+          this.queueDistantSurfaceUpdate(edit.x, edit.z);
         }
       }
       this.terrainVersion++;

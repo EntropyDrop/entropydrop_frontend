@@ -170,6 +170,48 @@ export class WorldEditPersistence {
     return this.microEdits.values();
   }
 
+  *getMicroEditsForChunk(cx: number, cz: number) {
+    const minMx = cx * CHUNK_SIZE_X * MICRO_DIVISIONS;
+    const maxMx = minMx + CHUNK_SIZE_X * MICRO_DIVISIONS;
+    const minMz = cz * CHUNK_SIZE_Z * MICRO_DIVISIONS;
+    const maxMz = minMz + CHUNK_SIZE_Z * MICRO_DIVISIONS;
+    for (const edit of this.microEdits.values()) {
+      if (edit.mx >= minMx && edit.mx < maxMx && edit.mz >= minMz && edit.mz < maxMz) {
+        yield edit;
+      }
+    }
+  }
+
+  /** Replace one server-authored chunk snapshot without creating an outgoing echo batch. */
+  replaceRemoteChunk(chunk: TerrainEditChunk) {
+    const chunkCountX = TORUS_SIZE_X / CHUNK_SIZE_X;
+    const chunkCountZ = TORUS_SIZE_Z / CHUNK_SIZE_Z;
+    const cx = ((Math.floor(chunk.chunk_x) % chunkCountX) + chunkCountX) % chunkCountX;
+    const cz = ((Math.floor(chunk.chunk_z) % chunkCountZ) + chunkCountZ) % chunkCountZ;
+    const chunkKey = `${cx},${cz}`;
+    const previousStandard = this.standardEditsByChunk.get(chunkKey);
+    if (previousStandard) {
+      for (const key of previousStandard.keys()) this.standardEdits.delete(key);
+      this.standardEditsByChunk.delete(chunkKey);
+    }
+
+    const minMx = cx * CHUNK_SIZE_X * MICRO_DIVISIONS;
+    const maxMx = minMx + CHUNK_SIZE_X * MICRO_DIVISIONS;
+    const minMz = cz * CHUNK_SIZE_Z * MICRO_DIVISIONS;
+    const maxMz = minMz + CHUNK_SIZE_Z * MICRO_DIVISIONS;
+    for (const [key, edit] of this.microEdits) {
+      if (edit.mx >= minMx && edit.mx < maxMx && edit.mz >= minMz && edit.mz < maxMz) {
+        this.microEdits.delete(key);
+      }
+    }
+
+    this.loadPackedEdits(chunk.standard, chunk.micro);
+    // A remote snapshot can race a still-unacknowledged local batch. Reapply
+    // the durable outbox so local intent stays visible and is not discarded.
+    this.replayPendingBatches();
+    this.reconcileStandardMicroExclusion();
+  }
+
   recordStandard(x: number, y: number, z: number, block: number, color: number) {
     const edit = this.normalizeStandardEdit(x, y, z, block, color);
     if (!edit) return;

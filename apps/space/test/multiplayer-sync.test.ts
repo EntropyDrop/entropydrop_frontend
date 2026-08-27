@@ -119,3 +119,33 @@ test('World.applyRemoteChunkUpdates updates loaded chunk blocks and microblocks 
   assert.equal(microColor, 0x00ff00);
   assert.equal(world.microVoxels.parts.get('25,200,25'), 'part_1');
 });
+
+test('remote chunk snapshots are cached without echoing them back as local mutations', async () => {
+  const scene = new THREE.Scene();
+  const sent: any[] = [];
+  const world = new World(scene, 12345, null, {
+    worldId: 'shared-world',
+    storage: null,
+    saveDelayMs: 0,
+    remote: {
+      chunks: [],
+      async sendBatch(batchId, mutations) {
+        sent.push({ batchId, mutations });
+      }
+    }
+  });
+  world.getOrCreateChunk(0, 0);
+
+  world.applyRemoteChunkUpdates([{
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 1,
+    standard: [[5, 40, 5, BlockTypes.COLOR_BLOCK, 0x123456]],
+    micro: [[30, 200, 25, 0x00ff00, 'remote']]
+  }]);
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert.equal(sent.length, 0);
+  assert.equal(world.getBlockColor(5, 40, 5), 0x123456);
+  assert.equal(world.microVoxels.parts.get('30,200,25'), 'remote');
+});

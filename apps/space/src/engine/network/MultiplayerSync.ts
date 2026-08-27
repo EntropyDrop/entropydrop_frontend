@@ -42,6 +42,7 @@ export class MultiplayerSync {
   private inFlight = false;
   private isRunning = false;
   private sinceTerrainRevision = 0;
+  private lastErrorLogAt = 0;
 
   public getPlayerPosition: (() => { x: number; y: number; z: number; yaw: number }) | null = null;
   public onPlayersUpdate: ((players: RemotePlayerInfo[]) => void) | null = null;
@@ -72,7 +73,10 @@ export class MultiplayerSync {
   }
 
   setSinceTerrainRevision(rev: number) {
-    this.sinceTerrainRevision = Math.max(this.sinceTerrainRevision, rev);
+    const numericRevision = Number(rev);
+    if (Number.isFinite(numericRevision) && numericRevision >= 0) {
+      this.sinceTerrainRevision = Math.max(this.sinceTerrainRevision, Math.floor(numericRevision));
+    }
   }
 
   private scheduleNextHeartbeat(delayMs = this.heartbeatIntervalMs) {
@@ -115,22 +119,27 @@ export class MultiplayerSync {
         body: JSON.stringify(body)
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data) {
-          if (Array.isArray(data.players)) {
-            this.onPlayersUpdate?.(data.players);
-          }
-          if (Array.isArray(data.terrain_chunks) && data.terrain_chunks.length > 0) {
-            this.onTerrainUpdate?.(data.terrain_chunks);
-          }
-          if (Number.isFinite(data.max_terrain_revision)) {
-            this.sinceTerrainRevision = Math.max(this.sinceTerrainRevision, Number(data.max_terrain_revision));
-          }
+      if (!response.ok) {
+        throw new Error(`Space multiplayer heartbeat failed with HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      if (data) {
+        if (Array.isArray(data.players)) {
+          this.onPlayersUpdate?.(data.players);
+        }
+        if (Array.isArray(data.terrain_chunks) && data.terrain_chunks.length > 0) {
+          this.onTerrainUpdate?.(data.terrain_chunks);
+        }
+        if (Number.isFinite(data.max_terrain_revision)) {
+          this.sinceTerrainRevision = Math.max(this.sinceTerrainRevision, Number(data.max_terrain_revision));
         }
       }
     } catch (err) {
-      // Ignore transient network errors during fast multiplayer heartbeat polling
+      const now = Date.now();
+      if (now - this.lastErrorLogAt >= 10_000) {
+        this.lastErrorLogAt = now;
+        console.warn('Space multiplayer sync is temporarily unavailable.', err);
+      }
     } finally {
       this.inFlight = false;
       if (this.isRunning) {

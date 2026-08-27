@@ -35,6 +35,7 @@ export class Minimap {
   heights: Int32Array = new Int32Array(Minimap.CELLS * Minimap.CELLS);
   colors: Uint32Array = new Uint32Array(Minimap.CELLS * Minimap.CELLS);
   imageData: ImageData | null = null;
+  remotePlayers: any[];
   dpr = 1;
 
   constructor(parent: HTMLElement, world, contraptionManager) {

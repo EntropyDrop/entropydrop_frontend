@@ -32,6 +32,7 @@ export interface SpaceBootstrapPayload {
     name: string;
     seed: number;
     terrain_generator_version: number;
+    terrain_revision: number;
   };
   player: {
     user_id: string;

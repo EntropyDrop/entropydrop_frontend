@@ -167,6 +167,7 @@ class Game {
       z: this.playerPhysics.position.z,
       yaw: this.controller.yaw
     });
+    this.multiplayerSync.setSinceTerrainRevision(session.world.terrain_revision);
     this.multiplayerSync.start();
 
     // 6. Start Loop
