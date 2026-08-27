@@ -66,21 +66,18 @@ test('Space loads every terrain snapshot page and posts authenticated mutation b
   });
 });
 
-test('Space restores a backend resume pose and keeps birth point as fallback', () => {
+test('Space consumes one unified backend start pose for random entry or resume', () => {
   const player = {
     user_id: 'player',
     username: 'Player',
     player_entity_id: 'entity',
     minecraft_skin_url: 'https://example.com/skin.png',
     minecraft_skin_model: 'strong' as const,
-    spawn_x_cm: 100,
-    spawn_y_cm: 3200,
-    spawn_z_cm: 200,
-    spawn_yaw_q15: 0,
-    resume_x_cm: 12345,
-    resume_y_cm: 6789,
-    resume_z_cm: 23456,
-    resume_yaw_q15: 16384,
+    start_x_cm: 12345,
+    start_y_cm: 6789,
+    start_z_cm: 23456,
+    start_yaw_q15: 16384,
+    resumed: true,
   };
 
   assert.deepEqual(resolveInitialPlayerPose(player), {
@@ -92,10 +89,11 @@ test('Space restores a backend resume pose and keeps birth point as fallback', (
   });
   assert.deepEqual(resolveInitialPlayerPose({
     ...player,
-    resume_x_cm: null,
-    resume_y_cm: null,
-    resume_z_cm: null,
-    resume_yaw_q15: null,
+    start_x_cm: 100,
+    start_y_cm: 3200,
+    start_z_cm: 200,
+    start_yaw_q15: 0,
+    resumed: false,
   }), {
     x: 1,
     y: 32,

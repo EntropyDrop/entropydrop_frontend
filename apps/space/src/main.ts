@@ -116,9 +116,14 @@ class Game {
 
     // 5. Initial Spawn & Worldgen
     this.initializeSpawn(session);
-    this.lastSavedPlayerPosition = JSON.stringify(this.currentPlayerPosition());
+    this.lastSavedPlayerPosition = session.player.resumed
+      ? JSON.stringify(this.currentPlayerPosition())
+      : '';
     this.lastPlayerPositionSyncAt = performance.now();
     this.installPlayerPositionPersistence();
+    // A random first-entry position is ephemeral until it becomes the first
+    // player snapshot, so persist it immediately even before the player moves.
+    if (!session.player.resumed) this.queuePlayerPositionSave();
 
     // 6. Start Loop
     this.animate = this.animate.bind(this);
@@ -126,8 +131,8 @@ class Game {
   }
 
   initializeSpawn(session: ReadySpaceSession) {
-    // A durable reconnect snapshot takes precedence. The immutable birth point
-    // remains the fallback for first entry or a missing/invalid snapshot.
+    // The backend returns either the latest durable state or an ephemeral random
+    // position for a player who has no snapshot yet.
     const pose = resolveInitialPlayerPose(session.player);
 
     // Pre-generate initial chunks around the restored position.

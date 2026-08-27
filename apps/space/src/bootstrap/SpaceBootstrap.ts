@@ -24,14 +24,11 @@ export interface SpaceBootstrapPayload {
     player_entity_id: string;
     minecraft_skin_url: string;
     minecraft_skin_model: MinecraftSkinModel;
-    spawn_x_cm: number;
-    spawn_y_cm: number;
-    spawn_z_cm: number;
-    spawn_yaw_q15: number;
-    resume_x_cm: number | null;
-    resume_y_cm: number | null;
-    resume_z_cm: number | null;
-    resume_yaw_q15: number | null;
+    start_x_cm: number;
+    start_y_cm: number;
+    start_z_cm: number;
+    start_yaw_q15: number;
+    resumed: boolean;
   };
 }
 
@@ -89,23 +86,12 @@ export function hasPngSignature(bytes: Uint8Array) {
 }
 
 export function resolveInitialPlayerPose(player: SpaceBootstrapPayload['player']) {
-  const hasResumePosition = [
-    player.resume_x_cm,
-    player.resume_y_cm,
-    player.resume_z_cm,
-  ].every(value => typeof value === 'number' && Number.isFinite(value));
-  const xCm = hasResumePosition ? player.resume_x_cm! : player.spawn_x_cm;
-  const yCm = hasResumePosition ? player.resume_y_cm! : player.spawn_y_cm;
-  const zCm = hasResumePosition ? player.resume_z_cm! : player.spawn_z_cm;
-  const yawQ15 = typeof player.resume_yaw_q15 === 'number' && Number.isFinite(player.resume_yaw_q15)
-    ? player.resume_yaw_q15
-    : player.spawn_yaw_q15;
   return {
-    x: xCm / 100,
-    y: yCm / 100,
-    z: zCm / 100,
-    yaw: (yawQ15 / 32767) * Math.PI,
-    resumed: hasResumePosition,
+    x: player.start_x_cm / 100,
+    y: player.start_y_cm / 100,
+    z: player.start_z_cm / 100,
+    yaw: (player.start_yaw_q15 / 32767) * Math.PI,
+    resumed: player.resumed,
   };
 }
 
