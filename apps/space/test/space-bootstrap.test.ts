@@ -128,6 +128,7 @@ test('Space wraps and saves a small authenticated position checkpoint with keepa
     y_cm: 4568,
     z_cm: 1,
     yaw_q15: 16384,
+    pitch_q15: 0,
   });
   assert.equal(requests[0].options.method, 'PUT');
   assert.equal(requests[0].options.keepalive, true);

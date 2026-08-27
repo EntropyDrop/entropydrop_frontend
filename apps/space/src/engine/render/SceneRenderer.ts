@@ -1600,6 +1600,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
           targetPosition: new THREE.Vector3(p.x, p.y, p.z),
           targetYaw: p.yaw || 0,
           currentYaw: p.yaw || 0,
+          targetPitch: p.pitch || 0,
+          currentPitch: p.pitch || 0,
           lastSeen: now,
           skinUrl: p.minecraft_skin_url,
           skinModel: p.minecraft_skin_model || 'strong',
@@ -1612,6 +1614,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       } else {
         record.targetPosition.set(p.x, p.y, p.z);
         record.targetYaw = p.yaw || 0;
+        record.targetPitch = p.pitch || 0;
         record.lastSeen = now;
       }
 
@@ -1690,6 +1693,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       record.currentYaw += dyaw * lerpFactor;
       record.group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), record.currentYaw);
 
+      record.currentPitch = THREE.MathUtils.lerp(record.currentPitch ?? 0, record.targetPitch ?? 0, lerpFactor);
+
       if (record.character) {
         const forwardX = -Math.sin(record.currentYaw);
         const forwardZ = -Math.cos(record.currentYaw);
@@ -1704,6 +1709,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
           speed: record.speed,
           forwardSpeed,
           sideSpeed,
+          lookPitch: record.currentPitch,
           grounded: true,
           flying: false
         });

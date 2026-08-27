@@ -11,6 +11,7 @@ export interface RemotePlayerInfo {
   y: number;
   z: number;
   yaw: number;
+  pitch: number;
   is_self: boolean;
   updated_at: string | null;
 }
@@ -45,7 +46,7 @@ export class MultiplayerSync {
   private sinceTerrainRevision = 0;
   private lastErrorLogAt = 0;
 
-  public getPlayerPosition: (() => { x: number; y: number; z: number; yaw: number }) | null = null;
+  public getPlayerPosition: (() => { x: number; y: number; z: number; yaw: number; pitch?: number }) | null = null;
   public onPlayersUpdate: ((players: RemotePlayerInfo[]) => void) | null = null;
   public onTerrainUpdate: ((chunks: TerrainChunkUpdate[]) => void) | null = null;
 
@@ -103,11 +104,12 @@ export class MultiplayerSync {
       };
 
       if (pose && Number.isFinite(pose.x) && Number.isFinite(pose.y) && Number.isFinite(pose.z)) {
-        const encoded = encodePlayerPosition(pose, pose.yaw || 0);
+        const encoded = encodePlayerPosition(pose, pose.yaw || 0, pose.pitch || 0);
         body.x_cm = encoded.x_cm;
         body.y_cm = encoded.y_cm;
         body.z_cm = encoded.z_cm;
         body.yaw_q15 = encoded.yaw_q15;
+        body.pitch_q15 = encoded.pitch_q15;
       }
 
       const url = `${this.apiOrigin}/space/api/v2/worlds/${encodeURIComponent(this.worldId)}/heartbeat`;

@@ -165,7 +165,8 @@ class Game {
       x: this.playerPhysics.position.x,
       y: this.playerPhysics.position.y,
       z: this.playerPhysics.position.z,
-      yaw: this.controller.yaw
+      yaw: this.controller.yaw,
+      pitch: this.controller.pitch
     });
     this.multiplayerSync.setSinceTerrainRevision(session.world.terrain_revision);
     this.multiplayerSync.start();
@@ -194,7 +195,7 @@ class Game {
   }
 
   currentPlayerPosition() {
-    return encodePlayerPosition(this.playerPhysics.position, this.controller.yaw);
+    return encodePlayerPosition(this.playerPhysics.position, this.controller.yaw, this.controller.pitch);
   }
 
   queuePlayerPositionSave(force = false, keepalive = false) {

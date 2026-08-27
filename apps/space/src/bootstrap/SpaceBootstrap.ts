@@ -53,6 +53,7 @@ export interface PlayerPositionPayload {
   y_cm: number;
   z_cm: number;
   yaw_q15: number;
+  pitch_q15?: number;
 }
 
 export interface PlayerPositionRemote {
@@ -146,14 +147,18 @@ function wrapCentimeters(valueMeters: number, sizeMeters: number) {
 
 export function encodePlayerPosition(
   position: { x: number; y: number; z: number },
-  yaw: number
+  yaw: number,
+  pitch = 0
 ): PlayerPositionPayload {
   const normalizedYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+  const maxPitch = Math.PI / 2 - 0.01;
+  const clampedPitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
   return {
     x_cm: wrapCentimeters(position.x, TORUS_SIZE_X),
     y_cm: Math.round(position.y * 100),
     z_cm: wrapCentimeters(position.z, TORUS_SIZE_Z),
     yaw_q15: Math.max(-32767, Math.min(32767, Math.round((normalizedYaw / Math.PI) * 32767))),
+    pitch_q15: Math.max(-32767, Math.min(32767, Math.round((clampedPitch / Math.PI) * 32767))),
   };
 }
 
