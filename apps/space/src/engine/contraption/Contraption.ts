@@ -2845,73 +2845,43 @@ export class Contraption {
       list.push(b);
     }
 
-    const faces = [
-      { dir: [0, 1, 0], quad: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] },
-      { dir: [0, -1, 0], quad: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] },
-      { dir: [0, 0, -1], quad: [[1, 1, 0], [1, 0, 0], [0, 0, 0], [0, 1, 0]] },
-      { dir: [0, 0, 1], quad: [[0, 1, 1], [0, 0, 1], [1, 0, 1], [1, 1, 1]] },
-      { dir: [-1, 0, 0], quad: [[0, 1, 0], [0, 0, 0], [0, 0, 1], [0, 1, 1]] },
-      { dir: [1, 0, 0], quad: [[1, 1, 1], [1, 0, 1], [1, 0, 0], [1, 1, 0]] }
-    ];
-
     for (const [nodeId, blocks] of nodeMap) {
       const node = this.entityNodes.get(nodeId) || this.entityNodes.get('root');
       if (!node) continue;
 
-      const blockSet = new Set<string>();
-      const key = (x: number, y: number, z: number, s: number) =>
-        `${Math.round(x * 5)},${Math.round(y * 5)},${Math.round(z * 5)},${Math.round(s * 5)}`;
-
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
       for (const b of blocks) {
         const s = b.size || 1;
-        blockSet.add(key(b.localX, b.localY, b.localZ, s));
+        if (b.localX < minX) minX = b.localX;
+        if (b.localY < minY) minY = b.localY;
+        if (b.localZ < minZ) minZ = b.localZ;
+        if (b.localX + s > maxX) maxX = b.localX + s;
+        if (b.localY + s > maxY) maxY = b.localY + s;
+        if (b.localZ + s > maxZ) maxZ = b.localZ + s;
       }
 
-      const edgePositions: number[] = [];
-      const edgeSet = new Set<string>();
+      const sx = Math.max(0.001, maxX - minX);
+      const sy = Math.max(0.001, maxY - minY);
+      const sz = Math.max(0.001, maxZ - minZ);
       const pivot = node.pivotLocal;
+      const cx = (minX + maxX) / 2 - pivot.x;
+      const cy = (minY + maxY) / 2 - pivot.y;
+      const cz = (minZ + maxZ) / 2 - pivot.z;
 
-      for (const b of blocks) {
-        const s = b.size || 1;
-        for (const f of faces) {
-          const nx = b.localX + f.dir[0] * s;
-          const ny = b.localY + f.dir[1] * s;
-          const nz = b.localZ + f.dir[2] * s;
-          if (blockSet.has(key(nx, ny, nz, s))) continue; // Cull internal overlapping face!
-
-          const q = f.quad;
-          const v0 = [b.localX + q[0][0] * s - pivot.x, b.localY + q[0][1] * s - pivot.y, b.localZ + q[0][2] * s - pivot.z];
-          const v1 = [b.localX + q[1][0] * s - pivot.x, b.localY + q[1][1] * s - pivot.y, b.localZ + q[1][2] * s - pivot.z];
-          const v2 = [b.localX + q[2][0] * s - pivot.x, b.localY + q[2][1] * s - pivot.y, b.localZ + q[2][2] * s - pivot.z];
-          const v3 = [b.localX + q[3][0] * s - pivot.x, b.localY + q[3][1] * s - pivot.y, b.localZ + q[3][2] * s - pivot.z];
-
-          const quadEdges = [[v0, v1], [v1, v2], [v2, v3], [v3, v0]];
-          for (const [p1, p2] of quadEdges) {
-            const k1 = `${Math.round(p1[0] * 1000)},${Math.round(p1[1] * 1000)},${Math.round(p1[2] * 1000)}`;
-            const k2 = `${Math.round(p2[0] * 1000)},${Math.round(p2[1] * 1000)},${Math.round(p2[2] * 1000)}`;
-            const edgeKey = k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
-            if (!edgeSet.has(edgeKey)) {
-              edgeSet.add(edgeKey);
-              edgePositions.push(...p1, ...p2);
-            }
-          }
-        }
-      }
-
-      if (edgePositions.length > 0) {
-        const edgeGeo = new THREE.BufferGeometry();
-        edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
-        const lineMat = new THREE.LineBasicMaterial({
-          color: 0xff9f43,
-          transparent: true,
-          opacity: 0.95,
-          depthWrite: false
-        });
-        const lines = new THREE.LineSegments(edgeGeo, lineMat);
-        lines.renderOrder = 33;
-        node.group.add(lines);
-        this.subtreeHighlightBoxes.push({ group: lines, geometries: { edges: edgeGeo }, materials: { lineMat } });
-      }
+      const boxGeo = new THREE.BoxGeometry(sx, sy, sz);
+      const edgeGeo = new THREE.EdgesGeometry(boxGeo);
+      const lineMat = new THREE.LineBasicMaterial({
+        color: 0xff9f43,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false
+      });
+      const lines = new THREE.LineSegments(edgeGeo, lineMat);
+      lines.position.set(cx, cy, cz);
+      lines.renderOrder = 33;
+      node.group.add(lines);
+      this.subtreeHighlightBoxes.push({ group: lines, geometries: { edges: edgeGeo, box: boxGeo }, materials: { lineMat } });
     }
   }
 

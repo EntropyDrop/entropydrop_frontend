@@ -1342,32 +1342,43 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
 
   updateSelectionHologram(bounds, connectedBlocks = null, microBlocks = null) {
     if (Array.isArray(microBlocks)) {
-      this.selectionGroup.visible = false;
       this.selectionCellsGroup.visible = false;
-      const signature = `micro:${microBlocks
-        .map(block => `${block.x},${block.y},${block.z}`)
-        .sort()
-        .join('|')}`;
-      if (signature !== this.selectionMicroCellsSignature) {
-        for (const child of this.selectionMicroCellsGroup.children as any[]) {
-          child.geometry?.dispose();
-        }
-        this.selectionMicroCellsGroup.clear();
-        const geos = this.buildCulledVoxelHologram(microBlocks, 0.2);
-        if (geos) {
-          const fill = new THREE.Mesh(geos.fillGeo, this.selectionMicroCellFillMaterial);
-          const lines = new THREE.LineSegments(geos.edgeGeo, this.selectionMicroCellLineMaterial);
-          fill.renderOrder = 20;
-          lines.renderOrder = 21;
-          this.selectionMicroCellsGroup.add(fill, lines);
-        }
-        this.selectionMicroCellsSignature = signature;
+      this.selectionMicroCellsGroup.visible = false;
+
+      if (microBlocks.length === 0) {
+        this.selectionGroup.visible = false;
+        return;
       }
-      const t = performance.now() * 0.004;
-      const pulse = (Math.sin(t) + 1) * 0.5;
-      this.selectionMicroCellLineMaterial.opacity = 0.5 + pulse * 0.46;
-      this.selectionMicroCellFillMaterial.opacity = 0.06 + pulse * 0.17;
-      this.selectionMicroCellsGroup.visible = microBlocks.length > 0;
+
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (const b of microBlocks) {
+        if (b.x < minX) minX = b.x;
+        if (b.y < minY) minY = b.y;
+        if (b.z < minZ) minZ = b.z;
+        if (b.x > maxX) maxX = b.x;
+        if (b.y > maxY) maxY = b.y;
+        if (b.z > maxZ) maxZ = b.z;
+      }
+
+      const sx = Math.max(0.001, (maxX - minX + 1) * 0.2);
+      const sy = Math.max(0.001, (maxY - minY + 1) * 0.2);
+      const sz = Math.max(0.001, (maxZ - minZ + 1) * 0.2);
+
+      const cx = (minX + maxX + 1) * 0.2 * 0.5;
+      const cy = (minY + maxY + 1) * 0.2 * 0.5;
+      const cz = (minZ + maxZ + 1) * 0.2 * 0.5;
+
+      updateTorusSelectionBoxGeometry(this.selectionFill, this.selectionWireframe, sx, sy, sz);
+      this.selectionGroup.position.set(cx, cy, cz);
+      this.selectionGroup.scale.set(sx, sy, sz);
+      this.selectionGroup.visible = true;
+
+      // Pulse opacity subtly matching standard mode
+      const t = performance.now() * 0.003;
+      const pulse = 0.75 + Math.sin(t) * 0.2;
+      this.selectionWireframe.material.opacity = pulse;
+      this.selectionFill.material.opacity = 0.12 + Math.sin(t) * 0.06;
       return;
     }
 

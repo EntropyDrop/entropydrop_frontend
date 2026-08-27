@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
 import { Contraption } from '../src/engine/contraption/Contraption.ts';
 
-test('micro selection hologram culls internal overlapping faces and lines', () => {
+test('micro selection hologram renders unified outer bounding box like standard selection', () => {
   const renderer = Object.create(SceneRenderer.prototype);
   renderer.scene = new THREE.Scene();
   renderer.setupSelectionHologram();
@@ -21,26 +21,22 @@ test('micro selection hologram culls internal overlapping faces and lines', () =
 
   renderer.updateSelectionHologram(null, null, microCells);
 
-  assert.ok(renderer.selectionMicroCellsGroup.visible);
-  assert.equal(renderer.selectionMicroCellsGroup.children.length, 2, 'should have 1 fill mesh and 1 line segments');
+  // Micro selection now uses unified selectionGroup (same as standard selection)
+  assert.ok(renderer.selectionGroup.visible);
+  assert.equal(renderer.selectionMicroCellsGroup.visible, false);
 
-  const fillMesh = renderer.selectionMicroCellsGroup.children[0] as THREE.Mesh;
-  const lineSegments = renderer.selectionMicroCellsGroup.children[1] as THREE.LineSegments;
+  // Bounds should span 2 microcells = 0.4m in each dimension
+  assert.ok(Math.abs(renderer.selectionGroup.scale.x - 0.4) < 1e-4);
+  assert.ok(Math.abs(renderer.selectionGroup.scale.y - 0.4) < 1e-4);
+  assert.ok(Math.abs(renderer.selectionGroup.scale.z - 0.4) < 1e-4);
 
-  // A 2x2x2 cube has 6 outer faces. Each outer face has 2x2 = 4 micro quads.
-  // Total external quads = 6 * 4 = 24 quads.
-  // 24 quads * 2 triangles * 3 vertices = 144 vertices.
-  // Without culling, 8 cells * 6 faces * 2 triangles * 3 vertices = 288 vertices.
-  const posAttr = fillMesh.geometry.attributes.position;
-  assert.equal(posAttr.count, 144, 'fill geometry should contain exactly 24 external quads (144 vertices)');
-
-  // External border lines: 2x2 on 6 faces has 24 unique quad borders with 60 line segments.
-  const lineAttr = lineSegments.geometry.attributes.position;
-  assert.ok(lineAttr.count > 0);
-  assert.ok(lineAttr.count < 8 * 24, 'internal lines between adjacent microcells must be culled');
+  // Center should be (0.5 * 0.2, 0.5 * 0.2, 0.5 * 0.2) = (0.2, 0.2, 0.2)
+  assert.ok(Math.abs(renderer.selectionGroup.position.x - 0.2) < 1e-4);
+  assert.ok(Math.abs(renderer.selectionGroup.position.y - 0.2) < 1e-4);
+  assert.ok(Math.abs(renderer.selectionGroup.position.z - 0.2) < 1e-4);
 });
 
-test('entity block selection highlight culls internal overlapping edges', () => {
+test('entity block selection highlight renders single outer bounding box wireframe per node', () => {
   const contraption = Object.create(Contraption.prototype);
   contraption.entityNodes = new Map();
   const rootNode = { id: 'root', group: new THREE.Group(), pivotLocal: new THREE.Vector3(0, 0, 0) };
@@ -56,11 +52,10 @@ test('entity block selection highlight culls internal overlapping edges', () => 
 
   contraption.highlightBlocks(blocks);
 
-  assert.equal(contraption.subtreeHighlightBoxes.length, 1, 'should combine into 1 culled highlight per node');
+  assert.equal(contraption.subtreeHighlightBoxes.length, 1, 'should combine into 1 highlight box per node');
   const lineSegments = contraption.subtreeHighlightBoxes[0].group;
   const linePos = lineSegments.geometry.attributes.position;
 
-  // 2 separate boxes have 2 * 12 = 24 segments (48 vertices).
-  // A merged 2x1x1 box has 10 exposed faces with 20 deduplicated edges (40 vertices).
-  assert.equal(linePos.count, 40, 'shared face internal edges should be culled');
+  // Single outer bounding box wireframe has exactly 12 edges (24 vertices)
+  assert.equal(linePos.count, 24, 'outer bounding box should have exactly 12 edges (24 vertices)');
 });
