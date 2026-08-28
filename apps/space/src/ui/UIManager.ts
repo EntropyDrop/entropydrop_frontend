@@ -8,7 +8,6 @@ import { MAX_STL_FILE_BYTES } from '../engine/voxel/STLVoxelizer.ts';
 import { ActionDomain } from '../engine/actions/BasicActions.ts';
 import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../engine/torus/TorusWorld.ts';
 import { InventoryThumbnailRenderer } from '../engine/render/InventoryThumbnailRenderer.ts';
-import { useSpaceStore } from './react/store/useSpaceStore.ts';
 
 const TOOL_PIXEL_ICONS: Record<string, string> = {
   [SpecialTool.SHOVEL]: '',
@@ -344,7 +343,6 @@ export class UIManager {
 
   setWorld(world) {
     this.world = world;
-    useSpaceStore.getState().setWorld(world);
     try {
       const savedDist = localStorage.getItem('space_setting_render_dist');
       if (savedDist && this.world) this.world.setRenderDistance(Number(savedDist));
@@ -354,7 +352,6 @@ export class UIManager {
 
   setContraptions(contraptionManager) {
     this.contraptions = contraptionManager;
-    useSpaceStore.getState().setContraptions(contraptionManager);
   }
 
   setRemotePlayers(players: any[]) {
@@ -363,12 +360,10 @@ export class UIManager {
 
   setNavigationSystem(navigationSystem: any) {
     this.navigationSystem = navigationSystem;
-    useSpaceStore.getState().setNavigationSystem(navigationSystem);
   }
 
   setSceneRenderer(sceneRenderer) {
     this.sceneRenderer = sceneRenderer;
-    useSpaceStore.getState().setSceneRenderer(sceneRenderer);
     this.sceneRenderer?.setEntityPreviewCanvas(this.entityPreviewCanvas);
     if (this.sceneRenderer) {
       this.sceneRenderer.onEntityPreviewNodeSelect = (nodeId) => {
@@ -2055,7 +2050,7 @@ export class UIManager {
     );
     colorSets.forEach((item, index) => {
       if (!item) {
-        addEmptySlot(index, `Empty slot ${index + 1} · save the palette or import`);
+        addEmptySlot(`Empty slot ${index + 1} · save the palette or import`);
         return;
       }
       const card = document.createElement('div');
@@ -2359,7 +2354,6 @@ export class UIManager {
   }
 
   setPointerLocked(locked) {
-    useSpaceStore.getState().syncFromEngine({ hasStarted: true, isPaused: !locked });
     if (this.pauseScreen) {
       if (locked) {
         this.hasStarted = true;
@@ -2373,10 +2367,9 @@ export class UIManager {
     }
   }
 
-  showToast(msg) {
-    useSpaceStore.getState().showToast(String(msg));
+  showToast(message) {
     if (!this.toast) return;
-    this.toast.textContent = msg;
+    this.toast.textContent = message;
     this.toast.classList.add('show');
     clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => {

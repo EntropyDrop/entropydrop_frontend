@@ -2,15 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' http: https: ws: wss:; object-src 'none'; base-uri 'none'">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' http: https: ws: wss:; object-src 'none'; base-uri 'none'">
   <title>EntropyDrop · Space — Programmable Voxel Physics World</title>
   <meta name="description" content="An AI-native programmable voxel physics world: one block in any color, 1m standard voxels, 5x5x5 micro-carving, rigid-body entities and natural-language force controllers.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect x=%2220%22 y=%2220%22 width=%2260%22 height=%2260%22 fill=%22%233c8527%22 stroke=%22%23111111%22 stroke-width=%2210%22/></svg>">
-  <link rel="stylesheet" href="/src/style.css">
+    <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-  <!-- Space Authentication & Account Gate -->
   <div id="space-entry-gate" class="space-entry-gate" role="status" aria-live="polite">
     <div class="space-entry-card">
       <div class="space-entry-brand">EntropyDrop · Space</div>
@@ -18,12 +17,852 @@
       <a id="space-entry-action" class="space-entry-action" href="/skin/" hidden>返回主站</a>
     </div>
   </div>
-
   <!-- 3D WebGL Canvas Container -->
   <div id="canvas-container"></div>
 
-  <!-- React 2D UI Overlay Root -->
-  <div id="space-react-root"></div>
+  <!-- Center Crosshair -->
+  <div id="crosshair"></div>
+
+  <!-- HUD Interface Overlay -->
+  <div id="hud-overlay">
+    <!-- Top Bar -->
+    <div class="hud-top">
+      <div class="hud-card">
+        <div class="hud-badge"><span class="hud-badge-dot"></span>EntropyDrop · Space</div>
+        <div class="hud-metrics-row">
+          <span id="fps-val">60 FPS</span>
+          <span class="hud-metric-sep">·</span>
+          <span id="ping-val" class="hud-ping ping-unknown">-- ms</span>
+        </div>
+        <div id="pos-val">X: -- | Y: -- | Z: --</div>
+        
+        <!-- Nearby Entities Collapsible Section -->
+        <div class="hud-entities-section" id="hud-entities-section">
+          <div class="hud-entities-header" id="hud-entities-toggle" role="button" tabindex="0" title="Toggle nearby entities list">
+            <div class="hud-entities-title">
+              <span class="hud-entities-icon">⬡</span>
+              <span>Nearby Entities (<span id="hud-entities-count">0</span>)</span>
+            </div>
+            <button type="button" id="hud-entities-toggle-btn" class="hud-entities-toggle-btn" aria-label="Toggle entities list">▼</button>
+          </div>
+          <div class="hud-entities-body" id="hud-entities-body" style="display: none;">
+            <div class="hud-entities-list" id="hud-entities-list">
+              <!-- Dynamically populated -->
+            </div>
+            <div class="hud-entities-pagination" id="hud-entities-pagination" style="display: none;">
+              <button type="button" id="hud-entities-prev-btn" class="hud-page-btn" disabled title="Previous page">◀</button>
+              <span id="hud-entities-page-info" class="hud-page-info">1 / 1</span>
+              <button type="button" id="hud-entities-next-btn" class="hud-page-btn" disabled title="Next page">▶</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hud-actions">
+        <button id="global-settings-btn" class="icon-btn" title="Global Settings (O)">⚙</button>
+      </div>
+    </div>
+
+    <!-- Bottom Bar: Tools Hotbar (Slots 1-6) + Dynamic Tool Panel (Palette / Backpack / Selector) -->
+    <div class="hud-bottom">
+      <div class="builder-toolbar">
+        <div class="toolbar-center-panel">
+          <div class="color-palette-bar-wrapper" id="color-palette-wrapper">
+            <div class="palette-info-row">
+              <span class="palette-title">Palette</span>
+              <span class="palette-hotkey-hint"><b>Shift+1~9</b> pick · <b>E</b> set colors</span>
+            </div>
+            <div id="color-palette-bar" class="color-palette-bar"></div>
+          </div>
+          <div class="inventory-bar-wrapper" id="inventory-bar-wrapper" style="display: none;">
+            <div class="palette-info-row">
+              <div class="palette-title-group">
+                <span class="palette-title" id="backpack-bar-title" style="cursor: pointer;" title="Click or press E to open full backpack">Backpack</span>
+                <div id="inv-cat-tabs" class="inv-cat-tabs"></div>
+              </div>
+              <span class="palette-hotkey-hint"><b>E</b> Full Backpack · <b>Tab</b> BKS↔ENT</span>
+            </div>
+            <div id="inventory-bar" class="inventory-bar"></div>
+          </div>
+          <div class="selector-panel-wrapper" id="selector-panel-wrapper" style="display: none;">
+            <div class="palette-info-row">
+              <div class="selector-title-group">
+                <span class="palette-title">Selector</span>
+                <button id="selector-mode-toggle" class="selector-mode-btn" title="Click or press Tab to switch mode">
+                  <span id="selector-mode-badge" class="mode-badge std">STANDARD</span>
+                  <span class="mode-tab-hint">Tab ⇋</span>
+                </button>
+              </div>
+              <span class="palette-hotkey-hint"><b>Tab</b> mode · <b>R</b> copy · <b>G</b> assemble</span>
+            </div>
+            <div class="selector-toolbox-content" id="selector-toolbox-content">
+              <div class="selector-status-col">
+                <div class="selector-status-main">
+                  <span class="selector-icon">⬡</span>
+                  <span id="selector-panel-title" class="selector-status-title">Selector</span>
+                </div>
+                <div id="selector-panel-details" class="selector-status-sub"></div>
+              </div>
+              <div class="selector-action-buttons">
+                <button id="assemble-btn" class="banner-btn primary" disabled>Assemble (G)</button>
+                <button id="copy-btn" class="banner-btn secondary" title="Copy selection to backpack (R)" disabled>Copy (R)</button>
+              </div>
+            </div>
+          </div>
+          <div id="hotbar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Entity Agent + Programmable Controller Modal (C key) -->
+  <div id="code-editor-modal" class="custom-modal">
+    <div class="modal-content code-editor-container">
+      <!-- Editor Header -->
+      <div class="editor-header">
+        <div class="editor-title-group">
+          <div class="editor-title">Entity Editor</div>
+          <div id="editor-entity-id" class="editor-tag" title="Click to copy Entity ID">ID: ent_pending</div>
+          <div id="editor-status-badge" class="status-badge running">RUNNING</div>
+          <div id="editor-exec-time" class="exec-time">0.05 ms</div>
+        </div>
+
+        <div class="editor-actions">
+          <div class="pb-radio-group" id="global-playback-group" title="Global script control">
+            <input type="radio" id="pb-global-play" name="pb-global" value="play">
+            <label for="pb-global-play" class="pb-option play" title="Play: enable all component scripts">▶</label>
+            <input type="radio" id="pb-global-pause" name="pb-global" value="pause">
+            <label for="pb-global-pause" class="pb-option pause" title="Pause: disable all component scripts">⏸</label>
+            <input type="radio" id="pb-global-stop" name="pb-global" value="stop">
+            <label for="pb-global-stop" class="pb-option stop" title="Stop: disable all scripts and reset state, clock, transforms, and forces">⏹</label>
+          </div>
+          <button id="run-script-btn" class="editor-btn run-btn">Apply Code</button>
+          <button id="api-docs-btn" class="editor-btn" title="Open the script API reference (documentation)">📖 Docs</button>
+          <button id="close-code-btn" class="icon-btn" style="width: 28px; height: 28px; font-size: 13px;" title="Close terminal (ESC)">✕</button>
+        </div>
+      </div>
+
+      <!-- Editor Main Layout (3-Column: Hierarchy & Inspector | Code & Tabs | 3D View & Telemetry) -->
+      <div class="editor-body">
+        <!-- Left Sidebar: Component Hierarchy Tree & Property Inspector -->
+        <div class="hierarchy-sidebar">
+          <div class="sidebar-section-title">
+            <span>ENTITY COMPONENT TREE</span>
+          </div>
+          <div id="component-tree-panel" class="component-tree-panel">
+            <div id="component-tree-list" class="component-tree-list"></div>
+          </div>
+
+          <!-- Component Property Inspector -->
+          <div class="sidebar-section-title" style="margin-top: 8px;">
+            <span>COMPONENT INSPECTOR</span>
+            <span id="component-inspector-id" class="component-inspector-badge">root</span>
+          </div>
+          <div id="component-inspector-panel" class="component-inspector-panel">
+            <div class="inspector-field">
+              <label class="inspector-label">ID</label>
+              <div class="inspector-input-row">
+                <input id="prop-node-name" class="inspector-input" type="text" value="root">
+                <button id="prop-rename-btn" class="small-action-btn" title="Rename component id (unique across the whole entity)">Rename</button>
+              </div>
+            </div>
+            <div class="inspector-field has-tooltip">
+              <label class="inspector-label" title="Component role in the hierarchy: root body is the main rigid body, child is an attached sub-assembly">Type ⓘ</label>
+              <span id="prop-node-kind" class="inspector-val">root body</span>
+              <div class="tooltip-text">Role in hierarchy:<br><b>root body</b> is the entity's main rigid body;<br><b>child</b> is an attached sub-assembly.</div>
+            </div>
+            <div class="inspector-field">
+              <label class="inspector-label">Parent</label>
+              <span id="prop-node-parent" class="inspector-val">None</span>
+            </div>
+            <div class="inspector-grid inspector-grid-three">
+              <div class="inspector-field has-tooltip">
+                <label class="inspector-sublabel" for="prop-body-type" title="Rigid body mode: kinematic is script-driven without gravity/forces; dynamic simulates full Newtonian physics">Rigid Body ⓘ</label>
+                <select id="prop-body-type" class="inspector-input">
+                  <option value="kinematic">kinematic</option>
+                  <option value="dynamic">dynamic</option>
+                </select>
+                <div class="tooltip-text"><b>kinematic</b>: Moves strictly via script, immune to gravity and forces.<br><b>dynamic</b>: Full physics simulation (gravity, thrust, collisions).</div>
+              </div>
+              <div class="inspector-field has-tooltip">
+                <label class="inspector-sublabel" for="prop-restitution" title="Coefficient of restitution (0.0–1.0): collision bounciness (0 = no bounce, 1 = perfectly elastic)">Restitution ⓘ</label>
+                <input id="prop-restitution" class="inspector-input" type="number" min="0" max="1" step="0.01" value="0.01">
+                <div class="tooltip-text">Collision bounciness (0.0 to 1.0).<br>0.0 is inelastic (no bounce), 1.0 is perfectly elastic bounce.</div>
+              </div>
+              <div class="inspector-field has-tooltip">
+                <label class="inspector-sublabel" for="prop-mass" title="Rigid body mass (kg): determines inertia and acceleration (F = m · a). Defaults to volume × 10 kg/m³">Mass (kg) ⓘ</label>
+                <input id="prop-mass" class="inspector-input" type="number" min="0.1" step="1" value="10">
+                <div class="tooltip-text">Mass in kg, determining inertia & acceleration (F = m · a).<br>Defaults to voxel volume × 10 kg/m³ (micro block = 0.08 kg, min 0.1 kg).</div>
+              </div>
+            </div>
+            <div class="inspector-grid">
+              <div class="inspector-item">
+                <span class="inspector-sublabel">Blocks</span>
+                <span id="prop-node-blocks" class="inspector-num">12</span>
+              </div>
+              <div class="inspector-item">
+                <span class="inspector-sublabel">Volume</span>
+                <span id="prop-node-volume" class="inspector-num">12.0 m³</span>
+              </div>
+            </div>
+            <div class="inspector-field has-tooltip">
+              <label class="inspector-label" title="Joints & constraints connecting this component to its parent or child nodes">Constraints ⓘ</label>
+              <span id="prop-node-constraints" class="inspector-val">0</span>
+              <div class="tooltip-text">Physical joints/constraints connecting this component to parent or child nodes (welds, hinges, sliders).</div>
+            </div>
+            <div class="inspector-field has-tooltip">
+              <label class="inspector-label" title="Local anchor center [x, y, z] (m) for rotation center, force applications, and physics calculations">Pivot ⓘ</label>
+              <span id="prop-node-pivot" class="inspector-val mono">[0.0, 0.0, 0.0]</span>
+              <div class="tooltip-text">Local anchor point [x, y, z] (m) for rotation center, physics calculations, and force applications.</div>
+            </div>
+            <div class="inspector-field has-tooltip">
+              <label class="inspector-label" title="3D position offset [x, y, z] (m) relative to the parent coordinate frame">Local Pos ⓘ</label>
+              <span id="prop-node-pos" class="inspector-val mono">[0.0, 0.0, 0.0]</span>
+              <div class="tooltip-text">3D position offset [x, y, z] (m) relative to the parent component's local coordinate frame.</div>
+            </div>
+            <div class="inspector-field has-tooltip">
+              <label class="inspector-label" title="Euler rotation angles [pitch°, yaw°, roll°] relative to the parent coordinate frame">Local Rot ⓘ</label>
+              <span id="prop-node-rot" class="inspector-val mono">[0.0, 0.0, 0.0]</span>
+              <div class="tooltip-text">Euler orientation angles [pitch°, yaw°, roll°] relative to the parent component's coordinate frame.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center: Code Editor with Component Tab Navigation -->
+        <div class="code-area-wrapper">
+          <div class="code-tab-bar" id="code-tab-bar">
+            <!-- Dynamic component tabs, e.g. [R root] [C child_1] -->
+          </div>
+          <div class="code-editor-main">
+            <div class="code-gutter" id="code-gutter"></div>
+            <textarea id="script-textarea" class="code-textarea" spellcheck="false" placeholder="// Write your controller code here..."></textarea>
+          </div>
+          <div class="code-footer-hint" id="code-footer-hint">
+            <span id="code-target-hint">Editing: root (body)</span>
+            <span id="code-api-hint" class="code-api-hint">API: self · ctx</span>
+          </div>
+        </div>
+
+        <!-- Right: 3D Preview, Direct state API telemetry, Console Logs -->
+        <div class="telemetry-panel">
+          <div class="telemetry-section-title">3D VIEW</div>
+          <div class="entity-preview-frame">
+            <canvas id="entity-preview-canvas" aria-label="Interactive preview of the entity in the current world"></canvas>
+          </div>
+
+          <div class="telemetry-section-title">ENTITY STATE API</div>
+
+          <div class="telemetry-grid">
+            <div class="telemetry-item">
+              <span class="tele-label">Ground Dist</span>
+              <span id="tele-ground-dist" class="tele-val highlight">4.50 m</span>
+            </div>
+            <div class="telemetry-item">
+              <span class="tele-label">Altitude</span>
+              <span id="tele-altitude" class="tele-val">18.5 m</span>
+            </div>
+            <div class="telemetry-item">
+              <span class="tele-label">Speed</span>
+              <span id="tele-speed" class="tele-val">0.00 m/s</span>
+            </div>
+            <div class="telemetry-item">
+              <span class="tele-label">Mass</span>
+              <span id="tele-mass" class="tele-val">14.4 kg</span>
+            </div>
+            <div class="telemetry-item power-item has-tooltip">
+              <span class="tele-label" title="Percentage of maximum force and torque budget currently consumed by legacy top-level root force commands">Root Power Budget ⓘ</span>
+              <span id="tele-power" class="tele-val highlight">0%</span>
+              <span class="power-meter"><span id="tele-power-fill"></span></span>
+              <div class="tooltip-text"><b>Root Power Budget</b>: % of max force & torque budget used by legacy top-level root commands (<code>applyForce</code>, <code>applyTorque</code>). Per-component <code>self.body.apply*</code> is unmetered.</div>
+            </div>
+          </div>
+
+          <div class="telemetry-section-title" style="margin-top: 8px;">CONSOLE LOGS</div>
+          <div id="tele-console-logs" class="console-logs-box">
+            <div class="log-line text-muted">Terminal ready, waiting for script output...</div>
+          </div>
+        </div>
+
+        <!-- Far right: AI Assistant Chat column -->
+        <div class="agent-column">
+          <div class="telemetry-section-title agent-chat-title">
+            <span>AI ASSISTANT</span>
+            <div class="agent-title-actions">
+              <button id="agent-clear-btn" class="mini-toggle-btn reset" title="Clear chat history">🗑 CLEAR</button>
+              <button id="agent-settings-btn" class="mini-toggle-btn reset" title="Toggle model API settings">
+                ⚙ SETUP <span id="agent-setup-arrow" class="setup-arrow">▼</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Accordion Collapsible Setup Panel -->
+          <div id="agent-setup-accordion" class="agent-setup-accordion" style="display: none;">
+            <div class="agent-config-field">
+              <span class="config-label">API Base URL</span>
+              <input id="agent-api-base" class="config-input" type="text" placeholder="https://api.openai.com/v1" autocomplete="off">
+            </div>
+            <div class="agent-config-field">
+              <span class="config-label">API Key</span>
+              <input id="agent-api-key" class="config-input" type="password" placeholder="sk-..." autocomplete="off">
+            </div>
+            <div class="agent-config-field">
+              <span class="config-label">Model</span>
+              <input id="agent-api-model" class="config-input" type="text" placeholder="gpt-4o-mini" autocomplete="off">
+            </div>
+            <div class="agent-config-field">
+              <span class="config-label">Context Window (K tokens)</span>
+              <input id="agent-context-length" class="config-input" type="number" min="1" max="2048" step="1" placeholder="32" autocomplete="off">
+            </div>
+            <div class="agent-config-field">
+              <span class="config-label">Max Output (K tokens)</span>
+              <input id="agent-max-tokens" class="config-input" type="number" min="0.1" max="128" step="0.5" placeholder="4" autocomplete="off">
+            </div>
+            <div class="agent-config-actions">
+              <button id="agent-config-save-btn" class="small-btn primary">Save Config</button>
+            </div>
+            <div class="config-hint">Key is saved in browser localStorage. Without a key, uses local compiler.</div>
+          </div>
+
+          <div id="agent-chat-box" class="agent-chat-box">
+            <div class="agent-chat-msg agent-msg-system">Tip: describe a behavior in plain language (e.g. &quot;hover 5 meters above ground&quot;). Configure an API Key to use a real model, otherwise the built-in local compiler is used.</div>
+          </div>
+          <div class="agent-chat-input-row">
+            <input id="agent-chat-input" class="agent-chat-input" type="text" autocomplete="off"
+              placeholder="e.g. follow me 3m behind to the right..." />
+            <button id="agent-chat-send-btn" class="agent-send-btn">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Structure Blueprints Modal (B key) -->
+  <div id="blueprints-modal" class="custom-modal">
+    <div class="modal-content large">
+      <div class="modal-header">
+        <h2>Structure Blueprints</h2>
+        <button id="close-blueprints-btn" class="icon-btn" style="width: 28px; height: 28px; font-size: 13px;">✕</button>
+      </div>
+      <div class="modal-sub">Click to spawn a colored structure in front of you — ready to use!</div>
+      <div id="blueprints-grid" class="blueprints-grid"></div>
+    </div>
+  </div>
+
+  <!-- Tools & Colors Inventory Modal (E key) -->
+  <div id="inventory-modal" class="custom-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Backpack</h2>
+        <button id="close-inv-btn" class="icon-btn" style="width: 28px; height: 28px; font-size: 13px;">✕</button>
+      </div>
+      <div class="modal-sub">9 block sets · 9 entities · 9 color sets — exportable as JSON · ⬡ STL meshes importable as block sets</div>
+      <div id="inventory-grid" class="inventory-grid"></div>
+    </div>
+  </div>
+
+  <!-- Script API Reference Modal (button inside the code editor) -->
+  <div id="api-docs-modal" class="custom-modal">
+    <div class="modal-content api-docs-container">
+      <div class="modal-header">
+        <h2>📖 ENTITY SCRIPT API V2 REFERENCE</h2>
+        <button id="close-api-docs-btn" class="icon-btn" style="width: 28px; height: 28px; font-size: 13px;" title="Close docs (ESC)">✕</button>
+      </div>
+      <div class="modal-sub">Entity behavior script reference · isolated QuickJS per loaded entity · one script per component · press C to open the editor</div>
+      <div class="api-docs-body" id="api-docs-body">
+
+        <!-- ================= Defaults & Conventions ================= -->
+        <div class="api-section">
+          <div class="api-h2">Defaults &amp; coordinate conventions</div>
+          <table class="api-table">
+            <thead><tr><th>Property</th><th>Default</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><b>Pivot (rotation center)</b></td>
+                <td>Geometric center of the component's own blocks (AABB centroid)</td>
+                <td>
+                  <code>setLocalSpin</code> and <code>setLocalEuler</code> always rotate around this point.
+                  The pivot is captured when the component is created and <b>never updates automatically</b>
+                  when blocks change (placing/removing blocks, repainting, or subdividing 1x1x1 → 5x5x5
+                  does not move the rotation axis). To update it at runtime read the new bounds with
+                  <code>self.getBounds()</code> and apply them with <code>self.setPivot(...)</code>
+                  (blocks stay in place — only the rotation axis moves). See the
+                  <em>Blocks-changed events</em> section below for reacting to edits automatically.
+                  To reposition the pivot at build time, select the component in the Selector tool and use
+                  <b>G</b> to re-assemble with a different block layout — the pivot recalculates on each assembly.
+                </td>
+              </tr>
+              <tr>
+                <td><b>Component id</b></td>
+                <td>Unique across the whole entity</td>
+                <td>
+                  Every component is addressed by its <code>id</code> string (<code>self.child('arm')</code>,
+                  <code>node.children()</code>, code tabs). Ids are unique across the entire entity,
+                  so siblings can never share one; <code>root</code> is reserved. Rename via the component
+                  inspector (Rename button).
+                </td>
+              </tr>
+              <tr>
+                <td><b>Local position origin</b></td>
+                <td>Pivot offset relative to the parent's pivot</td>
+                <td>
+                  When a child is first created its <code>localPosition</code> is <code>[0,0,0]</code> in the
+                  parent's pivot frame, meaning the two pivots coincide. Calling
+                  <code>setLocalPosition</code> moves the child pivot away from the parent pivot. The
+                  root has no parent, so a kinematic root's transform setters use world space.
+                </td>
+              </tr>
+              <tr>
+                <td><b>Local rotation</b></td>
+                <td>Identity (no rotation)</td>
+                <td>
+                  Child components start aligned with their parent. All Euler angles use
+                  <b>YXZ order</b> (yaw → pitch → roll); quaternions follow the Three.js convention
+                  (<code>[x, y, z, w]</code>).
+                </td>
+              </tr>
+              <tr>
+                <td><b>Coordinate system</b></td>
+                <td>Right-handed, Y-up</td>
+                <td>
+                  +X right, +Y up, +Z toward the viewer (same as Three.js world space).
+                  <code>applyLocalForce([0, 0, -1])</code> pushes the entity <em>forward</em>
+                  along its own nose.
+                </td>
+              </tr>
+              <tr>
+                <td><b>Script state on start</b></td>
+                <td>All components enabled</td>
+                <td>
+                  Toggle individual component scripts with the <b>ON/OFF</b> switch in the code
+                  editor tab. The state persists when you exit the editor. Global <b>Pause</b>
+                  disables every script without clearing state; global <b>Stop</b> additionally
+                  resets state, script time/tick, child transforms/spins, and pending forces.
+                </td>
+              </tr>
+              <tr>
+                <td><b>Legacy root force budget (initial)</b></td>
+                <td><code>maxForce = max(80, mass × 65)</code></td>
+                <td>
+                  Applies only to the legacy root-body force surface and is recalculated whenever root blocks are added or removed. Check
+                  <code>ctx.limits.maxForce</code> / <code>ctx.limits.maxTorque</code> at runtime.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ================= World Topology ================= -->
+        <div class="api-section">
+          <div class="api-h2">World topology (torus)</div>
+          <ul class="api-ul">
+            <li>The world is a <b>torus</b>: flat coordinates wrap. <code>X ∈ [0, 16384)</code> and <code>Z ∈ [0, 2048)</code> are cyclic; <code>Y ∈ [0, 128)</code> is the only vertical range accepted by world voxel edits (out of range → <code>invalid_position</code>). The nominal donut surface (ground) sits at <code>y = 16</code>.</li>
+            <li>Queued world mutations wrap X/Z automatically. The entity's <code>ctx.position</code> does <b>not</b> wrap — it can run past the seam while flying, so raw position differences are only valid on one side of the seam.</li>
+            <li>For follow / orbit / seek behaviour that must survive the seam, compute each X/Z delta as the shortest wrapped distance (Y is never wrapped):</li>
+          </ul>
+          <pre class="api-code"><code>// torus sizes: X = 16384, Z = 2048
+function wrappedDelta(from, to, size) {
+  return ((to - from) % size + size + size / 2) % size - size / 2;
+}
+
+// Keep the entity ~1 m behind the player, correct even across the seam:
+const dx = wrappedDelta(ctx.position[0], playerPos[0], 16384) - 1;
+const dz = wrappedDelta(ctx.position[2], playerPos[2], 2048);
+const dy = playerPos[1] - ctx.position[1]; // no wrap on Y</code></pre>
+        </div>
+
+        <!-- ================= Execution Model ================= -->
+        <div class="api-section">
+          <div class="api-h2">Execution model</div>
+          <ul class="api-ul">
+            <li><b>Every script</b> receives <code>(self, ctx)</code>: <code>self</code> is that component's action API; <code>ctx</code> is a read-only sensor snapshot whose body fields (<code>position</code>, <code>velocity</code>, <code>rotation</code>, <code>mass</code>, <code>bodyType</code>) always describe the root entity.</li>
+            <li><code>ctx.root</code> is the root component. Traverse the real hierarchy recursively with <code>node.children()</code>; there is no flat component snapshot.</li>
+            <li>Store cross-frame values in <code>self.state</code>. State is isolated by component, so sibling scripts cannot accidentally reuse the same variable name. Global Stop clears all component state.</li>
+            <li>Scripts are submitted once per physics frame to a shared Worker; each loaded scripted entity owns an isolated QuickJS Runtime. Completed command buffers normally commit on the following frame.</li>
+            <li>Read state from <code>ctx</code>. Dynamic bodies move through force/torque APIs and cannot accept direct pose writes; kinematic bodies additionally accept the documented <code>setLocalPosition</code>/<code>setLocalRotation</code>/<code>setLocalEuler</code> commands. No public API directly sets velocity.</li>
+            <li><b>Ordering</b>: the root script runs first, then child scripts in the order their code was first set. All components of one entity share a single frozen <code>ctx</code> snapshot: rigid-body fields (<code>position</code>, <code>velocity</code>, <code>rotation</code>, …) are sampled at frame start, so siblings cannot read each other's motion within the same frame.</li>
+            <li>Mutations are queued and revalidated on the main thread. An admitted immediate result is provisional with <code>reason: 'queued'</code>; a full 256-command entity buffer returns <code>ok: false</code> with <code>reason: 'command_limit'</code>. Standard-world writes are visible to later sibling scripts through the current frame's overlay.</li>
+            <li>Thrown script exceptions are caught: only the failing component script is disabled and marked <b>ERROR</b>; sibling scripts continue. Every component invocation has a <code>5 ms</code> interrupt deadline, so an infinite loop cannot freeze the page.</li>
+            <li>An entity is loaded and simulated only while its wrapped root chunk is active. Leaving the streaming window serializes its identity, hierarchy, physics, scripts, and <code>self.state</code>, then destroys its scene object and QuickJS Runtime. Reloading the chunk creates a fresh instance and resumes the frozen state.</li>
+            <li>An entity whose root falls below <code>y = -30</code> is removed together with all component scripts and <code>self.state</code>.</li>
+          </ul>
+        </div>
+
+        <!-- ================= ctx ================= -->
+        <div class="api-section">
+          <div class="api-h2">ctx — sensor snapshot (read-only)</div>
+          <table class="api-table">
+            <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>apiVersion</code></td><td>number</td><td>Current script API version: <code>2</code></td></tr>
+              <tr><td><code>entityId</code></td><td>string</td><td>Stable random ID of the current entity, also shown in the Behavior Terminal header</td></tr>
+              <tr><td><code>root</code></td><td>ComponentAPI</td><td>Root component and entry point for recursive tree traversal</td></tr>
+              <tr><td><code>time</code></td><td>number</td><td>Seconds with at least one component script enabled; Pause freezes it and Stop resets it</td></tr>
+              <tr><td><code>deltaTime</code></td><td>number</td><td>Current simulation step in seconds — use it only when explicitly integrating a rate</td></tr>
+              <tr><td><code>tick</code></td><td>number</td><td>Executed script-frame count; Pause freezes it and Stop resets it</td></tr>
+              <tr><td><code>position</code></td><td>[x,y,z]</td><td>Root entity world position</td></tr>
+              <tr><td><code>velocity</code></td><td>[x,y,z]</td><td>World-space velocity (m/s)</td></tr>
+              <tr><td><code>rotation</code></td><td>[x,y,z]</td><td>Euler angles in radians, YXZ order</td></tr>
+              <tr><td><code>angularVelocity</code></td><td>[x,y,z]</td><td>Angular velocity (rad/s)</td></tr>
+              <tr><td><code>groundDistance</code></td><td>number</td><td>Distance to the ground below (metres)</td></tr>
+              <tr><td><code>mass</code></td><td>number</td><td>Entity mass (kg)</td></tr>
+              <tr><td><code>bodyType</code></td><td>string</td><td>Root body type: <code>'kinematic'</code> or <code>'dynamic'</code></td></tr>
+              <tr><td><code>gravity</code></td><td>[x,y,z]</td><td>Current gravity vector (default <code>[0,-18,0]</code>)</td></tr>
+              <tr><td><code>limits</code></td><td>object</td><td><code>{maxForce, maxTorque}</code> — ceiling for the legacy root-body force surface only</td></tr>
+              <tr><td><code>input</code></td><td>object</td><td>Keyboard input queries — see the <code>ctx.input</code> section below</td></tr>
+              <tr><td><code>blocks</code></td><td>object</td><td>Block-edit queries (same frame-snapshot style as <code>ctx.input</code>): <code>pressed(type?)</code> — true when blocks were edited since the last frame (optionally filter by <code>'place'|'remove'|'color'|'subdivide'</code>); <code>event()</code> — the latest edit <code>{type, nodeId, blockCount}</code> or <code>null</code>. Fires even when the bounding box did not change (e.g. repainting only)</td></tr>
+              <tr><td><code>players</code></td><td>array</td><td>Player list (multiplayer-ready): <code>[{id: string, position:[x,y,z]}]</code>; empty array when no player context is available. <code>position</code> is the player's <b>eye</b> (feet + 1.62 m, + 1.3 m crouched), not the feet</td></tr>
+              <tr><td><code>world</code></td><td>object</td><td>World query API — see the <code>ctx.world</code> section below</td></tr>
+              <tr><td><code>selection</code></td><td>object</td><td>Shared engine selection command API — see the <code>ctx.selection</code> section below</td></tr>
+              <tr><td><code>log(msg)</code></td><td>fn</td><td>Append a line to CONSOLE LOGS</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ================= self ================= -->
+        <div class="api-section">
+          <div class="api-h2">Component API (self) — one object for every component</div>
+          <p class="api-sub">Everything is a component: the root body is the <b>root component</b>, everything else is a child component. Every script uses the unified signature <code>(self, ctx)</code>.</p>
+
+          <div class="api-h3">Universal (same on root and children)</div>
+          <table class="api-table">
+            <thead><tr><th>Method</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>self.apiVersion</code></td><td>Current component API version: <code>2</code></td></tr>
+              <tr><td><code>self.id</code> / <code>self.parentId</code></td><td>Component id and direct parent id; the root is <code>{id:'root', parentId:null}</code></td></tr>
+              <tr><td><code>self.state</code></td><td>Mutable persistent state scoped to this component and retained across frames</td></tr>
+              <tr><td><code>self.child(id)</code></td><td>Look up a known <b>direct child</b> by id; returns <code>null</code> when missing. <code>child('root')</code> returns the root component itself</td></tr>
+              <tr><td><code>self.children()</code></td><td>Return a frozen array of direct child component APIs. Start at <code>ctx.root</code> and recurse to visit the whole tree</td></tr>
+              <tr><td><code>self.applyThrust([x,y,z])</code></td><td><b>General-purpose thrust</b>: root-body-local force (N) applied at this component — on the root component it acts at the center of mass (= <code>applyLocalForce</code>); on a child it acts at its mounting point (off-center placement generates torque). Direction is independent of the spin axis; dynamic root only, subject to the force budget</td></tr>
+              <tr><td><code>self.applyForce([x,y,z])</code></td><td>World-space force (N) at the center of mass — same on every component; no effect on a kinematic root</td></tr>
+              <tr><td><code>self.applyLocalForce([x,y,z])</code></td><td>Body-space force (rotates with the entity). On a child the direction is interpreted in that component's own local frame and converted to the entity frame (component +Z maps through its rotation)</td></tr>
+              <tr><td><code>self.applyForceAt([x,y,z], [lx,ly,lz])</code></td><td>World-space force at a local offset point — produces both translation and torque. On a child the offset point is in that component's local frame (relative to its pivot) and converted to entity-local coordinates</td></tr>
+              <tr><td><code>self.applyTorque([x,y,z])</code></td><td>World-space torque — same on every component</td></tr>
+              <tr><td><code>self.getWorldPosition()</code></td><td>Returns this component's world position as <code>[x,y,z]</code></td></tr>
+              <tr><td><code>self.getWorldRotation()</code></td><td>Returns the world-space quaternion <code>[x,y,z,w]</code> (includes all parent rotations)</td></tr>
+              <tr><td><code>self.getPivot()</code></td><td>Returns the current rotation center (pivot) as <code>[x,y,z]</code> in entity-local coordinates, matching <code>getBounds()</code> and <code>setPivot()</code></td></tr>
+              <tr><td><code>self.getBounds()</code></td><td>Returns this component's block bounding box in entity-local coordinates: <code>{min, max, size, center}</code> (each <code>[x,y,z]</code>); <code>null</code> if it has no blocks</td></tr>
+              <tr><td><code>self.voxels.set(position, options?)</code></td><td>Place one standard voxel at a component-local cell. <b>Cells are measured from this component's pivot</b> (the root pivot is the AABB centroid of its blocks), not from the entity corner; fractional coordinates are floored after applying the pivot. <code>options</code> accepts <code>{color:0xRRGGBB}</code> or <code>{r,g,b}</code>; when omitted the color inherits the component's first block (default <code>0xf2a93b</code> when it has no blocks yet). Returns <code>{ok,placed,reason}</code></td></tr>
+              <tr><td><code>self.voxels.clear(position)</code></td><td>Remove this component's standard voxel only; returns <code>{ok,removed,reason}</code></td></tr>
+              <tr><td><code>self.voxels.paint(position, options?)</code></td><td>Repaint one existing standard voxel through the same command used by the Brush; returns <code>{ok,painted,reason}</code></td></tr>
+              <tr><td><code>self.voxels.clearCell(position)</code></td><td>Remove this component's standard or micro voxels in one 1 m cell through the same command used by the Shovel; returns <code>{ok,removed,reason}</code></td></tr>
+              <tr><td><code>self.voxels.subdivide(position, clearOffset?)</code></td><td>Convert one standard voxel into 125 micro voxels; optionally remove one offset atomically, matching the Spoon's direct carve. Returns <code>{ok,subdivided,removed,reason}</code></td></tr>
+              <tr><td><code>self.microVoxels.set(cell, offset, options?)</code></td><td>Place one 0.2 m voxel. Each offset value is an integer from 0 through 4. Same pivot-relative cell origin and inherited-default-color rules as <code>self.voxels</code>; returns <code>{ok,placed,reason}</code></td></tr>
+              <tr><td><code>self.microVoxels.clear(cell, offset)</code></td><td>Remove this component's exact micro voxel; returns <code>{ok,removed,reason}</code></td></tr>
+              <tr><td><code>self.microVoxels.paint(cell, offset, options?)</code></td><td>Repaint one existing micro voxel; returns <code>{ok,painted,reason}</code></td></tr>
+              <tr><td><code>self.localToWorldDirection([x,y,z])</code></td><td>Convert a local-space direction to world space (includes all parent rotations)</td></tr>
+            </tbody>
+          </table>
+          <p class="api-sub">All voxel edit results are action-specific: check <code>result.ok</code> and read <code>result.reason</code> on failure. Entity bounding boxes are capped at <b>64×64×64</b>: a placement that would extend the entity AABB beyond the cap fails with <code>bounds_exceeded</code>. Removing the entity's final voxel deletes the entity together with all scripts and <code>self.state</code>.</p>
+
+          <div class="api-h3">Kinematics (only <code>kinematic</code> component bodies accept direct pose commands; dynamic bodies are physics-driven)</div>
+          <table class="api-table">
+            <thead><tr><th>Method</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>self.setLocalPosition([x,y,z])</code></td><td>Set kinematic-child position relative to the parent, or kinematic-root world position</td></tr>
+              <tr><td><code>self.setLocalEuler([x,y,z])</code></td><td>Set kinematic-child relative orientation, or kinematic-root world orientation, as Euler angles (radians, YXZ order)</td></tr>
+              <tr><td><code>self.setLocalRotation([x,y,z,w])</code></td><td>Set kinematic-child relative orientation, or kinematic-root world orientation, as a quaternion</td></tr>
+              <tr><td><code>self.setLocalSpin([ax,ay,az], rpm)</code></td><td>Spin continuously around a local axis at the given RPM; call every frame to sustain the speed</td></tr>
+              <tr><td><code>self.getLocalPosition()</code></td><td>Returns current local position as <code>[x,y,z]</code></td></tr>
+              <tr><td><code>self.getLocalRotation()</code></td><td>Returns current local quaternion as <code>[x,y,z,w]</code></td></tr>
+              <tr><td><code>self.setPivot([x,y,z])</code></td><td>Update a kinematic body's rotation center explicitly (entity-local coordinates, same frame as <code>getBounds()</code>). The pivot does <b>not</b> auto-update when blocks change. Dynamic bodies use their physical center of mass. Rebuilding the hierarchy invalidates previously obtained component APIs — re-fetch with <code>self.child(id)</code></td></tr>
+            </tbody>
+          </table>
+
+          <div class="api-h3">Rigid body and constraints (available on every component)</div>
+          <table class="api-table">
+            <thead><tr><th>Method</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>self.body.getType()</code> / <code>self.body.setType(type)</code></td><td>Read <code>'kinematic'|'dynamic'</code>; setter returns <code>{ok,type,reason}</code>. World voxels are the static collision layer; entity bodies have no static type</td></tr>
+              <tr><td><code>self.body.getMass()</code> / <code>self.body.setMass(kg)</code></td><td>Read mass; setter returns <code>{ok,mass,reason}</code>. Automatic mass defaults to owned block count × <code>10 kg</code>; a manual value survives hierarchy rebuilds. Non-positive/non-finite input returns <code>invalid_mass</code>; positive values below <code>0.1 kg</code> clamp to <code>0.1 kg</code></td></tr>
+              <tr><td><code>self.body.getMaterial()</code> / <code>self.body.setMaterial({...})</code></td><td>Read <code>{restitution,friction}</code>; setter returns <code>{ok,material,reason}</code>. Both coefficients clamp to <code>[0,1]</code>. Restitution defaults to <code>0.01</code> and friction to <code>0.7</code></td></tr>
+              <tr><td><code>self.body.getVelocity()</code> / <code>self.body.getAngularVelocity()</code></td><td>Read this component body's world-space velocities</td></tr>
+              <tr><td><code>self.body.applyForce(force)</code> / <code>self.body.applyLocalForce(force)</code> / <code>self.body.applyTorque(torque)</code></td><td>Apply force or torque to this component body's independent accumulator; returns <code>true</code> only for a dynamic body with a valid vector and available command slot. Kinematic bodies ignore forces. These methods are not clamped by <code>ctx.limits</code> or included in the HUD meter, even when <code>self</code> is the root; all components must nevertheless be finite and at most <code>1e12</code> in magnitude</td></tr>
+              <tr><td><code>self.constraints.all()</code></td><td>Frozen array of complete definitions: <code>{id,type,bodyA,bodyB,anchorA,anchorB,axisA,axisB,referenceA,referenceB,limits,stiffness,collideConnected}</code></td></tr>
+              <tr><td><code>self.constraints.create(options)</code></td><td>Create a point/hinge/weld from <code>options.other</code> (component id or <code>'world'</code> static anchor) to this body; returns <code>{ok,id,reason}</code>. Optional <code>stiffness</code> defaults to 0.9 and clamps to [0,1]; <code>collideConnected</code> defaults false. Without <code>id</code>, the base name is <code>${type}_${other}_${self.id}</code> with numeric suffixes for duplicates</td></tr>
+              <tr><td><code>self.constraints.remove(id)</code></td><td>Remove one constraint; returns boolean</td></tr>
+            </tbody>
+          </table>
+          <pre class="api-code"><code>// Create a world-anchored hinge once, retain its generated id, then remove it.
+if (!self.state.anchorId) {
+  const created = self.constraints.create({
+    type: 'hinge', other: 'world',
+    axisA: [0, 0, 1], axisB: [0, 0, 1],
+    stiffness: 0.9, collideConnected: false
+  });
+  if (created.ok) self.state.anchorId = created.id;
+  else ctx.log(created.reason);
+}
+if (self.state.anchorId && ctx.input.pressed('KeyQ')) {
+  self.constraints.remove(self.state.anchorId);
+  self.state.anchorId = null;
+}</code></pre>
+
+          <div class="api-h3">Root-only state (no-op on children)</div>
+          <table class="api-table">
+            <thead><tr><th>Method</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>self.setCockpitPosition([x,y,z])</code></td><td>Set the driver-seat position, relative to the root pivot (default <code>[0,0,0]</code>). While mounted (V), the player sits at this point and rotates with the entity</td></tr>
+              <tr><td><code>self.setVehicle(true/false)</code></td><td>Set whether the entity can be mounted with <b>V</b> (default <code>true</code>); <code>false</code> excludes it from vehicle pickup</td></tr>
+              <tr><td><code>self.getCockpitPosition()</code> / <code>self.getVehicle()</code></td><td>Read back the cockpit position and vehicle flag</td></tr>
+              <tr><td><code>self.stop()</code></td><td>Exactly the global Stop action: disable every component script and reset every <code>self.state</code>, script time/tick, child transforms/spins, and pending forces/torques. Root-only; child calls are no-ops, so child code should use <code>ctx.root.stop()</code>. It immediately ends the current script invocation</td></tr>
+            </tbody>
+          </table>
+
+          <div class="api-code-title">Spin vs. thrust — which to use?</div>
+          <ul class="api-ul">
+            <li><b>① Pure rotation (mechanism / decoration)</b>: <code>setLocalSpin(axis, rpm)</code> — works on any child component, produces no force. Use for turbine blades, rolling wheels, decorative rotors.</li>
+            <li><b>② Directed thrust (any direction)</b>: <code>applyThrust([x,y,z])</code> — completely decoupled from the spin axis. A quadrotor uses <code>setLocalSpin</code> for each rotor's visual motion plus <code>applyThrust([0, thrust, 0])</code> for lift; differential lift creates pitch/roll and <code>self.applyTorque</code> controls yaw.</li>
+          </ul>
+
+          <div class="api-code-title">Traverse the component tree</div>
+          <pre class="api-code"><code>function visit(node) {
+  ctx.log(node.id);
+  for (const child of node.children()) visit(child);
+}
+visit(ctx.root);</code></pre>
+          
+          <div class="api-code-title">Block edits &amp; pivot updates</div>
+          <ul class="api-ul">
+            <li><code>ctx.blocks.pressed(type?)</code> — true when blocks were edited since the last frame, in the same query style as <code>ctx.input</code>. Edits are <b>place</b>, <b>remove</b>, <b>color</b>, or <b>subdivide</b> (1x1x1 → 5x5x5); pass a type to filter. It is a one-frame edge: the next frame returns false. <code>ctx.blocks.event()</code> returns the latest edit as <code>{type, nodeId, blockCount}</code> (or <code>null</code>).</li>
+            <li>Edits are reported <b>even when the bounding box does not change</b> (e.g. repainting only).</li>
+            <li>The <b>pivot is never updated automatically</b>: adding, removing, repainting or subdividing blocks keeps the old rotation center. Update it explicitly with <code>self.getBounds()</code> → <code>self.setPivot(bounds.center)</code> (blocks stay in place; only the axis moves).</li>
+          </ul>
+          <pre class="api-code"><code>// Root script: keep a component's pivot centered on its current block layout.
+// No registration needed — just query every frame (like ctx.input).
+if (ctx.blocks.pressed()) {
+  const arm = self.child('arm');
+  if (arm) {
+    const bounds = arm.getBounds();
+    if (bounds) arm.setPivot(bounds.center); // re-center after any edit
+  }
+}
+
+// Filter by edit type if needed:
+// if (ctx.blocks.pressed('color')) { ... }   // repaint only
+// if (ctx.blocks.pressed('subdivide')) { ... } // 1x1x1 → 5x5x5 carving</code></pre>
+        </div>
+
+        <!-- ================= world ================= -->
+        <div class="api-section">
+          <div class="api-h2">ctx.world — world query API</div>
+          <table class="api-table">
+            <thead><tr><th>Method</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>ctx.world.apiVersion</code></td><td>Current world API version: <code>2</code></td></tr>
+              <tr><td><code>ctx.world.voxels.get([x,y,z])</code></td><td>Read the current script frame's standard-write overlay; cells not written this frame currently return air</td></tr>
+              <tr><td><code>ctx.world.voxels.set([x,y,z], options?)</code></td><td>Queue one standard voxel placement. An admitted result is provisional <code>{ok:true,placed:1,reason:'queued'}</code>; a full buffer returns <code>{ok:false,placed:0,reason:'command_limit'}</code>. The main thread validates occupancy and bounds before commit</td></tr>
+              <tr><td><code>ctx.world.voxels.clear([x,y,z])</code></td><td>Queue removal of one standard voxel without deleting micro voxels in that cell</td></tr>
+              <tr><td><code>ctx.world.voxels.paint([x,y,z], options?)</code></td><td>Queue repainting one existing standard world voxel</td></tr>
+              <tr><td><code>ctx.world.voxels.clearCell([x,y,z])</code></td><td>Queue removal of all standard and micro voxels in one world cell</td></tr>
+              <tr><td><code>ctx.world.voxels.subdivide([x,y,z], clearOffset?)</code></td><td>Queue conversion of one standard voxel into 125 micro voxels with optional offset removal</td></tr>
+              <tr><td><code>ctx.world.microVoxels.get(cell, offset)</code></td><td>Full synchronous micro-world reads are unavailable across the Worker boundary; currently returns air</td></tr>
+              <tr><td><code>ctx.world.microVoxels.set(cell, offset, options?)</code></td><td>Queue placement of one 0.2 m world voxel</td></tr>
+              <tr><td><code>ctx.world.microVoxels.clear(cell, offset)</code></td><td>Queue removal of one exact 0.2 m world voxel</td></tr>
+              <tr><td><code>ctx.world.microVoxels.paint(cell, offset, options?)</code></td><td>Queue repainting one existing micro world voxel</td></tr>
+              <tr><td><code>ctx.world.entities(origin, radius?)</code></td><td>Filter the frame's nearby-entity snapshot, prefetched to 64 m, by shortest wrapped X/Z distance</td></tr>
+              <tr><td><code>ctx.world.entities.get(id, chunkId?)</code></td><td>Look up one entity in the frame's nearby-entity snapshot</td></tr>
+              <tr><td><code>ctx.world.entities.list(chunkId)</code> / <code>ctx.world.entities.inChunk(chunkId)</code></td><td>Filter the nearby-entity snapshot by wrapped chunk id <code>"cx,cz"</code></td></tr>
+              <tr><td><code>ctx.world.raycast(origin, direction, maxDistance?)</code></td><td>Full synchronous raycasts over standard world voxels are unavailable across the Worker boundary and currently return <code>null</code></td></tr>
+            </tbody>
+          </table>
+          <p class="api-sub">The API never overwrites occupied cells and never converts between standard and micro voxels implicitly. World X/Z wrap on the torus — see <b>World topology</b> above.</p>
+        </div>
+
+        <!-- ================= selection ================= -->
+        <div class="api-section">
+          <div class="api-h2">ctx.selection — shared selector command API</div>
+          <p class="api-sub">Every mutating command returns <code>{ok,...,reason}</code>. When <code>ok === false</code>, inspect <code>reason</code>; <code>get()</code> is a query and returns the current selection snapshot instead. Selections are capped at a <b>64×64×64</b> AABB: box corners clamp to the cap (the result reports <code>clamped</code>), and single-cell toggles or <code>cells</code> batches that would exceed it are rejected with <code>bounds_exceeded</code>.</p>
+          <table class="api-table">
+            <thead><tr><th>Method</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>ctx.selection.get()</code></td><td>Read the shared Manager-owned world/entity selection snapshot</td></tr>
+              <tr><td><code>ctx.selection.clear()</code></td><td>Returns <code>{ok,cleared,reason}</code>. Does not forcibly cancel the player's separate current Selector-tool interaction state</td></tr>
+              <tr><td><code>ctx.selection.cornerA(point)</code> / <code>ctx.selection.cornerB(point)</code></td><td>Set progressive world-box corners; returns <code>{ok,selected,reason}</code>. Pass <code>{micro:true}</code> to work in 0.2 m units — the confirmed micro box materializes into the existing micro voxels it contains</td></tr>
+              <tr><td><code>ctx.selection.box(a,b)</code></td><td>Set an atomic two-point world box; returns <code>{ok,selected,reason}</code>. Accepts <code>{micro:true}</code> for 0.2 m corners</td></tr>
+              <tr><td><code>ctx.selection.cells(list)</code> / <code>ctx.selection.toggle(cell)</code></td><td>Replace or toggle sparse world cells; returns <code>{ok,selected,reason}</code>. <code>toggle</code> accepts <code>{micro:true}</code> to target 0.2 m cells instead of 1 m cells</td></tr>
+              <tr><td><code>ctx.selection.entity(entityId,nodeId?)</code></td><td>Select a component subtree and return <code>{ok,selected,reason}</code>. <code>nodeId</code> defaults to <code>root</code>; child selection requires stopped, whole-root works in every state</td></tr>
+              <tr><td><code>ctx.selection.entityBox(entityId,nodeId,a,b,space?)</code></td><td>Returns <code>{ok,selected,components,reason}</code> for direct owned voxels intersecting a box; default space is <code>node-local</code>, or pass <code>world</code>. Requires stopped. Pass <code>{micro:true}</code> to keep only 0.2 m blocks</td></tr>
+              <tr><td><code>ctx.selection.delete()</code></td><td>Delete the shared selection: root subtree removes its entity in any state; child subtree/entity-block selections require a stopped entity; world selections remove voxels. Returns <code>{ok,removed,standard,micro,entities,components,entityId,nodeId,reason}</code>; <code>entities</code> and <code>components</code> are removal counts. Returns <code>entity_not_stopped</code> when an internal selection is no longer editable</td></tr>
+              <tr><td><code>ctx.selection.assemble(mode='programmable',options={})</code></td><td>Modes: <code>auto</code>, <code>free_physics</code>, <code>bearing</code>, <code>piston</code>, <code>drivable</code>, <code>projectile</code>, <code>programmable</code>; <code>auto</code> aliases <code>programmable</code>. Options: <code>bodyType</code>, <code>restitution</code>, <code>friction</code>, <code>useGravity</code>, <code>mass</code>. Returns <code>{ok,assembled,entityId,runtimeId,reason}</code></td></tr>
+              <tr><td><code>ctx.selection.createChild(id?)</code></td><td>Create a child from the current entity-block selection; returns <code>{ok,childId,reason}</code>, with null <code>childId</code> on failure. The entity must be stopped</td></tr>
+            </tbody>
+          </table>
+          <p class="api-sub">Assembly defaults: <code>bodyType: 'dynamic'</code>, <code>restitution: 0.01</code>, <code>friction: 0.7</code>, gravity enabled for dynamic bodies and disabled for kinematic bodies, and mass equal to owned block count × 10 kg (minimum 0.1 kg). Restitution/friction clamp to [0,1]; invalid mass falls back to the block-count default. Reasons are <code>assembled</code>, <code>no_selection</code>, <code>empty</code>, and <code>invalid_mode</code>; failures return null IDs, and an invalid mode is rejected before changing the selection or world.</p>
+          <p class="api-sub">Mouse selector input and entity code dispatch through the same engine action layer, but the mouse adapter retains its own active interaction selection for R/T/Delete. Script-created selections should therefore be read and consumed through <code>ctx.selection</code>. Gate destructive operations with <code>self.state</code> or an input edge so they run once, not on every script frame.</p>
+        </div>
+
+        <!-- ================= input ================= -->
+        <div class="api-section">
+          <div class="api-h2">ctx.input — keyboard input</div>
+          <ul class="api-ul">
+            <li><code>ctx.input.down(code)</code> — true while the key is held</li>
+            <li><code>ctx.input.pressed(code)</code> — true only on the frame the key was first pressed (leading edge)</li>
+            <li><code>ctx.input.released(code)</code> — true only on the frame the key was released (trailing edge)</li>
+            <li><code>code</code> uses <code>KeyboardEvent.code</code> values: <code>KeyW</code> <code>KeyA</code> <code>KeyS</code> <code>KeyD</code> <code>Space</code> <code>ShiftLeft</code> …; the generic modifiers <code>Shift</code>, <code>Control</code> and <code>Alt</code> are accepted and match either side.</li>
+            <li>Only the entity currently <b>mounted</b> (press V to mount/leave) receives player input; autonomous entities always see empty input.</li>
+            <li>Editor-reserved keys are never forwarded to scripts: <code>Escape</code>, <code>Backspace</code>, <code>Delete</code>, <code>F3</code>, <code>F5</code>, <code>KeyB</code>, <code>KeyC</code>, <code>KeyE</code>, <code>KeyF</code>, <code>KeyG</code>, <code>KeyR</code>, <code>KeyV</code>, <code>Digit0</code>, <code>Digit1</code>, <code>Digit2</code>, <code>Digit3</code>, <code>Digit4</code>, <code>Digit5</code>, <code>Digit6</code>, <code>Digit7</code>, <code>Digit8</code>, <code>Digit9</code>. Scripts therefore <b>cannot use number keys</b>.</li>
+          </ul>
+        </div>
+
+        <!-- ================= Force budget ================= -->
+        <div class="api-section">
+          <div class="api-h2">Legacy root force budget</div>
+          <ul class="api-ul">
+            <li>The legacy top-level methods <code>self.applyForce</code>, <code>applyLocalForce</code>, <code>applyThrust</code>, <code>applyForceAt</code>, and <code>applyTorque</code> all target the root body and share a shape-aware ceiling: <code>maxForce = max(80, mass × 65)</code>, <code>maxTorque = max(40, maxForce × max(0.75, boundingRadius))</code>.</li>
+            <li>Requests through that legacy surface are clamped, and its real-time utilisation is shown in the HUD's <b>Root Power Budget</b> meter.</li>
+            <li>The <code>ctx.limits</code> clamp and HUD <b>Power Budget</b> cover only the legacy root-body force surface; <code>self.body.apply*</code> is not clamped to that gameplay budget or included in the meter. Both surfaces reject non-finite vectors and components above the separate <code>1e12</code> physics-safety ceiling.</li>
+            <li>Typical hover pattern: offset gravity with <code>ctx.mass × |gravity|</code>, then use a PD controller on the altitude error for stability.</li>
+          </ul>
+        </div>
+
+        <!-- ================= Tips ================= -->
+        <div class="api-section">
+          <div class="api-h2">Tips</div>
+          <ul class="api-ul">
+            <li><b>Ctrl/Cmd + Enter</b>: save script and return to game; <b>ESC</b>: close the panel.</li>
+            <li>Press <b>V</b> to mount an entity <em>before</em> writing a driving script — only mounted entities receive keyboard input. Press C while mounted to open the editor directly.</li>
+            <li><code>self.state</code> is the right place for persistent state: target altitude, phase counters, timers, etc. Each component owns a separate state object.</li>
+            <li>Use <code>ctx.deltaTime</code> only when integrating an explicit rate. Force and torque commands are already in N/N·m; do not multiply them by <code>deltaTime</code>.</li>
+            <li>Use the Selector to select an entity and press <b>R</b> to copy it. Copying automatically switches to Hammer, which previews and builds the inventory item with left-click. Use Wrench left-click on an entity to start/pause its code, or right-click to stop and reset runtime state. The blueprint library (<b>B</b>) contains ready-made drone, windmill, and Ferris wheel examples.</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Settings Modal (O key or top-right gear icon) -->
+  <div id="global-settings-modal" class="custom-modal">
+    <div class="modal-content settings-modal-content">
+      <div class="modal-header">
+        <h2>Global Settings</h2>
+        <button id="close-global-settings-btn" class="icon-btn" style="width: 28px; height: 28px; font-size: 13px;" title="Close settings (ESC)">✕</button>
+      </div>
+      <div class="modal-sub">Configure camera, perspective, and world preferences</div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">CAMERA &amp; VIEW</div>
+
+        <!-- Camera FOV -->
+        <div class="settings-row">
+          <div class="settings-label-group">
+            <span class="settings-label">Field of View (FOV)</span>
+            <span class="settings-desc">Camera lens angle (50° ~ 110°)</span>
+          </div>
+          <div class="settings-control-group">
+            <input id="setting-fov-slider" class="settings-slider" type="range" min="50" max="110" step="1" value="75">
+            <span id="setting-fov-val" class="settings-value-badge">75°</span>
+          </div>
+        </div>
+
+        <!-- Camera Perspective -->
+        <div class="settings-row">
+          <div class="settings-label-group">
+            <span class="settings-label">Perspective</span>
+            <span class="settings-desc">Cycle First, Third Back, and Third Front views (F3)</span>
+          </div>
+          <div class="settings-segmented-control" id="setting-perspective-group">
+            <button class="segment-btn active" data-perspective="first_person">1st Person</button>
+            <button class="segment-btn" data-perspective="third_person">3rd Back</button>
+            <button class="segment-btn" data-perspective="third_person_front">3rd Front</button>
+          </div>
+        </div>
+
+        <!-- Third Person Distance -->
+        <div class="settings-row" id="setting-cam-dist-row">
+          <div class="settings-label-group">
+            <span class="settings-label">Third Person Distance</span>
+            <span class="settings-desc">Camera offset distance from player</span>
+          </div>
+          <div class="settings-control-group">
+            <input id="setting-cam-dist-slider" class="settings-slider" type="range" min="2" max="8" step="0.5" value="4">
+            <span id="setting-cam-dist-val" class="settings-value-badge">4.0 m</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">PHYSICS &amp; ENVIRONMENT</div>
+        <div class="settings-row">
+          <div class="settings-label-group">
+            <span class="settings-label">Entity Gravity</span>
+            <span class="settings-desc">Rigid body world gravity simulation</span>
+          </div>
+          <div class="settings-segmented-control" id="setting-gravity-group">
+            <button class="segment-btn active" data-gravity="-18">Standard (-18)</button>
+            <button class="segment-btn" data-gravity="-5">Moon (-5)</button>
+            <button class="segment-btn" data-gravity="0">Zero-G (0)</button>
+          </div>
+        </div>
+
+        <!-- Chunk Render Distance -->
+        <div class="settings-row">
+          <div class="settings-label-group">
+            <span class="settings-label">Chunk Render Distance</span>
+            <span class="settings-desc">Voxel terrain mesh streaming radius (4 ~ 20 chunks)</span>
+          </div>
+          <div class="settings-control-group">
+            <input id="setting-render-dist-slider" class="settings-slider" type="range" min="4" max="20" step="1" value="12">
+            <span id="setting-render-dist-val" class="settings-value-badge">12 Chunks</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Start / Pause Hero Overlay -->
+  <div id="pause-screen">
+    <div class="hero-box">
+      <div class="hero-gear-icon">✦</div>
+      <h1 class="game-logo">EntropyDrop · Space</h1>
+      <p class="game-sub">Build anything. Tell it what to do. · AI-native programmable voxel physics</p>
+
+      <div class="features-highlight">
+        <div class="feat-item">
+          <span class="feat-icon">✦</span>
+          <b>Behavior via Natural Language</b>
+          <p>Point at an entity and press C — say &quot;follow me&quot; or &quot;hover 5 meters&quot; to generate code</p>
+        </div>
+        <div class="feat-item">
+          <span class="feat-icon">⬡</span>
+          <b>One Block · Any Color</b>
+          <p>Material type never limits your shape; instant color with palette, brush, and pipette</p>
+        </div>
+        <div class="feat-item">
+          <span class="feat-icon">⚡</span>
+          <b>Dual-Scale Micro-Carving</b>
+          <p>The shovel edits standard 1m blocks; the spoon carves each into 5x5x5 micro voxels</p>
+        </div>
+      </div>
+
+      <div class="controls-guide">
+        <span><kbd class="key-badge">W</kbd><kbd class="key-badge">A</kbd><kbd class="key-badge">S</kbd><kbd class="key-badge">D</kbd> Move / Drive</span>
+        <span><kbd class="key-badge">Space</kbd> Jump / Ascend</span>
+        <span><kbd class="key-badge">Shift+1-9</kbd> Palette color / Backpack slot</span>
+        <span><kbd class="key-badge">E</kbd> Backpack / Set colors</span>
+        <span><kbd class="key-badge">1</kbd> Shovel: remove / place 1m blocks</span>
+        <span><kbd class="key-badge">2</kbd> Spoon: micro-carve 5x5x5</span>
+        <span><kbd class="key-badge">3</kbd> Brush: paint / right-click sample</span>
+        <span><kbd class="key-badge">MMB</kbd> Sample color anywhere</span>
+        <span><kbd class="key-badge">4</kbd> Selector: box select (max 64×64×64) · Tab standard/micro blocks · R copy</span>
+        <span><kbd class="key-badge">5</kbd> Hammer: preview &amp; LMB build / RMB overwrite</span>
+        <span><kbd class="key-badge">6</kbd> Wrench: LMB drag force · RMB start/stop</span>
+        <span><kbd class="key-badge">Shift+Click</kbd> Multi-select component blocks</span>
+        <span><kbd class="key-badge">C</kbd> Entity editor</span>
+        <span><kbd class="key-badge">G</kbd> Assemble physics entity</span>
+        <span><kbd class="key-badge">V</kbd> Mount / leave drivable entity</span>
+        <span><kbd class="key-badge">B</kbd> Structure blueprint library</span>
+        <span><kbd class="key-badge">F</kbd> Fly mode</span>
+        <span><kbd class="key-badge">F3</kbd> Cycle 1st / 3rd Back / 3rd Front</span>
+        <span><kbd class="key-badge">ESC</kbd> Settings / release cursor</span>
+      </div>
+
+      <button id="start-btn" class="start-btn">Enter Space</button>
+    </div>
+  </div>
 
   <script type="module" src="/src/main.ts"></script>
 </body>
