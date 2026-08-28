@@ -1745,27 +1745,48 @@ export class UIManager {
       const card = document.createElement('div');
       card.className = 'inventory-card backpack-item';
 
-      // 3D Sandbox Thumbnail Preview for block sets and resting entities
+      // 3D Toolbar-style Preview Slot (Left Column)
+      const slotBox = document.createElement('div');
+      slotBox.className = 'backpack-slot-preview-box filled';
+      slotBox.innerHTML = `
+        <span class="backpack-slot-index">#${index + 1}</span>
+      `;
+
       if (category === 'blockset' || category === 'entity') {
-        const thumbUrl = InventoryThumbnailRenderer.getInstance().getThumbnail(item, 160);
+        const thumbUrl = InventoryThumbnailRenderer.getInstance().getThumbnail(item, 96);
         if (thumbUrl) {
-          const preview = document.createElement('div');
-          preview.className = 'backpack-item-preview';
           const img = document.createElement('img');
-          img.className = 'backpack-item-thumb';
+          img.className = 'inv-slot-thumb';
           img.src = thumbUrl;
           img.alt = fallbackName;
           img.draggable = false;
-          preview.appendChild(img);
-          card.appendChild(preview);
+          slotBox.appendChild(img);
         }
+      } else if (category === 'colorset') {
+        const grid = document.createElement('span');
+        grid.className = 'colorset-preview-grid';
+        grid.innerHTML = (item.colors || []).slice(0, 9).map((hex: string) => `<i style="background:${hex}"></i>`).join('');
+        slotBox.appendChild(grid);
       }
+
+      const countVal = item.blockCount || item.blocks?.length || 0;
+      if (countVal > 0) {
+        const countSpan = document.createElement('span');
+        countSpan.className = 'backpack-slot-count';
+        countSpan.textContent = String(countVal);
+        slotBox.appendChild(countSpan);
+      }
+
+      card.appendChild(slotBox);
+
+      // Right Column: Details, Input, Actions
+      const detailsCol = document.createElement('div');
+      detailsCol.className = 'backpack-item-details';
 
       const metaElement = document.createElement('div');
       metaElement.className = 'backpack-item-meta';
       metaElement.textContent = String(meta);
-      card.appendChild(metaElement);
-      if (extraHtml?.nodeType === 1) card.appendChild(extraHtml);
+
       const actionBar = document.createElement('div');
       actionBar.className = 'inv-item-actions';
       actions.forEach((action) => {
@@ -1775,18 +1796,36 @@ export class UIManager {
         button.addEventListener('click', action.run);
         actionBar.appendChild(button);
       });
-      card.appendChild(actionBar);
-      bindNameInput(card, category, index, item, fallbackName);
+
+      bindNameInput(detailsCol, category, index, item, fallbackName);
+      detailsCol.appendChild(metaElement);
+      if (extraHtml?.nodeType === 1) detailsCol.appendChild(extraHtml);
+      detailsCol.appendChild(actionBar);
+
+      card.appendChild(detailsCol);
       this.inventoryGrid.appendChild(card);
     };
 
-    const addEmptySlot = (label) => {
+    const addEmptySlot = (index, label) => {
       const card = document.createElement('div');
       card.className = 'inventory-card backpack-item backpack-item-empty';
+
+      const slotBox = document.createElement('div');
+      slotBox.className = 'backpack-slot-preview-box empty';
+      slotBox.innerHTML = `
+        <span class="backpack-slot-index">#${index + 1}</span>
+        <span class="backpack-slot-empty-icon">+</span>
+      `;
+      card.appendChild(slotBox);
+
+      const detailsCol = document.createElement('div');
+      detailsCol.className = 'backpack-item-details';
       const meta = document.createElement('div');
       meta.className = 'backpack-item-meta';
       meta.textContent = String(label);
-      card.appendChild(meta);
+      detailsCol.appendChild(meta);
+      card.appendChild(detailsCol);
+
       this.inventoryGrid.appendChild(card);
     };
 
@@ -1798,7 +1837,7 @@ export class UIManager {
     addSectionHeader('BLOCK SETS — hammer builds plain blocks', blockSetCount, 9, 'blockset');
     blockSets.forEach((item, index) => {
       if (!item) {
-        addEmptySlot(`Empty slot ${index + 1} · R copy or import`);
+        addEmptySlot(index, `Empty slot ${index + 1} · R copy or import`);
         return;
       }
       addItemCard(
@@ -1968,7 +2007,7 @@ export class UIManager {
     addSectionHeader('ENTITIES — hammer builds the physics entity', entities.filter(Boolean).length, 9, 'entity');
     entities.forEach((item, index) => {
       if (!item) {
-        addEmptySlot(`Empty slot ${index + 1} · R copy or import`);
+        addEmptySlot(index, `Empty slot ${index + 1} · R copy or import`);
         return;
       }
       const label = item.rootId || (item.rootIds ? `${item.rootIds.length} components` : 'entity');
