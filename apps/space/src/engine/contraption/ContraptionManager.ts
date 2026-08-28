@@ -5,6 +5,9 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../voxel/Chunk.ts';
 import {
   TORUS_SIZE_X,
   TORUS_SIZE_Z,
+  unwrapPeriodicNear,
+  wrapX,
+  wrapZ,
   wrapChunkX,
   wrapChunkZ,
   wrapMicroX,
@@ -820,7 +823,7 @@ export class ContraptionManager {
     if (pos) {
       this.selectionCornerA = opts.micro === true
         ? this.microCellFromPoint(pos)
-        : { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) };
+        : { x: wrapX(Math.floor(pos.x)), y: Math.floor(pos.y), z: wrapZ(Math.floor(pos.z)) };
     } else {
       this.selectionCornerA = null;
     }
@@ -843,7 +846,11 @@ export class ContraptionManager {
 
   /** Clamp a raw corner against the anchor corner so the box stays within MAX_ENTITY_BOUNDS cells per axis. */
   clampSelectionCorner(raw, anchor) {
-    const pos = { x: Math.floor(raw.x), y: Math.floor(raw.y), z: Math.floor(raw.z) };
+    const pos = {
+      x: unwrapPeriodicNear(Math.floor(raw.x), anchor.x, TORUS_SIZE_X),
+      y: Math.floor(raw.y),
+      z: unwrapPeriodicNear(Math.floor(raw.z), anchor.z, TORUS_SIZE_Z)
+    };
     let clamped = false;
     for (const axis of ['x', 'y', 'z']) {
       if (pos[axis] - anchor[axis] > MAX_ENTITY_BOUNDS - 1) {
@@ -859,7 +866,12 @@ export class ContraptionManager {
 
   /** Clamp a raw micro corner against the anchor so the box stays within MAX_ENTITY_BOUNDS standard cells per axis. */
   clampMicroSelectionCorner(raw, anchor) {
-    const pos = { x: raw.x, y: raw.y, z: raw.z, micro: true };
+    const pos = {
+      x: unwrapPeriodicNear(raw.x, anchor.x, TORUS_SIZE_X * MICRO_DIVISIONS),
+      y: raw.y,
+      z: unwrapPeriodicNear(raw.z, anchor.z, TORUS_SIZE_Z * MICRO_DIVISIONS),
+      micro: true
+    };
     let clamped = false;
     const limit = MAX_ENTITY_BOUNDS * MICRO_DIVISIONS - 1;
     for (const axis of ['x', 'y', 'z']) {
@@ -921,11 +933,17 @@ export class ContraptionManager {
     }
     let clamped = false;
     if (pos) {
-      const raw = { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) };
+      const raw = {
+        x: wrapX(Math.floor(pos.x)),
+        y: Math.floor(pos.y),
+        z: wrapZ(Math.floor(pos.z))
+      };
       if (this.selectionCornerA) {
         const result = this.clampSelectionCorner(raw, this.selectionCornerA);
         pos = result.pos;
         clamped = result.clamped;
+      } else {
+        pos = raw;
       }
     }
     this.selectionCornerB = pos;
@@ -948,9 +966,12 @@ export class ContraptionManager {
     if (cells) {
       for (const key of cells.keys()) {
         const [mx, my, mz] = key.split(',').map(Number);
-        if (mx < minMx || mx > maxMx || my < loY || my > hiY || mz < minMz || mz > maxMz) continue;
-        found.push({ x: mx, y: my, z: mz });
-        existingMicroKeys.add(key);
+        const selectionMx = unwrapPeriodicNear(mx, minMx, TORUS_SIZE_X * MICRO_DIVISIONS);
+        const selectionMz = unwrapPeriodicNear(mz, minMz, TORUS_SIZE_Z * MICRO_DIVISIONS);
+        if (selectionMx < minMx || selectionMx > maxMx || my < loY || my > hiY
+          || selectionMz < minMz || selectionMz > maxMz) continue;
+        found.push({ x: selectionMx, y: my, z: selectionMz });
+        existingMicroKeys.add(`${selectionMx},${my},${selectionMz}`);
       }
     }
 
@@ -1002,10 +1023,20 @@ export class ContraptionManager {
 
   setConnectedSelection(blocks) {
     this.clearChildSelection();
-    if (this.boundsExceedEntityLimit(this.getBoundsFromPoints(blocks))) {
+    const anchor = blocks?.[0]
+      ? { x: wrapX(Math.floor(blocks[0].x)), y: Math.floor(blocks[0].y), z: wrapZ(Math.floor(blocks[0].z)) }
+      : null;
+    const normalizedBlocks = anchor
+      ? blocks.map(block => ({
+          x: unwrapPeriodicNear(Math.floor(block.x), anchor.x, TORUS_SIZE_X),
+          y: Math.floor(block.y),
+          z: unwrapPeriodicNear(Math.floor(block.z), anchor.z, TORUS_SIZE_Z)
+        }))
+      : blocks;
+    if (this.boundsExceedEntityLimit(this.getBoundsFromPoints(normalizedBlocks))) {
       return false;
     }
-    this.connectedSelection = blocks;
+    this.connectedSelection = normalizedBlocks;
     this.selectionCornerA = null;
     this.selectionCornerB = null;
     this.microSelection = null;
@@ -1017,7 +1048,16 @@ export class ContraptionManager {
   addGluePoint(pos) {
     if (!pos) return 0;
     this.clearChildSelection();
-    const pt = { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) };
+    const anchor = this.gluePoints[0] || null;
+    const pt = {
+      x: anchor
+        ? unwrapPeriodicNear(Math.floor(pos.x), anchor.x, TORUS_SIZE_X)
+        : wrapX(Math.floor(pos.x)),
+      y: Math.floor(pos.y),
+      z: anchor
+        ? unwrapPeriodicNear(Math.floor(pos.z), anchor.z, TORUS_SIZE_Z)
+        : wrapZ(Math.floor(pos.z))
+    };
     // A plain click always returns from single mode to a fresh three-point
     // box. The click itself is point one, so only two more clicks are needed.
     if (this.connectedSelection !== null || this.gluePoints.length >= 3) {
@@ -1053,8 +1093,14 @@ export class ContraptionManager {
   toggleWorldGlueCell(pos) {
     if (!pos) return null;
     this.clearChildSelection();
-    const cell = { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) };
-    const key = `${cell.x},${cell.y},${cell.z}`;
+    const canonicalCell = { x: wrapX(Math.floor(pos.x)), y: Math.floor(pos.y), z: wrapZ(Math.floor(pos.z)) };
+    const anchor = this.connectedSelection?.[0] || canonicalCell;
+    const cell = {
+      x: unwrapPeriodicNear(canonicalCell.x, anchor.x, TORUS_SIZE_X),
+      y: canonicalCell.y,
+      z: unwrapPeriodicNear(canonicalCell.z, anchor.z, TORUS_SIZE_Z)
+    };
+    const key = `${canonicalCell.x},${cell.y},${canonicalCell.z}`;
 
     // Shift always enters single mode. Any unfinished or completed box is
     // intentionally discarded so the two interaction modes never overlap.
@@ -1066,7 +1112,9 @@ export class ContraptionManager {
       this.selectionCornerB = null;
     }
 
-    const index = this.connectedSelection.findIndex(item => `${item.x},${item.y},${item.z}` === key);
+    const index = this.connectedSelection.findIndex(item => (
+      `${wrapX(item.x)},${item.y},${wrapZ(item.z)}` === key
+    ));
     let rejected = false;
     if (index >= 0) {
       this.connectedSelection.splice(index, 1);
@@ -1098,8 +1146,14 @@ export class ContraptionManager {
   toggleMicroCell(pos) {
     if (!pos) return null;
     this.clearChildSelection();
-    const cell = this.microCellFromPoint(pos);
-    const key = `${cell.x},${cell.y},${cell.z}`;
+    const canonicalCell = this.microCellFromPoint(pos);
+    const anchor = this.microSelection?.[0] || canonicalCell;
+    const cell = {
+      x: unwrapPeriodicNear(canonicalCell.x, anchor.x, TORUS_SIZE_X * MICRO_DIVISIONS),
+      y: canonicalCell.y,
+      z: unwrapPeriodicNear(canonicalCell.z, anchor.z, TORUS_SIZE_Z * MICRO_DIVISIONS)
+    };
+    const key = `${canonicalCell.x},${cell.y},${canonicalCell.z}`;
 
     if (this.microSelection === null) {
       this.microSelection = [];
@@ -1109,7 +1163,9 @@ export class ContraptionManager {
       this.selectionCornerB = null;
     }
 
-    const index = this.microSelection.findIndex(item => `${item.x},${item.y},${item.z}` === key);
+    const index = this.microSelection.findIndex(item => (
+      `${wrapMicroX(item.x)},${item.y},${wrapMicroZ(item.z)}` === key
+    ));
     let rejected = false;
     if (index >= 0) {
       this.microSelection.splice(index, 1);

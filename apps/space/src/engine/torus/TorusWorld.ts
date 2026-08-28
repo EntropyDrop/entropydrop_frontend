@@ -55,6 +55,22 @@ export function wrapMicroZ(mz) {
   return ((mz % m) + m) % m;
 }
 
+/**
+ * Return the periodic equivalent of value that is nearest to anchor.
+ *
+ * Selection and interpolation code use this to keep a small range that crosses
+ * a torus seam continuous (for example X 16383..16385 instead of 0..16383).
+ * Storage and world lookup may still wrap the returned coordinate normally.
+ */
+export function unwrapPeriodicNear(value, anchor, period) {
+  if (!Number.isFinite(value) || !Number.isFinite(anchor) || !Number.isFinite(period) || period <= 0) {
+    return value;
+  }
+  let delta = ((value - anchor) % period + period) % period;
+  if (delta > period / 2) delta -= period;
+  return anchor + delta;
+}
+
 // -----------------------------------------------------------------------------
 // Bend and unbend.
 // -----------------------------------------------------------------------------
