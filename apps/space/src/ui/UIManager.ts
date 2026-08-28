@@ -7,6 +7,7 @@ import { loadAgentConfig, saveAgentConfig, runAgentTurn } from '../engine/contra
 import { MAX_STL_FILE_BYTES } from '../engine/voxel/STLVoxelizer.ts';
 import { ActionDomain } from '../engine/actions/BasicActions.ts';
 import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../engine/torus/TorusWorld.ts';
+import { InventoryThumbnailRenderer } from '../engine/render/InventoryThumbnailRenderer.ts';
 
 const TOOL_PIXEL_ICONS: Record<string, string> = {
   [SpecialTool.SHOVEL]: '',
@@ -1591,13 +1592,26 @@ export class UIManager {
       else if (isBlockSet) title = `Slot ${i + 1}: "${itemName}" · ${content.blockCount} voxels`;
       else title = `Slot ${i + 1}: "${itemName}" · ${content.blockCount} blocks · ${content.scripts?.length || 0} scripts`;
       slotEl.title = title + ` · Shift+${i + 1}`;
-      slotEl.innerHTML = !content
-        ? `<span class="inv-slot-empty">-</span>`
-        : isColorSet
-          ? `<span class="colorset-preview-grid">${(content.colors || []).slice(0, 9).map(hex => `<i style="background:${hex}"></i>`).join('')}</span>`
-          : isBlockSet
+
+      if (!content) {
+        slotEl.innerHTML = `<span class="inv-slot-empty">-</span>`;
+      } else if (isColorSet) {
+        slotEl.innerHTML = `<span class="colorset-preview-grid">${(content.colors || []).slice(0, 9).map(hex => `<i style="background:${hex}"></i>`).join('')}</span>`;
+      } else {
+        const thumbUrl = InventoryThumbnailRenderer.getInstance().getThumbnail(content, 64);
+        if (thumbUrl) {
+          slotEl.innerHTML = `
+            <img class="inv-slot-thumb" src="${thumbUrl}" alt="${itemName}" draggable="false" />
+            <span class="inv-slot-tag ${isBlockSet ? 'bks' : 'ent'}">${isBlockSet ? 'BKS' : 'ENT'}</span>
+            <span class="inv-slot-count">${content.blockCount || content.blocks?.length || 0}</span>
+          `;
+        } else {
+          slotEl.innerHTML = isBlockSet
             ? `<span class="inv-slot-id">BKS</span><span class="inv-slot-count">${content.blockCount}</span>`
             : `<span class="inv-slot-id">ENT</span><span class="inv-slot-count">${content.blockCount}</span>`;
+        }
+      }
+
       slotEl.addEventListener('click', () => {
         this.selectInventorySlot(i);
       });
@@ -1731,6 +1745,23 @@ export class UIManager {
     const addItemCard = (category, index, item, fallbackName, meta, extraHtml, actions) => {
       const card = document.createElement('div');
       card.className = 'inventory-card backpack-item';
+
+      // 3D Sandbox Thumbnail Preview for block sets and resting entities
+      if (category === 'blockset' || category === 'entity') {
+        const thumbUrl = InventoryThumbnailRenderer.getInstance().getThumbnail(item, 160);
+        if (thumbUrl) {
+          const preview = document.createElement('div');
+          preview.className = 'backpack-item-preview';
+          const img = document.createElement('img');
+          img.className = 'backpack-item-thumb';
+          img.src = thumbUrl;
+          img.alt = fallbackName;
+          img.draggable = false;
+          preview.appendChild(img);
+          card.appendChild(preview);
+        }
+      }
+
       const metaElement = document.createElement('div');
       metaElement.className = 'backpack-item-meta';
       metaElement.textContent = String(meta);
