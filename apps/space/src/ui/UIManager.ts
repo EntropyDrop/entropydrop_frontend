@@ -8,6 +8,7 @@ import { MAX_STL_FILE_BYTES } from '../engine/voxel/STLVoxelizer.ts';
 import { ActionDomain } from '../engine/actions/BasicActions.ts';
 import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../engine/torus/TorusWorld.ts';
 import { InventoryThumbnailRenderer } from '../engine/render/InventoryThumbnailRenderer.ts';
+import { useSpaceStore } from './react/store/useSpaceStore.ts';
 
 const TOOL_PIXEL_ICONS: Record<string, string> = {
   [SpecialTool.SHOVEL]: '',
@@ -343,6 +344,7 @@ export class UIManager {
 
   setWorld(world) {
     this.world = world;
+    useSpaceStore.getState().setWorld(world);
     try {
       const savedDist = localStorage.getItem('space_setting_render_dist');
       if (savedDist && this.world) this.world.setRenderDistance(Number(savedDist));
@@ -352,6 +354,7 @@ export class UIManager {
 
   setContraptions(contraptionManager) {
     this.contraptions = contraptionManager;
+    useSpaceStore.getState().setContraptions(contraptionManager);
   }
 
   setRemotePlayers(players: any[]) {
@@ -360,10 +363,12 @@ export class UIManager {
 
   setNavigationSystem(navigationSystem: any) {
     this.navigationSystem = navigationSystem;
+    useSpaceStore.getState().setNavigationSystem(navigationSystem);
   }
 
   setSceneRenderer(sceneRenderer) {
     this.sceneRenderer = sceneRenderer;
+    useSpaceStore.getState().setSceneRenderer(sceneRenderer);
     this.sceneRenderer?.setEntityPreviewCanvas(this.entityPreviewCanvas);
     if (this.sceneRenderer) {
       this.sceneRenderer.onEntityPreviewNodeSelect = (nodeId) => {
@@ -1741,11 +1746,11 @@ export class UIManager {
       card.prepend(input);
     };
 
-    const addItemCard = (targetContainer, category, index, item, fallbackName, meta, extraHtml, actions) => {
+    const addItemCard = (category, index, item, fallbackName, meta, extraHtml, actions) => {
       const card = document.createElement('div');
-      card.className = 'backpack-slot-card filled';
+      card.className = 'inventory-card backpack-item';
 
-      // 3D Toolbar-style Preview Slot Box
+      // 3D Toolbar-style Preview Slot (Left Column)
       const slotBox = document.createElement('div');
       slotBox.className = 'backpack-slot-preview-box filled';
       slotBox.innerHTML = `
@@ -1779,31 +1784,36 @@ export class UIManager {
 
       card.appendChild(slotBox);
 
-      // Name Input
-      bindNameInput(card, category, index, item, fallbackName);
+      // Right Column: Details, Input, Actions
+      const detailsCol = document.createElement('div');
+      detailsCol.className = 'backpack-item-details';
 
-      // Action Buttons
+      const metaElement = document.createElement('div');
+      metaElement.className = 'backpack-item-meta';
+      metaElement.textContent = String(meta);
+
       const actionBar = document.createElement('div');
-      actionBar.className = 'backpack-slot-actions';
+      actionBar.className = 'inv-item-actions';
       actions.forEach((action) => {
         const button = document.createElement('button');
-        button.className = `backpack-slot-action-btn${action.danger ? ' danger' : ''}`;
+        button.className = `backpack-item-btn${action.danger ? ' danger' : ''}`;
         button.textContent = String(action.label);
-        button.title = action.title || action.label;
-        button.addEventListener('click', (e) => {
-          e.stopPropagation();
-          action.run();
-        });
+        button.addEventListener('click', action.run);
         actionBar.appendChild(button);
       });
-      card.appendChild(actionBar);
 
-      targetContainer.appendChild(card);
+      bindNameInput(detailsCol, category, index, item, fallbackName);
+      detailsCol.appendChild(metaElement);
+      if (extraHtml?.nodeType === 1) detailsCol.appendChild(extraHtml);
+      detailsCol.appendChild(actionBar);
+
+      card.appendChild(detailsCol);
+      this.inventoryGrid.appendChild(card);
     };
 
-    const addEmptySlot = (targetContainer, index, label) => {
+    const addEmptySlot = (index, label) => {
       const card = document.createElement('div');
-      card.className = 'backpack-slot-card empty';
+      card.className = 'inventory-card backpack-item backpack-item-empty';
 
       const slotBox = document.createElement('div');
       slotBox.className = 'backpack-slot-preview-box empty';
@@ -1813,12 +1823,15 @@ export class UIManager {
       `;
       card.appendChild(slotBox);
 
-      const emptyLabel = document.createElement('div');
-      emptyLabel.className = 'backpack-slot-empty-label';
-      emptyLabel.textContent = 'R copy';
-      card.appendChild(emptyLabel);
+      const detailsCol = document.createElement('div');
+      detailsCol.className = 'backpack-item-details';
+      const meta = document.createElement('div');
+      meta.className = 'backpack-item-meta';
+      meta.textContent = String(label);
+      detailsCol.appendChild(meta);
+      card.appendChild(detailsCol);
 
-      targetContainer.appendChild(card);
+      this.inventoryGrid.appendChild(card);
     };
 
     const inventories = this.controller?.inventories;
@@ -1827,46 +1840,38 @@ export class UIManager {
     const blockSets = inventories?.blockset?.items || [];
     const blockSetCount = blockSets.filter(Boolean).length;
     addSectionHeader('BLOCK SETS — hammer builds plain blocks', blockSetCount, 9, 'blockset');
-
-    const blocksetRow = document.createElement('div');
-    blocksetRow.className = 'backpack-slots-row';
-    for (let index = 0; index < 9; index++) {
-      const item = blockSets[index];
+    blockSets.forEach((item, index) => {
       if (!item) {
-        addEmptySlot(blocksetRow, index, `Empty slot ${index + 1}`);
-      } else {
-        addItemCard(
-          blocksetRow,
-          'blockset',
-          index,
-          item,
-          `Block set ${index + 1}`,
-          `${item.blockCount || item.blocks?.length || 0} voxels`,
-          null,
-          [
-            {
-              label: 'Exp',
-              title: 'Export JSON',
-              run: () => this.downloadJson(
-                this.inventoryJsonFilename(item.name, `Block set ${index + 1}`),
-                this.controller?.serializeInventoryItem?.('blockset', item) || item
-              )
-            },
-            {
-              label: '✕',
-              title: 'Delete block set',
-              danger: true,
-              run: () => {
-                this.controller?.deleteInventoryItem?.('blockset', index);
-                this.renderInventory();
-                this.renderInventoryBar();
-              }
-            }
-          ]
-        );
+        addEmptySlot(index, `Empty slot ${index + 1} · R copy or import`);
+        return;
       }
-    }
-    this.inventoryGrid.appendChild(blocksetRow);
+      addItemCard(
+        'blockset',
+        index,
+        item,
+        `Block set ${index + 1}`,
+        `${item.blockCount || item.blocks?.length || 0} voxels`,
+        null,
+        [
+          {
+            label: 'Export',
+            run: () => this.downloadJson(
+              this.inventoryJsonFilename(item.name, `Block set ${index + 1}`),
+              this.controller?.serializeInventoryItem?.('blockset', item) || item
+            )
+          },
+          {
+            label: 'Delete',
+            danger: true,
+            run: () => {
+              this.controller?.deleteInventoryItem?.('blockset', index);
+              this.renderInventory();
+              this.renderInventoryBar();
+            }
+          }
+        ]
+      );
+    });
 
     // STL Import card: pick a quantization size, load an .stl mesh, voxelize it
     // into the block-set area of the backpack.
@@ -2005,47 +2010,39 @@ export class UIManager {
     // === ENTITIES (max 9) ===
     const entities = inventories?.entity?.items || [];
     addSectionHeader('ENTITIES — hammer builds the physics entity', entities.filter(Boolean).length, 9, 'entity');
-
-    const entityRow = document.createElement('div');
-    entityRow.className = 'backpack-slots-row';
-    for (let index = 0; index < 9; index++) {
-      const item = entities[index];
+    entities.forEach((item, index) => {
       if (!item) {
-        addEmptySlot(entityRow, index, `Empty slot ${index + 1}`);
-      } else {
-        const label = item.rootId || (item.rootIds ? `${item.rootIds.length} components` : 'entity');
-        addItemCard(
-          entityRow,
-          'entity',
-          index,
-          item,
-          `Entity ${label}`,
-          `${item.blockCount || item.blocks?.length || 0} blocks`,
-          null,
-          [
-            {
-              label: 'Exp',
-              title: 'Export JSON',
-              run: () => this.downloadJson(
-                this.inventoryJsonFilename(item.name, `Entity ${index + 1}`),
-                this.controller?.serializeInventoryItem?.('entity', item) || item
-              )
-            },
-            {
-              label: '✕',
-              title: 'Delete entity',
-              danger: true,
-              run: () => {
-                this.controller?.deleteInventoryItem?.('entity', index);
-                this.renderInventory();
-                this.renderInventoryBar();
-              }
-            }
-          ]
-        );
+        addEmptySlot(index, `Empty slot ${index + 1} · R copy or import`);
+        return;
       }
-    }
-    this.inventoryGrid.appendChild(entityRow);
+      const label = item.rootId || (item.rootIds ? `${item.rootIds.length} components` : 'entity');
+      addItemCard(
+        'entity',
+        index,
+        item,
+        `Entity ${label}`,
+        `${item.blockCount || item.blocks?.length || 0} blocks · ${item.scripts?.length || 0} scripts · ${item.mode || 'free_physics'}`,
+        null,
+        [
+          {
+            label: 'Export',
+            run: () => this.downloadJson(
+              this.inventoryJsonFilename(item.name, `Entity ${index + 1}`),
+              this.controller?.serializeInventoryItem?.('entity', item) || item
+            )
+          },
+          {
+            label: 'Delete',
+            danger: true,
+            run: () => {
+              this.controller?.deleteInventoryItem?.('entity', index);
+              this.renderInventory();
+              this.renderInventoryBar();
+            }
+          }
+        ]
+      );
+    });
 
     // === COLOR SETS (max 9, 9 colors each) ===
     const colorSets = inventories?.colorset?.items || [];
@@ -2058,7 +2055,7 @@ export class UIManager {
     );
     colorSets.forEach((item, index) => {
       if (!item) {
-        addEmptySlot(`Empty slot ${index + 1} · save the palette or import`);
+        addEmptySlot(index, `Empty slot ${index + 1} · save the palette or import`);
         return;
       }
       const card = document.createElement('div');
@@ -2362,6 +2359,7 @@ export class UIManager {
   }
 
   setPointerLocked(locked) {
+    useSpaceStore.getState().syncFromEngine({ hasStarted: true, isPaused: !locked });
     if (this.pauseScreen) {
       if (locked) {
         this.hasStarted = true;
@@ -2375,9 +2373,10 @@ export class UIManager {
     }
   }
 
-  showToast(message) {
+  showToast(msg) {
+    useSpaceStore.getState().showToast(String(msg));
     if (!this.toast) return;
-    this.toast.textContent = message;
+    this.toast.textContent = msg;
     this.toast.classList.add('show');
     clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => {

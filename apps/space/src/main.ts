@@ -21,6 +21,10 @@ import {
 import { loadDistantLodCache } from './bootstrap/DistantLodCache.ts';
 import type { DistantLodCacheData } from './engine/render/DistantLodCacheFormat.ts';
 import { MultiplayerSync, type RemotePlayerInfo } from './engine/network/MultiplayerSync.ts';
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { SpaceRoot } from './ui/react/SpaceRoot.tsx';
+import { useSpaceStore } from './ui/react/store/useSpaceStore.ts';
 
 class Game {
   canvasContainer: HTMLElement | null;
@@ -125,6 +129,23 @@ class Game {
       this.uiManager
     );
     this.uiManager.setNavigationSystem(this.navigationSystem);
+
+    // Initialize React 2D UI Overlay
+    let reactRootElem = document.getElementById('space-react-root');
+    if (!reactRootElem) {
+      reactRootElem = document.createElement('div');
+      reactRootElem.id = 'space-react-root';
+      document.body.appendChild(reactRootElem);
+    }
+    const reactRoot = ReactDOM.createRoot(reactRootElem);
+    reactRoot.render(React.createElement(SpaceRoot));
+
+    const store = useSpaceStore.getState();
+    store.setController(this.controller);
+    store.setWorld(this.world);
+    store.setContraptions(this.contraptionManager);
+    store.setSceneRenderer(this.sceneRenderer);
+    store.setNavigationSystem(this.navigationSystem);
 
     // 4. Clock & FPS tracking
     this.clock = new THREE.Clock();
@@ -256,6 +277,8 @@ class Game {
       this.currentFps = (this.frameCount * 1000) / (now - this.lastFpsTime);
       this.frameCount = 0;
       this.lastFpsTime = now;
+      const fpsElem = document.getElementById('fps-val');
+      if (fpsElem) fpsElem.textContent = `${Math.round(this.currentFps)} FPS`;
     }
 
     // 1. Update Player & Controls
@@ -263,6 +286,8 @@ class Game {
     // 2. Stream World Chunks around Player. Entity streaming consumes this
     // exact active window below, so chunks must be current before entities run.
     const playerPos = this.playerPhysics.position;
+    const posElem = document.getElementById('pos-val');
+    if (posElem) posElem.textContent = `X: ${playerPos.x.toFixed(1)} | Y: ${playerPos.y.toFixed(1)} | Z: ${playerPos.z.toFixed(1)}`;
     this.world.updateChunksAround(playerPos.x, playerPos.z);
 
     // 3. Update Contraptions & Physics Simulation
