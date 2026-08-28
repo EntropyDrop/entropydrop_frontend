@@ -380,32 +380,68 @@ export class ContraptionPhysics {
 
       if (normalVel < 0) {
         const restitution = Math.abs(normalVel) < 0.5 ? 0 : body.restitution;
-        const impulseMag = -(1 + restitution) * normalVel * (body.mass * 0.6);
-        const impulse = totalNormal.clone().multiplyScalar(impulseMag);
-        const contactImpulse = impulse.clone();
+        const inverseMass = 1 / body.mass;
+        const normalLever = r.clone().cross(totalNormal);
+        const normalDenominator = inverseMass + normalLever.lengthSq() * body.inverseInertia;
+        const normalImpulseMag = normalDenominator > 1e-9
+          ? -(1 + restitution) * normalVel / normalDenominator
+          : 0;
+        const normalImpulse = totalNormal.clone().multiplyScalar(normalImpulseMag);
 
-        body.velocity.addScaledVector(impulse, 1 / body.mass);
+        body.velocity.addScaledVector(normalImpulse, inverseMass);
+        body.angularVelocity.addScaledVector(normalLever, normalImpulseMag * body.inverseInertia);
 
-        // Surface friction
-        const tangentVel = vContact.clone().sub(totalNormal.clone().multiplyScalar(normalVel));
-        if (tangentVel.lengthSq() > 0.0001) {
-          const tangentSpeed = tangentVel.length();
-          const frictionDir = tangentVel.normalize().negate();
-          const frictionMag = Math.min(tangentSpeed * body.mass, impulseMag * body.friction);
-          const frictionImpulse = frictionDir.multiplyScalar(frictionMag);
-          body.velocity.addScaledVector(frictionImpulse, 1 / body.mass);
-          contactImpulse.add(frictionImpulse);
+        // Solve Coulomb friction after the support impulse. Its effective mass
+        // includes the same contact lever arm, and the impulse is capped by
+        // μN so it cannot inject rotational energy into long or flat bodies.
+        const postNormalContactVelocity = body.velocity.clone().add(body.angularVelocity.clone().cross(r));
+        const tangentVelocity = postNormalContactVelocity
+          .clone()
+          .addScaledVector(totalNormal, -postNormalContactVelocity.dot(totalNormal));
+        const tangentSpeed = tangentVelocity.length();
+        if (tangentSpeed > 0.01 && normalImpulseMag > 0) {
+          const tangent = tangentVelocity.divideScalar(tangentSpeed);
+          const tangentLever = r.clone().cross(tangent);
+          const tangentDenominator = inverseMass + tangentLever.lengthSq() * body.inverseInertia;
+          if (tangentDenominator > 1e-9) {
+            const frictionImpulseMag = Math.max(
+              -normalImpulseMag * body.friction,
+              -tangentSpeed / tangentDenominator
+            );
+            body.velocity.addScaledVector(tangent, frictionImpulseMag * inverseMass);
+            body.angularVelocity.addScaledVector(
+              tangentLever,
+              frictionImpulseMag * body.inverseInertia
+            );
+          }
         }
 
-        // Both the support impulse and surface friction act at the contact
-        // point. Applying their complete torque lets a tilted body topple at
-        // a natural rate without a blanket per-contact angular slowdown.
-        const torque = r.clone().cross(contactImpulse);
-        // The solver stores one conservative scalar inertia for arbitrary
-        // voxel shapes. Compensate for that overestimate at terrain contacts
-        // so support forces can rotate a body promptly without destabilising
-        // free-flight integration.
-        body.angularVelocity.add(torque.multiplyScalar(body.inverseInertia * 2));
+        // A mathematically perfect voxel can balance forever on one sampled
+        // corner or edge. Real contacts always contain a small asymmetry, so
+        // introduce a bounded gravity-scaled toppling bias only for these
+        // narrow support manifolds. It rotates the nearest voxel face toward
+        // the terrain normal without adding linear (bounce) energy.
+        if (collisionCount <= 2) {
+          const bodyAxes = [
+            new THREE.Vector3(1, 0, 0).applyQuaternion(body.quaternion),
+            new THREE.Vector3(0, 1, 0).applyQuaternion(body.quaternion),
+            new THREE.Vector3(0, 0, 1).applyQuaternion(body.quaternion)
+          ];
+          let supportFace = bodyAxes[0];
+          for (const axis of bodyAxes.slice(1)) {
+            if (Math.abs(axis.dot(totalNormal)) > Math.abs(supportFace.dot(totalNormal))) supportFace = axis;
+          }
+          if (supportFace.dot(totalNormal) < 0) supportFace.multiplyScalar(-1);
+          const alignment = supportFace.dot(totalNormal);
+          if (alignment < 0.995) {
+            const toppleAxis = supportFace.clone().cross(totalNormal);
+            const instability = toppleAxis.length();
+            if (instability > 1e-6) {
+              const acceleration = this.gravity.length() * 0.25 * instability;
+              body.angularVelocity.addScaledVector(toppleAxis.divideScalar(instability), acceleration * dt);
+            }
+          }
+        }
 
         // Settle tiny linear vibrations, but do not zero a small contact-driven
         // angular velocity. An off-centre support impulse can be small for a

@@ -44,3 +44,40 @@ test('a tilted dynamic block topples onto a stable face under gravity', () => {
   assert.ok(contraption.isOnGround, 'the settled block should remain supported by terrain');
   assert.ok(contraption.angularVelocity.length() < 0.03, 'the settled block should stop rotating');
 });
+
+test('low restitution settles a long body without repeated launch bounces', () => {
+  const blocks = [0, 1, 2].map(localX => ({
+    localX,
+    localY: 0,
+    localZ: 0,
+    block: BlockTypes.COLOR_BLOCK
+  }));
+  const contraption = new Contraption(
+    2,
+    blocks,
+    new THREE.Vector3(10, 5, 10),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC, restitution: 0.01 }
+  );
+  contraption.quaternion.setFromEuler(new THREE.Euler(0.4, 0, 0.7));
+
+  const physics = new ContraptionPhysics(makeFloorWorld() as any);
+  let firstGroundHeight = null;
+  let leftGroundCount = 0;
+  let wasOnGround = false;
+  let maxRiseAfterContact = 0;
+  for (let frame = 0; frame < 600; frame++) {
+    physics.update(contraption, 1 / 60);
+    if (contraption.isOnGround && firstGroundHeight === null) firstGroundHeight = contraption.position.y;
+    if (wasOnGround && !contraption.isOnGround) leftGroundCount++;
+    if (firstGroundHeight !== null) {
+      maxRiseAfterContact = Math.max(maxRiseAfterContact, contraption.position.y - firstGroundHeight);
+    }
+    wasOnGround = contraption.isOnGround;
+  }
+
+  assert.ok(leftGroundCount <= 1, `low restitution should not repeatedly leave the floor, count=${leftGroundCount}`);
+  assert.ok(maxRiseAfterContact < 0.25, `settling must not inject launch energy, rise=${maxRiseAfterContact}`);
+  assert.ok(contraption.isOnGround, 'the long body should finish on the floor');
+  assert.ok(contraption.velocity.length() < 0.05, 'the long body should finish without linear bounce');
+});
