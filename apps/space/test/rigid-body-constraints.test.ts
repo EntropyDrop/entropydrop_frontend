@@ -44,7 +44,7 @@ test('body type, mass and restitution use the shared physics action API', () => 
   const payload = contraption.getChildScriptApi('payload');
   assert.equal(contraption.scriptApi.body.getMass(), 10, 'one root-owned block should weigh 10 kg');
   assert.equal(payload.body.getMass(), 10, 'one child-owned block should weigh 10 kg');
-  assert.deepEqual(contraption.scriptApi.body.getMaterial(), { restitution: 0.01, friction: 0.7 });
+  assert.deepEqual(contraption.scriptApi.body.getMaterial(), { restitution: 0.1, friction: 0.7 });
 
   const payloadBody = contraption.getRigidBody('payload');
   const defaultInverseInertia = payloadBody.inverseInertia;
@@ -101,7 +101,7 @@ test('automatic mass is omitted from serialization so copied bodies keep followi
     new THREE.Scene()
   ) as any;
   assert.equal(contraption.mass, 30);
-  assert.equal(contraption.restitution, 0.01);
+  assert.equal(contraption.restitution, 0.1);
   assert.equal('mass' in contraption.serializeSubtree('root'), false);
 });
 

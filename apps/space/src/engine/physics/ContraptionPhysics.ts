@@ -399,12 +399,12 @@ export class ContraptionPhysics {
         body.angularVelocity.add(torque.multiplyScalar(body.inverseInertia));
         body.angularVelocity.multiplyScalar(0.85);
 
-        // Settle tiny vibrations
+        // Settle tiny linear vibrations, but do not zero a small contact-driven
+        // angular velocity. An off-centre support impulse can be small for a
+        // single sub-step yet must accumulate so gravity topples an object out
+        // of an unstable tilted pose and onto a stable face.
         if (Math.abs(body.velocity.y) < 0.2) body.velocity.y = 0;
-        if (body.velocity.lengthSq() < 0.01 && body.angularVelocity.lengthSq() < 0.02) {
-          body.velocity.set(0, 0, 0);
-          body.angularVelocity.set(0, 0, 0);
-        }
+        if (body.velocity.lengthSq() < 0.01) body.velocity.set(0, 0, 0);
       }
     } else {
       body.isOnGround = false;

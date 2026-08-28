@@ -111,7 +111,7 @@ test('ctx.selection exposes world box, sparse cells, deletion and assembly comma
   assert.equal(manager.contraptions[0].mode, 'programmable');
   assert.equal(manager.contraptions[0].bodyType, 'dynamic');
   assert.equal(manager.contraptions[0].mass, 10);
-  assert.equal(manager.contraptions[0].restitution, 0.01);
+  assert.equal(manager.contraptions[0].restitution, 0.1);
   assert.equal(manager.contraptions[0].friction, 0.7);
   assert.equal(manager.contraptions[0].useGravity, true);
 });

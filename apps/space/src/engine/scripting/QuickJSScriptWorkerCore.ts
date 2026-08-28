@@ -157,7 +157,7 @@ const QUICKJS_BOOTSTRAP = String.raw`
     };
     let bodyType = node.body?.type || 'dynamic';
     let bodyMass = finite(node.body?.mass);
-    let bodyMaterial = frozenClone(node.body?.material || { restitution: 0.01, friction: 0.7 });
+    let bodyMaterial = frozenClone(node.body?.material || { restitution: 0.1, friction: 0.7 });
     api.body = Object.freeze({
       getType: () => bodyType,
       setType: type => {

@@ -432,7 +432,7 @@ export class Contraption {
     this.voxelVolume = this.blocks.reduce((sum, block) => sum + Math.pow(block.size || 1, 3), 0);
     this.massOverride = normalizeBodyMass(options.mass);
     this.mass = this.massOverride ?? defaultBodyMass(this.blocks);
-    this.restitution = clampUnit(options.restitution, 0.01);
+    this.restitution = clampUnit(options.restitution, 0.1);
     this.friction = clampUnit(options.friction, 0.7);
     this.linearDamping = 0.98;
     this.angularDamping = 0.92;
