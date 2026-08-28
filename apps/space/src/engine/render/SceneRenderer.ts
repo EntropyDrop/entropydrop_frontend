@@ -5,10 +5,18 @@ import {
   TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ
 } from '../torus/TorusWorld.ts';
 import { CuteCharacter, loadCuteCharacter, type SkinModel } from './CuteCharacter.ts';
+import {
+  isProjectedPlayerVisible,
+  resolveRemotePlayerLod,
+  wrappedAxisDelta,
+  type RemotePlayerLod,
+} from './RemotePlayerLod.ts';
 
 export const ENTITY_PREVIEW_LAYER = 1;
 export const ENTITY_PREVIEW_FORCE_LIMIT_RATIO = 0.72;
 const MAX_SELECTION_BEND_SEGMENTS = 64;
+const remotePlayerCullCamera = new THREE.PerspectiveCamera();
+const remotePlayerProjectedPosition = new THREE.Vector3();
 
 function createPlayerNameTag(username: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
@@ -60,7 +68,7 @@ function createRemotePlayerFallback() {
   const addBox = (size: [number, number, number], position: [number, number, number]) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
     mesh.position.set(...position);
-    mesh.castShadow = true;
+    mesh.castShadow = false;
     group.add(mesh);
   };
   addBox([0.62, 0.78, 0.34], [0, 1.05, 0]);
@@ -1568,11 +1576,108 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     this.scene.add(this.remotePlayersGroup);
   }
 
+  private prepareRemotePlayerCullCamera() {
+    remotePlayerCullCamera.copy(this.camera, false);
+    remotePlayerCullCamera.position.copy(this.camera.position);
+    remotePlayerCullCamera.quaternion.copy(this.camera.quaternion);
+    remotePlayerCullCamera.updateMatrixWorld(true);
+    applyCameraBend(remotePlayerCullCamera);
+  }
+
+  private isRemotePlayerInView(record, distance: number) {
+    // Keep very near players visible even when only part of their body crosses
+    // the edge of the screen. Farther players use a torus-bent center point so
+    // ordinary flat-world frustum assumptions cannot hide the wrong player.
+    if (distance <= 4) return true;
+    bendPoint(
+      record.group.position.x,
+      record.group.position.y + 0.9,
+      record.group.position.z,
+      remotePlayerProjectedPosition,
+    );
+    remotePlayerProjectedPosition.project(remotePlayerCullCamera);
+    return isProjectedPlayerVisible(remotePlayerProjectedPosition);
+  }
+
+  private loadRemotePlayerCharacter(record, id: string, highDetail: boolean) {
+    if (record.loadingSkin) return;
+    const token = {};
+    const requestedSkinUrl = record.skinUrl;
+    const requestedSkinModel = record.skinModel;
+    record.loadingSkin = token;
+
+    void loadCuteCharacter(requestedSkinUrl, {
+      model: requestedSkinModel,
+      height: 1.8,
+      showOverlay: highDetail,
+      castShadow: highDetail,
+      createBillboard: true,
+      createFirstPersonHand: false,
+    }).then(character => {
+      if (
+        this.remotePlayers?.get(id) !== record
+        || record.loadingSkin !== token
+        || record.skinUrl !== requestedSkinUrl
+        || record.skinModel !== requestedSkinModel
+      ) {
+        character.dispose();
+        if (record.loadingSkin === token) record.loadingSkin = null;
+        return;
+      }
+
+      const previousCharacter = record.character;
+      record.character = character;
+      record.highDetail = highDetail;
+      record.loadedSkinUrl = requestedSkinUrl;
+      record.loadedSkinModel = requestedSkinModel;
+      record.loadingSkin = null;
+      record.group.add(character.object3d);
+      if (character.billboard) record.group.add(character.billboard);
+      hookSceneMaterials(character.object3d);
+      if (character.billboard) hookSceneMaterials(character.billboard);
+      previousCharacter?.dispose();
+      disposeRemotePlayerFallback(record.fallback);
+      record.fallback = null;
+      this.applyRemotePlayerLod(record, record.lod ?? 'hidden', record.inView ?? false);
+    }).catch(err => {
+      if (record.loadingSkin === token) record.loadingSkin = null;
+      console.warn('Failed to load remote player skin:', err);
+    });
+  }
+
+  private applyRemotePlayerLod(record, lod: RemotePlayerLod, inView: boolean) {
+    const shouldRender = lod !== 'hidden' && inView;
+    record.group.visible = shouldRender;
+    record.lod = lod;
+    record.inView = inView;
+    if (!shouldRender) return;
+
+    const render3d = lod === 'full' || lod === 'simplified';
+    const renderBillboard = lod === 'billboard';
+    if (record.fallback) record.fallback.visible = !record.character;
+    if (record.nameTag) record.nameTag.visible = true;
+
+    if (!record.character) return;
+    record.character.object3d.visible = render3d;
+    if (record.character.billboard) {
+      record.character.billboard.visible = renderBillboard;
+      if (renderBillboard) {
+        const cameraDx = wrappedAxisDelta(record.group.position.x, this.camera.position.x, TORUS_SIZE_X);
+        const cameraDz = wrappedAxisDelta(record.group.position.z, this.camera.position.z, TORUS_SIZE_Z);
+        const worldFacingYaw = Math.atan2(cameraDx, cameraDz);
+        record.character.billboard.rotation.y = worldFacingYaw - record.currentYaw;
+      }
+    }
+    record.character.setOverlayVisible(lod === 'full' && record.highDetail);
+    record.character.setCastShadow(lod === 'full' && record.highDetail);
+  }
+
   updateRemotePlayers(players: any[], dt = 0.016) {
     if (!this.remotePlayersGroup || !this.remotePlayers) return;
 
     const seenIds = new Set<string>();
     const now = performance.now();
+    this.prepareRemotePlayerCullCamera();
 
     for (const p of players) {
       if (p.is_self) continue;
@@ -1605,8 +1710,13 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
           lastSeen: now,
           skinUrl: p.minecraft_skin_url,
           skinModel: p.minecraft_skin_model || 'strong',
+          loadedSkinUrl: null,
+          loadedSkinModel: null,
+          highDetail: false,
+          lod: null,
+          inView: false,
           speed: 0,
-          loadingSkin: false
+          loadingSkin: null
         };
 
         this.remotePlayers.set(id, record);
@@ -1617,56 +1727,9 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         record.targetPitch = p.pitch || 0;
         record.lastSeen = now;
       }
-
-      if (!record.character && !record.loadingSkin) {
-        record.loadingSkin = true;
-        void loadCuteCharacter(record.skinUrl, {
-          model: record.skinModel,
-          height: 1.8,
-          showOverlay: true,
-          castShadow: true
-        }).then(character => {
-          record.loadingSkin = false;
-          if (!this.remotePlayers?.has(id)) {
-            character.dispose();
-            return;
-          }
-          record.character = character;
-          record.group.add(character.object3d);
-          hookSceneMaterials(character.object3d);
-          disposeRemotePlayerFallback(record.fallback);
-          record.fallback = null;
-        }).catch(err => {
-          record.loadingSkin = false;
-          console.warn('Failed to load remote player skin:', err);
-        });
-      } else if (p.minecraft_skin_url && record.skinUrl !== p.minecraft_skin_url && !record.loadingSkin) {
-        record.loadingSkin = true;
+      if (p.minecraft_skin_url && record.skinUrl !== p.minecraft_skin_url) {
         record.skinUrl = p.minecraft_skin_url;
         record.skinModel = p.minecraft_skin_model || 'strong';
-        void loadCuteCharacter(record.skinUrl, {
-          model: record.skinModel,
-          height: 1.8,
-          showOverlay: true,
-          castShadow: true
-        }).then(character => {
-          record.loadingSkin = false;
-          if (!this.remotePlayers?.has(id)) {
-            character.dispose();
-            return;
-          }
-          if (record.character) {
-            record.character.dispose();
-          }
-          record.character = character;
-          record.group.add(character.object3d);
-          hookSceneMaterials(character.object3d);
-          disposeRemotePlayerFallback(record.fallback);
-          record.fallback = null;
-        }).catch(err => {
-          record.loadingSkin = false;
-          console.warn('Failed to reload remote player skin:', err);
-        });
       }
 
       // Smoothly interpolate position with toroidal wrap
@@ -1679,8 +1742,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       else if (dz < -TORUS_SIZE_Z / 2) dz += TORUS_SIZE_Z;
 
       const dy = record.targetPosition.y - record.group.position.y;
-      const dist = Math.hypot(dx, dz);
-      record.speed = THREE.MathUtils.lerp(record.speed, dist / Math.max(0.001, dt), Math.min(1, dt * 8));
+      const movementDistance = Math.hypot(dx, dz);
+      record.speed = THREE.MathUtils.lerp(record.speed, movementDistance / Math.max(0.001, dt), Math.min(1, dt * 8));
 
       const lerpFactor = Math.min(1, dt * 12);
       record.group.position.x = wrapX(record.group.position.x + dx * lerpFactor);
@@ -1695,7 +1758,22 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
 
       record.currentPitch = THREE.MathUtils.lerp(record.currentPitch ?? 0, record.targetPitch ?? 0, lerpFactor);
 
-      if (record.character) {
+      const cameraDx = wrappedAxisDelta(this.camera.position.x, record.group.position.x, TORUS_SIZE_X);
+      const cameraDz = wrappedAxisDelta(this.camera.position.z, record.group.position.z, TORUS_SIZE_Z);
+      const cameraDy = record.group.position.y + 0.9 - this.camera.position.y;
+      const cameraDistance = Math.hypot(cameraDx, cameraDy, cameraDz);
+      const lod = resolveRemotePlayerLod(cameraDistance, record.lod);
+      const inView = lod !== 'hidden' && this.isRemotePlayerInView(record, cameraDistance);
+
+      const skinChanged = record.loadedSkinUrl !== record.skinUrl
+        || record.loadedSkinModel !== record.skinModel;
+      const needsHighDetail = lod === 'full' && !record.highDetail;
+      if (inView && (!record.character || skinChanged || needsHighDetail)) {
+        this.loadRemotePlayerCharacter(record, id, lod === 'full');
+      }
+      this.applyRemotePlayerLod(record, lod, inView);
+
+      if (record.character && inView && (lod === 'full' || lod === 'simplified')) {
         const forwardX = -Math.sin(record.currentYaw);
         const forwardZ = -Math.cos(record.currentYaw);
         const rightX = Math.cos(record.currentYaw);
@@ -1714,7 +1792,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
           flying: false
         });
       }
-      record.group.updateMatrixWorld(true);
+      if (record.group.visible) record.group.updateMatrixWorld(true);
     }
 
     // Clean up offline/inactive players (> 15 seconds)

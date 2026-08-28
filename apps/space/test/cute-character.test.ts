@@ -28,6 +28,54 @@ test('skin model detection recognizes the slim arm metadata pixel', () => {
   assert.equal(detectSkinModel({ width: 64, height: 64, data }), 'slim');
 });
 
+test('remote characters expose a one-plane billboard and switch expensive details off', () => {
+  const data = new Uint8ClampedArray(64 * 64 * 4);
+  for (let y = 8; y < 16; y++) {
+    for (let x = 8; x < 16; x++) {
+      const index = (y * 64 + x) * 4;
+      data[index] = 0x12;
+      data[index + 1] = 0x34;
+      data[index + 2] = 0x56;
+      data[index + 3] = 255;
+    }
+  }
+  const character = new CuteCharacter(
+    new THREE.Texture(),
+    { width: 64, height: 64, data } as ImageData,
+    {
+      model: 'strong',
+      showOverlay: true,
+      castShadow: true,
+      createBillboard: true,
+      createFirstPersonHand: false,
+    }
+  );
+
+  assert.ok(character.billboard instanceof THREE.Mesh);
+  assert.equal(character.billboard.geometry.parameters.width, 0.9);
+  assert.equal(character.billboard.geometry.parameters.height, 1.8);
+  const billboardImage = character.billboard.material.map!.image as { width: number; height: number };
+  assert.equal(billboardImage.width, 16);
+  assert.equal(billboardImage.height, 32);
+  assert.equal(character.billboard.castShadow, false);
+  assert.equal(character.firstPersonHand.children.length, 0);
+
+  const overlays: THREE.Group[] = [];
+  const meshes: THREE.Mesh[] = [];
+  character.object3d.traverse(object => {
+    if (object instanceof THREE.Group && object.userData.cuteCharacterOverlay) overlays.push(object);
+    if (object instanceof THREE.Mesh) meshes.push(object);
+  });
+  assert.equal(overlays.length, 6);
+  assert.ok(meshes.every(mesh => mesh.castShadow));
+
+  character.setOverlayVisible(false);
+  character.setCastShadow(false);
+  assert.ok(overlays.every(overlay => !overlay.visible));
+  assert.ok(meshes.every(mesh => !mesh.castShadow));
+  character.dispose();
+});
+
 test('locomotion blends in and out instead of snapping between poses', () => {
   const character = createTestCharacter();
   const rig = character as any;

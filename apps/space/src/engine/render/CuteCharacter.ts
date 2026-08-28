@@ -13,6 +13,8 @@ export type CuteCharacterOptions = {
   model?: SkinModel | 'auto';
   showOverlay?: boolean;
   castShadow?: boolean;
+  createBillboard?: boolean;
+  createFirstPersonHand?: boolean;
 };
 
 export type CuteCharacterMotion = {
@@ -338,6 +340,7 @@ function readOverlayVoxels(imageData: ImageData, uvMap: UvMap, targetBoxHeight?:
 
 function createVoxelGroup(imageData: ImageData, uvMap: UvMap, extra: number, size: [number, number, number]) {
   const group = new THREE.Group();
+  group.userData.cuteCharacterOverlay = true;
   const scaleX = (size[0] + extra) / size[0];
   const scaleY = (size[1] + extra) / size[1];
   const scaleZ = (size[2] + extra) / size[2];
@@ -350,6 +353,79 @@ function createVoxelGroup(imageData: ImageData, uvMap: UvMap, extra: number, siz
     group.add(mesh);
   }
   return group;
+}
+
+function createFrontBillboard(imageData: PixelData, model: SkinModel) {
+  const width = 16;
+  const height = 32;
+  const pixels = new Uint8Array(width * height * 4);
+  const armWidth = model === 'slim' ? 3 : 4;
+
+  const draw = (sourceX: number, sourceY: number, partWidth: number, partHeight: number, targetX: number, targetY: number) => {
+    for (let y = 0; y < partHeight; y++) {
+      for (let x = 0; x < partWidth; x++) {
+        const sx = sourceX + x;
+        const sy = sourceY + y;
+        const tx = targetX + x;
+        const ty = targetY + y;
+        if (sx < 0 || sx >= imageData.width || sy < 0 || sy >= imageData.height) continue;
+        if (tx < 0 || tx >= width || ty < 0 || ty >= height) continue;
+
+        const sourceIndex = (sy * imageData.width + sx) * 4;
+        const targetIndex = (ty * width + tx) * 4;
+        const sourceAlpha = imageData.data[sourceIndex + 3] / 255;
+        if (sourceAlpha <= 0) continue;
+        const targetAlpha = pixels[targetIndex + 3] / 255;
+        const outputAlpha = sourceAlpha + targetAlpha * (1 - sourceAlpha);
+        for (let channel = 0; channel < 3; channel++) {
+          const source = imageData.data[sourceIndex + channel];
+          const target = pixels[targetIndex + channel];
+          pixels[targetIndex + channel] = outputAlpha > 0
+            ? Math.round((source * sourceAlpha + target * targetAlpha * (1 - sourceAlpha)) / outputAlpha)
+            : 0;
+        }
+        pixels[targetIndex + 3] = Math.round(outputAlpha * 255);
+      }
+    }
+  };
+
+  // Minecraft skin front faces, assembled into one tiny 16x32 cutout.
+  const leftArmX = model === 'slim' ? 13 : 12;
+  draw(8, 8, 8, 8, 4, 0);
+  draw(20, 20, 8, 12, 4, 8);
+  draw(44, 20, armWidth, 12, 0, 8);
+  draw(36, 52, armWidth, 12, leftArmX, 8);
+  draw(4, 20, 4, 12, 4, 20);
+  draw(20, 52, 4, 12, 8, 20);
+
+  // Composite the translucent second skin layer over the base silhouette.
+  draw(40, 8, 8, 8, 4, 0);
+  draw(20, 36, 8, 12, 4, 8);
+  draw(44, 36, armWidth, 12, 0, 8);
+  draw(52, 52, armWidth, 12, leftArmX, 8);
+  draw(4, 36, 4, 12, 4, 20);
+  draw(4, 52, 4, 12, 8, 20);
+
+  const texture = new THREE.DataTexture(pixels, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.flipY = true;
+  texture.needsUpdate = true;
+
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    alphaTest: 0.1,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  const billboard = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.8), material);
+  billboard.name = 'CuteCharacterBillboard';
+  billboard.position.y = 0.9;
+  billboard.castShadow = false;
+  billboard.userData.remotePlayerBillboard = true;
+  return billboard;
 }
 
 function taperGeometry(geometry: THREE.BufferGeometry, height = CUTE_SOURCE_SIDE_ROWS) {
@@ -384,6 +460,7 @@ export class CuteCharacter {
   readonly object3d = new THREE.Group();
   /** Camera-local right arm used by the first-person view. */
   readonly firstPersonHand = new THREE.Group();
+  readonly billboard: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null;
   readonly model: SkinModel;
   action: CuteCharacterAction = 'idle';
   private readonly rig = new THREE.Group();
@@ -397,15 +474,19 @@ export class CuteCharacter {
   private smoothedSpeed = 0;
   private smoothedForward = 0;
   private smoothedSide = 0;
+  private readonly overlayGroups: THREE.Group[];
+  private shadowsEnabled: boolean;
 
   constructor(texture: THREE.Texture, imageData: ImageData, options: CuteCharacterOptions = {}) {
     this.texture = texture;
     this.model = options.model && options.model !== 'auto' ? options.model : detectSkinModel(imageData);
     const showOverlay = options.showOverlay !== false;
     const castShadow = options.castShadow !== false;
+    this.shadowsEnabled = castShadow;
     const height = Math.max(0.1, options.height ?? 1.8);
     const uv = getUvMaps(this.model);
     const overlayPixels = ensureOverlayConsistency(imageData);
+    this.billboard = options.createBillboard ? createFrontBillboard(overlayPixels, this.model) : null;
 
     texture.magFilter = THREE.NearestFilter;
     texture.minFilter = THREE.NearestFilter;
@@ -429,6 +510,7 @@ export class CuteCharacter {
       leftLeg: createVoxelGroup(overlayPixels, shiftUvMap(uv.leftLeg, -16, 0), 0.5, [4, CUTE_SIDE_ROWS, 4]),
       rightLeg: createVoxelGroup(overlayPixels, shiftUvMap(uv.rightLeg, 0, 16), 0.5, [4, CUTE_SIDE_ROWS, 4])
     } : null;
+    this.overlayGroups = overlays ? Object.values(overlays) : [];
 
     const bodyGeometry = new THREE.BoxGeometry(8, CUTE_SIDE_ROWS, 4, 8, CUTE_SIDE_ROWS, 4);
     if (this.model === 'slim') {
@@ -493,48 +575,50 @@ export class CuteCharacter {
 
     // First-person viewmodel: use a separate material/overlay set so it can
     // render on top of the world without changing the third-person arm.
-    const firstPersonArm = new THREE.Group();
-    firstPersonArm.scale.set(...armScale);
-    this.firstPersonHand.add(firstPersonArm);
-    const firstPersonArmCenter = new THREE.Group();
-    firstPersonArmCenter.position.y = -CUTE_SIDE_ROWS / 2;
-    firstPersonArm.add(firstPersonArmCenter);
-    addSkinnedPart(
-      firstPersonArmCenter,
-      new THREE.BoxGeometry(uv.armWidth, CUTE_SIDE_ROWS, 4),
-      createCuteFaceMaterials(imageData, uv.rightArm),
-      showOverlay
-        ? createVoxelGroup(
-          overlayPixels,
-          shiftUvMap(uv.rightArm, 0, 16),
-          0.5,
-          [uv.armWidth, CUTE_SIDE_ROWS, 4]
-        )
-        : null
-    );
-    this.firstPersonHand.name = 'CuteFirstPersonHand';
-    this.firstPersonHand.scale.setScalar(0.045);
-    this.firstPersonHand.traverse(object => {
-      if (!(object instanceof THREE.Mesh)) return;
-      object.castShadow = false;
-      object.frustumCulled = false;
-      object.renderOrder = 1000;
-      // Camera-local geometry is already in render space and must not receive
-      // the logical-world torus vertex bend.
-      object.userData.torusPreBent = true;
-      const viewMaterials = Array.isArray(object.material) ? object.material : [object.material];
-      for (const material of viewMaterials) {
-        // The base arm and its raised overlay occupy nearby layers. Disabling
-        // depth made their rear/inner faces draw over the front, which looked
-        // like transparent skin and self-intersection. Keep normal opaque
-        // depth semantics for a solid viewmodel.
-        material.depthTest = true;
-        material.depthWrite = true;
-        material.transparent = false;
-        material.opacity = 1;
-        material.side = THREE.FrontSide;
-      }
-    });
+    if (options.createFirstPersonHand !== false) {
+      const firstPersonArm = new THREE.Group();
+      firstPersonArm.scale.set(...armScale);
+      this.firstPersonHand.add(firstPersonArm);
+      const firstPersonArmCenter = new THREE.Group();
+      firstPersonArmCenter.position.y = -CUTE_SIDE_ROWS / 2;
+      firstPersonArm.add(firstPersonArmCenter);
+      addSkinnedPart(
+        firstPersonArmCenter,
+        new THREE.BoxGeometry(uv.armWidth, CUTE_SIDE_ROWS, 4),
+        createCuteFaceMaterials(imageData, uv.rightArm),
+        showOverlay
+          ? createVoxelGroup(
+            overlayPixels,
+            shiftUvMap(uv.rightArm, 0, 16),
+            0.5,
+            [uv.armWidth, CUTE_SIDE_ROWS, 4]
+          )
+          : null
+      );
+      this.firstPersonHand.name = 'CuteFirstPersonHand';
+      this.firstPersonHand.scale.setScalar(0.045);
+      this.firstPersonHand.traverse(object => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.castShadow = false;
+        object.frustumCulled = false;
+        object.renderOrder = 1000;
+        // Camera-local geometry is already in render space and must not receive
+        // the logical-world torus vertex bend.
+        object.userData.torusPreBent = true;
+        const viewMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of viewMaterials) {
+          // The base arm and its raised overlay occupy nearby layers. Disabling
+          // depth made their rear/inner faces draw over the front, which looked
+          // like transparent skin and self-intersection. Keep normal opaque
+          // depth semantics for a solid viewmodel.
+          material.depthTest = true;
+          material.depthWrite = true;
+          material.transparent = false;
+          material.opacity = 1;
+          material.side = THREE.FrontSide;
+        }
+      });
+    }
 
     this.parts = {
       body, head,
@@ -555,8 +639,19 @@ export class CuteCharacter {
     this.object3d.traverse(object => {
       if (object instanceof THREE.Mesh) {
         object.castShadow = castShadow;
-        object.frustumCulled = false;
       }
+    });
+  }
+
+  setOverlayVisible(visible: boolean) {
+    for (const overlay of this.overlayGroups) overlay.visible = visible;
+  }
+
+  setCastShadow(enabled: boolean) {
+    if (enabled === this.shadowsEnabled) return;
+    this.shadowsEnabled = enabled;
+    this.object3d.traverse(object => {
+      if (object instanceof THREE.Mesh) object.castShadow = enabled;
     });
   }
 
@@ -704,7 +799,8 @@ export class CuteCharacter {
     const geometries = new Set<THREE.BufferGeometry>();
     const materials = new Set<THREE.Material>();
     const textures = new Set<THREE.Texture>([this.texture]);
-    for (const root of [this.object3d, this.firstPersonHand]) {
+    for (const root of [this.object3d, this.firstPersonHand, this.billboard]) {
+      if (!root) continue;
       root.traverse(object => {
         if (!(object instanceof THREE.Mesh)) return;
         geometries.add(object.geometry);
@@ -721,6 +817,7 @@ export class CuteCharacter {
     textures.forEach(texture => texture.dispose());
     this.object3d.removeFromParent();
     this.firstPersonHand.removeFromParent();
+    this.billboard?.removeFromParent();
   }
 }
 
