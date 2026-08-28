@@ -1798,7 +1798,7 @@ export class UIManager {
     addSectionHeader('BLOCK SETS — hammer builds plain blocks', blockSetCount, 9, 'blockset');
     blockSets.forEach((item, index) => {
       if (!item) {
-        addEmptySlot(`Empty slot ${index + 1} · T copy or import`);
+        addEmptySlot(`Empty slot ${index + 1} · R copy or import`);
         return;
       }
       addItemCard(

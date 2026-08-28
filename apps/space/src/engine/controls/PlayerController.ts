@@ -20,7 +20,7 @@ export const RESERVED_ENTITY_INPUT_CODES = new Set([
   'Escape',
   'Backspace', 'Delete',
   'F3', 'F5',
-  'KeyB', 'KeyC', 'KeyE', 'KeyF', 'KeyG', 'KeyR', 'KeyT', 'KeyV',
+  'KeyB', 'KeyC', 'KeyE', 'KeyF', 'KeyG', 'KeyR', 'KeyV',
   'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5',
   'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'
 ]);
@@ -390,7 +390,6 @@ export class PlayerController {
           break;
 
         case 'KeyR': // R key: unified smart copy selection (entity or world blocks)
-        case 'KeyT': // T key: alias for copy selection
           if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
             this.copySelectionSmart();
           }
@@ -903,7 +902,7 @@ export class PlayerController {
               const count = info?.count ?? 0;
               const clampedNote = cornerResult?.clamped ? ' · clamped to the 64×64×64 limit' : '';
               if (this.ui) {
-                this.ui.showToast(`Selector [2/2] micro box set! (${count} micro voxels)${clampedNote} · G assemble · T copy block set · Del delete`);
+                this.ui.showToast(`Selector [2/2] micro box set! (${count} micro voxels)${clampedNote} · G assemble · R copy · Del delete`);
               }
             } else {
               const bounds = this.contraptions.getSelectionBounds();
@@ -913,7 +912,7 @@ export class PlayerController {
               const totalBlocks = this.contraptions.getSelectionBlockCount();
               const clampedNote = cornerResult?.clamped ? ' · clamped to the 64×64×64 limit' : '';
               if (this.ui) {
-                this.ui.showToast(`Selector [2/2] box set! (${sx}x${sy}x${sz}, ${totalBlocks} blocks)${clampedNote} · G assemble · T copy block set · Del delete`);
+                this.ui.showToast(`Selector [2/2] box set! (${sx}x${sy}x${sz}, ${totalBlocks} blocks)${clampedNote} · G assemble · R copy · Del delete`);
               }
             }
           } else {
@@ -1016,7 +1015,7 @@ export class PlayerController {
         const isMicro = (hitBlock.size || 1) < 1;
         const kindLabel = isMicro ? 'micro blocks' : 'blocks';
         if (this.ui) {
-          this.ui.showToast(`Multi-selected ${count} ${kindLabel} of [${hitNodeId}] · Shift+click to toggle more · R copy entity · T copy block set · G create child`);
+          this.ui.showToast(`Multi-selected ${count} ${kindLabel} of [${hitNodeId}] · Shift+click to toggle more · R copy · G create child`);
         }
       } else {
         this.selectedBlockSelection = null;
@@ -1115,9 +1114,9 @@ export class PlayerController {
     const blockCount = contraption.blocks.filter(b => nodeIds.has(b.entityId || 'root')).length;
     if (this.ui) {
       if (opts.wholeOnly) {
-        this.ui.showToast(`Entity #${contraption.id} is not stopped — whole entity selected (${blockCount} blocks) · Del delete entity · R copy entity · T copy block set · use Wrench right-click to stop it before selecting internal blocks`);
+        this.ui.showToast(`Entity #${contraption.id} is not stopped — whole entity selected (${blockCount} blocks) · Del delete entity · R copy · use Wrench right-click to stop it before selecting internal blocks`);
       } else {
-        this.ui.showToast(`Selected level [${hitNodeId}] + descendants (${blockCount} blocks, no parent) · Del delete selection · R copy entity · T copy block set · click to box its own blocks · Shift+click to switch level`);
+        this.ui.showToast(`Selected level [${hitNodeId}] + descendants (${blockCount} blocks, no parent) · Del delete selection · R copy · click to box its own blocks · Shift+click to switch level`);
       }
     }
   }
@@ -1232,8 +1231,8 @@ export class PlayerController {
 
     if (this.ui) {
       this.ui.showToast(this.selectorMicroMode
-        ? `Selected ${selected.length} own micro blocks of [${nodeId}] (children excluded) · R copy entity · T copy block set · G create child`
-        : `Selected ${selected.length} own blocks of [${nodeId}] (children excluded) · R copy entity · T copy block set · G create child`);
+        ? `Selected ${selected.length} own micro blocks of [${nodeId}] (children excluded) · R copy · G create child`
+        : `Selected ${selected.length} own blocks of [${nodeId}] (children excluded) · R copy · G create child`);
     }
   }
 
