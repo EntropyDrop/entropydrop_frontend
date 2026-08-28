@@ -4,6 +4,14 @@ import { BodyType } from '../contraption/Contraption.ts';
 import type { World } from '../voxel/World.ts';
 
 const ENTITY_BROADPHASE_CELL_SIZE = 32;
+const TERRAIN_FACE_NORMALS = [
+  new THREE.Vector3(-1, 0, 0),
+  new THREE.Vector3(1, 0, 0),
+  new THREE.Vector3(0, -1, 0),
+  new THREE.Vector3(0, 1, 0),
+  new THREE.Vector3(0, 0, -1),
+  new THREE.Vector3(0, 0, 1)
+];
 
 export class ContraptionPhysics {
   private world: World;
@@ -326,132 +334,180 @@ export class ContraptionPhysics {
     b.syncAllBodyTransforms?.();
   }
 
+  terrainCellAtPoint(point) {
+    const bx = Math.floor(point.x);
+    const by = Math.floor(point.y);
+    const bz = Math.floor(point.z);
+    if (this.world.getBlock(bx, by, bz) !== BlockTypes.AIR) {
+      return { minX: bx, maxX: bx + 1, minY: by, maxY: by + 1, minZ: bz, maxZ: bz + 1 };
+    }
+
+    const mx = Math.floor(point.x * 5);
+    const my = Math.floor(point.y * 5);
+    const mz = Math.floor(point.z * 5);
+    const micro = (this.world as any).getMicroBlock?.(mx, my, mz)
+      ?? (this.world as any).microVoxels?.get(mx, my, mz)
+      ?? null;
+    if (micro === null || micro === undefined) return null;
+    return {
+      minX: mx / 5,
+      maxX: (mx + 1) / 5,
+      minY: my / 5,
+      maxY: (my + 1) / 5,
+      minZ: mz / 5,
+      maxZ: (mz + 1) / 5
+    };
+  }
+
+  terrainContactAtPoint(point) {
+    const cell = this.terrainCellAtPoint(point);
+    if (!cell) return null;
+    const penetrations = [
+      point.x - cell.minX,
+      cell.maxX - point.x,
+      point.y - cell.minY,
+      cell.maxY - point.y,
+      point.z - cell.minZ,
+      cell.maxZ - point.z
+    ];
+    let remainingFaces = 0b111111;
+    while (remainingFaces) {
+      let index = -1;
+      let penetration = Infinity;
+      for (let candidate = 0; candidate < TERRAIN_FACE_NORMALS.length; candidate++) {
+        if (!(remainingFaces & (1 << candidate))) continue;
+        if (penetrations[candidate] < penetration) {
+          penetration = penetrations[candidate];
+          index = candidate;
+        }
+      }
+      if (index < 0 || !(penetration > 0)) return null;
+      remainingFaces &= ~(1 << index);
+      const normal = TERRAIN_FACE_NORMALS[index];
+      const outside = point.clone().addScaledVector(normal, penetration + 0.002);
+      // Shared faces inside solid terrain are not collision surfaces. Looking
+      // just outside the candidate face leaves only the actual exposed shell.
+      if (this.terrainCellAtPoint(outside)) continue;
+      return { normal, penetration };
+    }
+    return null;
+  }
+
+  solveTerrainContact(body, normal, hitPosition, penetration, contactCount, dt) {
+    body.position.addScaledVector(normal, Math.max(0, penetration - 0.001) * 0.9);
+    if (normal.y > 0.5) body.isOnGround = true;
+
+    const r = hitPosition.clone().sub(body.position);
+    const contactVelocity = body.velocity.clone().add(body.angularVelocity.clone().cross(r));
+    const normalVelocity = contactVelocity.dot(normal);
+    if (normalVelocity >= 0) return;
+
+    const restitution = Math.abs(normalVelocity) < 0.5 ? 0 : body.restitution;
+    const inverseMass = 1 / body.mass;
+    const normalLever = r.clone().cross(normal);
+    const normalDenominator = inverseMass + normalLever.lengthSq() * body.inverseInertia;
+    const normalImpulseMagnitude = normalDenominator > 1e-9
+      ? -(1 + restitution) * normalVelocity / normalDenominator
+      : 0;
+    const normalImpulse = normal.clone().multiplyScalar(normalImpulseMagnitude);
+
+    body.velocity.addScaledVector(normalImpulse, inverseMass);
+    body.angularVelocity.addScaledVector(normalLever, normalImpulseMagnitude * body.inverseInertia);
+
+    // Solve Coulomb friction after the support impulse. Its effective mass
+    // includes the same contact lever arm, and the impulse is capped by μN.
+    const postNormalVelocity = body.velocity.clone().add(body.angularVelocity.clone().cross(r));
+    const tangentVelocity = postNormalVelocity
+      .clone()
+      .addScaledVector(normal, -postNormalVelocity.dot(normal));
+    const tangentSpeed = tangentVelocity.length();
+    if (tangentSpeed > 0.01 && normalImpulseMagnitude > 0) {
+      const tangent = tangentVelocity.divideScalar(tangentSpeed);
+      const tangentLever = r.clone().cross(tangent);
+      const tangentDenominator = inverseMass + tangentLever.lengthSq() * body.inverseInertia;
+      if (tangentDenominator > 1e-9) {
+        const frictionImpulseMagnitude = Math.max(
+          -normalImpulseMagnitude * body.friction,
+          -tangentSpeed / tangentDenominator
+        );
+        body.velocity.addScaledVector(tangent, frictionImpulseMagnitude * inverseMass);
+        body.angularVelocity.addScaledVector(
+          tangentLever,
+          frictionImpulseMagnitude * body.inverseInertia
+        );
+      }
+    }
+
+    // Perfect voxels can balance forever on a sampled corner. Mimic real
+    // contact asymmetry only on narrow upward support manifolds; this adds no
+    // linear energy and never turns a wall collision into auto-levelling.
+    if (normal.y > 0.5 && contactCount <= 2) {
+      const bodyAxes = [
+        new THREE.Vector3(1, 0, 0).applyQuaternion(body.quaternion),
+        new THREE.Vector3(0, 1, 0).applyQuaternion(body.quaternion),
+        new THREE.Vector3(0, 0, 1).applyQuaternion(body.quaternion)
+      ];
+      let supportFace = bodyAxes[0];
+      for (const axis of bodyAxes.slice(1)) {
+        if (Math.abs(axis.dot(normal)) > Math.abs(supportFace.dot(normal))) supportFace = axis;
+      }
+      if (supportFace.dot(normal) < 0) supportFace.multiplyScalar(-1);
+      const alignment = supportFace.dot(normal);
+      if (alignment < 0.995) {
+        const toppleAxis = supportFace.clone().cross(normal);
+        const instability = toppleAxis.length();
+        if (instability > 1e-6) {
+          const acceleration = this.gravity.length() * 0.25 * instability;
+          body.angularVelocity.addScaledVector(toppleAxis.divideScalar(instability), acceleration * dt);
+        }
+      }
+    }
+
+    const residualNormalVelocity = body.velocity.dot(normal);
+    if (Math.abs(residualNormalVelocity) < 0.2) {
+      body.velocity.addScaledVector(normal, -residualNormalVelocity);
+    }
+    if (body.velocity.lengthSq() < 0.01) body.velocity.set(0, 0, 0);
+  }
+
   resolveTerrainCollisionBody(contraption, body, dt) {
     // A dynamic body's terrain contact includes every kinematic part rigidly
     // attached to it: after a child component is split off, the child's cells
     // still move with the body (scene-graph parent), so they must keep the
     // structure supported instead of silently losing that ground contact.
     const samplePoints = contraption.getCollisionSamplePoints(body.id, true);
-    let totalNormal = new THREE.Vector3(0, 0, 0);
-    let maxPenetration = 0;
-    let collisionCount = 0;
-    let avgHitPos = new THREE.Vector3(0, 0, 0);
+    const contacts = new Map();
 
     for (const pt of samplePoints) {
-      const bx = Math.floor(pt.x);
-      const by = Math.floor(pt.y);
-      const bz = Math.floor(pt.z);
-
-      const block = this.world.getBlock(bx, by, bz);
-      let blockTopY = block !== BlockTypes.AIR ? by + 1.0 : null;
-      if (blockTopY === null) {
-        const mx = Math.floor(pt.x * 5);
-        const my = Math.floor(pt.y * 5);
-        const mz = Math.floor(pt.z * 5);
-        if (((this.world as any).microVoxels?.get(mx, my, mz) ?? null) !== null) {
-          blockTopY = (my + 1) / 5;
-        }
-      }
-
-      if (blockTopY !== null) {
-        const penY = blockTopY - pt.y;
-
-        if (penY > 0 && penY < 1.2) {
-          if (penY > maxPenetration) maxPenetration = penY;
-          totalNormal.add(new THREE.Vector3(0, 1, 0));
-          avgHitPos.add(pt);
-          collisionCount++;
-        }
-      }
+      const contact = this.terrainContactAtPoint(pt);
+      if (!contact) continue;
+      const key = `${contact.normal.x},${contact.normal.y},${contact.normal.z}`;
+      const group = contacts.get(key) || {
+        normal: contact.normal,
+        penetration: 0,
+        hitPosition: new THREE.Vector3(),
+        count: 0
+      };
+      group.penetration = Math.max(group.penetration, contact.penetration);
+      group.hitPosition.add(pt);
+      group.count++;
+      contacts.set(key, group);
     }
 
-    if (collisionCount > 0) {
-      avgHitPos.divideScalar(collisionCount);
-      totalNormal.normalize();
-
-      // Lift out of penetration
-      body.position.y += maxPenetration * 0.9;
-      body.isOnGround = true;
-
-      // Contact velocity
-      const r = avgHitPos.clone().sub(body.position);
-      const vContact = body.velocity.clone().add(body.angularVelocity.clone().cross(r));
-      const normalVel = vContact.dot(totalNormal);
-
-      if (normalVel < 0) {
-        const restitution = Math.abs(normalVel) < 0.5 ? 0 : body.restitution;
-        const inverseMass = 1 / body.mass;
-        const normalLever = r.clone().cross(totalNormal);
-        const normalDenominator = inverseMass + normalLever.lengthSq() * body.inverseInertia;
-        const normalImpulseMag = normalDenominator > 1e-9
-          ? -(1 + restitution) * normalVel / normalDenominator
-          : 0;
-        const normalImpulse = totalNormal.clone().multiplyScalar(normalImpulseMag);
-
-        body.velocity.addScaledVector(normalImpulse, inverseMass);
-        body.angularVelocity.addScaledVector(normalLever, normalImpulseMag * body.inverseInertia);
-
-        // Solve Coulomb friction after the support impulse. Its effective mass
-        // includes the same contact lever arm, and the impulse is capped by
-        // μN so it cannot inject rotational energy into long or flat bodies.
-        const postNormalContactVelocity = body.velocity.clone().add(body.angularVelocity.clone().cross(r));
-        const tangentVelocity = postNormalContactVelocity
-          .clone()
-          .addScaledVector(totalNormal, -postNormalContactVelocity.dot(totalNormal));
-        const tangentSpeed = tangentVelocity.length();
-        if (tangentSpeed > 0.01 && normalImpulseMag > 0) {
-          const tangent = tangentVelocity.divideScalar(tangentSpeed);
-          const tangentLever = r.clone().cross(tangent);
-          const tangentDenominator = inverseMass + tangentLever.lengthSq() * body.inverseInertia;
-          if (tangentDenominator > 1e-9) {
-            const frictionImpulseMag = Math.max(
-              -normalImpulseMag * body.friction,
-              -tangentSpeed / tangentDenominator
-            );
-            body.velocity.addScaledVector(tangent, frictionImpulseMag * inverseMass);
-            body.angularVelocity.addScaledVector(
-              tangentLever,
-              frictionImpulseMag * body.inverseInertia
-            );
-          }
-        }
-
-        // A mathematically perfect voxel can balance forever on one sampled
-        // corner or edge. Real contacts always contain a small asymmetry, so
-        // introduce a bounded gravity-scaled toppling bias only for these
-        // narrow support manifolds. It rotates the nearest voxel face toward
-        // the terrain normal without adding linear (bounce) energy.
-        if (collisionCount <= 2) {
-          const bodyAxes = [
-            new THREE.Vector3(1, 0, 0).applyQuaternion(body.quaternion),
-            new THREE.Vector3(0, 1, 0).applyQuaternion(body.quaternion),
-            new THREE.Vector3(0, 0, 1).applyQuaternion(body.quaternion)
-          ];
-          let supportFace = bodyAxes[0];
-          for (const axis of bodyAxes.slice(1)) {
-            if (Math.abs(axis.dot(totalNormal)) > Math.abs(supportFace.dot(totalNormal))) supportFace = axis;
-          }
-          if (supportFace.dot(totalNormal) < 0) supportFace.multiplyScalar(-1);
-          const alignment = supportFace.dot(totalNormal);
-          if (alignment < 0.995) {
-            const toppleAxis = supportFace.clone().cross(totalNormal);
-            const instability = toppleAxis.length();
-            if (instability > 1e-6) {
-              const acceleration = this.gravity.length() * 0.25 * instability;
-              body.angularVelocity.addScaledVector(toppleAxis.divideScalar(instability), acceleration * dt);
-            }
-          }
-        }
-
-        // Settle tiny linear vibrations, but do not zero a small contact-driven
-        // angular velocity. An off-centre support impulse can be small for a
-        // single sub-step yet must accumulate so gravity topples an object out
-        // of an unstable tilted pose and onto a stable face.
-        if (Math.abs(body.velocity.y) < 0.2) body.velocity.y = 0;
-        if (body.velocity.lengthSq() < 0.01) body.velocity.set(0, 0, 0);
-      }
-    } else {
-      body.isOnGround = false;
+    // Resolve independent exposed faces in one sub-step (for example floor +
+    // wall at a corner). The ground flag is reset once per frame by update(),
+    // so a contact found in either sub-step remains stable for that frame.
+    const groups = [...contacts.values()].sort((a, b) => b.penetration - a.penetration);
+    for (const group of groups) {
+      group.hitPosition.divideScalar(group.count);
+      this.solveTerrainContact(
+        body,
+        group.normal,
+        group.hitPosition,
+        group.penetration,
+        group.count,
+        dt
+      );
     }
   }
 

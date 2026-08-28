@@ -81,3 +81,62 @@ test('low restitution settles a long body without repeated launch bounces', () =
   assert.ok(contraption.isOnGround, 'the long body should finish on the floor');
   assert.ok(contraption.velocity.length() < 0.05, 'the long body should finish without linear bounce');
 });
+
+test('terrain wall collision resolves sideways without climbing or frame rewind', () => {
+  const wallWorld = {
+    getBlock: (x, y, _z) => (y <= 0 || (x === 12 && y <= 4))
+      ? BlockTypes.COLOR_BLOCK
+      : BlockTypes.AIR,
+    raycast: () => ({ hit: false, distance: 0 }),
+    raycastMicro: () => ({ hit: false, distance: 0 }),
+    microVoxels: { get: () => null }
+  };
+  const contraption = new Contraption(
+    3,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(10, 1, 10),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC, restitution: 0.01, friction: 0 }
+  );
+  contraption.velocity.x = 20;
+
+  const physics = new ContraptionPhysics(wallWorld as any);
+  let maxX = contraption.position.x;
+  let maxY = contraption.position.y;
+  let maxVerticalFrameStep = 0;
+  let previousY = contraption.position.y;
+  for (let frame = 0; frame < 180; frame++) {
+    physics.update(contraption, 1 / 60);
+    maxX = Math.max(maxX, contraption.position.x);
+    maxY = Math.max(maxY, contraption.position.y);
+    maxVerticalFrameStep = Math.max(maxVerticalFrameStep, Math.abs(contraption.position.y - previousY));
+    previousY = contraption.position.y;
+  }
+
+  assert.ok(maxX < 11.55, `the body must not tunnel through the wall, maxX=${maxX}`);
+  assert.ok(maxY < 2, `a side collision must not climb the wall, maxY=${maxY}`);
+  assert.ok(maxVerticalFrameStep < 0.2, `collision correction must not jump between frame histories, step=${maxVerticalFrameStep}`);
+  assert.ok(Math.abs(contraption.position.y - 1.5) < 0.02, 'the body should settle back on the floor');
+});
+
+test('resting terrain contact remains stable across physics frames', () => {
+  const contraption = new Contraption(
+    4,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(10, 1, 10),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC, restitution: 0.01 }
+  );
+  const physics = new ContraptionPhysics(makeFloorWorld() as any);
+  for (let frame = 0; frame < 180; frame++) physics.update(contraption, 1 / 60);
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let frame = 0; frame < 180; frame++) {
+    physics.update(contraption, 1 / 60);
+    assert.ok(contraption.isOnGround, `grounded state must not flicker at frame ${frame}`);
+    minY = Math.min(minY, contraption.position.y);
+    maxY = Math.max(maxY, contraption.position.y);
+  }
+  assert.ok(maxY - minY < 0.01, `resting pose should not jitter, range=${maxY - minY}`);
+});
