@@ -1741,11 +1741,11 @@ export class UIManager {
       card.prepend(input);
     };
 
-    const addItemCard = (category, index, item, fallbackName, meta, extraHtml, actions) => {
+    const addItemCard = (targetContainer, category, index, item, fallbackName, meta, extraHtml, actions) => {
       const card = document.createElement('div');
-      card.className = 'inventory-card backpack-item';
+      card.className = 'backpack-slot-card filled';
 
-      // 3D Toolbar-style Preview Slot (Left Column)
+      // 3D Toolbar-style Preview Slot Box
       const slotBox = document.createElement('div');
       slotBox.className = 'backpack-slot-preview-box filled';
       slotBox.innerHTML = `
@@ -1779,36 +1779,31 @@ export class UIManager {
 
       card.appendChild(slotBox);
 
-      // Right Column: Details, Input, Actions
-      const detailsCol = document.createElement('div');
-      detailsCol.className = 'backpack-item-details';
+      // Name Input
+      bindNameInput(card, category, index, item, fallbackName);
 
-      const metaElement = document.createElement('div');
-      metaElement.className = 'backpack-item-meta';
-      metaElement.textContent = String(meta);
-
+      // Action Buttons
       const actionBar = document.createElement('div');
-      actionBar.className = 'inv-item-actions';
+      actionBar.className = 'backpack-slot-actions';
       actions.forEach((action) => {
         const button = document.createElement('button');
-        button.className = `backpack-item-btn${action.danger ? ' danger' : ''}`;
+        button.className = `backpack-slot-action-btn${action.danger ? ' danger' : ''}`;
         button.textContent = String(action.label);
-        button.addEventListener('click', action.run);
+        button.title = action.title || action.label;
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
+          action.run();
+        });
         actionBar.appendChild(button);
       });
+      card.appendChild(actionBar);
 
-      bindNameInput(detailsCol, category, index, item, fallbackName);
-      detailsCol.appendChild(metaElement);
-      if (extraHtml?.nodeType === 1) detailsCol.appendChild(extraHtml);
-      detailsCol.appendChild(actionBar);
-
-      card.appendChild(detailsCol);
-      this.inventoryGrid.appendChild(card);
+      targetContainer.appendChild(card);
     };
 
-    const addEmptySlot = (index, label) => {
+    const addEmptySlot = (targetContainer, index, label) => {
       const card = document.createElement('div');
-      card.className = 'inventory-card backpack-item backpack-item-empty';
+      card.className = 'backpack-slot-card empty';
 
       const slotBox = document.createElement('div');
       slotBox.className = 'backpack-slot-preview-box empty';
@@ -1818,15 +1813,12 @@ export class UIManager {
       `;
       card.appendChild(slotBox);
 
-      const detailsCol = document.createElement('div');
-      detailsCol.className = 'backpack-item-details';
-      const meta = document.createElement('div');
-      meta.className = 'backpack-item-meta';
-      meta.textContent = String(label);
-      detailsCol.appendChild(meta);
-      card.appendChild(detailsCol);
+      const emptyLabel = document.createElement('div');
+      emptyLabel.className = 'backpack-slot-empty-label';
+      emptyLabel.textContent = 'R copy';
+      card.appendChild(emptyLabel);
 
-      this.inventoryGrid.appendChild(card);
+      targetContainer.appendChild(card);
     };
 
     const inventories = this.controller?.inventories;
@@ -1835,38 +1827,46 @@ export class UIManager {
     const blockSets = inventories?.blockset?.items || [];
     const blockSetCount = blockSets.filter(Boolean).length;
     addSectionHeader('BLOCK SETS — hammer builds plain blocks', blockSetCount, 9, 'blockset');
-    blockSets.forEach((item, index) => {
+
+    const blocksetRow = document.createElement('div');
+    blocksetRow.className = 'backpack-slots-row';
+    for (let index = 0; index < 9; index++) {
+      const item = blockSets[index];
       if (!item) {
-        addEmptySlot(index, `Empty slot ${index + 1} · R copy or import`);
-        return;
-      }
-      addItemCard(
-        'blockset',
-        index,
-        item,
-        `Block set ${index + 1}`,
-        `${item.blockCount || item.blocks?.length || 0} voxels`,
-        null,
-        [
-          {
-            label: 'Export',
-            run: () => this.downloadJson(
-              this.inventoryJsonFilename(item.name, `Block set ${index + 1}`),
-              this.controller?.serializeInventoryItem?.('blockset', item) || item
-            )
-          },
-          {
-            label: 'Delete',
-            danger: true,
-            run: () => {
-              this.controller?.deleteInventoryItem?.('blockset', index);
-              this.renderInventory();
-              this.renderInventoryBar();
+        addEmptySlot(blocksetRow, index, `Empty slot ${index + 1}`);
+      } else {
+        addItemCard(
+          blocksetRow,
+          'blockset',
+          index,
+          item,
+          `Block set ${index + 1}`,
+          `${item.blockCount || item.blocks?.length || 0} voxels`,
+          null,
+          [
+            {
+              label: 'Exp',
+              title: 'Export JSON',
+              run: () => this.downloadJson(
+                this.inventoryJsonFilename(item.name, `Block set ${index + 1}`),
+                this.controller?.serializeInventoryItem?.('blockset', item) || item
+              )
+            },
+            {
+              label: '✕',
+              title: 'Delete block set',
+              danger: true,
+              run: () => {
+                this.controller?.deleteInventoryItem?.('blockset', index);
+                this.renderInventory();
+                this.renderInventoryBar();
+              }
             }
-          }
-        ]
-      );
-    });
+          ]
+        );
+      }
+    }
+    this.inventoryGrid.appendChild(blocksetRow);
 
     // STL Import card: pick a quantization size, load an .stl mesh, voxelize it
     // into the block-set area of the backpack.
@@ -2005,39 +2005,47 @@ export class UIManager {
     // === ENTITIES (max 9) ===
     const entities = inventories?.entity?.items || [];
     addSectionHeader('ENTITIES — hammer builds the physics entity', entities.filter(Boolean).length, 9, 'entity');
-    entities.forEach((item, index) => {
+
+    const entityRow = document.createElement('div');
+    entityRow.className = 'backpack-slots-row';
+    for (let index = 0; index < 9; index++) {
+      const item = entities[index];
       if (!item) {
-        addEmptySlot(index, `Empty slot ${index + 1} · R copy or import`);
-        return;
-      }
-      const label = item.rootId || (item.rootIds ? `${item.rootIds.length} components` : 'entity');
-      addItemCard(
-        'entity',
-        index,
-        item,
-        `Entity ${label}`,
-        `${item.blockCount || item.blocks?.length || 0} blocks · ${item.scripts?.length || 0} scripts · ${item.mode || 'free_physics'}`,
-        null,
-        [
-          {
-            label: 'Export',
-            run: () => this.downloadJson(
-              this.inventoryJsonFilename(item.name, `Entity ${index + 1}`),
-              this.controller?.serializeInventoryItem?.('entity', item) || item
-            )
-          },
-          {
-            label: 'Delete',
-            danger: true,
-            run: () => {
-              this.controller?.deleteInventoryItem?.('entity', index);
-              this.renderInventory();
-              this.renderInventoryBar();
+        addEmptySlot(entityRow, index, `Empty slot ${index + 1}`);
+      } else {
+        const label = item.rootId || (item.rootIds ? `${item.rootIds.length} components` : 'entity');
+        addItemCard(
+          entityRow,
+          'entity',
+          index,
+          item,
+          `Entity ${label}`,
+          `${item.blockCount || item.blocks?.length || 0} blocks`,
+          null,
+          [
+            {
+              label: 'Exp',
+              title: 'Export JSON',
+              run: () => this.downloadJson(
+                this.inventoryJsonFilename(item.name, `Entity ${index + 1}`),
+                this.controller?.serializeInventoryItem?.('entity', item) || item
+              )
+            },
+            {
+              label: '✕',
+              title: 'Delete entity',
+              danger: true,
+              run: () => {
+                this.controller?.deleteInventoryItem?.('entity', index);
+                this.renderInventory();
+                this.renderInventoryBar();
+              }
             }
-          }
-        ]
-      );
-    });
+          ]
+        );
+      }
+    }
+    this.inventoryGrid.appendChild(entityRow);
 
     // === COLOR SETS (max 9, 9 colors each) ===
     const colorSets = inventories?.colorset?.items || [];
