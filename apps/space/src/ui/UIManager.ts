@@ -2348,33 +2348,76 @@ export class UIManager {
     }
 
     if (total === 0) {
-      this.entitiesList.innerHTML = '<div class="hud-entity-empty">No entities detected nearby</div>';
+      if (!this.entitiesList.querySelector('.hud-entity-empty')) {
+        this.entitiesList.innerHTML = '<div class="hud-entity-empty">No entities detected nearby</div>';
+      }
       return;
+    }
+
+    // Remove empty placeholder if present
+    const emptyEl = this.entitiesList.querySelector('.hud-entity-empty');
+    if (emptyEl) {
+      emptyEl.remove();
     }
 
     const startIdx = (this.entitiesCurrentPage - 1) * this.entitiesPageSize;
     const endIdx = startIdx + this.entitiesPageSize;
     const pageItems = list.slice(startIdx, endIdx);
 
-    let html = '';
-    for (const item of pageItems) {
+    const existingRows = Array.from(this.entitiesList.querySelectorAll('.hud-entity-item'));
+
+    // Trim excess rows
+    while (existingRows.length > pageItems.length) {
+      const row = existingRows.pop();
+      row?.remove();
+    }
+
+    for (let i = 0; i < pageItems.length; i++) {
+      const item = pageItems[i];
       const distStr = item.dist < 1000 ? `${item.dist.toFixed(1)}m` : `${(item.dist / 1000).toFixed(2)}km`;
       const posStr = `X:${item.pos.x.toFixed(0)} Y:${item.pos.y.toFixed(0)} Z:${item.pos.z.toFixed(0)}`;
-      const safeName = String(item.name).replace(/"/g, '&quot;');
-      html += `
-        <div class="hud-entity-item">
+      const safeName = String(item.name);
+
+      let row = existingRows[i] as HTMLElement | undefined;
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'hud-entity-item';
+        row.innerHTML = `
           <div class="hud-entity-info">
-            <div class="hud-entity-name" title="${safeName}">${safeName}</div>
+            <div class="hud-entity-name"></div>
             <div class="hud-entity-meta">
-              <span class="hud-entity-pos">${posStr}</span>
-              <span class="hud-entity-dist">${distStr}</span>
+              <span class="hud-entity-pos"></span>
+              <span class="hud-entity-dist"></span>
             </div>
           </div>
-          <button type="button" class="hud-entity-nav-btn" data-x="${item.pos.x}" data-y="${item.pos.y}" data-z="${item.pos.z}" data-name="${safeName}" title="Autopilot to ${safeName}">NAV</button>
-        </div>
-      `;
+          <button type="button" class="hud-entity-nav-btn">NAV</button>
+        `;
+        this.entitiesList.appendChild(row);
+      }
+
+      const nameEl = row.querySelector('.hud-entity-name');
+      const posEl = row.querySelector('.hud-entity-pos');
+      const distEl = row.querySelector('.hud-entity-dist');
+      const navBtn = row.querySelector('.hud-entity-nav-btn') as HTMLElement | null;
+
+      if (nameEl && nameEl.textContent !== safeName) {
+        nameEl.textContent = safeName;
+        nameEl.setAttribute('title', safeName);
+      }
+      if (posEl && posEl.textContent !== posStr) {
+        posEl.textContent = posStr;
+      }
+      if (distEl && distEl.textContent !== distStr) {
+        distEl.textContent = distStr;
+      }
+      if (navBtn) {
+        navBtn.dataset.x = String(item.pos.x);
+        navBtn.dataset.y = String(item.pos.y);
+        navBtn.dataset.z = String(item.pos.z);
+        navBtn.dataset.name = safeName;
+        navBtn.setAttribute('title', `Autopilot to ${safeName}`);
+      }
     }
-    this.entitiesList.innerHTML = html;
   }
 
   updateHUD(fps, playerPos, raycast, hoveredContraption, pingMs: number | null = null) {
