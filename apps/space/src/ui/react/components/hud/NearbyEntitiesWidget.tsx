@@ -38,10 +38,11 @@ export const NearbyEntitiesWidget: React.FC = () => {
       >
         <div className="hud-entities-title">
           <span className="hud-entities-icon">⬡</span>
-          <span>Nearby Entities ({total})</span>
+          <span>Nearby Entities (<span id="hud-entities-count">{total}</span>)</span>
         </div>
         <button
           type="button"
+          id="hud-entities-toggle-btn"
           className={`hud-entities-toggle-btn ${expanded ? 'expanded' : ''}`}
           aria-label="Toggle entities list"
           onClick={(e) => {
@@ -53,69 +54,67 @@ export const NearbyEntitiesWidget: React.FC = () => {
         </button>
       </div>
 
-      {expanded && (
-        <div className="hud-entities-body" id="hud-entities-body" style={{ display: 'flex' }}>
-          <div className="hud-entities-list" id="hud-entities-list">
-            {total === 0 ? (
-              <div className="hud-entity-empty">No entities detected nearby</div>
-            ) : (
-              currentItems.map((item) => {
-                const distStr = item.dist < 1000 ? `${item.dist.toFixed(1)}m` : `${(item.dist / 1000).toFixed(2)}km`;
-                const posStr = `X:${item.pos.x.toFixed(0)} Y:${item.pos.y.toFixed(0)} Z:${item.pos.z.toFixed(0)}`;
-                return (
-                  <div key={item.id} className="hud-entity-item">
-                    <div className="hud-entity-info">
-                      <div className="hud-entity-name" title={item.name}>{item.name}</div>
-                      <div className="hud-entity-meta">
-                        <span className="hud-entity-pos">{posStr}</span>
-                        <span className="hud-entity-dist">{distStr}</span>
-                      </div>
+      <div className="hud-entities-body" id="hud-entities-body" style={{ display: expanded ? 'flex' : 'none' }}>
+        <div className="hud-entities-list" id="hud-entities-list">
+          {total === 0 ? (
+            <div className="hud-entity-empty">No entities detected nearby</div>
+          ) : (
+            currentItems.map((item) => {
+              const distStr = item.dist < 1000 ? `${item.dist.toFixed(1)}m` : `${(item.dist / 1000).toFixed(2)}km`;
+              const posStr = `X:${item.pos.x.toFixed(0)} Y:${item.pos.y.toFixed(0)} Z:${item.pos.z.toFixed(0)}`;
+              return (
+                <div key={item.id} className="hud-entity-item">
+                  <div className="hud-entity-info">
+                    <div className="hud-entity-name" title={item.name}>{item.name}</div>
+                    <div className="hud-entity-meta">
+                      <span className="hud-entity-pos">{posStr}</span>
+                      <span className="hud-entity-dist">{distStr}</span>
                     </div>
-                    <button
-                      type="button"
-                      className="hud-entity-nav-btn"
-                      onClick={(e) => handleNav(e, item)}
-                      title={`Autopilot to ${item.name}`}
-                    >
-                      NAV
-                    </button>
                   </div>
-                );
-              })
-            )}
-          </div>
-
-          {total > PAGE_SIZE && (
-            <div className="hud-entities-pagination" id="hud-entities-pagination" style={{ display: 'flex' }}>
-              <button
-                type="button"
-                className="hud-page-btn"
-                disabled={currentPage <= 1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setPage(p => Math.max(1, p - 1));
-                }}
-                title="Previous page"
-              >
-                ◀
-              </button>
-              <span className="hud-page-info">{currentPage} / {totalPages}</span>
-              <button
-                type="button"
-                className="hud-page-btn"
-                disabled={currentPage >= totalPages}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setPage(p => Math.min(totalPages, p + 1));
-                }}
-                title="Next page"
-              >
-                ▶
-              </button>
-            </div>
+                  <button
+                    type="button"
+                    className="hud-entity-nav-btn"
+                    onClick={(e) => handleNav(e, item)}
+                    title={`Autopilot to ${item.name}`}
+                  >
+                    NAV
+                  </button>
+                </div>
+              );
+            })
           )}
         </div>
-      )}
+
+        <div className="hud-entities-pagination" id="hud-entities-pagination" style={{ display: total > PAGE_SIZE ? 'flex' : 'none' }}>
+          <button
+            type="button"
+            id="hud-entities-prev-btn"
+            className="hud-page-btn"
+            disabled={currentPage <= 1}
+            onClick={(e) => {
+              e.stopPropagation();
+              setPage(p => Math.max(1, p - 1));
+            }}
+            title="Previous page"
+          >
+            ◀
+          </button>
+          <span id="hud-entities-page-info" className="hud-page-info">{currentPage} / {totalPages}</span>
+          <button
+            type="button"
+            id="hud-entities-next-btn"
+            className="hud-page-btn"
+            disabled={currentPage >= totalPages}
+            onClick={(e) => {
+              e.stopPropagation();
+              setPage(p => Math.min(totalPages, p + 1));
+            }}
+            title="Next page"
+          >
+            ▶
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

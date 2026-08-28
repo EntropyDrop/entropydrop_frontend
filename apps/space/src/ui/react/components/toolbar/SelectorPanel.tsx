@@ -27,38 +27,52 @@ export const SelectorPanel: React.FC = () => {
     }
   };
 
-  const handleClear = () => {
-    if (controller) {
-      controller.clearSelection?.();
-    }
-  };
-
   return (
-    <div className="selector-panel" id="selector-panel">
-      <div className="selector-mode-badge" onClick={() => setSelectorMicroMode(!selectorMicroMode)} title="Toggle mode (Tab)">
-        <span className="selector-mode-name">{selectorMicroMode ? 'MICRO (0.2m)' : 'STANDARD (1m)'}</span>
-        <kbd className="key-badge">Tab</kbd>
-      </div>
-
-      <div className="selector-info">
-        <div className="selector-title">{selectorTitle}</div>
-        <div className="selector-details">{selectorDetails}</div>
-      </div>
-
-      <div className="selector-actions">
-        {canAssemble && (
-          <button type="button" className="selector-action-btn primary" onClick={handleAssemble}>
-            {assembleLabel} <kbd className="key-badge">G</kbd>
+    <div className="selector-panel-wrapper" id="selector-panel-wrapper">
+      <div className="palette-info-row">
+        <div className="selector-title-group">
+          <span className="palette-title">Selector</span>
+          <button
+            id="selector-mode-toggle"
+            className="selector-mode-btn"
+            title="Click or press Tab to switch mode"
+            onClick={() => setSelectorMicroMode(!selectorMicroMode)}
+          >
+            <span id="selector-mode-badge" className={`mode-badge ${selectorMicroMode ? 'micro' : 'std'}`}>
+              {selectorMicroMode ? 'MICRO' : 'STANDARD'}
+            </span>
+            <span className="mode-tab-hint">Tab ⇋</span>
           </button>
-        )}
-        {canCopy && (
-          <button type="button" className="selector-action-btn" onClick={handleCopy}>
-            Copy <kbd className="key-badge">R</kbd>
+        </div>
+        <span className="palette-hotkey-hint"><b>Tab</b> mode · <b>R</b> copy · <b>G</b> assemble</span>
+      </div>
+      <div className="selector-toolbox-content" id="selector-toolbox-content">
+        <div className="selector-status-col">
+          <div className="selector-status-main">
+            <span className="selector-icon">⬡</span>
+            <span id="selector-panel-title" className="selector-status-title">{selectorTitle}</span>
+          </div>
+          <div id="selector-panel-details" className="selector-status-sub">{selectorDetails}</div>
+        </div>
+        <div className="selector-action-buttons">
+          <button
+            id="assemble-btn"
+            className="banner-btn primary"
+            disabled={!canAssemble}
+            onClick={handleAssemble}
+          >
+            {assembleLabel || 'Assemble (G)'}
           </button>
-        )}
-        <button type="button" className="selector-action-btn danger" onClick={handleClear}>
-          Clear <kbd className="key-badge">Del</kbd>
-        </button>
+          <button
+            id="copy-btn"
+            className="banner-btn secondary"
+            title="Copy selection to backpack (R)"
+            disabled={!canCopy}
+            onClick={handleCopy}
+          >
+            Copy (R)
+          </button>
+        </div>
       </div>
     </div>
   );

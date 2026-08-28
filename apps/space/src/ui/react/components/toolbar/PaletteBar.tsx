@@ -10,31 +10,26 @@ export const PaletteBar: React.FC = () => {
   const currentHex = colorToHex(selectedColor);
 
   return (
-    <div className="palette-bar" id="palette-bar">
-      <div className="palette-title">Palette</div>
-      <div className="palette-chips">
+    <div className="color-palette-bar-wrapper" id="color-palette-wrapper">
+      <div className="palette-info-row">
+        <span className="palette-title">Palette</span>
+        <span className="palette-hotkey-hint"><b>Shift+1~9</b> pick · <b>E</b> set colors</span>
+      </div>
+      <div id="color-palette-bar" className="color-palette-bar">
         {paletteColors.map((col, index) => {
           const isSelected = col.hex.toLowerCase() === currentHex.toLowerCase();
           return (
             <div
               key={col.hex + index}
-              className={`palette-chip ${isSelected ? 'selected' : ''}`}
+              className={`color-chip ${isSelected ? 'active' : ''}`}
               style={{ backgroundColor: col.hex }}
               onClick={() => setBuildColor(col.hex)}
-              title={`${col.name} (Shift+${index + 1}) · ${col.hex}`}
+              title={`${col.name || 'Custom'} (${col.hex.toUpperCase()})${index < 9 ? ` · Shift+${index + 1}` : ''}`}
             >
-              <span className="palette-chip-key">{index + 1}</span>
+              {index < 9 && <span className="chip-num">{index + 1}</span>}
             </div>
           );
         })}
-      </div>
-      <div className="palette-custom-picker">
-        <input
-          type="color"
-          value={currentHex}
-          onChange={(e) => setBuildColor(e.target.value)}
-          title="Pick custom build color"
-        />
       </div>
     </div>
   );

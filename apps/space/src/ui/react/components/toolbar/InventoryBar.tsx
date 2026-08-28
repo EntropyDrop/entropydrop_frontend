@@ -14,40 +14,38 @@ export const InventoryBar: React.FC = () => {
   const thumbnailRenderer = InventoryThumbnailRenderer.getInstance();
 
   return (
-    <div className="inventory-bar" id="inventory-bar">
-      <div className="inventory-bar-header">
-        <div className="inv-cat-tabs" id="inv-cat-tabs">
-          <button
-            type="button"
-            className={`inv-cat-tab ${activeCategory === 'blockset' ? 'active' : ''}`}
-            onClick={() => selectInventoryCategory('blockset')}
+    <div className="inventory-bar-wrapper" id="inventory-bar-wrapper">
+      <div className="palette-info-row">
+        <div className="palette-title-group">
+          <span
+            className="palette-title"
+            id="backpack-bar-title"
+            style={{ cursor: 'pointer' }}
+            title="Click or press E to open full backpack"
+            onClick={() => toggleModal('inventory')}
           >
-            BKS
-          </button>
-          <button
-            type="button"
-            className={`inv-cat-tab ${activeCategory === 'entity' ? 'active' : ''}`}
-            onClick={() => selectInventoryCategory('entity')}
-          >
-            ENT
-          </button>
+            Backpack
+          </span>
+          <div id="inv-cat-tabs" className="inv-cat-tabs">
+            <button
+              type="button"
+              className={`inv-cat-tab ${activeCategory === 'blockset' ? 'active' : ''}`}
+              onClick={() => selectInventoryCategory('blockset')}
+            >
+              BKS
+            </button>
+            <button
+              type="button"
+              className={`inv-cat-tab ${activeCategory === 'entity' ? 'active' : ''}`}
+              onClick={() => selectInventoryCategory('entity')}
+            >
+              ENT
+            </button>
+          </div>
         </div>
-
-        <span
-          className="backpack-bar-title"
-          id="backpack-bar-title"
-          title="Click to open full backpack (E)"
-          onClick={() => toggleModal('inventory')}
-        >
-          {activeCategory === 'blockset' ? 'Block Sets' : 'Entities'}
-        </span>
-
-        <span className="backpack-bar-hint">
-          <b>E</b> Full Backpack · <b>Tab</b> BKS↔ENT
-        </span>
+        <span className="palette-hotkey-hint"><b>E</b> Full Backpack · <b>Tab</b> BKS↔ENT</span>
       </div>
-
-      <div className="inventory-bar-slots" id="inventory-bar-slots">
+      <div id="inventory-bar" className="inventory-bar">
         {Array.from({ length: 9 }).map((_, index) => {
           const item = currentItems[index];
           const isSelected = selectedIndex === index;
@@ -61,8 +59,6 @@ export const InventoryBar: React.FC = () => {
               onClick={() => selectInventorySlot(index)}
               title={item ? `${item.name || 'Slot ' + (index + 1)} · ${count} voxels` : `Empty slot ${index + 1}`}
             >
-              <span className="inv-slot-key">{index + 1}</span>
-
               {item && thumbUrl ? (
                 <img
                   className="inv-slot-thumb"
@@ -72,9 +68,11 @@ export const InventoryBar: React.FC = () => {
                 />
               ) : null}
 
-              {item && count > 0 && (
+              {item && count > 0 ? (
                 <span className="inv-slot-count">{count}</span>
-              )}
+              ) : !item ? (
+                <span className="inv-slot-empty">+</span>
+              ) : null}
             </div>
           );
         })}

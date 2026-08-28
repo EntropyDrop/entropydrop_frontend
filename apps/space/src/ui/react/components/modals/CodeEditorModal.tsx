@@ -68,92 +68,130 @@ export const CodeEditorModal: React.FC = () => {
   const nodeIds = contraption ? Array.from(contraption.entityNodes?.keys() || ['root']) as string[] : ['root'];
 
   return (
-    <div className="modal-backdrop show" id="code-editor-modal" onClick={closeAllModals}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', width: '92vw', height: '82vh', display: 'flex', flexDirection: 'column' }}>
-        <div className="modal-header">
-          <h2>ENTITY CODE TERMINAL {contraption ? `#${contraption.id}` : ''}</h2>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button type="button" className="backpack-section-btn" style={{ background: '#15803d' }} onClick={handleRunScript}>
-              ▶ Run
-            </button>
-            <button type="button" className="backpack-section-btn danger" onClick={handleStopScript}>
-              ■ Stop
-            </button>
-            <button type="button" className="modal-close" onClick={closeAllModals}>✕</button>
+    <div id="code-editor-modal" className="custom-modal show" onClick={closeAllModals}>
+      <div className="modal-content code-editor-container" onClick={(e) => e.stopPropagation()}>
+        {/* Editor Header */}
+        <div className="editor-header">
+          <div className="editor-title-group">
+            <div className="editor-title">Entity Editor</div>
+            <div id="editor-entity-id" className="editor-tag" title="Click to copy Entity ID">
+              ID: {contraption ? `ent_${contraption.id}` : 'ent_pending'}
+            </div>
+            <div id="editor-status-badge" className="status-badge running">RUNNING</div>
+            <div id="editor-exec-time" className="exec-time">0.05 ms</div>
+          </div>
+
+          <div className="editor-actions">
+            <button id="run-script-btn" className="editor-btn run-btn" onClick={handleRunScript}>Apply Code</button>
+            <button id="close-code-btn" className="icon-btn" style={{ width: '28px', height: '28px', fontSize: '13px' }} title="Close terminal (ESC)" onClick={closeAllModals}>✕</button>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flex: 1, gap: '12px', minHeight: 0, marginTop: '8px' }}>
-          {/* Node tree hierarchy */}
-          <div style={{ width: '180px', borderRight: '1px solid var(--border-subtle)', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--accent-light)' }}>COMPONENTS</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto', flex: 1 }}>
-              {nodeIds.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`backpack-section-btn ${selectedNodeId === id ? 'active' : ''}`}
-                  style={{ textAlign: 'left', padding: '4px 8px', width: '100%' }}
-                  onClick={() => setSelectedNodeId(id)}
-                >
-                  [{id}]
-                </button>
-              ))}
+        {/* Editor Main Layout (3-Column: Hierarchy & Inspector | Code & Tabs | 3D View & Telemetry) */}
+        <div className="editor-body">
+          {/* Left Sidebar: Component Hierarchy Tree & Property Inspector */}
+          <div className="hierarchy-sidebar">
+            <div className="sidebar-section-title">
+              <span>ENTITY COMPONENT TREE</span>
+            </div>
+            <div id="component-tree-panel" className="component-tree-panel">
+              <div id="component-tree-list" className="component-tree-list">
+                {nodeIds.map((id) => (
+                  <div
+                    key={id}
+                    className={`tree-node ${selectedNodeId === id ? 'selected' : ''}`}
+                    onClick={() => setSelectedNodeId(id)}
+                  >
+                    <span className="node-icon">⬡</span>
+                    <span className="node-name">{id}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="sidebar-section-title" style={{ marginTop: '8px' }}>
+              <span>COMPONENT INSPECTOR</span>
+              <span id="component-inspector-id" className="component-inspector-badge">{selectedNodeId}</span>
+            </div>
+            <div id="component-inspector-panel" className="component-inspector-panel">
+              <div className="inspector-field">
+                <label className="inspector-label">ID</label>
+                <div className="inspector-input-row">
+                  <input id="prop-node-name" className="inspector-input" type="text" value={selectedNodeId} readOnly />
+                </div>
+              </div>
+              <div className="inspector-field has-tooltip">
+                <label className="inspector-label">Type ⓘ</label>
+                <span id="prop-node-kind" className="inspector-val">{selectedNodeId === 'root' ? 'root body' : 'child'}</span>
+              </div>
             </div>
           </div>
 
-          {/* Main Editor + Console */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, gap: '8px' }}>
-            <textarea
-              className="code-editor-textarea"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              style={{
-                flex: 1,
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: '12px',
-                background: '#0d0e12',
-                color: '#e2e8f0',
-                border: '1px solid var(--border-subtle)',
-                padding: '10px',
-                outline: 'none',
-                resize: 'none',
-                lineHeight: 1.5
-              }}
-              spellCheck={false}
-              onFocus={(e) => e.stopPropagation()}
-            />
+          {/* Center: Code Editor with Component Tab Navigation */}
+          <div className="code-area-wrapper">
+            <div className="code-tab-bar" id="code-tab-bar">
+              {nodeIds.map((id) => (
+                <div
+                  key={id}
+                  className={`code-tab ${selectedNodeId === id ? 'active' : ''}`}
+                  onClick={() => setSelectedNodeId(id)}
+                >
+                  <span className="tab-type-tag">{id === 'root' ? 'R' : 'C'}</span>
+                  <span className="tab-name">{id}</span>
+                </div>
+              ))}
+            </div>
+            <div className="code-editor-main">
+              <textarea
+                id="script-textarea"
+                className="code-textarea"
+                spellCheck={false}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="// Write your controller code here..."
+                onFocus={(e) => e.stopPropagation()}
+              />
+            </div>
+            <div className="code-footer-hint" id="code-footer-hint">
+              <span id="code-target-hint">Editing: {selectedNodeId} ({selectedNodeId === 'root' ? 'body' : 'child'})</span>
+              <span id="code-api-hint" className="code-api-hint">API: self · ctx</span>
+            </div>
+          </div>
 
-            {/* AI Agent Chat Prompt */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Far right: AI Assistant Chat column */}
+          <div className="agent-column">
+            <div className="telemetry-section-title agent-chat-title">
+              <span>AI ASSISTANT</span>
+            </div>
+
+            <div id="agent-chat-box" className="agent-chat-box">
+              <div className="agent-chat-msg agent-msg-system">
+                Tip: describe a behavior in plain language (e.g. &quot;hover 5 meters above ground&quot;).
+              </div>
+              {logs.map((log, i) => (
+                <div key={i} className="agent-chat-msg agent-msg-user">{log}</div>
+              ))}
+            </div>
+            <div className="agent-chat-input-row">
               <input
+                id="agent-chat-input"
+                className="agent-chat-input"
                 type="text"
                 value={agentPrompt}
                 onChange={(e) => setAgentPrompt(e.target.value)}
-                placeholder="Ask AI to write script (e.g. 'Rotate blades at 60 RPM on W key')..."
-                style={{ flex: 1, padding: '6px 10px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', color: '#fff', fontSize: '12px' }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAgentGenerate();
-                }}
+                onKeyDown={(e) => e.key === 'Enter' && handleAgentGenerate()}
+                placeholder="e.g. rotate blades at 60 RPM on W key..."
+                onFocus={(e) => e.stopPropagation()}
               />
               <button
-                type="button"
-                className="backpack-section-btn"
+                id="agent-chat-send-btn"
+                className="agent-send-btn"
                 onClick={handleAgentGenerate}
                 disabled={agentRunning}
               >
-                {agentRunning ? 'Generating...' : '⚡ Generate'}
+                {agentRunning ? '...' : 'Send'}
               </button>
             </div>
-
-            {/* Log Output Console */}
-            {logs.length > 0 && (
-              <div style={{ height: '70px', background: '#090a0d', border: '1px solid #222', padding: '6px', fontSize: '11px', color: '#94a3b8', fontFamily: 'monospace', overflowY: 'auto' }}>
-                {logs.map((log, i) => (
-                  <div key={i}>{log}</div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </div>

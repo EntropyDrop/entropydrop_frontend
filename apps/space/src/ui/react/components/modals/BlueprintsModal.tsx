@@ -52,37 +52,29 @@ export const BlueprintsModal: React.FC = () => {
   };
 
   return (
-    <div className="modal-backdrop show" id="blueprints-modal" onClick={closeAllModals}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '640px' }}>
+    <div id="blueprints-modal" className="custom-modal show" onClick={closeAllModals}>
+      <div className="modal-content large" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>STRUCTURE BLUEPRINTS</h2>
-          <button type="button" className="modal-close" onClick={closeAllModals}>✕</button>
+          <h2>Structure Blueprints</h2>
+          <button
+            id="close-blueprints-btn"
+            className="icon-btn"
+            style={{ width: '28px', height: '28px', fontSize: '13px' }}
+            onClick={closeAllModals}
+          >
+            ✕
+          </button>
         </div>
-        <div className="modal-sub">
-          Instant programmable mechanisms, vehicles, and architectural structures.
-        </div>
-
-        <div className="blueprints-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '12px' }}>
+        <div className="modal-sub">Click to spawn a colored structure in front of you — ready to use!</div>
+        <div id="blueprints-grid" className="blueprints-grid">
           {SAMPLE_BLUEPRINTS.map((bp) => (
-            <div key={bp.id} className="inventory-card" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '13px', color: '#fff' }}>{bp.name}</span>
-                <span style={{ fontSize: '10px', color: 'var(--accent-light)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px' }}>
-                  {bp.category}
-                </span>
+            <div key={bp.id} className="blueprint-card" onClick={() => handleSpawnBlueprint(bp)}>
+              <div className="bp-info">
+                <div className="bp-name">{bp.name}</div>
+                <div className="bp-meta">{bp.blocks} blocks · {bp.category}</div>
+                <div className="bp-desc">{bp.desc}</div>
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{bp.desc}</div>
-              <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>{bp.blocks} blocks · {bp.scripts} scripts</span>
-                <button
-                  type="button"
-                  className="backpack-item-btn"
-                  style={{ width: 'auto', padding: '3px 10px' }}
-                  onClick={() => handleSpawnBlueprint(bp)}
-                >
-                  Spawn
-                </button>
-              </div>
+              <button type="button" className="banner-btn primary bp-btn">Spawn</button>
             </div>
           ))}
         </div>
