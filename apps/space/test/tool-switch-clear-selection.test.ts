@@ -6,7 +6,7 @@ import { ContraptionManager } from '../src/engine/contraption/ContraptionManager
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 import { World } from '../src/engine/voxel/World.ts';
-import { UIManager } from '../src/ui/UIManager.ts';
+import { SpaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
 
 function createMockRenderer() {
   let hologramCleared = false;
@@ -179,22 +179,14 @@ test('switching between SELECTOR and SUPER_GLUE alias does not clear selection',
   assert.notEqual(manager.selectionCornerA, null);
 });
 
-test('UIManager applyActiveSlot clears selection when switching from Selector', () => {
+test('React UI store applyActiveSlot clears selection when switching from Selector', () => {
   const { controller, manager } = makeControllerWithWorld();
+  const ui = new SpaceUiStore();
+  ui.setController(controller);
+  controller.activeTool = SpecialTool.SELECTOR;
   manager.setCornerA({ x: 3, y: 3, z: 3 });
   manager.setCornerB({ x: 4, y: 4, z: 4 });
   assert.equal(manager.hasValidSelection(), true);
-
-  // Mock UI manager with hotbarSlots
-  const ui = Object.create(UIManager.prototype);
-  ui.controller = controller;
-  ui.hotbarSlots = [
-    { type: 'tool', value: SpecialTool.SHOVEL, name: 'Shovel' },
-    { type: 'tool', value: SpecialTool.SELECTOR, name: 'Selector' },
-    { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer' }
-  ];
-  ui.selectedHotbarIndex = 0; // Switching to Shovel (index 0)
-  ui.showToast = () => {};
 
   ui.applyActiveSlot();
 

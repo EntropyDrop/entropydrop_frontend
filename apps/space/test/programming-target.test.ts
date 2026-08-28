@@ -18,9 +18,9 @@ import {
   TORUS_SPAWN_Z
 } from '../src/engine/torus/TorusWorld.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
-import { UIManager } from '../src/ui/UIManager.ts';
+import { SpaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
 
-test('Behavior Terminal header displays the entity random id', t => {
+test('React editor state exposes the entity random id', t => {
   const originalAnimationFrame = globalThis.requestAnimationFrame;
   globalThis.requestAnimationFrame = (() => 0) as any;
   t.after(() => { globalThis.requestAnimationFrame = originalAnimationFrame; });
@@ -31,22 +31,14 @@ test('Behavior Terminal header displays the entity random id', t => {
     new THREE.Vector3(),
     new THREE.Scene()
   ) as any;
-  const ui = Object.create(UIManager.prototype) as any;
-  ui.editorEntityId = { textContent: '', title: '' };
-  ui.editorContraptionTag = { textContent: '' };
-  ui.renderComponentTree = () => {};
-  ui.renderCodeTabs = () => {};
-  ui.loadNodeCodeIntoEditor = () => {};
-  ui.updateInspectorProperties = () => {};
-  ui.resetAgentChat = () => {};
-  ui.toggleCodeEditorModal = () => {};
-  ui.sceneRenderer = { setEntityPreviewTarget() {}, renderEntityPreview() {} };
+  const ui = new SpaceUiStore();
+  ui.setSceneRenderer({ setEntityPreviewTarget() {}, renderEntityPreview() {} });
 
   ui.openCodeEditor(entity);
 
-  assert.equal(ui.editorEntityId.textContent, `ID: ${entity.publicId}`);
-  assert.match(ui.editorEntityId.textContent, /^ID: ent_[0-9a-f-]{36}$/);
-  assert.match(ui.editorContraptionTag.textContent, /^Runtime: #7/);
+  assert.equal(ui.getSnapshot().editingContraption.publicId, entity.publicId);
+  assert.match(ui.getSnapshot().editingContraption.publicId, /^ent_[0-9a-f-]{36}$/);
+  assert.equal(ui.getSnapshot().activeModal, 'code');
 });
 
 test('programming terminal opens under any tool when pointed at contraption', () => {

@@ -7,7 +7,6 @@ import { ContraptionManager } from './engine/contraption/ContraptionManager.ts';
 import { PlayerController } from './engine/controls/PlayerController.ts';
 import { SoundManager } from './engine/audio/SoundManager.ts';
 import { ParticleSystem } from './engine/render/ParticleSystem.ts';
-import { UIManager } from './ui/UIManager.ts';
 import { Minimap } from './ui/Minimap.ts';
 import { NavigationSystem } from './ui/NavigationSystem.ts';
 import {
@@ -22,6 +21,7 @@ import { loadDistantLodCache } from './bootstrap/DistantLodCache.ts';
 import type { DistantLodCacheData } from './engine/render/DistantLodCacheFormat.ts';
 import { MultiplayerSync, type RemotePlayerInfo } from './engine/network/MultiplayerSync.ts';
 import { mountSpaceUi } from './ui/react/mountSpaceUi.tsx';
+import { spaceUiStore, type SpaceUiStore } from './ui/react/store/SpaceUiStore.ts';
 
 // Mount the 2D interface as soon as the module starts. The authentication gate
 // remains above it until bootstrap succeeds, and every engine adapter created
@@ -37,7 +37,7 @@ class Game {
   contraptionPhysics: any;
   contraptionManager: any;
   playerPhysics: any;
-  uiManager: UIManager;
+  uiStore: SpaceUiStore;
   minimap: Minimap;
   navigationSystem: NavigationSystem;
   controller: PlayerController;
@@ -87,8 +87,8 @@ class Game {
     this.contraptionManager.loadEntitiesFromStorage();
 
     this.playerPhysics = new PlayerPhysics(this.world, this.contraptionManager);
-    this.uiManager = new UIManager();
-    this.minimap = new Minimap(document.body, this.world, this.contraptionManager);
+    this.uiStore = spaceUiStore;
+    this.minimap = new Minimap(this.world, this.contraptionManager);
 
     // 2. Player Controller
     this.controller = new PlayerController(
@@ -98,7 +98,7 @@ class Game {
       this.soundManager,
       this.particleSystem,
       this.contraptionManager,
-      this.uiManager
+      this.uiStore
     );
     this.controller.setSceneRenderer(this.sceneRenderer);
     this.remotePlayers = [];
@@ -120,17 +120,17 @@ class Game {
     });
 
     // 3. Connect UI
-    this.uiManager.setController(this.controller);
-    this.uiManager.setWorld(this.world);
-    this.uiManager.setContraptions(this.contraptionManager);
-    this.uiManager.setSceneRenderer(this.sceneRenderer);
+    this.uiStore.setController(this.controller);
+    this.uiStore.setWorld(this.world);
+    this.uiStore.setContraptions(this.contraptionManager);
+    this.uiStore.setSceneRenderer(this.sceneRenderer);
+    this.uiStore.setMinimap(this.minimap);
     this.navigationSystem = new NavigationSystem(
-      document.body,
       this.playerPhysics,
       this.controller,
-      this.uiManager
+      this.uiStore
     );
-    this.uiManager.setNavigationSystem(this.navigationSystem);
+    this.uiStore.setNavigationSystem(this.navigationSystem);
 
     // 4. Clock & FPS tracking
     this.clock = new THREE.Clock();
@@ -163,7 +163,7 @@ class Game {
       onPlayersUpdate: (players) => {
         this.remotePlayers = players;
         this.minimap.setRemotePlayers(players);
-        this.uiManager.setRemotePlayers(players);
+        this.uiStore.setRemotePlayers(players);
       },
       onTerrainUpdate: (chunks) => {
         this.world.applyRemoteChunkUpdates(chunks);
@@ -336,7 +336,7 @@ class Game {
     this.sceneRenderer.setInventoryPlacementPreview(this.controller.inventoryPlacementPreview);
 
     // 7. Update UI HUD
-    this.uiManager.updateHUD(
+    this.uiStore.updateHUD(
       this.currentFps,
       playerPos,
       this.controller.currentRaycast,

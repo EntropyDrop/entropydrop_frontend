@@ -74,8 +74,6 @@ function makeMockChunk(cx: number, cz: number, blockHeight = 10, color = 0x3c852
 
 test('Minimap seamlessly renders across toroidal boundary at (1, 1, 1)', () => {
   const dom = setupMockDOM();
-  const parent = createMockElement('div');
-
   const chunks = new Map<string, any>();
   // Chunk at (0, 0)
   chunks.set('0,0', makeMockChunk(0, 0, 15, 0x112233));
@@ -93,7 +91,7 @@ test('Minimap seamlessly renders across toroidal boundary at (1, 1, 1)', () => {
     microVoxels: { cells: new Map() }
   };
 
-  const minimap = new Minimap(parent, world, null);
+  const minimap = new Minimap(world, null);
   // Recompute at player position (1, 1)
   minimap.recomputeTerrain(1, 1);
 
@@ -119,7 +117,6 @@ test('Minimap seamlessly renders across toroidal boundary at (1, 1, 1)', () => {
 
 test('Minimap correctly wraps entity positions near toroidal boundaries', () => {
   const dom = setupMockDOM();
-  const parent = createMockElement('div');
   const world = { chunks: new Map(), getChunk: () => null, terrainVersion: 1 };
 
   // Contraption at x = 16380 (4 meters to the left of player at x = 0)
@@ -130,7 +127,8 @@ test('Minimap correctly wraps entity positions near toroidal boundaries', () => 
     contraptions: [contraption]
   };
 
-  const minimap = new Minimap(parent, world, contraptionManager);
+  const minimap = new Minimap(world, contraptionManager);
+  minimap.attachCanvas(createMockCanvas());
 
   // When player is at (0, 0), the update call should not throw and correctly process entity
   assert.doesNotThrow(() => {

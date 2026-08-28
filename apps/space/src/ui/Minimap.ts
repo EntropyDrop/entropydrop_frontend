@@ -12,9 +12,8 @@ import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ, wrapChunkX, wrapChunkZ } from
  * each frame redraws only the overlay.
  */
 export class Minimap {
-  container: HTMLElement;
-  canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
+  canvas: HTMLCanvasElement | null = null;
+  ctx: CanvasRenderingContext2D | null = null;
   world: any;
   contraptionManager: any;
 
@@ -38,22 +37,11 @@ export class Minimap {
   remotePlayers: any[];
   dpr = 1;
 
-  constructor(parent: HTMLElement, world, contraptionManager) {
+  private readonly resizeHandler = () => this.applySize();
+
+  constructor(world, contraptionManager) {
     this.world = world;
     this.contraptionManager = contraptionManager;
-
-    const reactContainer = document.getElementById?.('minimap-container') || null;
-    this.container = reactContainer || document.createElement('div');
-    this.container.className = 'minimap-container';
-    let canvas = this.container.querySelector('.minimap-canvas') as HTMLCanvasElement | null;
-    if (!canvas) {
-      canvas = document.createElement('canvas');
-      canvas.className = 'minimap-canvas';
-      this.container.appendChild(canvas);
-    }
-    this.canvas = canvas;
-    this.ctx = this.canvas.getContext('2d')!;
-    if (!this.container.isConnected) parent.appendChild(this.container);
 
     this.terrainCanvas = document.createElement('canvas');
     this.terrainCanvas.width = Minimap.CELLS;
@@ -62,16 +50,29 @@ export class Minimap {
     this.imageData = this.terrainCtx.createImageData(Minimap.CELLS, Minimap.CELLS);
     this.remotePlayers = [];
 
-    this.applySize();
     if (typeof window !== 'undefined') {
-      window.addEventListener('resize', () => this.applySize());
+      window.addEventListener('resize', this.resizeHandler);
     }
+  }
+
+  /** React owns the visible canvas and provides it through this lifecycle hook. */
+  attachCanvas(canvas: HTMLCanvasElement | null) {
+    this.canvas = canvas;
+    this.ctx = canvas?.getContext('2d') || null;
+    if (canvas) this.applySize();
+  }
+
+  dispose() {
+    if (typeof window !== 'undefined') window.removeEventListener('resize', this.resizeHandler);
+    this.attachCanvas(null);
   }
 
   applySize() {
     if (typeof window === 'undefined') return;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.size = Math.max(96, Math.min(Minimap.SIZE, this.container.clientWidth - 8 || Minimap.SIZE));
+    if (!this.canvas) return;
+    const containerWidth = this.canvas.parentElement?.clientWidth || Minimap.SIZE + 8;
+    this.size = Math.max(96, Math.min(Minimap.SIZE, containerWidth - 8 || Minimap.SIZE));
     const size = this.size;
     this.canvas.width = size * this.dpr;
     this.canvas.height = size * this.dpr;
@@ -91,6 +92,7 @@ export class Minimap {
    * @param drivenContraption The driven entity, or null.
    */
   update(playerPos, yaw, isDriving, drivenContraption) {
+    if (!this.canvas || !this.ctx) return;
     const px = playerPos.x;
     const pz = playerPos.z;
     const now = performance.now();

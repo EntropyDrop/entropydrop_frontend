@@ -13,7 +13,7 @@ import {
 } from '../src/engine/controls/PlayerController.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 import { World } from '../src/engine/voxel/World.ts';
-import { UIManager } from '../src/ui/UIManager.ts';
+import { SpaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
 
 /**
  * Backpack: three categories of 9 items each (block sets, entities, color sets),
@@ -146,17 +146,19 @@ test('inventory slots bridge to the active category', () => {
 });
 
 test('the backpack workbench no longer renders tool cards', () => {
-  const uiSource = readFileSync(new URL('../src/ui/UIManager.ts', import.meta.url), 'utf8');
+  const inventorySource = readFileSync(new URL('../src/ui/react/components/InventoryModal.tsx', import.meta.url), 'utf8');
+  const hudSource = readFileSync(new URL('../src/ui/react/components/Hud.tsx', import.meta.url), 'utf8');
+  const editorSource = readFileSync(new URL('../src/ui/react/components/EditorModal.tsx', import.meta.url), 'utf8');
   const styleSource = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
   const indexSource = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  assert.doesNotMatch(uiSource, /inventory-card tool-card/);
-  assert.doesNotMatch(uiSource, /const tools = \[/);
-  assert.doesNotMatch(uiSource, /KEYBOARD PALETTE \(9\)/);
-  assert.doesNotMatch(uiSource, /CURRENT BUILD COLOR/);
-  assert.match(uiSource, /Add current palette/);
-  assert.match(uiSource, /colorset-preview-grid/);
-  assert.doesNotMatch(uiSource, /teleConsoleLogs\.innerHTML/);
-  assert.doesNotMatch(uiSource, /applyAgentCode\(code, targetId, true\)/);
+  assert.doesNotMatch(inventorySource, /inventory-card tool-card/);
+  assert.doesNotMatch(inventorySource, /const tools = \[/);
+  assert.doesNotMatch(inventorySource, /KEYBOARD PALETTE \(9\)/);
+  assert.doesNotMatch(inventorySource, /CURRENT BUILD COLOR/);
+  assert.match(inventorySource, /Add current palette/);
+  assert.match(`${inventorySource}\n${hudSource}`, /colorset-(?:preview-grid|colors)/);
+  assert.doesNotMatch(editorSource, /\.innerHTML|createElement\(/);
+  assert.doesNotMatch(editorSource, /applyAgentCode\(code, targetId, true\)/);
   assert.match(styleSource, /\.colorset-colors\s*\{[^}]*grid-template-columns:\s*repeat\(3,/s);
   assert.match(indexSource, /Content-Security-Policy/);
   assert.match(indexSource, /object-src 'none'/);
@@ -433,7 +435,7 @@ test('backpack persists all categories and seeds the default palette', () => {
 });
 
 test('inventory export filenames use the item name', () => {
-  const ui = Object.create(UIManager.prototype);
+  const ui = new SpaceUiStore();
   assert.equal(ui.inventoryJsonFilename('My Palette'), 'My Palette.json');
   assert.equal(ui.inventoryJsonFilename('robot/body?.json'), 'robot_body_.json');
 });
@@ -560,4 +562,3 @@ test('copySelectionSmart handles both entity and world block selection with unif
   assert.equal(controller.activeInventoryCategory, 'blockset');
   assert.equal(controller.inventories.blockset.items[0].blockCount, 1);
 });
-

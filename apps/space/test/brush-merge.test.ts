@@ -55,13 +55,14 @@ test('sampling updates the current color', () => {
 });
 
 test('the six-tool hotbar includes Wrench and Hammer but no Pipette', () => {
-  // UIManager removed Pipette from hotbarSlots; keep the SpecialTool constant for compatibility.
+  // React UI removed Pipette from the rendered hotbar; keep the constant for compatibility.
   assert.equal(SpecialTool.PIPETTE, 'pipette');
-  const source = readFileSync(new URL('../src/ui/UIManager.ts', import.meta.url), 'utf8');
-  const hotbarDefinition = source.slice(source.indexOf('this.hotbarSlots = ['), source.indexOf('this.selectedHotbarIndex'));
+  const source = readFileSync(new URL('../src/ui/react/store/SpaceUiStore.ts', import.meta.url), 'utf8');
+  const hotbarDefinition = source.slice(source.indexOf('const HOTBAR_SLOTS = ['), source.indexOf('const EMPTY_SELECTOR'));
   assert.match(hotbarDefinition, /SpecialTool\.WRENCH/);
   assert.match(hotbarDefinition, /SpecialTool\.HAMMER/);
   assert.match(hotbarDefinition, /SpecialTool\.SELECTOR/);
   assert.doesNotMatch(hotbarDefinition, /SpecialTool\.PIPETTE/);
-  assert.match(source, /const showInventory = slot\?\.value === SpecialTool\.HAMMER/);
+  const hudSource = readFileSync(new URL('../src/ui/react/components/Hud.tsx', import.meta.url), 'utf8');
+  assert.match(hudSource, /activeTool === SpecialTool\.HAMMER/);
 });

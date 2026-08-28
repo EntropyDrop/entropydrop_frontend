@@ -7,7 +7,7 @@ import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerCont
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 import { ActionDomain, executeBasicAction } from '../src/engine/actions/BasicActions.ts';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
-import { UIManager } from '../src/ui/UIManager.ts';
+import { SpaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
 
 /**
  * Selector tool micro-block selection mode:
@@ -803,71 +803,24 @@ test('default mass uses block volume: 10 kg/m³, 0.08 kg per 0.2m microblock', (
   assert.equal(c4.mass, 10);
 });
 
-test('updateToolPanelMode replaces palette with selector panel when selector is active', () => {
-  const elements = new Map();
-  const createMockElement = (tag = 'div') => {
-    const el: any = {
-      tagName: tag,
-      style: {},
-      dataset: {},
-      childNodes: [],
-      children: [],
-      classList: { add() {}, remove() {}, toggle() {} },
-      appendChild(child) {
-        el.childNodes.push(child);
-        el.children.push(child);
-        return child;
-      },
-      querySelectorAll: () => [],
-      querySelector: () => null,
-      addEventListener() {},
-      setAttribute() {},
-      click() {}
-    };
-    return el;
-  };
-
-  const mockDoc = {
-    getElementById: (id) => {
-      if (!elements.has(id)) {
-        elements.set(id, createMockElement('div'));
-      }
-      return elements.get(id);
-    },
-    createElement: (tag) => createMockElement(tag)
-  };
-  globalThis.document = mockDoc as any;
-
+test('React UI store exposes palette, selector, and backpack tool modes', () => {
   const controller = makeMicroController();
   controller.inventories = {
     entity: { items: Array(9).fill(null) },
     blockset: { items: Array(9).fill(null) },
     colorset: { items: Array(9).fill(null) }
   };
-  const ui = new UIManager();
+  const ui = new SpaceUiStore();
   ui.setController(controller);
-  ui.hotbarContainer = mockDoc.getElementById('hotbar') as any;
-  ui.colorPaletteBar = mockDoc.getElementById('color-palette-bar') as any;
 
-  // Slot 0: Shovel -> shows color palette
   ui.selectHotbarSlot(0);
-  assert.equal(mockDoc.getElementById('color-palette-wrapper').style.display, '');
-  assert.equal(mockDoc.getElementById('inventory-bar-wrapper').style.display, 'none');
-  assert.equal(mockDoc.getElementById('selector-panel-wrapper').style.display, 'none');
+  assert.equal(ui.getSnapshot().hotbarSlots[ui.getSnapshot().selectedHotbarIndex].value, SpecialTool.SHOVEL);
 
-  // Slot 3: Selector (SpecialTool.SELECTOR) -> shows selector panel, hides palette & backpack
   ui.selectHotbarSlot(3);
-  assert.equal(mockDoc.getElementById('color-palette-wrapper').style.display, 'none');
-  assert.equal(mockDoc.getElementById('inventory-bar-wrapper').style.display, 'none');
-  assert.equal(mockDoc.getElementById('selector-panel-wrapper').style.display, '');
+  assert.equal(ui.getSnapshot().hotbarSlots[ui.getSnapshot().selectedHotbarIndex].value, SpecialTool.SELECTOR);
 
-  // Slot 4: Hammer (SpecialTool.HAMMER) -> shows backpack, hides palette & selector panel
   ui.selectHotbarSlot(4);
-  assert.equal(mockDoc.getElementById('color-palette-wrapper').style.display, 'none');
-  assert.equal(mockDoc.getElementById('inventory-bar-wrapper').style.display, '');
-  assert.equal(mockDoc.getElementById('selector-panel-wrapper').style.display, 'none');
-
-  globalThis.document = undefined;
+  assert.equal(ui.getSnapshot().hotbarSlots[ui.getSnapshot().selectedHotbarIndex].value, SpecialTool.HAMMER);
 });
 
 test('toggleSelectorMicroMode toggles between standard (1m) and micro (0.2m) mode with UI sync', () => {
@@ -889,4 +842,3 @@ test('toggleSelectorMicroMode toggles between standard (1m) and micro (0.2m) mod
   assert.equal(controller.selectorMicroMode, false, 'toggles back to standard mode');
   assert.ok(uiCalls.some(c => c.includes('STANDARD mode')));
 });
-

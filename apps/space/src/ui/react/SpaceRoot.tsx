@@ -1,19 +1,52 @@
-import React from 'react';
-import { spaceUiMarkup } from './spaceUiMarkup.ts';
+import React, { useEffect } from 'react';
+import { colorToHex } from '../../engine/voxel/BlockTypes.ts';
+import { ApiDocsModal, CodeEditorModal } from './components/EditorModal.tsx';
+import { Hud } from './components/Hud.tsx';
+import { InventoryModal } from './components/InventoryModal.tsx';
+import { BlueprintsModal, GlobalSettingsModal, PauseScreen } from './components/SimpleModals.tsx';
+import { MinimapCanvas, NavigationPanel } from './components/WorldWidgets.tsx';
+import { spaceUiStore } from './store/SpaceUiStore.ts';
+import { useSpaceUi } from './store/useSpaceUi.ts';
 
-/**
- * React owns the complete 2D interface tree while the existing UIManager acts
- * as the engine adapter for its stable element IDs. Keeping the original HTML
- * as a colocated React asset preserves the exact DOM hierarchy and CSS contract
- * during the migration; dynamic engine-owned regions are updated in place and
- * this component deliberately never re-renders them.
- */
-export const SpaceRoot = React.memo(function SpaceRoot() {
+export function SpaceRoot() {
+  const selectedColor = useSpaceUi(state => state.selectedColor);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--build-color', colorToHex(selectedColor));
+  }, [selectedColor]);
+
+  useEffect(() => {
+    const handleGlobalKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && spaceUiStore.handleEscape()) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter'
+        && spaceUiStore.getSnapshot().activeModal === 'code') {
+        event.preventDefault();
+        event.stopPropagation();
+        spaceUiStore.applyAndRunScript();
+        spaceUiStore.closeAllModals(true);
+        spaceUiStore.showToast('Script saved & applied, back to the game!');
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey, true);
+    return () => window.removeEventListener('keydown', handleGlobalKey, true);
+  }, []);
+
   return (
-    <div
-      id="space-ui-react-content"
-      style={{ display: 'contents' }}
-      dangerouslySetInnerHTML={{ __html: spaceUiMarkup }}
-    />
+    <>
+      <div id="canvas-container" onClick={() => spaceUiStore.resumeFromCanvas()} />
+      <Hud />
+      <NavigationPanel />
+      <MinimapCanvas />
+      <InventoryModal />
+      <BlueprintsModal />
+      <GlobalSettingsModal />
+      <CodeEditorModal />
+      <ApiDocsModal />
+      <PauseScreen />
+    </>
   );
-});
+}

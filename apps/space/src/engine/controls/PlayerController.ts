@@ -140,14 +140,14 @@ export class PlayerController {
   isDriving: boolean;
   drivenContraption: any;
 
-  constructor(camera, physics, world, soundManager, particleSystem, contraptionManager, uiManager) {
+  constructor(camera, physics, world, soundManager, particleSystem, contraptionManager, uiBridge) {
     this.camera = camera;
     this.physics = physics;
     this.world = world;
     this.sound = soundManager;
     this.particles = particleSystem;
     this.contraptions = contraptionManager;
-    this.ui = uiManager;
+    this.ui = uiBridge;
     if (this.contraptions) this.contraptions.selectionHost = this;
 
     this.sceneRenderer = null;
