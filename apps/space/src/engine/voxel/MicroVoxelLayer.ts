@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { DEFAULT_BLOCK_COLOR, normalizeColor } from './BlockTypes.ts';
-import { bendPoint, wrapMicroX, wrapMicroZ } from '../torus/TorusWorld.ts';
+import {
+  bendPoint,
+  TORUS_SIZE_X,
+  TORUS_SIZE_Z,
+  unwrapPeriodicNear,
+  wrapMicroX,
+  wrapMicroZ
+} from '../torus/TorusWorld.ts';
 
 export const MICRO_DIVISIONS = 5;
 export const MICRO_SIZE = 1 / MICRO_DIVISIONS;
@@ -229,8 +236,11 @@ export class MicroVoxelLayer {
 
     for (const [cellKey, color] of this.cells) {
       const [mx, my, mz] = cellKey.split(',').map(Number);
-      if (mx < minMx || mx > maxMx || my < minMy || my > maxMy || mz < minMz || mz > maxMz) continue;
-      extracted.push({ mx, my, mz, color, part: this.parts.get(cellKey) ?? null });
+      const extractedMx = unwrapPeriodicNear(mx, minMx, TORUS_SIZE_X * MICRO_DIVISIONS);
+      const extractedMz = unwrapPeriodicNear(mz, minMz, TORUS_SIZE_Z * MICRO_DIVISIONS);
+      if (extractedMx < minMx || extractedMx > maxMx || my < minMy || my > maxMy
+        || extractedMz < minMz || extractedMz > maxMz) continue;
+      extracted.push({ mx: extractedMx, my, mz: extractedMz, color, part: this.parts.get(cellKey) ?? null });
       this.cells.delete(cellKey);
       this.removeChunkCell(cellKey, mx, mz);
       this.indexCellDelete(mx, my, mz);
@@ -254,8 +264,11 @@ export class MicroVoxelLayer {
     }
     for (const [cellKey, color] of this.cells) {
       const [mx, my, mz] = cellKey.split(',').map(Number);
-      if (mx < minMx || mx > maxMx || my < minMy || my > maxMy || mz < minMz || mz > maxMz) continue;
-      extracted.push({ mx, my, mz, color, part: this.parts.get(cellKey) ?? null });
+      const extractedMx = unwrapPeriodicNear(mx, minMx, TORUS_SIZE_X * MICRO_DIVISIONS);
+      const extractedMz = unwrapPeriodicNear(mz, minMz, TORUS_SIZE_Z * MICRO_DIVISIONS);
+      if (extractedMx < minMx || extractedMx > maxMx || my < minMy || my > maxMy
+        || extractedMz < minMz || extractedMz > maxMz) continue;
+      extracted.push({ mx: extractedMx, my, mz: extractedMz, color, part: this.parts.get(cellKey) ?? null });
       this.cells.delete(cellKey);
       this.removeChunkCell(cellKey, mx, mz);
       this.indexCellDelete(mx, my, mz);

@@ -1048,6 +1048,12 @@ export class ContraptionManager {
   addGluePoint(pos) {
     if (!pos) return 0;
     this.clearChildSelection();
+    // A plain click always returns from single mode to a fresh three-point
+    // box. The click itself is point one, so only two more clicks are needed.
+    if (this.connectedSelection !== null || this.gluePoints.length >= 3) {
+      this.connectedSelection = null;
+      this.gluePoints = [];
+    }
     const anchor = this.gluePoints[0] || null;
     const pt = {
       x: anchor
@@ -1058,12 +1064,6 @@ export class ContraptionManager {
         ? unwrapPeriodicNear(Math.floor(pos.z), anchor.z, TORUS_SIZE_Z)
         : wrapZ(Math.floor(pos.z))
     };
-    // A plain click always returns from single mode to a fresh three-point
-    // box. The click itself is point one, so only two more clicks are needed.
-    if (this.connectedSelection !== null || this.gluePoints.length >= 3) {
-      this.connectedSelection = null;
-      this.gluePoints = [];
-    }
     if (this.gluePoints.length > 0) {
       // Keep the completed three-point box within MAX_ENTITY_BOUNDS per axis.
       const bounds = this.getBoundsFromPoints(this.gluePoints);

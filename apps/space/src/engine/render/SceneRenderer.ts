@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {
   applyCameraBend, hookSceneMaterials, cullChunks,
   bendPoint, bendDirection, unbendPoint, unbendDirection,
-  TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ
+  TORUS_SIZE_X, TORUS_SIZE_Z, unwrapPeriodicNear, wrapX, wrapZ
 } from '../torus/TorusWorld.ts';
 import { CuteCharacter, loadCuteCharacter, type SkinModel } from './CuteCharacter.ts';
 import {
@@ -1314,12 +1314,24 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     if (micro) {
       // Micro mode (Selector Tab): a/b are the meter-space origins of 0.2 m
       // cells, so quantize to micro indices and span whole micro cells.
-      const minMx = Math.floor(Math.min(a.x, b.x) * 5 + 1e-6);
-      const maxMx = Math.floor(Math.max(a.x, b.x) * 5 + 1e-6);
+      const aMx = Math.floor(a.x * 5 + 1e-6);
+      const bMx = unwrapPeriodicNear(
+        Math.floor(b.x * 5 + 1e-6),
+        aMx,
+        TORUS_SIZE_X * 5
+      );
+      const minMx = Math.min(aMx, bMx);
+      const maxMx = Math.max(aMx, bMx);
       const minMy = Math.floor(Math.min(a.y, b.y) * 5 + 1e-6);
       const maxMy = Math.floor(Math.max(a.y, b.y) * 5 + 1e-6);
-      const minMz = Math.floor(Math.min(a.z, b.z) * 5 + 1e-6);
-      const maxMz = Math.floor(Math.max(a.z, b.z) * 5 + 1e-6);
+      const aMz = Math.floor(a.z * 5 + 1e-6);
+      const bMz = unwrapPeriodicNear(
+        Math.floor(b.z * 5 + 1e-6),
+        aMz,
+        TORUS_SIZE_Z * 5
+      );
+      const minMz = Math.min(aMz, bMz);
+      const maxMz = Math.max(aMz, bMz);
       const sx = (maxMx - minMx + 1) * 0.2;
       const sy = (maxMy - minMy + 1) * 0.2;
       const sz = (maxMz - minMz + 1) * 0.2;
@@ -1337,9 +1349,13 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     // Block alignment rounds corners, adds one cell to the span, and centers on
     // cell centers. This exactly matches updateSelectionHologram, so the preview
     // and confirmed selection have identical geometry.
-    const minX = Math.floor(Math.min(a.x, b.x)), maxX = Math.floor(Math.max(a.x, b.x));
+    const aX = Math.floor(a.x);
+    const bX = unwrapPeriodicNear(Math.floor(b.x), aX, TORUS_SIZE_X);
+    const minX = Math.min(aX, bX), maxX = Math.max(aX, bX);
     const minY = Math.floor(Math.min(a.y, b.y)), maxY = Math.floor(Math.max(a.y, b.y));
-    const minZ = Math.floor(Math.min(a.z, b.z)), maxZ = Math.floor(Math.max(a.z, b.z));
+    const aZ = Math.floor(a.z);
+    const bZ = unwrapPeriodicNear(Math.floor(b.z), aZ, TORUS_SIZE_Z);
+    const minZ = Math.min(aZ, bZ), maxZ = Math.max(aZ, bZ);
     const sx = Math.max(0.001, maxX - minX + 1);
     const sy = Math.max(0.001, maxY - minY + 1);
     const sz = Math.max(0.001, maxZ - minZ + 1);
