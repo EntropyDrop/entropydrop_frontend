@@ -35,7 +35,27 @@
           <span id="ping-val" class="hud-ping ping-unknown">-- ms</span>
         </div>
         <div id="pos-val">X: -- | Y: -- | Z: --</div>
-        <div id="target-val">Target: Air</div>
+        
+        <!-- Nearby Entities Collapsible Section -->
+        <div class="hud-entities-section" id="hud-entities-section">
+          <div class="hud-entities-header" id="hud-entities-toggle" role="button" tabindex="0" title="Toggle nearby entities list">
+            <div class="hud-entities-title">
+              <span class="hud-entities-icon">⬡</span>
+              <span>Nearby Entities (<span id="hud-entities-count">0</span>)</span>
+            </div>
+            <button type="button" id="hud-entities-toggle-btn" class="hud-entities-toggle-btn" aria-label="Toggle entities list">▼</button>
+          </div>
+          <div class="hud-entities-body" id="hud-entities-body" style="display: none;">
+            <div class="hud-entities-list" id="hud-entities-list">
+              <!-- Dynamically populated -->
+            </div>
+            <div class="hud-entities-pagination" id="hud-entities-pagination" style="display: none;">
+              <button type="button" id="hud-entities-prev-btn" class="hud-page-btn" disabled title="Previous page">◀</button>
+              <span id="hud-entities-page-info" class="hud-page-info">1 / 1</span>
+              <button type="button" id="hud-entities-next-btn" class="hud-page-btn" disabled title="Next page">▶</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="hud-actions">

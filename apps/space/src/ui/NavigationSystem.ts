@@ -137,6 +137,10 @@ export class NavigationSystem {
     this.target = { x: targetX, y: targetY, z: targetZ };
     this.isNavigating = true;
 
+    if (this.inputX) this.inputX.value = String(targetX.toFixed(0));
+    if (this.inputY) this.inputY.value = String(targetY.toFixed(0));
+    if (this.inputZ) this.inputZ.value = String(targetZ.toFixed(0));
+
     // Automatically switch to flight mode
     this.physics.isFlying = true;
     this.physics.velocity.set(0, 0, 0);

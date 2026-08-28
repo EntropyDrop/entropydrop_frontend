@@ -306,9 +306,203 @@ canvas {
   color: var(--text-muted);
 }
 
-#target-val {
-  color: var(--accent-light);
+/* =========================================================================
+   HUD NEARBY ENTITIES WIDGET (Top-Left)
+   ========================================================================= */
+
+.hud-entities-section {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hud-entities-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  padding: 3px 4px;
+  border-radius: 2px;
+  user-select: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.hud-entities-header:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.hud-entities-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: 0.3px;
+}
+
+.hud-entities-icon {
+  color: var(--accent-active);
+  font-size: 11px;
+}
+
+.hud-entities-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 9px;
+  padding: 2px 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, color 0.15s ease;
+}
+
+.hud-entities-header:hover .hud-entities-toggle-btn {
+  color: var(--text-main);
+}
+
+.hud-entities-toggle-btn.expanded {
+  transform: rotate(180deg);
+}
+
+.hud-entities-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 320px;
+  min-width: 240px;
+  margin-top: 2px;
+}
+
+.hud-entities-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.hud-entity-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(10, 12, 18, 0.65);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 6px;
+  border-radius: 2px;
+  gap: 8px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.hud-entity-item:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(15, 18, 26, 0.85);
+}
+
+.hud-entity-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.hud-entity-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f1c40f;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-entity-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.hud-entity-pos {
+  font-family: monospace;
+}
+
+.hud-entity-dist {
+  color: var(--accent-active);
+  font-weight: 600;
+}
+
+.hud-entity-nav-btn {
+  background: rgba(0, 206, 201, 0.15);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-active);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.hud-entity-nav-btn:hover {
+  background: var(--accent-active);
+  color: #0a0c12;
+  box-shadow: 0 0 8px var(--accent-active);
+}
+
+.hud-entity-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 6px 4px;
+  text-align: center;
+  font-style: italic;
+}
+
+.hud-entities-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 2px;
+  font-size: 10px;
+  color: var(--text-dim);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 2px;
+}
+
+.hud-page-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hud-page-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--accent-border);
+  color: var(--accent-active);
+}
+
+.hud-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.hud-page-info {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 /* Floating Center Selection Banner */

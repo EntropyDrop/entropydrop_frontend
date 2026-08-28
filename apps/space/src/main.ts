@@ -124,6 +124,7 @@ class Game {
       this.controller,
       this.uiManager
     );
+    this.uiManager.setNavigationSystem(this.navigationSystem);
 
     // 4. Clock & FPS tracking
     this.clock = new THREE.Clock();
@@ -156,6 +157,7 @@ class Game {
       onPlayersUpdate: (players) => {
         this.remotePlayers = players;
         this.minimap.setRemotePlayers(players);
+        this.uiManager.setRemotePlayers(players);
       },
       onTerrainUpdate: (chunks) => {
         this.world.applyRemoteChunkUpdates(chunks);

@@ -6,6 +6,7 @@ import { BLUEPRINTS, spawnBlueprintInWorld } from '../engine/contraption/Bluepri
 import { loadAgentConfig, saveAgentConfig, runAgentTurn } from '../engine/contraption/AgentChat.ts';
 import { MAX_STL_FILE_BYTES } from '../engine/voxel/STLVoxelizer.ts';
 import { ActionDomain } from '../engine/actions/BasicActions.ts';
+import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../engine/torus/TorusWorld.ts';
 
 const TOOL_PIXEL_ICONS: Record<string, string> = {
   [SpecialTool.SHOVEL]: '',
@@ -36,6 +37,26 @@ export class UIManager {
   pingVal: HTMLElement | null = null;
   posVal: HTMLElement | null = null;
   targetVal: HTMLElement | null = null;
+
+  // Nearby Entities DOM & State
+  entitiesSection: HTMLElement | null = null;
+  entitiesCount: HTMLElement | null = null;
+  entitiesToggle: HTMLElement | null = null;
+  entitiesToggleBtn: HTMLElement | null = null;
+  entitiesBody: HTMLElement | null = null;
+  entitiesList: HTMLElement | null = null;
+  entitiesPagination: HTMLElement | null = null;
+  entitiesPrevBtn: HTMLButtonElement | null = null;
+  entitiesNextBtn: HTMLButtonElement | null = null;
+  entitiesPageInfo: HTMLElement | null = null;
+  entitiesListExpanded: boolean = false;
+  entitiesCurrentPage: number = 1;
+  entitiesPageSize: number = 3;
+  cachedEntities: any[] = [];
+  lastEntitiesRenderAt: number = 0;
+  remotePlayers: any[] = [];
+  navigationSystem: any = null;
+
   hotbarContainer: HTMLElement | null = null;
   pauseScreen: HTMLElement | null = null;
   hasStarted: boolean = false;
@@ -181,6 +202,19 @@ export class UIManager {
     this.pingVal = document.getElementById('ping-val');
     this.posVal = document.getElementById('pos-val');
     this.targetVal = document.getElementById('target-val');
+
+    // Nearby Entities DOM
+    this.entitiesSection = document.getElementById('hud-entities-section');
+    this.entitiesCount = document.getElementById('hud-entities-count');
+    this.entitiesToggle = document.getElementById('hud-entities-toggle');
+    this.entitiesToggleBtn = document.getElementById('hud-entities-toggle-btn');
+    this.entitiesBody = document.getElementById('hud-entities-body');
+    this.entitiesList = document.getElementById('hud-entities-list');
+    this.entitiesPagination = document.getElementById('hud-entities-pagination');
+    this.entitiesPrevBtn = document.getElementById('hud-entities-prev-btn') as HTMLButtonElement | null;
+    this.entitiesNextBtn = document.getElementById('hud-entities-next-btn') as HTMLButtonElement | null;
+    this.entitiesPageInfo = document.getElementById('hud-entities-page-info');
+
     this.hotbarContainer = document.getElementById('hotbar');
     this.pauseScreen = document.getElementById('pause-screen');
     this.hasStarted = false;
@@ -319,6 +353,14 @@ export class UIManager {
     this.contraptions = contraptionManager;
   }
 
+  setRemotePlayers(players: any[]) {
+    this.remotePlayers = players || [];
+  }
+
+  setNavigationSystem(navigationSystem: any) {
+    this.navigationSystem = navigationSystem;
+  }
+
   setSceneRenderer(sceneRenderer) {
     this.sceneRenderer = sceneRenderer;
     this.sceneRenderer?.setEntityPreviewCanvas(this.entityPreviewCanvas);
@@ -372,6 +414,41 @@ export class UIManager {
     document.getElementById('close-inv-btn')?.addEventListener('click', () => this.toggleInventoryModal(false));
     document.getElementById('close-blueprints-btn')?.addEventListener('click', () => this.toggleBlueprintsModal(false));
     this.closeCodeBtn?.addEventListener('click', () => this.toggleCodeEditorModal(false));
+
+    // Nearby Entities Dropdown & Navigation Events
+    this.entitiesToggle?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleEntitiesList();
+    });
+    this.entitiesPrevBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.entitiesCurrentPage > 1) {
+        this.entitiesCurrentPage--;
+        this.renderEntitiesList(true);
+      }
+    });
+    this.entitiesNextBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const totalPages = Math.max(1, Math.ceil(this.cachedEntities.length / this.entitiesPageSize));
+      if (this.entitiesCurrentPage < totalPages) {
+        this.entitiesCurrentPage++;
+        this.renderEntitiesList(true);
+      }
+    });
+    this.entitiesList?.addEventListener('click', (e) => {
+      const navBtn = (e.target as HTMLElement)?.closest('.hud-entity-nav-btn') as HTMLElement | null;
+      if (!navBtn) return;
+      e.stopPropagation();
+      const x = parseFloat(navBtn.dataset.x || '0');
+      const y = parseFloat(navBtn.dataset.y || '20');
+      const z = parseFloat(navBtn.dataset.z || '0');
+      const name = navBtn.dataset.name || 'Entity';
+      if (this.navigationSystem) {
+        const flightY = Math.max(y + 1.5, 20);
+        this.navigationSystem.startNavigation(x, flightY, z);
+        this.showToast(`Auto Pilot Engaged: ${name} (${x.toFixed(0)}, ${flightY.toFixed(0)}, ${z.toFixed(0)})`);
+      }
+    });
 
     // Global Settings Modal
     this.globalSettingsBtn?.addEventListener('click', () => this.toggleGlobalSettingsModal());
@@ -2231,6 +2308,75 @@ export class UIManager {
     }, 2800);
   }
 
+  toggleEntitiesList(expand?: boolean) {
+    this.entitiesListExpanded = expand !== undefined ? expand : !this.entitiesListExpanded;
+    if (this.entitiesBody) {
+      this.entitiesBody.style.display = this.entitiesListExpanded ? 'flex' : 'none';
+    }
+    if (this.entitiesToggleBtn) {
+      this.entitiesToggleBtn.classList.toggle('expanded', this.entitiesListExpanded);
+    }
+    if (this.entitiesListExpanded) {
+      this.renderEntitiesList(true);
+    }
+  }
+
+  renderEntitiesList(force = false) {
+    if (!this.entitiesList) return;
+    const list = this.cachedEntities;
+    const total = list.length;
+    const totalPages = Math.max(1, Math.ceil(total / this.entitiesPageSize));
+
+    if (this.entitiesCurrentPage > totalPages) {
+      this.entitiesCurrentPage = totalPages;
+    }
+    if (this.entitiesCurrentPage < 1) {
+      this.entitiesCurrentPage = 1;
+    }
+
+    if (this.entitiesPagination) {
+      this.entitiesPagination.style.display = total > this.entitiesPageSize ? 'flex' : 'none';
+    }
+    if (this.entitiesPageInfo) {
+      this.entitiesPageInfo.textContent = `${this.entitiesCurrentPage} / ${totalPages}`;
+    }
+    if (this.entitiesPrevBtn) {
+      this.entitiesPrevBtn.disabled = this.entitiesCurrentPage <= 1;
+    }
+    if (this.entitiesNextBtn) {
+      this.entitiesNextBtn.disabled = this.entitiesCurrentPage >= totalPages;
+    }
+
+    if (total === 0) {
+      this.entitiesList.innerHTML = '<div class="hud-entity-empty">No entities detected nearby</div>';
+      return;
+    }
+
+    const startIdx = (this.entitiesCurrentPage - 1) * this.entitiesPageSize;
+    const endIdx = startIdx + this.entitiesPageSize;
+    const pageItems = list.slice(startIdx, endIdx);
+
+    let html = '';
+    for (const item of pageItems) {
+      const distStr = item.dist < 1000 ? `${item.dist.toFixed(1)}m` : `${(item.dist / 1000).toFixed(2)}km`;
+      const posStr = `X:${item.pos.x.toFixed(0)} Y:${item.pos.y.toFixed(0)} Z:${item.pos.z.toFixed(0)}`;
+      const safeName = String(item.name).replace(/"/g, '&quot;');
+      html += `
+        <div class="hud-entity-item">
+          <div class="hud-entity-info">
+            <div class="hud-entity-name" title="${safeName}">${safeName}</div>
+            <div class="hud-entity-meta">
+              <span class="hud-entity-pos">${posStr}</span>
+              <span class="hud-entity-dist">${distStr}</span>
+            </div>
+          </div>
+          <button type="button" class="hud-entity-nav-btn" data-x="${item.pos.x}" data-y="${item.pos.y}" data-z="${item.pos.z}" data-name="${safeName}" title="Autopilot to ${safeName}">NAV</button>
+        </div>
+      `;
+    }
+    this.entitiesList.innerHTML = html;
+  }
+
   updateHUD(fps, playerPos, raycast, hoveredContraption, pingMs: number | null = null) {
     if (this.fpsVal) this.fpsVal.textContent = `${Math.round(fps)} FPS`;
     if (this.pingVal) {
@@ -2248,20 +2394,66 @@ export class UIManager {
       this.posVal.textContent = `X: ${playerPos.x.toFixed(1)} | Y: ${playerPos.y.toFixed(1)} | Z: ${playerPos.z.toFixed(1)}`;
     }
 
-    if (this.targetVal) {
-      if (hoveredContraption) {
-        const programmingHint = 'Press C to program';
-        const nodeId = this.controller?.hoveredContraptionHit?.entityId || 'root';
-        const bodyLabel = hoveredContraption.getNodeBodyType?.(nodeId) || hoveredContraption.bodyType;
-        this.targetVal.textContent = `Entity #${hoveredContraption.id}/${nodeId} · ${String(bodyLabel).toUpperCase()} · ${hoveredContraption.collisionCellCount} cells / ${hoveredContraption.blocks.length} voxels (${programmingHint})`;
-        this.targetVal.style.color = '#f1c40f';
-      } else if (raycast && raycast.hit) {
-        this.targetVal.style.color = '';
-        const scale = raycast.kind === 'micro' ? 'micro voxel 0.2^3' : 'standard block 1^3';
-        this.targetVal.textContent = `Target: ${scale} · ${colorToHex(raycast.color)} (${raycast.hitPos.x.toFixed(1)}, ${raycast.hitPos.y.toFixed(1)}, ${raycast.hitPos.z.toFixed(1)})`;
-      } else {
-        this.targetVal.style.color = '';
-        this.targetVal.textContent = 'Target: Air';
+    // Update Nearby Entities
+    const entityList: Array<{ id: string | number; name: string; pos: { x: number; y: number; z: number }; dist: number; type: string }> = [];
+
+    const contraptions = this.contraptions?.contraptions || [];
+    for (const c of contraptions) {
+      if (!c || !c.position) continue;
+      let dx = wrapX(c.position.x) - wrapX(playerPos.x);
+      if (dx > TORUS_SIZE_X / 2) dx -= TORUS_SIZE_X;
+      else if (dx < -TORUS_SIZE_X / 2) dx += TORUS_SIZE_X;
+
+      let dz = wrapZ(c.position.z) - wrapZ(playerPos.z);
+      if (dz > TORUS_SIZE_Z / 2) dz -= TORUS_SIZE_Z;
+      else if (dz < -TORUS_SIZE_Z / 2) dz += TORUS_SIZE_Z;
+
+      const dy = c.position.y - playerPos.y;
+      const dist = Math.hypot(dx, dy, dz);
+      const name = c.name || `Entity #${c.id}`;
+      entityList.push({
+        id: c.id,
+        name,
+        pos: { x: c.position.x, y: c.position.y, z: c.position.z },
+        dist,
+        type: c.bodyType || 'dynamic'
+      });
+    }
+
+    const remotePlayers = this.remotePlayers || [];
+    for (const rp of remotePlayers) {
+      if (rp.is_self) continue;
+      let rdx = wrapX(rp.x) - wrapX(playerPos.x);
+      if (rdx > TORUS_SIZE_X / 2) rdx -= TORUS_SIZE_X;
+      else if (rdx < -TORUS_SIZE_X / 2) rdx += TORUS_SIZE_X;
+
+      let rdz = wrapZ(rp.z) - wrapZ(playerPos.z);
+      if (rdz > TORUS_SIZE_Z / 2) rdz -= TORUS_SIZE_Z;
+      else if (rdz < -TORUS_SIZE_Z / 2) rdz += TORUS_SIZE_Z;
+
+      const rdy = rp.y - playerPos.y;
+      const dist = Math.hypot(rdx, rdy, rdz);
+      entityList.push({
+        id: String(rp.user_id || rp.player_entity_id),
+        name: `Player: ${rp.username || 'Player'}`,
+        pos: { x: rp.x, y: rp.y, z: rp.z },
+        dist,
+        type: 'player'
+      });
+    }
+
+    entityList.sort((a, b) => a.dist - b.dist);
+    this.cachedEntities = entityList;
+
+    if (this.entitiesCount) {
+      this.entitiesCount.textContent = String(entityList.length);
+    }
+
+    if (this.entitiesListExpanded) {
+      const now = performance.now();
+      if (now - this.lastEntitiesRenderAt > 250) {
+        this.lastEntitiesRenderAt = now;
+        this.renderEntitiesList();
       }
     }
 

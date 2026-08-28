@@ -240,3 +240,23 @@ test('NavigationSystem cancels on key press with Auto Pilot Disengaged toast', (
   assert.ok(ui.toasts.some((t: string) => t.includes('Auto Pilot Disengaged')));
   dom.cleanup();
 });
+
+test('NavigationSystem startNavigation syncs coordinates to input elements', () => {
+  const dom = setupMockDOM();
+  const parent = createMockElement('div');
+  const physics = createMockPhysics({ x: 100, y: 20, z: 200 });
+  const controller = createMockController();
+  const ui = createMockUI();
+
+  const nav = new NavigationSystem(parent, physics, controller, ui);
+  nav.startNavigation(500, 65, 800);
+
+  const inputX = parent.querySelector('#nav-input-x');
+  const inputY = parent.querySelector('#nav-input-y');
+  const inputZ = parent.querySelector('#nav-input-z');
+
+  assert.equal(inputX?.value, '500');
+  assert.equal(inputY?.value, '65');
+  assert.equal(inputZ?.value, '800');
+  dom.cleanup();
+});
