@@ -4,6 +4,7 @@ import { BodyType } from '../contraption/Contraption.ts';
 import type { World } from '../voxel/World.ts';
 
 const ENTITY_BROADPHASE_CELL_SIZE = 32;
+const TERRAIN_SWEEP_THRESHOLD = 0.1;
 const TERRAIN_FACE_NORMALS = [
   new THREE.Vector3(-1, 0, 0),
   new THREE.Vector3(1, 0, 0),
@@ -79,7 +80,12 @@ export class ContraptionPhysics {
         const before = previous.get(body.id);
         body.velocity.copy(body.position).sub(before.position).divideScalar(sdt);
         body.angularVelocity.copy(this.angularVelocityBetween(before.quaternion, body.quaternion, sdt));
-        this.resolveTerrainCollisionBody(contraption, body, sdt);
+        this.resolveTerrainCollisionBody(
+          contraption,
+          body,
+          sdt,
+          before
+        );
       }
       contraption.syncAllBodyTransforms?.();
     }
@@ -393,8 +399,44 @@ export class ContraptionPhysics {
     return null;
   }
 
-  solveTerrainContact(body, normal, hitPosition, penetration, contactCount, dt) {
-    body.position.addScaledVector(normal, Math.max(0, penetration - 0.001) * 0.9);
+  sweepTerrainContact(start, end) {
+    const movement = end.clone().sub(start);
+    const distance = movement.length();
+    if (distance < 1e-8) return null;
+    const direction = movement.divideScalar(distance);
+    const hits = [
+      this.world.raycast?.(start, direction, distance + 0.002),
+      this.world.raycastMicro?.(start, direction, distance + 0.002)
+    ].filter(hit => hit?.hit
+      && Number.isFinite(hit.distance)
+      && hit.distance >= 0
+      && hit.distance <= distance + 0.002);
+    hits.sort((a, b) => a.distance - b.distance);
+
+    for (const hit of hits) {
+      const normal = new THREE.Vector3(
+        Number(hit.normal?.x) || 0,
+        Number(hit.normal?.y) || 0,
+        Number(hit.normal?.z) || 0
+      );
+      if (normal.lengthSq() < 0.5) continue;
+      normal.normalize();
+      const approach = -direction.dot(normal);
+      if (approach <= 1e-6) continue;
+      const overtravel = Math.max(0, distance - hit.distance) * approach;
+      if (overtravel <= 0) continue;
+      return {
+        normal,
+        penetration: overtravel + 0.001,
+        hitPosition: start.clone().addScaledVector(direction, hit.distance)
+      };
+    }
+    return null;
+  }
+
+  solveTerrainContact(body, normal, hitPosition, penetration, contactCount, dt, swept = false) {
+    const correctionRatio = swept ? 1 : 0.9;
+    body.position.addScaledVector(normal, Math.max(0, penetration - 0.001) * correctionRatio);
     if (normal.y > 0.5) body.isOnGround = true;
 
     const r = hitPosition.clone().sub(body.position);
@@ -470,27 +512,52 @@ export class ContraptionPhysics {
     if (body.velocity.lengthSq() < 0.01) body.velocity.set(0, 0, 0);
   }
 
-  resolveTerrainCollisionBody(contraption, body, dt) {
+  resolveTerrainCollisionBody(contraption, body, dt, previousPose = null) {
     // A dynamic body's terrain contact includes every kinematic part rigidly
     // attached to it: after a child component is split off, the child's cells
     // still move with the body (scene-graph parent), so they must keep the
     // structure supported instead of silently losing that ground contact.
     const samplePoints = contraption.getCollisionSamplePoints(body.id, true);
     const contacts = new Map();
+    const translationDistance = previousPose
+      ? body.position.distanceTo(previousPose.position)
+      : 0;
+    const rotationDistance = previousPose
+      ? body.quaternion.angleTo(previousPose.quaternion) * Math.max(0.5, contraption.boundingRadius || 0)
+      : 0;
+    const shouldSweep = translationDistance + rotationDistance >= TERRAIN_SWEEP_THRESHOLD;
+    const inverseCurrentQuaternion = shouldSweep ? body.quaternion.clone().invert() : null;
 
-    for (const pt of samplePoints) {
+    for (let index = 0; index < samplePoints.length; index++) {
+      const pt = samplePoints[index];
       const contact = this.terrainContactAtPoint(pt);
-      if (!contact) continue;
-      const key = `${contact.normal.x},${contact.normal.y},${contact.normal.z}`;
+      const previousPoint = shouldSweep
+        ? pt.clone()
+          .sub(body.position)
+          .applyQuaternion(inverseCurrentQuaternion)
+          .applyQuaternion(previousPose.quaternion)
+          .add(previousPose.position)
+        : null;
+      const sweptContact = previousPoint
+        ? this.sweepTerrainContact(previousPoint, pt)
+        : null;
+      // A deeply embedded endpoint may be closer to the far side of a voxel
+      // and therefore report its exit face. The sweep carries the actual entry
+      // face and must win whenever the point travelled far enough to need CCD.
+      const resolvedContact = sweptContact || contact;
+      if (!resolvedContact) continue;
+      const key = `${resolvedContact.normal.x},${resolvedContact.normal.y},${resolvedContact.normal.z}`;
       const group = contacts.get(key) || {
-        normal: contact.normal,
+        normal: resolvedContact.normal,
         penetration: 0,
         hitPosition: new THREE.Vector3(),
-        count: 0
+        count: 0,
+        swept: false
       };
-      group.penetration = Math.max(group.penetration, contact.penetration);
-      group.hitPosition.add(pt);
+      group.penetration = Math.max(group.penetration, resolvedContact.penetration);
+      group.hitPosition.add(sweptContact?.hitPosition || pt);
       group.count++;
+      group.swept ||= !!sweptContact;
       contacts.set(key, group);
     }
 
@@ -506,7 +573,8 @@ export class ContraptionPhysics {
         group.hitPosition,
         group.penetration,
         group.count,
-        dt
+        dt,
+        group.swept
       );
     }
   }

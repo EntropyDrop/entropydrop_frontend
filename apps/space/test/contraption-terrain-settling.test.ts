@@ -119,6 +119,72 @@ test('terrain wall collision resolves sideways without climbing or frame rewind'
   assert.ok(Math.abs(contraption.position.y - 1.5) < 0.02, 'the body should settle back on the floor');
 });
 
+test('terrain collision sweeps across a standard wall during a stalled frame', () => {
+  const wallX = 12;
+  const wallWorld = {
+    getBlock: (x) => x === wallX ? BlockTypes.COLOR_BLOCK : BlockTypes.AIR,
+    raycast: (origin, direction, maxDistance) => {
+      if (!(direction.x > 0) || origin.x >= wallX) return { hit: false };
+      const distance = (wallX - origin.x) / direction.x;
+      return distance <= maxDistance
+        ? { hit: true, distance, normal: { x: -1, y: 0, z: 0 } }
+        : { hit: false };
+    },
+    raycastMicro: () => ({ hit: false }),
+    microVoxels: { get: () => null }
+  };
+  // 25m/s ends a sub-step deep inside the wall; 60m/s skips the whole voxel.
+  // Both must use the entry face instead of choosing the nearer exit face.
+  for (const speed of [25, 60]) {
+    const contraption = new Contraption(
+      5,
+      [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+      new THREE.Vector3(10, 1, 10),
+      new THREE.Scene(),
+      { bodyType: BodyType.DYNAMIC, restitution: 0.01, friction: 0 }
+    );
+    contraption.useGravity = false;
+    contraption.velocity.x = speed;
+
+    new ContraptionPhysics(wallWorld as any).update(contraption, 0.08);
+
+    assert.ok(contraption.position.x < 11.55, `the body must stop at the swept wall at ${speed}m/s, x=${contraption.position.x}`);
+    assert.ok(contraption.velocity.x < 1, `the wall must cancel ${speed}m/s approaching velocity, vx=${contraption.velocity.x}`);
+  }
+});
+
+test('terrain collision sweeps across a 0.2m micro wall', () => {
+  const wallX = 12;
+  const wallMicroX = wallX * 5;
+  const wallWorld = {
+    getBlock: () => BlockTypes.AIR,
+    getMicroBlock: (mx) => mx === wallMicroX ? { block: BlockTypes.COLOR_BLOCK } : null,
+    raycast: () => ({ hit: false }),
+    raycastMicro: (origin, direction, maxDistance) => {
+      if (!(direction.x > 0) || origin.x >= wallX) return { hit: false };
+      const distance = (wallX - origin.x) / direction.x;
+      return distance <= maxDistance
+        ? { hit: true, distance, normal: { x: -1, y: 0, z: 0 } }
+        : { hit: false };
+    },
+    microVoxels: { get: () => null }
+  };
+  const contraption = new Contraption(
+    6,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(10, 1, 10),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC, restitution: 0.01, friction: 0 }
+  );
+  contraption.useGravity = false;
+  contraption.velocity.x = 20;
+
+  new ContraptionPhysics(wallWorld as any).update(contraption, 0.08);
+
+  assert.ok(contraption.position.x < 11.55, `the body must not skip the micro wall, x=${contraption.position.x}`);
+  assert.ok(contraption.velocity.x <= 0, `the micro wall must cancel approaching velocity, vx=${contraption.velocity.x}`);
+});
+
 test('resting terrain contact remains stable across physics frames', () => {
   const contraption = new Contraption(
     4,
