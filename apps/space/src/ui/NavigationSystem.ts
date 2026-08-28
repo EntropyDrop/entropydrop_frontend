@@ -38,18 +38,19 @@ export class NavigationSystem {
     this.controller = controller;
     this.ui = ui;
 
-    this.container = document.createElement('div');
+    this.container = document.getElementById?.('nav-system-container') || document.createElement('div');
     this.container.id = 'nav-system-container';
     this.container.className = 'nav-system-container';
 
     this.render();
-    parent.appendChild(this.container);
+    if (!this.container.isConnected) parent.appendChild(this.container);
 
     this.bindEvents();
   }
 
   private render() {
-    this.container.innerHTML = `
+    if (!this.container.querySelector('#nav-input-x')) {
+      this.container.innerHTML = `
       <div class="nav-badge">
         <span class="nav-badge-dot"></span>
         <span>AUTO PILOT</span>
@@ -70,6 +71,7 @@ export class NavigationSystem {
       </div>
       <button type="button" id="nav-start-btn" class="nav-action-btn start-btn">START</button>
     `;
+    }
 
     this.inputX = this.container.querySelector('#nav-input-x');
     this.inputY = this.container.querySelector('#nav-input-y');

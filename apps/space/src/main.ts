@@ -21,6 +21,12 @@ import {
 import { loadDistantLodCache } from './bootstrap/DistantLodCache.ts';
 import type { DistantLodCacheData } from './engine/render/DistantLodCacheFormat.ts';
 import { MultiplayerSync, type RemotePlayerInfo } from './engine/network/MultiplayerSync.ts';
+import { mountSpaceUi } from './ui/react/mountSpaceUi.tsx';
+
+// Mount the 2D interface as soon as the module starts. The authentication gate
+// remains above it until bootstrap succeeds, and every engine adapter created
+// later can synchronously resolve the React-owned DOM.
+mountSpaceUi();
 
 class Game {
   canvasContainer: HTMLElement | null;

@@ -42,12 +42,18 @@ export class Minimap {
     this.world = world;
     this.contraptionManager = contraptionManager;
 
-    this.container = document.createElement('div');
+    const reactContainer = document.getElementById?.('minimap-container') || null;
+    this.container = reactContainer || document.createElement('div');
     this.container.className = 'minimap-container';
-    this.container.innerHTML = '<canvas class="minimap-canvas"></canvas>';
-    this.canvas = this.container.querySelector('canvas') as HTMLCanvasElement;
+    let canvas = this.container.querySelector('.minimap-canvas') as HTMLCanvasElement | null;
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvas.className = 'minimap-canvas';
+      this.container.appendChild(canvas);
+    }
+    this.canvas = canvas;
     this.ctx = this.canvas.getContext('2d')!;
-    parent.appendChild(this.container);
+    if (!this.container.isConnected) parent.appendChild(this.container);
 
     this.terrainCanvas = document.createElement('canvas');
     this.terrainCanvas.width = Minimap.CELLS;

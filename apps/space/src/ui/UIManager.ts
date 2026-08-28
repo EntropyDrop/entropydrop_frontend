@@ -2050,7 +2050,7 @@ export class UIManager {
     );
     colorSets.forEach((item, index) => {
       if (!item) {
-        addEmptySlot(`Empty slot ${index + 1} · save the palette or import`);
+        addEmptySlot(index, `Empty slot ${index + 1} · save the palette or import`);
         return;
       }
       const card = document.createElement('div');
