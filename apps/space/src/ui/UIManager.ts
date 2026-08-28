@@ -404,6 +404,7 @@ export class UIManager {
       if (this.controller) this.controller.openCodeEditorForTarget();
     });
     document.getElementById('inv-toggle')?.addEventListener('click', () => this.toggleInventoryModal());
+    document.getElementById('backpack-bar-title')?.addEventListener('click', () => this.toggleInventoryModal());
     document.getElementById('blueprints-toggle')?.addEventListener('click', () => this.toggleBlueprintsModal());
     document.getElementById('fly-toggle')?.addEventListener('click', () => {
       if (this.controller) {
@@ -1599,16 +1600,14 @@ export class UIManager {
         slotEl.innerHTML = `<span class="colorset-preview-grid">${(content.colors || []).slice(0, 9).map(hex => `<i style="background:${hex}"></i>`).join('')}</span>`;
       } else {
         const thumbUrl = InventoryThumbnailRenderer.getInstance().getThumbnail(content, 64);
+        const count = content.blockCount || content.blocks?.length || 0;
         if (thumbUrl) {
           slotEl.innerHTML = `
             <img class="inv-slot-thumb" src="${thumbUrl}" alt="${itemName}" draggable="false" />
-            <span class="inv-slot-tag ${isBlockSet ? 'bks' : 'ent'}">${isBlockSet ? 'BKS' : 'ENT'}</span>
-            <span class="inv-slot-count">${content.blockCount || content.blocks?.length || 0}</span>
+            <span class="inv-slot-count">${count}</span>
           `;
         } else {
-          slotEl.innerHTML = isBlockSet
-            ? `<span class="inv-slot-id">BKS</span><span class="inv-slot-count">${content.blockCount}</span>`
-            : `<span class="inv-slot-id">ENT</span><span class="inv-slot-count">${content.blockCount}</span>`;
+          slotEl.innerHTML = `<span class="inv-slot-count">${count}</span>`;
         }
       }
 
