@@ -33,12 +33,6 @@ export function resolveRemotePlayerLod(
   return baseLod(safeDistance);
 }
 
-export function wrappedAxisDelta(from: number, to: number, size: number) {
-  const delta = to - from;
-  if (!Number.isFinite(delta) || !Number.isFinite(size) || size <= 0) return delta;
-  return ((delta + size / 2) % size + size) % size - size / 2;
-}
-
 export function isProjectedPlayerVisible(
   projected: Pick<{ x: number; y: number; z: number }, 'x' | 'y' | 'z'>,
   margin = 1.2,

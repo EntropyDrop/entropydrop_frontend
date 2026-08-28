@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {
   isProjectedPlayerVisible,
   resolveRemotePlayerLod,
-  wrappedAxisDelta,
 } from '../src/engine/render/RemotePlayerLod.ts';
+import { wrappedAxisDelta } from '../src/engine/render/RemotePlayerMotion.ts';
 
 test('remote player distance LOD selects full, simplified, billboard, and hidden modes', () => {
   assert.equal(resolveRemotePlayerLod(10), 'full');

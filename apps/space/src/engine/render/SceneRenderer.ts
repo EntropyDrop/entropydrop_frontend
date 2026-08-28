@@ -8,9 +8,13 @@ import { CuteCharacter, loadCuteCharacter, type SkinModel } from './CuteCharacte
 import {
   isProjectedPlayerVisible,
   resolveRemotePlayerLod,
-  wrappedAxisDelta,
   type RemotePlayerLod,
 } from './RemotePlayerLod.ts';
+import {
+  estimateRemotePlayerMotion,
+  remoteMotionFreshness,
+  wrappedAxisDelta,
+} from './RemotePlayerMotion.ts';
 
 export const ENTITY_PREVIEW_LAYER = 1;
 export const ENTITY_PREVIEW_FORCE_LIMIT_RATIO = 0.72;
@@ -1708,6 +1712,14 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
           targetPitch: p.pitch || 0,
           currentPitch: p.pitch || 0,
           lastSeen: now,
+          lastMotionSample: {
+            x: p.x,
+            y: p.y,
+            z: p.z,
+            updatedAt: p.updated_at || null,
+          },
+          lastMotionSampleAt: now,
+          sampleVelocity: new THREE.Vector3(),
           skinUrl: p.minecraft_skin_url,
           skinModel: p.minecraft_skin_model || 'strong',
           loadedSkinUrl: null,
@@ -1722,7 +1734,33 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         this.remotePlayers.set(id, record);
         this.remotePlayersGroup.add(group);
       } else {
-        record.targetPosition.set(p.x, p.y, p.z);
+        const nextSample = {
+          x: p.x,
+          y: p.y,
+          z: p.z,
+          updatedAt: p.updated_at || null,
+        };
+        const timestampChanged = nextSample.updatedAt !== record.lastMotionSample.updatedAt;
+        const positionChanged = nextSample.x !== record.lastMotionSample.x
+          || nextSample.y !== record.lastMotionSample.y
+          || nextSample.z !== record.lastMotionSample.z;
+        if (timestampChanged || positionChanged) {
+          const estimate = estimateRemotePlayerMotion(
+            record.lastMotionSample,
+            nextSample,
+            TORUS_SIZE_X,
+            TORUS_SIZE_Z,
+            (now - record.lastMotionSampleAt) / 1000,
+          );
+          if (estimate) {
+            record.sampleVelocity.set(estimate.vx, estimate.vy, estimate.vz);
+          } else {
+            record.sampleVelocity.set(0, 0, 0);
+          }
+          record.lastMotionSample = nextSample;
+          record.lastMotionSampleAt = now;
+          record.targetPosition.set(p.x, p.y, p.z);
+        }
         record.targetYaw = p.yaw || 0;
         record.targetPitch = p.pitch || 0;
         record.lastSeen = now;
@@ -1742,8 +1780,13 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       else if (dz < -TORUS_SIZE_Z / 2) dz += TORUS_SIZE_Z;
 
       const dy = record.targetPosition.y - record.group.position.y;
-      const movementDistance = Math.hypot(dx, dz);
-      record.speed = THREE.MathUtils.lerp(record.speed, movementDistance / Math.max(0.001, dt), Math.min(1, dt * 8));
+      const sampleAgeSeconds = (now - record.lastMotionSampleAt) / 1000;
+      const motionFreshness = remoteMotionFreshness(sampleAgeSeconds);
+      const motionVx = record.sampleVelocity.x * motionFreshness;
+      const motionVy = record.sampleVelocity.y * motionFreshness;
+      const motionVz = record.sampleVelocity.z * motionFreshness;
+      const sampledSpeed = Math.hypot(motionVx, motionVz);
+      record.speed = THREE.MathUtils.damp(record.speed, sampledSpeed, 8, dt);
 
       const lerpFactor = Math.min(1, dt * 12);
       record.group.position.x = wrapX(record.group.position.x + dx * lerpFactor);
@@ -1778,15 +1821,14 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         const forwardZ = -Math.cos(record.currentYaw);
         const rightX = Math.cos(record.currentYaw);
         const rightZ = -Math.sin(record.currentYaw);
-        const vx = dx / Math.max(0.001, dt);
-        const vz = dz / Math.max(0.001, dt);
-        const forwardSpeed = vx * forwardX + vz * forwardZ;
-        const sideSpeed = vx * rightX + vz * rightZ;
+        const forwardSpeed = motionVx * forwardX + motionVz * forwardZ;
+        const sideSpeed = motionVx * rightX + motionVz * rightZ;
 
         record.character.update(dt, {
           speed: record.speed,
           forwardSpeed,
           sideSpeed,
+          verticalSpeed: motionVy,
           lookPitch: record.currentPitch,
           grounded: true,
           flying: false
