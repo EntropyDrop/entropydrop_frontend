@@ -22,19 +22,25 @@ test('a tilted dynamic block topples onto a stable face under gravity', () => {
     new THREE.Scene(),
     { bodyType: BodyType.DYNAMIC }
   );
-  contraption.quaternion.setFromEuler(new THREE.Euler(0.4, 0, 0.7));
+  // Near-edge balance used to expose the worst slow-motion case: the block
+  // could spend more than 20 seconds creeping away from this pose.
+  contraption.quaternion.setFromEuler(new THREE.Euler(0.1, 0, 0.78));
 
   const physics = new ContraptionPhysics(makeFloorWorld() as any);
-  for (let frame = 0; frame < 600; frame++) physics.update(contraption, 1 / 60);
-
-  const worldUp = new THREE.Vector3(0, 1, 0);
-  const faceAlignment = Math.max(
-    Math.abs(new THREE.Vector3(1, 0, 0).applyQuaternion(contraption.quaternion).dot(worldUp)),
-    Math.abs(new THREE.Vector3(0, 1, 0).applyQuaternion(contraption.quaternion).dot(worldUp)),
-    Math.abs(new THREE.Vector3(0, 0, 1).applyQuaternion(contraption.quaternion).dot(worldUp))
+  const faceAlignment = () => Math.max(
+    Math.abs(new THREE.Vector3(1, 0, 0).applyQuaternion(contraption.quaternion).y),
+    Math.abs(new THREE.Vector3(0, 1, 0).applyQuaternion(contraption.quaternion).y),
+    Math.abs(new THREE.Vector3(0, 0, 1).applyQuaternion(contraption.quaternion).y)
   );
 
-  assert.ok(faceAlignment > 0.995, `one block face should settle parallel to the floor, alignment=${faceAlignment}`);
+  let stableFrame = null;
+  for (let frame = 0; frame < 600; frame++) {
+    physics.update(contraption, 1 / 60);
+    if (stableFrame === null && faceAlignment() > 0.995) stableFrame = frame + 1;
+  }
+
+  assert.ok(stableFrame !== null && stableFrame <= 240, `the block should topple within 4 seconds, frame=${stableFrame}`);
+  assert.ok(faceAlignment() > 0.995, `one block face should settle parallel to the floor, alignment=${faceAlignment()}`);
   assert.ok(contraption.isOnGround, 'the settled block should remain supported by terrain');
   assert.ok(contraption.angularVelocity.length() < 0.03, 'the settled block should stop rotating');
 });

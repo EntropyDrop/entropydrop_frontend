@@ -382,6 +382,7 @@ export class ContraptionPhysics {
         const restitution = Math.abs(normalVel) < 0.5 ? 0 : body.restitution;
         const impulseMag = -(1 + restitution) * normalVel * (body.mass * 0.6);
         const impulse = totalNormal.clone().multiplyScalar(impulseMag);
+        const contactImpulse = impulse.clone();
 
         body.velocity.addScaledVector(impulse, 1 / body.mass);
 
@@ -391,13 +392,20 @@ export class ContraptionPhysics {
           const tangentSpeed = tangentVel.length();
           const frictionDir = tangentVel.normalize().negate();
           const frictionMag = Math.min(tangentSpeed * body.mass, impulseMag * body.friction);
-          body.velocity.addScaledVector(frictionDir, frictionMag / body.mass);
+          const frictionImpulse = frictionDir.multiplyScalar(frictionMag);
+          body.velocity.addScaledVector(frictionImpulse, 1 / body.mass);
+          contactImpulse.add(frictionImpulse);
         }
 
-        // Rotational torque from off-center collision
-        const torque = r.clone().cross(impulse);
-        body.angularVelocity.add(torque.multiplyScalar(body.inverseInertia));
-        body.angularVelocity.multiplyScalar(0.85);
+        // Both the support impulse and surface friction act at the contact
+        // point. Applying their complete torque lets a tilted body topple at
+        // a natural rate without a blanket per-contact angular slowdown.
+        const torque = r.clone().cross(contactImpulse);
+        // The solver stores one conservative scalar inertia for arbitrary
+        // voxel shapes. Compensate for that overestimate at terrain contacts
+        // so support forces can rotate a body promptly without destabilising
+        // free-flight integration.
+        body.angularVelocity.add(torque.multiplyScalar(body.inverseInertia * 2));
 
         // Settle tiny linear vibrations, but do not zero a small contact-driven
         // angular velocity. An off-centre support impulse can be small for a
