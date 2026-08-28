@@ -235,6 +235,13 @@ Reserved editor keys never reach scripts: `Escape`, `Backspace`, `Delete`, `F3`,
 
 ## Multiplayer backend
 
+The running browser client currently uses the transitional `space-relay-v1`
+MessagePack WebSocket channel for player poses: changed poses are sampled at 20 Hz,
+nearby-player snapshots arrive at 10 Hz, terrain is invalidated immediately and loaded
+through its durable REST cursor, and reconnect positions are checkpointed every five
+seconds. This relay is a compatibility stage, not the authoritative simulation protocol
+described below.
+
 The Multiplayer V2 target is server-authoritative: zone workers own the 60 Hz
 simulation and active chunks, binary WebSocket messages carry inputs and AOI
 deltas, and PostgreSQL stores compressed chunk/entity checkpoints plus ordered

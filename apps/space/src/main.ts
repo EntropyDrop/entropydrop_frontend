@@ -44,7 +44,6 @@ class Game {
   lastSavedPlayerPosition: string;
   pendingPlayerPosition: PlayerPositionPayload | null;
   playerPositionSaveInFlight: boolean;
-  lastPlayerPositionSyncAt: number;
   multiplayerSync: MultiplayerSync;
   remotePlayers: RemotePlayerInfo[];
 
@@ -141,7 +140,6 @@ class Game {
     this.lastSavedPlayerPosition = session.player.resumed
       ? JSON.stringify(this.currentPlayerPosition())
       : '';
-    this.lastPlayerPositionSyncAt = performance.now();
     this.installPlayerPositionPersistence();
     // A random first-entry position is sampled on the client; persist it immediately to DB.
     if (!session.player.resumed) this.queuePlayerPositionSave(true);
@@ -152,7 +150,9 @@ class Game {
       token: session.token,
       worldId: session.world.id,
       currentUserId: session.player.user_id,
-      heartbeatIntervalMs: 300,
+      websocketUrl: session.websocket_url,
+      poseIntervalMs: 50,
+      terrainPollIntervalMs: 1000,
       onPlayersUpdate: (players) => {
         this.remotePlayers = players;
         this.minimap.setRemotePlayers(players);
@@ -258,11 +258,6 @@ class Game {
 
     // 1. Update Player & Controls
     this.controller.update(dt);
-    if (now - this.lastPlayerPositionSyncAt >= 1000) {
-      this.lastPlayerPositionSyncAt = now;
-      this.queuePlayerPositionSave();
-    }
-
     // 2. Stream World Chunks around Player. Entity streaming consumes this
     // exact active window below, so chunks must be current before entities run.
     const playerPos = this.playerPhysics.position;

@@ -1,9 +1,148 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { MultiplayerSync } from '../src/engine/network/MultiplayerSync.ts';
+import { decode, encode } from '@msgpack/msgpack';
+import {
+  MultiplayerSync,
+  resolveWebSocketUrl,
+} from '../src/engine/network/MultiplayerSync.ts';
 import { World } from '../src/engine/voxel/World.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+
+test('resolveWebSocketUrl follows the API origin for relative realtime URLs', () => {
+  assert.equal(
+    resolveWebSocketUrl('/space/ws/v2', 'https://entropydrop.com'),
+    'wss://entropydrop.com/space/ws/v2'
+  );
+  assert.equal(
+    resolveWebSocketUrl('/space/ws/v2', 'http://localhost:8000'),
+    'ws://localhost:8000/space/ws/v2'
+  );
+});
+
+test('MultiplayerSync sends poses over binary WebSocket and keeps HTTP for terrain', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
+  const fetchBodies: any[] = [];
+  const sentMessages: any[] = [];
+  let receivedPlayers: any[] = [];
+
+  class FakeWebSocket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+    static instances: FakeWebSocket[] = [];
+    readyState = FakeWebSocket.CONNECTING;
+    bufferedAmount = 0;
+    binaryType = '';
+    onopen: (() => void) | null = null;
+    onmessage: ((event: { data: ArrayBuffer }) => void) | null = null;
+    onerror: (() => void) | null = null;
+    onclose: (() => void) | null = null;
+    url: string;
+    protocol: string;
+
+    constructor(url: string, protocol: string) {
+      this.url = url;
+      this.protocol = protocol;
+      FakeWebSocket.instances.push(this);
+      setTimeout(() => {
+        this.readyState = FakeWebSocket.OPEN;
+        this.onopen?.();
+      }, 0);
+    }
+
+    send(data: Uint8Array) {
+      const message = decode(data) as any;
+      sentMessages.push(message);
+      if (message.type === 'hello') {
+        setTimeout(() => this.serverSend({ type: 'hello', snapshot_hz: 10, input_hz: 20 }), 0);
+      }
+    }
+
+    serverSend(message: any) {
+      const bytes = encode(message);
+      const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+      this.onmessage?.({ data });
+    }
+
+    close() {
+      this.readyState = FakeWebSocket.CLOSED;
+      this.onclose?.();
+    }
+  }
+
+  globalThis.WebSocket = FakeWebSocket as any;
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).endsWith('/join-ticket')) {
+      return new Response(JSON.stringify({
+        ticket: 'one-use-ticket',
+        websocket_url: '/space/ws/v2'
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (init?.body) fetchBodies.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify({
+      players: [],
+      terrain_chunks: [],
+      max_terrain_revision: 0
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+
+  try {
+    const sync = new MultiplayerSync({
+      apiOrigin: 'http://localhost:8000',
+      token: 'jwt-test-token',
+      worldId: 'world-123',
+      currentUserId: 'user-alice',
+      websocketUrl: '/space/ws/v2',
+      poseIntervalMs: 20,
+      terrainPollIntervalMs: 50,
+      onPlayersUpdate: players => {
+        receivedPlayers = players;
+      }
+    });
+    sync.getPlayerPosition = () => ({ x: 12.34, y: 56.78, z: 90.12, yaw: 0.5, pitch: -0.25 });
+    sync.start();
+    await new Promise(resolve => setTimeout(resolve, 80));
+
+    const socket = FakeWebSocket.instances[0];
+    assert.ok(socket);
+    assert.equal(socket.url, 'ws://localhost:8000/space/ws/v2');
+    assert.equal(socket.protocol, 'space-relay-v1');
+    assert.equal(sentMessages[0].type, 'hello');
+    const pose = sentMessages.find(message => message.type === 'pose');
+    assert.equal(pose.x_cm, 1234);
+    assert.equal(pose.y_cm, 5678);
+    assert.equal(pose.z_cm, 9012);
+    assert.equal(fetchBodies.at(-1).include_players, false);
+    assert.equal('x_cm' in fetchBodies.at(-1), false);
+
+    socket.serverSend({
+      type: 'state',
+      players: [{
+        user_id: 'user-bob',
+        username: 'Bob',
+        player_entity_id: 'entity-bob',
+        minecraft_skin_url: '/skin/bob.png',
+        minecraft_skin_model: 'slim',
+        x_cm: 1000,
+        y_cm: 6400,
+        z_cm: 2000,
+        yaw_q15: 16384,
+        pitch_q15: 0,
+        is_self: false,
+        updated_at: '2026-08-28T00:00:00+00:00'
+      }]
+    });
+    assert.equal(receivedPlayers[0].x, 10);
+    assert.equal(receivedPlayers[0].yaw, (16384 / 32767) * Math.PI);
+    sync.stop();
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
 
 test('MultiplayerSync polls heartbeat and dispatches player and terrain updates', async () => {
   let capturedUrl = '';
