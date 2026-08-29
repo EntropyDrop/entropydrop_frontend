@@ -1909,40 +1909,87 @@ export class ContraptionManager {
       selection: this.scriptSelectionApi
     };
 
+    // 1. Update internal kinematics or programmable script evaluation for
+    // every entity first, so every controller evaluates against the same
+    // frame-start state and every entity's swept "previous" pose is captured
+    // before any body moves.
+    const supportsSubstepFrames = !!(
+      this.physics?.prepareContraptionFrame
+      && this.physics?.stepContraptionFrame
+    );
+    const frames = [];
     for (let i = this.contraptions.length - 1; i >= 0; i--) {
       const c = this.contraptions[i];
       c.setActionContext?.({ manager: this, world: this.world });
 
-      // 1. Update internal kinematics or programmable script evaluation
       const isDriving = (this.activeDrivable === c);
       // Live keyboard input belongs only to the currently mounted entity.
       // Autonomous scripts keep running with a neutral snapshot after dismount.
       c.update(dt, isDriving ? inputState : null, runtimeContext);
 
-      // 2. Body type, not behavior mode, decides whether a body is integrated.
-      // Kinematic bodies still enter this step so their contact velocity and
-      // constraints against dynamic children stay current.
-      if (this.physics) this.physics.update(c, dt);
+      if (!this.physics) continue;
+      if (supportsSubstepFrames) {
+        const frame = this.physics.prepareContraptionFrame(c, dt);
+        if (frame) frames.push(frame);
+      } else {
+        // Body type, not behavior mode, decides whether a body is integrated.
+        // Kinematic bodies still enter this step so their contact velocity and
+        // constraints against dynamic children stay current.
+        this.physics.update(c, dt);
+      }
+    }
 
-      // Autonomous entities can cross the streaming edge during this physics
-      // step. Snapshot and destroy them immediately instead of allowing one
-      // extra off-chunk script/physics frame.
+    // 2. Interleaved physics substeps. Terrain collision resolves inside every
+    // substep, and entity-vs-entity collision resolves at the same substep
+    // cadence, so a body resting on another entity is caught within a
+    // millimetre of sinking - exactly like terrain - instead of falling
+    // through the whole frame first and being popped back out afterwards.
+    if (this.physics) {
+      if (supportsSubstepFrames) {
+        let maxSubSteps = 0;
+        for (const frame of frames) maxSubSteps = Math.max(maxSubSteps, frame.subSteps);
+        const substepCount = Math.max(1, maxSubSteps);
+        const broadphaseBounds = this.physics.frameBroadphaseBounds ? new Map() : null;
+        if (broadphaseBounds) {
+          for (const c of this.contraptions) {
+            if (!c?.getRigidBodies?.().length) continue;
+            broadphaseBounds.set(c, this.physics.frameBroadphaseBounds(c, dt));
+          }
+        }
+        for (let step = 0; step < substepCount; step++) {
+          for (const frame of frames) {
+            if (step < frame.subSteps) this.physics.stepContraptionFrame(frame);
+          }
+          // Entity vs entity collisions (dynamic-dynamic + dynamic-static)
+          this.physics.resolveContraptionPairs?.(
+            this.contraptions,
+            dt / substepCount,
+            broadphaseBounds || undefined
+          );
+        }
+        for (const frame of frames) this.physics.finishContraptionFrame(frame);
+      } else {
+        this.physics.resolveContraptionPairs?.(this.contraptions, dt);
+      }
+    }
+
+    // 3. Safety checks: streaming edge and falling into the void.
+    // Autonomous entities can cross the streaming edge during this physics
+    // step. Snapshot and destroy them instead of allowing one extra off-chunk
+    // script/physics frame.
+    for (let i = this.contraptions.length - 1; i >= 0; i--) {
+      const c = this.contraptions[i];
       const chunk = this.getContraptionChunk(c);
       if (this.hasEntityStreamingWindow() && chunk && !this.world.activeChunkKeys.has(chunk.id)) {
         this.unloadContraption(c);
         continue;
       }
-
-      // 3. Safety check: fell into void
       if (c.position.y < -30) {
         this.removeContraption(c);
       }
     }
 
-    // 4. Entity vs entity collisions (dynamic-dynamic + dynamic-static)
-    this.physics?.resolveContraptionPairs?.(this.contraptions, dt);
-
-    // 5. Periodic entity persistence
+    // 4. Periodic entity persistence
     this.lastEntitySaveTime = (this.lastEntitySaveTime || 0) + dt;
     if (this.lastEntitySaveTime >= 2.0) {
       this.lastEntitySaveTime = 0;

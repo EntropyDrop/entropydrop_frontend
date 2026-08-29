@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { BodyType, Contraption, ContraptionMode } from '../src/engine/contraption/Contraption.ts';
+import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
 import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 
@@ -486,5 +487,333 @@ test('an off-center block follows the same fall path from terrain and entity sup
   assert.ok(
     Math.abs(entityFallFrame - terrainFallFrame) <= 90,
     `fall timing should stay comparable, terrain=${terrainFallFrame}, entity=${entityFallFrame}`
+  );
+});
+
+test('a grounded entity is shoved by a sideways hit instead of acting as an immovable pillar', () => {
+  const physics = makeFloorPhysics();
+  // A loose block resting on the floor. Its centre is lower than the flyer's,
+  // which previously froze it with infinite mass for any contact from above
+  // - a flying block then stopped dead against a 10kg box as if it had hit a
+  // mountain, while the same block hitting terrain blocks knocks them loose.
+  const box = makeEntity(221, { x: 0, y: 1, z: 0 }, { restitution: 0, friction: 0.5 });
+  const flyer = makeEntity(222, { x: -3, y: 1.3, z: 0 }, { restitution: 0, friction: 0 });
+  flyer.useGravity = false;
+  flyer.velocity.set(5, 0, 0);
+  const boxStartX = box.position.x;
+
+  for (let frame = 0; frame < 40; frame++) {
+    box.update(1 / 60, null, {});
+    flyer.update(1 / 60, null, {});
+    physics.update(box, 1 / 60);
+    physics.update(flyer, 1 / 60);
+    physics.resolveContraptionPairs([box, flyer], 1 / 60);
+  }
+
+  assert.ok(
+    box.position.x - boxStartX > 0.02,
+    `a grounded entity must be knocked loose by a sideways hit, moved=${box.position.x - boxStartX}`
+  );
+  assert.ok(
+    box.velocity.x > 0.1,
+    `the grounded entity should share the impact momentum, vx=${box.velocity.x}`
+  );
+});
+
+test('entity contacts resolve at terrain substep cadence and hold a stable rest', () => {
+  const physics = makePhysics();
+  const support = makeEntity(230, { x: 0, y: 0, z: 0 }, {
+    bodyType: BodyType.KINEMATIC,
+    restitution: 0,
+    friction: 0.5
+  });
+  const falling = makeEntity(231, { x: 0, y: 20, z: 0 }, {
+    restitution: 0.01,
+    friction: 0.5
+  });
+
+  // Interleave entity-pair resolution with the physics substeps exactly like
+  // ContraptionManager.update does. Under dt spikes (0.08s), the old
+  // frame-end pair solver let a resting block sink ~86mm into its support
+  // before a single pop corrected it; at substep cadence the sink stays at
+  // substep scale, the same dip a terrain contact shows.
+  let deepestSubstepSink = -Infinity;
+  let minFrameEndSink = Infinity;
+  let maxFrameEndSink = -Infinity;
+  let maxRestingSpeed = 0;
+  for (let frame = 0; frame < 360; frame++) {
+    const dt = frame % 6 === 0 ? 0.08 : 1 / 60;
+    falling.update(dt, null, {});
+    support.update(dt, null, {});
+
+    const frames = [];
+    for (const entity of [falling, support]) {
+      const frameState = physics.prepareContraptionFrame(entity, dt);
+      if (frameState) frames.push(frameState);
+    }
+    let substeps = 1;
+    for (const frameState of frames) substeps = Math.max(substeps, frameState.subSteps);
+    for (let step = 0; step < substeps; step++) {
+      for (const frameState of frames) {
+        if (step < frameState.subSteps) physics.stepContraptionFrame(frameState);
+      }
+      if (frame > 150) {
+        const fallingBox = falling.getCollisionWorldAABBs()[0];
+        const supportBox = support.getCollisionWorldAABBs()[0];
+        deepestSubstepSink = Math.max(
+          deepestSubstepSink,
+          supportBox.currentMaxY - fallingBox.currentMinY
+        );
+      }
+      physics.resolveContraptionPairs([falling, support], dt / substeps);
+    }
+    for (const frameState of frames) physics.finishContraptionFrame(frameState);
+
+    if (frame > 150) {
+      const fallingBox = falling.getCollisionWorldAABBs()[0];
+      const supportBox = support.getCollisionWorldAABBs()[0];
+      const sink = supportBox.currentMaxY - fallingBox.currentMinY;
+      minFrameEndSink = Math.min(minFrameEndSink, sink);
+      maxFrameEndSink = Math.max(maxFrameEndSink, sink);
+      maxRestingSpeed = Math.max(maxRestingSpeed, falling.velocity.length());
+    }
+  }
+
+  assert.ok(
+    deepestSubstepSink < 0.04,
+    `substep-cadence contacts must stay shallow across dt spikes, sink=${deepestSubstepSink}`
+  );
+  assert.ok(
+    minFrameEndSink >= -0.0005,
+    `a resting entity must not be pushed out into a floating gap, sink=${minFrameEndSink}`
+  );
+  assert.ok(
+    maxFrameEndSink <= 0.002,
+    `a resting entity must hold its slop contact like on terrain, sink=${maxFrameEndSink}`
+  );
+  assert.ok(
+    maxRestingSpeed < 0.05,
+    `a resting entity must stay at rest between frames, speed=${maxRestingSpeed}`
+  );
+  assert.ok(
+    Math.abs(falling.position.y - 1.5) < 0.01,
+    `falling entity should rest on top of its support, y=${falling.position.y}`
+  );
+});
+
+/**
+ * A corner- or edge-down block dropped onto another entity must break out of
+ * the corner interlock and settle flat on a real face, instead of locking the
+ * two bodies in a tip balance with a vertex resting on the other's top face or
+ * edge (the fake COM-clamped contact point used to zero the gravity torque and
+ * hold the balance forever).
+ */
+/**
+ * A corner- or edge-down block dropped onto another entity must break out of
+ * the corner interlock and settle flat on a real face, instead of locking the
+ * two bodies in a tip balance with a vertex resting on the other's top face or
+ * edge. The old fake COM-clamped contact point zeroed the gravity torque and
+ * held that balance forever; a narrow support now carries the true contact
+ * feature and the same toppling response terrain gets.
+ */
+test('a corner-down block dropped onto another entity escapes the corner interlock and settles flat', () => {
+  const settle = (seed, euler, startCornerX) => {
+    const physics = makeFloorPhysics();
+    // Support rests exactly on the floor: bottom face y=1, top face y=2.
+    const support = makeEntity(seed, { x: 0, y: 1, z: 0 }, {
+      restitution: 0,
+      friction: 0.7
+    });
+    const falling = makeEntity(seed + 1, { x: startCornerX, y: 6, z: 0 }, {
+      restitution: 0,
+      friction: 0.7
+    });
+    falling.quaternion.setFromEuler(euler);
+
+    for (let frame = 0; frame < 600; frame++) {
+      support.update(1 / 60, null, {});
+      falling.update(1 / 60, null, {});
+      const frames = [
+        physics.prepareContraptionFrame(support, 1 / 60),
+        physics.prepareContraptionFrame(falling, 1 / 60)
+      ].filter(Boolean);
+      let substeps = 1;
+      for (const state of frames) substeps = Math.max(substeps, state.subSteps);
+      for (let step = 0; step < substeps; step++) {
+        for (const state of frames) {
+          if (step < state.subSteps) physics.stepContraptionFrame(state);
+        }
+        physics.resolveContraptionPairs([support, falling], 1 / 60 / substeps);
+      }
+      for (const state of frames) physics.finishContraptionFrame(state);
+    }
+
+    // Flat on any face: at least one body face normal points vertically.
+    const flatOnFace = Math.max(
+      Math.abs(new THREE.Vector3(1, 0, 0).applyQuaternion(falling.quaternion).y),
+      Math.abs(new THREE.Vector3(0, 1, 0).applyQuaternion(falling.quaternion).y),
+      Math.abs(new THREE.Vector3(0, 0, 1).applyQuaternion(falling.quaternion).y)
+    );
+    let deepestOverlap = 0;
+    for (const boxA of falling.getCollisionWorldAABBs()) {
+      for (const boxB of support.getCollisionWorldAABBs()) {
+        const contact = physics.orientedBoxPairContact(boxA, boxB);
+        if (contact) deepestOverlap = Math.max(deepestOverlap, contact.penetration);
+      }
+    }
+    const motion = Math.max(
+      falling.velocity.length(),
+      falling.angularVelocity.length(),
+      support.velocity.length(),
+      support.angularVelocity.length()
+    );
+    return { flatOnFace, deepestOverlap, motion, falling };
+  };
+
+  // Main diagonal pointing down, off-centre: the vertex used to wedge onto
+  // the support's top edge and balance there forever.
+  const offCenter = settle(300, new THREE.Euler(Math.PI / 4, 0, Math.PI / 4), 0.3);
+  assert.ok(
+    offCenter.flatOnFace > 0.95 && offCenter.falling.position.y < 2.6,
+    `the corner-down block must land flat, not balance on its vertex, faceAlignment=${offCenter.flatOnFace}, y=${offCenter.falling.position.y}`
+  );
+  assert.ok(
+    offCenter.deepestOverlap < 0.01,
+    `the settled pair must hold at contact slop, overlap=${offCenter.deepestOverlap}`
+  );
+  assert.ok(
+    offCenter.motion < 0.05,
+    `the settled pair must be at rest, motion=${offCenter.motion}`
+  );
+
+  // Main diagonal pointing down exactly over the support centre: a perfectly
+  // symmetric tip balance with the gravity torque about the vertex at zero -
+  // only the narrow-support toppling response can break it.
+  const symmetric = settle(302, new THREE.Euler(Math.PI / 4, 0, Math.PI / 4), 0);
+  assert.ok(
+    symmetric.flatOnFace > 0.95 && symmetric.falling.position.y < 2.6,
+    `a symmetric corner balance must topple, faceAlignment=${symmetric.flatOnFace}, y=${symmetric.falling.position.y}`
+  );
+  assert.ok(
+    symmetric.deepestOverlap < 0.01 && symmetric.motion < 0.05,
+    `the symmetric case must settle, overlap=${symmetric.deepestOverlap}, motion=${symmetric.motion}`
+  );
+
+  // Edge down: a line balance against the support's face must roll off too.
+  const edgeDown = settle(304, new THREE.Euler(0, 0, Math.PI / 4), 0.2);
+  assert.ok(
+    edgeDown.flatOnFace > 0.95 && edgeDown.falling.position.y < 2.6,
+    `an edge-down block must settle flat, faceAlignment=${edgeDown.flatOnFace}, y=${edgeDown.falling.position.y}`
+  );
+  assert.ok(
+    edgeDown.deepestOverlap < 0.01 && edgeDown.motion < 0.05,
+    `the edge-down case must settle, overlap=${edgeDown.deepestOverlap}, motion=${edgeDown.motion}`
+  );
+});
+
+test('a face-down block dropped onto another entity still rests without rocking', () => {
+  const physics = makeFloorPhysics();
+  // Support on the floor (bottom face y=1, top face y=2); the falling block
+  // lands 0.15 off the support's centre, face on face.
+  const support = makeEntity(310, { x: 0, y: 1, z: 0 }, {
+    restitution: 0,
+    friction: 0.7
+  });
+  const falling = makeEntity(311, { x: 0.15, y: 6, z: 0 }, {
+    restitution: 0,
+    friction: 0.7
+  });
+
+  for (let frame = 0; frame < 600; frame++) {
+    support.update(1 / 60, null, {});
+    falling.update(1 / 60, null, {});
+    const frames = [
+      physics.prepareContraptionFrame(support, 1 / 60),
+      physics.prepareContraptionFrame(falling, 1 / 60)
+    ].filter(Boolean);
+    let substeps = 1;
+    for (const state of frames) substeps = Math.max(substeps, state.subSteps);
+    for (let step = 0; step < substeps; step++) {
+      for (const state of frames) {
+        if (step < state.subSteps) physics.stepContraptionFrame(state);
+      }
+      physics.resolveContraptionPairs([support, falling], 1 / 60 / substeps);
+    }
+    for (const state of frames) physics.finishContraptionFrame(state);
+  }
+
+  const upY = Math.abs(new THREE.Vector3(0, 1, 0).applyQuaternion(falling.quaternion).y);
+  const motion = Math.max(
+    falling.velocity.length(),
+    falling.angularVelocity.length(),
+    support.velocity.length(),
+    support.angularVelocity.length()
+  );
+  assert.ok(
+    upY > 0.995,
+    `a face-on-face rest must not receive a toppling kick, upY=${upY}`
+  );
+  assert.ok(
+    Math.abs(falling.position.x - 0.65) < 0.05,
+    `the off-center face rest must keep its offset, x=${falling.position.x}`
+  );
+  assert.ok(
+    Math.abs(falling.position.y - 2.5) < 0.02,
+    `the face rest must sit on top of the support, y=${falling.position.y}`
+  );
+  assert.ok(
+    motion < 0.05,
+    `the face rest must stay at rest, motion=${motion}`
+  );
+});
+
+test('the manager resolves entity collisions at substep cadence end to end', () => {
+  const scene = new THREE.Scene();
+  const world = {
+    activeChunkKeys: new Set(['0,0']),
+    worldToChunkCoords: (x, z) => ({ cx: Math.floor(x / 16), cz: Math.floor(z / 16) }),
+    getBlock: (_x, y, _z) => (y <= 0 ? BlockTypes.COLOR_BLOCK : BlockTypes.AIR),
+    microVoxels: { get: () => null },
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false })
+  } as any;
+  const manager = new ContraptionManager(scene, world, null, null) as any;
+  manager.setPhysics(new ContraptionPhysics(world));
+
+  // A loose block on the floor plus a faster, slightly higher flying block.
+  // Both stay inside the streamed chunk; the pair must exchange momentum the
+  // way terrain blocks do instead of freezing the grounded block.
+  const box = new Contraption(
+    240,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(3.5, 1.0, 0),
+    scene,
+    { mode: ContraptionMode.FREE_PHYSICS, restitution: 0, friction: 0.5 }
+  ) as any;
+  const flyer = new Contraption(
+    241,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(1.5, 1.3, 0),
+    scene,
+    { mode: ContraptionMode.FREE_PHYSICS, restitution: 0, friction: 0 }
+  ) as any;
+  flyer.useGravity = false;
+  flyer.velocity.set(5, 0, 0);
+  manager.registerContraption(box);
+  manager.registerContraption(flyer);
+
+  const boxStartX = box.position.x;
+  for (let frame = 0; frame < 60; frame++) {
+    manager.update(1 / 60, null);
+  }
+
+  assert.equal(manager.contraptions.length, 2, 'both entities must stay in the active window');
+  assert.ok(
+    box.position.x - boxStartX > 0.02,
+    `the manager path must shove the grounded entity, moved=${box.position.x - boxStartX}`
+  );
+  assert.ok(
+    flyer.velocity.x < 4,
+    `the flyer must lose speed in the collision, vx=${flyer.velocity.x}`
   );
 });

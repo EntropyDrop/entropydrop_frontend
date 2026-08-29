@@ -11,6 +11,11 @@ const MAX_PHYSICS_SUBSTEPS = 16;
 const MAX_SUBSTEP_SURFACE_TRAVEL = 0.15;
 const ENTITY_CONTACT_ITERATIONS = 10;
 const EXACT_TERRAIN_CONTACT_SLOP = 0.005;
+// Entity contacts share the terrain resting rules: separation leaves one
+// millimetre of contact slop instead of over-pushing, and residual normal
+// velocity below this threshold is cancelled so supported bodies settle.
+const ENTITY_CONTACT_SLOP = 0.001;
+const RESTING_CONTACT_VELOCITY = 0.2;
 // A support manifold narrower than this is a point or line balance (unstable,
 // must topple); any real face rest, down to a 0.2m micro voxel, spans more.
 const SUPPORT_WIDTH_NARROW = 0.05;
@@ -45,15 +50,29 @@ export class ContraptionPhysics {
   }
 
   /**
-   * Step physics for a single contraption
+   * Step physics for a single contraption. Kept as the one-call form used by
+   * tests and simple hosts; the manager uses the split frame API below so it
+   * can interleave entity-vs-entity collision with terrain collision at the
+   * same substep cadence.
    */
   update(contraption, dt) {
-    if (!contraption || !(dt > 0)) return;
+    const frame = this.prepareContraptionFrame(contraption, dt);
+    if (!frame) return;
+    for (let step = 0; step < frame.subSteps; step++) this.stepContraptionFrame(frame);
+    this.finishContraptionFrame(frame);
+  }
+
+  /**
+   * Begin one contraption's physics frame: snapshot the accumulated script
+   * forces, reset ground flags, and choose the adaptive substep count.
+   */
+  prepareContraptionFrame(contraption, dt) {
+    if (!contraption || !(dt > 0)) return null;
     contraption.groundDistance = this.getGroundDistance(contraption.position);
     contraption.syncKinematicBodies?.(dt);
     const bodies = contraption.getRigidBodies?.() || [];
     const dynamicBodies = bodies.filter(body => body.type === BodyType.DYNAMIC);
-    if (dynamicBodies.length === 0) return;
+    if (dynamicBodies.length === 0) return null;
 
     const frameInputs = new Map();
     for (const body of dynamicBodies) {
@@ -81,39 +100,57 @@ export class ContraptionPhysics {
       MIN_PHYSICS_SUBSTEPS,
       Math.min(MAX_PHYSICS_SUBSTEPS, Math.ceil(estimatedSurfaceTravel / MAX_SUBSTEP_SURFACE_TRAVEL))
     );
-    const sdt = dt / subSteps;
+    return {
+      contraption,
+      dynamicBodies,
+      frameInputs,
+      subSteps,
+      substepDt: dt / subSteps
+    };
+  }
 
-    for (let step = 0; step < subSteps; step++) {
-      const previous = new Map();
-      for (const body of dynamicBodies) {
-        previous.set(body.id, {
-          position: body.position.clone(),
-          quaternion: body.quaternion.clone()
-        });
-        const input = frameInputs.get(body.id);
-        this.integrateBody(contraption, body, sdt, input.force, input.torque);
-      }
-
-      contraption.syncAllBodyTransforms?.();
-      contraption.syncKinematicBodies?.(sdt, true);
-      this.solveConstraints(contraption, sdt, 10);
-      contraption.syncAllBodyTransforms?.();
-
-      // Position-based constraint corrections become physical velocities.
-      for (const body of dynamicBodies) {
-        const before = previous.get(body.id);
-        body.velocity.copy(body.position).sub(before.position).divideScalar(sdt);
-        body.angularVelocity.copy(this.angularVelocityBetween(before.quaternion, body.quaternion, sdt));
-        this.resolveTerrainCollisionBody(
-          contraption,
-          body,
-          sdt,
-          before
-        );
-      }
-      contraption.syncAllBodyTransforms?.();
+  /** Run exactly one adaptive substep: integrate, solve constraints, then
+   * resolve terrain contacts with the same body poses every other entity
+   * currently has, so entity-pair collision can run between substeps. */
+  stepContraptionFrame(frame) {
+    if (!frame) return;
+    const { contraption, dynamicBodies, frameInputs, substepDt } = frame;
+    const sdt = substepDt;
+    const previous = new Map();
+    for (const body of dynamicBodies) {
+      previous.set(body.id, {
+        position: body.position.clone(),
+        quaternion: body.quaternion.clone()
+      });
+      const input = frameInputs.get(body.id);
+      this.integrateBody(contraption, body, sdt, input.force, input.torque);
     }
 
+    contraption.syncAllBodyTransforms?.();
+    contraption.syncKinematicBodies?.(sdt, true);
+    this.solveConstraints(contraption, sdt, 10);
+    contraption.syncAllBodyTransforms?.();
+
+    // Position-based constraint corrections become physical velocities.
+    for (const body of dynamicBodies) {
+      const before = previous.get(body.id);
+      body.velocity.copy(body.position).sub(before.position).divideScalar(sdt);
+      body.angularVelocity.copy(this.angularVelocityBetween(before.quaternion, body.quaternion, sdt));
+      this.resolveTerrainCollisionBody(
+        contraption,
+        body,
+        sdt,
+        before
+      );
+    }
+    contraption.syncAllBodyTransforms?.();
+  }
+
+  /** Close one contraption's physics frame after all substeps (and any
+   * entity-pair resolution interleaved with them) have run. */
+  finishContraptionFrame(frame) {
+    if (!frame) return;
+    const contraption = frame.contraption;
     contraption.isOnGround = contraption.getRigidBody?.('root')?.isOnGround || false;
   }
 
@@ -256,34 +293,16 @@ export class ContraptionPhysics {
   /**
    * Entity collision resolves body pairs. Kinematic bodies have zero inverse
    * mass but contribute their scripted contact velocity; at least one body in a
-   * pair must be dynamic.
+   * pair must be dynamic. The manager calls this once per physics substep so
+   * entity contacts are caught at the same cadence as terrain contacts.
    */
-  resolveContraptionPairs(contraptions, dt = 1 / 60) {
+  resolveContraptionPairs(contraptions, dt = 1 / 60, broadphaseBounds = null) {
     const colliders = (contraptions || []).filter(c => c?.getRigidBodies?.().length > 0);
-    const colliderBoxes = colliders.map(collider => collider.getCollisionWorldAABBs?.() || []);
     const buckets = new Map<string, number[]>();
     const candidates = new Map<string, [number, number]>();
     for (let index = 0; index < colliders.length; index++) {
       const collider = colliders[index];
-      const boxes = colliderBoxes[index];
-      const radius = Math.max(0.5, Number(collider.boundingRadius) || 0.5) + 0.5;
-      const bounds = boxes.length > 0
-        ? boxes.reduce((result, box) => ({
-            minX: Math.min(result.minX, box.minX),
-            minY: Math.min(result.minY, box.minY),
-            minZ: Math.min(result.minZ, box.minZ),
-            maxX: Math.max(result.maxX, box.maxX),
-            maxY: Math.max(result.maxY, box.maxY),
-            maxZ: Math.max(result.maxZ, box.maxZ)
-          }), { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity })
-        : {
-            minX: collider.position.x - radius,
-            minY: collider.position.y - radius,
-            minZ: collider.position.z - radius,
-            maxX: collider.position.x + radius,
-            maxY: collider.position.y + radius,
-            maxZ: collider.position.z + radius
-          };
+      const bounds = broadphaseBounds?.get(collider) || this.contraptionBroadphaseBounds(collider);
       const minX = Math.floor(bounds.minX / ENTITY_BROADPHASE_CELL_SIZE);
       const maxX = Math.floor(bounds.maxX / ENTITY_BROADPHASE_CELL_SIZE);
       const minY = Math.floor(bounds.minY / ENTITY_BROADPHASE_CELL_SIZE);
@@ -328,6 +347,63 @@ export class ContraptionPhysics {
       }
       if (resolvedContacts === 0) break;
     }
+  }
+
+  /**
+   * Tight broadphase bounds for one contraption: the axis-aligned hull of its
+   * collision boxes, which spans both the previous and current poses because
+   * every box records both corner sets.
+   */
+  contraptionBroadphaseBounds(contraption) {
+    const radius = Math.max(0.5, Number(contraption.boundingRadius) || 0.5) + 0.5;
+    const boxes = contraption.getCollisionWorldAABBs?.() || [];
+    if (boxes.length === 0) {
+      return {
+        minX: contraption.position.x - radius,
+        minY: contraption.position.y - radius,
+        minZ: contraption.position.z - radius,
+        maxX: contraption.position.x + radius,
+        maxY: contraption.position.y + radius,
+        maxZ: contraption.position.z + radius
+      };
+    }
+    return boxes.reduce((result, box) => ({
+      minX: Math.min(result.minX, box.minX),
+      minY: Math.min(result.minY, box.minY),
+      minZ: Math.min(result.minZ, box.minZ),
+      maxX: Math.max(result.maxX, box.maxX),
+      maxY: Math.max(result.maxY, box.maxY),
+      maxZ: Math.max(result.maxZ, box.maxZ)
+    }), { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity });
+  }
+
+  /**
+   * Conservative broadphase bounds covering one whole physics frame: the tight
+   * pose hull padded by the maximum distance any body can travel this frame.
+   * Computed once per frame by the manager and reused by every per-substep
+   * entity-pair pass, so substep-cadence collision detection never misses a
+   * swept crossing.
+   */
+  frameBroadphaseBounds(contraption, dt) {
+    const bounds = this.contraptionBroadphaseBounds(contraption);
+    const radius = Math.max(0.5, Number(contraption.boundingRadius) || 0.5);
+    let travel = 0;
+    for (const body of contraption.getRigidBodies?.() || []) {
+      travel = Math.max(
+        travel,
+        (body.velocity.length() + body.angularVelocity.length() * radius)
+          * Math.max(0, Number(dt) || 0)
+      );
+    }
+    const pad = travel + 0.5;
+    return {
+      minX: bounds.minX - pad,
+      minY: bounds.minY - pad,
+      minZ: bounds.minZ - pad,
+      maxX: bounds.maxX + pad,
+      maxY: bounds.maxY + pad,
+      maxZ: bounds.maxZ + pad
+    };
   }
 
   isDynamicCollider(contraption) {
@@ -474,6 +550,37 @@ export class ContraptionPhysics {
     return obb;
   }
 
+  /**
+   * The vertices of one oriented box that extremise the projection onto `axis`.
+   * sign=+1 returns the vertices farthest in +axis (a face, edge, or vertex of
+   * the support face); sign=-1 the farthest in -axis. Ties within 1e-7 keep
+   * every member of the support feature, so the count reveals its shape:
+   * 4 tied vertices is a face, 2 an edge, 1 a vertex.
+   */
+  boxSupportVertices(obb, axis, sign) {
+    const dots = obb.axes.map(obbAxis => obbAxis.dot(axis));
+    const vertices = [];
+    let best = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      let projection = 0;
+      const point = obb.center.clone();
+      for (let k = 0; k < 3; k++) {
+        const side = ((i >> k) & 1) ? 1 : -1;
+        projection += side * obb.halfExtents[k] * dots[k];
+        point.addScaledVector(obb.axes[k], side * obb.halfExtents[k]);
+      }
+      const score = sign * projection;
+      if (score > best + 1e-7) {
+        best = score;
+        vertices.length = 0;
+        vertices.push(point);
+      } else if (best - score <= 1e-7) {
+        vertices.push(point);
+      }
+    }
+    return vertices;
+  }
+
   orientedBoxPairContact(boxA, boxB, cache = null) {
     const obbA = this.entityCollisionObb(boxA, cache);
     const obbB = this.entityCollisionObb(boxB, cache);
@@ -507,20 +614,36 @@ export class ContraptionPhysics {
     }
     if (!normal || !Number.isFinite(penetration)) return null;
 
-    return { normal, penetration };
+    // The contact feature on each box is its support set in the separating
+    // direction: A's vertices deepest into +normal, B's deepest into -normal.
+    // A face-face rest carries 4 tied vertices on both sides; any vertex or
+    // edge involvement makes the support narrow (a point or line balance).
+    const supportA = this.boxSupportVertices(obbA, normal, 1);
+    const supportB = this.boxSupportVertices(obbB, normal, -1);
+    const featurePoint = supportA.reduce((sum, point) => sum.add(point), new THREE.Vector3())
+      .divideScalar(supportA.length);
+    const otherPoint = supportB.reduce((sum, point) => sum.add(point), new THREE.Vector3())
+      .divideScalar(supportB.length);
+    featurePoint.add(otherPoint).multiplyScalar(0.5);
+
+    return {
+      normal,
+      penetration,
+      featurePoint,
+      faceSupport: supportA.length >= 3 && supportB.length >= 3
+    };
   }
 
-  entityContactInverseMass(body, normalDirection, otherBody = null) {
+  entityContactInverseMass(body, normalDirection) {
     const inverseMass = this.inverseMass(body);
     if (inverseMass <= 0) return 0;
-    // Entity pairs are solved after terrain. A grounded lower body must carry
-    // a load from an entity above into that terrain contact during this pass;
-    // otherwise the equal-and-opposite pair impulse acts as if the floor had
-    // disappeared. Contacts from peers that are not above remain dynamic.
-    if (body.isOnGround && (
-      normalDirection.y < -0.5
-      || (otherBody && otherBody.position.y > body.position.y + 0.1)
-    )) return 0;
+    // Entity pairs are solved at the same substep cadence as terrain: a
+    // grounded lower body carrying a downward load hands that load to the next
+    // substep's terrain pass, so only a contact that actually pushes the
+    // grounded body downward gets terrain-like infinite mass. Every other
+    // contact stays fully dynamic - a grounded entity must still shove, tilt,
+    // and slide like the terrain blocks it sits between.
+    if (body.isOnGround && normalDirection.y < -0.5) return 0;
     return inverseMass;
   }
 
@@ -531,63 +654,79 @@ export class ContraptionPhysics {
     const velocityB = bodyB.velocity.clone().add(bodyB.angularVelocity.clone().cross(leverB));
     const relativeVelocity = velocityB.sub(velocityA);
     const normalVelocity = relativeVelocity.dot(normal);
-    if (normalVelocity >= -0.05) return;
-
-    const angularA = invA > 0
-      ? leverA.clone().cross(normal).lengthSq() * bodyA.inverseInertia
-      : 0;
-    const angularB = invB > 0
-      ? leverB.clone().cross(normal).lengthSq() * bodyB.inverseInertia
-      : 0;
-    const effectiveInverseMass = invA + invB + angularA + angularB;
-    if (effectiveInverseMass <= 1e-10) return;
-
-    const restitution = Math.abs(normalVelocity) < 0.5
-      ? 0
-      : Math.max(bodyA.restitution, bodyB.restitution);
-    const impulseMagnitude = -(1 + restitution) * normalVelocity / effectiveInverseMass;
-    const impulse = normal.clone().multiplyScalar(impulseMagnitude);
-    const applyPairImpulse = vector => {
-      bodyA.velocity.addScaledVector(vector, -invA);
-      bodyB.velocity.addScaledVector(vector, invB);
-      if (invA > 0) {
-        bodyA.angularVelocity.addScaledVector(
-          leverA.clone().cross(vector),
-          -bodyA.inverseInertia
-        );
-      }
-      if (invB > 0) {
-        bodyB.angularVelocity.addScaledVector(
-          leverB.clone().cross(vector),
-          bodyB.inverseInertia
-        );
-      }
-    };
-    applyPairImpulse(impulse);
-
-    // Match terrain contact friction: cancel relative tangential motion at the
-    // contact point, limited by the Coulomb cone μN, including angular mass.
-    const postVelocityA = bodyA.velocity.clone().add(bodyA.angularVelocity.clone().cross(leverA));
-    const postVelocityB = bodyB.velocity.clone().add(bodyB.angularVelocity.clone().cross(leverB));
-    const tangentVelocity = postVelocityB.sub(postVelocityA);
-    tangentVelocity.addScaledVector(normal, -tangentVelocity.dot(normal));
-    const tangentSpeed = tangentVelocity.length();
-    if (tangentSpeed > 0.01 && impulseMagnitude > 0) {
-      const tangent = tangentVelocity.divideScalar(tangentSpeed);
-      const tangentAngularA = invA > 0
-        ? leverA.clone().cross(tangent).lengthSq() * bodyA.inverseInertia
+    if (normalVelocity < 0) {
+      const angularA = invA > 0
+        ? leverA.clone().cross(normal).lengthSq() * bodyA.inverseInertia
         : 0;
-      const tangentAngularB = invB > 0
-        ? leverB.clone().cross(tangent).lengthSq() * bodyB.inverseInertia
+      const angularB = invB > 0
+        ? leverB.clone().cross(normal).lengthSq() * bodyB.inverseInertia
         : 0;
-      const tangentInverseMass = invA + invB + tangentAngularA + tangentAngularB;
-      if (tangentInverseMass > 1e-10) {
-        const friction = Math.sqrt(Math.max(0, bodyA.friction * bodyB.friction));
-        const frictionMagnitude = Math.max(
-          -impulseMagnitude * friction,
-          -tangentSpeed / tangentInverseMass
-        );
-        applyPairImpulse(tangent.multiplyScalar(frictionMagnitude));
+      const effectiveInverseMass = invA + invB + angularA + angularB;
+      if (effectiveInverseMass > 1e-10) {
+        const restitution = Math.abs(normalVelocity) < 0.5
+          ? 0
+          : Math.max(bodyA.restitution, bodyB.restitution);
+        const impulseMagnitude = -(1 + restitution) * normalVelocity / effectiveInverseMass;
+        const impulse = normal.clone().multiplyScalar(impulseMagnitude);
+        const applyPairImpulse = vector => {
+          bodyA.velocity.addScaledVector(vector, -invA);
+          bodyB.velocity.addScaledVector(vector, invB);
+          if (invA > 0) {
+            bodyA.angularVelocity.addScaledVector(
+              leverA.clone().cross(vector),
+              -bodyA.inverseInertia
+            );
+          }
+          if (invB > 0) {
+            bodyB.angularVelocity.addScaledVector(
+              leverB.clone().cross(vector),
+              bodyB.inverseInertia
+            );
+          }
+        };
+        applyPairImpulse(impulse);
+
+        // Match terrain contact friction: cancel relative tangential motion at
+        // the contact point, limited by the Coulomb cone μN, including angular
+        // mass.
+        const postVelocityA = bodyA.velocity.clone().add(bodyA.angularVelocity.clone().cross(leverA));
+        const postVelocityB = bodyB.velocity.clone().add(bodyB.angularVelocity.clone().cross(leverB));
+        const tangentVelocity = postVelocityB.sub(postVelocityA);
+        tangentVelocity.addScaledVector(normal, -tangentVelocity.dot(normal));
+        const tangentSpeed = tangentVelocity.length();
+        if (tangentSpeed > 0.01 && impulseMagnitude > 0) {
+          const tangent = tangentVelocity.divideScalar(tangentSpeed);
+          const tangentAngularA = invA > 0
+            ? leverA.clone().cross(tangent).lengthSq() * bodyA.inverseInertia
+            : 0;
+          const tangentAngularB = invB > 0
+            ? leverB.clone().cross(tangent).lengthSq() * bodyB.inverseInertia
+            : 0;
+          const tangentInverseMass = invA + invB + tangentAngularA + tangentAngularB;
+          if (tangentInverseMass > 1e-10) {
+            const friction = Math.sqrt(Math.max(0, bodyA.friction * bodyB.friction));
+            const frictionMagnitude = Math.max(
+              -impulseMagnitude * friction,
+              -tangentSpeed / tangentInverseMass
+            );
+            applyPairImpulse(tangent.multiplyScalar(frictionMagnitude));
+          }
+        }
+      }
+    }
+
+    // Resting stabilization identical to terrain contact: residual relative
+    // normal velocity below the terrain threshold - approaching creep as well
+    // as a separating micro-bounce - is cancelled, so a supported body settles
+    // on its support instead of buzzing on it. Only the relative velocity is
+    // touched, so a body carried by a moving support keeps riding along.
+    const totalInverseMass = invA + invB;
+    if (totalInverseMass > 1e-10) {
+      const residualNormalVelocity = bodyB.velocity.clone().sub(bodyA.velocity).dot(normal);
+      if (Math.abs(residualNormalVelocity) < RESTING_CONTACT_VELOCITY) {
+        const correction = -residualNormalVelocity / totalInverseMass;
+        bodyA.velocity.addScaledVector(normal, -correction * invA);
+        bodyB.velocity.addScaledVector(normal, correction * invB);
       }
     }
   }
@@ -622,8 +761,9 @@ export class ContraptionPhysics {
 
     boxesA ||= a.getCollisionWorldAABBs?.() || [];
     boxesB ||= b.getCollisionWorldAABBs?.() || [];
-    let bestOverlap = null;
     let bestSweep = null;
+    let shallowestContact = null;
+    const contactGroups = new Map();
     const obbCache = new Map();
 
     for (const ba of boxesA) {
@@ -642,30 +782,46 @@ export class ContraptionPhysics {
         const oz = Math.min(ba.currentMaxZ, bb.currentMaxZ) - Math.max(ba.currentMinZ, bb.currentMinZ);
         if (ox > 0 && oy > 0 && oz > 0) {
           const contact = this.orientedBoxPairContact(ba, bb, obbCache);
-          if (contact && (!bestOverlap || contact.penetration < bestOverlap.penetration)) {
-            const responseNormal = contact.normal;
-            bestOverlap = {
-              ...contact,
-              // Match terrain support: use the separating axis of the actual
-              // oriented features and create rotation through the contact-point
-              // lever arm, without injecting an artificial escape direction.
-              normal: responseNormal,
-              // Use the center of the overlapping broadphase footprint as the
-              // impulse lever. SAT support vertices are excellent for the
-              // normal but can put a face contact almost directly below the
-              // upper COM, erasing the torque of a real overhang.
-              contactPoint: this.stableStackContactPoint(
-                ba,
-                bb,
-                bodyA,
-                bodyB,
-                responseNormal
-              ),
-              ba,
-              bb,
-              bodyA,
-              bodyB
-            };
+          if (!contact) continue;
+          // Match terrain support: use the separating axis of the actual
+          // oriented features and create rotation through the contact-point
+          // lever arm, without injecting an artificial escape direction. The
+          // center of the overlapping broadphase footprint is the impulse
+          // lever: SAT support vertices are excellent for the normal but can
+          // put a face contact almost directly below the upper COM, erasing
+          // the torque of a real overhang.
+          const contactPoint = this.stableStackContactPoint(
+            ba,
+            bb,
+            bodyA,
+            bodyB,
+            contact.normal
+          );
+          // Terrain resolves a full contact manifold, grouping every contact
+          // that shares a separating normal; entity pairs get the same
+          // treatment instead of resolving one arbitrary cell pair at a time,
+          // which let wide bodies rock on a single wandering contact point.
+          const key = `${bodyA.id}|${bodyB.id}|${
+            contact.normal.x.toFixed(3)
+          },${contact.normal.y.toFixed(3)},${contact.normal.z.toFixed(3)}`;
+          const group = contactGroups.get(key) || {
+            normal: contact.normal,
+            penetration: 0,
+            contactPoints: [],
+            featurePoints: [],
+            faceSupport: false,
+            ba,
+            bb,
+            bodyA,
+            bodyB
+          };
+          group.penetration = Math.max(group.penetration, contact.penetration);
+          group.contactPoints.push(contactPoint);
+          group.featurePoints.push(contact.featurePoint);
+          group.faceSupport = group.faceSupport || contact.faceSupport;
+          contactGroups.set(key, group);
+          if (!shallowestContact || contact.penetration < shallowestContact.penetration) {
+            shallowestContact = { penetration: contact.penetration, ba, bb, bodyA, bodyB };
           }
         }
       }
@@ -688,10 +844,10 @@ export class ContraptionPhysics {
     // a CCD fallback for bodies that crossed completely between frames; when
     // both exist, choosing the broadphase sweep can recreate a vertical ghost
     // shelf around a rotating overhang.
-    if (bestSweep && !bestOverlap && !sweepUpperOutsideSupport) {
+    if (bestSweep && contactGroups.size === 0 && !sweepUpperOutsideSupport) {
       const { ba, bb, bodyA, bodyB, normal, relativeDelta, time } = bestSweep;
-      const invA = this.entityContactInverseMass(bodyA, normal.clone().multiplyScalar(-1), bodyB);
-      const invB = this.entityContactInverseMass(bodyB, normal, bodyA);
+      const invA = this.entityContactInverseMass(bodyA, normal.clone().multiplyScalar(-1));
+      const invB = this.entityContactInverseMass(bodyB, normal);
       const totalInv = invA + invB;
       if (totalInv <= 0) return false;
       const relativeDistance = Math.max(1e-9, relativeDelta.length());
@@ -706,35 +862,73 @@ export class ContraptionPhysics {
       return true;
     }
 
-    if (!bestOverlap) return false;
+    if (contactGroups.size === 0) return false;
 
-    const { penetration, bodyA, bodyB, normal, contactPoint } = bestOverlap;
+    // Independent contact groups resolve in one pass, deepest first, exactly
+    // like the terrain contact groups (for example floor + wall at a corner).
+    const groups = [...contactGroups.values()].sort((first, second) => (
+      second.penetration - first.penetration
+    ));
+    let separated = false;
+    for (const group of groups) {
+      const { normal, bodyA, bodyB } = group;
+      const invA = this.entityContactInverseMass(bodyA, normal.clone().multiplyScalar(-1));
+      const invB = this.entityContactInverseMass(bodyB, normal);
+      const totalInv = invA + invB;
+      if (totalInv <= 0) continue;
+      // A face-to-face rest keeps the stable-stack COM-clamped lever: the
+      // shared face spans the whole footprint, so clamping the upper COM onto
+      // it is the true balance point and keeps wide stacks from rocking on a
+      // wandering SAT vertex. A narrow rest - vertex or edge against anything
+      // - must use the real contact feature instead: clamping the COM onto
+      // the rotated box's broadphase footprint lands the fake contact almost
+      // directly under the COM, zeroes the gravity torque, and locks the two
+      // bodies in a corner interlock that no solver pass can escape.
+      const points = group.faceSupport ? group.contactPoints : group.featurePoints;
+      const contactPoint = points.length === 1
+        ? points[0]
+        : points.reduce(
+          (sum, point) => sum.add(point),
+          new THREE.Vector3()
+        ).divideScalar(points.length);
+      // Terrain contacts leave one millimetre of slop instead of
+      // over-separating: a resting body then holds a stable shallow contact
+      // instead of sinking a full frame and popping back out past the surface.
+      const push = Math.max(0, group.penetration - ENTITY_CONTACT_SLOP);
+      if (push > 0) {
+        bodyA.position.addScaledVector(normal, -push * invA / totalInv);
+        bodyB.position.addScaledVector(normal, push * invB / totalInv);
+        separated = true;
+      }
+      this.applyEntityCollisionImpulse(bodyA, bodyB, normal, contactPoint, invA, invB);
+      this.markEntitySupport(a, b, bodyA, bodyB, normal);
+      // A narrow upward support is a point or line balance that cannot hold:
+      // tip the supported body off it, exactly like terrain contacts do. Run
+      // once per solver pass (the first iteration, gated on allowSweep) so the
+      // magnitude matches the terrain per-substep cadence instead of being
+      // multiplied by the contact iteration count.
+      if (allowSweep && !group.faceSupport) {
+        if (normal.y > 0.5) this.toppleNarrowSupport(bodyB, normal, dt);
+        else if (normal.y < -0.5) this.toppleNarrowSupport(bodyA, normal.clone().multiplyScalar(-1), dt);
+      }
+    }
 
-    const invA = this.entityContactInverseMass(bodyA, normal.clone().multiplyScalar(-1), bodyB);
-    const invB = this.entityContactInverseMass(bodyB, normal, bodyA);
-    const totalInv = invA + invB;
-    if (totalInv <= 0) return false;
-
-    const push = penetration + 0.001;
-    bodyA.position.addScaledVector(normal, -push * invA / totalInv);
-    bodyB.position.addScaledVector(normal, push * invB / totalInv);
-    this.applyEntityCollisionImpulse(bodyA, bodyB, normal, contactPoint, invA, invB);
-    this.markEntitySupport(a, b, bodyA, bodyB, normal);
-    if (allowSweep) {
+    if (allowSweep && shallowestContact) {
+      const { bodyA, bodyB } = shallowestContact;
       const upperIsBodyB = bodyB.position.y > bodyA.position.y + 0.5;
       const upperIsBodyA = bodyA.position.y > bodyB.position.y + 0.5;
       const upperBody = upperIsBodyB ? bodyB : upperIsBodyA ? bodyA : null;
       this.destabilizeOverhangingEntity(
         upperBody,
-        bestOverlap.ba,
-        bestOverlap.bb,
+        shallowestContact.ba,
+        shallowestContact.bb,
         dt
       );
     }
 
     a.syncAllBodyTransforms?.();
     b.syncAllBodyTransforms?.();
-    return true;
+    return separated;
   }
 
   markEntitySupport(a, b, bodyA, bodyB, normal) {
@@ -1203,6 +1397,36 @@ export class ContraptionPhysics {
     return 2 * Math.sqrt(Math.max(0, narrowEigenvalue));
   }
 
+  /**
+   * Tip a body that rests on a narrow (point or line) upward support. A face
+   * flush with the support plane stays put; a tilted or corner-down body gets
+   * a gravity-scaled angular kick around the contact edge so the balance
+   * breaks instead of persisting forever. Shared by terrain contacts (width
+   * check) and entity pairs (SAT feature check).
+   */
+  toppleNarrowSupport(body, normal, dt) {
+    if (!body || body.type !== BodyType.DYNAMIC) return;
+    const bodyAxes = [
+      new THREE.Vector3(1, 0, 0).applyQuaternion(body.quaternion),
+      new THREE.Vector3(0, 1, 0).applyQuaternion(body.quaternion),
+      new THREE.Vector3(0, 0, 1).applyQuaternion(body.quaternion)
+    ];
+    let supportFace = bodyAxes[0];
+    for (const axis of bodyAxes.slice(1)) {
+      if (Math.abs(axis.dot(normal)) > Math.abs(supportFace.dot(normal))) supportFace = axis;
+    }
+    if (supportFace.dot(normal) < 0) supportFace.multiplyScalar(-1);
+    const alignment = supportFace.dot(normal);
+    if (alignment < 0.995) {
+      const toppleAxis = supportFace.clone().cross(normal);
+      const instability = toppleAxis.length();
+      if (instability > 1e-6) {
+        const acceleration = this.gravity.length() * 0.25 * instability;
+        body.angularVelocity.addScaledVector(toppleAxis.divideScalar(instability), acceleration * dt);
+      }
+    }
+  }
+
   solveTerrainContact(body, normal, hitPosition, penetration, contactPoints, dt) {
     body.position.addScaledVector(normal, Math.max(0, penetration - 0.001));
     if (normal.y > 0.5) body.isOnGround = true;
@@ -1255,29 +1479,11 @@ export class ContraptionPhysics {
     // spans a visible area. This adds no linear energy and never turns a wall
     // collision into auto-levelling.
     if (normal.y > 0.5 && this.supportWidth(contactPoints, normal) < SUPPORT_WIDTH_NARROW) {
-      const bodyAxes = [
-        new THREE.Vector3(1, 0, 0).applyQuaternion(body.quaternion),
-        new THREE.Vector3(0, 1, 0).applyQuaternion(body.quaternion),
-        new THREE.Vector3(0, 0, 1).applyQuaternion(body.quaternion)
-      ];
-      let supportFace = bodyAxes[0];
-      for (const axis of bodyAxes.slice(1)) {
-        if (Math.abs(axis.dot(normal)) > Math.abs(supportFace.dot(normal))) supportFace = axis;
-      }
-      if (supportFace.dot(normal) < 0) supportFace.multiplyScalar(-1);
-      const alignment = supportFace.dot(normal);
-      if (alignment < 0.995) {
-        const toppleAxis = supportFace.clone().cross(normal);
-        const instability = toppleAxis.length();
-        if (instability > 1e-6) {
-          const acceleration = this.gravity.length() * 0.25 * instability;
-          body.angularVelocity.addScaledVector(toppleAxis.divideScalar(instability), acceleration * dt);
-        }
-      }
+      this.toppleNarrowSupport(body, normal, dt);
     }
 
     const residualNormalVelocity = body.velocity.dot(normal);
-    if (Math.abs(residualNormalVelocity) < 0.2) {
+    if (Math.abs(residualNormalVelocity) < RESTING_CONTACT_VELOCITY) {
       body.velocity.addScaledVector(normal, -residualNormalVelocity);
     }
     if (body.velocity.lengthSq() < 0.01) body.velocity.set(0, 0, 0);
