@@ -201,6 +201,73 @@ canvas {
   height: 16px;
 }
 
+.wrench-charge-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 72px;
+  height: 72px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 55;
+  filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.38));
+}
+
+.wrench-charge-ring svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.wrench-charge-ring circle {
+  fill: none;
+  stroke-width: 3;
+}
+
+.wrench-charge-track {
+  stroke: rgba(5, 18, 28, 0.82);
+}
+
+.wrench-charge-progress {
+  stroke: #00f0ff;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 32px 32px;
+  transition: stroke-dashoffset 40ms linear, stroke 160ms ease;
+}
+
+.wrench-charge-ring span {
+  position: absolute;
+  top: 66px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #9ffaff;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-shadow: 0 1px 3px #000, 0 0 6px rgba(0, 240, 255, 0.75);
+}
+
+.wrench-charge-ring.full {
+  filter: drop-shadow(0 0 9px rgba(242, 169, 59, 0.72));
+  animation: wrench-charge-pulse 700ms ease-in-out infinite alternate;
+}
+
+.wrench-charge-ring.full .wrench-charge-progress {
+  stroke: #f2a93b;
+}
+
+.wrench-charge-ring.full span {
+  color: #ffd486;
+}
+
+@keyframes wrench-charge-pulse {
+  from { opacity: 0.78; }
+  to { opacity: 1; }
+}
+
 /* =========================================================================
    HUD OVERLAY (Top Bar & Controls)
    ========================================================================= */

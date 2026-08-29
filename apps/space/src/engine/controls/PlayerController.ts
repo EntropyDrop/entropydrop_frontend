@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { BlockTypes, colorToHex, normalizeColor, PRESET_COLORS } from '../voxel/BlockTypes.ts';
 import {
+  BodyType,
   ContraptionMode,
   isValidComponentId,
   MAX_ENTITY_BOUNDS,
@@ -31,6 +32,18 @@ export function isPerspectiveToggleCode(code: string) {
 
 export type PlayerPerspective = 'first_person' | 'third_person' | 'third_person_front';
 
+export const WRENCH_MAX_CHARGE_SECONDS = 2;
+const WRENCH_CHARGE_EXPONENT = 3.2;
+
+/** Normalized exponential wrench strength: precise at first, powerful near full charge. */
+export function wrenchChargeStrength(heldSeconds: number) {
+  const normalized = Math.max(0, Math.min(1, Number(heldSeconds) / WRENCH_MAX_CHARGE_SECONDS));
+  if (normalized <= 0) return 0;
+  if (normalized >= 1 - 1e-9) return 1;
+  return (Math.exp(WRENCH_CHARGE_EXPONENT * normalized) - 1)
+    / (Math.exp(WRENCH_CHARGE_EXPONENT) - 1);
+}
+
 const HEX_COLOR = /^#?[0-9a-f]{6}$/i;
 const MAX_INVENTORY_NAME_LENGTH = 80;
 const MICRO_DIVISIONS = 5;
@@ -51,7 +64,7 @@ export const SpecialTool = {
   BRUSH: 'brush',           // 3. Brush (repaint block colors)
   PIPETTE: 'pipette',       // Legacy alias; color sampling is part of Brush
   SELECTOR: 'selector',     // 4. Selector (world/component selection and copy)
-  WRENCH: 'wrench',         // 6. Wrench (left drag force, right start/stop)
+  WRENCH: 'wrench',         // 6. Wrench (hold to charge/grab, right start/stop)
   HAMMER: 'hammer',         // 5. Hammer (preview/place inventory items)
   SUPER_GLUE: 'selector'    // alias for backwards compatibility
 };
@@ -108,6 +121,9 @@ export class PlayerController {
         (tool !== SpecialTool.SELECTOR && tool !== SpecialTool.SUPER_GLUE)) {
       this.clearSelection();
     }
+    if (prev === SpecialTool.WRENCH && tool !== SpecialTool.WRENCH) {
+      this.releaseWrenchGrab();
+    }
     this._activeTool = tool;
   }
   selectedBlock: number;
@@ -115,7 +131,7 @@ export class PlayerController {
   currentRaycast: any;
   hoveredContraption: any;
   hoveredContraptionHit: any;
-  wrenchForceDrag: any;
+  wrenchGrab: any;
   microCarvePreview: any;
   focusBlockPreview: any;
   boxSelectionPreview: any;
@@ -187,7 +203,7 @@ export class PlayerController {
     this.currentRaycast = { hit: false };
     this.hoveredContraption = null;
     this.hoveredContraptionHit = null;
-    this.wrenchForceDrag = null;
+    this.wrenchGrab = null;
     this.microCarvePreview = null;
     // Selector focus block guide: { cellOrigin, active } | null
     this.focusBlockPreview = null;
@@ -228,6 +244,7 @@ export class PlayerController {
       if (!locked) {
         this.pointerLockDesired = false;
         this.resetEntityInputState();
+        this.releaseWrenchGrab();
       }
 
       // A pending request may finish after a modal has already called
@@ -313,10 +330,7 @@ export class PlayerController {
     });
 
     document.addEventListener('mouseup', (e) => {
-      if (e.button === 0 && this.wrenchForceDrag) {
-        this.wrenchForceDrag = null;
-        this.sceneRenderer?.setWrenchTether?.(null, null);
-      }
+      if (e.button === 0) this.releaseWrenchGrab();
     });
 
     // Mouse Clicks
@@ -473,7 +487,10 @@ export class PlayerController {
       }
     });
 
-    window.addEventListener('blur', () => this.resetEntityInputState());
+    window.addEventListener('blur', () => {
+      this.resetEntityInputState();
+      this.releaseWrenchGrab();
+    });
 
     document.addEventListener('wheel', (e) => {
       if (!this.isLocked) return;
@@ -498,10 +515,7 @@ export class PlayerController {
 
   /** Switch tools from an interaction flow such as a successful selection copy. */
   activateTool(tool) {
-    if (this.wrenchForceDrag) {
-      this.wrenchForceDrag = null;
-      this.sceneRenderer?.setWrenchTether?.(null, null);
-    }
+    if (this.wrenchGrab) this.releaseWrenchGrab();
     this.activeTool = tool;
     if (this.ui?.selectTool) this.ui.selectTool(tool);
     else this.ui?.updateToolPanelMode?.();
@@ -588,9 +602,9 @@ export class PlayerController {
       return;
     }
 
-    // Wrench owns entity force dragging; left-click and drag applies force.
+    // Wrench owns charged point grabbing while the left button is held.
     if (this.activeTool === SpecialTool.WRENCH) {
-      this.startWrenchForceDrag();
+      this.startWrenchGrab();
       return;
     }
 
@@ -2056,10 +2070,28 @@ export class PlayerController {
     return;
   }
 
-  startWrenchForceDrag() {
+  getWrenchGrabBodyId(contraption, nodeId = 'root') {
+    let currentId = String(nodeId || 'root');
+    while (currentId) {
+      const body = contraption.getRigidBody?.(currentId);
+      if (body?.type === BodyType.DYNAMIC) return currentId;
+      currentId = contraption.getEntityNode?.(currentId)?.parentId || '';
+    }
+    return null;
+  }
+
+  startWrenchGrab() {
     const contraption = this.hoveredContraptionHit?.contraption || this.hoveredContraption;
     if (!contraption) {
-      this.ui?.showToast?.('Wrench: left-click and drag an entity to pull it with a tether');
+      this.ui?.showToast?.('Wrench: hold left-click on a dynamic entity to charge and grab');
+      return false;
+    }
+    const bodyId = this.getWrenchGrabBodyId(
+      contraption,
+      this.hoveredContraptionHit?.entityId || 'root'
+    );
+    if (!bodyId) {
+      this.ui?.showToast?.('Wrench: this entity has no dynamic body to grab');
       return false;
     }
     const eyePos = this.physics?.getEyePosition ? this.physics.getEyePosition() : (this.camera?.position ? this.camera.position.clone() : new THREE.Vector3());
@@ -2069,20 +2101,36 @@ export class PlayerController {
         : new THREE.Vector3(this.hoveredContraptionHit.point.x, this.hoveredContraptionHit.point.y, this.hoveredContraptionHit.point.z))
       : (contraption.position?.isVector3 ? contraption.position.clone() : new THREE.Vector3());
 
-    const localPoint = contraption.worldToLocal
-      ? contraption.worldToLocal(hitPoint.clone())
-      : hitPoint.clone().sub(contraption.position || new THREE.Vector3());
+    const localPoint = contraption.worldToEntityLocal
+      ? contraption.worldToEntityLocal(bodyId, hitPoint.clone())
+      : contraption.worldToLocal
+        ? contraption.worldToLocal(hitPoint.clone())
+        : hitPoint.clone().sub(contraption.position || new THREE.Vector3());
 
     const initialDistance = Math.max(1.5, eyePos.distanceTo(hitPoint));
 
-    this.wrenchForceDrag = {
+    this.releaseWrenchGrab();
+    this.wrenchGrab = {
       contraption,
+      bodyId,
       localPoint,
       targetDistance: initialDistance,
+      holdTime: 0,
+      strength: 0,
+      lastTargetPosition: hitPoint.clone(),
       active: true
     };
+    this.ui?.setWrenchChargeStrength?.(0);
     this.sound?.playWrenchClick?.();
     return true;
+  }
+
+  releaseWrenchGrab() {
+    const wasActive = !!this.wrenchGrab;
+    this.wrenchGrab = null;
+    this.sceneRenderer?.setWrenchTether?.(null, null);
+    this.ui?.setWrenchChargeStrength?.(null);
+    return wasActive;
   }
 
   stopHoveredEntity() {
@@ -3195,43 +3243,61 @@ export class PlayerController {
       this.physics.update(dt, this.keys, this.yaw);
     }
 
-    if (this.wrenchForceDrag?.active && this.wrenchForceDrag.contraption) {
-      const contraption = this.wrenchForceDrag.contraption;
+    if (this.wrenchGrab?.active && this.wrenchGrab.contraption) {
+      const grab = this.wrenchGrab;
+      const contraption = grab.contraption;
       if (this.contraptions?.contraptions && !this.contraptions.contraptions.includes(contraption)) {
-        this.wrenchForceDrag = null;
-        this.sceneRenderer?.setWrenchTether?.(null, null);
+        this.releaseWrenchGrab();
       } else {
-        const { localPoint, targetDistance } = this.wrenchForceDrag;
-        const eyePos = this.physics?.getEyePosition ? this.physics.getEyePosition() : this.camera.position.clone();
-        const lookDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
-        const targetPos = eyePos.clone().addScaledVector(lookDir, targetDistance);
+        const { localPoint, targetDistance, bodyId } = grab;
+        const body = contraption.getRigidBody?.(bodyId);
+        if (!body || body.type !== BodyType.DYNAMIC) {
+          this.releaseWrenchGrab();
+        } else {
+          const eyePos = this.physics?.getEyePosition ? this.physics.getEyePosition() : this.camera.position.clone();
+          const lookDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
+          const targetPos = eyePos.clone().addScaledVector(lookDir, targetDistance);
+          const anchorPos = contraption.entityLocalToWorld
+            ? contraption.entityLocalToWorld(bodyId, localPoint.clone())
+            : contraption.localToWorld
+              ? contraption.localToWorld(localPoint.clone())
+              : localPoint.clone().add(contraption.position || new THREE.Vector3());
 
-        const anchorPos = contraption.localToWorld
-          ? contraption.localToWorld(localPoint.clone())
-          : localPoint.clone().add(contraption.position || new THREE.Vector3());
+          grab.holdTime += Math.max(0, Number(dt) || 0);
+          grab.strength = wrenchChargeStrength(grab.holdTime);
+          this.ui?.setWrenchChargeStrength?.(grab.strength);
+          this.sceneRenderer?.setWrenchTether?.(eyePos, anchorPos, grab.strength);
 
-        // Tether line visual from player eye to entity anchor point
-        this.sceneRenderer?.setWrenchTether?.(eyePos, anchorPos);
+          // Critically damp the exact grabbed point against the camera target.
+          // Anchor velocity includes body rotation and target velocity includes
+          // player/camera movement; the old COM-only damper felt like a
+          // continuous one-way push instead of a held physical point.
+          const safeDt = Math.max(1 / 240, Math.min(0.08, Number(dt) || 0));
+          const targetVelocity = targetPos.clone()
+            .sub(grab.lastTargetPosition)
+            .divideScalar(safeDt);
+          if (targetVelocity.length() > 50) targetVelocity.setLength(50);
 
-        // Spring-damper physics pull (like a physical string / rope tether)
-        const delta = targetPos.clone().sub(anchorPos);
-        const dist = delta.length();
-        if (dist > 0.001) {
-          const mass = Math.max(1, contraption.mass || 10);
-          const k = mass * 180;
-          const c = mass * 26;
-          const entityVel = contraption.velocity?.isVector3 ? contraption.velocity.clone() : new THREE.Vector3();
-          const springForce = delta.multiplyScalar(k).sub(entityVel.multiplyScalar(c));
+          const lever = anchorPos.clone().sub(body.position);
+          const anchorVelocity = body.velocity.clone()
+            .add(body.angularVelocity.clone().cross(lever));
+          const positionError = targetPos.clone().sub(anchorPos);
+          const relativeVelocity = targetVelocity.sub(anchorVelocity);
+          const frequency = 4 + 12 * grab.strength;
+          const acceleration = positionError.multiplyScalar(frequency * frequency)
+            .addScaledVector(relativeVelocity, 2 * frequency);
+          const maxAcceleration = 24 + 156 * grab.strength;
+          if (acceleration.length() > maxAcceleration) acceleration.setLength(maxAcceleration);
 
-          const maxLimit = Math.max(500, (contraption.maxForce || mass * 65) * 6);
-          if (springForce.length() > maxLimit) {
-            springForce.setLength(maxLimit);
+          const force = acceleration.multiplyScalar(Math.max(0.1, body.mass || 1));
+          body.appliedForces.add(force);
+          body.appliedTorques.add(lever.cross(force));
+          grab.lastTargetPosition.copy(targetPos);
+
+          if (grab.strength >= 1 && !grab.fullyCharged) {
+            grab.fullyCharged = true;
+            this.sound?.playWrenchClick?.();
           }
-
-          contraption.applyForceAt?.(
-            [springForce.x, springForce.y, springForce.z],
-            [localPoint.x, localPoint.y, localPoint.z]
-          );
         }
       }
     } else {

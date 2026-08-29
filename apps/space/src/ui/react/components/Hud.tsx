@@ -148,6 +148,30 @@ function InventoryBar() {
   );
 }
 
+function WrenchChargeRing() {
+  const strength = useSpaceUi(state => state.wrenchChargeStrength);
+  if (strength === null) return null;
+  const radius = 24;
+  const circumference = 2 * Math.PI * radius;
+  const percent = Math.round(strength * 100);
+  return (
+    <div id="wrench-charge-ring" className={`wrench-charge-ring ${strength >= 1 ? 'full' : ''}`} aria-hidden="true">
+      <svg viewBox="0 0 64 64">
+        <circle className="wrench-charge-track" cx="32" cy="32" r={radius} />
+        <circle
+          className="wrench-charge-progress"
+          cx="32"
+          cy="32"
+          r={radius}
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - strength)}
+        />
+      </svg>
+      <span>{percent}%</span>
+    </div>
+  );
+}
+
 function SelectorPanel() {
   const { selector, controller } = useSpaceUi(state => state);
   return (
@@ -198,6 +222,7 @@ export function Hud() {
   return (
     <>
       <div id="crosshair" />
+      <WrenchChargeRing />
       <div id="hud-overlay">
         <div className="hud-top">
           <div className="hud-card">

@@ -16,7 +16,7 @@ const componentSource = COMPONENT_FILES
   .join('\n');
 
 const REQUIRED_UI_IDS = [
-  'canvas-container', 'crosshair', 'hud-overlay', 'fps-val', 'ping-val', 'pos-val',
+  'canvas-container', 'crosshair', 'wrench-charge-ring', 'hud-overlay', 'fps-val', 'ping-val', 'pos-val',
   'hud-entities-list', 'global-settings-btn', 'color-palette-bar', 'inventory-bar',
   'selector-panel-wrapper', 'hotbar', 'toast', 'code-editor-modal',
   'global-playback-group', 'component-tree-list', 'component-inspector-panel',

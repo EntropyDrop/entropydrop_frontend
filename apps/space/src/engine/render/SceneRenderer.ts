@@ -21,6 +21,8 @@ export const ENTITY_PREVIEW_FORCE_LIMIT_RATIO = 0.72;
 const MAX_SELECTION_BEND_SEGMENTS = 64;
 const remotePlayerCullCamera = new THREE.PerspectiveCamera();
 const remotePlayerProjectedPosition = new THREE.Vector3();
+const wrenchTetherColdColor = new THREE.Color(0x00f0ff);
+const wrenchTetherHotColor = new THREE.Color(0xf2a93b);
 
 function createPlayerNameTag(username: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
@@ -1236,7 +1238,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     if (this.focusBlockGuide) this.focusBlockGuide.visible = false;
   }
 
-  setWrenchTether(startPoint: THREE.Vector3 | null, endPoint: THREE.Vector3 | null) {
+  setWrenchTether(startPoint: THREE.Vector3 | null, endPoint: THREE.Vector3 | null, strength = 0) {
     if (!this.wrenchTetherLine) {
       const geom = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(),
@@ -1264,6 +1266,10 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     posAttr.setXYZ(0, startPoint.x, startPoint.y, startPoint.z);
     posAttr.setXYZ(1, endPoint.x, endPoint.y, endPoint.z);
     posAttr.needsUpdate = true;
+    const material = this.wrenchTetherLine.material as THREE.LineBasicMaterial;
+    const normalizedStrength = Math.max(0, Math.min(1, Number(strength) || 0));
+    material.color.copy(wrenchTetherColdColor).lerp(wrenchTetherHotColor, normalizedStrength);
+    material.opacity = 0.65 + normalizedStrength * 0.3;
     this.wrenchTetherLine.visible = true;
   }
 
