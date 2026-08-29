@@ -460,10 +460,18 @@ export class ContraptionManager {
     }));
     const bodies = (contraption.getRigidBodies?.() || []).map(body => ({
       id: body.id,
+      type: body.type,
       position: body.position?.toArray?.() || [0, 0, 0],
       quaternion: body.quaternion?.toArray?.() || [0, 0, 0, 1],
       velocity: body.velocity?.toArray?.() || [0, 0, 0],
       angularVelocity: body.angularVelocity?.toArray?.() || [0, 0, 0],
+      mass: body.mass,
+      inverseInertia: body.inverseInertia,
+      restitution: body.restitution,
+      friction: body.friction,
+      linearDamping: body.linearDamping,
+      angularDamping: body.angularDamping,
+      centerOfMassLocal: body.centerOfMassLocal?.toArray?.() || [0, 0, 0],
       previousKinematicPosition: body.previousKinematicPosition?.toArray?.() || [0, 0, 0],
       previousKinematicQuaternion: body.previousKinematicQuaternion?.toArray?.() || [0, 0, 0, 1],
       isOnGround: !!body.isOnGround
@@ -538,7 +546,7 @@ export class ContraptionManager {
     contraption.quaternion.fromArray(record.quaternion || [0, 0, 0, 1]).normalize();
     contraption.velocity.fromArray(record.velocity || [0, 0, 0]);
     contraption.angularVelocity.fromArray(record.angularVelocity || [0, 0, 0]);
-    contraption.useGravity = record.useGravity !== false;
+    if (typeof record.useGravity === 'boolean') contraption.useGravity = record.useGravity;
     contraption.isOnGround = !!record.isOnGround;
     contraption.groundDistance = Number(record.groundDistance) || 0;
     contraption.rootPivotOverride = Array.isArray(record.rootPivotOverride)
@@ -558,6 +566,30 @@ export class ContraptionManager {
     for (const saved of record.bodies || []) {
       const body = contraption.getRigidBody(saved.id);
       if (!body) continue;
+      if (saved.type === BodyType.DYNAMIC || saved.type === BodyType.KINEMATIC) {
+        body.type = saved.type;
+        const node = contraption.entityNodes.get(String(saved.id));
+        if (node) node.bodyType = saved.type;
+      }
+      if (Number.isFinite(Number(saved.mass)) && Number(saved.mass) > 0) body.mass = Number(saved.mass);
+      if (Number.isFinite(Number(saved.inverseInertia)) && Number(saved.inverseInertia) >= 0) {
+        body.inverseInertia = Number(saved.inverseInertia);
+      }
+      if (Number.isFinite(Number(saved.restitution))) {
+        body.restitution = Math.max(0, Math.min(1, Number(saved.restitution)));
+      }
+      if (Number.isFinite(Number(saved.friction))) {
+        body.friction = Math.max(0, Math.min(1, Number(saved.friction)));
+      }
+      if (Number.isFinite(Number(saved.linearDamping))) {
+        body.linearDamping = Math.max(0, Math.min(1, Number(saved.linearDamping)));
+      }
+      if (Number.isFinite(Number(saved.angularDamping))) {
+        body.angularDamping = Math.max(0, Math.min(1, Number(saved.angularDamping)));
+      }
+      if (isFiniteVector3Array(saved.centerOfMassLocal)) {
+        body.centerOfMassLocal.fromArray(saved.centerOfMassLocal);
+      }
       body.position.fromArray(saved.position || [0, 0, 0]);
       body.quaternion.fromArray(saved.quaternion || [0, 0, 0, 1]).normalize();
       body.velocity.fromArray(saved.velocity || [0, 0, 0]);
@@ -567,6 +599,22 @@ export class ContraptionManager {
       body.appliedForces.set(0, 0, 0);
       body.appliedTorques.set(0, 0, 0);
       body.isOnGround = !!saved.isOnGround;
+
+      if (body.id === 'root') {
+        contraption.bodyType = body.type;
+        contraption.mass = body.mass;
+        contraption.restitution = body.restitution;
+        contraption.friction = body.friction;
+        contraption.linearDamping = body.linearDamping;
+        contraption.angularDamping = body.angularDamping;
+      } else {
+        const definition = contraption.childDefinitions.get(body.id);
+        if (definition) {
+          definition.bodyType = body.type;
+          definition.restitution = body.restitution;
+          definition.friction = body.friction;
+        }
+      }
     }
     contraption.syncAllBodyTransforms?.();
 

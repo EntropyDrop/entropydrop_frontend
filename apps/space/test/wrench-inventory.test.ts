@@ -368,6 +368,136 @@ test('Wrench grab is mass independent for extremely heavy entities', () => {
   assert.ok(entity.position.x > 2.5, `a billion-kilogram entity must follow the grab target, x=${entity.position.x}`);
 });
 
+test('Wrench cannot repeatedly drive a grabbed entity through terrain', () => {
+  const wallX = 3;
+  const world = {
+    getBlock: (x) => x === wallX ? BlockTypes.COLOR_BLOCK : BlockTypes.AIR,
+    raycast: (origin, direction, maxDistance) => {
+      if (!(direction.x > 0) || origin.x >= wallX) return { hit: false };
+      const distance = (wallX - origin.x) / direction.x;
+      return distance <= maxDistance
+        ? { hit: true, distance, normal: { x: -1, y: 0, z: 0 } }
+        : { hit: false };
+    },
+    raycastMicro: () => ({ hit: false }),
+    microVoxels: { get: () => null }
+  };
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, world, null, null);
+  const entityPhysics = new ContraptionPhysics(world as any);
+  manager.setPhysics(entityPhysics);
+  const entity = new Contraption(
+    4,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0, 0, -5),
+    scene,
+    { bodyType: 'dynamic', friction: 0, restitution: 0 }
+  );
+  entity.useGravity = false;
+  manager.registerContraption(entity);
+
+  const eye = new THREE.Vector3(0, 0, 0);
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.copy(eye);
+  camera.lookAt(entity.position);
+  const controller = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.WRENCH;
+  controller.contraptions = manager;
+  controller.hoveredContraption = entity;
+  controller.hoveredContraptionHit = {
+    contraption: entity,
+    entityId: 'root',
+    point: entity.position.clone()
+  };
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+  controller.camera = camera;
+  controller.physics = {
+    update() {},
+    getEyePosition() { return eye.clone(); },
+    position: eye,
+    velocity: new THREE.Vector3()
+  };
+  controller.updateCameraPosition = () => {};
+  controller.handleLeftClick();
+
+  eye.x = 8;
+  let maxX = entity.position.x;
+  for (let frame = 0; frame < 120; frame++) {
+    controller.update(1 / 60);
+    entityPhysics.update(entity, 1 / 60);
+    maxX = Math.max(maxX, entity.position.x);
+  }
+
+  assert.ok(maxX < 2.51, `the held body must remain on the near side of the wall, maxX=${maxX}`);
+});
+
+test('Wrench cannot drive a grabbed entity through another entity', () => {
+  const world = {
+    getBlock: () => BlockTypes.AIR,
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false }),
+    microVoxels: { get: () => null }
+  };
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, world, null, null);
+  const entityPhysics = new ContraptionPhysics(world as any);
+  manager.setPhysics(entityPhysics);
+  const grabbed = new Contraption(
+    5,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0, 0, -5),
+    scene,
+    { bodyType: 'dynamic', friction: 0, restitution: 0 }
+  );
+  grabbed.useGravity = false;
+  const obstacle = new Contraption(
+    6,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(3, 0, -5),
+    scene,
+    { bodyType: 'kinematic', friction: 0, restitution: 0 }
+  );
+  manager.registerContraption(grabbed);
+  manager.registerContraption(obstacle);
+
+  const eye = new THREE.Vector3(0, 0, 0);
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.copy(eye);
+  camera.lookAt(grabbed.position);
+  const controller = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.WRENCH;
+  controller.contraptions = manager;
+  controller.hoveredContraption = grabbed;
+  controller.hoveredContraptionHit = {
+    contraption: grabbed,
+    entityId: 'root',
+    point: grabbed.position.clone()
+  };
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+  controller.camera = camera;
+  controller.physics = {
+    update() {},
+    getEyePosition() { return eye.clone(); },
+    position: eye,
+    velocity: new THREE.Vector3()
+  };
+  controller.updateCameraPosition = () => {};
+  controller.handleLeftClick();
+
+  eye.x = 8;
+  let maxX = grabbed.position.x;
+  for (let frame = 0; frame < 120; frame++) {
+    controller.update(1 / 60);
+    manager.update(1 / 60, null);
+    maxX = Math.max(maxX, grabbed.position.x);
+  }
+
+  assert.ok(maxX < 2.51, `the held body must not pass through the other entity, maxX=${maxX}`);
+  assert.equal(obstacle.position.x, 3.5, 'a kinematic obstacle must remain fixed');
+});
+
 test('Wrench resolves a grabbed kinematic child to its nearest dynamic body', () => {
   const entity = makeContraptionWithChildren();
   const controller = Object.create(PlayerController.prototype);

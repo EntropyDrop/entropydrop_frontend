@@ -3257,16 +3257,29 @@ export class PlayerController {
           const targetVelocity = targetPos.clone()
             .sub(grab.lastTargetPosition)
             .divideScalar(safeDt);
-          if (targetVelocity.length() > 80) targetVelocity.setLength(80);
+          if (targetVelocity.length() > 24) targetVelocity.setLength(24);
 
           const desiredVelocity = targetPos.clone()
             .sub(anchorPos)
             .multiplyScalar(36)
             .add(targetVelocity);
-          if (desiredVelocity.length() > 120) desiredVelocity.setLength(120);
+          if (desiredVelocity.length() > 30) desiredVelocity.setLength(30);
+
+          const constrained = this.contraptions?.physics?.constrainWrenchVelocity?.(
+            contraption,
+            body,
+            desiredVelocity,
+            safeDt,
+            this.contraptions?.contraptions
+          );
+          const collisionSafeVelocity = constrained?.velocity || desiredVelocity;
 
           const velocityBlend = 1 - Math.exp(-80 * safeDt);
-          body.velocity.lerp(desiredVelocity, velocityBlend);
+          body.velocity.lerp(collisionSafeVelocity, velocityBlend);
+          for (const normal of constrained?.normals || []) {
+            const inwardSpeed = body.velocity.dot(normal);
+            if (inwardSpeed < 0) body.velocity.addScaledVector(normal, -inwardSpeed);
+          }
           body.angularVelocity.multiplyScalar(Math.exp(-32 * safeDt));
           grab.lastTargetPosition.copy(targetPos);
         }

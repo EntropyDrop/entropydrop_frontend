@@ -434,6 +434,110 @@ export class ContraptionPhysics {
     return null;
   }
 
+  /**
+   * Limit an editor-style wrench drive before it overwrites collision response.
+   * Ordinary CCD runs after integration, but a held wrench writes a new target
+   * velocity every frame; without this preflight, the next frame can drive the
+   * body back into (and eventually through) the same wall. Probe every collider
+   * sample through this frame's requested displacement and stop at the earliest
+   * terrain or entity entry face.
+   */
+  sweepPointAabb(start, direction, maxDistance, box) {
+    const inside = start.x >= box.minX && start.x <= box.maxX
+      && start.y >= box.minY && start.y <= box.maxY
+      && start.z >= box.minZ && start.z <= box.maxZ;
+    if (inside) {
+      const faces = [
+        { distance: start.x - box.minX, normal: new THREE.Vector3(-1, 0, 0) },
+        { distance: box.maxX - start.x, normal: new THREE.Vector3(1, 0, 0) },
+        { distance: start.y - box.minY, normal: new THREE.Vector3(0, -1, 0) },
+        { distance: box.maxY - start.y, normal: new THREE.Vector3(0, 1, 0) },
+        { distance: start.z - box.minZ, normal: new THREE.Vector3(0, 0, -1) },
+        { distance: box.maxZ - start.z, normal: new THREE.Vector3(0, 0, 1) }
+      ].sort((a, b) => a.distance - b.distance);
+      return { distance: 0, normal: faces[0].normal };
+    }
+
+    let near = 0;
+    let far = maxDistance;
+    let normal = null;
+    for (const axis of ['x', 'y', 'z'] as const) {
+      const component = direction[axis];
+      const min = box[`min${axis.toUpperCase()}`];
+      const max = box[`max${axis.toUpperCase()}`];
+      if (Math.abs(component) < 1e-10) {
+        if (start[axis] < min || start[axis] > max) return null;
+        continue;
+      }
+      let entry = (min - start[axis]) / component;
+      let exit = (max - start[axis]) / component;
+      let entrySign = -1;
+      if (entry > exit) {
+        [entry, exit] = [exit, entry];
+        entrySign = 1;
+      }
+      if (entry > near) {
+        near = entry;
+        normal = new THREE.Vector3();
+        normal[axis] = entrySign;
+      }
+      far = Math.min(far, exit);
+      if (near > far) return null;
+    }
+    if (!normal || near < 0 || near > maxDistance) return null;
+    return { distance: near, normal };
+  }
+
+  constrainWrenchVelocity(contraption, body, desiredVelocity, dt, contraptions = []) {
+    const velocity = desiredVelocity?.clone?.() || new THREE.Vector3();
+    const safeDt = Math.max(1 / 240, Math.min(0.08, Number(dt) || 0));
+    const frameDistance = velocity.length() * safeDt;
+    if (!body || frameDistance < 1e-8) return { velocity, normals: [] };
+
+    const direction = velocity.clone().normalize();
+    const probeDistance = frameDistance + 0.02;
+    const samples = contraption.getCollisionSamplePoints?.(body.id, true) || [];
+    const normals: THREE.Vector3[] = [];
+    let allowedFraction = 1;
+
+    for (const start of samples) {
+      const end = start.clone().addScaledVector(direction, probeDistance);
+      const contact = this.sweepTerrainContact(start, end);
+      if (!contact || velocity.dot(contact.normal) >= -1e-8) continue;
+      const hitDistance = contact.hitPosition
+        ? start.distanceTo(contact.hitPosition)
+        : 0;
+      const allowedDistance = Math.max(0, hitDistance - 0.004);
+      allowedFraction = Math.min(allowedFraction, allowedDistance / frameDistance);
+      if (!normals.some(normal => normal.dot(contact.normal) > 0.999)) {
+        normals.push(contact.normal.clone());
+      }
+    }
+
+    for (const other of contraptions || []) {
+      if (!other || other === contraption) continue;
+      const broadphaseDistance = Math.max(0.5, Number(contraption.boundingRadius) || 0.5)
+        + Math.max(0.5, Number(other.boundingRadius) || 0.5)
+        + probeDistance;
+      if (contraption.position.distanceToSquared(other.position) > broadphaseDistance * broadphaseDistance) continue;
+      const boxes = other.getCollisionWorldAABBs?.() || [];
+      for (const start of samples) {
+        for (const box of boxes) {
+          const contact = this.sweepPointAabb(start, direction, probeDistance, box);
+          if (!contact || velocity.dot(contact.normal) >= -1e-8) continue;
+          const allowedDistance = Math.max(0, contact.distance - 0.004);
+          allowedFraction = Math.min(allowedFraction, allowedDistance / frameDistance);
+          if (!normals.some(normal => normal.dot(contact.normal) > 0.999)) {
+            normals.push(contact.normal.clone());
+          }
+        }
+      }
+    }
+
+    if (allowedFraction < 1) velocity.multiplyScalar(Math.max(0, allowedFraction));
+    return { velocity, normals };
+  }
+
   solveTerrainContact(body, normal, hitPosition, penetration, contactCount, dt, swept = false) {
     const correctionRatio = swept ? 1 : 0.9;
     body.position.addScaledVector(normal, Math.max(0, penetration - 0.001) * correctionRatio);
