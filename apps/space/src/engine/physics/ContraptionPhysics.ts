@@ -8,6 +8,7 @@ const TERRAIN_SWEEP_THRESHOLD = 0.1;
 const MIN_PHYSICS_SUBSTEPS = 2;
 const MAX_PHYSICS_SUBSTEPS = 16;
 const MAX_SUBSTEP_SURFACE_TRAVEL = 0.15;
+const ENTITY_CONTACT_ITERATIONS = 10;
 const TERRAIN_FACE_NORMALS = [
   new THREE.Vector3(-1, 0, 0),
   new THREE.Vector3(1, 0, 0),
@@ -300,9 +301,26 @@ export class ContraptionPhysics {
         }
       }
     }
-    for (const [a, b] of candidates.values()) {
-      if (!this.isDynamicCollider(colliders[a]) && !this.isDynamicCollider(colliders[b])) continue;
-      this.resolveContraptionPair(colliders[a], colliders[b], colliderBoxes[a], colliderBoxes[b]);
+    const dynamicCandidates = [...candidates.values()].filter(([a, b]) => (
+      this.isDynamicCollider(colliders[a]) || this.isDynamicCollider(colliders[b])
+    ));
+    for (let iteration = 0; iteration < ENTITY_CONTACT_ITERATIONS; iteration++) {
+      let resolvedContacts = 0;
+      for (const [a, b] of dynamicCandidates) {
+        // Every correction changes all world-space boxes on that body. Fresh
+        // boxes let the solver propagate support through a stack instead of
+        // leaving the next pair embedded until the following rendered frame.
+        const boxesA = colliders[a].getCollisionWorldAABBs?.() || [];
+        const boxesB = colliders[b].getCollisionWorldAABBs?.() || [];
+        if (this.resolveContraptionPair(
+          colliders[a],
+          colliders[b],
+          boxesA,
+          boxesB,
+          iteration === 0
+        )) resolvedContacts++;
+      }
+      if (resolvedContacts === 0) break;
     }
   }
 
@@ -376,8 +394,8 @@ export class ContraptionPhysics {
     bodyB.velocity.addScaledVector(normal, impulse * this.inverseMass(bodyB));
   }
 
-  resolveContraptionPair(a, b, boxesA = null, boxesB = null) {
-    if (a === b) return;
+  resolveContraptionPair(a, b, boxesA = null, boxesB = null, allowSweep = true) {
+    if (a === b) return false;
 
     boxesA ||= a.getCollisionWorldAABBs?.() || [];
     boxesB ||= b.getCollisionWorldAABBs?.() || [];
@@ -390,7 +408,7 @@ export class ContraptionPhysics {
         const bodyB = b.getRigidBody?.(bb.bodyId || bb.entityId || 'root');
         if (!bodyA || !bodyB || (bodyA.type !== BodyType.DYNAMIC && bodyB.type !== BodyType.DYNAMIC)) continue;
 
-        const sweep = this.sweptAabbContact(ba, bb);
+        const sweep = allowSweep ? this.sweptAabbContact(ba, bb) : null;
         if (sweep && (!bestSweep || sweep.time < bestSweep.time)) {
           bestSweep = { ...sweep, bodyA, bodyB };
         }
@@ -419,18 +437,19 @@ export class ContraptionPhysics {
       const invA = this.inverseMass(bodyA);
       const invB = this.inverseMass(bodyB);
       const totalInv = invA + invB;
-      if (totalInv <= 0) return;
+      if (totalInv <= 0) return false;
       const relativeDistance = Math.max(1e-9, relativeDelta.length());
       const rewindFraction = Math.min(1, Math.max(0, 1 - time + 0.001 / relativeDistance));
       bodyA.position.addScaledVector(relativeDelta, -rewindFraction * invA / totalInv);
       bodyB.position.addScaledVector(relativeDelta, rewindFraction * invB / totalInv);
       this.applyEntityCollisionImpulse(bodyA, bodyB, normal, totalInv);
+      this.markEntitySupport(a, b, bodyA, bodyB, normal);
       a.syncAllBodyTransforms?.();
       b.syncAllBodyTransforms?.();
-      return;
+      return true;
     }
 
-    if (!bestOverlap) return;
+    if (!bestOverlap) return false;
 
     const { axis, penetration, ba, bb, bodyA, bodyB } = bestOverlap;
     const minKey = `currentMin${axis.toUpperCase()}`;
@@ -444,15 +463,28 @@ export class ContraptionPhysics {
     const invA = this.inverseMass(bodyA);
     const invB = this.inverseMass(bodyB);
     const totalInv = invA + invB;
-    if (totalInv <= 0) return;
+    if (totalInv <= 0) return false;
 
     const push = penetration + 0.001;
     bodyA.position.addScaledVector(normal, -push * invA / totalInv);
     bodyB.position.addScaledVector(normal, push * invB / totalInv);
     this.applyEntityCollisionImpulse(bodyA, bodyB, normal, totalInv);
+    this.markEntitySupport(a, b, bodyA, bodyB, normal);
 
     a.syncAllBodyTransforms?.();
     b.syncAllBodyTransforms?.();
+    return true;
+  }
+
+  markEntitySupport(a, b, bodyA, bodyB, normal) {
+    if (normal.y < -0.5 && bodyA.type === BodyType.DYNAMIC) {
+      bodyA.isOnGround = true;
+      if (bodyA.id === 'root') a.isOnGround = true;
+    }
+    if (normal.y > 0.5 && bodyB.type === BodyType.DYNAMIC) {
+      bodyB.isOnGround = true;
+      if (bodyB.id === 'root') b.isOnGround = true;
+    }
   }
 
   terrainCellAtPoint(point) {

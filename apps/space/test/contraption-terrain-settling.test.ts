@@ -14,6 +14,47 @@ function makeFloorWorld() {
   };
 }
 
+function makeSingleBlockWorld() {
+  return {
+    getBlock: (x, y, z) => (x === 0 && y === 0 && z === 0)
+      ? BlockTypes.COLOR_BLOCK
+      : BlockTypes.AIR,
+    raycast: (origin, direction, maxDistance) => {
+      if (!(direction.y < -1e-8) || origin.y <= 1) return { hit: false };
+      const distance = (1 - origin.y) / direction.y;
+      if (!(distance >= 0 && distance <= maxDistance)) return { hit: false };
+      const x = origin.x + direction.x * distance;
+      const z = origin.z + direction.z * distance;
+      return x >= -1e-8 && x <= 1 + 1e-8 && z >= -1e-8 && z <= 1 + 1e-8
+        ? { hit: true, distance, normal: { x: 0, y: 1, z: 0 } }
+        : { hit: false };
+    },
+    raycastMicro: () => ({ hit: false, distance: 0 }),
+    microVoxels: { get: () => null }
+  };
+}
+
+test('a block dropped from height settles on one terrain block without embedding', () => {
+  const contraption = new Contraption(
+    0,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0, 20, 0),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC, restitution: 0.01 }
+  );
+  const physics = new ContraptionPhysics(makeSingleBlockWorld() as any);
+  let minimumBottom = Infinity;
+
+  for (let frame = 0; frame < 600; frame++) {
+    physics.update(contraption, 1 / 60);
+    minimumBottom = Math.min(minimumBottom, contraption.getCollisionWorldAABBs()[0].currentMinY);
+  }
+
+  assert.ok(minimumBottom > 0.98, `falling body must not embed into the terrain block, bottom=${minimumBottom}`);
+  assert.ok(Math.abs(contraption.position.y - 1.5) < 0.02, `falling body should rest on the terrain block, y=${contraption.position.y}`);
+  assert.ok(Math.abs(contraption.velocity.y) < 0.05, `resting vertical velocity should be near zero, vy=${contraption.velocity.y}`);
+});
+
 test('a tilted dynamic block topples onto a stable face under gravity', () => {
   const contraption = new Contraption(
     1,

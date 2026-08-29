@@ -202,3 +202,124 @@ test('continuous entity collision prevents two fast dynamic bodies from swapping
   assert.ok(a.position.x < b.position.x, `fast bodies must not swap sides, a=${a.position.x}, b=${b.position.x}`);
   assert.ok(a.velocity.x <= b.velocity.x, `post-contact velocities must separate, avx=${a.velocity.x}, bvx=${b.velocity.x}`);
 });
+
+test('a block dropped from height settles on a kinematic entity without embedding', () => {
+  const physics = makePhysics();
+  const falling = makeEntity(204, { x: 0, y: 20, z: 0 }, {
+    restitution: 0.01,
+    friction: 0.5
+  });
+  const support = makeEntity(205, { x: 0, y: 0, z: 0 }, {
+    bodyType: BodyType.KINEMATIC,
+    restitution: 0,
+    friction: 0.5
+  });
+
+  let maximumPenetration = 0;
+  for (let frame = 0; frame < 600; frame++) {
+    falling.update(1 / 60, null, {});
+    support.update(1 / 60, null, {});
+    physics.update(falling, 1 / 60);
+    physics.update(support, 1 / 60);
+    physics.resolveContraptionPairs([falling, support]);
+
+    const fallingBox = falling.getCollisionWorldAABBs()[0];
+    const supportBox = support.getCollisionWorldAABBs()[0];
+    maximumPenetration = Math.max(
+      maximumPenetration,
+      supportBox.currentMaxY - fallingBox.currentMinY
+    );
+  }
+
+  assert.ok(maximumPenetration < 0.02, `falling entity penetration must stay shallow, depth=${maximumPenetration}`);
+  assert.ok(Math.abs(falling.position.y - 1.5) < 0.02, `falling entity should rest on top, y=${falling.position.y}`);
+  assert.ok(Math.abs(falling.velocity.y) < 0.05, `resting vertical velocity should be near zero, vy=${falling.velocity.y}`);
+});
+
+test('a rotating block dropped onto a multi-block entity resolves every overlapping contact', () => {
+  const physics = makePhysics();
+  const falling = makeEntity(206, { x: 0, y: 20, z: 0 }, {
+    restitution: 0.01,
+    friction: 0.5
+  });
+  const support = new Contraption(
+    207,
+    [-1, 0, 1].flatMap(localX => [-1, 0, 1].map(localZ => ({
+      localX,
+      localY: 0,
+      localZ,
+      block: BlockTypes.COLOR_BLOCK
+    }))),
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Scene(),
+    { mode: ContraptionMode.FREE_PHYSICS, bodyType: BodyType.KINEMATIC, restitution: 0 }
+  );
+  falling.quaternion.setFromEuler(new THREE.Euler(0.25, 0.15, 0.2));
+  falling.angularVelocity.set(2, 1, 3);
+
+  let maximumRemainingOverlap = 0;
+  for (let frame = 0; frame < 360; frame++) {
+    const dt = frame % 45 === 0 ? 0.08 : 1 / 60;
+    falling.update(dt, null, {});
+    support.update(dt, null, {});
+    physics.update(falling, dt);
+    physics.update(support, dt);
+    physics.resolveContraptionPairs([falling, support]);
+
+    const fallingBox = falling.getCollisionWorldAABBs()[0];
+    for (const supportBox of support.getCollisionWorldAABBs()) {
+      const overlap = Math.min(
+        Math.min(fallingBox.currentMaxX, supportBox.currentMaxX) - Math.max(fallingBox.currentMinX, supportBox.currentMinX),
+        Math.min(fallingBox.currentMaxY, supportBox.currentMaxY) - Math.max(fallingBox.currentMinY, supportBox.currentMinY),
+        Math.min(fallingBox.currentMaxZ, supportBox.currentMaxZ) - Math.max(fallingBox.currentMinZ, supportBox.currentMinZ)
+      );
+      if (overlap > 0) maximumRemainingOverlap = Math.max(maximumRemainingOverlap, overlap);
+    }
+  }
+
+  assert.ok(
+    maximumRemainingOverlap < 0.02,
+    `all entity contacts should be separated after each frame, overlap=${maximumRemainingOverlap}`
+  );
+});
+
+test('a falling block cannot compress into a stack of dynamic blocks', () => {
+  const physics = makePhysics();
+  const support = makeEntity(208, { x: 0, y: 0, z: 0 }, {
+    bodyType: BodyType.KINEMATIC,
+    restitution: 0
+  });
+  const stack = [1, 2, 3, 4].map((y, index) => makeEntity(209 + index, { x: 0, y, z: 0 }, {
+    restitution: 0.01,
+    friction: 0.5
+  }));
+  const falling = makeEntity(213, { x: 0, y: 15, z: 0 }, {
+    restitution: 0.01,
+    friction: 0.5
+  });
+  const entities = [support, ...stack, falling];
+  let maximumRemainingOverlap = 0;
+
+  for (let frame = 0; frame < 600; frame++) {
+    for (const entity of entities) entity.update(1 / 60, null, {});
+    for (const entity of entities) physics.update(entity, 1 / 60);
+    physics.resolveContraptionPairs(entities);
+
+    const boxes = entities.map(entity => entity.getCollisionWorldAABBs()[0]);
+    for (let a = 0; a < boxes.length; a++) {
+      for (let b = a + 1; b < boxes.length; b++) {
+        const overlap = Math.min(
+          Math.min(boxes[a].currentMaxX, boxes[b].currentMaxX) - Math.max(boxes[a].currentMinX, boxes[b].currentMinX),
+          Math.min(boxes[a].currentMaxY, boxes[b].currentMaxY) - Math.max(boxes[a].currentMinY, boxes[b].currentMinY),
+          Math.min(boxes[a].currentMaxZ, boxes[b].currentMaxZ) - Math.max(boxes[a].currentMinZ, boxes[b].currentMinZ)
+        );
+        if (overlap > 0) maximumRemainingOverlap = Math.max(maximumRemainingOverlap, overlap);
+      }
+    }
+  }
+
+  assert.ok(
+    maximumRemainingOverlap < 0.02,
+    `iterative stacking contacts should prevent compression, overlap=${maximumRemainingOverlap}`
+  );
+});
