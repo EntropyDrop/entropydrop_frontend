@@ -1,17 +1,18 @@
 /// <reference lib="webworker" />
-import { parseSTLData, planSTLSize, voxelizeSTL } from './STLVoxelizer.ts';
+import { parse3DModelData, planModelSize, voxelizeModel } from './ModelVoxelizer.ts';
 
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 
-workerScope.addEventListener('message', event => {
-  const { buffer, sizeBlocks, precision, color } = event.data || {};
+workerScope.addEventListener('message', async event => {
+  const { buffer, filename, sizeBlocks, precision, color, hollow } = event.data || {};
   try {
-    if (!(buffer instanceof ArrayBuffer)) throw new Error('Missing STL file data');
-    const triangles = parseSTLData(buffer);
-    const plan = planSTLSize(triangles, sizeBlocks, precision);
-    const result = voxelizeSTL(triangles, plan.cellSize, color, {
+    if (!(buffer instanceof ArrayBuffer)) throw new Error('Missing 3D model file data');
+    const triangles = await parse3DModelData(buffer, filename);
+    const plan = planModelSize(triangles, sizeBlocks, precision);
+    const result = voxelizeModel(triangles, plan.cellSize, color, {
       micro: plan.micro,
-      scale: plan.scale
+      scale: plan.scale,
+      hollow: hollow !== false
     });
     workerScope.postMessage({ ok: true, result, plan });
   } catch (error) {

@@ -293,14 +293,14 @@ function StlImportCard() {
   };
   useEffect(() => stopWorker, []);
 
-  const importStl = async () => {
+  const importModel = async () => {
     if (workerRef.current) {
       stopWorker();
       setStatus('Import cancelled');
       return;
     }
-    if (!file) { setStatus('Choose an .stl file first'); return; }
-    if (file.size > MAX_STL_FILE_BYTES) { setStatus(`Error: STL files are limited to ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB`); return; }
+    if (!file) { setStatus('Choose a .glb, .gltf, or .stl file first'); return; }
+    if (file.size > MAX_STL_FILE_BYTES) { setStatus(`Error: Model files are limited to ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB`); return; }
     if (!sizeBlocks || sizeBlocks < 1) { setStatus('Error: size in standard blocks must be at least 1'); return; }
     try {
       const worker = new Worker(new URL('../../../engine/voxel/STLImportWorker.ts', import.meta.url), { type: 'module' });
@@ -309,13 +309,13 @@ function StlImportCard() {
       timeoutRef.current = window.setTimeout(() => {
         if (workerRef.current === worker) {
           stopWorker();
-          setStatus('Error: STL import exceeded the 120 second processing limit');
+          setStatus('Error: 3D model import exceeded the 120 second processing limit');
         }
       }, 120000);
       worker.onmessage = event => {
         if (workerRef.current !== worker) return;
         try {
-          if (!event.data?.ok) throw new Error(event.data?.error || 'STL worker failed');
+          if (!event.data?.ok) throw new Error(event.data?.error || 'Model worker failed');
           const result = event.data.result;
           const sizeLabel = `prec ${precision} · size ${sizeBlocks} blocks`;
           const slot = controller?.importBlockSetToInventory?.(result.blocks, `${file.name} @${sizeLabel}`);
@@ -329,11 +329,17 @@ function StlImportCard() {
           stopWorker();
         }
       };
-      worker.onerror = event => { stopWorker(); setStatus(`Error: ${event.message || 'STL worker crashed'}`); };
+      worker.onerror = event => { stopWorker(); setStatus(`Error: ${event.message || 'Model worker crashed'}`); };
       const buffer = await file.arrayBuffer();
       if (workerRef.current !== worker) return;
       setStatus(`Voxelizing ${file.name} in background…`);
-      worker.postMessage({ buffer, sizeBlocks, precision, color: controller?.selectedColor ?? 0xf2a93b }, [buffer]);
+      worker.postMessage({
+        buffer,
+        filename: file.name,
+        sizeBlocks,
+        precision,
+        color: controller?.selectedColor ?? 0xf2a93b
+      }, [buffer]);
     } catch (error: any) {
       stopWorker();
       setStatus(`Error: ${error?.message || String(error)}`);
@@ -345,8 +351,8 @@ function StlImportCard() {
       <div className="stl-card-header">
         <span className="inv-icon">⬡</span>
         <div style={{ flex: 1, textAlign: 'left' }}>
-          <div className="inv-name" style={{ color: 'var(--brass-light)' }}>IMPORT STL → BLOCK BODY</div>
-          <div className="inv-desc">Convert an .stl mesh into a block set in the inventory — Hammer left-click places plain blocks</div>
+          <div className="inv-name" style={{ color: 'var(--brass-light)' }}>IMPORT 3D MODEL (GLB / GLTF / STL) → BLOCK SET</div>
+          <div className="inv-desc">Convert full-color .glb, .gltf, or .stl models into a block set — Hammer left-click builds empty cells, right-click overwrites</div>
         </div>
       </div>
       <div className="stl-size-row">
@@ -378,7 +384,7 @@ function StlImportCard() {
       <input
         type="file"
         id="stl-file-input"
-        accept=".stl"
+        accept=".glb,.gltf,.stl"
         className="stl-file-input"
         onChange={event => {
           const next = event.target.files?.[0] || null;
@@ -393,7 +399,7 @@ function StlImportCard() {
           className="banner-btn primary"
           id="stl-import-btn"
           style={{ fontSize: 11, padding: '4px 10px' }}
-          onClick={importStl}
+          onClick={importModel}
         >
           {workerRef.current ? 'Cancel' : 'Import & Voxelize'}
         </button>

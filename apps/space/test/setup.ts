@@ -41,3 +41,7 @@ Object.defineProperty(globalThis, '__SPACE_SCRIPT_SYNC__', {
   writable: false,
   value: true
 });
+
+if (typeof (globalThis as any).ProgressEvent === 'undefined') {
+  (globalThis as any).ProgressEvent = class ProgressEvent extends Event {};
+}
