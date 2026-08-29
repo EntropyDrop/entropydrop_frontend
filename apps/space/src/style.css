@@ -1514,57 +1514,47 @@ canvas {
 .inventory-header-title-group {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
   flex-wrap: wrap;
 }
 
 .backpack-tabs-bar {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 3px;
 }
 
 .backpack-tab-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
   font-size: 11px;
   font-weight: 700;
-  padding: 4px 10px;
+  letter-spacing: 0.4px;
+  padding: 5px 16px;
   cursor: pointer;
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-subtle);
-  border-radius: 2px;
-  transition: all 0.12s ease;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  transition: all 0.15s ease;
   user-select: none;
 }
 
 .backpack-tab-btn:hover {
   color: #fff;
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .backpack-tab-btn.active {
   color: #fff;
   background: var(--accent-base);
   border-color: var(--accent-active);
-  box-shadow: var(--btn-shadow), 0 0 10px var(--accent-glow);
-}
-
-.backpack-tab-icon {
-  font-size: 12px;
-  line-height: 1;
-}
-
-.backpack-tab-badge {
-  font-size: 9px;
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 600;
-  padding: 1px 4px;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 2px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4), 0 0 10px var(--accent-glow);
 }
 
 .backpack-tab-panel {
@@ -1572,25 +1562,17 @@ canvas {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  margin-top: 6px;
-  padding-right: 4px;
+  margin-top: 10px;
 }
 
-.backpack-tab-toolbar {
+.backpack-panel-footer {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-subtle);
-  gap: 12px;
-}
-
-.backpack-tab-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.3;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .backpack-tab-actions {
@@ -1598,6 +1580,45 @@ canvas {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.backpack-pixel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.backpack-pixel-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--accent-base);
+  color: #ffffff;
+}
+
+.backpack-pixel-btn.danger:hover {
+  background: rgba(235, 87, 87, 0.2);
+  border-color: #eb5757;
+  color: #ff6b6b;
+}
+
+.backpack-pixel-btn:active {
+  transform: translateY(1px);
+}
+
+.backpack-pixel-btn:disabled,
+.backpack-pixel-btn.disabled {
+  opacity: 0.28;
+  cursor: not-allowed !important;
+  pointer-events: none;
 }
 
 .backpack-section-btn.primary {
@@ -1608,6 +1629,119 @@ canvas {
 
 .backpack-section-btn.primary:hover {
   background: var(--accent-active);
+}
+
+.inventory-card.colorset-card,
+.colorset-card {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  align-items: stretch !important;
+  gap: 10px;
+  padding: 10px 12px;
+  position: relative;
+  cursor: pointer;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-glass, rgba(24, 24, 28, 0.94));
+  border-radius: 3px;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.inventory-card.colorset-card:hover,
+.colorset-card:hover {
+  border-color: var(--accent-base);
+  background: #232328;
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.inventory-card.colorset-card.active,
+.colorset-card.active {
+  border-color: var(--accent-base);
+  background: rgba(242, 169, 59, 0.1);
+  box-shadow: 0 0 0 1px var(--accent-base), 0 0 14px var(--accent-glow);
+}
+
+.colorset-colors-row {
+  display: grid !important;
+  grid-template-columns: repeat(9, 1fr) !important;
+  gap: 5px;
+  width: 100%;
+  padding: 2px 0;
+  box-sizing: border-box;
+}
+
+.colorset-cell-swatch {
+  position: relative;
+  aspect-ratio: 1;
+  min-height: 20px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  overflow: hidden;
+  display: block;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.colorset-cell-swatch:hover {
+  transform: scale(1.15);
+  border-color: #ffffff;
+  z-index: 2;
+}
+
+.colorset-cell-swatch input[type="color"] {
+  position: absolute;
+  inset: -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.colorset-card-header,
+.colorset-card-bottom {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.colorset-name-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.colorset-active-tag {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #000;
+  background: var(--accent-light, #f2a93b);
+  padding: 1px 5px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.colorset-empty-card {
+  align-items: center !important;
+  justify-content: center !important;
+  border-style: dashed !important;
+}
+
+.colorset-empty-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  color: var(--text-muted);
 }
 
 .stl-import-section {
@@ -1679,8 +1813,9 @@ canvas {
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   overflow-y: auto;
-  padding-right: 6px;
+  padding: 6px 8px 8px 6px;
   max-height: calc(88vh - 130px);
+  box-sizing: border-box;
 }
 
 .inventory-card {
@@ -1692,16 +1827,16 @@ canvas {
   align-items: center;
   gap: 10px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
   min-height: 64px;
   border-radius: 2px;
+  box-sizing: border-box;
 }
 
 .inventory-card:hover {
   border-color: var(--accent-base);
   background: #222227;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 10px var(--accent-glow);
+  box-shadow: 0 0 12px var(--accent-glow);
 }
 
 .backpack-item {

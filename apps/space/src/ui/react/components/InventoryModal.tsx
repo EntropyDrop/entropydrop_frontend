@@ -7,6 +7,30 @@ import { useSpaceUi } from '../store/useSpaceUi.ts';
 
 export type InventoryCategory = 'blockset' | 'entity' | 'colorset';
 
+function PixelCopyIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
+      <path fillRule="evenodd" clipRule="evenodd" d="M2 2h8v2H4v8H2V2zm4 4h8v8H6V6zm2 2h4v4H8V8z" />
+    </svg>
+  );
+}
+
+function PixelExportIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
+      <path d="M7 1h2v5h3l-4 4-4-4h3V1zm-5 9h2v2h8v-2h2v4H2v-4z" />
+    </svg>
+  );
+}
+
+function PixelDeleteIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
+      <path fillRule="evenodd" clipRule="evenodd" d="M5 2h6v2h4v2h-1v8H2V6H1V4h4V2zm-1 4v6h8V6H4zm2 1h2v4H6V7zm4 0h2v4h-2V7z" />
+    </svg>
+  );
+}
+
 function ImportJsonButton({ category }: { category: InventoryCategory }) {
   const input = useRef<HTMLInputElement>(null);
   return (
@@ -33,11 +57,11 @@ function ImportJsonButton({ category }: { category: InventoryCategory }) {
   );
 }
 
-function EmptySlot({ index, label }: { index: number; label: string }) {
+function EmptySlot({ index, label }: { index?: number; label: string }) {
   return (
     <div className="inventory-card backpack-item backpack-item-empty">
       <div className="backpack-slot-preview-box empty">
-        <span className="backpack-slot-index">#{index + 1}</span>
+        {index !== undefined && <span className="backpack-slot-index">#{index + 1}</span>}
         <span className="backpack-slot-empty-icon">+</span>
       </div>
       <div className="backpack-item-details">
@@ -47,10 +71,21 @@ function EmptySlot({ index, label }: { index: number; label: string }) {
   );
 }
 
+function EmptyColorSetSlot() {
+  return (
+    <div className="inventory-card backpack-item colorset-card colorset-empty-card">
+      <div className="colorset-empty-content">
+        <span className="backpack-slot-empty-icon">+</span>
+        <span className="backpack-item-meta">Empty slot</span>
+      </div>
+    </div>
+  );
+}
+
 function InventoryItemCard({ category, index, item }: { category: 'blockset' | 'entity'; index: number; item: any }) {
   const controller = useSpaceUi(state => state.controller);
   const fallback = category === 'blockset' ? `Block set ${index + 1}` : `Entity ${index + 1}`;
-  const name = controller?.inventoryItemName?.(category, item, index) || item.name || fallback;
+  const name = typeof item?.name === 'string' ? item.name : (controller?.inventoryItemName?.(category, item, index) || fallback);
   const count = item.blockCount || item.blocks?.length || 0;
   const thumbnail = InventoryThumbnailRenderer.getInstance().getThumbnail(item, 96);
   const meta = category === 'blockset'
@@ -60,7 +95,7 @@ function InventoryItemCard({ category, index, item }: { category: 'blockset' | '
     <div className="inventory-card backpack-item">
       <div className="backpack-slot-preview-box filled">
         <span className="backpack-slot-index">#{index + 1}</span>
-        {thumbnail ? <img className="inv-slot-thumb" src={thumbnail} alt={name} draggable={false} /> : null}
+        {thumbnail ? <img className="inv-slot-thumb" src={thumbnail} alt={name || fallback} draggable={false} /> : null}
         {count > 0 ? <span className="backpack-slot-count">{count}</span> : null}
       </div>
       <div className="backpack-item-details">
@@ -69,6 +104,7 @@ function InventoryItemCard({ category, index, item }: { category: 'blockset' | '
           className="backpack-item-name-input"
           maxLength={80}
           value={name}
+          placeholder={fallback}
           aria-label={`${category} slot ${index + 1} name`}
           onChange={event => spaceUiStore.renameInventoryItem(category, index, event.target.value)}
           onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
@@ -78,21 +114,35 @@ function InventoryItemCard({ category, index, item }: { category: 'blockset' | '
           <button
             type="button"
             tabIndex={-1}
-            className="backpack-item-btn"
-            onClick={() => spaceUiStore.downloadJson(
-              spaceUiStore.inventoryJsonFilename(item.name, fallback),
-              controller?.serializeInventoryItem?.(category, item) || item
-            )}
+            className="backpack-pixel-btn"
+            title={`Copy ${category === 'blockset' ? 'block set' : 'entity'}`}
+            aria-label="Copy item"
+            onClick={() => spaceUiStore.copyInventoryItem(category, index)}
           >
-            Export
+            <PixelCopyIcon />
           </button>
           <button
             type="button"
             tabIndex={-1}
-            className="backpack-item-btn danger"
+            className="backpack-pixel-btn"
+            title="Export JSON"
+            aria-label="Export JSON"
+            onClick={() => spaceUiStore.downloadJson(
+              spaceUiStore.inventoryJsonFilename(item.name || fallback, fallback),
+              controller?.serializeInventoryItem?.(category, item) || item
+            )}
+          >
+            <PixelExportIcon />
+          </button>
+          <button
+            type="button"
+            tabIndex={-1}
+            className="backpack-pixel-btn danger"
+            title="Delete item"
+            aria-label="Delete item"
             onClick={() => spaceUiStore.deleteInventoryItem(category, index)}
           >
-            Delete
+            <PixelDeleteIcon />
           </button>
         </div>
       </div>
@@ -100,65 +150,127 @@ function InventoryItemCard({ category, index, item }: { category: 'blockset' | '
   );
 }
 
-function ColorSetCard({ index, item }: { index: number; item: any }) {
-  const controller = useSpaceUi(state => state.controller);
-  const name = controller?.inventoryItemName?.('colorset', item, index) || item.name || `Color set ${index + 1}`;
+function ColorSetCard({ index, item, totalCount }: { index: number; item: any; totalCount?: number }) {
+  const state = useSpaceUi(s => s);
+  const controller = state.controller;
+  const fallback = `Color set ${index + 1}`;
+  const name = typeof item?.name === 'string' ? item.name : (controller?.inventoryItemName?.('colorset', item, index) || fallback);
+  const isOnlyColorSet = totalCount !== undefined
+    ? totalCount <= 1
+    : ((controller?.inventories?.colorset?.items || state.inventoryItems || []) as any[]).filter(Boolean).length <= 1;
+
+  if (!item.id) {
+    item.id = typeof globalThis.crypto?.randomUUID === 'function'
+      ? `cs_${globalThis.crypto.randomUUID()}`
+      : `cs_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  }
+
+  const isCurrent = Boolean(
+    state.activeColorSetId ? state.activeColorSetId === item.id : index === 0
+  );
+
   const updateColor = (colorIndex: number, value: string) => {
     item.colors[colorIndex] = colorToHex(normalizeColor(value));
     controller?.saveInventoriesToLocalStorage?.();
-    spaceUiStore.refresh();
+    if (isCurrent) {
+      spaceUiStore.applyColorSetToPalette(item);
+    } else {
+      spaceUiStore.refresh();
+    }
   };
+
   return (
-    <div className="inventory-card backpack-item">
-      <input
-        className="backpack-item-name-input"
-        maxLength={80}
-        value={name}
-        onChange={event => spaceUiStore.renameInventoryItem('colorset', index, event.target.value)}
-        onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
-      />
-      <div className="backpack-item-meta">9 colors · click a swatch to recolor</div>
-      <div className="colorset-colors">
+    <div
+      className={`inventory-card backpack-item colorset-card ${isCurrent ? 'active' : ''}`}
+      onClick={() => {
+        spaceUiStore.applyColorSetToPalette(item);
+        spaceUiStore.showToast(`Applied color set "${name || fallback}" to palette`);
+      }}
+    >
+      <div className="colorset-colors-row">
         {(item.colors || []).slice(0, 9).map((hex: string, colorIndex: number) => {
           const safe = colorToHex(normalizeColor(hex));
           return (
-            <label key={colorIndex} className="colorset-cell" style={{ background: safe }} title={`Recolor set slot ${colorIndex + 1}`}>
-              <input type="color" value={safe} onChange={event => updateColor(colorIndex, event.target.value)} />
+            <label
+              key={colorIndex}
+              className="colorset-cell-swatch"
+              style={{ background: safe }}
+              title={`Recolor slot ${colorIndex + 1} (${safe})`}
+              onClick={event => event.stopPropagation()}
+            >
+              <input
+                type="color"
+                value={safe}
+                onChange={event => {
+                  event.stopPropagation();
+                  updateColor(colorIndex, event.target.value);
+                }}
+              />
             </label>
           );
         })}
       </div>
-      <div className="inv-item-actions">
-        <button
-          type="button"
-          tabIndex={-1}
-          className="backpack-item-btn"
-          onClick={() => {
-            spaceUiStore.applyColorSetToPalette(item);
-            spaceUiStore.showToast(`Applied color set "${name}" to the palette`);
-          }}
-        >
-          Apply
-        </button>
-        <button
-          type="button"
-          tabIndex={-1}
-          className="backpack-item-btn"
-          onClick={() => spaceUiStore.downloadJson(
-            spaceUiStore.inventoryJsonFilename(item.name, `Color set ${index + 1}`),
-            controller?.serializeInventoryItem?.('colorset', item) || item
-          )}
-        >
-          Export
-        </button>
-        <button
-          type="button"
-          tabIndex={-1}
-          className="backpack-item-btn danger"
-          onClick={() => spaceUiStore.deleteInventoryItem('colorset', index)}
-        >
-          Delete
-        </button>
+
+      <div className="colorset-card-bottom">
+        <input
+          type="text"
+          className="backpack-item-name-input colorset-name-input"
+          maxLength={80}
+          value={name}
+          placeholder={fallback}
+          aria-label={`Color set ${index + 1} name`}
+          onClick={event => event.stopPropagation()}
+          onChange={event => spaceUiStore.renameInventoryItem('colorset', index, event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+        />
+        {isCurrent && <span className="colorset-active-tag">Active</span>}
+        <div className="inv-item-actions">
+          <button
+            type="button"
+            tabIndex={-1}
+            className="backpack-pixel-btn"
+            title="Copy color set"
+            aria-label="Copy color set"
+            onClick={event => {
+              event.stopPropagation();
+              spaceUiStore.copyInventoryItem('colorset', index);
+            }}
+          >
+            <PixelCopyIcon />
+          </button>
+          <button
+            type="button"
+            tabIndex={-1}
+            className="backpack-pixel-btn"
+            title="Export JSON"
+            aria-label="Export JSON"
+            onClick={event => {
+              event.stopPropagation();
+              spaceUiStore.downloadJson(
+                spaceUiStore.inventoryJsonFilename(item.name, `Color set ${index + 1}`),
+                controller?.serializeInventoryItem?.('colorset', item) || item
+              );
+            }}
+          >
+            <PixelExportIcon />
+          </button>
+          <button
+            type="button"
+            tabIndex={-1}
+            disabled={isOnlyColorSet}
+            className={`backpack-pixel-btn danger ${isOnlyColorSet ? 'disabled' : ''}`}
+            title={isOnlyColorSet ? 'Cannot delete the only color set' : 'Delete color set'}
+            aria-label={isOnlyColorSet ? 'Cannot delete the only color set' : 'Delete color set'}
+            onClick={event => {
+              event.stopPropagation();
+              if (!isOnlyColorSet) {
+                spaceUiStore.deleteInventoryItem('colorset', index);
+              }
+            }}
+          >
+            <PixelDeleteIcon />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -306,10 +418,6 @@ export function InventoryModal() {
       ? 'colorset'
       : 'blockset';
 
-  const blocksetCount = blocksets.filter(Boolean).length;
-  const entityCount = entities.filter(Boolean).length;
-  const colorsetCount = colorsets.filter(Boolean).length;
-
   return (
     <div
       id="inventory-modal"
@@ -332,9 +440,7 @@ export function InventoryModal() {
                 className={`backpack-tab-btn ${activeCategory === 'blockset' ? 'active' : ''}`}
                 onClick={() => spaceUiStore.selectInventoryCategory('blockset')}
               >
-                <span className="backpack-tab-icon">🧱</span>
-                <span>Block Set</span>
-                <span className="backpack-tab-badge">{blocksetCount}/9</span>
+                Block Set
               </button>
               <button
                 type="button"
@@ -345,9 +451,7 @@ export function InventoryModal() {
                 className={`backpack-tab-btn ${activeCategory === 'entity' ? 'active' : ''}`}
                 onClick={() => spaceUiStore.selectInventoryCategory('entity')}
               >
-                <span className="backpack-tab-icon">⚙</span>
-                <span>Entity</span>
-                <span className="backpack-tab-badge">{entityCount}/9</span>
+                Entity
               </button>
               <button
                 type="button"
@@ -358,9 +462,7 @@ export function InventoryModal() {
                 className={`backpack-tab-btn ${activeCategory === 'colorset' ? 'active' : ''}`}
                 onClick={() => spaceUiStore.selectInventoryCategory('colorset')}
               >
-                <span className="backpack-tab-icon">🎨</span>
-                <span>Color Set</span>
-                <span className="backpack-tab-badge">{colorsetCount}/9</span>
+                Color Set
               </button>
             </div>
           </div>
@@ -379,71 +481,60 @@ export function InventoryModal() {
 
         {activeCategory === 'blockset' && (
           <div className="backpack-tab-panel" id="backpack-panel-blockset">
-            <div className="backpack-tab-toolbar">
-              <div className="backpack-tab-desc">9 block sets — Hammer LMB builds plain blocks · R copies selection · Import .stl or .json</div>
-              <div className="backpack-tab-actions">
-                <ImportJsonButton category="blockset" />
-              </div>
-            </div>
             <div className="inventory-grid" id="inventory-grid">
-              {Array.from({ length: 9 }, (_, index) =>
-                blocksets[index] ? (
-                  <InventoryItemCard key={`b:${index}`} category="blockset" index={index} item={blocksets[index]} />
+              {Array.from({ length: 9 }, (_, index) => {
+                const item = blocksets[index];
+                return item ? (
+                  <InventoryItemCard key={item.id || `b:${index}`} category="blockset" index={index} item={item} />
                 ) : (
-                  <EmptySlot key={`b:${index}`} index={index} label={`Empty slot ${index + 1} · R copy or import`} />
-                )
-              )}
+                  <EmptySlot key={`empty-b:${index}`} index={index} label={`Empty slot ${index + 1} · R copy or import`} />
+                );
+              })}
             </div>
             <div className="stl-import-section">
               <StlImportCard />
+            </div>
+            <div className="backpack-panel-footer">
+              <ImportJsonButton category="blockset" />
             </div>
           </div>
         )}
 
         {activeCategory === 'entity' && (
           <div className="backpack-tab-panel" id="backpack-panel-entity">
-            <div className="backpack-tab-toolbar">
-              <div className="backpack-tab-desc">9 programmable entities — Hammer LMB builds physics entity · Isolated scripts · R copies entity</div>
-              <div className="backpack-tab-actions">
-                <ImportJsonButton category="entity" />
-              </div>
-            </div>
             <div className="inventory-grid" id="inventory-grid">
-              {Array.from({ length: 9 }, (_, index) =>
-                entities[index] ? (
-                  <InventoryItemCard key={`e:${index}`} category="entity" index={index} item={entities[index]} />
+              {Array.from({ length: 9 }, (_, index) => {
+                const item = entities[index];
+                return item ? (
+                  <InventoryItemCard key={item.id || `e:${index}`} category="entity" index={index} item={item} />
                 ) : (
-                  <EmptySlot key={`e:${index}`} index={index} label={`Empty slot ${index + 1} · R copy or import`} />
-                )
-              )}
+                  <EmptySlot key={`empty-e:${index}`} index={index} label={`Empty slot ${index + 1} · R copy or import`} />
+                );
+              })}
+            </div>
+            <div className="backpack-panel-footer">
+              <ImportJsonButton category="entity" />
             </div>
           </div>
         )}
 
         {activeCategory === 'colorset' && (
           <div className="backpack-tab-panel" id="backpack-panel-colorset">
-            <div className="backpack-tab-toolbar">
-              <div className="backpack-tab-desc">9 color sets — 9 colors per set · Apply to keyboard palette (Shift+1~9) · Click swatch to recolor</div>
-              <div className="backpack-tab-actions">
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  className="backpack-section-btn primary"
-                  onClick={() => spaceUiStore.savePaletteAsColorSet()}
-                >
-                  Add current palette
-                </button>
-                <ImportJsonButton category="colorset" />
-              </div>
-            </div>
             <div className="inventory-grid" id="inventory-grid">
-              {Array.from({ length: 9 }, (_, index) =>
-                colorsets[index] ? (
-                  <ColorSetCard key={`c:${index}`} index={index} item={colorsets[index]} />
-                ) : (
-                  <EmptySlot key={`c:${index}`} index={index} label={`Empty slot ${index + 1} · save palette or import`} />
-                )
-              )}
+              {(() => {
+                const totalCount = colorsets.filter(Boolean).length;
+                return Array.from({ length: 9 }, (_, index) => {
+                  const item = colorsets[index];
+                  return item ? (
+                    <ColorSetCard key={item.id || `c:${index}`} index={index} item={item} totalCount={totalCount} />
+                  ) : (
+                    <EmptyColorSetSlot key={`empty-c:${index}`} />
+                  );
+                });
+              })()}
+            </div>
+            <div className="backpack-panel-footer">
+              <ImportJsonButton category="colorset" />
             </div>
           </div>
         )}

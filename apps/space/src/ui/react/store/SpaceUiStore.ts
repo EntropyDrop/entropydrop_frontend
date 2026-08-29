@@ -69,6 +69,7 @@ export interface SpaceUiSnapshot {
   selectedColor: number;
   selectedColorIndex: number;
   paletteColors: Array<{ hex: string; name: string }>;
+  activeColorSetId: string | null;
   activeInventoryCategory: 'blockset' | 'entity' | 'colorset';
   selectedInventoryIndex: number;
   editingContraption: any;
@@ -433,13 +434,18 @@ export class SpaceUiStore {
 
   applyColorSetToPalette(colorset: any): boolean {
     if (!colorset || !Array.isArray(colorset.colors)) return false;
+    if (!colorset.id) {
+      colorset.id = typeof globalThis.crypto?.randomUUID === 'function'
+        ? `cs_${globalThis.crypto.randomUUID()}`
+        : `cs_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    }
     const paletteColors = colorset.colors.slice(0, 9).map((value: any) => ({
       hex: colorToHex(normalizeColor(value)),
       name: colorset.name || 'Custom'
     }));
     while (paletteColors.length < 9) paletteColors.push({ hex: '#f2a93b', name: 'Custom' });
     const selectedColorIndex = Math.min(this.snapshot.selectedColorIndex, paletteColors.length - 1);
-    this.patch({ paletteColors, selectedColorIndex });
+    this.patch({ paletteColors, selectedColorIndex, activeColorSetId: colorset.id });
     this.setBuildColor(paletteColors[selectedColorIndex].hex, false);
     try { localStorage.setItem('space_palette_colors', JSON.stringify(paletteColors)); } catch {}
     return true;
@@ -469,12 +475,24 @@ export class SpaceUiStore {
     return index >= 0 ? this.selectHotbarSlot(index) : false;
   }
 
+  selectPreviousTool(): void {
+    const count = this.snapshot.hotbarSlots.length;
+    const prev = (this.snapshot.selectedHotbarIndex - 1 + count) % count;
+    this.selectHotbarSlot(prev);
+  }
+
+  selectNextTool(): void {
+    const count = this.snapshot.hotbarSlots.length;
+    const next = (this.snapshot.selectedHotbarIndex + 1) % count;
+    this.selectHotbarSlot(next);
+  }
+
   cycleHotbar(direction: number): void {
     const count = this.snapshot.hotbarSlots.length;
     this.selectHotbarSlot((this.snapshot.selectedHotbarIndex + direction + count) % count);
   }
 
-  applyActiveSlot(notify = true): void {
+  applyActiveSlot(notify = false): void {
     const controller = this.snapshot.controller;
     const slot = this.snapshot.hotbarSlots[this.snapshot.selectedHotbarIndex];
     if (!controller || !slot) return;
@@ -500,9 +518,22 @@ export class SpaceUiStore {
       controller.setActiveInventoryCategory?.('blockset');
       activeInventoryCategory = 'blockset';
     }
+    let activeColorSetId = this.snapshot.activeColorSetId;
+    if (!activeColorSetId) {
+      const firstColorSet = controller.inventories?.colorset?.items?.find(Boolean);
+      if (firstColorSet) {
+        if (!firstColorSet.id) {
+          firstColorSet.id = typeof globalThis.crypto?.randomUUID === 'function'
+            ? `cs_${globalThis.crypto.randomUUID()}`
+            : `cs_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+        }
+        activeColorSetId = firstColorSet.id;
+      }
+    }
     this.patch({
       activeInventoryCategory,
-      selectedInventoryIndex: Number(controller.selectedInventoryIndex ?? 0)
+      selectedInventoryIndex: Number(controller.selectedInventoryIndex ?? 0),
+      activeColorSetId
     });
   }
 
@@ -572,8 +603,52 @@ export class SpaceUiStore {
     this.refresh();
   }
 
+  copyInventoryItem(category: string, index: number): void {
+    const controller = this.snapshot.controller;
+    if (!controller) return;
+    const group = controller.inventories?.[category];
+    const source = group?.items?.[index];
+    if (!source) return;
+    const clone = JSON.parse(JSON.stringify(source));
+    const baseName = controller.inventoryItemName?.(category, source, index) || source.name || 'Item';
+    clone.name = `${baseName} (Copy)`;
+
+    // Assign fresh unique IDs so copied items and entities never collide with originals
+    const prefix = category === 'colorset' ? 'cs_' : category === 'blockset' ? 'bs_' : 'ent_';
+    const newUniqueId = typeof globalThis.crypto?.randomUUID === 'function'
+      ? `${prefix}${globalThis.crypto.randomUUID()}`
+      : `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    clone.id = newUniqueId;
+    if (clone.publicId !== undefined || category === 'entity') clone.publicId = newUniqueId;
+    if (clone.contraptionId !== undefined) clone.contraptionId = newUniqueId;
+
+    const newIndex = controller.addInventoryItem?.(category, clone);
+    if (newIndex !== null && newIndex !== undefined && newIndex >= 0) {
+      this.showToast(`Copied to slot ${newIndex + 1}`);
+      this.syncInventoryState();
+    } else {
+      this.showToast(`Cannot copy: ${category} inventory is full (9/9)`);
+    }
+  }
+
   deleteInventoryItem(category: string, index: number): void {
-    this.snapshot.controller?.deleteInventoryItem?.(category, index);
+    if (category === 'colorset') {
+      const items = this.snapshot.controller?.inventories?.colorset?.items || [];
+      const nonNullCount = items.filter(Boolean).length;
+      if (nonNullCount <= 1) {
+        this.showToast('Cannot delete the only color set');
+        return;
+      }
+    }
+    const success = this.snapshot.controller?.deleteInventoryItem?.(category, index);
+    if (category === 'colorset' && success) {
+      const colorsets = this.snapshot.controller?.inventories?.colorset?.items || [];
+      const firstAvailable = colorsets.find(Boolean);
+      if (firstAvailable) {
+        this.applyColorSetToPalette(firstAvailable);
+      }
+    }
     this.syncInventoryState();
   }
 

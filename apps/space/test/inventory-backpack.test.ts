@@ -155,7 +155,7 @@ test('the backpack workbench no longer renders tool cards', () => {
   assert.doesNotMatch(inventorySource, /const tools = \[/);
   assert.doesNotMatch(inventorySource, /KEYBOARD PALETTE \(9\)/);
   assert.doesNotMatch(inventorySource, /CURRENT BUILD COLOR/);
-  assert.match(inventorySource, /Add current palette/);
+  assert.match(inventorySource, /ColorSetCard/);
   assert.match(`${inventorySource}\n${hudSource}`, /colorset-(?:preview-grid|colors)/);
   assert.doesNotMatch(editorSource, /\.innerHTML|createElement\(/);
   assert.doesNotMatch(editorSource, /applyAgentCode\(code, targetId, true\)/);
@@ -180,8 +180,8 @@ test('all categories support duplicate editable names', () => {
   assert.equal(controller.inventories.colorset.items[0].name, 'Shared');
 
   assert.equal(controller.renameInventoryItem('entity', 0, '  Renamed  '), 'Renamed');
-  assert.equal(controller.renameInventoryItem('entity', 0, '   '), null, 'empty names are rejected');
-  assert.equal(controller.inventories.entity.items[0].name, 'Renamed');
+  assert.equal(controller.renameInventoryItem('entity', 0, '   '), '', 'empty names are allowed as empty string');
+  assert.equal(controller.inventories.entity.items[0].name, '');
 });
 
 test('serialize/parse round-trips block sets', () => {
@@ -629,3 +629,125 @@ test('toggleInventoryModal automatically opens the corresponding default tab bas
 
   spaceUiStore.closeAllModals(false);
 });
+
+test('InventoryModal tab buttons have clean labels without emoji icons or capacity badges', () => {
+  const inventorySource = readFileSync(new URL('../src/ui/react/components/InventoryModal.tsx', import.meta.url), 'utf8');
+  assert.match(inventorySource, />\s*Block Set\s*<\/button>/);
+  assert.match(inventorySource, />\s*Entity\s*<\/button>/);
+  assert.match(inventorySource, />\s*Color Set\s*<\/button>/);
+  assert.doesNotMatch(inventorySource, /backpack-tab-icon/);
+  assert.doesNotMatch(inventorySource, /backpack-tab-badge/);
+  assert.doesNotMatch(inventorySource, /Add current palette/);
+  assert.match(inventorySource, /backpack-pixel-btn/);
+  assert.match(inventorySource, /PixelCopyIcon/);
+  assert.match(inventorySource, /PixelExportIcon/);
+  assert.match(inventorySource, /PixelDeleteIcon/);
+});
+
+test('SpaceUiStore copyInventoryItem clones colorset, blockset, and entity into available slots with unique IDs', () => {
+  const controller = makeController();
+  spaceUiStore.setController(controller);
+
+  // 1. Copy colorset (while it is active)
+  const colorset = { id: 'cs_orig_1', name: 'Pastel Glow', colors: ['#ff0000', '#00ff00', '#0000ff', '#ffffff', '#000000', '#ffff00', '#00ffff', '#ff00ff', '#888888'] };
+  controller.inventories.colorset.items[0] = colorset;
+  spaceUiStore.applyColorSetToPalette(colorset);
+  assert.equal(spaceUiStore.getSnapshot().activeColorSetId, 'cs_orig_1');
+
+  spaceUiStore.copyInventoryItem('colorset', 0);
+  assert.ok(controller.inventories.colorset.items[1]);
+  assert.equal(controller.inventories.colorset.items[1].name, 'Pastel Glow (Copy)');
+  assert.deepEqual(controller.inventories.colorset.items[1].colors, colorset.colors);
+  assert.notEqual(controller.inventories.colorset.items[1].id, 'cs_orig_1');
+  assert.match(controller.inventories.colorset.items[1].id, /^cs_/);
+  // Active color set must remain the original, not duplicated to clone
+  assert.equal(spaceUiStore.getSnapshot().activeColorSetId, 'cs_orig_1');
+
+  // 2. Copy blockset
+  const blockset = { id: 'bs_orig_1', name: 'Pillar', blocks: [{ x: 0, y: 0, z: 0 }], blockCount: 1 };
+  controller.inventories.blockset.items[0] = blockset;
+  spaceUiStore.copyInventoryItem('blockset', 0);
+  assert.ok(controller.inventories.blockset.items[1]);
+  assert.equal(controller.inventories.blockset.items[1].name, 'Pillar (Copy)');
+  assert.notEqual(controller.inventories.blockset.items[1].id, 'bs_orig_1');
+  assert.match(controller.inventories.blockset.items[1].id, /^bs_/);
+
+  // 3. Copy entity with unique ID check
+  const entity = { id: 'ent_original_123', publicId: 'ent_original_123', name: 'Drone', blocks: [{ x: 0, y: 0, z: 0 }], blockCount: 1, scripts: [] };
+  controller.inventories.entity.items[0] = entity;
+  spaceUiStore.copyInventoryItem('entity', 0);
+  assert.ok(controller.inventories.entity.items[1]);
+  assert.equal(controller.inventories.entity.items[1].name, 'Drone (Copy)');
+  assert.notEqual(controller.inventories.entity.items[1].id, 'ent_original_123');
+  assert.notEqual(controller.inventories.entity.items[1].publicId, 'ent_original_123');
+  assert.match(controller.inventories.entity.items[1].id, /^ent_/);
+});
+
+test('ColorSetCard renders 9 swatches in 1 row, places Import JSON in footer, and omits activate text', () => {
+  const inventorySource = readFileSync(new URL('../src/ui/react/components/InventoryModal.tsx', import.meta.url), 'utf8');
+  const styleSource = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(inventorySource, /colorset-colors-row/);
+  assert.match(inventorySource, /backpack-panel-footer/);
+  assert.doesNotMatch(inventorySource, /Click to activate/);
+  assert.doesNotMatch(inventorySource, /Current active palette/);
+  assert.match(styleSource, /\.colorset-colors-row\s*\{[^}]*grid-template-columns:\s*repeat\(9,/s);
+  assert.match(styleSource, /\.backpack-panel-footer\s*\{[^}]*justify-content:\s*flex-end/s);
+});
+
+test('ColorSet deletion is rejected when only 1 color set exists', () => {
+  const controller = makeController();
+  spaceUiStore.setController(controller);
+
+  // Clear all except 1
+  controller.inventories.colorset.items = [
+    { name: 'Only Palette', colors: ['#ff0000', '#00ff00', '#0000ff', '#ffffff', '#000000', '#ffff00', '#00ffff', '#ff00ff', '#888888'] },
+    null, null, null, null, null, null, null, null
+  ];
+
+  spaceUiStore.deleteInventoryItem('colorset', 0);
+  assert.ok(controller.inventories.colorset.items[0], 'Should not delete the only color set');
+  assert.equal(controller.inventories.colorset.items.filter(Boolean).length, 1);
+});
+
+test('Deleting a color set automatically switches active palette to the first available color set and compacts remaining items', () => {
+  const controller = makeController();
+  spaceUiStore.setController(controller);
+
+  const set1 = { id: 'cs_1', name: 'First Set', colors: ['#111111', '#222222', '#333333', '#444444', '#555555', '#666666', '#777777', '#888888', '#999999'] };
+  const set2 = { id: 'cs_2', name: 'Second Set', colors: ['#aaaaaa', '#bbbbbb', '#cccccc', '#dddddd', '#eeeeee', '#ffffff', '#123456', '#654321', '#abcdef'] };
+  const set3 = { id: 'cs_3', name: 'Third Set', colors: ['#222222', '#333333', '#444444', '#555555', '#666666', '#777777', '#888888', '#999999', '#000000'] };
+
+  controller.inventories.colorset.items = [
+    set1, set2, set3, null, null, null, null, null, null
+  ];
+
+  // Apply set2 initially
+  spaceUiStore.applyColorSetToPalette(set2);
+
+  // Delete set2 (index 1)
+  spaceUiStore.deleteInventoryItem('colorset', 1);
+
+  // Remaining array should be compacted: set1 at index 0, set3 shifted to index 1, index 2..8 are null
+  assert.equal(controller.inventories.colorset.items[0].name, 'First Set');
+  assert.equal(controller.inventories.colorset.items[1].name, 'Third Set');
+  assert.equal(controller.inventories.colorset.items[2], null);
+  assert.equal(controller.inventories.colorset.items.length, 9);
+
+  // Active palette should have automatically switched to set1
+  const snapshot = spaceUiStore.getSnapshot();
+  const activePaletteHexes = snapshot.paletteColors.map(p => p.hex.toLowerCase());
+  assert.equal(activePaletteHexes[0], '#111111');
+  assert.equal(activePaletteHexes[1], '#222222');
+});
+
+test('Color set tab does not display # numbers or import json on empty slots', () => {
+  const inventorySource = readFileSync(new URL('../src/ui/react/components/InventoryModal.tsx', import.meta.url), 'utf8');
+  assert.match(inventorySource, /function EmptyColorSetSlot/);
+  // Verify EmptyColorSetSlot has no #{index + 1}
+  const emptySlotFunc = inventorySource.slice(inventorySource.indexOf('function EmptyColorSetSlot'));
+  const emptySlotBody = emptySlotFunc.slice(0, emptySlotFunc.indexOf('function InventoryItemCard'));
+  assert.doesNotMatch(emptySlotBody, /backpack-slot-index/);
+  assert.doesNotMatch(emptySlotBody, /import JSON/i);
+  assert.match(emptySlotBody, />Empty slot<\/span>/);
+});
+

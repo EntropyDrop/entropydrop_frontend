@@ -2489,6 +2489,12 @@ export class PlayerController {
     if (!this.inventories) this.inventoryCategory();
     const group = this.inventories?.[category];
     if (!group || !item) return null;
+    if (!item.id) {
+      const prefix = category === 'colorset' ? 'cs_' : category === 'blockset' ? 'bs_' : 'ent_';
+      item.id = typeof globalThis.crypto?.randomUUID === 'function'
+        ? `${prefix}${globalThis.crypto.randomUUID()}`
+        : `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    }
     // Prefer the currently shown selected slot only when it belongs to this
     // category; otherwise the first empty slot. Full categories reject.
     let index = this.activeInventoryCategory === category && !group.items[group.selected] ? group.selected : -1;
@@ -2515,13 +2521,13 @@ export class PlayerController {
     return `Color set ${index + 1}`;
   }
 
-  /** Rename one item. Duplicate names are allowed within and across categories. */
+  /** Rename one item. Duplicate and empty names are allowed within and across categories. */
   renameInventoryItem(category, index, name) {
     if (!this.inventories) this.inventoryCategory();
-    const item = this.inventories?.[category]?.items?.[index];
+    const group = this.inventories?.[category];
+    if (!group || !Number.isInteger(index) || !group.items[index]) return null;
     const cleanName = typeof name === 'string' ? name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH) : '';
-    if (!item || !cleanName) return null;
-    item.name = cleanName;
+    group.items[index].name = cleanName;
     this.saveInventoriesToLocalStorage();
     return cleanName;
   }
@@ -2531,6 +2537,19 @@ export class PlayerController {
     if (!this.inventories) this.inventoryCategory();
     const group = this.inventories?.[category];
     if (!group || !Number.isInteger(index) || !group.items[index]) return false;
+    if (category === 'colorset') {
+      const nonNullCount = group.items.filter(Boolean).length;
+      if (nonNullCount <= 1) return false;
+      group.items.splice(index, 1);
+      while (group.items.length < 9) {
+        group.items.push(null);
+      }
+      if (group.selected >= group.items.filter(Boolean).length) {
+        group.selected = Math.max(0, group.items.filter(Boolean).length - 1);
+      }
+      this.saveInventoriesToLocalStorage();
+      return true;
+    }
     group.items[index] = null;
     if (!group.items[group.selected]) {
       const filled = group.items.findIndex(slot => slot);
@@ -2557,10 +2576,25 @@ export class PlayerController {
     const alreadyPresent = items.some(item => item && Array.isArray(item.colors)
       && item.colors.length === defaultColors.length
       && item.colors.every((color, index) => String(color).toLowerCase() === defaultColors[index]));
-    if (alreadyPresent) return false;
+    if (alreadyPresent) {
+      items.forEach(item => {
+        if (item && !item.id) {
+          item.id = typeof globalThis.crypto?.randomUUID === 'function'
+            ? `cs_${globalThis.crypto.randomUUID()}`
+            : `cs_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+        }
+      });
+      return false;
+    }
     const index = items.findIndex(item => !item);
     if (index < 0) return false;
-    items[index] = { name: DEFAULT_COLOR_SET_NAME, colors: defaultColors };
+    items[index] = {
+      id: typeof globalThis.crypto?.randomUUID === 'function'
+        ? `cs_${globalThis.crypto.randomUUID()}`
+        : `cs_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      name: DEFAULT_COLOR_SET_NAME,
+      colors: defaultColors
+    };
     return true;
   }
 
