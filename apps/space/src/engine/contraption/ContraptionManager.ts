@@ -1639,7 +1639,17 @@ export class ContraptionManager {
       }
     }
 
-    if (rawBlocks.length === 0) {
+    return this.commitPreparedAssembly(rawBlocks, originPos, finalMode, customOptions);
+  }
+
+  /**
+   * Atomically turn already-extracted voxels into an entity. Large player edits
+   * prepare/extract their blocks through BulkEditJob, then use this same commit
+   * path so no partially constructed entity is ever registered.
+   */
+  commitPreparedAssembly(rawBlocks, originPos, mode = ContraptionMode.PROGRAMMABLE, customOptions = {}) {
+    const finalMode = this.normalizeAssemblyMode(mode);
+    if (!finalMode || !Array.isArray(rawBlocks) || rawBlocks.length === 0) {
       this.clearSelection();
       return null;
     }
@@ -1649,32 +1659,24 @@ export class ContraptionManager {
       mode: finalMode,
       particleSystem: this.particles
     };
-
+    const origin = originPos?.isVector3
+      ? originPos.clone()
+      : new THREE.Vector3(Number(originPos?.x) || 0, Number(originPos?.y) || 0, Number(originPos?.z) || 0);
     const contraption = new Contraption(
       this.nextId++,
       rawBlocks,
-      originPos,
+      origin,
       this.scene,
       options
     );
 
     this.registerContraption(contraption);
     this.activeProgrammingContraption = contraption;
-
-    // Audio & Particle Effects
-    if (this.sound) {
-      this.sound.playAssemblyClack();
-      this.sound.playSteamHiss();
-    }
-    if (this.particles) {
-      this.particles.emitSteamPuff(contraption.position, 25);
-    }
-
-    // Clear selection
+    this.sound?.playAssemblyClack?.();
+    this.sound?.playSteamHiss?.();
+    this.particles?.emitSteamPuff?.(contraption.position, 25);
     this.clearSelection();
-
     this.saveEntitiesToStorage();
-
     return contraption;
   }
 
@@ -1684,7 +1686,7 @@ export class ContraptionManager {
    * - A null rootId denotes a multi-root range; component ids remain and attach to the new root.
    * @returns The registered entity, or null for an empty slot.
    */
-  buildFromSlot(slot, position, restoreState = null, autoSave = true) {
+  buildFromSlot(slot, position, restoreState = null, autoSave = true, preparedBlocks = null) {
     if (!slot || !Array.isArray(slot.blocks) || slot.blocks.length === 0) return null;
 
     const singleRoot = slot.rootId && slot.rootId !== null;
@@ -1692,7 +1694,7 @@ export class ContraptionManager {
     const subtreeChildIds = new Set((slot.childEntities || []).map(d => d.id));
     const mapId = (id) => (singleRoot && id === rootId ? 'root' : id);
 
-    const blocks = slot.blocks.map(b => ({
+    const blocks = Array.isArray(preparedBlocks) ? preparedBlocks : slot.blocks.map(b => ({
       localX: b.localX,
       localY: b.localY,
       localZ: b.localZ,

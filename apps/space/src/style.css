@@ -810,6 +810,34 @@ canvas {
   color: var(--accent-light);
   font-size: 11px;
   letter-spacing: 0.5px;
+  margin: 0;
+  padding: 0;
+}
+
+#backpack-bar-title,
+button.palette-title {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-light);
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+  line-height: inherit;
+  user-select: none;
+}
+
+#backpack-bar-title:hover,
+button.palette-title:hover {
+  color: #ffffff;
+  text-shadow: 0 0 6px var(--accent-light);
 }
 
 .palette-hotkey-hint {
@@ -3426,6 +3454,17 @@ canvas {
   gap: 16px;
 }
 
+.hero-block-icon {
+  font-size: 32px;
+  color: var(--accent-active);
+  text-shadow: 0 0 16px rgba(82, 226, 82, 0.6);
+  animation: pixel-pulse 2s infinite ease-in-out;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .hero-gear-icon {
   font-size: 36px;
   color: var(--accent-active);
@@ -3438,47 +3477,6 @@ canvas {
   color: #ffffff;
   text-shadow: 3px 3px 0px #000;
   letter-spacing: 1px;
-}
-
-.game-sub {
-  font-size: 13px;
-  color: var(--text-muted);
-  max-width: 540px;
-}
-
-.features-highlight {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  width: 100%;
-  margin: 4px 0;
-}
-
-.feat-item {
-  background: #141418;
-  border: 1px solid var(--border-subtle);
-  padding: 10px;
-  text-align: left;
-}
-
-.feat-icon {
-  font-size: 16px;
-  color: var(--accent-active);
-  margin-bottom: 3px;
-  display: block;
-}
-
-.feat-item b {
-  font-size: 12px;
-  color: #ffffff;
-  display: block;
-  margin-bottom: 3px;
-}
-
-.feat-item p {
-  font-size: 10px;
-  color: var(--text-muted);
-  line-height: 1.4;
 }
 
 .controls-guide {
@@ -3812,10 +3810,6 @@ canvas {
   .telemetry-panel {
     min-height: 260px;
     overflow: visible;
-  }
-
-  .features-highlight {
-    grid-template-columns: 1fr;
   }
 
   .builder-toolbar {

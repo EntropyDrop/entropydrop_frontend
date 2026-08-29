@@ -89,14 +89,8 @@ export function PauseScreen() {
   return (
     <div id="pause-screen" className={hasStarted ? 'hidden' : ''}>
       <div className="hero-box">
-        <div className="hero-gear-icon">✦</div>
+        <div className="hero-block-icon">■</div>
         <h1 className="game-logo">EntropyDrop · Space</h1>
-        <p className="game-sub">Build anything. Tell it what to do. · AI-native programmable voxel physics</p>
-        <div className="features-highlight">
-          <div className="feat-item"><span className="feat-icon">✦</span><b>Behavior via Natural Language</b><p>Point at an entity and press C — say &quot;follow me&quot; or &quot;hover 5 meters&quot; to generate code</p></div>
-          <div className="feat-item"><span className="feat-icon">⬡</span><b>One Block · Any Color</b><p>Material type never limits your shape; instant color with palette, brush, and pipette</p></div>
-          <div className="feat-item"><span className="feat-icon">⚡</span><b>Dual-Scale Micro-Carving</b><p>The shovel edits standard 1m blocks; the spoon carves each into 5x5x5 micro voxels</p></div>
-        </div>
         <div className="controls-guide">
           <span><kbd className="key-badge">W</kbd><kbd className="key-badge">A</kbd><kbd className="key-badge">S</kbd><kbd className="key-badge">D</kbd> Move / Drive</span>
           <span><kbd className="key-badge">Space</kbd> Jump / Ascend</span>

@@ -2394,11 +2394,11 @@ export class Contraption {
     }
     if (selectedBlocks.length === 0) return null;
 
-    let id = String(requestedId || `child_${this.nextChildId++}`);
-    while (this.entityNodes.has(id) || this.childDefinitions.has(id)) {
-      id = `child_${this.nextChildId++}`;
-    }
+    const bounds = this.getPreparedChildBounds(selectedBlocks);
+    return this.createChildEntityFromPrepared(parentId, selectedBlocks, bounds, requestedId);
+  }
 
+  private getPreparedChildBounds(selectedBlocks) {
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
     for (const b of selectedBlocks) {
@@ -2410,10 +2410,28 @@ export class Contraption {
       maxY = Math.max(maxY, b.localY + s);
       maxZ = Math.max(maxZ, b.localZ + s);
     }
+    return { minX, minY, minZ, maxX, maxY, maxZ };
+  }
+
+  /** Commit a child component after BulkEditJob has validated and bounded it. */
+  createChildEntityFromPrepared(parentId, selectedBlocks, bounds, requestedId = null) {
+    const parent = this.entityNodes.get(parentId);
+    if (!parent || !Array.isArray(selectedBlocks) || selectedBlocks.length === 0
+      || this.childDefinitions.size >= MAX_ENTITY_COMPONENTS - 1) return null;
+    if (requestedId !== null && !isValidComponentId(String(requestedId), false)) return null;
+    if (!bounds || !Number.isFinite(bounds.minX) || !Number.isFinite(bounds.maxX)) return null;
+    // Ownership and bounds were checked incrementally by BulkEditJob. The
+    // entity remains stopped until this atomic hierarchy mutation completes.
+
+    let id = String(requestedId || `child_${this.nextChildId++}`);
+    while (this.entityNodes.has(id) || this.childDefinitions.has(id)) {
+      id = `child_${this.nextChildId++}`;
+    }
+
     const pivot = new THREE.Vector3(
-      (minX + maxX) / 2,
-      (minY + maxY) / 2,
-      (minZ + maxZ) / 2
+      (bounds.minX + bounds.maxX) / 2,
+      (bounds.minY + bounds.maxY) / 2,
+      (bounds.minZ + bounds.maxZ) / 2
     );
 
     for (const block of selectedBlocks) block.entityId = id;

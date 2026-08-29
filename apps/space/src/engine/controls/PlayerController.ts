@@ -50,6 +50,19 @@ export const BULK_EDIT_THRESHOLD = 256;
 export const BULK_EDIT_MAX_OPERATIONS_PER_FRAME = 128;
 export const BULK_EDIT_FRAME_BUDGET_MS = 5;
 
+type BulkEditPhase = 'applying' | 'waiting' | 'syncing' | 'complete' | 'failed';
+type BulkEditJob = {
+  label: string;
+  total: number;
+  processed: number;
+  changed: number;
+  /** False for read-only preparation jobs such as copying or entity-slot mapping. */
+  mutatesWorld?: boolean;
+  detail?: string | ((job: BulkEditJob) => string);
+  step: (index: number, job: BulkEditJob) => number | void;
+  finish?: (job: BulkEditJob) => void;
+};
+
 export const SpecialTool = {
   SHOVEL: 'shovel',         // 1. Shovel (remove / place 1x1x1 standard blocks)
   SPOON: 'spoon',           // 2. Spoon (carve 5x5x5 micro voxels)
@@ -138,7 +151,7 @@ export class PlayerController {
   inventories: any;
   activeInventoryCategory: string;
   persistentStorage: SpaceStorage | null;
-  bulkEditJob: any;
+  bulkEditJob: BulkEditJob | null;
 
   // --- Camera / View Settings ---
   sceneRenderer: any;
@@ -617,6 +630,10 @@ export class PlayerController {
   }
 
   handleLeftClick(e = null) {
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
+      return false;
+    }
     // Hammer owns inventory construction. Selection never places inventory
     // contents, so copying and building remain distinct tool modes.
     if (this.activeTool === SpecialTool.HAMMER) {
@@ -1276,13 +1293,101 @@ export class PlayerController {
    * G key (Selector + block selection): create a child component from the currently box-selected
    * blocks under the active level.
    */
+  private preparedChildBoundsStep(bounds, block) {
+    const size = block.size || 1;
+    bounds.minX = Math.min(bounds.minX, block.localX);
+    bounds.minY = Math.min(bounds.minY, block.localY);
+    bounds.minZ = Math.min(bounds.minZ, block.localZ);
+    bounds.maxX = Math.max(bounds.maxX, block.localX + size);
+    bounds.maxY = Math.max(bounds.maxY, block.localY + size);
+    bounds.maxZ = Math.max(bounds.maxZ, block.localZ + size);
+  }
+
+  private finishPreparedChildCreation(contraption, nodeId, blocks, bounds, legacy = false) {
+    const result = this.performBasicAction({
+      domain: ActionDomain.SELECTION,
+      action: 'create-child',
+      selection: {
+        kind: 'entity-blocks',
+        contraption,
+        nodeId,
+        blocks,
+        preparedBounds: bounds
+      }
+    });
+    const child = result.child;
+    if (!child) {
+      this.ui?.showToast?.(result.reason === 'entity_not_stopped'
+        ? 'Stop the entity before creating a child component from its blocks'
+        : 'Could not create child component from this selection');
+      return null;
+    }
+    contraption.clearSubtreeHighlight?.();
+    this.sound?.playAssemblyClack?.();
+    if (legacy) {
+      this.ui?.showToast?.(`Child component ${child.id} created · control it via self.child('${child.id}')`);
+      this.ui?.renderComponentTree?.(contraption);
+      this.ui?.renderCodeTabs?.(contraption);
+      this.ui?.updateInspectorProperties?.(child.id);
+    } else {
+      this.selectorLevel = { contraption, nodeId };
+      this.ui?.showToast?.(`Created child component [${child.id}] from ${blocks.length} blocks under [${nodeId}] · press C to program`);
+    }
+    return child;
+  }
+
+  private startLargeChildCreation(contraption, nodeId, candidates, legacy = false, selectedCells = null) {
+    const source = [...candidates];
+    const prepared: any[] = [];
+    const bounds = {
+      minX: Infinity, minY: Infinity, minZ: Infinity,
+      maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity
+    };
+    return this.startBulkEditJob({
+      label: 'Creating child component',
+      total: source.length,
+      mutatesWorld: false,
+      detail: 'Preparing component blocks',
+      step: index => {
+        const block = source[index];
+        if ((block.entityId || 'root') !== nodeId) return 0;
+        if (selectedCells) {
+          const key = `${Math.floor(block.localX + 1e-6)},${Math.floor(block.localY + 1e-6)},${Math.floor(block.localZ + 1e-6)}`;
+          if (!selectedCells.has(key)) return 0;
+        }
+        prepared.push(block);
+        this.preparedChildBoundsStep(bounds, block);
+        return 1;
+      },
+      finish: () => this.finishPreparedChildCreation(contraption, nodeId, prepared, bounds, legacy)
+    });
+  }
+
   createChildFromSelectedBlocks() {
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
+      return null;
+    }
     const sel = this.selectedBlockSelection;
     if (!sel || !sel.contraption || sel.blocks.length === 0) {
       if (this.ui) this.ui.showToast('No block selection - box-select blocks of a level first');
       return;
     }
     const { contraption, nodeId, blocks } = sel;
+    if (!this.canEditEntityInternals(contraption)) {
+      this.clearSelection();
+      this.ui?.showToast?.('Stop the entity before creating a child component from its blocks');
+      return null;
+    }
+    if (blocks.length > BULK_EDIT_THRESHOLD) {
+      const started = this.startLargeChildCreation(contraption, nodeId, blocks);
+      if (started) {
+        contraption.clearSubtreeHighlight?.();
+        this.selectedBlockSelection = null;
+        this.selectorRange = null;
+      }
+      return started;
+    }
     const result = this.performBasicAction({
       domain: ActionDomain.SELECTION,
       action: 'create-child',
@@ -1397,7 +1502,180 @@ export class PlayerController {
    * 3. **World selection** (2-point box / single cells): read-only sampling of the
    *    world — the original blocks stay in place (unlike G, which extracts them).
    */
+  private finishBlockSetCopy(rawBlocks, name) {
+    if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) {
+      this.ui?.showToast?.('Selection region is empty (no voxels to copy)');
+      return null;
+    }
+    const slot = { kind: 'blockset', name, blocks: rawBlocks, blockCount: rawBlocks.length };
+    const index = this.addInventoryItem('blockset', slot);
+    if (index === null) {
+      this.ui?.showToast?.('Block set inventory is full (9) - delete one first');
+      return null;
+    }
+    this.setActiveInventoryCategory('blockset');
+    this.ui?.renderInventoryBar?.();
+    this.clearSelection();
+    this.activateTool(SpecialTool.HAMMER);
+    this.ui?.showToast?.(`Copied ${rawBlocks.length} voxels as a block set to block set slot ${index + 1} · switched to Hammer · left-click to build`);
+    return slot;
+  }
+
+  /** Two-pass, frame-sliced normalization for entity-local block selections. */
+  private startLargeEntityBlockSetCopy(blocks, name) {
+    const source = [...blocks];
+    const rawBlocks: any[] = [];
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    return this.startBulkEditJob({
+      label: 'Copying block set',
+      total: source.length * 2,
+      mutatesWorld: false,
+      detail: job => job.processed < source.length ? 'Measuring selection' : 'Preparing inventory voxels',
+      step: index => {
+        const sourceIndex = index % source.length;
+        const block = source[sourceIndex];
+        if (index < source.length) {
+          minX = Math.min(minX, block.localX);
+          minY = Math.min(minY, block.localY);
+          minZ = Math.min(minZ, block.localZ);
+          return 0;
+        }
+        rawBlocks.push({
+          dx: block.localX - minX,
+          dy: block.localY - minY,
+          dz: block.localZ - minZ,
+          size: block.size || 1,
+          block: block.block,
+          color: block.color,
+          part: block.part
+        });
+        return 1;
+      },
+      finish: () => this.finishBlockSetCopy(rawBlocks, name)
+    });
+  }
+
+  /** Read one standard world cell and all of its carved micro voxels. */
+  private sampleWorldCellForBulkCopy(cell, consider) {
+    const block = this.world.getBlock?.(cell.x, cell.y, cell.z);
+    if (block !== BlockTypes.AIR) {
+      consider(cell.x, cell.y, cell.z, 1, block, this.world.getBlockColor?.(cell.x, cell.y, cell.z), null);
+    }
+    const micros = this.world.getMicroBlocksInAABB?.({
+      minX: cell.x,
+      minY: cell.y,
+      minZ: cell.z,
+      maxX: cell.x + 1 - 1e-6,
+      maxY: cell.y + 1 - 1e-6,
+      maxZ: cell.z + 1 - 1e-6
+    }) || [];
+    for (const micro of micros) {
+      consider(micro.x, micro.y, micro.z, micro.size || 0.2, BlockTypes.COLOR_BLOCK, micro.color, micro.part);
+    }
+  }
+
+  /** Scan and normalize a large world selection through the shared executor. */
+  private startLargeWorldBlockSetCopy(manager) {
+    const microCells = Array.isArray(manager.microSelection)
+      ? manager.microSelection.map(cell => ({ x: cell.x, y: cell.y, z: cell.z }))
+      : null;
+    const bounds = manager.getSelectionBounds?.();
+    const sparseCells = !microCells && manager.connectedSelection !== null
+      ? [...(manager.connectedSelection || [])].map(cell => ({ x: cell.x, y: cell.y, z: cell.z }))
+      : null;
+    if (!microCells && !bounds) return false;
+
+    const sizeY = bounds ? bounds.maxY - bounds.minY + 1 : 0;
+    const sizeZ = bounds ? bounds.maxZ - bounds.minZ + 1 : 0;
+    const scanTotal = microCells?.length
+      ?? sparseCells?.length
+      ?? ((bounds.maxX - bounds.minX + 1) * sizeY * sizeZ);
+    const collected: any[] = [];
+    const rawBlocks: any[] = [];
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    const consider = (x, y, z, size, block, color, part = null) => {
+      collected.push({ x, y, z, size, block, color, part });
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      minZ = Math.min(minZ, z);
+    };
+    const cellAt = index => sparseCells?.[index] || {
+      x: bounds.minX + Math.floor(index / (sizeY * sizeZ)),
+      y: bounds.minY + Math.floor(index / sizeZ) % sizeY,
+      z: bounds.minZ + index % sizeZ
+    };
+
+    const started = this.startBulkEditJob({
+      label: 'Copying world selection',
+      total: scanTotal,
+      mutatesWorld: false,
+      detail: job => job.processed < scanTotal ? 'Scanning selected cells' : 'Normalizing inventory voxels',
+      step: (index, job) => {
+        if (index < scanTotal) {
+          if (microCells) {
+            const cell = microCells[index];
+            const existing = this.world.getMicroBlock?.(cell.x, cell.y, cell.z);
+            let color = existing?.color;
+            let part = null;
+            if (existing) {
+              const exact = this.world.getMicroBlocksInAABB?.({
+                minX: cell.x / MICRO_DIVISIONS,
+                minY: cell.y / MICRO_DIVISIONS,
+                minZ: cell.z / MICRO_DIVISIONS,
+                maxX: cell.x / MICRO_DIVISIONS,
+                maxY: cell.y / MICRO_DIVISIONS,
+                maxZ: cell.z / MICRO_DIVISIONS
+              })?.[0];
+              part = exact?.part ?? null;
+            } else {
+              const wx = Math.floor(cell.x / MICRO_DIVISIONS);
+              const wy = Math.floor(cell.y / MICRO_DIVISIONS);
+              const wz = Math.floor(cell.z / MICRO_DIVISIONS);
+              if (this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
+                color = this.world.getBlockColor?.(wx, wy, wz);
+              }
+            }
+            if (color !== null && color !== undefined) {
+              consider(
+                cell.x / MICRO_DIVISIONS,
+                cell.y / MICRO_DIVISIONS,
+                cell.z / MICRO_DIVISIONS,
+                0.2,
+                BlockTypes.COLOR_BLOCK,
+                color,
+                part
+              );
+            }
+          } else {
+            this.sampleWorldCellForBulkCopy(cellAt(index), consider);
+          }
+          if (index === scanTotal - 1) job.total += collected.length;
+          return 0;
+        }
+
+        const item = collected[index - scanTotal];
+        rawBlocks.push({
+          dx: microCells ? Math.round((item.x - minX) * 5) / 5 : item.x - minX,
+          dy: microCells ? Math.round((item.y - minY) * 5) / 5 : item.y - minY,
+          dz: microCells ? Math.round((item.z - minZ) * 5) / 5 : item.z - minZ,
+          size: item.size,
+          block: item.block,
+          color: item.color,
+          part: item.part
+        });
+        return 1;
+      },
+      finish: () => this.finishBlockSetCopy(rawBlocks, `world selection (${rawBlocks.length} voxels)`)
+    });
+    if (started) manager.clearSelection?.();
+    return started;
+  }
+
   copySelectionAsBlockSet() {
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
+      return null;
+    }
     let rawBlocks = null;
     let name = '';
 
@@ -1408,6 +1686,15 @@ export class PlayerController {
         this.clearSelection();
         this.ui?.showToast?.('Stop the entity before copying an internal block selection');
         return null;
+      }
+      if (blocks.length > BULK_EDIT_THRESHOLD) {
+        const started = this.startLargeEntityBlockSetCopy(blocks, `${blocks.length} blocks of [${nodeId}]`);
+        if (started) {
+          contraption.clearSubtreeHighlight?.();
+          this.selectedBlockSelection = null;
+          this.selectorRange = null;
+        }
+        return started;
       }
       const minX = Math.min(...blocks.map(b => b.localX));
       const minY = Math.min(...blocks.map(b => b.localY));
@@ -1435,6 +1722,14 @@ export class PlayerController {
       const nodeIds = this.selectedSubtree.nodeIds || this.collectSubtreeIds(contraption, rootId);
       const blocks = contraption.blocks.filter(b => nodeIds.has(b.entityId || 'root'));
       if (blocks.length > 0) {
+        if (blocks.length > BULK_EDIT_THRESHOLD) {
+          const started = this.startLargeEntityBlockSetCopy(blocks, `subtree [${rootId}] (${blocks.length} blocks)`);
+          if (started) {
+            contraption.clearSubtreeHighlight?.();
+            this.selectedSubtree = null;
+          }
+          return started;
+        }
         const minX = Math.min(...blocks.map(b => b.localX));
         const minY = Math.min(...blocks.map(b => b.localY));
         const minZ = Math.min(...blocks.map(b => b.localZ));
@@ -1453,6 +1748,9 @@ export class PlayerController {
 
     // 3. World selection (2-point box / single-cell mode): read-only, keeps the source intact.
     if (!rawBlocks && this.contraptions && this.contraptions.hasValidSelection()) {
+      if (this.contraptions.getSelectionBlockCount?.() > BULK_EDIT_THRESHOLD) {
+        return this.startLargeWorldBlockSetCopy(this.contraptions);
+      }
       rawBlocks = this.sampleWorldSelectionAsBlockSet();
       if (rawBlocks && rawBlocks.length > 0) name = `world selection (${rawBlocks.length} voxels)`;
     }
@@ -1462,22 +1760,7 @@ export class PlayerController {
       return;
     }
 
-    const slot = { kind: 'blockset', name, blocks: rawBlocks, blockCount: rawBlocks.length };
-    const index = this.addInventoryItem('blockset', slot);
-    if (index === null) {
-      this.ui?.showToast?.('Block set inventory is full (9) - delete one first');
-      return null;
-    }
-    this.setActiveInventoryCategory('blockset');
-    this.ui?.renderInventoryBar?.();
-
-    // After copying, clear selection and highlights; the banner collapses automatically.
-    this.clearSelection();
-    this.activateTool(SpecialTool.HAMMER);
-    if (this.ui) {
-      this.ui.showToast(`Copied ${rawBlocks.length} voxels as a block set to block set slot ${index + 1} · switched to Hammer · left-click to build`);
-    }
-    return slot;
+    return this.finishBlockSetCopy(rawBlocks, name);
   }
 
   /**
@@ -1598,18 +1881,19 @@ export class PlayerController {
     }));
   }
 
-  private bulkEditProgress(job, phase: 'applying' | 'waiting' | 'syncing' | 'complete' | 'failed', detail = '') {
+  private bulkEditProgress(job: BulkEditJob, phase: BulkEditPhase, detail = '') {
+    const jobDetail = typeof job.detail === 'function' ? job.detail(job) : job.detail;
     this.ui?.setBulkEditProgress?.({
       label: job.label,
       phase,
       processed: job.processed,
       total: job.total,
       changed: job.changed,
-      detail
+      detail: detail || jobDetail || ''
     });
   }
 
-  private startBulkEditJob(job) {
+  private startBulkEditJob(job: Omit<BulkEditJob, 'processed' | 'changed'>) {
     if (this.bulkEditJob) {
       this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
       return false;
@@ -1633,7 +1917,7 @@ export class PlayerController {
 
     const sync = this.world?.editPersistence?.getSyncStatus?.();
     if (sync) this.ui?.setWorldEditSync?.(sync);
-    if (sync?.backpressured) {
+    if (job.mutatesWorld !== false && sync?.backpressured) {
       this.bulkEditProgress(job, 'waiting', `Waiting for the server · ${sync.pendingBatches} batches queued`);
       return true;
     }
@@ -1650,7 +1934,7 @@ export class PlayerController {
         && operations < operationLimit
         && (operations === 0 || now() - startedAt < timeLimit)
       ) {
-        const changed = Number(job.step(job.processed)) || 0;
+        const changed = Number(job.step(job.processed, job)) || 0;
         job.changed += changed;
         job.processed++;
         operations++;
@@ -1669,10 +1953,19 @@ export class PlayerController {
     }
 
     this.bulkEditJob = null;
-    job.finish?.();
+    try {
+      job.finish?.(job);
+    } catch (error) {
+      console.error(`Bulk edit failed while finishing ${job.label}.`, error);
+      this.bulkEditProgress(job, 'failed', 'The operation could not be committed');
+      this.ui?.showToast?.(`${job.label} could not be completed`);
+      return false;
+    }
     const finalSync = this.world?.editPersistence?.getSyncStatus?.();
     if (finalSync) this.ui?.setWorldEditSync?.(finalSync);
-    const hasPendingSync = !!finalSync && (finalSync.pendingBatches > 0 || finalSync.sending);
+    const hasPendingSync = job.mutatesWorld !== false
+      && !!finalSync
+      && (finalSync.pendingBatches > 0 || finalSync.sending);
     this.bulkEditProgress(
       job,
       hasPendingSync ? 'syncing' : 'complete',
@@ -2161,6 +2454,10 @@ export class PlayerController {
   }
 
   handleRightClick(e = null) {
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
+      return false;
+    }
     const isRecolorModifier = e && (e.shiftKey || this.keys.crouch);
 
     // 1. Shovel -> place one standard block, replacing micro cells in the cell.
@@ -3291,6 +3588,46 @@ export class PlayerController {
 
   // --- Hammer build ------------------------------------------------------------------
 
+  private finishEntitySlotBuild(slot, position, preparedBlocks = null) {
+    const created = this.contraptions.buildFromSlot(slot, position, null, true, preparedBlocks);
+    if (created) {
+      this.sound?.playBlockPlace?.();
+      const builtLabel = slot.name || slot.rootId || (slot.rootIds ? `${slot.rootIds.length} components` : 'entity');
+      this.ui?.showToast?.(`Built [${builtLabel}] (${slot.blockCount} blocks) as entity #${created.id}`);
+    }
+    return created;
+  }
+
+  /** Map a large serialized entity slot incrementally; registration stays atomic. */
+  private startLargeEntitySlotBuild(slot, position) {
+    const source = [...slot.blocks];
+    const preparedBlocks: any[] = [];
+    const singleRoot = slot.rootId && slot.rootId !== null;
+    const rootId = slot.rootId || null;
+    const mapId = id => (singleRoot && id === rootId ? 'root' : id);
+    return this.startBulkEditJob({
+      label: 'Building entity',
+      total: source.length,
+      mutatesWorld: false,
+      detail: 'Preparing entity voxels',
+      step: index => {
+        const block = source[index];
+        preparedBlocks.push({
+          localX: block.localX,
+          localY: block.localY,
+          localZ: block.localZ,
+          size: block.size || 1,
+          color: block.color,
+          block: block.block,
+          part: block.part,
+          entityId: mapId(block.entityId || 'root')
+        });
+        return 1;
+      },
+      finish: () => this.finishEntitySlotBuild(slot, position, preparedBlocks)
+    });
+  }
+
   /**
    * Hammer left-click: place the current inventory slot at the crosshair.
    * - **Block set** (T copy, STL import): stamps plain world blocks.
@@ -3303,6 +3640,10 @@ export class PlayerController {
     const slot = this.inventorySlots[this.selectedInventoryIndex];
     if (!slot) {
       if (this.ui) this.ui.showToast(`${category} slot is empty - copy or import something first`);
+      return false;
+    }
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
       return false;
     }
 
@@ -3326,15 +3667,11 @@ export class PlayerController {
       return false;
     }
 
-    const created = this.contraptions.buildFromSlot(slot, pose.position);
-    if (created) {
-      this.sound.playBlockPlace();
-      if (this.ui) {
-        const builtLabel = slot.name || slot.rootId || (slot.rootIds ? `${slot.rootIds.length} components` : 'entity');
-        this.ui.showToast(`Built [${builtLabel}] (${slot.blockCount} blocks) as entity #${created.id}`);
-      }
+    const position = pose.position.clone?.() || new THREE.Vector3(pose.position.x, pose.position.y, pose.position.z);
+    if (Array.isArray(slot.blocks) && slot.blocks.length > BULK_EDIT_THRESHOLD) {
+      return this.startLargeEntitySlotBuild(slot, position);
     }
-    return !!created;
+    return !!this.finishEntitySlotBuild(slot, position);
   }
 
   /**
@@ -3368,11 +3705,191 @@ export class PlayerController {
     );
   }
 
+  private finishPreparedWorldAssembly(rawBlocks, origin, mode, customOptions) {
+    if (rawBlocks.length === 0) {
+      this.ui?.showToast?.('Selection region is empty (no blocks to assemble)');
+      return null;
+    }
+    const actionResult = this.performBasicAction({
+      domain: ActionDomain.SELECTION,
+      action: 'assemble',
+      mode,
+      options: customOptions,
+      prepared: { blocks: rawBlocks, origin }
+    });
+    const contraption = actionResult.entity;
+    if (contraption) {
+      this.ui?.showToast?.(`${contraption.blocks.length} blocks assembled as root body · press C to open the editor`);
+      this.openCodeEditorForTarget();
+    }
+    return contraption || null;
+  }
+
+  /** Extract a large world selection incrementally, then atomically create its entity. */
+  private startLargeWorldAssembly(mode, customOptions = {}) {
+    const manager = this.contraptions;
+    const finalMode = manager.normalizeAssemblyMode?.(mode);
+    if (!finalMode) return false;
+
+    const microCells = Array.isArray(manager.microSelection)
+      ? manager.microSelection.map(cell => ({ x: cell.x, y: cell.y, z: cell.z }))
+      : null;
+    const bounds = manager.getSelectionBounds?.();
+    const sparseCells = !microCells && manager.connectedSelection !== null
+      ? [...(manager.connectedSelection || [])].map(cell => ({ x: cell.x, y: cell.y, z: cell.z }))
+      : null;
+    if (!microCells && !bounds) return false;
+
+    const sizeY = bounds ? bounds.maxY - bounds.minY + 1 : 0;
+    const sizeZ = bounds ? bounds.maxZ - bounds.minZ + 1 : 0;
+    const scanTotal = microCells?.length
+      ?? sparseCells?.length
+      ?? ((bounds.maxX - bounds.minX + 1) * sizeY * sizeZ);
+    const origin = microCells
+      ? { x: Infinity, y: Infinity, z: Infinity }
+      : { x: bounds.minX, y: bounds.minY, z: bounds.minZ };
+    const total = microCells ? scanTotal * 2 : scanTotal;
+    const rawBlocks: any[] = [];
+    const cellAt = index => sparseCells?.[index] || {
+      x: bounds.minX + Math.floor(index / (sizeY * sizeZ)),
+      y: bounds.minY + Math.floor(index / sizeZ) % sizeY,
+      z: bounds.minZ + index % sizeZ
+    };
+
+    const started = this.startBulkEditJob({
+      label: 'Assembling selection',
+      total,
+      detail: job => microCells && job.processed < scanTotal
+        ? 'Measuring micro selection'
+        : 'Extracting selected voxels',
+      step: index => {
+        if (microCells) {
+          if (index < scanTotal) {
+            const cell = microCells[index];
+            origin.x = Math.min(origin.x, cell.x / MICRO_DIVISIONS);
+            origin.y = Math.min(origin.y, cell.y / MICRO_DIVISIONS);
+            origin.z = Math.min(origin.z, cell.z / MICRO_DIVISIONS);
+            return 0;
+          }
+          const cell = microCells[index - scanTotal];
+          const wx = Math.floor(cell.x / MICRO_DIVISIONS);
+          const wy = Math.floor(cell.y / MICRO_DIVISIONS);
+          const wz = Math.floor(cell.z / MICRO_DIVISIONS);
+          const existing = this.world.getMicroBlock?.(cell.x, cell.y, cell.z);
+          let color = existing?.color;
+          let part = null;
+          if (existing) {
+            const exact = this.world.getMicroBlocksInAABB?.({
+              minX: cell.x / MICRO_DIVISIONS,
+              minY: cell.y / MICRO_DIVISIONS,
+              minZ: cell.z / MICRO_DIVISIONS,
+              maxX: cell.x / MICRO_DIVISIONS,
+              maxY: cell.y / MICRO_DIVISIONS,
+              maxZ: cell.z / MICRO_DIVISIONS
+            })?.[0];
+            part = exact?.part ?? null;
+          } else if (this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
+            color = this.world.getBlockColor?.(wx, wy, wz);
+          }
+          if (color === null || color === undefined) return 0;
+
+          let result;
+          if (!existing && this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
+            result = this.performBasicAction({
+              domain: ActionDomain.WORLD,
+              action: 'subdivide-standard',
+              cell: { x: wx, y: wy, z: wz },
+              micro: cell
+            });
+          } else {
+            result = this.performBasicAction({
+              domain: ActionDomain.WORLD,
+              action: 'remove-micro',
+              micro: cell
+            });
+          }
+          if (!(result.removed > 0)) return 0;
+          rawBlocks.push({
+            localX: cell.x / MICRO_DIVISIONS - origin.x,
+            localY: cell.y / MICRO_DIVISIONS - origin.y,
+            localZ: cell.z / MICRO_DIVISIONS - origin.z,
+            size: 0.2,
+            block: BlockTypes.COLOR_BLOCK,
+            color,
+            part
+          });
+          return 1;
+        }
+
+        const cell = cellAt(index);
+        const block = this.world.getBlock?.(cell.x, cell.y, cell.z);
+        const color = block !== BlockTypes.AIR
+          ? this.world.getBlockColor?.(cell.x, cell.y, cell.z)
+          : null;
+        const micros = this.world.getMicroBlocksInAABB?.({
+          minX: cell.x,
+          minY: cell.y,
+          minZ: cell.z,
+          maxX: cell.x + 1 - 1e-6,
+          maxY: cell.y + 1 - 1e-6,
+          maxZ: cell.z + 1 - 1e-6
+        }) || [];
+        const result = this.performBasicAction({
+          domain: ActionDomain.WORLD,
+          action: 'clear-cell',
+          cell
+        });
+        if (result.standard > 0) {
+          rawBlocks.push({
+            localX: cell.x - origin.x,
+            localY: cell.y - origin.y,
+            localZ: cell.z - origin.z,
+            size: 1,
+            block,
+            color
+          });
+        }
+        for (const micro of micros) {
+          rawBlocks.push({
+            localX: micro.x - origin.x,
+            localY: micro.y - origin.y,
+            localZ: micro.z - origin.z,
+            size: micro.size || 0.2,
+            block: BlockTypes.COLOR_BLOCK,
+            color: micro.color,
+            part: micro.part
+          });
+        }
+        return result.removed || 0;
+      },
+      finish: () => this.finishPreparedWorldAssembly(rawBlocks, origin, finalMode, customOptions)
+    });
+    if (started) manager.clearSelection?.();
+    return started;
+  }
+
   assembleSelection(mode = ContraptionMode.PROGRAMMABLE, customOptions = {}) {
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
+      return null;
+    }
     if (this.contraptions.hasChildSelection()) {
       if (!this.contraptions.hasReadyChildSelection()) {
         if (this.ui) this.ui.showToast('No blocks selected - click to select component blocks');
         return null;
+      }
+      const selection = this.contraptions.getChildSelectionInfo?.();
+      if (selection && (selection.count > BULK_EDIT_THRESHOLD
+        || selection.contraption.blocks.length > BULK_EDIT_THRESHOLD)) {
+        const started = this.startLargeChildCreation(
+          selection.contraption,
+          selection.parentId,
+          selection.contraption.blocks,
+          true,
+          selection.cells
+        );
+        if (started) this.contraptions.clearChildSelection?.();
+        return started;
       }
       const actionResult = this.performBasicAction({
         domain: ActionDomain.SELECTION,
@@ -3388,6 +3905,9 @@ export class PlayerController {
         this.ui.updateInspectorProperties(result.child.id);
       }
       return result?.child || null;
+    }
+    if (this.contraptions.getSelectionBlockCount?.() > BULK_EDIT_THRESHOLD) {
+      return this.startLargeWorldAssembly(mode, customOptions);
     }
     const actionResult = this.performBasicAction({
       domain: ActionDomain.SELECTION,

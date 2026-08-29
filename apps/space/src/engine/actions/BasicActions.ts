@@ -999,7 +999,8 @@ function executeSelectionAction(context: any, command: any) {
           runtimeId: null
         });
       }
-      if (!manager?.hasValidSelection?.()) {
+      const prepared = command.prepared;
+      if (!prepared && !manager?.hasValidSelection?.()) {
         return actionResult(command.action, 0, 'no_selection', {
           assembled: 0,
           entity: null,
@@ -1007,7 +1008,18 @@ function executeSelectionAction(context: any, command: any) {
           runtimeId: null
         });
       }
-      const entity = manager.assembleSelection?.(mode, command.options || {});
+      const entity = prepared
+        ? manager.commitPreparedAssembly?.(
+            prepared.blocks,
+            new THREE.Vector3(
+              Number(prepared.origin?.x) || 0,
+              Number(prepared.origin?.y) || 0,
+              Number(prepared.origin?.z) || 0
+            ),
+            mode,
+            command.options || {}
+          )
+        : manager.assembleSelection?.(mode, command.options || {});
       return actionResult(command.action, entity ? 1 : 0, entity ? 'assembled' : 'empty', {
         assembled: entity ? 1 : 0,
         entity,
@@ -1036,7 +1048,14 @@ function executeSelectionAction(context: any, command: any) {
       if (!selected?.contraption || !Array.isArray(selected.blocks) || selected.blocks.length === 0) {
         return actionResult(command.action, 0, 'no_selection', { child: null });
       }
-      const child = selected.contraption.createChildEntity?.(selected.nodeId || 'root', selected.blocks, command.id || null);
+      const child = selected.preparedBounds
+        ? selected.contraption.createChildEntityFromPrepared?.(
+            selected.nodeId || 'root',
+            selected.blocks,
+            selected.preparedBounds,
+            command.id || null
+          )
+        : selected.contraption.createChildEntity?.(selected.nodeId || 'root', selected.blocks, command.id || null);
       if (child) {
         selected.contraption.clearSubtreeHighlight?.();
         owner.entitySelection = null;

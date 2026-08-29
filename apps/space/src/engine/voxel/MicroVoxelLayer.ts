@@ -298,6 +298,7 @@ export class MicroVoxelLayer {
             z: mz * MICRO_SIZE,
             size: MICRO_SIZE,
             color,
+            part: this.parts.get(key(mx, my, mz)) ?? null,
             micro: true
           });
         }

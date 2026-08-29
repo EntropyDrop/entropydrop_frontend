@@ -806,3 +806,11 @@ test('Color set tab does not display # numbers or import json on empty slots', (
   assert.doesNotMatch(emptySlotBody, /import JSON/i);
   assert.match(emptySlotBody, />Empty slot<\/span>/);
 });
+
+test('backpack bar title in HUD has transparent background and clean button styling', () => {
+  const styleSource = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(styleSource, /#backpack-bar-title[^}]*background:\s*transparent/);
+  assert.match(styleSource, /#backpack-bar-title[^}]*border:\s*none/);
+  assert.match(styleSource, /#backpack-bar-title[^}]*cursor:\s*pointer/);
+});
+
