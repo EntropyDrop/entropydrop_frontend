@@ -7,6 +7,7 @@ import {
   loadTerrainEditRemote,
   resolveApiOrigin,
   resolveInitialPlayerPose,
+  terrainStreamAreaForPosition,
 } from '../src/bootstrap/SpaceBootstrap.ts';
 
 test('Space derives the API origin from the main frontend API configuration', () => {
@@ -50,20 +51,40 @@ test('Space loads every terrain snapshot page and posts authenticated mutation b
     'https://api.entropydrop.com',
     'test-token',
     '00000000-0000-0000-0000-000000000001',
-    fetchImpl as typeof fetch
+    fetchImpl as typeof fetch,
+    undefined,
+    terrainStreamAreaForPosition(8192, 1024)
   );
+  const initialRequestCount = requests.length;
+  await remote.loadArea?.(516, 68, 32);
   await remote.sendBatch('00000000-0000-4000-8000-000000000001', [{
     kind: 'set_standard', x: 1, y: 80, z: 1, block: 1, color: 0x123456
   }]);
 
   assert.deepEqual(remote.chunks.map(chunk => chunk.chunk_x), [0, 2]);
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 5);
+  assert.equal(initialRequestCount, 2);
   assert.equal((requests[0].options.headers as any).Authorization, 'Bearer test-token');
+  assert.match(requests[0].url, /center_chunk_x=516/);
+  assert.match(requests[0].url, /center_chunk_z=68/);
+  assert.match(requests[0].url, /radius_chunks=32/);
   assert.match(requests[1].url, /cursor=0%2C0/);
-  assert.deepEqual(JSON.parse(String(requests[2].options.body)), {
+  assert.match(requests[3].url, /cursor=0%2C0/);
+  assert.deepEqual(JSON.parse(String(requests[4].options.body)), {
     batch_id: '00000000-0000-4000-8000-000000000001',
     mutations: [{ kind: 'set_standard', x: 1, y: 80, z: 1, block: 1, color: 0x123456 }]
   });
+});
+
+test('terrain AOI windows are tiled, wrapped, and overlap the maximum render distance', () => {
+  assert.deepEqual(terrainStreamAreaForPosition(8192, 1024), {
+    centerChunkX: 516,
+    centerChunkZ: 68,
+    radiusChunks: 32,
+    key: '516,68,32',
+  });
+  assert.equal(terrainStreamAreaForPosition(-1, -1).centerChunkX, 1020);
+  assert.equal(terrainStreamAreaForPosition(-1, -1).centerChunkZ, 124);
 });
 
 test('Space consumes one unified backend start pose for resume or samples random spawn when not resumed', () => {

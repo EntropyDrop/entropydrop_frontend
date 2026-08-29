@@ -3,6 +3,7 @@ import type {
   TerrainMutation,
   WorldEditRemote,
 } from '../engine/voxel/WorldEditPersistence.ts';
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../engine/voxel/Chunk.ts';
 import {
   TORUS_GREF,
   TORUS_SIZE_X,
@@ -19,6 +20,16 @@ import {
 } from './LatencyMonitor.ts';
 
 export { LatencyMonitor, type LatencyMonitorOptions };
+
+export const TERRAIN_STREAM_RADIUS_CHUNKS = 32;
+export const TERRAIN_STREAM_TILE_CHUNKS = 8;
+
+export interface TerrainStreamArea {
+  centerChunkX: number;
+  centerChunkZ: number;
+  radiusChunks: number;
+  key: string;
+}
 
 export type MinecraftSkinModel = 'strong' | 'slim';
 
@@ -139,6 +150,47 @@ export function resolveInitialPlayerPose(
   };
 }
 
+/**
+ * Coarsen player movement into overlapping terrain snapshot windows. A 32-chunk
+ * radius covers the maximum 24-chunk render distance plus movement within one
+ * eight-chunk tile, avoiding a snapshot request on every chunk boundary.
+ */
+export function terrainStreamAreaForPosition(
+  xMeters: number,
+  zMeters: number,
+  radiusChunks = TERRAIN_STREAM_RADIUS_CHUNKS
+): TerrainStreamArea {
+  const chunkCountX = TORUS_SIZE_X / CHUNK_SIZE_X;
+  const chunkCountZ = TORUS_SIZE_Z / CHUNK_SIZE_Z;
+  const chunkX = Math.floor(wrapX(xMeters) / CHUNK_SIZE_X);
+  const chunkZ = Math.floor(wrapZ(zMeters) / CHUNK_SIZE_Z);
+  const tileX = Math.floor(chunkX / TERRAIN_STREAM_TILE_CHUNKS);
+  const tileZ = Math.floor(chunkZ / TERRAIN_STREAM_TILE_CHUNKS);
+  const centerChunkX = (
+    tileX * TERRAIN_STREAM_TILE_CHUNKS + Math.floor(TERRAIN_STREAM_TILE_CHUNKS / 2)
+  ) % chunkCountX;
+  const centerChunkZ = (
+    tileZ * TERRAIN_STREAM_TILE_CHUNKS + Math.floor(TERRAIN_STREAM_TILE_CHUNKS / 2)
+  ) % chunkCountZ;
+  const normalizedRadius = Math.max(1, Math.floor(radiusChunks));
+  return {
+    centerChunkX,
+    centerChunkZ,
+    radiusChunks: normalizedRadius,
+    key: `${centerChunkX},${centerChunkZ},${normalizedRadius}`,
+  };
+}
+
+export function initialTerrainStreamArea(player: SpaceBootstrapPayload['player']) {
+  const resumed = player.resumed
+    && typeof player.start_x_cm === 'number'
+    && typeof player.start_z_cm === 'number';
+  return terrainStreamAreaForPosition(
+    resumed ? player.start_x_cm! / 100 : TORUS_SPAWN_X,
+    resumed ? player.start_z_cm! / 100 : TORUS_SPAWN_Z
+  );
+}
+
 function wrapCentimeters(valueMeters: number, sizeMeters: number) {
   const sizeCm = sizeMeters * 100;
   const valueCm = Math.round(valueMeters * 100);
@@ -242,70 +294,110 @@ export async function loadTerrainEditRemote(
   token: string,
   worldId: string,
   fetchImpl: typeof fetch = fetch,
-  latencyMonitor?: LatencyMonitor
+  latencyMonitor?: LatencyMonitor,
+  initialArea?: TerrainStreamArea
 ): Promise<WorldEditRemote> {
   const baseUrl = `${apiOrigin}/space/api/v2/worlds/${encodeURIComponent(worldId)}/terrain-edits`;
   const retryUrl = typeof window === 'undefined' ? '/' : window.location.href;
-  const chunks: TerrainEditChunk[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | null = null;
+  const areaRequests = new Map<string, Promise<TerrainEditChunk[]>>();
 
-  do {
-    const url = new URL(
-      baseUrl,
-      typeof window === 'undefined' ? 'http://localhost' : window.location.href
-    );
-    url.searchParams.set('limit', '256');
-    if (cursor) url.searchParams.set('cursor', cursor);
-    const start = performance.now();
-    const response = await fetchImpl(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json'
-      },
-      cache: 'no-store'
-    });
-    if (response.ok) {
-      latencyMonitor?.recordPing(performance.now() - start);
-    }
-    const body = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new SpaceEntryError(
-        response.status === 401 || response.status === 403 ? 'LOGIN_REQUIRED' : 'BOOTSTRAP_FAILED',
-        '无法加载 Space 世界修改，请检查后端版本和网络连接。',
-        response.status === 401 || response.status === 403 ? '/skin/' : retryUrl,
-        response.status === 401 || response.status === 403 ? '返回主站登录' : '重试'
+  const fetchPages = async (area?: TerrainStreamArea) => {
+    const chunks: TerrainEditChunk[] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | null = null;
+
+    do {
+      const url = new URL(
+        baseUrl,
+        typeof window === 'undefined' ? 'http://localhost' : window.location.href
       );
-    }
-    if (!Array.isArray(body?.chunks)) {
-      throw new SpaceEntryError(
-        'BOOTSTRAP_FAILED',
-        'Space 世界修改响应格式无效。',
-        retryUrl,
-        '重试'
-      );
-    }
-    chunks.push(...body.chunks);
-    const nextCursor = typeof body.next_cursor === 'string' ? body.next_cursor : null;
-    if (nextCursor && seenCursors.has(nextCursor)) {
-      throw new SpaceEntryError(
-        'BOOTSTRAP_FAILED',
-        'Space 世界修改分页游标重复。',
-        retryUrl,
-        '重试'
-      );
-    }
-    if (nextCursor) seenCursors.add(nextCursor);
-    cursor = nextCursor;
-  } while (cursor);
+      url.searchParams.set('limit', '256');
+      if (area) {
+        url.searchParams.set('center_chunk_x', String(area.centerChunkX));
+        url.searchParams.set('center_chunk_z', String(area.centerChunkZ));
+        url.searchParams.set('radius_chunks', String(area.radiusChunks));
+      }
+      if (cursor) url.searchParams.set('cursor', cursor);
+      const start = performance.now();
+      const response = await fetchImpl(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json'
+        },
+        cache: 'no-store'
+      });
+      if (response.ok) latencyMonitor?.recordPing(performance.now() - start);
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new SpaceEntryError(
+          response.status === 401 || response.status === 403 ? 'LOGIN_REQUIRED' : 'BOOTSTRAP_FAILED',
+          '无法加载 Space 世界修改，请检查后端版本和网络连接。',
+          response.status === 401 || response.status === 403 ? '/skin/' : retryUrl,
+          response.status === 401 || response.status === 403 ? '返回主站登录' : '重试'
+        );
+      }
+      if (!Array.isArray(body?.chunks)) {
+        throw new SpaceEntryError(
+          'BOOTSTRAP_FAILED',
+          'Space 世界修改响应格式无效。',
+          retryUrl,
+          '重试'
+        );
+      }
+      chunks.push(...body.chunks);
+      const nextCursor = typeof body.next_cursor === 'string' ? body.next_cursor : null;
+      if (nextCursor && seenCursors.has(nextCursor)) {
+        throw new SpaceEntryError(
+          'BOOTSTRAP_FAILED',
+          'Space 世界修改分页游标重复。',
+          retryUrl,
+          '重试'
+        );
+      }
+      if (nextCursor) seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    } while (cursor);
+    return chunks;
+  };
+
+  const loadArea = (
+    centerChunkX: number,
+    centerChunkZ: number,
+    radiusChunks: number
+  ) => {
+    const area = {
+      centerChunkX: Math.floor(centerChunkX),
+      centerChunkZ: Math.floor(centerChunkZ),
+      radiusChunks: Math.max(1, Math.floor(radiusChunks)),
+      key: `${Math.floor(centerChunkX)},${Math.floor(centerChunkZ)},${Math.max(1, Math.floor(radiusChunks))}`,
+    };
+    const existing = areaRequests.get(area.key);
+    if (existing) return existing;
+    // Coalesce only concurrent requests. A completed area must be fetched again
+    // when the player later returns, because other players may have edited it
+    // while the global terrain cursor advanced in another AOI.
+    const request = fetchPages(area).finally(() => areaRequests.delete(area.key));
+    areaRequests.set(area.key, request);
+    return request;
+  };
+
+  const chunks = initialArea
+    ? await loadArea(initialArea.centerChunkX, initialArea.centerChunkZ, initialArea.radiusChunks)
+    : await fetchPages();
 
   return {
     chunks,
-    async sendBatch(batchId: string, mutations: TerrainMutation[]) {
+    loadArea,
+    async sendBatch(batchId: string, mutations: TerrainMutation[], metadata) {
       if (mutations.length < 1 || mutations.length > 256) {
         throw new Error('Space terrain mutation batches must contain 1-256 operations.');
       }
       const start = performance.now();
+      const requestBody: Record<string, unknown> = { batch_id: batchId, mutations };
+      if (metadata?.dedupeEpoch === 1 && Number.isFinite(Number(metadata.createdAtMs))) {
+        requestBody.dedupe_epoch = 1;
+        requestBody.created_at_ms = Math.floor(Number(metadata.createdAtMs));
+      }
       const response = await fetchImpl(`${baseUrl}/batches`, {
         method: 'POST',
         headers: {
@@ -313,7 +405,7 @@ export async function loadTerrainEditRemote(
           Accept: 'application/json',
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ batch_id: batchId, mutations })
+        body: JSON.stringify(requestBody)
       });
       if (response.ok) {
         latencyMonitor?.recordPing(performance.now() - start);
@@ -321,7 +413,10 @@ export async function loadTerrainEditRemote(
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         const code = body?.detail?.code || `HTTP_${response.status}`;
-        const error: Error & { retryAfterMs?: number } = new Error(`Space terrain batch was not accepted: ${code}`);
+        const error: Error & { retryAfterMs?: number; permanent?: boolean } = new Error(
+          `Space terrain batch was not accepted: ${code}`
+        );
+        if (code === 'TERRAIN_BATCH_EXPIRED') error.permanent = true;
         const retryAfter = response.headers?.get?.('Retry-After');
         if (retryAfter) {
           const seconds = Number(retryAfter);
@@ -410,7 +505,14 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
 
   const [skinObjectUrl, terrainEditRemote] = await Promise.all([
     downloadSkinPng(payload.player.minecraft_skin_url),
-    loadTerrainEditRemote(apiOrigin, token, payload.world.id, fetch, latencyMonitor)
+    loadTerrainEditRemote(
+      apiOrigin,
+      token,
+      payload.world.id,
+      fetch,
+      latencyMonitor,
+      initialTerrainStreamArea(payload.player)
+    )
   ]);
   return {
     ...payload,

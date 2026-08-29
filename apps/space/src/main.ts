@@ -12,7 +12,9 @@ import { NavigationSystem } from './ui/NavigationSystem.ts';
 import {
   encodePlayerPosition,
   enterSpace,
+  initialTerrainStreamArea,
   resolveInitialPlayerPose,
+  terrainStreamAreaForPosition,
   type PlayerPositionPayload,
   type PlayerPositionRemote,
   type ReadySpaceSession,
@@ -56,6 +58,9 @@ class Game {
   playerPositionSaveInFlight: boolean;
   multiplayerSync: MultiplayerSync;
   remotePlayers: RemotePlayerInfo[];
+  terrainEditRemote: ReadySpaceSession['terrain_edit_remote'];
+  terrainAreaKey: string;
+  terrainAreaRetryAt: number;
 
   constructor(
     session: ReadySpaceSession,
@@ -79,7 +84,11 @@ class Game {
         worldId: session.world.id,
         remote: session.terrain_edit_remote,
         storage: persistentStorage,
-        onSyncStatus: status => spaceUiStore.setWorldEditSync(status)
+        onSyncStatus: status => spaceUiStore.setWorldEditSync(status),
+        // A batch older than the bounded server dedupe window is intentionally
+        // not replayed over newer shared-world edits. Reload the authoritative
+        // AOI after removing that stale outbox entry.
+        onResyncRequired: () => window.location.reload()
       }
     );
     this.sceneRenderer.setWorld(this.world);
@@ -151,11 +160,17 @@ class Game {
     this.currentFps = 60;
     this.latencyMonitor = session.latency_monitor;
     this.playerPositionRemote = session.player_position_remote;
+    this.terrainEditRemote = session.terrain_edit_remote;
     this.pendingPlayerPosition = null;
     this.playerPositionSaveInFlight = false;
+    this.terrainAreaKey = '';
+    this.terrainAreaRetryAt = 0;
 
     // 5. Initial Spawn & Worldgen
     this.initializeSpawn(session);
+    // bootstrapSpace already loaded this window. If a first-entry random spawn
+    // crosses into an adjacent tile, the first frame will fetch that tile too.
+    this.terrainAreaKey = initialTerrainStreamArea(session.player).key;
     this.lastSavedPlayerPosition = session.player.resumed
       ? JSON.stringify(this.currentPlayerPosition())
       : '';
@@ -262,6 +277,21 @@ class Game {
     });
   }
 
+  ensureTerrainArea(playerX: number, playerZ: number) {
+    const remote = this.terrainEditRemote;
+    if (!remote?.loadArea || Date.now() < this.terrainAreaRetryAt) return;
+    const area = terrainStreamAreaForPosition(playerX, playerZ);
+    if (area.key === this.terrainAreaKey) return;
+    this.terrainAreaKey = area.key;
+    void remote.loadArea(area.centerChunkX, area.centerChunkZ, area.radiusChunks)
+      .then(chunks => this.world.applyRemoteChunkUpdates(chunks))
+      .catch(error => {
+        if (this.terrainAreaKey === area.key) this.terrainAreaKey = '';
+        this.terrainAreaRetryAt = Date.now() + 2_000;
+        console.warn('Space terrain area loading is temporarily unavailable.', error);
+      });
+  }
+
   animate() {
     requestAnimationFrame(this.animate);
 
@@ -282,6 +312,7 @@ class Game {
     // exact active window below, so chunks must be current before entities run.
     const playerPos = this.playerPhysics.position;
     this.world.updateChunksAround(playerPos.x, playerPos.z);
+    this.ensureTerrainArea(playerPos.x, playerPos.z);
 
     // 3. Update Contraptions & Physics Simulation
     const entityInput = this.controller.consumeEntityInputFrame();

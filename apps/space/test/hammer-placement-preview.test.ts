@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
 import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
-import { SceneRenderer, getInventoryPreviewBlocks } from '../src/engine/render/SceneRenderer.ts';
+import { SceneRenderer, getInventoryPreviewBlocks, buildUnifiedInventoryPreviewMesh } from '../src/engine/render/SceneRenderer.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 
 function makeController(slot) {
@@ -107,7 +107,7 @@ test('entity preview blocks reproduce the hierarchy pose built from the same slo
   }
 });
 
-test('renderer shows colored, scaled voxel instances at the placement origin', () => {
+test('renderer shows colored, scaled unified voxel mesh at the placement origin', () => {
   const renderer = Object.create(SceneRenderer.prototype);
   renderer.scene = { add() {} };
   renderer.setupInventoryPlacementPreview();
@@ -126,22 +126,16 @@ test('renderer shows colored, scaled voxel instances at the placement origin', (
   });
   assert.equal(renderer.inventoryPlacementGroup.visible, true);
   assert.deepEqual(renderer.inventoryPlacementGroup.position.toArray(), [10, 20, 30]);
-  assert.equal(renderer.inventoryPlacementFill.count, 2);
-
-  const matrix = new THREE.Matrix4();
-  const position = new THREE.Vector3();
-  const quaternion = new THREE.Quaternion();
-  const scale = new THREE.Vector3();
-  renderer.inventoryPlacementFill.getMatrixAt(1, matrix);
-  matrix.decompose(position, quaternion, scale);
-  assert.ok(position.distanceTo(new THREE.Vector3(1.1, 2.1, 3.1)) < 1e-6);
-  assert.ok(scale.distanceTo(new THREE.Vector3(0.2, 0.2, 0.2)) < 1e-6);
+  assert.ok(renderer.inventoryPlacementFill);
+  assert.ok(renderer.inventoryPlacementFill.isMesh);
+  assert.ok(renderer.inventoryPlacementFill.geometry.getAttribute('position').count > 0);
+  assert.ok(renderer.inventoryPlacementFill.geometry.getAttribute('color').count > 0);
 
   renderer.setInventoryPlacementPreview(null);
   assert.equal(renderer.inventoryPlacementGroup.visible, false);
 });
 
-test('hammer ghost is depth-tested and outlines quads without triangle diagonals', () => {
+test('hammer ghost is a unified outer boundary mesh with internal face culling', () => {
   const renderer = Object.create(SceneRenderer.prototype);
   renderer.scene = { add() {} };
   renderer.setupInventoryPlacementPreview();
@@ -163,6 +157,7 @@ test('hammer ghost is depth-tested and outlines quads without triangle diagonals
   assert.equal(renderer.inventoryPlacementFill.material.depthTest, true);
   assert.equal(renderer.inventoryPlacementFill.material.depthWrite, true,
     'the fill must write depth so interior edges hide behind the outer shell');
+  assert.equal(renderer.inventoryPlacementFill.material.vertexColors, true);
   assert.equal(renderer.inventoryPlacementWire.material.depthTest, true);
   assert.equal(renderer.inventoryPlacementWire.material.depthWrite, false);
 
@@ -171,19 +166,7 @@ test('hammer ghost is depth-tested and outlines quads without triangle diagonals
   assert.equal(wire.isLineSegments, true);
   assert.equal(wire.material.wireframe, undefined);
   const wireGeometry = wire.geometry;
-  assert.equal(wireGeometry.isInstancedBufferGeometry, true);
-  assert.equal(wireGeometry.instanceCount, 2);
-  // 12 clean box edges per instance (24 line vertices) — a wireframe-mesh
-  // box would carry 6 extra triangle diagonals.
-  assert.equal(wireGeometry.getAttribute('position').count, 24);
-
-  const iCenter = wireGeometry.getAttribute('iCenter');
-  const iScale = wireGeometry.getAttribute('iScale');
-  // Float32 storage: compare with a tolerance.
-  assert.ok(Math.abs(iCenter.getX(1) - 1.1) < 1e-6);
-  assert.ok(Math.abs(iCenter.getY(1) - 2.1) < 1e-6);
-  assert.ok(Math.abs(iCenter.getZ(1) - 3.1) < 1e-6);
-  assert.ok(Math.abs(iScale.getX(1) - 0.2) < 1e-6);
+  assert.ok(wireGeometry.getAttribute('position').count > 0);
 
   // Rebuilding disposes the previous wire geometry instead of leaking it.
   let disposedGeometryEvent = false;
@@ -201,3 +184,38 @@ test('hammer ghost is depth-tested and outlines quads without triangle diagonals
   assert.equal(disposedGeometryEvent, true, 'the previous wire geometry is disposed on rebuild');
   assert.equal(disposedMaterialEvent, true, 'the previous wire material is disposed on rebuild');
 });
+
+test('buildUnifiedInventoryPreviewMesh culls internal touching faces between adjacent voxels', () => {
+  // 1. Two adjacent blocks at (0,0,0) and (1,0,0) with size 1
+  const twoAdjacentBlocks = [
+    { center: new THREE.Vector3(0.5, 0.5, 0.5), size: 1, color: '#ff0000' },
+    { center: new THREE.Vector3(1.5, 0.5, 0.5), size: 1, color: '#00ff00' }
+  ];
+  const twoResult = buildUnifiedInventoryPreviewMesh(twoAdjacentBlocks);
+  assert.ok(twoResult);
+  // Two isolated cubes would have 12 faces = 24 triangles.
+  // With internal face between them culled, exactly 10 faces = 20 triangles (60 vertex positions)
+  assert.equal(twoResult.patchCount, 10);
+  assert.equal(twoResult.fillGeometry.getAttribute('position').count, 60);
+
+  // 2. 3x3x3 solid cube of 27 blocks (size 1)
+  const cubeBlocks = [];
+  for (let x = 0; x < 3; x++) {
+    for (let y = 0; y < 3; y++) {
+      for (let z = 0; z < 3; z++) {
+        cubeBlocks.push({
+          center: new THREE.Vector3(x + 0.5, y + 0.5, z + 0.5),
+          size: 1,
+          color: '#ffffff'
+        });
+      }
+    }
+  }
+  const cubeResult = buildUnifiedInventoryPreviewMesh(cubeBlocks);
+  assert.ok(cubeResult);
+  // 27 separate cubes would have 27 * 6 = 162 faces (324 triangles).
+  // With all internal faces culled, only outer 6 faces of 3x3 (54 surface quads = 108 triangles = 324 vertices).
+  assert.equal(cubeResult.patchCount, 54);
+  assert.equal(cubeResult.fillGeometry.getAttribute('position').count, 324);
+});
+

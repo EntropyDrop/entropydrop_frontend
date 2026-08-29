@@ -602,7 +602,7 @@ test('copySelectionSmart handles both entity and world block selection with unif
   assert.equal(controller.inventories.blockset.items[0].blockCount, 1);
 });
 
-test('SpaceUiStore resolveDefaultInventoryCategory selects blockset for hammer, entity for wrench, and colorset for others', () => {
+test('SpaceUiStore resolveDefaultInventoryCategory selects blockset for shovel/spoon/selector/hammer, colorset for brush, and entity for wrench', () => {
   const controller = makeController();
   spaceUiStore.setController(controller);
 
@@ -610,25 +610,29 @@ test('SpaceUiStore resolveDefaultInventoryCategory selects blockset for hammer, 
   controller.activeTool = SpecialTool.HAMMER;
   assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'blockset');
 
-  // Wrench tool -> defaults to entity
-  controller.activeTool = SpecialTool.WRENCH;
-  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'entity');
+  // Shovel tool -> defaults to blockset
+  controller.activeTool = SpecialTool.SHOVEL;
+  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'blockset');
+
+  // Spoon tool -> defaults to blockset
+  controller.activeTool = SpecialTool.SPOON;
+  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'blockset');
+
+  // Selector tool -> defaults to blockset
+  controller.activeTool = SpecialTool.SELECTOR;
+  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'blockset');
 
   // Brush tool -> defaults to colorset
   controller.activeTool = SpecialTool.BRUSH;
   assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'colorset');
 
-  // Shovel tool -> defaults to colorset
-  controller.activeTool = SpecialTool.SHOVEL;
+  // Pipette tool -> defaults to colorset
+  controller.activeTool = SpecialTool.PIPETTE;
   assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'colorset');
 
-  // Spoon tool -> defaults to colorset
-  controller.activeTool = SpecialTool.SPOON;
-  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'colorset');
-
-  // Selector tool -> defaults to colorset
-  controller.activeTool = SpecialTool.SELECTOR;
-  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'colorset');
+  // Wrench tool -> defaults to entity
+  controller.activeTool = SpecialTool.WRENCH;
+  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'entity');
 });
 
 test('SpaceUiStore keeps bulk progress visible through server sync completion', () => {

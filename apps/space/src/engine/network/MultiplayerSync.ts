@@ -1,5 +1,8 @@
 import { decode, encode } from '@msgpack/msgpack';
-import { encodePlayerPosition } from '../../bootstrap/SpaceBootstrap.ts';
+import {
+  encodePlayerPosition,
+  terrainStreamAreaForPosition,
+} from '../../bootstrap/SpaceBootstrap.ts';
 
 export interface RemotePlayerInfo {
   user_id: string;
@@ -159,8 +162,14 @@ export class MultiplayerSync {
         since_terrain_revision: this.sinceTerrainRevision,
         include_players: includePlayers
       };
+      const pose = this.getPlayerPosition?.();
+      if (pose && Number.isFinite(pose.x) && Number.isFinite(pose.y) && Number.isFinite(pose.z)) {
+        const area = terrainStreamAreaForPosition(pose.x, pose.z);
+        body.center_chunk_x = area.centerChunkX;
+        body.center_chunk_z = area.centerChunkZ;
+        body.terrain_radius_chunks = area.radiusChunks;
+      }
       if (includePlayers) {
-        const pose = this.getPlayerPosition?.();
         if (pose && Number.isFinite(pose.x) && Number.isFinite(pose.y) && Number.isFinite(pose.z)) {
           Object.assign(body, encodePlayerPosition(pose, pose.yaw || 0, pose.pitch || 0));
         }

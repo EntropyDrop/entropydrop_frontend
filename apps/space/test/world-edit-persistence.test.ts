@@ -121,8 +121,44 @@ test('remote terrain mutations are split into stable batches of at most 256 oper
 
   assert.deepEqual(sent.map(batch => batch.mutations.length), [256, 1]);
   assert.equal(new Set(sent.map(batch => batch.batchId)).size, 2);
-  const cached = JSON.parse(storage.getItem(worldEditStorageKey('remote-batch-world'))!);
-  assert.deepEqual(cached.pendingBatches, []);
+  assert.equal(
+    storage.getItem(worldEditStorageKey('remote-batch-world')),
+    null,
+    'an acknowledged remote overlay must not remain duplicated in browser storage'
+  );
+});
+
+test('remote persistence stores only the durable outbox, not acknowledged world snapshots', async () => {
+  const storage = new MemoryStorage();
+  let releaseSend: (() => void) | null = null;
+  const persistence = new WorldEditPersistence({
+    worldId: 'outbox-only-world',
+    storage,
+    saveDelayMs: 0,
+    remote: {
+      chunks: [{
+        chunk_x: 0,
+        chunk_z: 0,
+        revision: 1,
+        standard: [[1, 80, 1, BlockTypes.COLOR_BLOCK, 0xabcdef]],
+        micro: [],
+      }],
+      async sendBatch() {
+        await new Promise<void>(resolve => { releaseSend = resolve; });
+      }
+    }
+  });
+
+  persistence.recordStandard(2, 80, 1, BlockTypes.COLOR_BLOCK, 0x123456);
+  await waitFor(() => storage.getItem(worldEditStorageKey('outbox-only-world')) !== null);
+  const cached = JSON.parse(storage.getItem(worldEditStorageKey('outbox-only-world'))!);
+
+  assert.equal(cached.standard, undefined);
+  assert.equal(cached.micro, undefined);
+  assert.equal(cached.pendingBatches.length, 1);
+  assert.equal(cached.pendingBatches[0].dedupeEpoch, 1);
+  assert.equal(typeof cached.pendingBatches[0].createdAtMs, 'number');
+  releaseSend?.();
 });
 
 test('successful remote batches are paced without allowing concurrent sends', async () => {

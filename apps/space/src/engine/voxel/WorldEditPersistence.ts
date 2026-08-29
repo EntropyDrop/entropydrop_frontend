@@ -41,7 +41,12 @@ export interface TerrainEditChunk {
 
 export interface WorldEditRemote {
   chunks: TerrainEditChunk[];
-  sendBatch(batchId: string, mutations: TerrainMutation[]): Promise<unknown>;
+  loadArea?(centerChunkX: number, centerChunkZ: number, radiusChunks: number): Promise<TerrainEditChunk[]>;
+  sendBatch(
+    batchId: string,
+    mutations: TerrainMutation[],
+    metadata?: { dedupeEpoch: number; createdAtMs: number | null }
+  ): Promise<unknown>;
 }
 
 export interface WorldEditSyncStatus {
@@ -62,6 +67,7 @@ export interface WorldEditPersistenceOptions {
   remoteBatchDelayMs?: number;
   remote?: WorldEditRemote | null;
   onSyncStatus?: (status: WorldEditSyncStatus) => void;
+  onResyncRequired?: () => void;
 }
 
 export interface PersistedStandardEdit {
@@ -83,6 +89,8 @@ export interface PersistedMicroEdit {
 interface PersistedMutationBatch {
   batchId: string;
   mutations: TerrainMutation[];
+  dedupeEpoch: number;
+  createdAtMs: number | null;
 }
 
 function standardKey(x: number, y: number, z: number) {
@@ -144,6 +152,7 @@ export class WorldEditPersistence {
   private readonly remoteBatchDelayMs: number;
   private readonly remote: WorldEditRemote | null;
   private readonly onSyncStatus: ((status: WorldEditSyncStatus) => void) | null;
+  private readonly onResyncRequired: (() => void) | null;
   private readonly standardEdits = new Map<string, PersistedStandardEdit>();
   private readonly standardEditsByChunk = new Map<string, Map<string, PersistedStandardEdit>>();
   private readonly microEdits = new Map<string, PersistedMicroEdit>();
@@ -169,6 +178,7 @@ export class WorldEditPersistence {
     this.storage = options.storage === undefined ? resolveDefaultStorage() : options.storage;
     this.remote = options.remote ?? null;
     this.onSyncStatus = options.onSyncStatus ?? null;
+    this.onResyncRequired = options.onResyncRequired ?? null;
     const configuredSaveDelay = Number(options.saveDelayMs);
     this.saveDelayMs = Number.isFinite(configuredSaveDelay)
       ? Math.max(0, configuredSaveDelay)
@@ -319,24 +329,29 @@ export class WorldEditPersistence {
     if (!this.dirty || !this.storage || !this.worldId) return false;
 
     try {
-      if (
-        this.standardEdits.size === 0
-        && this.microEdits.size === 0
-        && this.pendingBatches.length === 0
-      ) {
+      // The server is authoritative in remote mode. Persist only the durable
+      // outbox: acknowledged world snapshots are fetched by AOI and must not be
+      // copied into every player's IndexedDB or synchronously JSON-stringified
+      // after every local edit.
+      const hasLocalOverlay = !this.remote && (
+        this.standardEdits.size > 0 || this.microEdits.size > 0
+      );
+      if (!hasLocalOverlay && this.pendingBatches.length === 0) {
         this.storage.removeItem(this.storageKey);
       } else {
         const payload = {
           version: STORAGE_SCHEMA_VERSION,
           worldId: this.worldId,
-          standard: [...this.standardEdits.values()].map(edit => (
-            [edit.x, edit.y, edit.z, edit.block, edit.color]
-          )),
-          micro: [...this.microEdits.values()].map(edit => (
-            edit.part
-              ? [edit.mx, edit.my, edit.mz, edit.color, edit.part]
-              : [edit.mx, edit.my, edit.mz, edit.color]
-          )),
+          ...(!this.remote ? {
+            standard: [...this.standardEdits.values()].map(edit => (
+              [edit.x, edit.y, edit.z, edit.block, edit.color]
+            )),
+            micro: [...this.microEdits.values()].map(edit => (
+              edit.part
+                ? [edit.mx, edit.my, edit.mz, edit.color, edit.part]
+                : [edit.mx, edit.my, edit.mz, edit.color]
+            )),
+          } : {}),
           pendingBatches: this.pendingBatches,
           savedAt: Date.now(),
         };
@@ -422,7 +437,12 @@ export class WorldEditPersistence {
         || batch.mutations.length >= MAX_MUTATIONS_PER_BATCH
         || this.sealedBatchIds.has(batch.batchId)
       ) {
-        batch = { batchId: createBatchId(), mutations: [] };
+        batch = {
+          batchId: createBatchId(),
+          mutations: [],
+          dedupeEpoch: 1,
+          createdAtMs: Date.now(),
+        };
         this.pendingBatches.push(batch);
       }
       batch.mutations.push(mutation);
@@ -477,7 +497,10 @@ export class WorldEditPersistence {
       return;
     }
     try {
-      await this.remote.sendBatch(batch.batchId, batch.mutations);
+      await this.remote.sendBatch(batch.batchId, batch.mutations, {
+        dedupeEpoch: batch.dedupeEpoch,
+        createdAtMs: batch.createdAtMs,
+      });
       const index = this.pendingBatches.findIndex(item => item.batchId === batch.batchId);
       if (index >= 0) this.pendingBatches.splice(index, 1);
       this.sealedBatchIds.delete(batch.batchId);
@@ -493,6 +516,19 @@ export class WorldEditPersistence {
       this.notifySyncStatus();
     } catch (error) {
       this.sendingBatchId = null;
+      if ((error as any)?.permanent === true) {
+        const index = this.pendingBatches.findIndex(item => item.batchId === batch.batchId);
+        if (index >= 0) this.pendingBatches.splice(index, 1);
+        this.sealedBatchIds.delete(batch.batchId);
+        this.remoteFailureCount = 0;
+        this.currentRetryDelayMs = 0;
+        this.dirty = true;
+        this.flush();
+        this.refreshBackpressure();
+        this.notifySyncStatus();
+        this.onResyncRequired?.();
+        return;
+      }
       console.warn('Space terrain batch remains queued for retry.', error);
       this.remoteFailureCount++;
       const delay = this.resolveRetryDelay(error);
@@ -640,7 +676,16 @@ export class WorldEditPersistence {
         .map((mutation: any) => this.sanitizeMutation(mutation))
         .filter(Boolean) as TerrainMutation[];
       if (mutations.length > 0) {
-        this.pendingBatches.push({ batchId: item.batchId, mutations });
+        const hasBoundedDedupeMetadata = item.dedupeEpoch === 1
+          && Number.isFinite(Number(item.createdAtMs));
+        this.pendingBatches.push({
+          batchId: item.batchId,
+          mutations,
+          // Old V2 outboxes may already have reached the server and lost their
+          // ACK. Keep them in epoch 0 so the server retains their receipts.
+          dedupeEpoch: hasBoundedDedupeMetadata ? 1 : 0,
+          createdAtMs: hasBoundedDedupeMetadata ? Math.floor(Number(item.createdAtMs)) : null,
+        });
         this.sealedBatchIds.add(item.batchId);
       }
     }
@@ -757,6 +802,8 @@ export class WorldEditPersistence {
       this.pendingBatches.push({
         batchId: createBatchId(),
         mutations: mutations.slice(start, start + MAX_MUTATIONS_PER_BATCH),
+        dedupeEpoch: 1,
+        createdAtMs: Date.now(),
       });
       this.sealedBatchIds.add(this.pendingBatches[this.pendingBatches.length - 1].batchId);
     }

@@ -356,13 +356,14 @@ export class SpaceUiStore {
   resolveDefaultInventoryCategory(): 'blockset' | 'entity' | 'colorset' {
     const activeTool = this.snapshot.controller?.activeTool
       || this.snapshot.hotbarSlots[this.snapshot.selectedHotbarIndex]?.value;
-    if (activeTool === SpecialTool.HAMMER) {
-      return 'blockset';
+    if (activeTool === SpecialTool.BRUSH || activeTool === SpecialTool.PIPETTE) {
+      return 'colorset';
     }
     if (activeTool === SpecialTool.WRENCH) {
       return 'entity';
     }
-    return 'colorset';
+    // Shovel, Spoon, Selector, Hammer, and default tools map to block set
+    return 'blockset';
   }
 
   private toggleModal(modal: Exclude<SpaceModal, null>, forceState: boolean | null = null): void {

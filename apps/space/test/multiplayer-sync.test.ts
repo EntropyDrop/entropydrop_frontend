@@ -220,6 +220,9 @@ test('MultiplayerSync polls heartbeat and dispatches player and terrain updates'
     assert.equal(capturedBody.y_cm, 6400);
     assert.equal(capturedBody.z_cm, 7500);
     assert.equal(capturedBody.yaw_q15, Math.round((0.5 / Math.PI) * 32767));
+    assert.equal(capturedBody.center_chunk_x, 4);
+    assert.equal(capturedBody.center_chunk_z, 4);
+    assert.equal(capturedBody.terrain_radius_chunks, 32);
     assert.deepEqual(receivedPlayers, mockPlayers);
     assert.deepEqual(receivedChunks, mockChunks);
   } finally {

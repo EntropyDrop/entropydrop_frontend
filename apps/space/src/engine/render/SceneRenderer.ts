@@ -261,6 +261,275 @@ export function getInventoryPreviewBlocks(slot) {
   });
 }
 
+/**
+ * Builds a single unified boundary mesh and wireframe for voxel placement preview,
+ * culling all internal adjoining faces between voxels so the ghost renders as a clean solid
+ * without multi-box transparent overdraw or internal line clutter.
+ */
+export function buildUnifiedInventoryPreviewMesh(entries) {
+  if (!entries || entries.length === 0) return null;
+
+  let minSize = Infinity;
+  let allSize1 = true;
+  for (const entry of entries) {
+    const s = Number(entry.size) || 1;
+    minSize = Math.min(minSize, s);
+    if (Math.abs(s - 1) > 1e-4) allSize1 = false;
+  }
+
+  // Quantization step in milli-units (1.0 block -> 1000, 0.2 microblock -> 200)
+  const step = allSize1 ? 1000 : (minSize < 0.9 ? 200 : 1000);
+  const toCoord = (val) => Math.round(val * 1000);
+
+  // Map of patchKey -> { pos?: Patch, neg?: Patch }
+  // Back-to-back opposing faces cancel each other out (internal face culling).
+  const patchMap = new Map();
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const size = Number(entry.size) || 1;
+    const color = entry.color ?? 0xf2a93b;
+    const cx = entry.center.x;
+    const cy = entry.center.y;
+    const cz = entry.center.z;
+
+    const qx0 = toCoord(cx - size / 2);
+    const qy0 = toCoord(cy - size / 2);
+    const qz0 = toCoord(cz - size / 2);
+    const qx1 = toCoord(cx + size / 2);
+    const qy1 = toCoord(cy + size / 2);
+    const qz1 = toCoord(cz + size / 2);
+
+    // 1. +X Face (Plane X = qx1, Normal +X, Dir +1)
+    for (let u = qy0; u < qy1; u += step) {
+      for (let v = qz0; v < qz1; v += step) {
+        const u1 = Math.min(u + step, qy1);
+        const v1 = Math.min(v + step, qz1);
+        const key = `X:${qx1}:${u}:${u1}:${v}:${v1}`;
+        const existing = patchMap.get(key);
+        if (existing?.neg) {
+          patchMap.delete(key);
+        } else {
+          patchMap.set(key, {
+            pos: {
+              v0: [qx1 / 1000, u / 1000, v1 / 1000],
+              v1: [qx1 / 1000, u / 1000, v / 1000],
+              v2: [qx1 / 1000, u1 / 1000, v / 1000],
+              v3: [qx1 / 1000, u1 / 1000, v1 / 1000],
+              normal: [1, 0, 0],
+              color
+            }
+          });
+        }
+      }
+    }
+
+    // 2. -X Face (Plane X = qx0, Normal -X, Dir -1)
+    for (let u = qy0; u < qy1; u += step) {
+      for (let v = qz0; v < qz1; v += step) {
+        const u1 = Math.min(u + step, qy1);
+        const v1 = Math.min(v + step, qz1);
+        const key = `X:${qx0}:${u}:${u1}:${v}:${v1}`;
+        const existing = patchMap.get(key);
+        if (existing?.pos) {
+          patchMap.delete(key);
+        } else {
+          patchMap.set(key, {
+            neg: {
+              v0: [qx0 / 1000, u / 1000, v / 1000],
+              v1: [qx0 / 1000, u / 1000, v1 / 1000],
+              v2: [qx0 / 1000, u1 / 1000, v1 / 1000],
+              v3: [qx0 / 1000, u1 / 1000, v / 1000],
+              normal: [-1, 0, 0],
+              color
+            }
+          });
+        }
+      }
+    }
+
+    // 3. +Y Face (Plane Y = qy1, Normal +Y, Dir +1)
+    for (let u = qx0; u < qx1; u += step) {
+      for (let v = qz0; v < qz1; v += step) {
+        const u1 = Math.min(u + step, qx1);
+        const v1 = Math.min(v + step, qz1);
+        const key = `Y:${qy1}:${u}:${u1}:${v}:${v1}`;
+        const existing = patchMap.get(key);
+        if (existing?.neg) {
+          patchMap.delete(key);
+        } else {
+          patchMap.set(key, {
+            pos: {
+              v0: [u / 1000, qy1 / 1000, v1 / 1000],
+              v1: [u1 / 1000, qy1 / 1000, v1 / 1000],
+              v2: [u1 / 1000, qy1 / 1000, v / 1000],
+              v3: [u / 1000, qy1 / 1000, v / 1000],
+              normal: [0, 1, 0],
+              color
+            }
+          });
+        }
+      }
+    }
+
+    // 4. -Y Face (Plane Y = qy0, Normal -Y, Dir -1)
+    for (let u = qx0; u < qx1; u += step) {
+      for (let v = qz0; v < qz1; v += step) {
+        const u1 = Math.min(u + step, qx1);
+        const v1 = Math.min(v + step, qz1);
+        const key = `Y:${qy0}:${u}:${u1}:${v}:${v1}`;
+        const existing = patchMap.get(key);
+        if (existing?.pos) {
+          patchMap.delete(key);
+        } else {
+          patchMap.set(key, {
+            neg: {
+              v0: [u / 1000, qy0 / 1000, v / 1000],
+              v1: [u1 / 1000, qy0 / 1000, v / 1000],
+              v2: [u1 / 1000, qy0 / 1000, v1 / 1000],
+              v3: [u / 1000, qy0 / 1000, v1 / 1000],
+              normal: [0, -1, 0],
+              color
+            }
+          });
+        }
+      }
+    }
+
+    // 5. +Z Face (Plane Z = qz1, Normal +Z, Dir +1)
+    for (let u = qx0; u < qx1; u += step) {
+      for (let v = qy0; v < qy1; v += step) {
+        const u1 = Math.min(u + step, qx1);
+        const v1 = Math.min(v + step, qy1);
+        const key = `Z:${qz1}:${u}:${u1}:${v}:${v1}`;
+        const existing = patchMap.get(key);
+        if (existing?.neg) {
+          patchMap.delete(key);
+        } else {
+          patchMap.set(key, {
+            pos: {
+              v0: [u / 1000, v / 1000, qz1 / 1000],
+              v1: [u1 / 1000, v / 1000, qz1 / 1000],
+              v2: [u1 / 1000, v1 / 1000, qz1 / 1000],
+              v3: [u / 1000, v1 / 1000, qz1 / 1000],
+              normal: [0, 0, 1],
+              color
+            }
+          });
+        }
+      }
+    }
+
+    // 6. -Z Face (Plane Z = qz0, Normal -Z, Dir -1)
+    for (let u = qx0; u < qx1; u += step) {
+      for (let v = qy0; v < qy1; v += step) {
+        const u1 = Math.min(u + step, qx1);
+        const v1 = Math.min(v + step, qy1);
+        const key = `Z:${qz0}:${u}:${u1}:${v}:${v1}`;
+        const existing = patchMap.get(key);
+        if (existing?.pos) {
+          patchMap.delete(key);
+        } else {
+          patchMap.set(key, {
+            neg: {
+              v0: [u1 / 1000, v / 1000, qz0 / 1000],
+              v1: [u / 1000, v / 1000, qz0 / 1000],
+              v2: [u / 1000, v1 / 1000, qz0 / 1000],
+              v3: [u1 / 1000, v1 / 1000, qz0 / 1000],
+              normal: [0, 0, -1],
+              color
+            }
+          });
+        }
+      }
+    }
+  }
+
+  const patchCount = patchMap.size;
+  if (patchCount === 0) return null;
+
+  const fillPositions = new Float32Array(patchCount * 18);
+  const fillNormals = new Float32Array(patchCount * 18);
+  const fillColors = new Float32Array(patchCount * 18);
+
+  const edgePositions: number[] = [];
+  const edgeSet = new Set<string>();
+  const tempColor = new THREE.Color();
+
+  let vertOffset = 0;
+  for (const item of patchMap.values()) {
+    const patch = item.pos || item.neg;
+    if (!patch) continue;
+
+    tempColor.set(patch.color ?? 0xf2a93b);
+    const r = tempColor.r;
+    const g = tempColor.g;
+    const b = tempColor.b;
+    const [nx, ny, nz] = patch.normal;
+    const { v0, v1, v2, v3 } = patch;
+
+    // Triangle 1: v0, v1, v2
+    fillPositions[vertOffset] = v0[0];
+    fillPositions[vertOffset + 1] = v0[1];
+    fillPositions[vertOffset + 2] = v0[2];
+    fillPositions[vertOffset + 3] = v1[0];
+    fillPositions[vertOffset + 4] = v1[1];
+    fillPositions[vertOffset + 5] = v1[2];
+    fillPositions[vertOffset + 6] = v2[0];
+    fillPositions[vertOffset + 7] = v2[1];
+    fillPositions[vertOffset + 8] = v2[2];
+
+    // Triangle 2: v0, v2, v3
+    fillPositions[vertOffset + 9] = v0[0];
+    fillPositions[vertOffset + 10] = v0[1];
+    fillPositions[vertOffset + 11] = v0[2];
+    fillPositions[vertOffset + 12] = v2[0];
+    fillPositions[vertOffset + 13] = v2[1];
+    fillPositions[vertOffset + 14] = v2[2];
+    fillPositions[vertOffset + 15] = v3[0];
+    fillPositions[vertOffset + 16] = v3[1];
+    fillPositions[vertOffset + 17] = v3[2];
+
+    for (let k = 0; k < 6; k++) {
+      const idx = vertOffset + k * 3;
+      fillNormals[idx] = nx;
+      fillNormals[idx + 1] = ny;
+      fillNormals[idx + 2] = nz;
+      fillColors[idx] = r;
+      fillColors[idx + 1] = g;
+      fillColors[idx + 2] = b;
+    }
+    vertOffset += 18;
+
+    // Outer quad boundary edges
+    const edges = [
+      [v0, v1],
+      [v1, v2],
+      [v2, v3],
+      [v3, v0]
+    ];
+    for (const [p1, p2] of edges) {
+      const k1 = `${Math.round(p1[0] * 1000)},${Math.round(p1[1] * 1000)},${Math.round(p1[2] * 1000)}`;
+      const k2 = `${Math.round(p2[0] * 1000)},${Math.round(p2[1] * 1000)},${Math.round(p2[2] * 1000)}`;
+      const edgeKey = k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+      if (!edgeSet.has(edgeKey)) {
+        edgeSet.add(edgeKey);
+        edgePositions.push(p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]);
+      }
+    }
+  }
+
+  const fillGeometry = new THREE.BufferGeometry();
+  fillGeometry.setAttribute('position', new THREE.BufferAttribute(fillPositions, 3));
+  fillGeometry.setAttribute('normal', new THREE.BufferAttribute(fillNormals, 3));
+  fillGeometry.setAttribute('color', new THREE.BufferAttribute(fillColors, 3));
+
+  const wireGeometry = new THREE.BufferGeometry();
+  wireGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
+
+  return { fillGeometry, wireGeometry, patchCount };
+}
+
 export function calculatePreviewDragForce(
   cameraQuaternion,
   deltaX,
@@ -361,7 +630,7 @@ export class SceneRenderer {
   declare remotePlayersGroup: THREE.Group;
   declare remotePlayers: Map<string, any>;
   declare inventoryPlacementGroup: THREE.Group;
-  declare inventoryPlacementFill: THREE.InstancedMesh | null;
+  declare inventoryPlacementFill: THREE.Mesh | null;
   declare inventoryPlacementWire: THREE.LineSegments | null;
   declare inventoryPlacementSlot: any;
   declare selectionGroup: THREE.Group;
@@ -713,51 +982,21 @@ export class SceneRenderer {
     const entries = getInventoryPreviewBlocks(slot);
     if (entries.length === 0) return false;
 
-    // The ghost is a regular object in the scene: depth-tested and depth
-    // writing, so only the faces the camera can actually see are drawn —
-    // no X-ray through the voxel shell or through the world.
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const meshData = buildUnifiedInventoryPreviewMesh(entries);
+    if (!meshData) return false;
+
+    // The unified ghost mesh renders only external visible faces and boundary edges,
+    // avoiding internal multi-box overlapping transparency artifacts and improving performance.
     const fillMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
+      vertexColors: true,
       transparent: true,
       opacity: 0.38,
       depthTest: true,
-      depthWrite: true
+      depthWrite: true,
+      side: THREE.FrontSide
     });
-    const fill = new THREE.InstancedMesh(geometry, fillMaterial, entries.length);
-    const matrix = new THREE.Matrix4();
-    const scale = new THREE.Vector3();
-    const identity = new THREE.Quaternion();
-    for (let index = 0; index < entries.length; index++) {
-      const entry = entries[index];
-      scale.setScalar(entry.size);
-      matrix.compose(entry.center, identity, scale);
-      fill.setMatrixAt(index, matrix);
-      fill.setColorAt(index, new THREE.Color(entry.color ?? 0xf2a93b));
-    }
-    fill.instanceMatrix.needsUpdate = true;
-    if (fill.instanceColor) fill.instanceColor.needsUpdate = true;
+    const fill = new THREE.Mesh(meshData.fillGeometry, fillMaterial);
 
-    // Quad outlines only: EdgesGeometry keeps each box's 12 clean face edges
-    // and drops the triangle diagonals a wireframe-mesh pass would add.
-    // The 12 edges are instanced per box with per-instance center/scale.
-    const edgeGeometry = new THREE.EdgesGeometry(geometry);
-    const wireGeometry = new THREE.InstancedBufferGeometry();
-    // Clone the attribute so disposing the template geometry below cannot
-    // release the GL buffer the instanced outline still draws from.
-    wireGeometry.setAttribute('position', edgeGeometry.getAttribute('position').clone());
-    const centers = new Float32Array(entries.length * 3);
-    const sizes = new Float32Array(entries.length);
-    for (let index = 0; index < entries.length; index++) {
-      centers[index * 3] = entries[index].center.x;
-      centers[index * 3 + 1] = entries[index].center.y;
-      centers[index * 3 + 2] = entries[index].center.z;
-      sizes[index] = entries[index].size;
-    }
-    wireGeometry.setAttribute('iCenter', new THREE.InstancedBufferAttribute(centers, 3));
-    wireGeometry.setAttribute('iScale', new THREE.InstancedBufferAttribute(sizes, 1));
-    wireGeometry.instanceCount = entries.length;
-    edgeGeometry.dispose();
     const wireMaterial = new THREE.LineBasicMaterial({
       color: 0x74d9ff,
       transparent: true,
@@ -765,18 +1004,7 @@ export class SceneRenderer {
       depthTest: true,
       depthWrite: false
     });
-    wireMaterial.onBeforeCompile = (shader) => {
-      shader.vertexShader = [
-        'attribute vec3 iCenter;',
-        'attribute float iScale;',
-        shader.vertexShader.replace(
-          '#include <begin_vertex>',
-          'vec3 transformed = vec3( position * iScale ) + iCenter;'
-        )
-      ].join('\n');
-    };
-    wireMaterial.customProgramCacheKey = () => 'hammer-ghost-quad-wire-v1';
-    const wire = new THREE.LineSegments(wireGeometry, wireMaterial);
+    const wire = new THREE.LineSegments(meshData.wireGeometry, wireMaterial);
 
     fill.renderOrder = 38;
     wire.renderOrder = 39;
