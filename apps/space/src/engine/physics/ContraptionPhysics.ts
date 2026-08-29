@@ -9,6 +9,10 @@ const MIN_PHYSICS_SUBSTEPS = 2;
 const MAX_PHYSICS_SUBSTEPS = 16;
 const MAX_SUBSTEP_SURFACE_TRAVEL = 0.15;
 const ENTITY_CONTACT_ITERATIONS = 10;
+const EXACT_TERRAIN_CONTACT_SLOP = 0.005;
+// A support manifold narrower than this is a point or line balance (unstable,
+// must topple); any real face rest, down to a 0.2m micro voxel, spans more.
+const SUPPORT_WIDTH_NARROW = 0.05;
 const TERRAIN_FACE_NORMALS = [
   new THREE.Vector3(-1, 0, 0),
   new THREE.Vector3(1, 0, 0),
@@ -512,6 +516,200 @@ export class ContraptionPhysics {
     };
   }
 
+  /**
+   * Exact oriented collision boxes for the cells carried by one rigid body.
+   * Point probes are useful for contact manifolds and sweeps, but they cannot
+   * detect the dual case where a terrain edge pierces the interior of a body
+   * face. Keeping the OBBs here lets the terrain solver cover that topology
+   * with a separating-axis test.
+   */
+  getBodyCollisionWorldOBBs(contraption, body) {
+    if (!contraption || !body) return [];
+    const attached = contraption.getAttachedNodeIds?.(body.id) || new Set([body.id]);
+    const boxes = [];
+    for (const cell of contraption.collisionEntries || []) {
+      if (!attached.has(cell.entityId)) continue;
+      const node = contraption.getEntityNode?.(cell.entityId) || contraption.getEntityNode?.('root');
+      const quaternion = node?.group?.getWorldQuaternion?.(new THREE.Quaternion())
+        || body.quaternion.clone();
+      const axes = [
+        new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion).normalize(),
+        new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize(),
+        new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).normalize()
+      ];
+      const size = cell.span * 0.2;
+      const halfExtents = [size / 2, size / 2, size / 2];
+      const center = contraption.entityLocalToWorld(cell.entityId, new THREE.Vector3(
+        (cell.x + cell.span / 2) * 0.2,
+        (cell.y + cell.span / 2) * 0.2,
+        (cell.z + cell.span / 2) * 0.2
+      ));
+      const radiusX = halfExtents.reduce((sum, half, index) => sum + half * Math.abs(axes[index].x), 0);
+      const radiusY = halfExtents.reduce((sum, half, index) => sum + half * Math.abs(axes[index].y), 0);
+      const radiusZ = halfExtents.reduce((sum, half, index) => sum + half * Math.abs(axes[index].z), 0);
+      boxes.push({
+        center,
+        axes,
+        halfExtents,
+        minX: center.x - radiusX,
+        maxX: center.x + radiusX,
+        minY: center.y - radiusY,
+        maxY: center.y + radiusY,
+        minZ: center.z - radiusZ,
+        maxZ: center.z + radiusZ,
+        cell,
+        body
+      });
+    }
+    return boxes;
+  }
+
+  orientedBoxAabbContact(obb, box) {
+    const terrainCenter = new THREE.Vector3(
+      (box.minX + box.maxX) / 2,
+      (box.minY + box.maxY) / 2,
+      (box.minZ + box.maxZ) / 2
+    );
+    const terrainHalf = new THREE.Vector3(
+      (box.maxX - box.minX) / 2,
+      (box.maxY - box.minY) / 2,
+      (box.maxZ - box.minZ) / 2
+    );
+    const worldAxes = [
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(0, 0, 1)
+    ];
+    const candidateAxes = [...obb.axes, ...worldAxes];
+    for (const bodyAxis of obb.axes) {
+      for (const terrainAxis of worldAxes) {
+        const cross = new THREE.Vector3().crossVectors(bodyAxis, terrainAxis);
+        if (cross.lengthSq() > 1e-10) candidateAxes.push(cross);
+      }
+    }
+
+    const delta = obb.center.clone().sub(terrainCenter);
+    let penetration = Infinity;
+    let normal = null;
+    for (const rawAxis of candidateAxes) {
+      const axis = rawAxis.clone().normalize();
+      const bodyRadius = obb.halfExtents.reduce((sum, half, index) => (
+        sum + half * Math.abs(obb.axes[index].dot(axis))
+      ), 0);
+      const terrainRadius = terrainHalf.x * Math.abs(axis.x)
+        + terrainHalf.y * Math.abs(axis.y)
+        + terrainHalf.z * Math.abs(axis.z);
+      const signedDistance = delta.dot(axis);
+      const overlap = bodyRadius + terrainRadius - Math.abs(signedDistance);
+      if (overlap <= 1e-7) return null;
+      if (overlap < penetration) {
+        penetration = overlap;
+        normal = axis.multiplyScalar(signedDistance >= 0 ? 1 : -1);
+      }
+    }
+    if (!normal || !Number.isFinite(penetration)) return null;
+
+    // The terrain support feature is a face, edge, or vertex depending on the
+    // separating normal. Its center is a much better angular-impulse lever arm
+    // than an arbitrary OBB vertex, especially for face-edge contact.
+    const hitPosition = terrainCenter.clone();
+    for (const axis of ['x', 'y', 'z'] as const) {
+      if (Math.abs(normal[axis]) > 1e-6) {
+        hitPosition[axis] += terrainHalf[axis] * Math.sign(normal[axis]);
+      }
+    }
+    return { normal, penetration, hitPosition };
+  }
+
+  terrainBoxesOverlapping(obb) {
+    const boxes = [];
+    for (let x = Math.floor(obb.minX); x <= Math.floor(obb.maxX); x++) {
+      for (let y = Math.floor(obb.minY); y <= Math.floor(obb.maxY); y++) {
+        for (let z = Math.floor(obb.minZ); z <= Math.floor(obb.maxZ); z++) {
+          if (this.world.getBlock(x, y, z) === BlockTypes.AIR) continue;
+          boxes.push({ minX: x, maxX: x + 1, minY: y, maxY: y + 1, minZ: z, maxZ: z + 1 });
+        }
+      }
+    }
+
+    const bounds = {
+      minX: obb.minX,
+      minY: obb.minY,
+      minZ: obb.minZ,
+      maxX: obb.maxX,
+      maxY: obb.maxY,
+      maxZ: obb.maxZ
+    };
+    const queriedMicro = this.world.getMicroBlocksInAABB?.(bounds);
+    if (Array.isArray(queriedMicro)) {
+      for (const cell of queriedMicro) {
+        const size = Number(cell.size) || 0.2;
+        boxes.push({
+          minX: cell.x,
+          maxX: cell.x + size,
+          minY: cell.y,
+          maxY: cell.y + size,
+          minZ: cell.z,
+          maxZ: cell.z + size
+        });
+      }
+    } else if (typeof (this.world as any).getMicroBlock === 'function') {
+      for (let mx = Math.floor(obb.minX * 5); mx <= Math.floor(obb.maxX * 5); mx++) {
+        for (let my = Math.floor(obb.minY * 5); my <= Math.floor(obb.maxY * 5); my++) {
+          for (let mz = Math.floor(obb.minZ * 5); mz <= Math.floor(obb.maxZ * 5); mz++) {
+            const micro = (this.world as any).getMicroBlock(mx, my, mz);
+            if (micro === null || micro === undefined) continue;
+            boxes.push({
+              minX: mx / 5,
+              maxX: (mx + 1) / 5,
+              minY: my / 5,
+              maxY: (my + 1) / 5,
+              minZ: mz / 5,
+              maxZ: (mz + 1) / 5
+            });
+          }
+        }
+      }
+    }
+    return boxes;
+  }
+
+  exactTerrainContacts(contraption, body) {
+    const contacts = [];
+    for (const obb of this.getBodyCollisionWorldOBBs(contraption, body)) {
+      for (const terrainBox of this.terrainBoxesOverlapping(obb)) {
+        const contact = this.orientedBoxAabbContact(obb, terrainBox);
+        if (!contact) continue;
+        // A diagonal SAT normal selects a terrain edge or vertex. It is only a
+        // real feature of the voxel union when every incident face selected by
+        // that normal is exposed. Testing just beyond the diagonal corner is
+        // insufficient: on a tiled floor that point is in the air even though
+        // the horizontal face is an internal seam shared with its neighbour.
+        const terrainCenter = new THREE.Vector3(
+          (terrainBox.minX + terrainBox.maxX) / 2,
+          (terrainBox.minY + terrainBox.maxY) / 2,
+          (terrainBox.minZ + terrainBox.maxZ) / 2
+        );
+        let exposed = true;
+        for (const axis of ['x', 'y', 'z'] as const) {
+          if (Math.abs(contact.normal[axis]) <= 1e-6) continue;
+          const facePoint = terrainCenter.clone();
+          facePoint[axis] = contact.normal[axis] > 0
+            ? terrainBox[`max${axis.toUpperCase()}`]
+            : terrainBox[`min${axis.toUpperCase()}`];
+          facePoint[axis] += Math.sign(contact.normal[axis]) * 0.002;
+          if (this.terrainCellAtPoint(facePoint)) {
+            exposed = false;
+            break;
+          }
+        }
+        if (!exposed) continue;
+        contacts.push(contact);
+      }
+    }
+    return contacts;
+  }
+
   terrainContactAtPoint(point) {
     const cell = this.terrainCellAtPoint(point);
     if (!cell) return null;
@@ -523,7 +721,17 @@ export class ContraptionPhysics {
       point.z - cell.minZ,
       cell.maxZ - point.z
     ];
+    // Rotated sample points land on voxel boundary planes all the time (a
+    // 45-degree tilted block whose corner rides the seam between two floor
+    // voxels is the classic case). floor() then snaps the point to one cell
+    // where the shared face reports zero penetration. Those faces carry no
+    // separation depth, but they must not abort the search: the point can sit
+    // deep inside solid terrain while every face it touches is an interior
+    // seam, and its only real way out is a face further away. Faces with
+    // penetration > 0 but a solid cell on the far side are interior seams too.
     let remainingFaces = 0b111111;
+    let fallbackIndex = -1;
+    let fallbackPenetration = Infinity;
     while (remainingFaces) {
       let index = -1;
       let penetration = Infinity;
@@ -534,14 +742,30 @@ export class ContraptionPhysics {
           index = candidate;
         }
       }
-      if (index < 0 || !(penetration > 0)) return null;
-      remainingFaces &= ~(1 << index);
+      if (index < 0) break;
       const normal = TERRAIN_FACE_NORMALS[index];
       const outside = point.clone().addScaledVector(normal, penetration + 0.002);
       // Shared faces inside solid terrain are not collision surfaces. Looking
       // just outside the candidate face leaves only the actual exposed shell.
-      if (this.terrainCellAtPoint(outside)) continue;
+      if (this.terrainCellAtPoint(outside)) {
+        remainingFaces &= ~(1 << index);
+        if (penetration > 0 && penetration < fallbackPenetration) {
+          // Remember the shallowest seam in case every face is interior: a
+          // body buried deep inside thick terrain must still receive a push,
+          // otherwise it silently tunnels through the world.
+          fallbackIndex = index;
+          fallbackPenetration = penetration;
+        }
+        continue;
+      }
+      if (!(penetration > 0)) {
+        // Exactly on an exposed shell face: touching, not overlapping.
+        return null;
+      }
       return { normal, penetration };
+    }
+    if (fallbackIndex >= 0) {
+      return { normal: TERRAIN_FACE_NORMALS[fallbackIndex], penetration: fallbackPenetration };
     }
     return null;
   }
@@ -685,7 +909,44 @@ export class ContraptionPhysics {
     return { velocity, normals };
   }
 
-  solveTerrainContact(body, normal, hitPosition, penetration, contactCount, dt) {
+  /**
+   * Width of the narrowest principal axis of a support point set projected
+   * onto the contact plane. Points that span a single point or a line (corner
+   * or edge balance) have width ~0; any real face support is at least as wide
+   * as its cell.
+   */
+  supportWidth(points, normal) {
+    if (!points || points.length <= 2) return 0;
+    const tangent = new THREE.Vector3(1, 0, 0);
+    if (Math.abs(normal.x) > 0.9) tangent.set(0, 1, 0);
+    const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+    tangent.crossVectors(bitangent, normal).normalize();
+    let meanU = 0;
+    let meanV = 0;
+    for (const point of points) {
+      meanU += point.dot(tangent);
+      meanV += point.dot(bitangent);
+    }
+    meanU /= points.length;
+    meanV /= points.length;
+    let suu = 0;
+    let svv = 0;
+    let suv = 0;
+    for (const point of points) {
+      const du = point.dot(tangent) - meanU;
+      const dv = point.dot(bitangent) - meanV;
+      suu += du * du;
+      svv += dv * dv;
+      suv += du * dv;
+    }
+    const trace = suu + svv;
+    const determinant = suu * svv - suv * suv;
+    const discriminant = Math.max(0, trace * trace / 4 - determinant);
+    const narrowEigenvalue = trace / 2 - Math.sqrt(discriminant);
+    return 2 * Math.sqrt(Math.max(0, narrowEigenvalue));
+  }
+
+  solveTerrainContact(body, normal, hitPosition, penetration, contactPoints, dt) {
     body.position.addScaledVector(normal, Math.max(0, penetration - 0.001));
     if (normal.y > 0.5) body.isOnGround = true;
 
@@ -730,10 +991,13 @@ export class ContraptionPhysics {
       }
     }
 
-    // Perfect voxels can balance forever on a sampled corner. Mimic real
-    // contact asymmetry only on narrow upward support manifolds; this adds no
-    // linear energy and never turns a wall collision into auto-levelling.
-    if (normal.y > 0.5 && contactCount <= 2) {
+    // Perfect voxels can balance forever on a sampled corner or edge. Mimic
+    // real contact asymmetry only on narrow upward support manifolds: a
+    // support whose points span a point or a line has width ~0 and is
+    // unstable, while any real face rest - including a 0.2m micro voxel face -
+    // spans a visible area. This adds no linear energy and never turns a wall
+    // collision into auto-levelling.
+    if (normal.y > 0.5 && this.supportWidth(contactPoints, normal) < SUPPORT_WIDTH_NARROW) {
       const bodyAxes = [
         new THREE.Vector3(1, 0, 0).applyQuaternion(body.quaternion),
         new THREE.Vector3(0, 1, 0).applyQuaternion(body.quaternion),
@@ -776,37 +1040,76 @@ export class ContraptionPhysics {
       ? body.quaternion.angleTo(previousPose.quaternion) * Math.max(0.5, contraption.boundingRadius || 0)
       : 0;
     const shouldSweep = translationDistance + rotationDistance >= TERRAIN_SWEEP_THRESHOLD;
-    const inverseCurrentQuaternion = shouldSweep ? body.quaternion.clone().invert() : null;
+    const inverseCurrentQuaternion = previousPose ? body.quaternion.clone().invert() : null;
+
+    const addContact = (resolvedContact, point) => {
+      const key = [resolvedContact.normal.x, resolvedContact.normal.y, resolvedContact.normal.z]
+        .map(value => value.toFixed(5))
+        .join(',');
+      const group = contacts.get(key) || {
+        normal: resolvedContact.normal,
+        penetration: 0,
+        hitPosition: new THREE.Vector3(),
+        points: [],
+        count: 0
+      };
+      group.penetration = Math.max(group.penetration, resolvedContact.penetration);
+      group.hitPosition.add(point);
+      group.points.push(point);
+      group.count++;
+      contacts.set(key, group);
+    };
 
     for (let index = 0; index < samplePoints.length; index++) {
       const pt = samplePoints[index];
-      const contact = this.terrainContactAtPoint(pt);
-      const previousPoint = shouldSweep
+      const previousPoint = previousPose
         ? pt.clone()
           .sub(body.position)
           .applyQuaternion(inverseCurrentQuaternion)
           .applyQuaternion(previousPose.quaternion)
           .add(previousPose.position)
         : null;
-      const sweptContact = previousPoint
+      const contact = this.terrainContactAtPoint(pt);
+      let sweptContact = shouldSweep && previousPoint
         ? this.sweepTerrainContact(previousPoint, pt)
         : null;
+      if (!sweptContact && contact && previousPoint) {
+        // Below the sweep threshold the substep displacement can still carry a
+        // rotated corner deep enough that its endpoint reports an exit face
+        // (a wall seam) instead of the face it entered through. The sweep from
+        // the previous position carries the actual entry face and is safe to
+        // attempt: it returns null when the start point is already embedded.
+        sweptContact = this.sweepTerrainContact(previousPoint, pt);
+      }
       // A deeply embedded endpoint may be closer to the far side of a voxel
       // and therefore report its exit face. The sweep carries the actual entry
       // face and must win whenever the point travelled far enough to need CCD.
       const resolvedContact = sweptContact || contact;
       if (!resolvedContact) continue;
-      const key = `${resolvedContact.normal.x},${resolvedContact.normal.y},${resolvedContact.normal.z}`;
-      const group = contacts.get(key) || {
-        normal: resolvedContact.normal,
-        penetration: 0,
-        hitPosition: new THREE.Vector3(),
-        count: 0
-      };
-      group.penetration = Math.max(group.penetration, resolvedContact.penetration);
-      group.hitPosition.add(sweptContact?.hitPosition || pt);
-      group.count++;
-      contacts.set(key, group);
+      addContact(resolvedContact, sweptContact?.hitPosition || pt);
+    }
+
+    // Sampling one body's surface cannot see the dual face-edge topology: a
+    // terrain edge can enter the interior of an OBB face while every sampled
+    // body point remains outside terrain. Exact SAT must augment even a
+    // non-empty sampled manifold, because a few shallow point contacts do not
+    // constrain a different edge that is already entering the face.
+    const sampledNormals = [...contacts.values()].map(group => group.normal);
+    for (const exactContact of this.exactTerrainContacts(contraption, body)) {
+      if (exactContact.penetration <= EXACT_TERRAIN_CONTACT_SLOP) continue;
+      const terrainFeatureDimensions = ['x', 'y', 'z'].filter(axis => (
+        Math.abs(exactContact.normal[axis]) > 1e-6
+      )).length;
+      // A sampled face normal already gives the higher-quality manifold for a
+      // normal terrain face. The exact supplement is needed alongside it only
+      // for a terrain edge/vertex, or when the sampled points constrain an
+      // unrelated direction (for example both Z faces while a top edge is
+      // entering the body along Y).
+      const constrainedBySamples = sampledNormals.some(normal => (
+        normal.dot(exactContact.normal) > 0.999
+      ));
+      if (constrainedBySamples && terrainFeatureDimensions < 2) continue;
+      addContact(exactContact, exactContact.hitPosition);
     }
 
     // Resolve independent exposed faces in one sub-step (for example floor +
@@ -820,7 +1123,7 @@ export class ContraptionPhysics {
         group.normal,
         group.hitPosition,
         group.penetration,
-        group.count,
+        group.points,
         dt
       );
     }

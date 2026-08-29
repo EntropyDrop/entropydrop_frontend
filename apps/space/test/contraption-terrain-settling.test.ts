@@ -34,6 +34,52 @@ function makeSingleBlockWorld() {
   };
 }
 
+function orientedUnitBlockPenetration(center, quaternion, box) {
+  const bodyAxes = [
+    new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion),
+    new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion),
+    new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion)
+  ];
+  const terrainAxes = [
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 1)
+  ];
+  const terrainCenter = new THREE.Vector3(
+    (box.minX + box.maxX) / 2,
+    (box.minY + box.maxY) / 2,
+    (box.minZ + box.maxZ) / 2
+  );
+  const terrainHalf = new THREE.Vector3(
+    (box.maxX - box.minX) / 2,
+    (box.maxY - box.minY) / 2,
+    (box.maxZ - box.minZ) / 2
+  );
+  const axes = [...bodyAxes, ...terrainAxes];
+  for (const bodyAxis of bodyAxes) {
+    for (const terrainAxis of terrainAxes) {
+      const cross = new THREE.Vector3().crossVectors(bodyAxis, terrainAxis);
+      if (cross.lengthSq() > 1e-10) axes.push(cross);
+    }
+  }
+
+  const delta = center.clone().sub(terrainCenter);
+  let penetration = Infinity;
+  for (const rawAxis of axes) {
+    const axis = rawAxis.clone().normalize();
+    const bodyRadius = bodyAxes.reduce((sum, bodyAxis) => (
+      sum + 0.5 * Math.abs(bodyAxis.dot(axis))
+    ), 0);
+    const terrainRadius = terrainHalf.x * Math.abs(axis.x)
+      + terrainHalf.y * Math.abs(axis.y)
+      + terrainHalf.z * Math.abs(axis.z);
+    const overlap = bodyRadius + terrainRadius - Math.abs(delta.dot(axis));
+    if (overlap <= 0) return 0;
+    penetration = Math.min(penetration, overlap);
+  }
+  return penetration;
+}
+
 test('a block dropped from height settles on one terrain block without embedding', () => {
   const contraption = new Contraption(
     0,
@@ -313,4 +359,132 @@ test('resting terrain contact remains stable across physics frames', () => {
     maxY = Math.max(maxY, contraption.position.y);
   }
   assert.ok(maxY - minY < 0.01, `resting pose should not jitter, range=${maxY - minY}`);
+});
+
+test('terrain contact at points exactly on voxel seams reports the exposed shell face', () => {
+  // A 45-degree tilted block rides the seam between two floor voxels: its
+  // sample points land exactly on the shared face plane where penetration is
+  // zero. The contact search used to abort there and report "no contact",
+  // letting the block tunnel straight through the floor surface.
+  const physics = new ContraptionPhysics(makeFloorWorld() as any);
+
+  const seamPoint = new THREE.Vector3(5, -0.4, 7);
+  const contact = physics.terrainContactAtPoint(seamPoint);
+  assert.ok(contact, 'a boundary point inside solid terrain must still produce a contact');
+  assert.ok(contact.normal.y > 0.5, `the contact must escape through the surface, normal=(${contact.normal.x},${contact.normal.y},${contact.normal.z})`);
+  assert.ok(Math.abs(contact.penetration - 0.4) < 0.01, `the contact must carry the real depth, penetration=${contact.penetration}`);
+});
+
+test('a tilted block falling onto a voxel seam must not wedge inside the terrain', () => {
+  // Regression for the classic "tilted block gets stuck in blocks" report:
+  // with its centre exactly on the seam (an integer coordinate) and corners
+  // rotated onto the boundary planes, every contact used to be reported as
+  // null, the block tunnelled half a unit into the floor and locked there.
+  // Origin + the 0.5 local centre offset puts the physics position exactly on
+  // the voxel seam x=10, so the rotated corners ride the boundary planes.
+  const contraption = new Contraption(
+    9,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(9.5, 6.0, 9.5),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC, restitution: 0.01 }
+  );
+  contraption.quaternion.setFromEuler(new THREE.Euler(0, 0, Math.PI / 4));
+
+  const physics = new ContraptionPhysics(makeFloorWorld() as any);
+  let deepestBottom = Infinity;
+  for (let frame = 0; frame < 600; frame++) {
+    physics.update(contraption, 1 / 60);
+    const bottom = Math.min(...contraption.getCollisionWorldAABBs().map(box => box.currentMinY));
+    deepestBottom = Math.min(deepestBottom, bottom);
+  }
+
+  assert.ok(deepestBottom > 0.9, `the block must never embed into the floor, deepest bottom=${deepestBottom.toFixed(3)}`);
+  assert.ok(Math.abs(contraption.position.y - 1.5) < 0.05, `the block should rest on the floor surface, y=${contraption.position.y.toFixed(3)}`);
+  const faceAlignment = Math.max(
+    Math.abs(new THREE.Vector3(1, 0, 0).applyQuaternion(contraption.quaternion).y),
+    Math.abs(new THREE.Vector3(0, 1, 0).applyQuaternion(contraption.quaternion).y),
+    Math.abs(new THREE.Vector3(0, 0, 1).applyQuaternion(contraption.quaternion).y)
+  );
+  assert.ok(faceAlignment > 0.995, `the block should settle on a face, not balance on the seam edge, alignment=${faceAlignment.toFixed(3)}`);
+});
+
+test('a yaw-rotated block wedged into a pillar corner is pushed back out', () => {
+  // Regression: point sampling cannot see a rotated box's bottom edge slicing
+  // a pillar voxel's top corner, so the block rested with part of its volume
+  // inside the pillar. Exact OBB-vs-AABB contact detects that overlap.
+  const pillarWorld = {
+    getBlock: (x, y, z) => (y <= 0 || (x === 1 && z === 1 && y <= 2))
+      ? BlockTypes.COLOR_BLOCK
+      : BlockTypes.AIR,
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false }),
+    microVoxels: { get: () => null }
+  };
+  const contraption = new Contraption(
+    10,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(2.258, 1.499, 1.801),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC, restitution: 0.01 }
+  );
+  contraption.quaternion.setFromEuler(new THREE.Euler(0, -0.415, 0));
+
+  const physics = new ContraptionPhysics(pillarWorld as any);
+  for (let frame = 0; frame < 600; frame++) physics.update(contraption, 1 / 60);
+
+  let inside = 0;
+  let total = 0;
+  for (const cell of contraption.collisionEntries) {
+    const span = cell.span * 0.2;
+    const x0 = cell.x * 0.2, y0 = cell.y * 0.2, z0 = cell.z * 0.2;
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        for (let k = 0; k < 4; k++) {
+          const p = contraption.entityLocalToWorld(cell.entityId, new THREE.Vector3(
+            x0 + (i + 0.5) * span / 4,
+            y0 + (j + 0.5) * span / 4,
+            z0 + (k + 0.5) * span / 4
+          ));
+          total++;
+          if (pillarWorld.getBlock(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) !== BlockTypes.AIR) inside++;
+        }
+      }
+    }
+  }
+  const embedded = inside / total;
+  assert.ok(embedded < 0.01, `the block must escape the pillar, embedded volume=${(embedded * 100).toFixed(1)}%`);
+  assert.ok(contraption.isOnGround, 'the escaped block should rest supported by the floor');
+});
+
+test('a terrain edge cannot pierce the face of a falling tilted block', () => {
+  // In the X/Y cross-section, the terrain block's top-right corner enters the
+  // interior of the falling block's lower-left edge. In 3D this is an entire
+  // terrain edge piercing an OBB face. None of the falling block's sampled
+  // vertices, edge midpoints, or face centers need be inside the terrain, so
+  // point-only collision detection allows roughly 0.2m of penetration.
+  const contraption = new Contraption(
+    11,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0.6, 4.5, 0),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC, restitution: 0.01 }
+  );
+  contraption.quaternion.setFromEuler(new THREE.Euler(0, 0, 0.25));
+
+  const physics = new ContraptionPhysics(makeSingleBlockWorld() as any);
+  const terrainBox = { minX: 0, maxX: 1, minY: 0, maxY: 1, minZ: 0, maxZ: 1 };
+  let maximumPenetration = 0;
+  for (let frame = 0; frame < 120; frame++) {
+    physics.update(contraption, 1 / 60);
+    maximumPenetration = Math.max(
+      maximumPenetration,
+      orientedUnitBlockPenetration(contraption.position, contraption.quaternion, terrainBox)
+    );
+  }
+
+  assert.ok(
+    maximumPenetration < 0.03,
+    `the terrain edge must not enter the falling block face, penetration=${maximumPenetration.toFixed(3)}`
+  );
 });

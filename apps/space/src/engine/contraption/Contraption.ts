@@ -3406,6 +3406,9 @@ export class Contraption {
       const sy = cell.span * MICRO_SIZE;
       const sz = cell.span * MICRO_SIZE;
       const x0 = cell.x * MICRO_SIZE, y0 = cell.y * MICRO_SIZE, z0 = cell.z * MICRO_SIZE;
+      // Point probes provide the swept contact manifold; exact OBB-vs-terrain
+      // SAT in ContraptionPhysics covers face-edge and edge-edge intersections
+      // that no finite set of surface samples can represent reliably.
       for (const dx of [low, high]) {
         for (const dy of [low, high]) {
           for (const dz of [low, high]) {
