@@ -13,7 +13,7 @@ import {
 } from '../src/engine/controls/PlayerController.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 import { World } from '../src/engine/voxel/World.ts';
-import { SpaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
+import { SpaceUiStore, spaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
 
 /**
  * Backpack: three categories of 9 items each (block sets, entities, color sets),
@@ -561,4 +561,71 @@ test('copySelectionSmart handles both entity and world block selection with unif
   assert.ok(blockSlot, 'should copy world block set');
   assert.equal(controller.activeInventoryCategory, 'blockset');
   assert.equal(controller.inventories.blockset.items[0].blockCount, 1);
+});
+
+test('SpaceUiStore resolveDefaultInventoryCategory selects blockset for hammer, entity for wrench, and colorset for others', () => {
+  const controller = makeController();
+  spaceUiStore.setController(controller);
+
+  // Hammer tool -> defaults to blockset
+  controller.activeTool = SpecialTool.HAMMER;
+  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'blockset');
+
+  // Wrench tool -> defaults to entity
+  controller.activeTool = SpecialTool.WRENCH;
+  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'entity');
+
+  // Brush tool -> defaults to colorset
+  controller.activeTool = SpecialTool.BRUSH;
+  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'colorset');
+
+  // Shovel tool -> defaults to colorset
+  controller.activeTool = SpecialTool.SHOVEL;
+  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'colorset');
+
+  // Spoon tool -> defaults to colorset
+  controller.activeTool = SpecialTool.SPOON;
+  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'colorset');
+
+  // Selector tool -> defaults to colorset
+  controller.activeTool = SpecialTool.SELECTOR;
+  assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'colorset');
+});
+
+test('toggleInventoryModal automatically opens the corresponding default tab based on tool', () => {
+  const controller = makeController();
+  spaceUiStore.setController(controller);
+
+  // 1. Open with Hammer active
+  controller.activeTool = SpecialTool.HAMMER;
+  spaceUiStore.closeAllModals(false);
+  spaceUiStore.toggleInventoryModal(true);
+  assert.equal(spaceUiStore.getSnapshot().activeModal, 'inventory');
+  assert.equal(spaceUiStore.getSnapshot().activeInventoryCategory, 'blockset');
+
+  // 2. Open with Wrench active
+  controller.activeTool = SpecialTool.WRENCH;
+  spaceUiStore.closeAllModals(false);
+  spaceUiStore.toggleInventoryModal(true);
+  assert.equal(spaceUiStore.getSnapshot().activeModal, 'inventory');
+  assert.equal(spaceUiStore.getSnapshot().activeInventoryCategory, 'entity');
+
+  // 3. Open with Brush active
+  controller.activeTool = SpecialTool.BRUSH;
+  spaceUiStore.closeAllModals(false);
+  spaceUiStore.toggleInventoryModal(true);
+  assert.equal(spaceUiStore.getSnapshot().activeModal, 'inventory');
+  assert.equal(spaceUiStore.getSnapshot().activeInventoryCategory, 'colorset');
+
+  // 4. Manually switch tab inside modal
+  spaceUiStore.selectInventoryCategory('entity');
+  assert.equal(spaceUiStore.getSnapshot().activeInventoryCategory, 'entity');
+
+  spaceUiStore.selectInventoryCategory('blockset');
+  assert.equal(spaceUiStore.getSnapshot().activeInventoryCategory, 'blockset');
+
+  spaceUiStore.selectInventoryCategory('colorset');
+  assert.equal(spaceUiStore.getSnapshot().activeInventoryCategory, 'colorset');
+
+  spaceUiStore.closeAllModals(false);
 });

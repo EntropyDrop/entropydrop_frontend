@@ -263,16 +263,19 @@ export class PlayerController {
 
   applyPointerLockState(locked) {
     this.isLocked = !!locked;
-    if (this.ui) this.ui.setPointerLocked(this.isLocked);
+    if (this.ui) this.ui.setPointerLocked?.(this.isLocked);
     return this.isLocked;
   }
 
   syncPointerLockState() {
-    return this.applyPointerLockState(document.pointerLockElement === document.body);
+    return this.applyPointerLockState(typeof document !== 'undefined' && document.pointerLockElement === document.body);
   }
 
   requestLock() {
     this.pointerLockDesired = true;
+    if (typeof document === 'undefined') {
+      return Promise.resolve(false);
+    }
     if (document.pointerLockElement === document.body) {
       this.syncPointerLockState();
       return Promise.resolve(true);
@@ -302,13 +305,13 @@ export class PlayerController {
     }
 
     // Legacy browsers report the result through pointerlockchange only.
-    return Promise.resolve(document.pointerLockElement === document.body);
+    return Promise.resolve(typeof document !== 'undefined' && document.pointerLockElement === document.body);
   }
 
   unlock() {
     this.pointerLockDesired = false;
     this.resetEntityInputState();
-    if (document.exitPointerLock && document.pointerLockElement) {
+    if (typeof document !== 'undefined' && document.exitPointerLock && document.pointerLockElement) {
       try { document.exitPointerLock(); } catch (e) {}
     } else {
       this.syncPointerLockState();

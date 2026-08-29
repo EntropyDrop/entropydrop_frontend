@@ -315,9 +315,26 @@ export class SpaceUiStore {
     else controller?.unlock?.();
   }
 
+  resolveDefaultInventoryCategory(): 'blockset' | 'entity' | 'colorset' {
+    const activeTool = this.snapshot.controller?.activeTool
+      || this.snapshot.hotbarSlots[this.snapshot.selectedHotbarIndex]?.value;
+    if (activeTool === SpecialTool.HAMMER) {
+      return 'blockset';
+    }
+    if (activeTool === SpecialTool.WRENCH) {
+      return 'entity';
+    }
+    return 'colorset';
+  }
+
   private toggleModal(modal: Exclude<SpaceModal, null>, forceState: boolean | null = null): void {
     const open = forceState === null ? this.snapshot.activeModal !== modal : forceState;
     if (open) {
+      if (modal === 'inventory') {
+        const targetCategory = this.resolveDefaultInventoryCategory();
+        this.snapshot.controller?.setActiveInventoryCategory?.(targetCategory);
+        this.patch({ activeInventoryCategory: targetCategory });
+      }
       this.patch({ activeModal: modal, apiDocsOpen: false });
       this.snapshot.controller?.unlock?.();
       if (modal === 'inventory') this.syncInventoryState();
@@ -330,7 +347,12 @@ export class SpaceUiStore {
     }
   }
 
-  toggleInventoryModal(forceState: boolean | null = null): void {
+  toggleInventoryModal(forceState: boolean | null = null, defaultCategory?: 'blockset' | 'entity' | 'colorset'): void {
+    if (forceState !== false && (forceState === true || this.snapshot.activeModal !== 'inventory')) {
+      const targetCategory = defaultCategory || this.resolveDefaultInventoryCategory();
+      this.snapshot.controller?.setActiveInventoryCategory?.(targetCategory);
+      this.patch({ activeInventoryCategory: targetCategory });
+    }
     this.toggleModal('inventory', forceState);
   }
 
@@ -473,8 +495,8 @@ export class SpaceUiStore {
   syncInventoryState(): void {
     const controller = this.snapshot.controller;
     if (!controller) return;
-    let activeInventoryCategory = controller.activeInventoryCategory || 'blockset';
-    if (activeInventoryCategory === 'colorset' && controller.activeTool === SpecialTool.HAMMER) {
+    let activeInventoryCategory = controller.activeInventoryCategory || this.snapshot.activeInventoryCategory || 'blockset';
+    if (activeInventoryCategory === 'colorset' && controller.activeTool === SpecialTool.HAMMER && this.snapshot.activeModal !== 'inventory') {
       controller.setActiveInventoryCategory?.('blockset');
       activeInventoryCategory = 'blockset';
     }
@@ -491,6 +513,7 @@ export class SpaceUiStore {
     const controller = this.snapshot.controller;
     if (!controller) return false;
     controller.setActiveInventoryCategory?.(category);
+    this.patch({ activeInventoryCategory: category });
     this.syncInventoryState();
     return true;
   }
