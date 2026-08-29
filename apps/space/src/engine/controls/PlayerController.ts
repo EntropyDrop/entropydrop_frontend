@@ -493,18 +493,21 @@ export class PlayerController {
     });
 
     document.addEventListener('wheel', (e) => {
-      if (!this.isLocked) return;
-      if (this.ui) {
-        if (e.shiftKey) {
-          // Shift+Wheel cycles palette colors; with the Hammer it cycles the
-          // active backpack category's slots instead.
-          if (this.activeTool === SpecialTool.HAMMER) this.cycleInventorySlot(e.deltaY > 0 ? 1 : -1);
-          else this.ui.cycleColor(e.deltaY > 0 ? 1 : -1);
-        } else {
-          this.ui.cycleHotbar(e.deltaY > 0 ? 1 : -1);
-        }
-      }
+      this.handleWheel(e);
     });
+  }
+
+  handleWheel(e: { deltaY: number; shiftKey?: boolean }) {
+    if (!this.isLocked) return;
+    if (this.ui) {
+      if (this.activeTool === SpecialTool.HAMMER) {
+        // Wheel cycles the active backpack category's slots when the Hammer is active.
+        this.cycleInventorySlot(e.deltaY > 0 ? 1 : -1);
+      } else if (this.activeTool === SpecialTool.BRUSH || e.shiftKey) {
+        // Wheel with Brush (or Shift+Wheel) cycles palette colors.
+        this.ui.cycleColor(e.deltaY > 0 ? 1 : -1);
+      }
+    }
   }
 
   setHotbarSlot(index) {
@@ -3041,7 +3044,7 @@ export class PlayerController {
 
   /**
    * Cycle the active inventory slot of the current backpack category by
-   * `direction` (+1 or −1); used by Shift+Wheel when the Hammer is active.
+   * `direction` (+1 or −1); used when the Hammer is active.
    */
   cycleInventorySlot(direction) {
     const count = this.inventorySlots.length;

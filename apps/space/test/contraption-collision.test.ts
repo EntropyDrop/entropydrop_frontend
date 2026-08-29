@@ -18,6 +18,28 @@ function makePhysics() {
   });
 }
 
+function makeFloorPhysics() {
+  return new ContraptionPhysics({
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false }),
+    getBlock: (_x, y, _z) => y <= 0 ? BlockTypes.COLOR_BLOCK : BlockTypes.AIR,
+    microVoxels: { get: () => null }
+  });
+}
+
+function makeRaisedTerrainBlockPhysics() {
+  return new ContraptionPhysics({
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false }),
+    getBlock: (x, y, z) => (
+      y <= 0 || (x === 0 && y === 1 && z === 0)
+        ? BlockTypes.COLOR_BLOCK
+        : BlockTypes.AIR
+    ),
+    microVoxels: { get: () => null }
+  });
+}
+
 function makeEntity(id, position, options = {}) {
   return new Contraption(
     id,
@@ -76,6 +98,31 @@ test('restitution controls the rebound speed of a dynamic body', () => {
   const elasticVelocity = collideAt(1);
   assert.ok(Math.abs(inelasticVelocity) < 1e-6, `zero restitution should stop normal rebound, got ${inelasticVelocity}`);
   assert.ok(elasticVelocity < -1.9, `full restitution should reverse nearly all normal speed, got ${elasticVelocity}`);
+});
+
+test('entity contact friction damps tangential motion like terrain contact', () => {
+  const collideAt = friction => {
+    const physics = makePhysics();
+    const support = makeEntity(`friction_support_${friction}`, { x: 0, y: 0, z: 0 }, {
+      bodyType: BodyType.KINEMATIC,
+      restitution: 0,
+      friction
+    });
+    const slider = makeEntity(`friction_slider_${friction}`, { x: 0, y: 0.8, z: 0 }, {
+      restitution: 0,
+      friction
+    });
+    slider.velocity.set(3, -1, 0);
+    physics.resolveContraptionPairs([support, slider]);
+    return Math.abs(slider.velocity.x);
+  };
+
+  const frictionlessSpeed = collideAt(0);
+  const roughSpeed = collideAt(1);
+  assert.ok(
+    roughSpeed < frictionlessSpeed - 0.1,
+    `rough entity contact should remove tangential speed, rough=${roughSpeed}, frictionless=${frictionlessSpeed}`
+  );
 });
 
 test('collision resolution changes no state when entities do not overlap', () => {
@@ -321,5 +368,123 @@ test('a falling block cannot compress into a stack of dynamic blocks', () => {
   assert.ok(
     maximumRemainingOverlap < 0.02,
     `iterative stacking contacts should prevent compression, overlap=${maximumRemainingOverlap}`
+  );
+});
+
+test('an off-center dynamic block topples from another dynamic block', () => {
+  const physics = makeFloorPhysics();
+  const support = makeEntity(214, { x: 0, y: 1, z: 0 }, {
+    restitution: 0,
+    friction: 0.7
+  });
+  const upper = makeEntity(215, { x: 0.7, y: 2.02, z: 0 }, {
+    restitution: 0,
+    friction: 0.7
+  });
+
+  let minimumUpperY = upper.position.y;
+  let maximumHorizontalSeparation = 0;
+  let minimumUpAlignment = 1;
+  for (let frame = 0; frame < 360; frame++) {
+    physics.update(support, 1 / 60);
+    physics.update(upper, 1 / 60);
+    physics.resolveContraptionPairs([support, upper]);
+    minimumUpperY = Math.min(minimumUpperY, upper.position.y);
+    minimumUpAlignment = Math.min(
+      minimumUpAlignment,
+      Math.abs(new THREE.Vector3(0, 1, 0).applyQuaternion(upper.quaternion).y)
+    );
+    maximumHorizontalSeparation = Math.max(
+      maximumHorizontalSeparation,
+      Math.abs(upper.position.x - support.position.x)
+    );
+  }
+
+  assert.ok(
+    minimumUpAlignment < 0.95,
+    `the unsupported center of mass must make the upper block topple, alignment=${minimumUpAlignment}`
+  );
+  assert.ok(
+    maximumHorizontalSeparation > 1.1 && minimumUpperY < 2.2,
+    `the upper block must leave its support and fall, separation=${maximumHorizontalSeparation}, minY=${minimumUpperY}, support=${support.position.toArray()}, upper=${upper.position.toArray()}`
+  );
+});
+
+test('a dynamic block stays stable while its center of mass remains over the support face', () => {
+  const physics = makeFloorPhysics();
+  const support = makeEntity(216, { x: 0, y: 1, z: 0 }, {
+    restitution: 0,
+    friction: 0.7
+  });
+  const upper = makeEntity(217, { x: 0.4, y: 2.02, z: 0 }, {
+    restitution: 0,
+    friction: 0.7
+  });
+
+  for (let frame = 0; frame < 360; frame++) {
+    physics.update(support, 1 / 60);
+    physics.update(upper, 1 / 60);
+    physics.resolveContraptionPairs([support, upper]);
+  }
+
+  const upperUp = new THREE.Vector3(0, 1, 0).applyQuaternion(upper.quaternion);
+  assert.ok(
+    upperUp.y > 0.995,
+    `a supported center of mass should not receive an artificial toppling torque, up.y=${upperUp.y}`
+  );
+  assert.ok(
+    Math.abs((upper.position.x - support.position.x) - 0.4) < 0.05,
+    `a stable partial overlap should retain its offset, separation=${upper.position.x - support.position.x}`
+  );
+});
+
+test('an off-center block follows the same fall path from terrain and entity supports', () => {
+  const terrainPhysics = makeRaisedTerrainBlockPhysics();
+  const entityPhysics = makeFloorPhysics();
+  const terrainUpper = makeEntity(218, { x: 0.7, y: 2.02, z: 0 }, {
+    restitution: 0,
+    friction: 0.7
+  });
+  const entitySupport = makeEntity(219, { x: 0, y: 1, z: 0 }, {
+    restitution: 0,
+    friction: 0.7
+  });
+  const entityUpper = makeEntity(220, { x: 0.7, y: 2.02, z: 0 }, {
+    restitution: 0,
+    friction: 0.7
+  });
+  let terrainToppleFrame = null;
+  let entityToppleFrame = null;
+  let terrainFallFrame = null;
+  let entityFallFrame = null;
+  for (let frame = 0; frame < 360; frame++) {
+    terrainPhysics.update(terrainUpper, 1 / 60);
+    entityPhysics.update(entitySupport, 1 / 60);
+    entityPhysics.update(entityUpper, 1 / 60);
+    entityPhysics.resolveContraptionPairs([entitySupport, entityUpper]);
+
+    const terrainAlignment = Math.abs(
+      new THREE.Vector3(0, 1, 0).applyQuaternion(terrainUpper.quaternion).y
+    );
+    const entityAlignment = Math.abs(
+      new THREE.Vector3(0, 1, 0).applyQuaternion(entityUpper.quaternion).y
+    );
+    if (terrainToppleFrame === null && terrainAlignment < 0.95) terrainToppleFrame = frame;
+    if (entityToppleFrame === null && entityAlignment < 0.95) entityToppleFrame = frame;
+    if (terrainFallFrame === null && terrainUpper.position.y < 2.2) terrainFallFrame = frame;
+    if (entityFallFrame === null && entityUpper.position.y < 2.2) entityFallFrame = frame;
+  }
+
+  assert.notEqual(terrainToppleFrame, null, 'terrain reference must topple');
+  assert.notEqual(entityToppleFrame, null, 'entity-supported block must topple');
+  assert.notEqual(terrainFallFrame, null, 'terrain reference must fall');
+  assert.notEqual(entityFallFrame, null, 'entity-supported block must fall');
+  assert.ok(
+    Math.abs(entityToppleFrame - terrainToppleFrame) <= 90,
+    `topple timing should stay comparable, terrain=${terrainToppleFrame}, entity=${entityToppleFrame}`
+  );
+  assert.ok(
+    Math.abs(entityFallFrame - terrainFallFrame) <= 90,
+    `fall timing should stay comparable, terrain=${terrainFallFrame}, entity=${entityFallFrame}`
   );
 });

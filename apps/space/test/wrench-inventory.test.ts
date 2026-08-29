@@ -590,3 +590,57 @@ test('Shift+click on entity micro-blocks toggles and multi-selects without selec
   assert.equal(controller.selectedBlockSelection.blocks.length, 1);
   assert.equal(controller.selectedBlockSelection.blocks[0], blockB);
 });
+
+test('handleWheel does not switch tools/hotbar, but cycles Hammer inventory or Brush palette', () => {
+  let cycledColors: number[] = [];
+  let cycledHotbars: number[] = [];
+  const mockUi = {
+    showToast() {},
+    renderInventoryBar() {},
+    cycleColor(dir: number) { cycledColors.push(dir); },
+    cycleHotbar(dir: number) { cycledHotbars.push(dir); }
+  };
+
+  const controller = Object.create(PlayerController.prototype);
+  controller.isLocked = true;
+  controller.inventorySlots = new Array(8).fill(null);
+  controller.selectedInventoryIndex = 0;
+  controller.ui = mockUi;
+  controller.handleWheel = PlayerController.prototype.handleWheel.bind(controller);
+  controller.cycleInventorySlot = PlayerController.prototype.cycleInventorySlot.bind(controller);
+
+  // 1. SELECTOR tool: wheel does nothing (no hotbar cycling, no color cycling)
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.handleWheel({ deltaY: 100 });
+  assert.equal(controller.activeTool, SpecialTool.SELECTOR);
+  assert.equal(cycledHotbars.length, 0, 'must not cycle hotbar on wheel');
+  assert.equal(cycledColors.length, 0);
+
+  // 2. HAMMER tool: wheel cycles inventory slot
+  controller.activeTool = SpecialTool.HAMMER;
+  controller.handleWheel({ deltaY: 100 });
+  assert.equal(controller.selectedInventoryIndex, 1);
+  controller.handleWheel({ deltaY: -100 });
+  assert.equal(controller.selectedInventoryIndex, 0);
+  assert.equal(cycledHotbars.length, 0, 'must not cycle hotbar on Hammer wheel');
+
+  // 3. BRUSH tool: wheel cycles palette colors
+  controller.activeTool = SpecialTool.BRUSH;
+  controller.handleWheel({ deltaY: 100 });
+  assert.deepEqual(cycledColors, [1]);
+  controller.handleWheel({ deltaY: -100 });
+  assert.deepEqual(cycledColors, [1, -1]);
+  assert.equal(cycledHotbars.length, 0, 'must not cycle hotbar on Brush wheel');
+
+  // 4. Shift+Wheel on non-Hammer tool cycles palette colors
+  controller.activeTool = SpecialTool.WRENCH;
+  controller.handleWheel({ deltaY: 100, shiftKey: true });
+  assert.deepEqual(cycledColors, [1, -1, 1]);
+  assert.equal(cycledHotbars.length, 0, 'must not cycle hotbar on Shift+Wheel');
+
+  // 5. When not pointer locked, wheel does nothing
+  controller.isLocked = false;
+  controller.activeTool = SpecialTool.HAMMER;
+  controller.handleWheel({ deltaY: 100 });
+  assert.equal(controller.selectedInventoryIndex, 0, 'must not cycle when not locked');
+});

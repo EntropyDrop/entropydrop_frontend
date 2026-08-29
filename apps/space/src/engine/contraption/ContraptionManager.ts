@@ -1940,7 +1940,7 @@ export class ContraptionManager {
     }
 
     // 4. Entity vs entity collisions (dynamic-dynamic + dynamic-static)
-    this.physics?.resolveContraptionPairs?.(this.contraptions);
+    this.physics?.resolveContraptionPairs?.(this.contraptions, dt);
 
     // 5. Periodic entity persistence
     this.lastEntitySaveTime = (this.lastEntitySaveTime || 0) + dt;
