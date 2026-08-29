@@ -183,6 +183,7 @@ export function extractTrianglesFromObject3D(root: THREE.Object3D): VoxelTriangl
   const vB = new THREE.Vector3();
   const vC = new THREE.Vector3();
   const normA = new THREE.Vector3();
+  const transformedUv = new THREE.Vector2();
 
   root.traverse(child => {
     if (!(child instanceof THREE.Mesh) || !child.geometry) return;
@@ -191,7 +192,6 @@ export function extractTrianglesFromObject3D(root: THREE.Object3D): VoxelTriangl
     if (!posAttr || posAttr.count < 3) return;
 
     const normalAttr = geom.getAttribute('normal');
-    const uvAttr = geom.getAttribute('uv');
     const colorAttr = geom.getAttribute('color');
     const indexAttr = geom.getIndex();
 
@@ -247,15 +247,27 @@ export function extractTrianglesFromObject3D(root: THREE.Object3D): VoxelTriangl
             textureCache.set(mat.map, extractTextureData(mat.map));
           }
           textureData = textureCache.get(mat.map);
+          if (!textureData) {
+            const materialName = mat.name ? ` for material "${mat.name}"` : '';
+            throw new Error(`Could not read the GLB base-color texture${materialName}; use an embedded PNG/JPEG texture supported by the browser`);
+          }
         }
       }
 
       let uvs: [[number, number], [number, number], [number, number]] | null = null;
+      const textureChannel = Number.isInteger(mat?.map?.channel) ? Math.max(0, mat.map.channel) : 0;
+      const uvAttr = geom.getAttribute(textureChannel === 0 ? 'uv' : `uv${textureChannel}`);
       if (uvAttr) {
+        if (mat?.map?.matrixAutoUpdate) mat.map.updateMatrix();
+        const readUv = (index: number): [number, number] => {
+          transformedUv.set(uvAttr.getX(index), uvAttr.getY(index));
+          if (mat?.map?.transformUv) mat.map.transformUv(transformedUv);
+          return [transformedUv.x, transformedUv.y];
+        };
         uvs = [
-          [uvAttr.getX(i0), uvAttr.getY(i0)],
-          [uvAttr.getX(i1), uvAttr.getY(i1)],
-          [uvAttr.getX(i2), uvAttr.getY(i2)]
+          readUv(i0),
+          readUv(i1),
+          readUv(i2)
         ];
       }
 
@@ -504,6 +516,79 @@ function triangleNormal(t: VoxelTriangle): [number, number, number] | null {
   return [nx / len, ny / len, nz / len];
 }
 
+/**
+ * Find the point on a triangle closest to a voxel center. The returned
+ * barycentric coordinates use the same a/b/c order as sampleTriangleColor.
+ */
+function closestTriangleBarycentrics(
+  t: VoxelTriangle,
+  px: number,
+  py: number,
+  pz: number,
+  out: [number, number, number]
+): number {
+  const ax = t.a[0], ay = t.a[1], az = t.a[2];
+  const bx = t.b[0], by = t.b[1], bz = t.b[2];
+  const cx = t.c[0], cy = t.c[1], cz = t.c[2];
+  const abx = bx - ax, aby = by - ay, abz = bz - az;
+  const acx = cx - ax, acy = cy - ay, acz = cz - az;
+  const apx = px - ax, apy = py - ay, apz = pz - az;
+  const d1 = abx * apx + aby * apy + abz * apz;
+  const d2 = acx * apx + acy * apy + acz * apz;
+
+  const writeResult = (u: number, v: number, w: number): number => {
+    out[0] = u; out[1] = v; out[2] = w;
+    const qx = ax * u + bx * v + cx * w;
+    const qy = ay * u + by * v + cy * w;
+    const qz = az * u + bz * v + cz * w;
+    return (px - qx) ** 2 + (py - qy) ** 2 + (pz - qz) ** 2;
+  };
+
+  if (d1 <= 0 && d2 <= 0) return writeResult(1, 0, 0);
+
+  const bpx = px - bx, bpy = py - by, bpz = pz - bz;
+  const d3 = abx * bpx + aby * bpy + abz * bpz;
+  const d4 = acx * bpx + acy * bpy + acz * bpz;
+  if (d3 >= 0 && d4 <= d3) return writeResult(0, 1, 0);
+
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+    const v = d1 / (d1 - d3);
+    return writeResult(1 - v, v, 0);
+  }
+
+  const cpx = px - cx, cpy = py - cy, cpz = pz - cz;
+  const d5 = abx * cpx + aby * cpy + abz * cpz;
+  const d6 = acx * cpx + acy * cpy + acz * cpz;
+  if (d6 >= 0 && d5 <= d6) return writeResult(0, 0, 1);
+
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+    const w = d2 / (d2 - d6);
+    return writeResult(1 - w, 0, w);
+  }
+
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+    const w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+    return writeResult(0, 1 - w, w);
+  }
+
+  const denominator = va + vb + vc;
+  if (Math.abs(denominator) < 1e-20) {
+    const da = (px - ax) ** 2 + (py - ay) ** 2 + (pz - az) ** 2;
+    const db = (px - bx) ** 2 + (py - by) ** 2 + (pz - bz) ** 2;
+    const dc = (px - cx) ** 2 + (py - cy) ** 2 + (pz - cz) ** 2;
+    if (da <= db && da <= dc) return writeResult(1, 0, 0);
+    if (db <= dc) return writeResult(0, 1, 0);
+    return writeResult(0, 0, 1);
+  }
+  const invDenominator = 1 / denominator;
+  const v = vb * invDenominator;
+  const w = vc * invDenominator;
+  return writeResult(1 - v - w, v, w);
+}
+
 function rayXIntersectsTriangle(t: VoxelTriangle, ox: number, oy: number, oz: number): number {
   const ax = t.a[0] - ox, ay = t.a[1] - oy, az = t.a[2] - oz;
   const bx = t.b[0] - ox, by = t.b[1] - oy, bz = t.b[2] - oz;
@@ -623,6 +708,54 @@ export function voxelizeModel(
     return crossings % 2 === 1;
   };
 
+  // Surface samples alone are intentionally sparse for voxel occupancy speed.
+  // Resolve the color of each exposed voxel from the actual nearest triangle
+  // afterward, so large textured triangles do not leave most shell cells with
+  // the material's usually-white fallback color.
+  const visitedTriangles = new Uint32Array(processedTriangles.length);
+  const candidateBarycentrics: [number, number, number] = [0, 0, 0];
+  let visitStamp = 0;
+  const nearestSurfaceColor = (px: number, py: number, pz: number): number | null => {
+    visitStamp++;
+    if (visitStamp >= 0xffffffff) {
+      visitedTriangles.fill(0);
+      visitStamp = 1;
+    }
+
+    const centerBy = Math.floor(py / bucketSize);
+    const centerBz = Math.floor(pz / bucketSize);
+    let bestDistanceSq = Infinity;
+    let bestTriangle: VoxelTriangle | null = null;
+    let bestU = 0, bestV = 0, bestW = 0;
+
+    // A surface voxel center is at most half a cell away from the triangle in
+    // Y/Z. Since buckets are 2 cells wide, the surrounding 3x3 buckets cover
+    // every triangle capable of touching that voxel.
+    for (let by = centerBy - 1; by <= centerBy + 1; by++) {
+      for (let bz = centerBz - 1; bz <= centerBz + 1; bz++) {
+        const candidates = bucket.get(bucketKey(by, bz));
+        if (!candidates) continue;
+        for (const ti of candidates) {
+          if (visitedTriangles[ti] === visitStamp) continue;
+          visitedTriangles[ti] = visitStamp;
+          const triangle = processedTriangles[ti];
+          const distanceSq = closestTriangleBarycentrics(triangle, px, py, pz, candidateBarycentrics);
+          if (distanceSq < bestDistanceSq) {
+            bestDistanceSq = distanceSq;
+            bestTriangle = triangle;
+            bestU = candidateBarycentrics[0];
+            bestV = candidateBarycentrics[1];
+            bestW = candidateBarycentrics[2];
+          }
+        }
+      }
+    }
+
+    return bestTriangle
+      ? sampleTriangleColor(bestTriangle, bestU, bestV, bestW, fallbackColor)
+      : null;
+  };
+
   // 1) Surface pass: sample surface and assign exact full-color samples
   for (const t of processedTriangles) {
     const edgeAB = Math.hypot(t.b[0] - t.a[0], t.b[1] - t.a[1], t.b[2] - t.a[2]);
@@ -715,6 +848,35 @@ export function voxelizeModel(
     }
   }
   const effectiveGrid = hollow ? hollowGrid : grid;
+
+  // Re-sample every visible shell voxel at the closest point on the source
+  // mesh. This is the important color-preservation pass: the parity fill only
+  // determines occupancy and must not decide a textured voxel's color.
+  for (let x = 0; x < gsx; x++) {
+    for (let y = 0; y < gsy; y++) {
+      for (let z = 0; z < gsz; z++) {
+        const cell = idx(x, y, z);
+        if (effectiveGrid[cell] !== 1) continue;
+        const exposed =
+          x === 0 || x === gsx - 1 ||
+          y === 0 || y === gsy - 1 ||
+          z === 0 || z === gsz - 1 ||
+          grid[idx(x + 1, y, z)] === 0 ||
+          grid[idx(x - 1, y, z)] === 0 ||
+          grid[idx(x, y + 1, z)] === 0 ||
+          grid[idx(x, y - 1, z)] === 0 ||
+          grid[idx(x, y, z + 1)] === 0 ||
+          grid[idx(x, y, z - 1)] === 0;
+        if (!exposed) continue;
+
+        const wx = (x + gminX) * s + s * 0.5;
+        const wy = (y + gminY) * s + s * 0.5;
+        const wz = (z + gminZ) * s + s * 0.5;
+        const sampled = nearestSurfaceColor(wx, wy, wz);
+        if (sampled !== null) colorGrid[cell] = sampled;
+      }
+    }
+  }
 
   // 3) Collect occupied cells
   let minBx = Infinity, minBy = Infinity, minBz = Infinity;

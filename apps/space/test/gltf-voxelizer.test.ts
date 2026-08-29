@@ -145,6 +145,50 @@ test('extractTrianglesFromObject3D extracts geometry, vertex colors, material co
   assert.deepEqual(triangles[0].vertexColors, [[255, 0, 0], [0, 255, 0], [0, 0, 255]]);
 });
 
+test('extractTrianglesFromObject3D honors the base-color texture UV channel and transform', () => {
+  const scene = new THREE.Scene();
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute([
+    0, 0, 0,
+    1, 0, 0,
+    0, 1, 0
+  ], 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute([
+    0, 0,
+    0, 0,
+    0, 0
+  ], 2));
+  geom.setAttribute('uv1', new THREE.Float32BufferAttribute([
+    0, 1,
+    1, 1,
+    0, 0
+  ], 2));
+
+  const texture = new THREE.DataTexture(
+    new Uint8Array([
+      255, 0, 0, 255, 0, 255, 0, 255,
+      0, 0, 255, 255, 255, 255, 0, 255
+    ]),
+    2,
+    2,
+    THREE.RGBAFormat
+  );
+  texture.channel = 1;
+  texture.flipY = false;
+  texture.offset.set(0.25, 0);
+  texture.repeat.set(0.5, 1);
+  const material = new THREE.MeshBasicMaterial({ color: 0xffffff, map: texture });
+  scene.add(new THREE.Mesh(geom, material));
+
+  const [triangle] = extractTrianglesFromObject3D(scene);
+  assert.ok(triangle.uvs);
+  assert.deepEqual(triangle.uvs, [[0.25, 1], [0.75, 1], [0.25, 0]]);
+
+  material.dispose();
+  texture.dispose();
+  geom.dispose();
+});
+
 test('parseGLTFData parses full-color GLB model with vertex colors', async () => {
   const json = {
     asset: { version: '2.0' },
@@ -207,6 +251,44 @@ test('voxelizeModel quantizes a full-color model into color-preserving blocks', 
   // Blocks preserve the quantized full-color values
   const colors = new Set(result.blocks.map(b => b.color));
   assert.ok(colors.has(0xff2233) || colors.has(0x3344ff));
+});
+
+test('voxelizeModel colors every shell block from large textured triangles', () => {
+  const side = 16;
+  const texture = {
+    data: new Uint8Array([255, 0, 0, 255]),
+    width: 1,
+    height: 1
+  };
+  const triangle = (
+    a: [number, number, number],
+    b: [number, number, number],
+    c: [number, number, number]
+  ): VoxelTriangle => ({
+    a, b, c,
+    color: 0xffffff,
+    uvs: [[0, 0], [1, 0], [1, 1]],
+    texture
+  });
+  const quad = (
+    a: [number, number, number],
+    b: [number, number, number],
+    c: [number, number, number],
+    d: [number, number, number]
+  ): VoxelTriangle[] => [triangle(a, b, c), triangle(a, c, d)];
+
+  const triangles = [
+    ...quad([0, 0, 0], [0, side, 0], [0, side, side], [0, 0, side]),
+    ...quad([side, 0, 0], [side, 0, side], [side, side, side], [side, side, 0]),
+    ...quad([0, 0, 0], [0, 0, side], [side, 0, side], [side, 0, 0]),
+    ...quad([0, side, 0], [side, side, 0], [side, side, side], [0, side, side]),
+    ...quad([0, 0, 0], [side, 0, 0], [side, side, 0], [0, side, 0]),
+    ...quad([0, 0, side], [0, side, side], [side, side, side], [side, 0, side])
+  ];
+
+  const result = voxelizeModel(triangles, 1, 0xffffff, { hollow: true });
+  assert.ok(result.blocks.length > 500);
+  assert.deepEqual(new Set(result.blocks.map(block => block.color)), new Set([0xff0000]));
 });
 
 test('parse3DModelData auto-detects GLB, GLTF, and STL files', async () => {
