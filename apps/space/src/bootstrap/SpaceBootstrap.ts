@@ -321,7 +321,19 @@ export async function loadTerrainEditRemote(
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         const code = body?.detail?.code || `HTTP_${response.status}`;
-        throw new Error(`Space terrain batch was not accepted: ${code}`);
+        const error: Error & { retryAfterMs?: number } = new Error(`Space terrain batch was not accepted: ${code}`);
+        const retryAfter = response.headers?.get?.('Retry-After');
+        if (retryAfter) {
+          const seconds = Number(retryAfter);
+          const retryAt = Date.parse(retryAfter);
+          const retryAfterMs = Number.isFinite(seconds)
+            ? seconds * 1_000
+            : Number.isFinite(retryAt)
+              ? Math.max(0, retryAt - Date.now())
+              : NaN;
+          if (Number.isFinite(retryAfterMs)) error.retryAfterMs = retryAfterMs;
+        }
+        throw error;
       }
       return response.json();
     }

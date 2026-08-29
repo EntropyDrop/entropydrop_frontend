@@ -46,6 +46,9 @@ export const MAX_INVENTORY_SCRIPT_BYTES = 64 * 1024;
 export const MAX_INVENTORY_TOTAL_SCRIPT_BYTES = 512 * 1024;
 const MAX_INVENTORY_CONSTRAINTS = 256;
 const MAX_IMPORT_COORDINATE = MAX_ENTITY_BOUNDS * 2;
+export const BULK_EDIT_THRESHOLD = 256;
+export const BULK_EDIT_MAX_OPERATIONS_PER_FRAME = 128;
+export const BULK_EDIT_FRAME_BUDGET_MS = 5;
 
 export const SpecialTool = {
   SHOVEL: 'shovel',         // 1. Shovel (remove / place 1x1x1 standard blocks)
@@ -135,6 +138,7 @@ export class PlayerController {
   inventories: any;
   activeInventoryCategory: string;
   persistentStorage: SpaceStorage | null;
+  bulkEditJob: any;
 
   // --- Camera / View Settings ---
   sceneRenderer: any;
@@ -164,6 +168,7 @@ export class PlayerController {
     this.contraptions = contraptionManager;
     this.ui = uiBridge;
     this.persistentStorage = persistentStorage;
+    this.bulkEditJob = null;
     if (this.contraptions) this.contraptions.selectionHost = this;
 
     this.sceneRenderer = null;
@@ -1593,6 +1598,89 @@ export class PlayerController {
     }));
   }
 
+  private bulkEditProgress(job, phase: 'applying' | 'waiting' | 'syncing' | 'complete' | 'failed', detail = '') {
+    this.ui?.setBulkEditProgress?.({
+      label: job.label,
+      phase,
+      processed: job.processed,
+      total: job.total,
+      changed: job.changed,
+      detail
+    });
+  }
+
+  private startBulkEditJob(job) {
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
+      return false;
+    }
+    this.bulkEditJob = {
+      ...job,
+      processed: 0,
+      changed: 0
+    };
+    this.bulkEditProgress(this.bulkEditJob, 'applying');
+    return true;
+  }
+
+  /** Process a bounded slice of a large Hammer/Selector edit from the game loop. */
+  processBulkEditFrame(
+    maxOperations = BULK_EDIT_MAX_OPERATIONS_PER_FRAME,
+    timeBudgetMs = BULK_EDIT_FRAME_BUDGET_MS
+  ) {
+    const job = this.bulkEditJob;
+    if (!job) return false;
+
+    const sync = this.world?.editPersistence?.getSyncStatus?.();
+    if (sync) this.ui?.setWorldEditSync?.(sync);
+    if (sync?.backpressured) {
+      this.bulkEditProgress(job, 'waiting', `Waiting for the server · ${sync.pendingBatches} batches queued`);
+      return true;
+    }
+
+    const now = () => globalThis.performance?.now?.() ?? Date.now();
+    const startedAt = now();
+    let operations = 0;
+    const operationLimit = Number.isFinite(maxOperations) ? Math.max(1, Math.floor(maxOperations)) : Infinity;
+    const timeLimit = Number.isFinite(timeBudgetMs) ? Math.max(0, timeBudgetMs) : Infinity;
+
+    try {
+      while (
+        job.processed < job.total
+        && operations < operationLimit
+        && (operations === 0 || now() - startedAt < timeLimit)
+      ) {
+        const changed = Number(job.step(job.processed)) || 0;
+        job.changed += changed;
+        job.processed++;
+        operations++;
+      }
+    } catch (error) {
+      console.error(`Bulk edit failed during ${job.label}.`, error);
+      this.bulkEditJob = null;
+      this.bulkEditProgress(job, 'failed', 'The operation stopped before all blocks were processed');
+      this.ui?.showToast?.(`${job.label} failed after ${job.processed}/${job.total} cells`);
+      return false;
+    }
+
+    if (job.processed < job.total) {
+      this.bulkEditProgress(job, 'applying');
+      return true;
+    }
+
+    this.bulkEditJob = null;
+    job.finish?.();
+    const finalSync = this.world?.editPersistence?.getSyncStatus?.();
+    if (finalSync) this.ui?.setWorldEditSync?.(finalSync);
+    const hasPendingSync = !!finalSync && (finalSync.pendingBatches > 0 || finalSync.sending);
+    this.bulkEditProgress(
+      job,
+      hasPendingSync ? 'syncing' : 'complete',
+      hasPendingSync ? `${finalSync.pendingBatches} server batches queued` : ''
+    );
+    return false;
+  }
+
   /** Prefer the visible entity surface over terrain behind it for inventory placement. */
   getInventoryPlacementHit() {
     const entityHit = this.hoveredContraptionHit;
@@ -1666,73 +1754,95 @@ export class PlayerController {
    * blocks are replaced and occupied micro cells are replaced; a micro voxel
    * that overlaps a standard block clears that block first.
    */
+  private applyBlockSetVoxel(target, block, replace = false) {
+    if ((block.size || 1) < 1) {
+      if (replace) {
+        // Micro voxels cannot coexist with a standard block, so overwrite
+        // mode clears the parent cell before writing the micro voxel.
+        const wx = Math.round(target.x + block.dx);
+        const wy = Math.round(target.y + block.dy);
+        const wz = Math.round(target.z + block.dz);
+        if (this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
+          this.performBasicAction({
+            domain: ActionDomain.WORLD,
+            action: 'remove-standard',
+            cell: { x: wx, y: wy, z: wz }
+          });
+        }
+      }
+      const result = this.performBasicAction({
+        domain: ActionDomain.WORLD,
+        action: 'place-micro',
+        micro: [
+          Math.round((target.x + block.dx) * MICRO_DIVISIONS),
+          Math.round((target.y + block.dy) * MICRO_DIVISIONS),
+          Math.round((target.z + block.dz) * MICRO_DIVISIONS)
+        ],
+        color: block.color,
+        part: block.part || null,
+        replace
+      });
+      return result.placed || 0;
+    }
+
+    const result = this.performBasicAction({
+      domain: ActionDomain.WORLD,
+      action: 'place-standard',
+      cell: {
+        x: target.x + Math.round(block.dx),
+        y: target.y + Math.round(block.dy),
+        z: target.z + Math.round(block.dz)
+      },
+      block: block.block || BlockTypes.COLOR_BLOCK,
+      color: block.color,
+      replace
+    });
+    return result.placed || 0;
+  }
+
+  private finishBlockSetPaste(target, total, placed, replace) {
+    if (placed > 0) this.sound?.playBlockPlace?.();
+    if (!this.ui) return;
+    const skipped = Math.max(0, total - placed);
+    const where = `at (${target.x}, ${target.y}, ${target.z})`;
+    this.ui.showToast(replace
+      ? `Overwrote block set: ${placed}/${total} plain blocks ${where}`
+      : skipped > 0
+        ? `Built block set: ${placed}/${total} plain blocks ${where} · ${skipped} occupied cell(s) skipped`
+        : `Built block set: ${placed}/${total} plain blocks ${where}`);
+  }
+
   pasteBlockSet(slot, replace = false) {
     if (!this.world || !slot || !Array.isArray(slot.blocks) || slot.blocks.length === 0) return false;
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
+      return false;
+    }
 
     const pose = this.getInventoryPlacementPose(slot);
     if (!pose) {
       if (this.ui) this.ui.showToast('No surface under the crosshair — aim at terrain or an entity to build');
       return false;
     }
-    const target = pose.position;
-
+    const target = pose.position.clone?.() || { ...pose.position };
+    const blocks = [...slot.blocks];
     let placed = 0;
-    for (const b of slot.blocks) {
-      if ((b.size || 1) < 1) {
-        if (replace) {
-          // Micro voxels cannot coexist with a standard block, so overwrite
-          // mode clears the parent cell before writing the micro voxel.
-          const wx = Math.round(target.x + b.dx);
-          const wy = Math.round(target.y + b.dy);
-          const wz = Math.round(target.z + b.dz);
-          if (this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
-            this.performBasicAction({
-              domain: ActionDomain.WORLD,
-              action: 'remove-standard',
-              cell: { x: wx, y: wy, z: wz }
-            });
-          }
-        }
-        const result = this.performBasicAction({
-          domain: ActionDomain.WORLD,
-          action: 'place-micro',
-          micro: [
-            Math.round((target.x + b.dx) * 5),
-            Math.round((target.y + b.dy) * 5),
-            Math.round((target.z + b.dz) * 5)
-          ],
-          color: b.color,
-          part: b.part || null,
-          replace
-        });
-        placed += result.placed || 0;
-      } else {
-        const result = this.performBasicAction({
-          domain: ActionDomain.WORLD,
-          action: 'place-standard',
-          cell: {
-            x: target.x + Math.round(b.dx),
-            y: target.y + Math.round(b.dy),
-            z: target.z + Math.round(b.dz)
-          },
-          block: b.block || BlockTypes.COLOR_BLOCK,
-          color: b.color,
-          replace
-        });
-        placed += result.placed || 0;
-      }
+
+    if (blocks.length > BULK_EDIT_THRESHOLD) {
+      return this.startBulkEditJob({
+        label: replace ? 'Overwriting block set' : 'Building block set',
+        total: blocks.length,
+        step: index => {
+          const changed = this.applyBlockSetVoxel(target, blocks[index], replace);
+          placed += changed;
+          return changed;
+        },
+        finish: () => this.finishBlockSetPaste(target, blocks.length, placed, replace)
+      });
     }
 
-    if (placed > 0 && this.sound) this.sound.playBlockPlace();
-    if (this.ui) {
-      const skipped = slot.blockCount - placed;
-      const where = `at (${target.x}, ${target.y}, ${target.z})`;
-      this.ui.showToast(replace
-        ? `Overwrote block set: ${placed}/${slot.blockCount} plain blocks ${where}`
-        : skipped > 0
-          ? `Built block set: ${placed}/${slot.blockCount} plain blocks ${where} · ${skipped} occupied cell(s) skipped`
-          : `Built block set: ${placed}/${slot.blockCount} plain blocks ${where}`);
-    }
+    for (const block of blocks) placed += this.applyBlockSetVoxel(target, block, replace);
+    this.finishBlockSetPaste(target, blocks.length, placed, replace);
     return placed > 0;
   }
 
@@ -1761,6 +1871,127 @@ export class PlayerController {
     return slot;
   }
 
+  private finishWorldSelectionDelete(standard, micro) {
+    const removed = standard + micro;
+    if (removed > 0) {
+      this.sound?.playBlockBreak?.();
+      const parts = [];
+      if (standard > 0) parts.push(`${standard} blocks`);
+      if (micro > 0) parts.push(`${micro} micro voxels`);
+      this.ui?.showToast?.(`Deleted ${parts.join(' + ')} from the selection`);
+    } else {
+      this.ui?.showToast?.('Selection region is empty (no blocks to delete)');
+    }
+  }
+
+  private startLargeWorldSelectionDelete(manager, microSelection, bounds) {
+    let particleBudget = 64;
+    let removedStandard = 0;
+    let removedMicro = 0;
+
+    if (Array.isArray(microSelection)) {
+      const cells = microSelection.map(cell => ({ x: cell.x, y: cell.y, z: cell.z }));
+      const subdividedStandardCells = new Set<string>();
+      const started = this.startBulkEditJob({
+        label: 'Deleting micro selection',
+        total: cells.length,
+        step: index => {
+          const cell = cells[index];
+          const wx = Math.floor(cell.x / MICRO_DIVISIONS);
+          const wy = Math.floor(cell.y / MICRO_DIVISIONS);
+          const wz = Math.floor(cell.z / MICRO_DIVISIONS);
+          let block = this.world.getMicroBlock?.(cell.x, cell.y, cell.z);
+          if (!block && this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
+            block = { color: this.world.getBlockColor?.(wx, wy, wz) };
+          }
+          if (block && particleBudget > 0) {
+            this.particles?.emitBlockBreak?.(
+              {
+                x: cell.x / MICRO_DIVISIONS + 0.5 / MICRO_DIVISIONS,
+                y: cell.y / MICRO_DIVISIONS + 0.5 / MICRO_DIVISIONS,
+                z: cell.z / MICRO_DIVISIONS + 0.5 / MICRO_DIVISIONS
+              },
+              block.color,
+              3
+            );
+            particleBudget--;
+          }
+
+          const cellKey = `${wx},${wy},${wz}`;
+          let result;
+          if (!subdividedStandardCells.has(cellKey)) {
+            if (this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
+              result = this.performBasicAction({
+                domain: ActionDomain.WORLD,
+                action: 'subdivide-standard',
+                cell: { x: wx, y: wy, z: wz },
+                micro: cell
+              });
+            }
+            subdividedStandardCells.add(cellKey);
+          }
+          if (!result) {
+            result = this.performBasicAction({
+              domain: ActionDomain.WORLD,
+              action: 'remove-micro',
+              micro: cell
+            });
+          }
+          const changed = result.removed || 0;
+          removedMicro += changed;
+          return changed;
+        },
+        finish: () => this.finishWorldSelectionDelete(0, removedMicro)
+      });
+      if (started) manager.clearSelection?.();
+      return started;
+    }
+
+    const sparseCells = manager.connectedSelection !== null
+      ? [...(manager.connectedSelection || [])].map(cell => ({ x: cell.x, y: cell.y, z: cell.z }))
+      : null;
+    const sizeY = bounds.maxY - bounds.minY + 1;
+    const sizeZ = bounds.maxZ - bounds.minZ + 1;
+    const total = sparseCells?.length
+      ?? (bounds.maxX - bounds.minX + 1) * sizeY * sizeZ;
+    const cellAt = index => {
+      if (sparseCells) return sparseCells[index];
+      return {
+        x: bounds.minX + Math.floor(index / (sizeY * sizeZ)),
+        y: bounds.minY + Math.floor(index / sizeZ) % sizeY,
+        z: bounds.minZ + index % sizeZ
+      };
+    };
+
+    const started = this.startBulkEditJob({
+      label: 'Deleting selection',
+      total,
+      step: index => {
+        const cell = cellAt(index);
+        const block = this.world.getBlock?.(cell.x, cell.y, cell.z);
+        if (block !== BlockTypes.AIR && particleBudget > 0) {
+          this.particles?.emitBlockBreak?.(
+            { x: cell.x + 0.5, y: cell.y + 0.5, z: cell.z + 0.5 },
+            this.world.getBlockColor?.(cell.x, cell.y, cell.z),
+            6
+          );
+          particleBudget--;
+        }
+        const result = this.performBasicAction({
+          domain: ActionDomain.WORLD,
+          action: 'clear-cell',
+          cell
+        });
+        removedStandard += result.standard || 0;
+        removedMicro += result.micro || 0;
+        return result.removed || 0;
+      },
+      finish: () => this.finishWorldSelectionDelete(removedStandard, removedMicro)
+    });
+    if (started) manager.clearSelection?.();
+    return started;
+  }
+
   /**
    * Delete removes blocks in the current selection and then resets the selection.
    *
@@ -1773,6 +2004,10 @@ export class PlayerController {
   deleteSelectionBlocks() {
     const manager = this.contraptions;
     if (!manager) return;
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
+      return;
+    }
 
     // 1. Remove selected blocks from an entity component.
     if (this.selectedBlockSelection && this.selectedBlockSelection.blocks.length > 0) {
@@ -1845,6 +2080,18 @@ export class PlayerController {
     const bounds = isMicroSelection ? null : manager.getSelectionBounds();
     if (!bounds && !isMicroSelection) {
       if (this.ui) this.ui.showToast('Nothing selected - box-select a region with the selector first, then press Del');
+      return;
+    }
+
+    const largeSelectionCount = isMicroSelection
+      ? microSelection.length
+      : manager.connectedSelection !== null
+        ? manager.connectedSelection.length
+        : (bounds.maxX - bounds.minX + 1)
+          * (bounds.maxY - bounds.minY + 1)
+          * (bounds.maxZ - bounds.minZ + 1);
+    if (largeSelectionCount > BULK_EDIT_THRESHOLD) {
+      this.startLargeWorldSelectionDelete(manager, microSelection, bounds);
       return;
     }
 
@@ -3280,6 +3527,8 @@ export class PlayerController {
   }
 
   update(dt) {
+    this.processBulkEditFrame();
+
     if (this.isDriving && this.drivenContraption) {
       // Seat the player at the cockpit position relative to pivot and rotate it with the entity.
       const cockpitWorld = this.drivenContraption.getCockpitWorldPosition

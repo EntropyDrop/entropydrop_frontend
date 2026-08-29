@@ -196,6 +196,52 @@ function Hotbar() {
   );
 }
 
+function BulkEditProgressPanel() {
+  const { bulkEdit, worldEditSync } = useSpaceUi(state => state);
+  if (!bulkEdit) return null;
+
+  const percent = bulkEdit.total > 0
+    ? Math.min(100, Math.round((bulkEdit.processed / bulkEdit.total) * 100))
+    : 100;
+  const phaseLabel = bulkEdit.phase === 'waiting'
+    ? 'SERVER BACKPRESSURE'
+    : bulkEdit.phase === 'syncing'
+      ? 'SYNCING'
+      : bulkEdit.phase === 'complete'
+        ? 'COMPLETE'
+        : bulkEdit.phase === 'failed'
+          ? 'FAILED'
+          : 'APPLYING';
+  const syncIdle = worldEditSync.pendingBatches === 0 && !worldEditSync.sending;
+  const syncText = worldEditSync.retrying
+    ? `Retrying in ${Math.max(1, Math.ceil(worldEditSync.retryDelayMs / 1_000))}s · ${worldEditSync.pendingBatches} batches queued`
+    : worldEditSync.backpressured
+      ? `Queue paused · ${worldEditSync.pendingBatches} batches / ${worldEditSync.pendingMutations} edits pending`
+      : syncIdle
+        ? 'Server synced'
+        : `Server sync · ${worldEditSync.pendingBatches} batches / ${worldEditSync.pendingMutations} edits pending`;
+
+  return (
+    <div className={`bulk-edit-progress phase-${bulkEdit.phase}`} role="status" aria-live="polite">
+      <div className="bulk-edit-heading">
+        <span>{bulkEdit.label}</span>
+        <span className="bulk-edit-phase">{phaseLabel}</span>
+      </div>
+      <div className="bulk-edit-row">
+        <span className="bulk-edit-row-label">Local</span>
+        <div className="bulk-edit-track"><span style={{ width: `${percent}%` }} /></div>
+        <span className="bulk-edit-value">{bulkEdit.processed.toLocaleString()} / {bulkEdit.total.toLocaleString()} · {percent}%</span>
+      </div>
+      <div className="bulk-edit-row">
+        <span className="bulk-edit-row-label">Sync</span>
+        <div className={`bulk-edit-track sync ${syncIdle ? 'idle' : 'active'}`}><span /></div>
+        <span className="bulk-edit-value">{syncText}</span>
+      </div>
+      {bulkEdit.detail ? <div className="bulk-edit-detail">{bulkEdit.detail}</div> : null}
+    </div>
+  );
+}
+
 export function Hud() {
   const state = useSpaceUi(snapshot => snapshot);
   const activeTool = state.hotbarSlots[state.selectedHotbarIndex]?.value;
@@ -213,10 +259,13 @@ export function Hud() {
           <div className="hud-actions"><button id="global-settings-btn" tabIndex={-1} className="icon-btn" title="Global Settings (O)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(true)}>⚙</button></div>
         </div>
         <div className="hud-bottom">
-          <div className="builder-toolbar">
-            <div className="toolbar-center-panel">
-              {activeTool === SpecialTool.HAMMER ? <InventoryBar /> : activeTool === SpecialTool.SELECTOR ? <SelectorPanel /> : <PaletteBar />}
-              <Hotbar />
+          <div className="hud-bottom-stack">
+            <BulkEditProgressPanel />
+            <div className="builder-toolbar">
+              <div className="toolbar-center-panel">
+                {activeTool === SpecialTool.HAMMER ? <InventoryBar /> : activeTool === SpecialTool.SELECTOR ? <SelectorPanel /> : <PaletteBar />}
+                <Hotbar />
+              </div>
             </div>
           </div>
         </div>

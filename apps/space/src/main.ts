@@ -78,7 +78,8 @@ class Game {
       {
         worldId: session.world.id,
         remote: session.terrain_edit_remote,
-        storage: persistentStorage
+        storage: persistentStorage,
+        onSyncStatus: status => spaceUiStore.setWorldEditSync(status)
       }
     );
     this.sceneRenderer.setWorld(this.world);

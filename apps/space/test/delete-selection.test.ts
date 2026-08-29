@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { Contraption } from '../src/engine/contraption/Contraption.ts';
 import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
-import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
+import {
+  BULK_EDIT_THRESHOLD,
+  PlayerController,
+  SpecialTool
+} from '../src/engine/controls/PlayerController.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 import { World } from '../src/engine/voxel/World.ts';
 
@@ -211,4 +215,40 @@ test('Delete reports an empty world-box selection', () => {
   controller.deleteSelectionBlocks();
   assert.ok(controller.__toasts.some(m => m.includes('empty')), 'the toast should report no blocks');
   assert.equal(manager.selectionCornerA, null, 'selection should still reset');
+});
+
+test('large Selector boxes delete incrementally and clear the captured selection', () => {
+  const scene = new THREE.Scene();
+  const world = new World(scene) as any;
+  const manager = new ContraptionManager(scene, world, null, null);
+  const controller = makeController({ manager, world });
+  controller.bulkEditJob = null;
+  const progress: any[] = [];
+  controller.ui.setBulkEditProgress = value => progress.push(value);
+
+  const sizeX = 8;
+  const sizeY = 8;
+  const sizeZ = 5;
+  const total = sizeX * sizeY * sizeZ;
+  assert.ok(total > BULK_EDIT_THRESHOLD);
+  clearRegion(world, 20, 80, 20, 20 + sizeX - 1, 80 + sizeY - 1, 20 + sizeZ - 1);
+  world.setBlock(20, 80, 20, BlockTypes.COLOR_BLOCK, false, 0x123456);
+  world.setBlock(27, 87, 24, BlockTypes.COLOR_BLOCK, false, 0xabcdef);
+  manager.setCornerA({ x: 20, y: 80, z: 20 });
+  manager.setCornerB({ x: 27, y: 87, z: 24 });
+
+  controller.deleteSelectionBlocks();
+  assert.ok(controller.bulkEditJob, 'large deletion should be scheduled');
+  assert.equal(manager.selectionCornerA, null, 'captured selection should clear immediately');
+  assert.equal(world.getBlock(20, 80, 20), BlockTypes.COLOR_BLOCK, 'work starts on the next frame');
+
+  controller.processBulkEditFrame(128, Infinity);
+  assert.equal(controller.bulkEditJob.processed, 128);
+  assert.equal(world.getBlock(20, 80, 20), BlockTypes.AIR);
+  assert.equal(world.getBlock(27, 87, 24), BlockTypes.COLOR_BLOCK);
+
+  while (controller.bulkEditJob) controller.processBulkEditFrame(128, Infinity);
+  assert.equal(world.getBlock(27, 87, 24), BlockTypes.AIR);
+  assert.equal(progress.at(-1).phase, 'complete');
+  assert.ok(controller.__toasts.some(message => message.includes('Deleted 2 blocks')));
 });

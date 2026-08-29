@@ -157,7 +157,7 @@ function ColorSetCard({ index, item, totalCount }: { index: number; item: any; t
   const name = typeof item?.name === 'string' ? item.name : (controller?.inventoryItemName?.('colorset', item, index) || fallback);
   const isOnlyColorSet = totalCount !== undefined
     ? totalCount <= 1
-    : ((controller?.inventories?.colorset?.items || state.inventoryItems || []) as any[]).filter(Boolean).length <= 1;
+    : ((controller?.inventories?.colorset?.items || []) as any[]).filter(Boolean).length <= 1;
 
   if (!item.id) {
     item.id = typeof globalThis.crypto?.randomUUID === 'function'

@@ -14,8 +14,12 @@ const STORAGE_SCHEMA_VERSION = 2;
 const STORAGE_PREFIX = 'space.world-edits.v2';
 const LEGACY_STORAGE_PREFIX = 'space.world-edits.v1';
 const DEFAULT_SAVE_DELAY_MS = 75;
+const DEFAULT_REMOTE_BATCH_DELAY_MS = 200;
 const REMOTE_RETRY_DELAY_MS = 2_000;
+const MAX_REMOTE_RETRY_DELAY_MS = 30_000;
 const MAX_MUTATIONS_PER_BATCH = 256;
+const OUTBOX_HIGH_WATER_MUTATIONS = 4_096;
+const OUTBOX_LOW_WATER_MUTATIONS = 2_048;
 const MAX_STORED_STANDARD_EDITS = 250_000;
 const MAX_STORED_MICRO_EDITS = 500_000;
 
@@ -40,11 +44,24 @@ export interface WorldEditRemote {
   sendBatch(batchId: string, mutations: TerrainMutation[]): Promise<unknown>;
 }
 
+export interface WorldEditSyncStatus {
+  pendingBatches: number;
+  pendingMutations: number;
+  sending: boolean;
+  retrying: boolean;
+  retryDelayMs: number;
+  acknowledgedBatches: number;
+  acknowledgedMutations: number;
+  backpressured: boolean;
+}
+
 export interface WorldEditPersistenceOptions {
   worldId: string;
   storage?: WorldEditStorage | null;
   saveDelayMs?: number;
+  remoteBatchDelayMs?: number;
   remote?: WorldEditRemote | null;
+  onSyncStatus?: (status: WorldEditSyncStatus) => void;
 }
 
 export interface PersistedStandardEdit {
@@ -124,7 +141,9 @@ export class WorldEditPersistence {
   private readonly legacyStorageKey: string;
   private readonly storage: WorldEditStorage | null;
   private readonly saveDelayMs: number;
+  private readonly remoteBatchDelayMs: number;
   private readonly remote: WorldEditRemote | null;
+  private readonly onSyncStatus: ((status: WorldEditSyncStatus) => void) | null;
   private readonly standardEdits = new Map<string, PersistedStandardEdit>();
   private readonly standardEditsByChunk = new Map<string, Map<string, PersistedStandardEdit>>();
   private readonly microEdits = new Map<string, PersistedMicroEdit>();
@@ -133,7 +152,14 @@ export class WorldEditPersistence {
   private readonly sealedBatchIds = new Set<string>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private remoteRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private syncStatusTimer: ReturnType<typeof setTimeout> | null = null;
   private sendingBatchId: string | null = null;
+  private remoteFailureCount = 0;
+  private currentRetryDelayMs = 0;
+  private acknowledgedBatches = 0;
+  private acknowledgedMutations = 0;
+  private backpressured = false;
+  private lastSyncStatusKey = '';
   private dirty = false;
 
   constructor(options: WorldEditPersistenceOptions) {
@@ -142,10 +168,15 @@ export class WorldEditPersistence {
     this.legacyStorageKey = legacyWorldEditStorageKey(this.worldId);
     this.storage = options.storage === undefined ? resolveDefaultStorage() : options.storage;
     this.remote = options.remote ?? null;
+    this.onSyncStatus = options.onSyncStatus ?? null;
     const configuredSaveDelay = Number(options.saveDelayMs);
     this.saveDelayMs = Number.isFinite(configuredSaveDelay)
       ? Math.max(0, configuredSaveDelay)
       : DEFAULT_SAVE_DELAY_MS;
+    const configuredRemoteBatchDelay = Number(options.remoteBatchDelayMs);
+    this.remoteBatchDelayMs = Number.isFinite(configuredRemoteBatchDelay)
+      ? Math.max(0, configuredRemoteBatchDelay)
+      : DEFAULT_REMOTE_BATCH_DELAY_MS;
 
     if (this.remote) this.loadRemoteChunks(this.remote.chunks);
     this.loadLocalState();
@@ -154,9 +185,24 @@ export class WorldEditPersistence {
 
     if (this.remote) {
       this.dirty = true;
+      this.refreshBackpressure();
       this.scheduleSave();
       this.scheduleRemoteFlush();
+      this.notifySyncStatus(true);
     }
+  }
+
+  getSyncStatus(): WorldEditSyncStatus {
+    return {
+      pendingBatches: this.pendingBatches.length,
+      pendingMutations: this.pendingMutationCount(),
+      sending: this.sendingBatchId !== null,
+      retrying: this.remoteFailureCount > 0 && this.remoteRetryTimer !== null,
+      retryDelayMs: this.currentRetryDelayMs,
+      acknowledgedBatches: this.acknowledgedBatches,
+      acknowledgedMutations: this.acknowledgedMutations,
+      backpressured: this.backpressured,
+    };
   }
 
   getStandardEditsForChunk(cx: number, cz: number) {
@@ -380,6 +426,8 @@ export class WorldEditPersistence {
         this.pendingBatches.push(batch);
       }
       batch.mutations.push(mutation);
+      this.refreshBackpressure();
+      this.scheduleSyncStatusPublish();
       this.scheduleRemoteFlush();
     }
     this.scheduleSave();
@@ -410,6 +458,8 @@ export class WorldEditPersistence {
     // Reserve the batch while its IndexedDB transaction commits so another
     // zero-delay mutation timer cannot start a concurrent send of the same id.
     this.sendingBatchId = batch.batchId;
+    this.currentRetryDelayMs = 0;
+    this.notifySyncStatus();
     this.flush();
     try {
       await this.storage?.whenIdle?.();
@@ -419,7 +469,11 @@ export class WorldEditPersistence {
       this.dirty = true;
       this.sendingBatchId = null;
       console.warn('Space terrain batch is waiting for durable browser storage.', error);
-      this.scheduleRemoteFlush(REMOTE_RETRY_DELAY_MS);
+      this.remoteFailureCount++;
+      const delay = this.resolveRetryDelay(error);
+      this.currentRetryDelayMs = delay;
+      this.scheduleRemoteFlush(delay);
+      this.notifySyncStatus();
       return;
     }
     try {
@@ -430,12 +484,69 @@ export class WorldEditPersistence {
       this.dirty = true;
       this.flush();
       this.sendingBatchId = null;
-      this.scheduleRemoteFlush(0);
+      this.remoteFailureCount = 0;
+      this.currentRetryDelayMs = 0;
+      this.acknowledgedBatches++;
+      this.acknowledgedMutations += batch.mutations.length;
+      this.refreshBackpressure();
+      this.scheduleRemoteFlush(this.remoteBatchDelayMs);
+      this.notifySyncStatus();
     } catch (error) {
       this.sendingBatchId = null;
       console.warn('Space terrain batch remains queued for retry.', error);
-      this.scheduleRemoteFlush(REMOTE_RETRY_DELAY_MS);
+      this.remoteFailureCount++;
+      const delay = this.resolveRetryDelay(error);
+      this.currentRetryDelayMs = delay;
+      this.scheduleRemoteFlush(delay);
+      this.notifySyncStatus();
     }
+  }
+
+  private pendingMutationCount() {
+    let count = 0;
+    for (const batch of this.pendingBatches) count += batch.mutations.length;
+    return count;
+  }
+
+  private refreshBackpressure() {
+    if (!this.remote) {
+      this.backpressured = false;
+      return;
+    }
+    const pending = this.pendingMutationCount();
+    if (this.backpressured) {
+      if (pending <= OUTBOX_LOW_WATER_MUTATIONS) this.backpressured = false;
+    } else if (pending >= OUTBOX_HIGH_WATER_MUTATIONS) {
+      this.backpressured = true;
+    }
+  }
+
+  private resolveRetryDelay(error: unknown) {
+    const requested = Number((error as any)?.retryAfterMs);
+    if (Number.isFinite(requested) && requested >= 0) {
+      return Math.min(MAX_REMOTE_RETRY_DELAY_MS, Math.max(REMOTE_RETRY_DELAY_MS, requested));
+    }
+    return Math.min(
+      MAX_REMOTE_RETRY_DELAY_MS,
+      REMOTE_RETRY_DELAY_MS * (2 ** Math.max(0, this.remoteFailureCount - 1))
+    );
+  }
+
+  private scheduleSyncStatusPublish() {
+    if (!this.onSyncStatus || this.syncStatusTimer !== null) return;
+    this.syncStatusTimer = setTimeout(() => {
+      this.syncStatusTimer = null;
+      this.notifySyncStatus();
+    }, 50);
+  }
+
+  private notifySyncStatus(force = false) {
+    if (!this.onSyncStatus) return;
+    const status = this.getSyncStatus();
+    const key = JSON.stringify(status);
+    if (!force && key === this.lastSyncStatusKey) return;
+    this.lastSyncStatusKey = key;
+    this.onSyncStatus(status);
   }
 
   private loadRemoteChunks(chunks: TerrainEditChunk[]) {

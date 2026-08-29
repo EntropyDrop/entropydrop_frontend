@@ -125,6 +125,60 @@ test('remote terrain mutations are split into stable batches of at most 256 oper
   assert.deepEqual(cached.pendingBatches, []);
 });
 
+test('successful remote batches are paced without allowing concurrent sends', async () => {
+  const storage = new MemoryStorage();
+  const starts: number[] = [];
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const persistence = new WorldEditPersistence({
+    worldId: 'paced-batch-world',
+    storage,
+    saveDelayMs: 0,
+    remoteBatchDelayMs: 35,
+    remote: {
+      chunks: [],
+      async sendBatch() {
+        starts.push(Date.now());
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise(resolve => setTimeout(resolve, 5));
+        inFlight--;
+      }
+    }
+  });
+
+  for (let index = 0; index < 257; index++) {
+    persistence.recordStandard(index, 81, 12, BlockTypes.COLOR_BLOCK, index);
+  }
+  await waitFor(() => starts.length === 2);
+
+  assert.equal(maxInFlight, 1);
+  assert.ok(starts[1] - starts[0] >= 30, 'the next batch should wait after the prior ACK');
+});
+
+test('remote outbox exposes high-water backpressure for bulk edit producers', () => {
+  const persistence = new WorldEditPersistence({
+    worldId: 'backpressure-world',
+    storage: new MemoryStorage(),
+    saveDelayMs: 0,
+    remote: {
+      chunks: [],
+      async sendBatch() {
+        await new Promise(() => {});
+      }
+    }
+  });
+
+  for (let index = 0; index < 4_096; index++) {
+    persistence.recordStandard(index, 82, 14, BlockTypes.COLOR_BLOCK, index);
+  }
+
+  const status = persistence.getSyncStatus();
+  assert.equal(status.pendingMutations, 4_096);
+  assert.equal(status.pendingBatches, 16);
+  assert.equal(status.backpressured, true);
+});
+
 test('remote terrain outbox waits for IndexedDB durability before transmission', async () => {
   const storage = new DeferredDurableStorage();
   const sent: any[] = [];

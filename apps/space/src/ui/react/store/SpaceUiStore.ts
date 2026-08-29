@@ -40,6 +40,26 @@ export interface SelectorView {
   canCopy: boolean;
 }
 
+export interface BulkEditView {
+  label: string;
+  phase: 'applying' | 'waiting' | 'syncing' | 'complete' | 'failed';
+  processed: number;
+  total: number;
+  changed: number;
+  detail?: string;
+}
+
+export interface WorldEditSyncView {
+  pendingBatches: number;
+  pendingMutations: number;
+  sending: boolean;
+  retrying: boolean;
+  retryDelayMs: number;
+  acknowledgedBatches: number;
+  acknowledgedMutations: number;
+  backpressured: boolean;
+}
+
 export interface TelemetryView {
   groundDistance: string;
   altitude: string;
@@ -85,6 +105,8 @@ export interface SpaceUiSnapshot {
   positionText: string;
   nearbyEntities: NearbyEntityItem[];
   selector: SelectorView;
+  bulkEdit: BulkEditView | null;
+  worldEditSync: WorldEditSyncView;
   telemetry: TelemetryView;
   fov: number;
   perspective: PlayerPerspective;
@@ -125,6 +147,17 @@ const EMPTY_TELEMETRY: TelemetryView = {
   logs: ['Terminal ready, waiting for script output...']
 };
 
+const EMPTY_WORLD_EDIT_SYNC: WorldEditSyncView = {
+  pendingBatches: 0,
+  pendingMutations: 0,
+  sending: false,
+  retrying: false,
+  retryDelayMs: 0,
+  acknowledgedBatches: 0,
+  acknowledgedMutations: 0,
+  backpressured: false
+};
+
 function defaultCode(nodeId: string, node: any): string {
   if (nodeId === 'root') {
     return `// [root component controller]
@@ -153,6 +186,7 @@ function defaultCode(nodeId: string, node: any): string {
 export class SpaceUiStore {
   private listeners = new Set<Listener>();
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  private bulkEditClearTimer: ReturnType<typeof setTimeout> | null = null;
   private lastHudPublishAt = 0;
   private toastSequence = 0;
   private remotePlayers: any[] = [];
@@ -175,6 +209,7 @@ export class SpaceUiStore {
     selectedColor: normalizeColor(PRESET_COLORS[0]?.hex || '#f2a93b'),
     selectedColorIndex: 0,
     paletteColors: PRESET_COLORS.slice(0, 9).map(item => ({ hex: item.hex, name: item.name })),
+    activeColorSetId: null,
     activeInventoryCategory: 'blockset',
     selectedInventoryIndex: 0,
     editingContraption: null,
@@ -190,6 +225,8 @@ export class SpaceUiStore {
     positionText: 'X: -- | Y: -- | Z: --',
     nearbyEntities: [],
     selector: EMPTY_SELECTOR,
+    bulkEdit: null,
+    worldEditSync: EMPTY_WORLD_EDIT_SYNC,
     telemetry: EMPTY_TELEMETRY,
     fov: 75,
     perspective: 'first_person',
@@ -398,6 +435,46 @@ export class SpaceUiStore {
     this.toastTimer = setTimeout(() => {
       if (this.snapshot.toast?.id === toast.id) this.patch({ toast: null });
     }, 2800);
+  }
+
+  setBulkEditProgress(progress: BulkEditView | null): void {
+    if (this.bulkEditClearTimer) {
+      clearTimeout(this.bulkEditClearTimer);
+      this.bulkEditClearTimer = null;
+    }
+    if (!progress) {
+      this.patch({ bulkEdit: null });
+      return;
+    }
+
+    const syncIdle = this.snapshot.worldEditSync.pendingBatches === 0
+      && !this.snapshot.worldEditSync.sending;
+    const next = progress.phase === 'syncing' && syncIdle
+      ? { ...progress, phase: 'complete' as const }
+      : { ...progress };
+    this.patch({ bulkEdit: next });
+    if (next.phase === 'complete' || next.phase === 'failed') this.scheduleBulkEditClear();
+  }
+
+  setWorldEditSync(status: Partial<WorldEditSyncView>): void {
+    const worldEditSync = { ...EMPTY_WORLD_EDIT_SYNC, ...status };
+    const current = this.snapshot.bulkEdit;
+    const syncIdle = worldEditSync.pendingBatches === 0 && !worldEditSync.sending;
+    const bulkEdit = current?.phase === 'syncing' && syncIdle
+      ? { ...current, phase: 'complete' as const }
+      : current;
+    this.patch({ worldEditSync, bulkEdit });
+    if (bulkEdit?.phase === 'complete' && current?.phase !== 'complete') this.scheduleBulkEditClear();
+  }
+
+  private scheduleBulkEditClear(): void {
+    if (this.bulkEditClearTimer) clearTimeout(this.bulkEditClearTimer);
+    this.bulkEditClearTimer = setTimeout(() => {
+      this.bulkEditClearTimer = null;
+      if (this.snapshot.bulkEdit?.phase === 'complete' || this.snapshot.bulkEdit?.phase === 'failed') {
+        this.patch({ bulkEdit: null });
+      }
+    }, 1_800);
   }
 
   setBuildColor(value: string | number, notify = true): void {

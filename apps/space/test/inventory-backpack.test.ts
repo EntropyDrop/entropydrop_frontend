@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { Contraption } from '../src/engine/contraption/Contraption.ts';
 import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
 import {
+  BULK_EDIT_THRESHOLD,
   MAX_INVENTORY_BLOCKS,
   MAX_INVENTORY_IMPORT_BYTES,
   MAX_INVENTORY_SCRIPT_BYTES,
@@ -476,6 +477,44 @@ test('hammer left-click applies a selected color set to the palette', () => {
   assert.ok(controller.__toasts.some(m => m.includes('slot is empty')));
 });
 
+test('large Hammer block sets are applied across bounded frame slices', () => {
+  const scene = new THREE.Scene();
+  const world = new World(scene) as any;
+  const controller = makeController({ world });
+  controller.activeTool = SpecialTool.HAMMER;
+  controller.bulkEditJob = null;
+  controller.getInventoryPlacementPose = () => ({ position: new THREE.Vector3(0, 80, 0) });
+  const progress: any[] = [];
+  controller.ui.setBulkEditProgress = value => progress.push(value);
+
+  const total = BULK_EDIT_THRESHOLD + 44;
+  const slot = {
+    kind: 'blockset',
+    blockCount: total,
+    blocks: Array.from({ length: total }, (_, index) => ({
+      dx: index,
+      dy: 0,
+      dz: 0,
+      block: BlockTypes.COLOR_BLOCK,
+      color: 0x123456
+    }))
+  };
+
+  assert.equal(controller.pasteBlockSet(slot), true, 'the bulk job should be accepted immediately');
+  assert.ok(controller.bulkEditJob, 'the edit should wait for frame processing');
+  assert.equal(world.getBlock(0, 80, 0), BlockTypes.AIR);
+
+  controller.processBulkEditFrame(128, Infinity);
+  assert.equal(controller.bulkEditJob.processed, 128);
+  assert.equal(world.getBlock(127, 80, 0), BlockTypes.COLOR_BLOCK);
+  assert.equal(world.getBlock(128, 80, 0), BlockTypes.AIR);
+
+  while (controller.bulkEditJob) controller.processBulkEditFrame(128, Infinity);
+  assert.equal(world.getBlock(total - 1, 80, 0), BlockTypes.COLOR_BLOCK);
+  assert.equal(progress.at(-1).phase, 'complete');
+  assert.ok(controller.__toasts.some(message => message.includes(`Built block set: ${total}/${total}`)));
+});
+
 test('assembleSelection creates the contraption without automatically writing to backpack', () => {
   const scene = new THREE.Scene();
   const world = new World(scene) as any;
@@ -590,6 +629,23 @@ test('SpaceUiStore resolveDefaultInventoryCategory selects blockset for hammer, 
   // Selector tool -> defaults to colorset
   controller.activeTool = SpecialTool.SELECTOR;
   assert.equal(spaceUiStore.resolveDefaultInventoryCategory(), 'colorset');
+});
+
+test('SpaceUiStore keeps bulk progress visible through server sync completion', () => {
+  const ui = new SpaceUiStore();
+  ui.setWorldEditSync({ pendingBatches: 2, pendingMutations: 300, sending: true });
+  ui.setBulkEditProgress({
+    label: 'Building block set',
+    phase: 'syncing',
+    processed: 300,
+    total: 300,
+    changed: 300
+  });
+  assert.equal(ui.getSnapshot().bulkEdit?.phase, 'syncing');
+
+  ui.setWorldEditSync({ pendingBatches: 0, pendingMutations: 0, sending: false });
+  assert.equal(ui.getSnapshot().bulkEdit?.phase, 'complete');
+  ui.setBulkEditProgress(null);
 });
 
 test('toggleInventoryModal automatically opens the corresponding default tab based on tool', () => {
@@ -750,4 +806,3 @@ test('Color set tab does not display # numbers or import json on empty slots', (
   assert.doesNotMatch(emptySlotBody, /import JSON/i);
   assert.match(emptySlotBody, />Empty slot<\/span>/);
 });
-
