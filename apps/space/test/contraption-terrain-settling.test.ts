@@ -185,6 +185,73 @@ test('terrain collision sweeps across a 0.2m micro wall', () => {
   assert.ok(contraption.velocity.x <= 0, `the micro wall must cancel approaching velocity, vx=${contraption.velocity.x}`);
 });
 
+test('persistent high force cannot push a dynamic body through terrain', () => {
+  const wallX = 12;
+  const wallWorld = {
+    getBlock: (x) => x === wallX ? BlockTypes.COLOR_BLOCK : BlockTypes.AIR,
+    raycast: (origin, direction, maxDistance) => {
+      if (!(direction.x > 0) || origin.x >= wallX) return { hit: false };
+      const distance = (wallX - origin.x) / direction.x;
+      return distance <= maxDistance
+        ? { hit: true, distance, normal: { x: -1, y: 0, z: 0 } }
+        : { hit: false };
+    },
+    raycastMicro: () => ({ hit: false }),
+    microVoxels: { get: () => null }
+  };
+  const contraption = new Contraption(
+    7,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(10, 1, 10),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC, restitution: 0, friction: 0 }
+  );
+  contraption.useGravity = false;
+  const physics = new ContraptionPhysics(wallWorld as any);
+  let maxX = contraption.position.x;
+  for (let frame = 0; frame < 120; frame++) {
+    contraption.appliedForces.set(1_000_000, 0, 0);
+    physics.update(contraption, 1 / 60);
+    maxX = Math.max(maxX, contraption.position.x);
+  }
+
+  assert.ok(maxX < 11.51, `continuous force must not tunnel through the wall, maxX=${maxX}`);
+});
+
+test('fast rotation increases physics substeps to keep swept arcs collision-safe', () => {
+  const contraption = new Contraption(
+    8,
+    [0, 1, 2, 3].map(localX => ({
+      localX,
+      localY: 0,
+      localZ: 0,
+      block: BlockTypes.COLOR_BLOCK
+    })),
+    new THREE.Vector3(10, 8, 10),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC }
+  );
+  contraption.useGravity = false;
+  contraption.angularVelocity.set(0, 80, 0);
+  const physics = new ContraptionPhysics({
+    getBlock: () => BlockTypes.AIR,
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false }),
+    microVoxels: { get: () => null }
+  } as any) as any;
+  const resolveTerrainCollisionBody = physics.resolveTerrainCollisionBody.bind(physics);
+  let collisionSubsteps = 0;
+  physics.resolveTerrainCollisionBody = (...args) => {
+    collisionSubsteps++;
+    return resolveTerrainCollisionBody(...args);
+  };
+
+  physics.update(contraption, 0.08);
+
+  assert.ok(collisionSubsteps > 2, `fast angular motion must use more than the fixed two substeps, count=${collisionSubsteps}`);
+  assert.ok(collisionSubsteps <= 16, `adaptive substeps must remain bounded, count=${collisionSubsteps}`);
+});
+
 test('resting terrain contact remains stable across physics frames', () => {
   const contraption = new Contraption(
     4,

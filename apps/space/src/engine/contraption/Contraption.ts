@@ -3443,6 +3443,10 @@ export class Contraption {
       const z0 = cell.z * MICRO_SIZE, z1 = (cell.z + cell.span) * MICRO_SIZE;
       let minX = Infinity, minY = Infinity, minZ = Infinity;
       let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      let currentMinX = Infinity, currentMinY = Infinity, currentMinZ = Infinity;
+      let currentMaxX = -Infinity, currentMaxY = -Infinity, currentMaxZ = -Infinity;
+      let previousMinX = Infinity, previousMinY = Infinity, previousMinZ = Infinity;
+      let previousMaxX = -Infinity, previousMaxY = -Infinity, previousMaxZ = -Infinity;
 
       for (const cx of [x0, x1]) {
         for (const cy of [y0, y1]) {
@@ -3454,6 +3458,12 @@ export class Contraption {
             maxX = Math.max(maxX, corner.x);
             maxY = Math.max(maxY, corner.y);
             maxZ = Math.max(maxZ, corner.z);
+            currentMinX = Math.min(currentMinX, corner.x);
+            currentMinY = Math.min(currentMinY, corner.y);
+            currentMinZ = Math.min(currentMinZ, corner.z);
+            currentMaxX = Math.max(currentMaxX, corner.x);
+            currentMaxY = Math.max(currentMaxY, corner.y);
+            currentMaxZ = Math.max(currentMaxZ, corner.z);
             if (node?.previousWorldMatrix) {
               const previousCorner = new THREE.Vector3(cx, cy, cz)
                 .sub(node.pivotLocal).applyMatrix4(node.previousWorldMatrix);
@@ -3463,6 +3473,12 @@ export class Contraption {
               maxX = Math.max(maxX, previousCorner.x);
               maxY = Math.max(maxY, previousCorner.y);
               maxZ = Math.max(maxZ, previousCorner.z);
+              previousMinX = Math.min(previousMinX, previousCorner.x);
+              previousMinY = Math.min(previousMinY, previousCorner.y);
+              previousMinZ = Math.min(previousMinZ, previousCorner.z);
+              previousMaxX = Math.max(previousMaxX, previousCorner.x);
+              previousMaxY = Math.max(previousMaxY, previousCorner.y);
+              previousMaxZ = Math.max(previousMaxZ, previousCorner.z);
             }
           }
         }
@@ -3471,6 +3487,14 @@ export class Contraption {
       boxes.push({
         minX, minY, minZ,
         maxX, maxY, maxZ,
+        currentMinX, currentMinY, currentMinZ,
+        currentMaxX, currentMaxY, currentMaxZ,
+        previousMinX: Number.isFinite(previousMinX) ? previousMinX : currentMinX,
+        previousMinY: Number.isFinite(previousMinY) ? previousMinY : currentMinY,
+        previousMinZ: Number.isFinite(previousMinZ) ? previousMinZ : currentMinZ,
+        previousMaxX: Number.isFinite(previousMaxX) ? previousMaxX : currentMaxX,
+        previousMaxY: Number.isFinite(previousMaxY) ? previousMaxY : currentMaxY,
+        previousMaxZ: Number.isFinite(previousMaxZ) ? previousMaxZ : currentMaxZ,
         cell,
         entityId: cell.entityId,
         bodyId: cell.entityId,

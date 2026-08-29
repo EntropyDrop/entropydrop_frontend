@@ -154,3 +154,51 @@ test('entity broadphase skips narrow-phase work for spatially separated bodies',
   physics.resolveContraptionPairs([entities[0], nearby]);
   assert.equal(narrowPhaseCalls, 1, 'nearby entities should remain collision candidates');
 });
+
+test('continuous entity collision blocks a fast body that crosses an obstacle in one frame', () => {
+  const physics = makePhysics();
+  const projectile = makeEntity(200, { x: 0, y: 10, z: 0 }, {
+    restitution: 0,
+    friction: 0
+  });
+  const obstacle = makeEntity(201, { x: 5, y: 10, z: 0 }, {
+    bodyType: BodyType.KINEMATIC,
+    restitution: 0,
+    friction: 0
+  });
+  projectile.useGravity = false;
+  projectile.velocity.set(200, 0, 0);
+
+  const dt = 0.08;
+  projectile.update(dt, null, {});
+  obstacle.update(dt, null, {});
+  physics.update(projectile, dt);
+  physics.update(obstacle, dt);
+  physics.resolveContraptionPairs([projectile, obstacle]);
+
+  assert.ok(
+    projectile.position.x < obstacle.position.x,
+    `the projectile must remain before the obstacle, projectile=${projectile.position.x}, obstacle=${obstacle.position.x}`
+  );
+  assert.ok(projectile.velocity.x <= 0.01, `the obstacle must cancel the approaching velocity, vx=${projectile.velocity.x}`);
+});
+
+test('continuous entity collision prevents two fast dynamic bodies from swapping sides', () => {
+  const physics = makePhysics();
+  const a = makeEntity(202, { x: 0, y: 10, z: 0 }, { restitution: 0.1, friction: 0 });
+  const b = makeEntity(203, { x: 10, y: 10, z: 0 }, { restitution: 0.1, friction: 0 });
+  a.useGravity = false;
+  b.useGravity = false;
+  a.velocity.set(200, 0, 0);
+  b.velocity.set(-200, 0, 0);
+
+  const dt = 0.08;
+  a.update(dt, null, {});
+  b.update(dt, null, {});
+  physics.update(a, dt);
+  physics.update(b, dt);
+  physics.resolveContraptionPairs([a, b]);
+
+  assert.ok(a.position.x < b.position.x, `fast bodies must not swap sides, a=${a.position.x}, b=${b.position.x}`);
+  assert.ok(a.velocity.x <= b.velocity.x, `post-contact velocities must separate, avx=${a.velocity.x}, bvx=${b.velocity.x}`);
+});

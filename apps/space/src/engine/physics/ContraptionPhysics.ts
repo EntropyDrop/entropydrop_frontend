@@ -5,6 +5,9 @@ import type { World } from '../voxel/World.ts';
 
 const ENTITY_BROADPHASE_CELL_SIZE = 32;
 const TERRAIN_SWEEP_THRESHOLD = 0.1;
+const MIN_PHYSICS_SUBSTEPS = 2;
+const MAX_PHYSICS_SUBSTEPS = 16;
+const MAX_SUBSTEP_SURFACE_TRAVEL = 0.15;
 const TERRAIN_FACE_NORMALS = [
   new THREE.Vector3(-1, 0, 0),
   new THREE.Vector3(1, 0, 0),
@@ -46,8 +49,6 @@ export class ContraptionPhysics {
     const dynamicBodies = bodies.filter(body => body.type === BodyType.DYNAMIC);
     if (dynamicBodies.length === 0) return;
 
-    const subSteps = 2;
-    const sdt = dt / subSteps;
     const frameInputs = new Map();
     for (const body of dynamicBodies) {
       frameInputs.set(body.id, {
@@ -58,6 +59,23 @@ export class ContraptionPhysics {
       body.appliedTorques.set(0, 0, 0);
       body.isOnGround = false;
     }
+
+    const radius = Math.max(0.5, Number(contraption.boundingRadius) || 0.5);
+    let estimatedSurfaceTravel = 0;
+    for (const body of dynamicBodies) {
+      const input = frameInputs.get(body.id);
+      const linearAcceleration = (input?.force?.length?.() || 0) / Math.max(0.1, body.mass || 0.1)
+        + (body.id === 'root' && contraption.useGravity === false ? 0 : this.gravity.length());
+      const angularAcceleration = (input?.torque?.length?.() || 0) * Math.max(0, body.inverseInertia || 0);
+      const linearTravel = (body.velocity.length() + linearAcceleration * dt) * dt;
+      const angularTravel = (body.angularVelocity.length() + angularAcceleration * dt) * radius * dt;
+      estimatedSurfaceTravel = Math.max(estimatedSurfaceTravel, linearTravel + angularTravel);
+    }
+    const subSteps = Math.max(
+      MIN_PHYSICS_SUBSTEPS,
+      Math.min(MAX_PHYSICS_SUBSTEPS, Math.ceil(estimatedSurfaceTravel / MAX_SUBSTEP_SURFACE_TRAVEL))
+    );
+    const sdt = dt / subSteps;
 
     for (let step = 0; step < subSteps; step++) {
       const previous = new Map();
@@ -236,17 +254,36 @@ export class ContraptionPhysics {
    */
   resolveContraptionPairs(contraptions) {
     const colliders = (contraptions || []).filter(c => c?.getRigidBodies?.().length > 0);
+    const colliderBoxes = colliders.map(collider => collider.getCollisionWorldAABBs?.() || []);
     const buckets = new Map<string, number[]>();
     const candidates = new Map<string, [number, number]>();
     for (let index = 0; index < colliders.length; index++) {
       const collider = colliders[index];
+      const boxes = colliderBoxes[index];
       const radius = Math.max(0.5, Number(collider.boundingRadius) || 0.5) + 0.5;
-      const minX = Math.floor((collider.position.x - radius) / ENTITY_BROADPHASE_CELL_SIZE);
-      const maxX = Math.floor((collider.position.x + radius) / ENTITY_BROADPHASE_CELL_SIZE);
-      const minY = Math.floor((collider.position.y - radius) / ENTITY_BROADPHASE_CELL_SIZE);
-      const maxY = Math.floor((collider.position.y + radius) / ENTITY_BROADPHASE_CELL_SIZE);
-      const minZ = Math.floor((collider.position.z - radius) / ENTITY_BROADPHASE_CELL_SIZE);
-      const maxZ = Math.floor((collider.position.z + radius) / ENTITY_BROADPHASE_CELL_SIZE);
+      const bounds = boxes.length > 0
+        ? boxes.reduce((result, box) => ({
+            minX: Math.min(result.minX, box.minX),
+            minY: Math.min(result.minY, box.minY),
+            minZ: Math.min(result.minZ, box.minZ),
+            maxX: Math.max(result.maxX, box.maxX),
+            maxY: Math.max(result.maxY, box.maxY),
+            maxZ: Math.max(result.maxZ, box.maxZ)
+          }), { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity })
+        : {
+            minX: collider.position.x - radius,
+            minY: collider.position.y - radius,
+            minZ: collider.position.z - radius,
+            maxX: collider.position.x + radius,
+            maxY: collider.position.y + radius,
+            maxZ: collider.position.z + radius
+          };
+      const minX = Math.floor(bounds.minX / ENTITY_BROADPHASE_CELL_SIZE);
+      const maxX = Math.floor(bounds.maxX / ENTITY_BROADPHASE_CELL_SIZE);
+      const minY = Math.floor(bounds.minY / ENTITY_BROADPHASE_CELL_SIZE);
+      const maxY = Math.floor(bounds.maxY / ENTITY_BROADPHASE_CELL_SIZE);
+      const minZ = Math.floor(bounds.minZ / ENTITY_BROADPHASE_CELL_SIZE);
+      const maxZ = Math.floor(bounds.maxZ / ENTITY_BROADPHASE_CELL_SIZE);
       for (let x = minX; x <= maxX; x++) {
         for (let y = minY; y <= maxY; y++) {
           for (let z = minZ; z <= maxZ; z++) {
@@ -265,7 +302,7 @@ export class ContraptionPhysics {
     }
     for (const [a, b] of candidates.values()) {
       if (!this.isDynamicCollider(colliders[a]) && !this.isDynamicCollider(colliders[b])) continue;
-      this.resolveContraptionPair(colliders[a], colliders[b]);
+      this.resolveContraptionPair(colliders[a], colliders[b], colliderBoxes[a], colliderBoxes[b]);
     }
   }
 
@@ -273,44 +310,131 @@ export class ContraptionPhysics {
     return !!contraption?.getRigidBodies?.().some(body => body.type === BodyType.DYNAMIC);
   }
 
-  resolveContraptionPair(a, b) {
+  sweptAabbContact(a, b) {
+    const previousOverlap = ['x', 'y', 'z'].every(axis => (
+      Math.min(a[`previousMax${axis.toUpperCase()}`], b[`previousMax${axis.toUpperCase()}`])
+        - Math.max(a[`previousMin${axis.toUpperCase()}`], b[`previousMin${axis.toUpperCase()}`]) > 0
+    ));
+    if (previousOverlap) return null;
+
+    const relativeDelta = new THREE.Vector3();
+    for (const axis of ['x', 'y', 'z'] as const) {
+      const centerA0 = (a[`previousMin${axis.toUpperCase()}`] + a[`previousMax${axis.toUpperCase()}`]) * 0.5;
+      const centerA1 = (a[`currentMin${axis.toUpperCase()}`] + a[`currentMax${axis.toUpperCase()}`]) * 0.5;
+      const centerB0 = (b[`previousMin${axis.toUpperCase()}`] + b[`previousMax${axis.toUpperCase()}`]) * 0.5;
+      const centerB1 = (b[`currentMin${axis.toUpperCase()}`] + b[`currentMax${axis.toUpperCase()}`]) * 0.5;
+      relativeDelta[axis] = (centerA1 - centerA0) - (centerB1 - centerB0);
+    }
+    if (relativeDelta.lengthSq() < 1e-12) return null;
+
+    let entryTime = -Infinity;
+    let exitTime = Infinity;
+    let normal = null;
+    for (const axis of ['x', 'y', 'z'] as const) {
+      const delta = relativeDelta[axis];
+      const aMin = a[`previousMin${axis.toUpperCase()}`];
+      const aMax = a[`previousMax${axis.toUpperCase()}`];
+      const bMin = b[`previousMin${axis.toUpperCase()}`];
+      const bMax = b[`previousMax${axis.toUpperCase()}`];
+      if (Math.abs(delta) < 1e-12) {
+        if (aMax < bMin || aMin > bMax) return null;
+        continue;
+      }
+
+      let entry;
+      let exit;
+      let direction;
+      if (delta > 0) {
+        entry = (bMin - aMax) / delta;
+        exit = (bMax - aMin) / delta;
+        direction = 1;
+      } else {
+        entry = (bMax - aMin) / delta;
+        exit = (bMin - aMax) / delta;
+        direction = -1;
+      }
+      if (entry > entryTime) {
+        entryTime = entry;
+        normal = new THREE.Vector3();
+        normal[axis] = direction;
+      }
+      exitTime = Math.min(exitTime, exit);
+      if (entryTime > exitTime) return null;
+    }
+
+    if (!normal || entryTime < 0 || entryTime > 1 || exitTime < 0) return null;
+    return { time: entryTime, normal, relativeDelta };
+  }
+
+  applyEntityCollisionImpulse(bodyA, bodyB, normal, totalInv) {
+    const relativeVelocity = bodyB.velocity.clone().sub(bodyA.velocity);
+    const normalVelocity = relativeVelocity.dot(normal);
+    if (normalVelocity >= -0.05) return;
+    const restitution = Math.max(bodyA.restitution, bodyB.restitution);
+    const impulse = -(1 + restitution) * normalVelocity / totalInv;
+    bodyA.velocity.addScaledVector(normal, -impulse * this.inverseMass(bodyA));
+    bodyB.velocity.addScaledVector(normal, impulse * this.inverseMass(bodyB));
+  }
+
+  resolveContraptionPair(a, b, boxesA = null, boxesB = null) {
     if (a === b) return;
 
-    // Fast rejection: loose bounding-sphere test only. Exact contact is
-    // decided per collision cell (world AABB), because boundingRadius
-    // overestimates flat/wide entities and would cause ghost bounces
-    // (a falling aircraft "hitting" a platform 2m above its top face).
-    const dist = a.position.distanceTo(b.position);
-    if (dist > a.boundingRadius + b.boundingRadius + 0.5) return;
-
-    const boxesA = a.getCollisionWorldAABBs?.() || [];
-    const boxesB = b.getCollisionWorldAABBs?.() || [];
-    let best = null;
+    boxesA ||= a.getCollisionWorldAABBs?.() || [];
+    boxesB ||= b.getCollisionWorldAABBs?.() || [];
+    let bestOverlap = null;
+    let bestSweep = null;
 
     for (const ba of boxesA) {
       for (const bb of boxesB) {
         const bodyA = a.getRigidBody?.(ba.bodyId || ba.entityId || 'root');
         const bodyB = b.getRigidBody?.(bb.bodyId || bb.entityId || 'root');
         if (!bodyA || !bodyB || (bodyA.type !== BodyType.DYNAMIC && bodyB.type !== BodyType.DYNAMIC)) continue;
-        const ox = Math.min(ba.maxX, bb.maxX) - Math.max(ba.minX, bb.minX);
-        if (ox <= 0) continue;
-        const oy = Math.min(ba.maxY, bb.maxY) - Math.max(ba.minY, bb.minY);
-        if (oy <= 0) continue;
-        const oz = Math.min(ba.maxZ, bb.maxZ) - Math.max(ba.minZ, bb.minZ);
-        if (oz <= 0) continue;
 
-        // Resolve along the axis of least penetration.
-        const penetration = Math.min(ox, oy, oz);
-        if (!best || penetration < best.penetration) {
-          best = { axis: penetration === ox ? 'x' : penetration === oy ? 'y' : 'z', penetration, ba, bb, bodyA, bodyB };
+        const sweep = this.sweptAabbContact(ba, bb);
+        if (sweep && (!bestSweep || sweep.time < bestSweep.time)) {
+          bestSweep = { ...sweep, bodyA, bodyB };
+        }
+
+        const ox = Math.min(ba.currentMaxX, bb.currentMaxX) - Math.max(ba.currentMinX, bb.currentMinX);
+        const oy = Math.min(ba.currentMaxY, bb.currentMaxY) - Math.max(ba.currentMinY, bb.currentMinY);
+        const oz = Math.min(ba.currentMaxZ, bb.currentMaxZ) - Math.max(ba.currentMinZ, bb.currentMinZ);
+        if (ox > 0 && oy > 0 && oz > 0) {
+          const penetration = Math.min(ox, oy, oz);
+          if (!bestOverlap || penetration < bestOverlap.penetration) {
+            bestOverlap = {
+              axis: penetration === ox ? 'x' : penetration === oy ? 'y' : 'z',
+              penetration,
+              ba,
+              bb,
+              bodyA,
+              bodyB
+            };
+          }
         }
       }
     }
-    if (!best) return;
 
-    const { axis, penetration, ba, bb, bodyA, bodyB } = best;
-    const minKey = `min${axis.toUpperCase()}`;
-    const maxKey = `max${axis.toUpperCase()}`;
+    if (bestSweep) {
+      const { bodyA, bodyB, normal, relativeDelta, time } = bestSweep;
+      const invA = this.inverseMass(bodyA);
+      const invB = this.inverseMass(bodyB);
+      const totalInv = invA + invB;
+      if (totalInv <= 0) return;
+      const relativeDistance = Math.max(1e-9, relativeDelta.length());
+      const rewindFraction = Math.min(1, Math.max(0, 1 - time + 0.001 / relativeDistance));
+      bodyA.position.addScaledVector(relativeDelta, -rewindFraction * invA / totalInv);
+      bodyB.position.addScaledVector(relativeDelta, rewindFraction * invB / totalInv);
+      this.applyEntityCollisionImpulse(bodyA, bodyB, normal, totalInv);
+      a.syncAllBodyTransforms?.();
+      b.syncAllBodyTransforms?.();
+      return;
+    }
+
+    if (!bestOverlap) return;
+
+    const { axis, penetration, ba, bb, bodyA, bodyB } = bestOverlap;
+    const minKey = `currentMin${axis.toUpperCase()}`;
+    const maxKey = `currentMax${axis.toUpperCase()}`;
     const centerA = (ba[minKey] + ba[maxKey]) / 2;
     const centerB = (bb[minKey] + bb[maxKey]) / 2;
     const dir = centerB >= centerA ? 1 : -1;
@@ -322,19 +446,10 @@ export class ContraptionPhysics {
     const totalInv = invA + invB;
     if (totalInv <= 0) return;
 
-    const push = penetration * 0.9;
+    const push = penetration + 0.001;
     bodyA.position.addScaledVector(normal, -push * invA / totalInv);
     bodyB.position.addScaledVector(normal, push * invB / totalInv);
-
-    // Elastic impulse only while approaching along the contact normal.
-    const relativeVelocity = bodyB.velocity.clone().sub(bodyA.velocity);
-    const normalVelocity = relativeVelocity.dot(normal);
-    if (normalVelocity < -0.05) {
-      const restitution = Math.max(bodyA.restitution, bodyB.restitution);
-      const impulse = -(1 + restitution) * normalVelocity / totalInv;
-      bodyA.velocity.addScaledVector(normal, -impulse * invA);
-      bodyB.velocity.addScaledVector(normal, impulse * invB);
-    }
+    this.applyEntityCollisionImpulse(bodyA, bodyB, normal, totalInv);
 
     a.syncAllBodyTransforms?.();
     b.syncAllBodyTransforms?.();
@@ -538,9 +653,8 @@ export class ContraptionPhysics {
     return { velocity, normals };
   }
 
-  solveTerrainContact(body, normal, hitPosition, penetration, contactCount, dt, swept = false) {
-    const correctionRatio = swept ? 1 : 0.9;
-    body.position.addScaledVector(normal, Math.max(0, penetration - 0.001) * correctionRatio);
+  solveTerrainContact(body, normal, hitPosition, penetration, contactCount, dt) {
+    body.position.addScaledVector(normal, Math.max(0, penetration - 0.001));
     if (normal.y > 0.5) body.isOnGround = true;
 
     const r = hitPosition.clone().sub(body.position);
@@ -655,19 +769,17 @@ export class ContraptionPhysics {
         normal: resolvedContact.normal,
         penetration: 0,
         hitPosition: new THREE.Vector3(),
-        count: 0,
-        swept: false
+        count: 0
       };
       group.penetration = Math.max(group.penetration, resolvedContact.penetration);
       group.hitPosition.add(sweptContact?.hitPosition || pt);
       group.count++;
-      group.swept ||= !!sweptContact;
       contacts.set(key, group);
     }
 
     // Resolve independent exposed faces in one sub-step (for example floor +
     // wall at a corner). The ground flag is reset once per frame by update(),
-    // so a contact found in either sub-step remains stable for that frame.
+    // so a contact found in any adaptive sub-step remains stable for that frame.
     const groups = [...contacts.values()].sort((a, b) => b.penetration - a.penetration);
     for (const group of groups) {
       group.hitPosition.divideScalar(group.count);
@@ -677,8 +789,7 @@ export class ContraptionPhysics {
         group.hitPosition,
         group.penetration,
         group.count,
-        dt,
-        group.swept
+        dt
       );
     }
   }
