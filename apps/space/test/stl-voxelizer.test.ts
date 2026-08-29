@@ -98,11 +98,16 @@ test('cell size 0.5 voxelizes a unit cube into normalized 2x2x2 blocks', () => {
   assert.equal(result.blocks[0].color, 0xff00aa);
 });
 
-test('a 10x10x10 cube at s=2 produces a filled 5x5x5 solid', () => {
+test('a 10x10x10 cube at s=2 produces a hollow 5x5x5 shell by default to save resources', () => {
   const buffer = encodeBinarySTL(cubeTriangles([0, 0, 0], [10, 10, 10]));
   const result = voxelizeSTL(parseSTLData(buffer), 2);
-  assert.equal(result.blocks.length, 125, 'the solid interior must be filled');
-  assert.ok(result.blocks.some(b => b.dx === 2 && b.dy === 2 && b.dz === 2), 'the center cell should exist');
+  assert.equal(result.blocks.length, 98, 'the interior is hollowed out (5^3 - 3^3 = 98)');
+  assert.equal(result.blocks.some(b => b.dx === 2 && b.dy === 2 && b.dz === 2), false, 'the center cell should be hollowed out');
+
+  // hollow: false produces solid
+  const solidResult = voxelizeSTL(parseSTLData(buffer), 2, 0xf2a93b, { hollow: false });
+  assert.equal(solidResult.blocks.length, 125, 'hollow: false produces a filled solid');
+  assert.ok(solidResult.blocks.some(b => b.dx === 2 && b.dy === 2 && b.dz === 2), 'solid model contains center cell');
 });
 
 test('binary STL converts embedded VisCAM 15-bit color to 8-bit RGB', () => {
@@ -180,11 +185,11 @@ test('planSTLSize uses size for scale and precision for representation', () => {
   assert.ok(Math.abs(micro.scale - 0.2) < 1e-9, 'both precisions should scale the model to eight standard cells');
 });
 
-test('scaled voxelization maps a 10-cube to a filled 5x5x5 standard-block model', () => {
+test('scaled voxelization maps a 10-cube to a hollow 5x5x5 standard-block model', () => {
   const tris = cubeTriangles([0, 0, 0], [10, 10, 10]).map(([a, b, c]: number[][]) => ({ a: a as [number, number, number], b: b as [number, number, number], c: c as [number, number, number] }));
   const plan = planSTLSize(tris, 5, 1);
   const result = voxelizeSTL(tris, plan.cellSize, 0xabcdef, { micro: plan.micro, scale: plan.scale });
-  assert.equal(result.blocks.length, 125, 'the result should be a filled 5x5x5 standard-block model');
+  assert.equal(result.blocks.length, 98, 'the result should be a hollow 5x5x5 standard-block model');
   assert.ok(result.blocks.every(b => b.size === 1 && Number.isInteger(b.dx) && Number.isInteger(b.dy) && Number.isInteger(b.dz)));
   const maxAxis = Math.max(
     Math.max(...result.blocks.map(b => b.dx)) + 1,
@@ -194,14 +199,13 @@ test('scaled voxelization maps a 10-cube to a filled 5x5x5 standard-block model'
   assert.equal(maxAxis, 5, 'the longest axis should span exactly five standard cells');
 });
 
-test('microblock precision automatically merges solid 5x5x5 micro regions into 1x1x1 blocks', () => {
+test('microblock precision keeps hollow surface shells while saving interior voxel budget', () => {
   const tris = cubeTriangles([0, 0, 0], [10, 10, 10]).map(([a, b, c]: number[][]) => ({ a: a as [number, number, number], b: b as [number, number, number], c: c as [number, number, number] }));
   const plan = planSTLSize(tris, 5, 0.2);
   assert.equal(plan.cells, 25);
   const result = voxelizeSTL(tris, plan.cellSize, 0xabcdef, { micro: plan.micro, scale: plan.scale });
-  // 25x25x25 solid microcells (15,625 microblocks) merge into 5x5x5 = 125 solid 1x1x1 standard blocks.
-  assert.equal(result.blocks.length, 125, '15,625 solid microcells should merge into 125 1x1x1 blocks');
-  assert.ok(result.blocks.every(b => b.size === 1), 'every output block in a fully solid model should be merged to size 1');
+  // 25x25x25 hollow microcells shell (3,458 microblocks) saves 12,167 interior blocks (down from 15,625).
+  assert.equal(result.blocks.length, 3458, '25x25x25 hollow shell should produce 3458 surface microblocks');
   assert.ok(
     result.blocks.every(b =>
       Math.abs(b.dx * 5 - Math.round(b.dx * 5)) < 1e-9 &&
@@ -211,22 +215,18 @@ test('microblock precision automatically merges solid 5x5x5 micro regions into 1
     'offsets should lie exactly on the 0.2 grid'
   );
   const maxDx = Math.max(...result.blocks.map(b => b.dx));
-  assert.equal(maxDx, 4, `five 1m blocks span from dx 0 to 4`);
+  assert.equal(maxDx, 4.8, `25 microcells span from dx 0 to 4.8`);
 });
 
-test('microblock precision keeps fine surface details as 0.2 blocks while merging solid interior into 1x1x1 blocks', () => {
+test('microblock precision retains fine surface details as 0.2 blocks on hollow models', () => {
   // A cube of 1.4m = 7 microcells on each axis (7x7x7 = 343 microcells)
   // At s = 0.2:
   // dx in [0..6], dy in [0..6], dz in [0..6] (7 cells)
-  // The aligned 5x5x5 region [0..4, 0..4, 0..4] (125 cells) merges into 1 1x1x1 block.
-  // The remaining 343 - 125 = 218 cells cannot form a complete 5x5x5 block and remain as 0.2 microblocks.
+  // Interior 5x5x5 core is hollowed out (343 - 125 = 218 surface microcells).
   const tris = cubeTriangles([0, 0, 0], [1.4, 1.4, 1.4]).map(([a, b, c]: number[][]) => ({ a: a as [number, number, number], b: b as [number, number, number], c: c as [number, number, number] }));
   const result = voxelizeSTL(tris, 0.2, 0x112233, { micro: true });
-  const merged1m = result.blocks.filter(b => b.size === 1);
-  const micro02 = result.blocks.filter(b => b.size === 0.2);
-  assert.equal(merged1m.length, 1, 'central 5x5x5 core is merged into 1 1x1x1 block');
-  assert.equal(micro02.length, 218, 'surface microcells remain as 0.2 microblocks');
-  assert.equal(result.blocks.length, 219, 'total blocks is 219 (reduced from 343)');
+  assert.equal(result.blocks.length, 218, 'hollow shell contains 218 surface microblocks');
+  assert.ok(result.blocks.every(b => b.size === 0.2));
 });
 
 test('planSTLSize handles empty meshes, zero extent, and invalid size boundaries', () => {

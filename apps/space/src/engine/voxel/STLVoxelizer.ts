@@ -220,8 +220,9 @@ function rayXIntersectsTriangle(t: STLTriangle, ox: number, oy: number, oz: numb
  * @param defaultColor Block color used when the STL has no embedded color.
  * @param opts.micro Emit 5x5x5 microblocks when true; standard blocks otherwise.
  * @param opts.scale Uniform scale mapping the longest axis to the target size.
+ * @param opts.hollow Keep model hollow (default true) by carving out fully enclosed interior voxels to save resources.
  */
-export function voxelizeSTL(triangles: STLTriangle[], blockSize = 1, defaultColor = 0xf2a93b, opts: { micro?: boolean; scale?: number } = {}): STLVoxelResult {
+export function voxelizeSTL(triangles: STLTriangle[], blockSize = 1, defaultColor = 0xf2a93b, opts: { micro?: boolean; scale?: number; hollow?: boolean } = {}): STLVoxelResult {
   if (!triangles || triangles.length === 0) throw new Error('STL has no triangles');
   const s = blockSize > 0 ? blockSize : 1;
   const eps = s * INWARD_OFFSET_RATIO;
@@ -372,13 +373,38 @@ export function voxelizeSTL(triangles: STLTriangle[], blockSize = 1, defaultColo
     }
   }
 
+  // --- 2.5) Hollow pass: preserve hollow shell and remove fully enclosed interior voxels to save resources ---
+  const hollow = opts.hollow !== false;
+  const hollowGrid = new Uint8Array(gsx * gsy * gsz);
+  if (hollow) {
+    for (let x = 1; x < gsx - 1; x++) {
+      for (let y = 1; y < gsy - 1; y++) {
+        for (let z = 1; z < gsz - 1; z++) {
+          const cell = idx(x, y, z);
+          if (grid[cell] !== 1) continue;
+          const isInterior =
+            grid[idx(x + 1, y, z)] === 1 &&
+            grid[idx(x - 1, y, z)] === 1 &&
+            grid[idx(x, y + 1, z)] === 1 &&
+            grid[idx(x, y - 1, z)] === 1 &&
+            grid[idx(x, y, z + 1)] === 1 &&
+            grid[idx(x, y, z - 1)] === 1;
+          if (!isInterior) {
+            hollowGrid[cell] = 1;
+          }
+        }
+      }
+    }
+  }
+  const effectiveGrid = hollow ? hollowGrid : grid;
+
   // --- 3) Collect occupied cells and normalize the minimum corner to zero ---
   let minBx = Infinity, minBy = Infinity, minBz = Infinity;
   const filled: number[][] = [];
   for (let x = 0; x < gsx; x++) {
     for (let y = 0; y < gsy; y++) {
       for (let z = 0; z < gsz; z++) {
-        if (grid[idx(x, y, z)] === 1) {
+        if (effectiveGrid[idx(x, y, z)] === 1) {
           filled.push([x, y, z]);
           if (x < minBx) minBx = x;
           if (y < minBy) minBy = y;
@@ -411,7 +437,7 @@ export function voxelizeSTL(triangles: STLTriangle[], blockSize = 1, defaultColo
           for (let dx = 0; dx < 5; dx++) {
             for (let dy = 0; dy < 5; dy++) {
               for (let dz = 0; dz < 5; dz++) {
-                if (grid[idx(x + dx, y + dy, z + dz)] !== 1) {
+                if (effectiveGrid[idx(x + dx, y + dy, z + dz)] !== 1) {
                   isSolid = false;
                   break;
                 }
