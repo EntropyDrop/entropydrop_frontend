@@ -32,18 +32,6 @@ export function isPerspectiveToggleCode(code: string) {
 
 export type PlayerPerspective = 'first_person' | 'third_person' | 'third_person_front';
 
-export const WRENCH_MAX_CHARGE_SECONDS = 2;
-const WRENCH_CHARGE_EXPONENT = 3.2;
-
-/** Normalized exponential wrench strength: precise at first, powerful near full charge. */
-export function wrenchChargeStrength(heldSeconds: number) {
-  const normalized = Math.max(0, Math.min(1, Number(heldSeconds) / WRENCH_MAX_CHARGE_SECONDS));
-  if (normalized <= 0) return 0;
-  if (normalized >= 1 - 1e-9) return 1;
-  return (Math.exp(WRENCH_CHARGE_EXPONENT * normalized) - 1)
-    / (Math.exp(WRENCH_CHARGE_EXPONENT) - 1);
-}
-
 const HEX_COLOR = /^#?[0-9a-f]{6}$/i;
 const MAX_INVENTORY_NAME_LENGTH = 80;
 const MICRO_DIVISIONS = 5;
@@ -64,7 +52,7 @@ export const SpecialTool = {
   BRUSH: 'brush',           // 3. Brush (repaint block colors)
   PIPETTE: 'pipette',       // Legacy alias; color sampling is part of Brush
   SELECTOR: 'selector',     // 4. Selector (world/component selection and copy)
-  WRENCH: 'wrench',         // 6. Wrench (hold to charge/grab, right start/stop)
+  WRENCH: 'wrench',         // 6. Wrench (hold to grab, right start/stop)
   HAMMER: 'hammer',         // 5. Hammer (preview/place inventory items)
   SUPER_GLUE: 'selector'    // alias for backwards compatibility
 };
@@ -2083,7 +2071,7 @@ export class PlayerController {
   startWrenchGrab() {
     const contraption = this.hoveredContraptionHit?.contraption || this.hoveredContraption;
     if (!contraption) {
-      this.ui?.showToast?.('Wrench: hold left-click on a dynamic entity to charge and grab');
+      this.ui?.showToast?.('Wrench: hold left-click on a dynamic entity to grab it');
       return false;
     }
     const bodyId = this.getWrenchGrabBodyId(
@@ -2115,12 +2103,9 @@ export class PlayerController {
       bodyId,
       localPoint,
       targetDistance: initialDistance,
-      holdTime: 0,
-      strength: 0,
       lastTargetPosition: hitPoint.clone(),
       active: true
     };
-    this.ui?.setWrenchChargeStrength?.(0);
     this.sound?.playWrenchClick?.();
     return true;
   }
@@ -2129,7 +2114,6 @@ export class PlayerController {
     const wasActive = !!this.wrenchGrab;
     this.wrenchGrab = null;
     this.sceneRenderer?.setWrenchTether?.(null, null);
-    this.ui?.setWrenchChargeStrength?.(null);
     return wasActive;
   }
 
@@ -3263,41 +3247,28 @@ export class PlayerController {
               ? contraption.localToWorld(localPoint.clone())
               : localPoint.clone().add(contraption.position || new THREE.Vector3());
 
-          grab.holdTime += Math.max(0, Number(dt) || 0);
-          grab.strength = wrenchChargeStrength(grab.holdTime);
-          this.ui?.setWrenchChargeStrength?.(grab.strength);
-          this.sceneRenderer?.setWrenchTether?.(eyePos, anchorPos, grab.strength);
+          this.sceneRenderer?.setWrenchTether?.(eyePos, anchorPos);
 
-          // Critically damp the exact grabbed point against the camera target.
-          // Anchor velocity includes body rotation and target velocity includes
-          // player/camera movement; the old COM-only damper felt like a
-          // continuous one-way push instead of a held physical point.
+          // Treat the wrench as an editor-style velocity constraint instead of
+          // a spring force. This deliberately ignores mass so a billion-kilogram
+          // body follows just as readily as a single block. Movement still goes
+          // through the physics step, preserving terrain sweep/collision checks.
           const safeDt = Math.max(1 / 240, Math.min(0.08, Number(dt) || 0));
           const targetVelocity = targetPos.clone()
             .sub(grab.lastTargetPosition)
             .divideScalar(safeDt);
-          if (targetVelocity.length() > 50) targetVelocity.setLength(50);
+          if (targetVelocity.length() > 80) targetVelocity.setLength(80);
 
-          const lever = anchorPos.clone().sub(body.position);
-          const anchorVelocity = body.velocity.clone()
-            .add(body.angularVelocity.clone().cross(lever));
-          const positionError = targetPos.clone().sub(anchorPos);
-          const relativeVelocity = targetVelocity.sub(anchorVelocity);
-          const frequency = 4 + 12 * grab.strength;
-          const acceleration = positionError.multiplyScalar(frequency * frequency)
-            .addScaledVector(relativeVelocity, 2 * frequency);
-          const maxAcceleration = 24 + 156 * grab.strength;
-          if (acceleration.length() > maxAcceleration) acceleration.setLength(maxAcceleration);
+          const desiredVelocity = targetPos.clone()
+            .sub(anchorPos)
+            .multiplyScalar(36)
+            .add(targetVelocity);
+          if (desiredVelocity.length() > 120) desiredVelocity.setLength(120);
 
-          const force = acceleration.multiplyScalar(Math.max(0.1, body.mass || 1));
-          body.appliedForces.add(force);
-          body.appliedTorques.add(lever.cross(force));
+          const velocityBlend = 1 - Math.exp(-80 * safeDt);
+          body.velocity.lerp(desiredVelocity, velocityBlend);
+          body.angularVelocity.multiplyScalar(Math.exp(-32 * safeDt));
           grab.lastTargetPosition.copy(targetPos);
-
-          if (grab.strength >= 1 && !grab.fullyCharged) {
-            grab.fullyCharged = true;
-            this.sound?.playWrenchClick?.();
-          }
         }
       }
     } else {

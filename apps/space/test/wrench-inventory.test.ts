@@ -5,9 +5,7 @@ import { Contraption, ContraptionMode } from '../src/engine/contraption/Contrapt
 import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
 import {
   PlayerController,
-  SpecialTool,
-  WRENCH_MAX_CHARGE_SECONDS,
-  wrenchChargeStrength
+  SpecialTool
 } from '../src/engine/controls/PlayerController.ts';
 import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
@@ -222,11 +220,7 @@ test('Wrench hold grabs the exact dynamic-body point and releases cleanly', () =
   controller.hoveredContraption = entity;
   controller.hoveredContraptionHit = { contraption: entity, entityId: 'root', point: new THREE.Vector3(0, 0, 5) };
   controller.sound = { playWrenchClick() {} };
-  const chargeUpdates = [];
-  controller.ui = {
-    showToast() {},
-    setWrenchChargeStrength(value) { chargeUpdates.push(value); }
-  };
+  controller.ui = { showToast() {} };
   controller.camera = new THREE.PerspectiveCamera();
   controller.camera.position.set(0, 0, 0);
   controller.camera.rotation.set(0, 0, 0, 'YXZ');
@@ -248,28 +242,11 @@ test('Wrench hold grabs the exact dynamic-body point and releases cleanly', () =
   controller.camera.position.set(0, 5, 0);
   controller.update(1 / 60);
 
-  assert.ok(entity.appliedForces.length() > 0, 'grab force must be applied at the locked point');
-  assert.ok(entity.appliedTorques.length() > 0, 'an off-centre grab must apply matching torque');
-  assert.ok(controller.wrenchGrab.strength > 0, 'hold duration must increase grab strength');
-  assert.equal(chargeUpdates[0], null, 'starting a fresh grab clears stale charge UI first');
-  assert.equal(chargeUpdates[1], 0, 'a fresh grab starts the ring at zero');
-  assert.ok(chargeUpdates.at(-1) > 0, 'the ring must advance while held');
+  assert.ok(entity.velocity.length() > 0, 'grab must immediately constrain the body toward the locked point');
+  assert.equal(entity.appliedForces.length(), 0, 'grab strength must not depend on finite force or body mass');
 
   assert.equal(controller.releaseWrenchGrab(), true);
   assert.equal(controller.wrenchGrab, null);
-  assert.equal(chargeUpdates.at(-1), null, 'releasing the mouse hides the ring');
-});
-
-test('Wrench charge strength grows exponentially and caps at full power', () => {
-  const quarter = wrenchChargeStrength(WRENCH_MAX_CHARGE_SECONDS * 0.25);
-  const half = wrenchChargeStrength(WRENCH_MAX_CHARGE_SECONDS * 0.5);
-  const threeQuarter = wrenchChargeStrength(WRENCH_MAX_CHARGE_SECONDS * 0.75);
-
-  assert.equal(wrenchChargeStrength(0), 0);
-  assert.ok(quarter < half && half < threeQuarter, 'charge must increase monotonically');
-  assert.ok(half - quarter < threeQuarter - half, 'later hold time must add power faster than earlier hold time');
-  assert.equal(wrenchChargeStrength(WRENCH_MAX_CHARGE_SECONDS), 1);
-  assert.equal(wrenchChargeStrength(WRENCH_MAX_CHARGE_SECONDS * 10), 1);
 });
 
 test('Wrench grab holds a stationary target without pushing and follows player motion', () => {
@@ -307,7 +284,7 @@ test('Wrench grab holds a stationary target without pushing and follows player m
     point: entity.position.clone()
   };
   controller.sound = { playWrenchClick() {} };
-  controller.ui = { showToast() {}, setWrenchChargeStrength() {} };
+  controller.ui = { showToast() {} };
   controller.camera = camera;
   controller.physics = {
     update() {},
@@ -324,7 +301,6 @@ test('Wrench grab holds a stationary target without pushing and follows player m
     entityPhysics.update(entity, 1 / 60);
   }
   assert.ok(entity.position.distanceTo(originalPosition) < 0.01, 'an unchanged grab target must not push the body away');
-  assert.equal(controller.wrenchGrab.strength, 1, 'two seconds of holding must reach full power');
 
   eye.x = 2;
   for (let frame = 0; frame < 90; frame++) {
@@ -333,6 +309,63 @@ test('Wrench grab holds a stationary target without pushing and follows player m
   }
   assert.ok(entity.position.x > 1.5, `the grabbed point must follow player motion, x=${entity.position.x}`);
   assert.ok(Math.abs(entity.position.z - originalPosition.z) < 0.2, 'following sideways must not become a forward push');
+});
+
+test('Wrench grab is mass independent for extremely heavy entities', () => {
+  const scene = new THREE.Scene();
+  const world = {
+    getBlock: () => BlockTypes.AIR,
+    raycast: () => ({ hit: false, distance: 0 }),
+    raycastMicro: () => ({ hit: false, distance: 0 }),
+    microVoxels: { get: () => null }
+  };
+  const manager = new ContraptionManager(scene, world, null, null);
+  const entityPhysics = new ContraptionPhysics(world as any);
+  manager.setPhysics(entityPhysics);
+  const entity = new Contraption(
+    3,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0, 0, -5),
+    scene,
+    { bodyType: 'dynamic', friction: 0 }
+  );
+  entity.useGravity = false;
+  entity.setNodeBodyMass('root', 1_000_000_000);
+  manager.registerContraption(entity);
+
+  const eye = new THREE.Vector3(0, 0, 0);
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.copy(eye);
+  camera.lookAt(entity.position);
+  const controller = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.WRENCH;
+  controller.contraptions = manager;
+  controller.hoveredContraption = entity;
+  controller.hoveredContraptionHit = {
+    contraption: entity,
+    entityId: 'root',
+    point: entity.position.clone()
+  };
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+  controller.camera = camera;
+  controller.physics = {
+    update() {},
+    getEyePosition() { return eye.clone(); },
+    position: eye,
+    velocity: new THREE.Vector3()
+  };
+  controller.updateCameraPosition = () => {};
+  controller.handleLeftClick();
+
+  eye.x = 3;
+  for (let frame = 0; frame < 45; frame++) {
+    controller.update(1 / 60);
+    entityPhysics.update(entity, 1 / 60);
+  }
+
+  assert.equal(entity.getNodeBodyMass('root'), 1_000_000_000);
+  assert.ok(entity.position.x > 2.5, `a billion-kilogram entity must follow the grab target, x=${entity.position.x}`);
 });
 
 test('Wrench resolves a grabbed kinematic child to its nearest dynamic body', () => {

@@ -90,7 +90,6 @@ export interface SpaceUiSnapshot {
   cameraDistance: number;
   gravity: number;
   renderDistance: number;
-  wrenchChargeStrength: number | null;
   toast: { id: number; message: string } | null;
 }
 
@@ -102,7 +101,7 @@ const HOTBAR_SLOTS = [
   { type: 'tool', value: SpecialTool.BRUSH, name: 'Brush', icon: '', desc: 'Left-click paint · right-click sample color' },
   { type: 'tool', value: SpecialTool.SELECTOR, name: 'Selector', icon: '', desc: 'Select and copy world/entity regions (max 64×64×64); no build action' },
   { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'Preview and left-click build inventory items' },
-  { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Hold left-click to charge and grab · right-click start/stop' }
+  { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Hold left-click to grab · right-click start/stop' }
 ];
 
 const EMPTY_SELECTOR: SelectorView = {
@@ -196,7 +195,6 @@ export class SpaceUiStore {
     cameraDistance: 4,
     gravity: -18,
     renderDistance: 12,
-    wrenchChargeStrength: null,
     toast: null
   };
 
@@ -294,17 +292,6 @@ export class SpaceUiStore {
 
   setPointerLocked(locked: boolean): void {
     this.patch({ pointerLocked: !!locked, hasStarted: locked ? true : this.snapshot.hasStarted });
-  }
-
-  setWrenchChargeStrength(strength: number | null): void {
-    const normalized = strength === null
-      ? null
-      : Math.max(0, Math.min(1, Number(strength) || 0));
-    const previous = this.snapshot.wrenchChargeStrength;
-    if (previous === normalized) return;
-    const isEndpoint = normalized === 0 || normalized === 1;
-    if (!isEndpoint && previous !== null && normalized !== null && Math.abs(previous - normalized) < 0.002) return;
-    this.patch({ wrenchChargeStrength: normalized });
   }
 
   hasAnyModalOpen(): boolean {

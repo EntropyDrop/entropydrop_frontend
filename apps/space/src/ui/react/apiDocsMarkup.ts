@@ -354,7 +354,7 @@ if (ctx.blocks.pressed()) {
             <li>Press <b>V</b> to mount an entity <em>before</em> writing a driving script — only mounted entities receive keyboard input. Press C while mounted to open the editor directly.</li>
             <li><code>self.state</code> is the right place for persistent state: target altitude, phase counters, timers, etc. Each component owns a separate state object.</li>
             <li>Use <code>ctx.deltaTime</code> only when integrating an explicit rate. Force and torque commands are already in N/N·m; do not multiply them by <code>deltaTime</code>.</li>
-            <li>Use the Selector to select an entity and press <b>R</b> to copy it. Copying automatically switches to Hammer, which previews and builds the inventory item with left-click. Hold Wrench left-click on a dynamic entity to charge and grab its exact hit point; release to drop it. Wrench right-click toggles its runtime. The blueprint library (<b>B</b>) contains ready-made drone, windmill, and Ferris wheel examples.</li>
+            <li>Use the Selector to select an entity and press <b>R</b> to copy it. Copying automatically switches to Hammer, which previews and builds the inventory item with left-click. Hold Wrench left-click on a dynamic entity to grab its exact hit point; release to drop it. Wrench right-click toggles its runtime. The blueprint library (<b>B</b>) contains ready-made drone, windmill, and Ferris wheel examples.</li>
           </ul>
         </div>
 
