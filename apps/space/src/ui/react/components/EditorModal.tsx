@@ -15,6 +15,7 @@ function HierarchyNode({ node, depth, selected }: { node: any; depth: number; se
     <>
       <button
         type="button"
+        tabIndex={-1}
         className={`component-tree-node ${selected === node.id ? 'selected' : ''}`}
         style={{ paddingLeft: 6 + depth * 14 }}
         onClick={() => spaceUiStore.selectComponentTreeNode(node.id)}
@@ -40,7 +41,7 @@ function ComponentInspector() {
   if (!properties) return <div id="component-inspector-panel" className="component-inspector-panel"><div className="text-muted">No component selected</div></div>;
   return (
     <div id="component-inspector-panel" className="component-inspector-panel">
-      <div className="inspector-field"><label className="inspector-label">ID</label><div className="inspector-input-row"><input id="prop-node-name" className="inspector-input" value={name} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') spaceUiStore.renameSelectedComponent(name); }} /><button id="prop-rename-btn" className="small-action-btn" title="Rename component id (unique across the whole entity)" onClick={() => spaceUiStore.renameSelectedComponent(name)}>Rename</button></div></div>
+      <div className="inspector-field"><label className="inspector-label">ID</label><div className="inspector-input-row"><input id="prop-node-name" className="inspector-input" value={name} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') spaceUiStore.renameSelectedComponent(name); }} /><button id="prop-rename-btn" tabIndex={-1} className="small-action-btn" title="Rename component id (unique across the whole entity)" onClick={() => spaceUiStore.renameSelectedComponent(name)}>Rename</button></div></div>
       <div className="inspector-field has-tooltip"><label className="inspector-label" title="Component role in the hierarchy: root body is the main rigid body, child is an attached sub-assembly">Type ⓘ</label><span id="prop-node-kind" className="inspector-val">{properties.kind === 'root' ? 'root body' : properties.kind}</span><div className="tooltip-text">Role in hierarchy:<br /><b>root body</b> is the entity&apos;s main rigid body;<br /><b>child</b> is an attached sub-assembly.</div></div>
       <div className="inspector-field"><label className="inspector-label">Parent</label><span id="prop-node-parent" className="inspector-val">{properties.parentId || 'None'}</span></div>
       <div className="inspector-grid inspector-grid-three">
@@ -76,25 +77,25 @@ function AgentChat() {
         {message.reasoning ? <details className="agent-thought-details" open><summary className="agent-thought-summary"><span className="thought-icon">💭</span> <span className="thought-title">{message.isStreaming ? 'Thinking...' : 'Thought'}</span></summary><div className="agent-thought-content">{message.reasoning}</div></details> : null}
         {message.content ? <div className="agent-msg-text">{message.content}</div> : message.isStreaming ? <div className="agent-msg-text text-muted">Generating... ▌</div> : null}
       </div>
-      {message.role === 'assistant' && message.code && !message.isStreaming ? <button className="agent-apply-btn" onClick={() => spaceUiStore.applyAgentCode(message.code!, message.targetId || 'root')}>Apply to {message.targetId || 'root'} component</button> : null}
+      {message.role === 'assistant' && message.code && !message.isStreaming ? <button tabIndex={-1} className="agent-apply-btn" onClick={() => spaceUiStore.applyAgentCode(message.code!, message.targetId || 'root')}>Apply to {message.targetId || 'root'} component</button> : null}
     </React.Fragment>
   );
   return (
     <div className="agent-column">
-      <div className="telemetry-section-title agent-chat-title"><span>AI ASSISTANT</span><div className="agent-title-actions"><button id="agent-clear-btn" className="mini-toggle-btn reset" title="Clear chat history" onClick={() => spaceUiStore.clearAgentChat()}>🗑 CLEAR</button><button id="agent-settings-btn" className={`mini-toggle-btn reset ${state.agentSetupOpen ? 'active' : ''}`} title="Toggle model API settings" onClick={() => spaceUiStore.toggleAgentSetup()}>⚙ SETUP <span id="agent-setup-arrow" className="setup-arrow">{state.agentSetupOpen ? '▲' : '▼'}</span></button></div></div>
+      <div className="telemetry-section-title agent-chat-title"><span>AI ASSISTANT</span><div className="agent-title-actions"><button id="agent-clear-btn" tabIndex={-1} className="mini-toggle-btn reset" title="Clear chat history" onClick={() => spaceUiStore.clearAgentChat()}>🗑 CLEAR</button><button id="agent-settings-btn" tabIndex={-1} className={`mini-toggle-btn reset ${state.agentSetupOpen ? 'active' : ''}`} title="Toggle model API settings" onClick={() => spaceUiStore.toggleAgentSetup()}>⚙ SETUP <span id="agent-setup-arrow" className="setup-arrow">{state.agentSetupOpen ? '▲' : '▼'}</span></button></div></div>
       <div id="agent-setup-accordion" className="agent-setup-accordion" style={{ display: state.agentSetupOpen ? 'flex' : 'none' }}>
         <div className="agent-config-field"><span className="config-label">API Base URL</span><input id="agent-api-base" className="config-input" value={config.baseUrl || ''} placeholder="https://api.openai.com/v1" onChange={event => setConfig({ ...config, baseUrl: event.target.value })} /></div>
         <div className="agent-config-field"><span className="config-label">API Key</span><input id="agent-api-key" className="config-input" type="password" value={config.apiKey || ''} placeholder="sk-..." onChange={event => setConfig({ ...config, apiKey: event.target.value })} /></div>
         <div className="agent-config-field"><span className="config-label">Model</span><input id="agent-api-model" className="config-input" value={config.model || ''} placeholder="gpt-4o-mini" onChange={event => setConfig({ ...config, model: event.target.value })} /></div>
         <div className="agent-config-field"><span className="config-label">Context Window (K tokens)</span><input id="agent-context-length" className="config-input" type="number" min="1" max="2048" step="1" value={config.contextKTokens ?? 32} onChange={event => setConfig({ ...config, contextKTokens: event.target.value })} /></div>
         <div className="agent-config-field"><span className="config-label">Max Output (K tokens)</span><input id="agent-max-tokens" className="config-input" type="number" min="0.1" max="128" step="0.5" value={config.maxOutputKTokens ?? 4} onChange={event => setConfig({ ...config, maxOutputKTokens: event.target.value })} /></div>
-        <div className="agent-config-actions"><button id="agent-config-save-btn" className="small-btn primary" onClick={() => spaceUiStore.saveAgentSettings(config)}>Save Config</button></div>
+        <div className="agent-config-actions"><button id="agent-config-save-btn" tabIndex={-1} className="small-btn primary" onClick={() => spaceUiStore.saveAgentSettings(config)}>Save Config</button></div>
         <div className="config-hint">Key is saved in browser localStorage. Without a key, uses local compiler.</div>
       </div>
       <div id="agent-chat-box" className="agent-chat-box" ref={scrollRef}>
         {state.agentMessages.length ? state.agentMessages.map(renderMessage) : <div className="agent-chat-msg agent-msg-system">Describe a behavior in plain language (e.g. &quot;hover 5m&quot;, &quot;follow me&quot;).<br />Generated code remains inert until you click Apply.<br />· {state.agentConfig?.apiKey ? `Model connected: ${state.agentConfig.model}` : 'Using built-in local compiler'}</div>}
       </div>
-      <div className="agent-chat-input-row"><input id="agent-chat-input" className="agent-chat-input" value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void send(); } }} placeholder="e.g. follow me 3m behind to the right..." /><button id="agent-chat-send-btn" className="agent-send-btn" disabled={state.agentBusy} onClick={() => void send()}>{state.agentBusy ? '…' : 'Send'}</button></div>
+      <div className="agent-chat-input-row"><input id="agent-chat-input" className="agent-chat-input" value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void send(); } }} placeholder="e.g. follow me 3m behind to the right..." /><button id="agent-chat-send-btn" tabIndex={-1} className="agent-send-btn" disabled={state.agentBusy} onClick={() => void send()}>{state.agentBusy ? '…' : 'Send'}</button></div>
     </div>
   );
 }
@@ -117,14 +118,14 @@ export function CodeEditorModal() {
     <div id="code-editor-modal" className="custom-modal open" onMouseDown={event => { if (event.target === event.currentTarget) spaceUiStore.toggleCodeEditorModal(false); }}>
       <div className="modal-content code-editor-container">
         <div className="editor-header">
-          <div className="editor-title-group"><div className="editor-title">Entity Editor</div><button id="editor-entity-id" className="editor-tag" title={runtimeTitle} onClick={() => { void navigator.clipboard?.writeText?.(String(contraption.publicId)); spaceUiStore.showToast(`Entity ID copied: ${contraption.publicId}`); }}>ID: {contraption.publicId}</button><div id="editor-status-badge" className={`status-badge ${status}`}>{status.toUpperCase()}</div><div id="editor-exec-time" className="exec-time">{state.telemetry.executionTime}</div></div>
+          <div className="editor-title-group"><div className="editor-title">Entity Editor</div><button id="editor-entity-id" tabIndex={-1} className="editor-tag" title={runtimeTitle} onClick={() => { void navigator.clipboard?.writeText?.(String(contraption.publicId)); spaceUiStore.showToast(`Entity ID copied: ${contraption.publicId}`); }}>ID: {contraption.publicId}</button><div id="editor-status-badge" className={`status-badge ${status}`}>{status.toUpperCase()}</div><div id="editor-exec-time" className="exec-time">{state.telemetry.executionTime}</div></div>
           <div className="editor-actions">
             <div className="pb-radio-group" id="global-playback-group" title="Global script control">
               {([['play', '▶', 'Play: enable all component scripts'], ['pause', '⏸', 'Pause: disable all component scripts'], ['stop', '⏹', 'Stop: disable all scripts and reset state, clock, transforms, and forces']] as const).map(([value, label, title]) => <React.Fragment key={value}><input type="radio" id={`pb-global-${value}`} name="pb-global" value={value} checked={playback === value} onChange={() => spaceUiStore.setGlobalPlayback(value)} /><label htmlFor={`pb-global-${value}`} className={`pb-option ${value}`} title={title}>{label}</label></React.Fragment>)}
             </div>
-            <button id="run-script-btn" className="editor-btn run-btn" onClick={() => spaceUiStore.applyAndRunScript()}>Apply Code</button>
-            <button id="api-docs-btn" className="editor-btn" title="Open the script API reference (documentation)" onClick={() => spaceUiStore.toggleApiDocs(true)}>📖 Docs</button>
-            <button id="close-code-btn" className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close terminal (ESC)" onClick={() => spaceUiStore.toggleCodeEditorModal(false)}>✕</button>
+            <button id="run-script-btn" tabIndex={-1} className="editor-btn run-btn" onClick={() => spaceUiStore.applyAndRunScript()}>Apply Code</button>
+            <button id="api-docs-btn" tabIndex={-1} className="editor-btn" title="Open the script API reference (documentation)" onClick={() => spaceUiStore.toggleApiDocs(true)}>📖 Docs</button>
+            <button id="close-code-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close terminal (ESC)" onClick={() => spaceUiStore.toggleCodeEditorModal(false)}>✕</button>
           </div>
         </div>
         <div className="editor-body">
@@ -138,7 +139,7 @@ export function CodeEditorModal() {
             <div className="code-tab-bar" id="code-tab-bar">{nodes.map((node: any) => {
               const code = contraption.getNodeScript(node.id);
               const enabled = contraption.isNodeScriptEnabled(node.id);
-              return <button type="button" key={node.id} className={`code-tab ${state.selectedComponentNodeId === node.id ? 'active' : ''} ${code?.trim?.() ? 'has-script' : ''} ${enabled ? 'enabled' : 'disabled'}`} onClick={() => spaceUiStore.selectComponentTreeNode(node.id)}><span className={`code-tab-dot ${enabled ? 'on' : 'off'}`} /><span>{nodeIcon(node)} {node.id}.js</span></button>;
+              return <button type="button" tabIndex={-1} key={node.id} className={`code-tab ${state.selectedComponentNodeId === node.id ? 'active' : ''} ${code?.trim?.() ? 'has-script' : ''} ${enabled ? 'enabled' : 'disabled'}`} onClick={() => spaceUiStore.selectComponentTreeNode(node.id)}><span className={`code-tab-dot ${enabled ? 'on' : 'off'}`} /><span>{nodeIcon(node)} {node.id}.js</span></button>;
             })}</div>
             <div className="code-editor-main"><div className="code-gutter" id="code-gutter" /><textarea id="script-textarea" className="code-textarea" spellCheck={false} placeholder="// Write your controller code here..." value={state.scriptDraft} onChange={event => spaceUiStore.setScriptDraft(event.target.value)} /></div>
             <div className="code-footer-hint" id="code-footer-hint"><span id="code-target-hint">Editing: {nodeIcon(contraption.getEntityNode?.(state.selectedComponentNodeId))} {state.selectedComponentNodeId}{state.selectedComponentNodeId === 'root' ? ' (body)' : ''}</span><span id="code-api-hint" className="code-api-hint">API: self · ctx</span></div>
@@ -168,7 +169,7 @@ export function ApiDocsModal() {
   return (
     <div id="api-docs-modal" className="custom-modal open" onMouseDown={event => { if (event.target === event.currentTarget) spaceUiStore.toggleApiDocs(false); }}>
       <div className="modal-content api-docs-container">
-        <div className="modal-header"><h2>📖 ENTITY SCRIPT API V2 REFERENCE</h2><button id="close-api-docs-btn" className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close docs (ESC)" onClick={() => spaceUiStore.toggleApiDocs(false)}>✕</button></div>
+        <div className="modal-header"><h2>📖 ENTITY SCRIPT API V2 REFERENCE</h2><button id="close-api-docs-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close docs (ESC)" onClick={() => spaceUiStore.toggleApiDocs(false)}>✕</button></div>
         <div className="modal-sub">Entity behavior script reference · isolated QuickJS per loaded entity · one script per component · press C to open the editor</div>
         <div className="api-docs-body" id="api-docs-body" dangerouslySetInnerHTML={{ __html: apiDocsBodyMarkup }} />
       </div>

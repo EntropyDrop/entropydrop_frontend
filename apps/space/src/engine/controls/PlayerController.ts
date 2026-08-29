@@ -363,7 +363,12 @@ export class PlayerController {
     // Keyboard controls
     document.addEventListener('keydown', (e) => {
       const eventTarget = e.target as HTMLElement;
-      if (eventTarget.tagName === 'INPUT' || eventTarget.tagName === 'SELECT' || eventTarget.tagName === 'TEXTAREA') return;
+      if (eventTarget && (eventTarget.tagName === 'INPUT' || eventTarget.tagName === 'SELECT' || eventTarget.tagName === 'TEXTAREA' || eventTarget.isContentEditable)) return;
+
+      // Ensure any accidentally focused button or interactive 2D element is blurred
+      if (document.activeElement && document.activeElement !== document.body && (document.activeElement.tagName === 'BUTTON' || document.activeElement.getAttribute('role') === 'button')) {
+        (document.activeElement as HTMLElement).blur();
+      }
 
       // Direct Shift + 1..9: picks palette color N, or the active backpack
       // category's slot N when the Hammer is the active tool.
@@ -395,7 +400,10 @@ export class PlayerController {
         case 'KeyS': this.keys.backward = true; break;
         case 'KeyA': this.keys.left = true; break;
         case 'KeyD': this.keys.right = true; break;
-        case 'Space': this.keys.jump = true; break;
+        case 'Space':
+          e.preventDefault();
+          this.keys.jump = true;
+          break;
         case 'ShiftLeft':
         case 'ShiftRight':
           this.keys.crouch = true;
@@ -477,7 +485,10 @@ export class PlayerController {
         case 'KeyS': this.keys.backward = false; break;
         case 'KeyA': this.keys.left = false; break;
         case 'KeyD': this.keys.right = false; break;
-        case 'Space': this.keys.jump = false; break;
+        case 'Space':
+          e.preventDefault();
+          this.keys.jump = false;
+          break;
         case 'ShiftLeft':
         case 'ShiftRight':
           this.keys.crouch = false;

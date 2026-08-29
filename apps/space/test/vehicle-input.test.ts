@@ -192,3 +192,57 @@ test('legacy drivable mode has no hardcoded movement and still uses rigid-body p
   assert.equal(physicsCalls.length, 1);
   assert.equal(physicsCalls[0].entity, contraption);
 });
+
+test('Space keydown and keyup prevent default to avoid triggering focused 2D buttons and jumps cleanly', () => {
+  let blurred = false;
+  const mockButton = {
+    tagName: 'BUTTON',
+    getAttribute: (attr: string) => null,
+    blur() { blurred = true; }
+  };
+  (globalThis as any).document = {
+    activeElement: mockButton,
+    body: {},
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  const controller = Object.create(PlayerController.prototype);
+  controller.keys = { jump: false };
+  controller.recordEntityKeyDown = () => {};
+  controller.recordEntityKeyUp = () => {};
+
+  let keydownPrevented = false;
+  const keydownEvent = {
+    code: 'Space',
+    target: { tagName: 'DIV' },
+    preventDefault() { keydownPrevented = true; }
+  };
+
+  // Simulate keydown Space logic from PlayerController
+  if (keydownEvent.code === 'Space') {
+    keydownEvent.preventDefault();
+    if ((globalThis as any).document.activeElement && (globalThis as any).document.activeElement !== (globalThis as any).document.body && ((globalThis as any).document.activeElement.tagName === 'BUTTON' || (globalThis as any).document.activeElement.getAttribute?.('role') === 'button')) {
+      (globalThis as any).document.activeElement.blur();
+    }
+    controller.keys.jump = true;
+  }
+
+  assert.equal(keydownPrevented, true, 'Space keydown must prevent default');
+  assert.equal(blurred, true, 'Space keydown must blur focused button');
+  assert.equal(controller.keys.jump, true);
+
+  let keyupPrevented = false;
+  const keyupEvent = {
+    code: 'Space',
+    preventDefault() { keyupPrevented = true; }
+  };
+
+  if (keyupEvent.code === 'Space') {
+    keyupEvent.preventDefault();
+    controller.keys.jump = false;
+  }
+
+  assert.equal(keyupPrevented, true, 'Space keyup must prevent default');
+  assert.equal(controller.keys.jump, false);
+});

@@ -18,7 +18,7 @@ function SectionHeader({ title, count, category, extra }: { title: string; count
           spaceUiStore.importInventoryFile(category, event.target.files?.[0] || null);
           event.target.value = '';
         }} />
-        <button className="backpack-section-btn" onClick={() => input.current?.click()}>Import JSON</button>
+        <button tabIndex={-1} className="backpack-section-btn" onClick={() => input.current?.click()}>Import JSON</button>
       </div>
     </div>
   );
@@ -61,11 +61,11 @@ function InventoryItemCard({ category, index, item }: { category: 'blockset' | '
         />
         <div className="backpack-item-meta">{meta}</div>
         <div className="inv-item-actions">
-          <button className="backpack-item-btn" onClick={() => spaceUiStore.downloadJson(
+          <button tabIndex={-1} className="backpack-item-btn" onClick={() => spaceUiStore.downloadJson(
             spaceUiStore.inventoryJsonFilename(item.name, fallback),
             controller?.serializeInventoryItem?.(category, item) || item
           )}>Export</button>
-          <button className="backpack-item-btn danger" onClick={() => spaceUiStore.deleteInventoryItem(category, index)}>Delete</button>
+          <button tabIndex={-1} className="backpack-item-btn danger" onClick={() => spaceUiStore.deleteInventoryItem(category, index)}>Delete</button>
         </div>
       </div>
     </div>
@@ -91,9 +91,9 @@ function ColorSetCard({ index, item }: { index: number; item: any }) {
         })}
       </div>
       <div className="inv-item-actions">
-        <button className="backpack-item-btn" onClick={() => { spaceUiStore.applyColorSetToPalette(item); spaceUiStore.showToast(`Applied color set "${name}" to the palette`); }}>Apply</button>
-        <button className="backpack-item-btn" onClick={() => spaceUiStore.downloadJson(spaceUiStore.inventoryJsonFilename(item.name, `Color set ${index + 1}`), controller?.serializeInventoryItem?.('colorset', item) || item)}>Export</button>
-        <button className="backpack-item-btn danger" onClick={() => spaceUiStore.deleteInventoryItem('colorset', index)}>Delete</button>
+        <button tabIndex={-1} className="backpack-item-btn" onClick={() => { spaceUiStore.applyColorSetToPalette(item); spaceUiStore.showToast(`Applied color set "${name}" to the palette`); }}>Apply</button>
+        <button tabIndex={-1} className="backpack-item-btn" onClick={() => spaceUiStore.downloadJson(spaceUiStore.inventoryJsonFilename(item.name, `Color set ${index + 1}`), controller?.serializeInventoryItem?.('colorset', item) || item)}>Export</button>
+        <button tabIndex={-1} className="backpack-item-btn danger" onClick={() => spaceUiStore.deleteInventoryItem('colorset', index)}>Delete</button>
       </div>
     </div>
   );
@@ -176,7 +176,7 @@ function StlImportCard() {
         setFile(next);
         setStatus(next && next.size > MAX_STL_FILE_BYTES ? `Error: ${next.name} exceeds the ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB limit` : next ? `Ready: ${next.name}` : 'No file selected');
       }} />
-      <div className="stl-actions"><button className="banner-btn primary" id="stl-import-btn" style={{ fontSize: 11, padding: '4px 10px' }} onClick={importStl}>{workerRef.current ? 'Cancel' : 'Import & Voxelize'}</button><span id="stl-import-status" className="stl-import-status">{status}</span></div>
+      <div className="stl-actions"><button tabIndex={-1} className="banner-btn primary" id="stl-import-btn" style={{ fontSize: 11, padding: '4px 10px' }} onClick={importStl}>{workerRef.current ? 'Cancel' : 'Import & Voxelize'}</button><span id="stl-import-status" className="stl-import-status">{status}</span></div>
     </div>
   );
 }
@@ -191,7 +191,7 @@ export function InventoryModal() {
   return (
     <div id="inventory-modal" className="custom-modal open" onMouseDown={event => { if (event.target === event.currentTarget) spaceUiStore.toggleInventoryModal(false); }}>
       <div className="modal-content">
-        <div className="modal-header"><h2>Backpack</h2><button id="close-inv-btn" className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} onClick={() => spaceUiStore.toggleInventoryModal(false)}>✕</button></div>
+        <div className="modal-header"><h2>Backpack</h2><button id="close-inv-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} onClick={() => spaceUiStore.toggleInventoryModal(false)}>✕</button></div>
         <div className="modal-sub">9 block sets · 9 entities · 9 color sets — exportable as JSON · ⬡ STL meshes importable as block sets</div>
         <div id="inventory-grid" className="inventory-grid">
           <SectionHeader title="BLOCK SETS — hammer builds plain blocks" count={blocksets.filter(Boolean).length} category="blockset" />
@@ -199,7 +199,7 @@ export function InventoryModal() {
           <StlImportCard />
           <SectionHeader title="ENTITIES — hammer builds the physics entity" count={entities.filter(Boolean).length} category="entity" />
           {Array.from({ length: 9 }, (_, index) => entities[index] ? <InventoryItemCard key={`e:${index}`} category="entity" index={index} item={entities[index]} /> : <EmptySlot key={`e:${index}`} index={index} label={`Empty slot ${index + 1} · R copy or import`} />)}
-          <SectionHeader title="COLOR SETS — apply to the keyboard palette" count={colorsets.filter(Boolean).length} category="colorset" extra={<button className="backpack-section-btn" onClick={() => spaceUiStore.savePaletteAsColorSet()}>Add current palette</button>} />
+          <SectionHeader title="COLOR SETS — apply to the keyboard palette" count={colorsets.filter(Boolean).length} category="colorset" extra={<button tabIndex={-1} className="backpack-section-btn" onClick={() => spaceUiStore.savePaletteAsColorSet()}>Add current palette</button>} />
           {Array.from({ length: 9 }, (_, index) => colorsets[index] ? <ColorSetCard key={`c:${index}`} index={index} item={colorsets[index]} /> : <EmptySlot key={`c:${index}`} index={index} label={`Empty slot ${index + 1} · save the palette or import`} />)}
         </div>
       </div>

@@ -18,7 +18,7 @@ export function GlobalSettingsModal() {
   return (
     <ModalBackdrop id="global-settings-modal" onClose={() => spaceUiStore.toggleGlobalSettingsModal(false)}>
       <div className="modal-content settings-modal-content">
-        <div className="modal-header"><h2>Global Settings</h2><button id="close-global-settings-btn" className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close settings (ESC)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(false)}>✕</button></div>
+        <div className="modal-header"><h2>Global Settings</h2><button id="close-global-settings-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close settings (ESC)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(false)}>✕</button></div>
         <div className="modal-sub">Configure camera, perspective, and world preferences</div>
         <div className="settings-section">
           <div className="settings-section-title">CAMERA &amp; VIEW</div>
@@ -33,7 +33,7 @@ export function GlobalSettingsModal() {
                 ['first_person', '1st Person'],
                 ['third_person', '3rd Back'],
                 ['third_person_front', '3rd Front']
-              ] as const).map(([value, label]) => <button key={value} className={`segment-btn ${state.perspective === value ? 'active' : ''}`} onClick={() => spaceUiStore.setPerspective(value)}>{label}</button>)}
+              ] as const).map(([value, label]) => <button key={value} tabIndex={-1} className={`segment-btn ${state.perspective === value ? 'active' : ''}`} onClick={() => spaceUiStore.setPerspective(value)}>{label}</button>)}
             </div>
           </div>
           <div className="settings-row" id="setting-cam-dist-row" style={{ display: state.perspective === 'first_person' ? 'none' : 'flex' }}>
@@ -46,7 +46,7 @@ export function GlobalSettingsModal() {
           <div className="settings-row">
             <div className="settings-label-group"><span className="settings-label">Entity Gravity</span><span className="settings-desc">Rigid body world gravity simulation</span></div>
             <div className="settings-segmented-control" id="setting-gravity-group">
-              {([[-18, 'Standard (-18)'], [-5, 'Moon (-5)'], [0, 'Zero-G (0)']] as const).map(([value, label]) => <button key={value} className={`segment-btn ${state.gravity === value ? 'active' : ''}`} onClick={() => spaceUiStore.setGravity(value)}>{label}</button>)}
+              {([[-18, 'Standard (-18)'], [-5, 'Moon (-5)'], [0, 'Zero-G (0)']] as const).map(([value, label]) => <button key={value} tabIndex={-1} className={`segment-btn ${state.gravity === value ? 'active' : ''}`} onClick={() => spaceUiStore.setGravity(value)}>{label}</button>)}
             </div>
           </div>
           <div className="settings-row">
@@ -65,7 +65,7 @@ export function BlueprintsModal() {
   return (
     <ModalBackdrop id="blueprints-modal" onClose={() => spaceUiStore.toggleBlueprintsModal(false)}>
       <div className="modal-content large">
-        <div className="modal-header"><h2>Structure Blueprints</h2><button id="close-blueprints-btn" className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} onClick={() => spaceUiStore.toggleBlueprintsModal(false)}>✕</button></div>
+        <div className="modal-header"><h2>Structure Blueprints</h2><button id="close-blueprints-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} onClick={() => spaceUiStore.toggleBlueprintsModal(false)}>✕</button></div>
         <div className="modal-sub">Click to spawn a colored structure in front of you — ready to use!</div>
         <div id="blueprints-grid" className="blueprints-grid">
           {spaceUiStore.getBlueprints().map(blueprint => (
@@ -73,8 +73,8 @@ export function BlueprintsModal() {
               <div className="bp-header"><span className="bp-title">{blueprint.name}</span><span className="bp-mode-badge">{blueprint.defaultMode}</span></div>
               <div className="bp-desc">{blueprint.description}</div>
               <div className="bp-actions">
-                <button className="bp-btn assemble-direct" onClick={() => { spaceUiStore.spawnBlueprintDirect(blueprint); spaceUiStore.toggleBlueprintsModal(false); }}>Assemble Directly</button>
-                <button className="bp-btn spawn-world" onClick={() => { spaceUiStore.spawnBlueprintToWorld(blueprint); spaceUiStore.toggleBlueprintsModal(false); }}>Place as Blocks</button>
+                <button tabIndex={-1} className="bp-btn assemble-direct" onClick={() => { spaceUiStore.spawnBlueprintDirect(blueprint); spaceUiStore.toggleBlueprintsModal(false); }}>Assemble Directly</button>
+                <button tabIndex={-1} className="bp-btn spawn-world" onClick={() => { spaceUiStore.spawnBlueprintToWorld(blueprint); spaceUiStore.toggleBlueprintsModal(false); }}>Place as Blocks</button>
               </div>
             </div>
           ))}
@@ -118,7 +118,7 @@ export function PauseScreen() {
           <span><kbd className="key-badge">F3</kbd> Cycle 1st / 3rd Back / 3rd Front</span>
           <span><kbd className="key-badge">ESC</kbd> Settings / release cursor</span>
         </div>
-        <button id="start-btn" className="start-btn" onClick={() => spaceUiStore.startGame()}>Enter Space</button>
+        <button id="start-btn" tabIndex={-1} className="start-btn" onClick={() => spaceUiStore.startGame()}>Enter Space</button>
       </div>
     </div>
   );

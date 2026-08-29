@@ -47,8 +47,13 @@ export function NavigationPanel() {
       <button
         type="button"
         id="nav-start-btn"
+        tabIndex={-1}
         className={`nav-action-btn ${navigating ? 'stop-btn' : 'start-btn'}`}
-        onClick={() => navigating ? navigation?.stopNavigation?.('cancelled') : start()}
+        onClick={(e) => {
+          (e.currentTarget as HTMLElement)?.blur();
+          if (navigating) navigation?.stopNavigation?.('cancelled');
+          else start();
+        }}
       >{navigating ? 'STOP' : 'START'}</button>
     </div>
   );

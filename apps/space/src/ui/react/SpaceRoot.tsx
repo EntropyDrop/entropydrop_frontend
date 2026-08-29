@@ -31,8 +31,37 @@ export function SpaceRoot() {
         spaceUiStore.showToast('Script saved & applied, back to the game!');
       }
     };
+
+    // Prevent 2D UI buttons from retaining focus when clicked,
+    // so game controls (e.g. Space for jump/fly) are never intercepted by focused buttons.
+    const blurButton = (target: EventTarget | null) => {
+      const el = target as HTMLElement | null;
+      const btn = el?.closest?.('button, [role="button"]') as HTMLElement | null;
+      if (btn) btn.blur();
+    };
+    const handleFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button')) {
+        target.blur();
+      }
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      blurButton(event.target);
+    };
+    const handleClick = (event: MouseEvent) => {
+      blurButton(event.target);
+    };
+
     window.addEventListener('keydown', handleGlobalKey, true);
-    return () => window.removeEventListener('keydown', handleGlobalKey, true);
+    window.addEventListener('focusin', handleFocusIn, true);
+    window.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('click', handleClick, true);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKey, true);
+      window.removeEventListener('focusin', handleFocusIn, true);
+      window.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('click', handleClick, true);
+    };
   }, []);
 
   return (

@@ -99,6 +99,17 @@ button, input, select, textarea, label,
   font-family: 'Fusion-Pixel-Zh-Hans', 'FusionPixel', sans-serif !important;
 }
 
+button, [role="button"] {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+button:focus, button:focus-visible,
+[role="button"]:focus, [role="button"]:focus-visible {
+  outline: none !important;
+}
+
 .code-textarea, .tele-val, .log-line, .config-input, .inspector-val.mono,
 .slot-num, .palette-hotkey-hint, .exec-time, .status-badge {
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, Monaco, monospace !important;

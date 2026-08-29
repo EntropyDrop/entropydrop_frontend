@@ -30,11 +30,11 @@ function NearbyEntities() {
         className="hud-entities-header"
         id="hud-entities-toggle"
         role="button"
-        tabIndex={0}
+        tabIndex={-1}
         title="Toggle nearby entities list"
         onClick={() => setExpanded(value => !value)}
         onKeyDown={event => {
-          if (event.key === 'Enter' || event.key === ' ') setExpanded(value => !value);
+          if (event.key === 'Enter') setExpanded(value => !value);
         }}
       >
         <div className="hud-entities-title">
@@ -44,6 +44,7 @@ function NearbyEntities() {
         <button
           type="button"
           id="hud-entities-toggle-btn"
+          tabIndex={-1}
           className={`hud-entities-toggle-btn ${expanded ? 'expanded' : ''}`}
           aria-label="Toggle entities list"
           onClick={event => {
@@ -65,6 +66,7 @@ function NearbyEntities() {
               </div>
               <button
                 type="button"
+                tabIndex={-1}
                 className="hud-entity-nav-btn"
                 title={`Autopilot to ${item.name}`}
                 onClick={() => navigationSystem?.startNavigation?.(item.pos.x, Math.max(item.pos.y + 1.5, 20), item.pos.z)}
@@ -73,9 +75,9 @@ function NearbyEntities() {
           ))}
         </div>
         <div className="hud-entities-pagination" id="hud-entities-pagination" style={{ display: pageCount > 1 ? 'flex' : 'none' }}>
-          <button type="button" id="hud-entities-prev-btn" className="hud-page-btn" disabled={currentPage <= 1} title="Previous page" onClick={() => setPage(value => Math.max(1, value - 1))}>◀</button>
+          <button type="button" id="hud-entities-prev-btn" tabIndex={-1} className="hud-page-btn" disabled={currentPage <= 1} title="Previous page" onClick={() => setPage(value => Math.max(1, value - 1))}>◀</button>
           <span id="hud-entities-page-info" className="hud-page-info">{currentPage} / {pageCount}</span>
-          <button type="button" id="hud-entities-next-btn" className="hud-page-btn" disabled={currentPage >= pageCount} title="Next page" onClick={() => setPage(value => Math.min(pageCount, value + 1))}>▶</button>
+          <button type="button" id="hud-entities-next-btn" tabIndex={-1} className="hud-page-btn" disabled={currentPage >= pageCount} title="Next page" onClick={() => setPage(value => Math.min(pageCount, value + 1))}>▶</button>
         </div>
       </div>
     </div>
@@ -94,6 +96,7 @@ function PaletteBar() {
         {paletteColors.map((item, index) => (
           <button
             type="button"
+            tabIndex={-1}
             key={`${item.hex}:${index}`}
             className={`color-chip ${index === selectedColorIndex ? 'active' : ''}`}
             style={{ backgroundColor: item.hex }}
@@ -115,10 +118,10 @@ function InventoryBar() {
     <div className="inventory-bar-wrapper" id="inventory-bar-wrapper">
       <div className="palette-info-row">
         <div className="palette-title-group">
-          <button type="button" className="palette-title" id="backpack-bar-title" title="Click or press E to open full backpack" onClick={() => spaceUiStore.toggleInventoryModal(true)}>Backpack</button>
+          <button type="button" tabIndex={-1} className="palette-title" id="backpack-bar-title" title="Click or press E to open full backpack" onClick={() => spaceUiStore.toggleInventoryModal(true)}>Backpack</button>
           <div id="inv-cat-tabs" className="inv-cat-tabs">
             {(['blockset', 'entity'] as const).map(key => (
-              <button type="button" key={key} className={`inv-cat-tab ${category === key ? 'active' : ''}`} onClick={() => spaceUiStore.selectInventoryCategory(key)}>{key === 'blockset' ? 'BKS' : 'ENT'}</button>
+              <button type="button" tabIndex={-1} key={key} className={`inv-cat-tab ${category === key ? 'active' : ''}`} onClick={() => spaceUiStore.selectInventoryCategory(key)}>{key === 'blockset' ? 'BKS' : 'ENT'}</button>
             ))}
           </div>
         </div>
@@ -133,6 +136,7 @@ function InventoryBar() {
           return (
             <button
               type="button"
+              tabIndex={-1}
               key={index}
               className={`inventory-slot ${selectedInventoryIndex === index ? 'active' : ''} ${item ? 'filled' : 'empty'}`}
               title={item ? `Slot ${index + 1}: "${name}" · ${count} blocks · Shift+${index + 1}` : `Slot ${index + 1}: empty · Shift+${index + 1}`}
@@ -155,7 +159,7 @@ function SelectorPanel() {
       <div className="palette-info-row">
         <div className="selector-title-group">
           <span className="palette-title">Selector</span>
-          <button id="selector-mode-toggle" className="selector-mode-btn" title="Click or press Tab to switch mode" onClick={() => controller?.toggleSelectorMicroMode?.()}>
+          <button id="selector-mode-toggle" tabIndex={-1} className="selector-mode-btn" title="Click or press Tab to switch mode" onClick={() => controller?.toggleSelectorMicroMode?.()}>
             <span id="selector-mode-badge" className={`mode-badge ${selector.micro ? 'micro' : 'std'}`}>{selector.micro ? 'MICRO' : 'STANDARD'}</span>
             <span className="mode-tab-hint">Tab ⇋</span>
           </button>
@@ -168,8 +172,8 @@ function SelectorPanel() {
           <div id="selector-panel-details" className="selector-status-sub">{selector.details}</div>
         </div>
         <div className="selector-action-buttons">
-          <button id="assemble-btn" className="banner-btn primary" disabled={!selector.canAssemble} onClick={() => controller?.assembleSelection?.(ContraptionMode.PROGRAMMABLE)}>{selector.assembleLabel}</button>
-          <button id="copy-btn" className="banner-btn secondary" title="Copy selection to backpack (R)" disabled={!selector.canCopy} onClick={() => controller?.copySelectionSmart?.()}>Copy (R)</button>
+          <button id="assemble-btn" tabIndex={-1} className="banner-btn primary" disabled={!selector.canAssemble} onClick={() => controller?.assembleSelection?.(ContraptionMode.PROGRAMMABLE)}>{selector.assembleLabel}</button>
+          <button id="copy-btn" tabIndex={-1} className="banner-btn secondary" title="Copy selection to backpack (R)" disabled={!selector.canCopy} onClick={() => controller?.copySelectionSmart?.()}>Copy (R)</button>
         </div>
       </div>
     </div>
@@ -181,7 +185,7 @@ function Hotbar() {
   return (
     <div id="hotbar">
       {hotbarSlots.map((slot, index) => (
-        <button type="button" key={slot.value} className={`hotbar-slot ${index === selectedHotbarIndex ? 'active' : ''}`} onClick={() => spaceUiStore.selectHotbarSlot(index)}>
+        <button type="button" tabIndex={-1} key={slot.value} className={`hotbar-slot ${index === selectedHotbarIndex ? 'active' : ''}`} onClick={() => spaceUiStore.selectHotbarSlot(index)}>
           <span className="slot-num">{index + 1}</span>
           <span className="slot-icon">{slot.value === SpecialTool.SELECTOR ? SELECTOR_ICON : slot.icon}</span>
           <span className="slot-name">{slot.name}</span>
@@ -206,7 +210,7 @@ export function Hud() {
             <div id="pos-val">{state.positionText}</div>
             <NearbyEntities />
           </div>
-          <div className="hud-actions"><button id="global-settings-btn" className="icon-btn" title="Global Settings (O)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(true)}>⚙</button></div>
+          <div className="hud-actions"><button id="global-settings-btn" tabIndex={-1} className="icon-btn" title="Global Settings (O)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(true)}>⚙</button></div>
         </div>
         <div className="hud-bottom">
           <div className="builder-toolbar">
