@@ -104,7 +104,7 @@ deltas, and PostgreSQL stores compressed chunk/entity checkpoints plus ordered
 durable events. The database never participates in the per-frame physics path.
 The V2 contract caps each world at 32 occupied sessions with FIFO queueing,
 uses reliable AOI presence plus wake/sleep entity activation, and keeps the
-three-category backpack only in browser local storage.
+three-category backpack in browser IndexedDB with automatic localStorage migration.
 
 - Architecture and consistency contract: [`docs/backend-storage.md`](docs/backend-storage.md)
 - PostgreSQL 15+ schema: [`backend/schema.sql`](backend/schema.sql)

@@ -15,6 +15,7 @@ import {
 } from '../torus/TorusWorld.ts';
 import { MICRO_DIVISIONS } from '../voxel/MicroVoxelLayer.ts';
 import { ActionDomain, executeBasicAction } from '../actions/BasicActions.ts';
+import type { SpaceStorage } from '../storage/BrowserStorage.ts';
 
 export const ENTITY_STORAGE_PREFIX = 'entropydrop_space_entities';
 export const ENTITY_STORAGE_VERSION = 1;
@@ -85,8 +86,9 @@ export class ContraptionManager {
   declare selectionHost: any;
   declare worldId: string;
   declare lastEntitySaveTime: number;
+  declare persistentStorage: SpaceStorage | null;
 
-  constructor(scene, world, soundManager, particleSystem) {
+  constructor(scene, world, soundManager, particleSystem, persistentStorage: SpaceStorage | null = null) {
     this.scene = scene;
     this.world = world;
     this.sound = soundManager;
@@ -98,6 +100,7 @@ export class ContraptionManager {
     this.nextId = 1;
     this.worldId = 'default';
     this.lastEntitySaveTime = 0;
+    this.persistentStorage = persistentStorage;
 
     // Selection State
     this.selectionCornerA = null;
@@ -771,7 +774,8 @@ export class ContraptionManager {
     this.worldId = String(worldId || 'default');
   }
 
-  entityStorage(): Storage | null {
+  entityStorage(): SpaceStorage | null {
+    if (this.persistentStorage) return this.persistentStorage;
     try {
       return typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
     } catch {

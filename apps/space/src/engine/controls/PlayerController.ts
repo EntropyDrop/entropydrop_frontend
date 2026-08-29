@@ -14,6 +14,7 @@ import {
   wrapMicroX, wrapMicroZ
 } from '../torus/TorusWorld.ts';
 import { calculatePreviewDragForce } from '../render/SceneRenderer.ts';
+import type { SpaceStorage } from '../storage/BrowserStorage.ts';
 
 // Global editor/game commands stay engine-owned and are not exposed to entity
 // programs, avoiding collisions between scripts and C/V/tool shortcuts.
@@ -133,6 +134,7 @@ export class PlayerController {
   selectorMicroMode: boolean;
   inventories: any;
   activeInventoryCategory: string;
+  persistentStorage: SpaceStorage | null;
 
   // --- Camera / View Settings ---
   sceneRenderer: any;
@@ -144,7 +146,16 @@ export class PlayerController {
   isDriving: boolean;
   drivenContraption: any;
 
-  constructor(camera, physics, world, soundManager, particleSystem, contraptionManager, uiBridge) {
+  constructor(
+    camera,
+    physics,
+    world,
+    soundManager,
+    particleSystem,
+    contraptionManager,
+    uiBridge,
+    persistentStorage: SpaceStorage | null = null
+  ) {
     this.camera = camera;
     this.physics = physics;
     this.world = world;
@@ -152,6 +163,7 @@ export class PlayerController {
     this.particles = particleSystem;
     this.contraptions = contraptionManager;
     this.ui = uiBridge;
+    this.persistentStorage = persistentStorage;
     if (this.contraptions) this.contraptions.selectionHost = this;
 
     this.sceneRenderer = null;
@@ -2512,6 +2524,7 @@ export class PlayerController {
   }
 
   inventoryStorage() {
+    if (this.persistentStorage) return this.persistentStorage;
     try {
       return typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
     } catch (err) {
@@ -2554,7 +2567,7 @@ export class PlayerController {
       }));
       return true;
     } catch (err) {
-      console.warn('Could not save backpack to localStorage:', err);
+      console.warn('Could not save backpack to browser storage:', err);
       return false;
     }
   }

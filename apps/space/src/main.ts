@@ -22,6 +22,10 @@ import type { DistantLodCacheData } from './engine/render/DistantLodCacheFormat.
 import { MultiplayerSync, type RemotePlayerInfo } from './engine/network/MultiplayerSync.ts';
 import { mountSpaceUi } from './ui/react/mountSpaceUi.tsx';
 import { spaceUiStore, type SpaceUiStore } from './ui/react/store/SpaceUiStore.ts';
+import {
+  createSpacePersistentStorage,
+  type SpaceStorage,
+} from './engine/storage/BrowserStorage.ts';
 
 // Mount the 2D interface as soon as the module starts. The authentication gate
 // remains above it until bootstrap succeeds, and every engine adapter created
@@ -53,7 +57,11 @@ class Game {
   multiplayerSync: MultiplayerSync;
   remotePlayers: RemotePlayerInfo[];
 
-  constructor(session: ReadySpaceSession, distantLodCache: DistantLodCacheData | null) {
+  constructor(
+    session: ReadySpaceSession,
+    distantLodCache: DistantLodCacheData | null,
+    persistentStorage: SpaceStorage | null
+  ) {
     this.canvasContainer = document.getElementById('canvas-container');
 
     // 1. Core Engine Systems
@@ -69,7 +77,8 @@ class Game {
       distantLodCache,
       {
         worldId: session.world.id,
-        remote: session.terrain_edit_remote
+        remote: session.terrain_edit_remote,
+        storage: persistentStorage
       }
     );
     this.sceneRenderer.setWorld(this.world);
@@ -80,7 +89,8 @@ class Game {
       this.sceneRenderer.scene,
       this.world,
       this.soundManager,
-      this.particleSystem
+      this.particleSystem,
+      persistentStorage
     );
     this.contraptionManager.setPhysics(this.contraptionPhysics);
     this.contraptionManager.setWorldId(session.world.id);
@@ -98,7 +108,8 @@ class Game {
       this.soundManager,
       this.particleSystem,
       this.contraptionManager,
-      this.uiStore
+      this.uiStore,
+      persistentStorage
     );
     this.controller.setSceneRenderer(this.sceneRenderer);
     this.remotePlayers = [];
@@ -363,11 +374,14 @@ class Game {
 // Start Game on page load
 window.addEventListener('DOMContentLoaded', () => {
   void enterSpace(async session => {
-    const distantLodCache = await loadDistantLodCache(
-      session.world.seed,
-      session.world.terrain_generator_version
-    );
+    const [distantLodCache, persistentStorage] = await Promise.all([
+      loadDistantLodCache(
+        session.world.seed,
+        session.world.terrain_generator_version
+      ),
+      createSpacePersistentStorage()
+    ]);
     (window as any).spaceSession = session;
-    (window as any).game = new Game(session, distantLodCache);
+    (window as any).game = new Game(session, distantLodCache, persistentStorage);
   });
 });

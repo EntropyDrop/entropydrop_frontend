@@ -25,6 +25,23 @@ class MemoryStorage implements WorldEditStorage {
   }
 }
 
+class DeferredDurableStorage extends MemoryStorage {
+  waitStarted = false;
+  private releaseDurability: (() => void) | null = null;
+  private readonly durable = new Promise<void>(resolve => {
+    this.releaseDurability = resolve;
+  });
+
+  async whenIdle() {
+    this.waitStarted = true;
+    await this.durable;
+  }
+
+  release() {
+    this.releaseDurability?.();
+  }
+}
+
 async function waitFor(predicate: () => boolean, timeoutMs = 1_000) {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
@@ -106,6 +123,33 @@ test('remote terrain mutations are split into stable batches of at most 256 oper
   assert.equal(new Set(sent.map(batch => batch.batchId)).size, 2);
   const cached = JSON.parse(storage.getItem(worldEditStorageKey('remote-batch-world'))!);
   assert.deepEqual(cached.pendingBatches, []);
+});
+
+test('remote terrain outbox waits for IndexedDB durability before transmission', async () => {
+  const storage = new DeferredDurableStorage();
+  const sent: any[] = [];
+  const persistence = new WorldEditPersistence({
+    worldId: 'durable-outbox-world',
+    storage,
+    saveDelayMs: 0,
+    remote: {
+      chunks: [],
+      async sendBatch(batchId, mutations) {
+        sent.push({ batchId, mutations });
+      }
+    }
+  });
+
+  persistence.recordStandard(10, 80, 10, BlockTypes.COLOR_BLOCK, 0x123456);
+  await waitFor(() => storage.waitStarted);
+  assert.equal(sent.length, 0, 'network send must wait until the IndexedDB transaction commits');
+  persistence.recordStandard(11, 80, 10, BlockTypes.COLOR_BLOCK, 0x654321);
+
+  storage.release();
+  await waitFor(() => sent.length === 2);
+  assert.equal(sent[0].mutations[0].kind, 'set_standard');
+  assert.deepEqual(sent.map(batch => batch.mutations.length), [1, 1]);
+  assert.equal(new Set(sent.map(batch => batch.batchId)).size, 2);
 });
 
 test('legacy browser-local edits are replayed over the server snapshot and uploaded once', async () => {

@@ -27,7 +27,7 @@ test('contraption manager saves assembled entity and restores it after simulated
   const worldId = 'test-world-persist-1';
 
   const scene = new THREE.Scene();
-  const managerA = new ContraptionManager(scene, null, null, null);
+  const managerA = new ContraptionManager(scene, null, null, null, storage);
   managerA.setWorldId(worldId);
 
   // Directly build an entity in managerA
@@ -67,7 +67,7 @@ test('contraption manager saves assembled entity and restores it after simulated
   created.groundDistance = 0.125;
 
   // Save to storage
-  const saved = managerA.saveEntitiesToStorage(storage as any);
+  const saved = managerA.saveEntitiesToStorage();
   assert.equal(saved, true);
 
   const raw = storage.getItem(worldEntitiesStorageKey(worldId));
@@ -81,11 +81,11 @@ test('contraption manager saves assembled entity and restores it after simulated
 
   // Now create managerB (simulating page reload)
   const sceneB = new THREE.Scene();
-  const managerB = new ContraptionManager(sceneB, null, null, null);
+  const managerB = new ContraptionManager(sceneB, null, null, null, storage);
   managerB.setWorldId(worldId);
 
   assert.equal(managerB.contraptions.length, 0);
-  const loadedCount = managerB.loadEntitiesFromStorage(storage as any);
+  const loadedCount = managerB.loadEntitiesFromStorage();
   assert.equal(loadedCount, 1);
   assert.equal(managerB.contraptions.length, 1);
 

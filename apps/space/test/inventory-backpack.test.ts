@@ -393,9 +393,9 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
 test('backpack persists all categories and seeds the default palette', () => {
   const storage = makeMemoryStorage();
   const controller = makeController();
-  controller.inventoryStorage = () => storage;
+  controller.persistentStorage = storage;
 
-  assert.equal(controller.loadInventoriesFromLocalStorage(storage), false);
+  assert.equal(controller.loadInventoriesFromLocalStorage(), false);
   const defaultSet = controller.inventories.colorset.items.find(Boolean);
   assert.equal(defaultSet.name, 'Default palette');
   assert.equal(defaultSet.colors.length, 9);
@@ -425,8 +425,8 @@ test('backpack persists all categories and seeds the default palette', () => {
   assert.equal('size' in stored.categories.blockset.items[0].blocks[0], false);
 
   const restored = makeController();
-  restored.inventoryStorage = () => storage;
-  assert.equal(restored.loadInventoriesFromLocalStorage(storage), true);
+  restored.persistentStorage = storage;
+  assert.equal(restored.loadInventoriesFromLocalStorage(), true);
   assert.equal(restored.activeInventoryCategory, 'entity');
   assert.equal(restored.inventories.blockset.items[0].name, 'Renamed shape');
   assert.equal(restored.inventories.blockset.items[0].blocks[0].dx, 0.2);

@@ -8,6 +8,7 @@ import {
   wrapX,
   wrapZ,
 } from '../torus/TorusWorld.ts';
+import type { SpaceStorage } from '../storage/BrowserStorage.ts';
 
 const STORAGE_SCHEMA_VERSION = 2;
 const STORAGE_PREFIX = 'space.world-edits.v2';
@@ -18,11 +19,7 @@ const MAX_MUTATIONS_PER_BATCH = 256;
 const MAX_STORED_STANDARD_EDITS = 250_000;
 const MAX_STORED_MICRO_EDITS = 500_000;
 
-export interface WorldEditStorage {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
-}
+export interface WorldEditStorage extends SpaceStorage {}
 
 export type TerrainMutation =
   | { kind: 'set_standard'; x: number; y: number; z: number; block: number; color: number }
@@ -118,8 +115,8 @@ function legacyWorldEditStorageKey(worldId: string) {
  *
  * Standard AIR entries are tombstones over deterministic generated terrain.
  * Remote mutations are grouped into stable, idempotent batches of at most 256;
- * a batch is written to localStorage before transmission and removed only after
- * the server acknowledges it.
+ * a batch is committed to browser storage before transmission and removed only
+ * after the server acknowledges it.
  */
 export class WorldEditPersistence {
   readonly worldId: string;
@@ -409,9 +406,22 @@ export class WorldEditPersistence {
   private async flushNextRemoteBatch() {
     if (!this.remote || this.sendingBatchId || this.pendingBatches.length === 0) return;
     const batch = this.pendingBatches[0];
-    this.flush();
     this.sealedBatchIds.add(batch.batchId);
+    // Reserve the batch while its IndexedDB transaction commits so another
+    // zero-delay mutation timer cannot start a concurrent send of the same id.
     this.sendingBatchId = batch.batchId;
+    this.flush();
+    try {
+      await this.storage?.whenIdle?.();
+    } catch (error) {
+      // Never transmit an outbox batch that did not become durable. Keep its
+      // stable id sealed and retry the same persistence operation later.
+      this.dirty = true;
+      this.sendingBatchId = null;
+      console.warn('Space terrain batch is waiting for durable browser storage.', error);
+      this.scheduleRemoteFlush(REMOTE_RETRY_DELAY_MS);
+      return;
+    }
     try {
       await this.remote.sendBatch(batch.batchId, batch.mutations);
       const index = this.pendingBatches.findIndex(item => item.batchId === batch.batchId);
