@@ -1,7 +1,8 @@
 # EntropyDrop Space
 
 This app lives in the `entropydrop_frontend` npm workspace and is built as the
-independent `/space/` document. It shares the repository's Three.js version and
+independent `/space/app/` document. The main `/space` route is the product
+introduction page. The app shares the repository's Three.js version and
 the main site's `localStorage` login token. It does not own an account system.
 
 Before constructing the Three.js scene it calls `POST /space/api/v2/bootstrap`,
@@ -68,7 +69,8 @@ npm ci
 npm run dev
 ```
 
-Open <http://localhost:5173/space/>. The main Vite process mounts Space directly
+Open <http://localhost:5173/space/> for the introduction, then enter the app at
+<http://localhost:5173/space/app/>. The main Vite process mounts Space directly
 at that path, preserving the main site's origin and login token without a second
 frontend server or proxy. API requests are sent by the browser directly to the
 backend configured by `VITE_API_BASE_URL` (default: `http://localhost:8000`).

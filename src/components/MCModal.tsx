@@ -262,6 +262,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const [currentUser, setCurrentUser] = useState<any>(null);
     const isLoggedIn = !!localStorage.getItem('token');
     const isOwner = Boolean(currentUser && item.creator?.id === currentUser.id);
+    const canSetMinecraftSkin = Boolean(isOwner && item.result && item.is_public === true);
     const licenseCode = item.license?.code || 'unknown';
     const publicLicense = item.license?.public_license;
     const hasCreatorCommercialLicense = isOwner && licenseCode === 'entropydrop-commercial-1.0';
@@ -1319,13 +1320,21 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
                                                             {renderLicenseInfo()}
 
-                                                            {isOwner && item.result && item.is_public === true && (
-                                                                <div className="flex flex-col gap-1.5 mt-2">
+                                                            <div className="flex flex-col gap-1.5 mt-2">
+                                                                <div
+                                                                    className="group/set-character relative"
+                                                                    tabIndex={canSetMinecraftSkin ? undefined : 0}
+                                                                    aria-disabled={canSetMinecraftSkin ? undefined : true}
+                                                                    aria-describedby={canSetMinecraftSkin ? undefined : 'set-character-requirement'}
+                                                                >
                                                                     <button
                                                                         type="button"
-                                                                        disabled={isSettingSkin}
+                                                                        disabled={!canSetMinecraftSkin || isSettingSkin}
                                                                         onClick={handleSetMinecraftSkin}
-                                                                        className="w-full py-2 bg-[#4ea632]/20 hover:bg-[#4ea632]/30 active:bg-[#4ea632]/40 border border-[#4ea632]/40 hover:border-[#4ea632]/60 text-[#4ea632] text-xs font-bold font-pixel-hans transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait flex items-center justify-center gap-2"
+                                                                        className={`w-full py-2 border text-xs font-bold font-pixel-hans transition-all flex items-center justify-center gap-2 ${canSetMinecraftSkin
+                                                                            ? 'bg-[#4ea632]/20 hover:bg-[#4ea632]/30 active:bg-[#4ea632]/40 border-[#4ea632]/40 hover:border-[#4ea632]/60 text-[#4ea632] cursor-pointer disabled:opacity-50 disabled:cursor-wait'
+                                                                            : 'bg-white/[0.03] border-white/10 text-white/25 cursor-not-allowed'
+                                                                            }`}
                                                                     >
                                                                         {isSettingSkin ? (
                                                                             <>
@@ -1344,13 +1353,24 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                             </>
                                                                         )}
                                                                     </button>
-                                                                    {skinError && (
-                                                                        <span className="text-[10px] text-red-400 font-pixel-hans leading-tight block text-center">
-                                                                            {skinError}
-                                                                        </span>
+
+                                                                    {!canSetMinecraftSkin && (
+                                                                        <div
+                                                                            id="set-character-requirement"
+                                                                            role="tooltip"
+                                                                            className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 w-max max-w-[220px] -translate-x-1/2 border border-white/15 bg-zinc-950/95 px-3 py-2 text-center text-[10px] leading-relaxed text-white/70 opacity-0 shadow-xl transition-opacity group-hover/set-character:opacity-100 group-focus-within/set-character:opacity-100"
+                                                                        >
+                                                                            {current.mcmodal.setMyCharacterRequirement}
+                                                                            <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-white/15 bg-zinc-950" />
+                                                                        </div>
                                                                     )}
                                                                 </div>
-                                                            )}
+                                                                {skinError && (
+                                                                    <span className="text-[10px] text-red-400 font-pixel-hans leading-tight block text-center">
+                                                                        {skinError}
+                                                                    </span>
+                                                                )}
+                                                            </div>
 
                                                             {item.id && item.mode && item.mode.startsWith('aigc_') && item.is_public === true && !hasUserFeedback && (
                                                                 <div className="p-3 bg-white/5 border border-white/10 flex flex-col gap-2 mt-2">

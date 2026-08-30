@@ -8,7 +8,7 @@ const spaceIndexPath = fileURLToPath(new URL('./apps/space/index.html', import.m
 
 /**
  * Mount the framework-independent Space document inside the main Vite server.
- * Production remains a separate build copied to dist/space, while development
+ * Production remains a separate build copied to dist/space/app, while development
  * uses one process and one browser origin for both applications.
  */
 function spaceDevMount(): Plugin {
@@ -20,14 +20,14 @@ function spaceDevMount(): Plugin {
         const requestUrl = request.url || '/'
         const url = new URL(requestUrl, 'http://vite.local')
 
-        if (url.pathname === '/space') {
+        if (url.pathname === '/space/app') {
           response.statusCode = 307
-          response.setHeader('Location', `/space/${url.search}`)
+          response.setHeader('Location', `/space/app/${url.search}`)
           response.end()
           return
         }
 
-        if (url.pathname !== '/space/' && url.pathname !== '/space/index.html') {
+        if (url.pathname !== '/space/app/' && url.pathname !== '/space/app/index.html') {
           next()
           return
         }

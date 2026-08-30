@@ -23,6 +23,7 @@ const LedgerPage = lazy(() => import('./pages/LedgerPage').then(m => ({ default:
 const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage').then(m => ({ default: m.DiscoveryPage })))
 const FigurePage = lazy(() => import('./pages/FigurePage').then(m => ({ default: m.FigurePage })))
 const CreditsPage = lazy(() => import('./pages/CreditsPage').then(m => ({ default: m.CreditsPage })))
+const SpacePage = lazy(() => import('./pages/SpacePage').then(m => ({ default: m.SpacePage })))
 
 
 /**
@@ -49,16 +50,6 @@ function LegacyOpenRedirect() {
   const location = useLocation()
   const target = `${location.pathname.replace(/^\/skin\/open/, '/public')}${location.search}${location.hash}`
   return <Navigate to={target} replace />
-}
-
-function SpaceRedirect() {
-  useEffect(() => {
-    // Keep the same browser origin so Space shares the main site's token.
-    // During development Vite proxies /space to the independent app server.
-    const target = import.meta.env.VITE_SPACE_URL || '/space/'
-    window.location.replace(target)
-  }, [])
-  return <LoadingPlaceholder />
 }
 
 function RouteReadySignal({ children, onReady }: { children: ReactNode, onReady: () => void }) {
@@ -128,7 +119,7 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/skin/open/*" element={<LegacyOpenRedirect />} />
         <Route path="/figure" element={<FigureRedirect />} />
         <Route path="/figure/:category" element={<FigurePage current={currentLangData} />} />
-        <Route path="/space/*" element={<SpaceRedirect />} />
+        <Route path="/space/*" element={<SpacePage current={currentLangData} />} />
       </Routes>
     </RouteTransition>
   )

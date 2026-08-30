@@ -166,6 +166,10 @@ export default {
         creationsPrivate: 'Creations (Private)',
         share: 'Share',
         upload: 'Upload Skin',
+        uploadDestination: 'Choose a destination collection',
+        chooseImage: 'Choose image',
+        previousPage: 'Previous page',
+        nextPage: 'Next page',
         uploadLicenseTitle: 'Confirm Upload License',
         uploadLicenseMessage: 'By uploading, you confirm that you hold the rights needed to grant this license and agree to offer the skin under CC BY-NC 4.0. Anyone may use, share, and adapt it for non-commercial purposes with attribution. This license is irrevocable; making the skin private limits new access but does not withdraw licenses already validly received.',
         empty: 'It\'s empty here',
@@ -885,6 +889,7 @@ Email: support@entropydrop.com`
         setMyCharacterSuccess: 'Set successfully!',
         setMyCharacterFailed: 'Failed to set',
         setMyCharacterNetworkError: 'Network error, please try again',
+        setMyCharacterRequirement: 'Only public skins you created can be set as your character.',
         licenseTitle: 'License',
         licenseUnknown: 'Unknown license',
         licenseUnknownDescription: 'This work was uploaded before license tracking was introduced. EntropyDrop cannot confirm its permitted uses; contact the uploader before using it.',
@@ -897,6 +902,50 @@ Email: support@entropydrop.com`
         previousPublicLicense: 'This work was previously public. CC BY-NC 4.0 licenses already validly received are not withdrawn when it becomes private.',
         viewLicenseTerms: 'View the full CC BY-NC 4.0 terms',
         thirdPartyRightsNotice: 'The license covers only rights the licensor can grant and excludes third-party trademarks, characters, likenesses, copyrighted material, and other third-party rights.'
+    },
+    space_page: {
+        title: 'EntropyDrop Space',
+        eyebrow: 'Playable prototype',
+        platform: 'WebGL · Shared world · AI agents',
+        tagline: 'Build anything. Tell it what to do.',
+        description: 'An AI-native programmable voxel world where every structure can become an entity, every entity can gain behavior, and every player can help shape the same persistent world.',
+        primaryCta: 'Enter Space',
+        secondaryCta: 'How it works',
+        heroPlaceholder: {
+            label: 'Space world screenshot',
+            hint: 'Replace with a product screenshot or gameplay video cover'
+        },
+        featuresTitle: 'A world made to be changed',
+        features: [
+            { title: 'Build freely', description: 'Place, remove, recolor, and combine voxels into terrain, machines, architecture, and anything between.' },
+            { title: 'Sculpt at two scales', description: 'Move from standard blocks to precise micro voxels when an idea needs finer geometry and detail.' },
+            { title: 'Program with language', description: 'Select a creation, describe what it should do, inspect the controller, and run its behavior in the world.' },
+            { title: 'Share one world', description: 'Meet other players, watch constructions evolve, and leave durable changes in a continuous multiplayer space.' }
+        ],
+        showcase: {
+            eyebrow: 'From blocks to behavior',
+            title: 'Your creation is not just scenery.',
+            description: 'A selected structure can become a programmable component tree with physical constraints and an agent-controlled behavior. Build a vehicle, a machine, a creature—or something without a name yet.',
+            placeholder: 'Gameplay / programmable creation screenshot',
+            bullets: [
+                'One freely colorable voxel material, from full blocks to micro details',
+                'Entity components with kinematic and dynamic physical behavior',
+                'Natural-language intent with an inspectable controller and API'
+            ]
+        },
+        workflow: {
+            title: 'Three steps from idea to behavior',
+            description: 'Space keeps the creative loop short: enter as your EntropyDrop character, build directly in the world, then give the result a behavior.',
+            steps: [
+                { title: 'Enter as yourself', description: 'Use your EntropyDrop account and Minecraft skin as your identity in the shared world.' },
+                { title: 'Shape the world', description: 'Build with standard or micro voxels, select connected structures, and turn them into entities.' },
+                { title: 'Give it intent', description: 'Describe a behavior in natural language, review the generated controller, and watch it act.' }
+            ]
+        },
+        closing: {
+            title: 'The prototype is open. Bring an idea.',
+            description: 'Space runs directly in a modern desktop browser. A configured Minecraft skin is required before entering.'
+        }
     },
     public_page: {
         title: 'Open Production',

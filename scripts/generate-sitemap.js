@@ -11,7 +11,7 @@ const staticRoutes = [
   '',
   '/skin',
   '/skin/generate',
-  '/space/',
+  '/space',
   '/credits',
   '/pro',
   '/public/about',

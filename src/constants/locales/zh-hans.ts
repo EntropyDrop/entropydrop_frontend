@@ -166,6 +166,10 @@ export default {
         creationsPrivate: '我的创作（私有）',
         share: '分享',
         upload: '上传皮肤',
+        uploadDestination: '选择上传到的收藏夹',
+        chooseImage: '选择图片',
+        previousPage: '上一页',
+        nextPage: '下一页',
         uploadLicenseTitle: '确认上传许可',
         uploadLicenseMessage: '上传即表示您确认拥有授予许可所需的权利，并同意将该皮肤以 CC BY-NC 4.0 许可提供：任何人可在署名条件下用于非商业目的、分享和修改。该许可不可撤销；设为私有只会限制新的访问，不会撤销此前已合法取得的许可。',
         empty: '这里空落落的',
@@ -885,6 +889,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         setMyCharacterSuccess: '设置成功！',
         setMyCharacterFailed: '设置失败',
         setMyCharacterNetworkError: '网络错误，请稍后重试',
+        setMyCharacterRequirement: '只有你创建的公开皮肤才能设为自己的角色。',
         licenseTitle: '使用许可',
         licenseUnknown: '许可未知',
         licenseUnknownDescription: '该作品是许可系统启用前上传的内容，平台无法确认其授权范围。使用前请联系上传者确认。',
@@ -897,6 +902,50 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         previousPublicLicense: '该作品曾经公开；此前已合法取得的 CC BY-NC 4.0 许可不因转为私有而撤销。',
         viewLicenseTerms: '查看 CC BY-NC 4.0 完整条款',
         thirdPartyRightsNotice: '许可仅覆盖许可人有权授予的权利，不包括第三方商标、角色、肖像、版权素材或其他第三方权利。'
+    },
+    space_page: {
+        title: 'EntropyDrop Space',
+        eyebrow: '可游玩原型',
+        platform: 'WebGL · 共享世界 · AI Agent',
+        tagline: '创造任何东西，然后告诉它该做什么。',
+        description: '一个 AI 原生的可编程体素世界：每座建筑都可以成为实体，每个实体都能获得行为，每位玩家都能共同塑造同一个持续演化的世界。',
+        primaryCta: '进入 Space',
+        secondaryCta: '了解玩法',
+        heroPlaceholder: {
+            label: 'Space 世界截图',
+            hint: '可替换为产品截图或玩法视频封面'
+        },
+        featuresTitle: '一个生来就能被改变的世界',
+        features: [
+            { title: '自由建造', description: '放置、移除、重新着色并组合体素，创造地形、机器、建筑，以及介于它们之间的一切。' },
+            { title: '双尺度雕刻', description: '从标准方块切换到精细微体素，让复杂轮廓、细节和结构不再受单一网格限制。' },
+            { title: '用语言编程', description: '选择你的造物，描述它应该做什么，检查生成的控制器，然后让行为在世界中运行。' },
+            { title: '共建同一世界', description: '遇见其他玩家，观察造物持续演化，并在同一个多人世界里留下持久的改变。' }
+        ],
+        showcase: {
+            eyebrow: '从方块到行为',
+            title: '你的造物不只是场景。',
+            description: '被选中的结构可以转化为可编程组件树，拥有物理约束与 Agent 控制的行为。造一辆车、一台机器、一个生物，或者某种还没有名字的东西。',
+            placeholder: '玩法 / 可编程造物截图',
+            bullets: [
+                '一种可自由着色的体素材料，覆盖标准方块与微体素细节',
+                '支持运动学、动力学与物理约束的实体组件',
+                '自然语言意图、可检查的控制器与开放 API'
+            ]
+        },
+        workflow: {
+            title: '从想法到行为，只需三步',
+            description: 'Space 尽量缩短创造循环：以 EntropyDrop 角色进入，直接在世界中建造，再赋予成品一个行为。',
+            steps: [
+                { title: '以自己的形象进入', description: '使用 EntropyDrop 账号与 Minecraft 皮肤，成为共享世界中的你。' },
+                { title: '塑造这个世界', description: '用标准或微体素建造，选中连通结构，并把它转化为实体。' },
+                { title: '赋予它意图', description: '用自然语言描述行为，检查生成的控制器，然后看着它开始行动。' }
+            ]
+        },
+        closing: {
+            title: '原型已经开放，带上一个想法来吧。',
+            description: 'Space 可直接在现代桌面浏览器中运行；进入前需要先为账号设置 Minecraft 皮肤。'
+        }
     },
     public_page: {
         title: '开放生产体系',

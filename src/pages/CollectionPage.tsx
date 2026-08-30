@@ -1,6 +1,6 @@
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
 import { SEO } from '../components/SEO'
@@ -10,6 +10,7 @@ import { MCModal } from '../components/MCModal'
 import { showError } from '../utils/alert'
 import { LoadingPlaceholder } from '../components/LoadingPlaceholder'
 import { apiFetch } from '../utils/api'
+import { CollectionUploadPicker } from '../components/CollectionUploadPicker'
 
 
 interface Collection {
@@ -34,6 +35,14 @@ interface CollectionItem {
         result?: string
         [key: string]: any
     }
+}
+
+interface UploadedCollectionItem {
+    id?: number | string
+    log_id?: number | string
+    name?: string
+    result_url?: string
+    data?: CollectionItem['data']
 }
 
 interface CollectionPageProps {
@@ -66,6 +75,14 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false)
     const [itemToMove, setItemToMove] = useState<CollectionItem | null>(null)
     const [isPro, setIsPro] = useState(false)
+    const [isUploadPickerOpen, setIsUploadPickerOpen] = useState(false)
+    const [uploadPickerTab, setUploadPickerTab] = useState<'public' | 'private'>('public')
+    const [uploadPickerCollections, setUploadPickerCollections] = useState<Collection[]>([])
+    const [selectedUploadCollection, setSelectedUploadCollection] = useState<Collection | null>(null)
+    const [uploadPickerPage, setUploadPickerPage] = useState(1)
+    const [uploadPickerTotalPages, setUploadPickerTotalPages] = useState(1)
+    const [isLoadingUploadPicker, setIsLoadingUploadPicker] = useState(false)
+    const homeUploadInputRef = useRef<HTMLInputElement>(null)
 
     // Rename state
     const [isRenameModalOpen, setIsRenameModalOpen] = useState(false)
@@ -135,7 +152,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
             if (res.ok) {
                 const data = await res.json()
                 setIsPro(data.is_pro)
-                setMyUserId(data.id)
+                setMyUserId(String(data.id))
             }
         } catch (e) {
             console.error('Failed to fetch user status', e)
@@ -172,6 +189,68 @@ export function CollectionPage({ current }: CollectionPageProps) {
             fetchUserStatus()
         }
     }, [])
+
+    useEffect(() => {
+        if (!isUploadPickerOpen) return
+        let isCancelled = false
+
+        const fetchUploadTargets = async () => {
+            setIsLoadingUploadPicker(true)
+            try {
+                const isPublic = uploadPickerTab === 'public'
+                const response = await apiFetch(`/api/collections?page=${uploadPickerPage}&page_size=6&is_public=${isPublic}&show_original_creation=false`)
+                if (isCancelled) return
+                if (!response.ok) {
+                    setUploadPickerCollections([])
+                    setUploadPickerTotalPages(1)
+                    return
+                }
+
+                const data = await response.json()
+                if (isCancelled) return
+                const originalId = isPublic ? 'creations_public' : 'creations_private'
+                const loadedOriginal = originalCollections.find(collection => String(collection.id) === originalId)
+                const originalTarget: Collection = loadedOriginal
+                    ? {
+                        ...loadedOriginal,
+                        name: isPublic ? current.collection.creationsPublic : current.collection.creationsPrivate
+                    }
+                    : {
+                        id: originalId,
+                        name: isPublic ? current.collection.creationsPublic : current.collection.creationsPrivate,
+                        is_public: isPublic,
+                        item_count: 0,
+                        original_creation: true,
+                        user_id: myUserId ? Number(myUserId) : undefined
+                    }
+
+                setUploadPickerCollections([originalTarget, ...(data.items || [])])
+                setUploadPickerPage(data.page || uploadPickerPage)
+                setUploadPickerTotalPages(Math.max(1, data.total_pages || 1))
+            } catch (error) {
+                if (!isCancelled) {
+                    console.error('Failed to fetch upload target collections', error)
+                    setUploadPickerCollections([])
+                    setUploadPickerTotalPages(1)
+                }
+            } finally {
+                if (!isCancelled) setIsLoadingUploadPicker(false)
+            }
+        }
+
+        void fetchUploadTargets()
+        return () => {
+            isCancelled = true
+        }
+    }, [
+        current.collection.creationsPrivate,
+        current.collection.creationsPublic,
+        isUploadPickerOpen,
+        myUserId,
+        originalCollections,
+        uploadPickerPage,
+        uploadPickerTab
+    ])
 
     useEffect(() => {
         if (!localStorage.getItem('token')) return;
@@ -249,6 +328,39 @@ export function CollectionPage({ current }: CollectionPageProps) {
         );
     };
 
+    const refreshCollectionSummaryAfterUpload = (collection: Collection, uploadedItem: UploadedCollectionItem) => {
+        if (currentCollection && String(currentCollection.id) === String(collection.id)) {
+            void fetchItems(collection.id, itemPage)
+            return
+        }
+
+        const preview = {
+            id: uploadedItem.log_id || uploadedItem.id || `${Date.now()}`,
+            data: uploadedItem.data || { result: uploadedItem.result_url }
+        }
+        const updateCollection = (candidate: Collection) => ({
+            ...candidate,
+            item_count: candidate.item_count + 1,
+            previews: [preview, ...(candidate.previews || [])].slice(0, 3)
+        })
+        const sourceCollectionId = collection.is_public ? 'creations_public' : 'creations_private'
+
+        setOriginalCollections(collections => collections.map(candidate =>
+            String(candidate.id) === sourceCollectionId ? updateCollection(candidate) : candidate
+        ))
+
+        if (!collection.original_creation) {
+            const updateTarget = (collections: Collection[]) => collections.map(candidate =>
+                String(candidate.id) === String(collection.id) ? updateCollection(candidate) : candidate
+            )
+            if (collection.is_public) {
+                setPublicCollections(updateTarget)
+            } else {
+                setPrivateCollections(updateTarget)
+            }
+        }
+    }
+
     const uploadConfirmedItem = async (file: File, collection: Collection) => {
         const processFile = async (): Promise<Blob> => {
             return new Promise((resolve) => {
@@ -303,8 +415,8 @@ export function CollectionPage({ current }: CollectionPageProps) {
                 body: formData
             });
             if (response.ok) {
+                const data = await response.json().catch(() => ({})) as UploadedCollectionItem;
                 if (isCustom) {
-                    const data = await response.json();
                     const linkResponse = await apiFetch('/api/collections/items', {
                         method: 'POST',
                         body: JSON.stringify({
@@ -316,13 +428,13 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         })
                     });
                     if (linkResponse.ok) {
-                        fetchItems(collection.id, itemPage);
+                        refreshCollectionSummaryAfterUpload(collection, data);
                     } else {
                         const errorData = await linkResponse.json().catch(() => ({}));
                         showError(errorData.detail || current.collection.uploadFailed);
                     }
                 } else {
-                    fetchItems(collection.id, itemPage);
+                    refreshCollectionSummaryAfterUpload(collection, data);
                 }
             } else {
                 showError(current.collection.uploadFailed);
@@ -332,13 +444,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         }
     };
 
-    const handleUploadItem = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        const collection = currentCollection;
-        // Reset immediately so choosing the same file again still triggers change.
-        e.target.value = '';
-        if (!file || !collection) return;
-
+    const confirmUploadItem = (file: File, collection: Collection) => {
         if (file.size > 512 * 1024) {
             showError(current.collection.fileTooLarge);
             return;
@@ -352,7 +458,27 @@ export function CollectionPage({ current }: CollectionPageProps) {
                 void uploadConfirmedItem(file, collection);
             }
         });
+    }
+
+    const handleUploadItem = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        const collection = currentCollection;
+        // Reset immediately so choosing the same file again still triggers change.
+        e.target.value = '';
+        if (!file || !collection) return;
+
+        confirmUploadItem(file, collection)
     };
+
+    const handleHomeUploadItem = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        const collection = selectedUploadCollection
+        e.target.value = ''
+        if (!file || !collection) return
+
+        setIsUploadPickerOpen(false)
+        confirmUploadItem(file, collection)
+    }
 
     const handleMoveItem = async (targetCollectionId: string | number) => {
         if (!itemToMove) return;
@@ -613,6 +739,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const collectionTitle = currentCollection
         ? `${currentCollection.name} | ${current.nav.collection}`
         : current.nav.collection;
+    const isOwnCollectionPage = Boolean(myUserId && (!userId || String(userId) === String(myUserId)))
 
     return (
         <PageContainer className="relative">
@@ -657,14 +784,81 @@ export function CollectionPage({ current }: CollectionPageProps) {
                     </div>
 
                     <div className="flex flex-col items-stretch md:items-end gap-3 w-full md:w-auto">
-                        {!currentCollection && (
-                            <button
-                                onClick={() => setIsCreateModalOpen(true)}
-                                className={`px-4 py-2 bg-[#3c8527] hover:bg-[#4ea632] text-white border-2 border-black cursor-pointer text-xs flex items-center justify-center gap-2 transition-all active:translate-y-0.5 w-full md:w-auto ${current.fontClass}`}
-                            >
-                                <Icon icon="pixelarticons:plus" />
-                                {current.collection.btnNew}
-                            </button>
+                        {!currentCollection && isOwnCollectionPage && (
+                            <div className="flex w-full items-center gap-2 md:w-auto">
+                                <button
+                                    onClick={() => setIsCreateModalOpen(true)}
+                                    className={`flex flex-1 cursor-pointer items-center justify-center gap-2 border-2 border-black bg-[#3c8527] px-4 py-2 text-xs text-white transition-all hover:bg-[#4ea632] active:translate-y-0.5 md:flex-none ${current.fontClass}`}
+                                >
+                                    <Icon icon="pixelarticons:plus" />
+                                    {current.collection.btnNew}
+                                </button>
+
+                                <div className={`relative flex-1 md:flex-none ${isUploadPickerOpen ? 'z-[60]' : ''}`}>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (isUploadPickerOpen) {
+                                                setIsUploadPickerOpen(false)
+                                                return
+                                            }
+                                            setUploadPickerTab('public')
+                                            setUploadPickerPage(1)
+                                            setSelectedUploadCollection(null)
+                                            setIsUploadPickerOpen(true)
+                                        }}
+                                        aria-expanded={isUploadPickerOpen}
+                                        className={`flex w-full cursor-pointer items-center justify-center gap-2 border-2 border-black bg-[#3c8527] px-4 py-2 text-xs text-white transition-all hover:bg-[#4ea632] active:translate-y-0.5 ${current.fontClass}`}
+                                    >
+                                        <Icon icon="pixelarticons:upload" />
+                                        {current.collection.upload}
+                                    </button>
+
+                                    <input
+                                        ref={homeUploadInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={handleHomeUploadItem}
+                                    />
+
+                                    {isUploadPickerOpen && (
+                                        <button
+                                            type="button"
+                                            aria-label={current.modal.cancel}
+                                            onClick={() => setIsUploadPickerOpen(false)}
+                                            className="fixed inset-0 z-40 cursor-default"
+                                        />
+                                    )}
+
+                                    <AnimatePresence>
+                                        {isUploadPickerOpen && (
+                                            <CollectionUploadPicker
+                                                current={current}
+                                                collections={uploadPickerCollections}
+                                                activeTab={uploadPickerTab}
+                                                selectedCollectionId={selectedUploadCollection?.id ?? null}
+                                                page={uploadPickerPage}
+                                                totalPages={uploadPickerTotalPages}
+                                                isLoading={isLoadingUploadPicker}
+                                                isPrivateUploadDisabled={!isPro}
+                                                onTabChange={(tab) => {
+                                                    setUploadPickerTab(tab)
+                                                    setUploadPickerPage(1)
+                                                    setSelectedUploadCollection(null)
+                                                }}
+                                                onSelectCollection={setSelectedUploadCollection}
+                                                onPageChange={(page) => {
+                                                    setUploadPickerPage(page)
+                                                    setSelectedUploadCollection(null)
+                                                }}
+                                                onChooseImage={() => homeUploadInputRef.current?.click()}
+                                                onClose={() => setIsUploadPickerOpen(false)}
+                                            />
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            </div>
                         )}
 
                         {currentCollection && (
