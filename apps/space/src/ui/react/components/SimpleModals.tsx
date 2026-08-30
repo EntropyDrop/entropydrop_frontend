@@ -42,7 +42,13 @@ export function GlobalSettingsModal() {
           </div>
         </div>
         <div className="settings-section">
-          <div className="settings-section-title">WORLD &amp; ENVIRONMENT</div>
+          <div className="settings-section-title">PHYSICS &amp; ENVIRONMENT</div>
+          <div className="settings-row">
+            <div className="settings-label-group"><span className="settings-label">Entity Gravity</span><span className="settings-desc">Rigid body world gravity simulation</span></div>
+            <div className="settings-segmented-control" id="setting-gravity-group">
+              {([[-18, 'Standard (-18)'], [-5, 'Moon (-5)'], [0, 'Zero-G (0)']] as const).map(([value, label]) => <button key={value} tabIndex={-1} className={`segment-btn ${state.gravity === value ? 'active' : ''}`} onClick={() => spaceUiStore.setGravity(value)}>{label}</button>)}
+            </div>
+          </div>
           <div className="settings-row">
             <div className="settings-label-group"><span className="settings-label">Chunk Render Distance</span><span className="settings-desc">Voxel terrain mesh streaming radius (4 ~ 20 chunks)</span></div>
             <div className="settings-control-group"><input id="setting-render-dist-slider" className="settings-slider" type="range" min="4" max="20" step="1" value={state.renderDistance} onChange={event => spaceUiStore.setRenderDistance(Number(event.target.value))} /><span id="setting-render-dist-val" className="settings-value-badge">{state.renderDistance} Chunks</span></div>

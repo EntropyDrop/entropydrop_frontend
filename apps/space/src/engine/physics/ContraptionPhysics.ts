@@ -28,15 +28,13 @@ const TERRAIN_FACE_NORMALS = [
   new THREE.Vector3(0, 0, 1)
 ];
 
-export const GLOBAL_GRAVITY = -18.0;
-export const GLOBAL_GRAVITY_VECTOR = new THREE.Vector3(0, GLOBAL_GRAVITY, 0);
-
 export class ContraptionPhysics {
   private world: World;
-  readonly gravity: THREE.Vector3 = new THREE.Vector3(0, GLOBAL_GRAVITY, 0);
+  private gravity: THREE.Vector3;
 
   constructor(world) {
     this.world = world;
+    this.gravity = new THREE.Vector3(0, -18.0, 0);
   }
 
   /**
@@ -394,7 +392,7 @@ export class ContraptionPhysics {
       travel = Math.max(
         travel,
         (body.velocity.length() + body.angularVelocity.length() * radius)
-          * Math.max(0, Number(dt) || 0)
+        * Math.max(0, Number(dt) || 0)
       );
     }
     const pad = travel + 0.5;
@@ -415,7 +413,7 @@ export class ContraptionPhysics {
   sweptAabbContact(a, b) {
     const previousOverlap = ['x', 'y', 'z'].every(axis => (
       Math.min(a[`previousMax${axis.toUpperCase()}`], b[`previousMax${axis.toUpperCase()}`])
-        - Math.max(a[`previousMin${axis.toUpperCase()}`], b[`previousMin${axis.toUpperCase()}`]) > 0
+      - Math.max(a[`previousMin${axis.toUpperCase()}`], b[`previousMin${axis.toUpperCase()}`]) > 0
     ));
     if (previousOverlap) return null;
 
@@ -803,9 +801,8 @@ export class ContraptionPhysics {
           // that shares a separating normal; entity pairs get the same
           // treatment instead of resolving one arbitrary cell pair at a time,
           // which let wide bodies rock on a single wandering contact point.
-          const key = `${bodyA.id}|${bodyB.id}|${
-            contact.normal.x.toFixed(3)
-          },${contact.normal.y.toFixed(3)},${contact.normal.z.toFixed(3)}`;
+          const key = `${bodyA.id}|${bodyB.id}|${contact.normal.x.toFixed(3)
+            },${contact.normal.y.toFixed(3)},${contact.normal.z.toFixed(3)}`;
           const group = contactGroups.get(key) || {
             normal: contact.normal,
             penetration: 0,

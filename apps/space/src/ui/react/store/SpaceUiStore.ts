@@ -267,7 +267,7 @@ export class SpaceUiStore {
           name: item.name || 'Custom'
         }));
       }
-    } catch {}
+    } catch { }
 
     const fov = Number(controller?.fov || 75);
     const perspective = (controller?.perspective || 'first_person') as PlayerPerspective;
@@ -285,7 +285,7 @@ export class SpaceUiStore {
       if (savedFov) this.setFov(Number(savedFov), false);
       if (savedPerspective) this.setPerspective(savedPerspective, false);
       if (savedDistance) this.setCameraDistance(Number(savedDistance), false);
-    } catch {}
+    } catch { }
   }
 
   setMarketSession(apiOrigin: string, token: string, isAdmin = false): void {
@@ -302,7 +302,7 @@ export class SpaceUiStore {
     try {
       const saved = localStorage.getItem('space_setting_render_dist');
       if (saved) this.setRenderDistance(Number(saved), false);
-    } catch {}
+    } catch { }
   }
 
   setContraptions(contraptions: any): void {
@@ -538,7 +538,7 @@ export class SpaceUiStore {
     const selectedColorIndex = Math.min(this.snapshot.selectedColorIndex, paletteColors.length - 1);
     this.patch({ paletteColors, selectedColorIndex, activeColorSetId: colorset.id });
     this.setBuildColor(paletteColors[selectedColorIndex].hex, false);
-    try { localStorage.setItem('space_palette_colors', JSON.stringify(paletteColors)); } catch {}
+    try { localStorage.setItem('space_palette_colors', JSON.stringify(paletteColors)); } catch { }
     return true;
   }
 
@@ -1030,13 +1030,13 @@ export class SpaceUiStore {
       const current = [...this.snapshot.agentMessages];
       current[assistantIndex] = result.ok
         ? {
-            role: 'assistant',
-            content: result.content || (result.code ? 'Controller code generated.' : ''),
-            reasoning: result.reasoning || '',
-            code: result.code || null,
-            targetId: result.code ? targetId : null,
-            isStreaming: false
-          }
+          role: 'assistant',
+          content: result.content || (result.code ? 'Controller code generated.' : ''),
+          reasoning: result.reasoning || '',
+          code: result.code || null,
+          targetId: result.code ? targetId : null,
+          isStreaming: false
+        }
         : { role: 'assistant', content: `[!] ${result.error}`, isStreaming: false };
       this.patch({ agentMessages: current });
     } catch (error: any) {
@@ -1081,32 +1081,35 @@ export class SpaceUiStore {
     const value = Math.max(50, Math.min(110, Number(fov) || 75));
     this.snapshot.controller?.setFov?.(value);
     this.patch({ fov: value });
-    if (persist) try { localStorage.setItem('space_setting_fov', String(value)); } catch {}
+    if (persist) try { localStorage.setItem('space_setting_fov', String(value)); } catch { }
   }
 
   setPerspective(perspective: PlayerPerspective, persist = true): void {
     this.snapshot.controller?.setPerspective?.(perspective);
     this.patch({ perspective });
-    if (persist) try { localStorage.setItem('space_setting_perspective', perspective); } catch {}
+    if (persist) try { localStorage.setItem('space_setting_perspective', perspective); } catch { }
   }
 
   setCameraDistance(distance: number, persist = true): void {
     const value = Math.max(2, Math.min(8, Number(distance) || 4));
     this.snapshot.controller?.setThirdPersonDistance?.(value);
     this.patch({ cameraDistance: value });
-    if (persist) try { localStorage.setItem('space_setting_cam_dist', String(value)); } catch {}
+    if (persist) try { localStorage.setItem('space_setting_cam_dist', String(value)); } catch { }
   }
 
-  setGravity(_gravity?: number): void {
-    // Global gravity is unified and fixed at -18.0 m/s²
-    this.patch({ gravity: -18 });
+  setGravity(gravity: number): void {
+    const value = Number(gravity);
+    const game = (window as any).game;
+    if (game?.contraptionPhysics?.gravity) game.contraptionPhysics.gravity.y = value;
+    this.patch({ gravity: value });
+    this.showToast(`Gravity set to ${value} m/s²`);
   }
 
   setRenderDistance(distance: number, persist = true): void {
     const value = Math.max(4, Math.min(20, Number(distance) || 12));
     this.snapshot.world?.setRenderDistance?.(value);
     this.patch({ renderDistance: value });
-    if (persist) try { localStorage.setItem('space_setting_render_dist', String(value)); } catch {}
+    if (persist) try { localStorage.setItem('space_setting_render_dist', String(value)); } catch { }
   }
 
   private buildSelectorView(): SelectorView {

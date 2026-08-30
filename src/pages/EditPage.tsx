@@ -1243,6 +1243,11 @@ export function EditPage({ current }: EditPageProps) {
                                                                 <span className={current.fontClass}>{current.edit.saveAsPrivate}</span>
                                                                 <span className="ml-auto px-1 py-0.5 border border-amber-400/40 bg-amber-500/10 text-amber-300 text-[8px] font-pixel-hans">PRO</span>
                                                             </button>
+                                                            {!isProUser && saveLicensePreview !== 'loading' && (
+                                                                <div className="text-[9px] text-amber-400/80 px-1.5 font-pixel-hans">
+                                                                    {current.edit.privateProRequired}
+                                                                </div>
+                                                            )}
                                                             {isSavingToCreation && <div className="text-[9px] text-white/40 text-center animate-pulse">{current.edit.saving}</div>}
                                                         </div>
                                                     </div>
