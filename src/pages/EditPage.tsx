@@ -8,6 +8,7 @@ import { Skin2D, isSlim, convertSkinLayout } from '../components/utils'
 import * as THREE from 'three'
 import { showAlert, showError } from '../utils/alert'
 import { apiFetch } from '../utils/api'
+import type { SkinLicense } from '../types/log'
 
 
 interface KMeansResult {
@@ -159,6 +160,9 @@ interface EditPageProps {
     current: LangData
 }
 
+type SaveLicensePreview = SkinLicense['code'] | 'loading' | 'unavailable';
+type SelectableSaveLicense = 'cc-by-nc-4.0' | 'entropydrop-commercial-1.0';
+
 export function EditPage({ current }: EditPageProps) {
     const location = useLocation();
     const navigate = useNavigate();
@@ -169,7 +173,7 @@ export function EditPage({ current }: EditPageProps) {
     const [updateTrigger, setUpdateTrigger] = useState(0);
     const [basedOnSkinRenderUrl, setBasedOnSkinRenderUrl] = useState<string | null>(null);
     const [parentSkinId, setParentSkinId] = useState<string | null>(location.state?.passedLogId || null);
-    const isParentPrivate = location.state?.isPublic === false;
+    const [isParentPrivate, setIsParentPrivate] = useState(location.state?.isPublic === false);
 
 
     // Undo/Redo state
@@ -196,10 +200,87 @@ export function EditPage({ current }: EditPageProps) {
     const [showOverlay, setShowOverlay] = useState(true);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isSavingToCreation, setIsSavingToCreation] = useState(false);
+    const [saveLicensePreview, setSaveLicensePreview] = useState<SaveLicensePreview>('loading');
+    const [selectedSaveLicense, setSelectedSaveLicense] = useState<SelectableSaveLicense>('cc-by-nc-4.0');
+    const [isProUser, setIsProUser] = useState(false);
+    const [isLocalImport, setIsLocalImport] = useState(false);
     const [isAdjustPanelOpen, setIsAdjustPanelOpen] = useState(false);
     const [hsb, setHsb] = useState({ h: 0, s: 0, b: 0, c: 0 });
     const originalImageDataRef = useRef<ImageData | null>(null);
     const startHsbRef = useRef({ h: 0, s: 0, b: 0, c: 0 });
+
+    useEffect(() => {
+        let cancelled = false;
+        setSaveLicensePreview('loading');
+
+        const loadSaveLicensePreview = async () => {
+            try {
+                const userRequest = apiFetch('/api/users/me', { skipGlobalError: true });
+                const parentRequest = parentSkinId
+                    ? apiFetch(`/api/logs/${parentSkinId}`, { skipGlobalError: true })
+                    : Promise.resolve(null);
+                const [userResponse, parentResponse] = await Promise.all([userRequest, parentRequest]);
+
+                if (!userResponse.ok || (parentResponse && !parentResponse.ok)) {
+                    if (!cancelled) setSaveLicensePreview('unavailable');
+                    return;
+                }
+
+                const userData = await userResponse.json();
+                const parentData = parentResponse ? await parentResponse.json() : null;
+                const userIsPro = userData?.is_pro === true;
+                if (!cancelled) setIsProUser(userIsPro);
+
+                if (!parentData) {
+                    const newWorkLicense: SaveLicensePreview = userIsPro
+                        ? 'entropydrop-commercial-1.0'
+                        : 'cc-by-nc-4.0';
+                    if (!cancelled) {
+                        setSaveLicensePreview(newWorkLicense);
+                        setSelectedSaveLicense(
+                            newWorkLicense === 'entropydrop-commercial-1.0'
+                                ? 'entropydrop-commercial-1.0'
+                                : 'cc-by-nc-4.0'
+                        );
+                    }
+                    return;
+                }
+
+                const parentLicense = parentData?.license?.code as SkinLicense['code'] | undefined;
+
+                let resolvedLicense: SaveLicensePreview;
+                if (parentLicense === 'entropydrop-commercial-1.0') {
+                    resolvedLicense = parentData?.creator?.id === userData?.id
+                        ? 'entropydrop-commercial-1.0'
+                        : 'cc-by-nc-4.0';
+                } else if (parentLicense === 'cc-by-nc-4.0' || parentLicense === 'unknown') {
+                    resolvedLicense = parentLicense;
+                } else {
+                    resolvedLicense = 'unavailable';
+                }
+
+                if (!cancelled) {
+                    setSaveLicensePreview(resolvedLicense);
+                    setSelectedSaveLicense(
+                        resolvedLicense === 'entropydrop-commercial-1.0'
+                            ? 'entropydrop-commercial-1.0'
+                            : 'cc-by-nc-4.0'
+                    );
+                }
+            } catch (error) {
+                console.error('Failed to resolve the saved skin license', error);
+                if (!cancelled) {
+                    setIsProUser(false);
+                    setSaveLicensePreview('unavailable');
+                }
+            }
+        };
+
+        loadSaveLicensePreview();
+        return () => {
+            cancelled = true;
+        };
+    }, [parentSkinId]);
 
     const handleHSBStart = () => {
         if (!ctx) return;
@@ -369,9 +450,17 @@ export function EditPage({ current }: EditPageProps) {
             }
             const formData = new FormData();
             formData.append('file', blob, 'skin.png');
-            formData.append('mode', 'human_edit');
+            formData.append('mode', isLocalImport ? 'human_upload' : 'human_edit');
             if (parentSkinId) {
                 formData.append('parent', parentSkinId);
+            } else {
+                formData.append('license_consent', 'true');
+            }
+            const requestedLicense = saveLicensePreview === 'entropydrop-commercial-1.0'
+                ? selectedSaveLicense
+                : saveLicensePreview;
+            if (requestedLicense === 'entropydrop-commercial-1.0' || requestedLicense === 'cc-by-nc-4.0') {
+                formData.append('requested_license', requestedLicense);
             }
 
             const targetCol = isPublic ? 'creations_public' : 'creations_private';
@@ -709,6 +798,8 @@ export function EditPage({ current }: EditPageProps) {
                 setIsEmptyModel(false);
 
                 setParentSkinId(null);
+                setIsParentPrivate(false);
+                setIsLocalImport(true);
                 setBasedOnSkinRenderUrl(null);
                 setModelType(isSlim(img) ? 'alex' : 'steve');
                 const imageData = ctx.getImageData(0, 0, 64, 64);
@@ -752,6 +843,38 @@ export function EditPage({ current }: EditPageProps) {
         // Row 3: Grayscale
         '#FFFFFF', '#D1D5DB', '#6B7280', '#4B5563', '#1F2937',
     ];
+
+    const effectiveSaveLicense = saveLicensePreview === 'entropydrop-commercial-1.0'
+        ? selectedSaveLicense
+        : saveLicensePreview;
+    const saveLicenseLabel = effectiveSaveLicense === 'entropydrop-commercial-1.0'
+        ? current.edit.saveLicenseCommercial
+        : effectiveSaveLicense === 'cc-by-nc-4.0'
+            ? 'CC BY-NC 4.0'
+            : effectiveSaveLicense === 'unknown'
+                ? current.edit.saveLicenseUnknown
+                : effectiveSaveLicense === 'loading'
+                    ? current.edit.saveLicenseLoading
+                    : current.edit.saveLicenseUnavailable;
+    const saveLicenseDescription = effectiveSaveLicense === 'entropydrop-commercial-1.0'
+        ? parentSkinId
+            ? current.edit.saveLicenseCommercialDescription
+            : current.edit.saveLicenseCommercialNewDescription
+        : effectiveSaveLicense === 'cc-by-nc-4.0'
+            ? current.edit.saveLicenseNonCommercialDescription
+            : effectiveSaveLicense === 'unknown'
+                ? current.edit.saveLicenseUnknownDescription
+                : effectiveSaveLicense === 'loading'
+                    ? current.edit.saveLicenseLoadingDescription
+                    : current.edit.saveLicenseUnavailableDescription;
+    const saveLicenseTone = effectiveSaveLicense === 'entropydrop-commercial-1.0'
+        ? 'border-emerald-500/25 bg-emerald-500/5 text-emerald-300'
+        : effectiveSaveLicense === 'cc-by-nc-4.0'
+            ? 'border-blue-500/25 bg-blue-500/5 text-blue-300'
+            : 'border-orange-500/25 bg-orange-500/5 text-orange-300';
+    const isSaveLicenseReady = effectiveSaveLicense !== 'loading' && effectiveSaveLicense !== 'unavailable';
+    const isPublicSaveDisabled = isSavingToCreation || isParentPrivate || !isSaveLicenseReady;
+    const isPrivateSaveDisabled = isSavingToCreation || !isProUser || !isSaveLicenseReady;
 
     return (
         <PageContainer
@@ -1047,17 +1170,57 @@ export function EditPage({ current }: EditPageProps) {
                                                 </button>
 
                                                 {isDropdownOpen && (
-                                                    <div className="absolute top-full right-0 mt-1 z-30 bg-[#121212] border border-white/10 p-2 flex flex-col gap-1 w-48 shadow-lg">
+                                                    <div className="absolute top-full right-0 mt-1 z-30 bg-[#121212] border border-white/10 p-2 flex flex-col gap-1 w-64 shadow-lg">
                                                         <div className="flex flex-col gap-2 p-1">
                                                             <div className="text-[10px] text-white/60 pb-1 border-b border-white/5 mb-1 font-pixel-hans">
                                                                 {current.edit.saveToCreations}
                                                             </div>
+                                                            <div className={`border p-2 flex flex-col gap-1.5 ${saveLicenseTone}`}>
+                                                                <div className="flex items-center gap-1.5 text-[9px] font-pixel-hans uppercase tracking-wider text-white/50">
+                                                                    <Icon icon="pixelarticons:shield" className="text-xs" />
+                                                                    <span>{current.edit.saveLicenseTitle}</span>
+                                                                </div>
+                                                                <div className="text-[10px] font-pixel-hans font-bold">
+                                                                    {saveLicenseLabel}
+                                                                </div>
+                                                                <p className="m-0 text-[9px] leading-relaxed text-white/55 font-pixel-hans">
+                                                                    {saveLicenseDescription}
+                                                                </p>
+                                                                {saveLicensePreview === 'entropydrop-commercial-1.0' && (
+                                                                    <div className="grid grid-cols-2 gap-1.5 pt-1" role="radiogroup" aria-label={current.edit.saveLicenseChoose}>
+                                                                        <button
+                                                                            type="button"
+                                                                            role="radio"
+                                                                            aria-checked={selectedSaveLicense === 'entropydrop-commercial-1.0'}
+                                                                            onClick={() => setSelectedSaveLicense('entropydrop-commercial-1.0')}
+                                                                            className={`p-1.5 border text-[9px] font-pixel-hans cursor-pointer transition-colors ${selectedSaveLicense === 'entropydrop-commercial-1.0'
+                                                                                ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-200'
+                                                                                : 'border-white/10 bg-black/20 text-white/50 hover:bg-white/5'
+                                                                                }`}
+                                                                        >
+                                                                            {current.edit.saveLicenseCommercialOption}
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            role="radio"
+                                                                            aria-checked={selectedSaveLicense === 'cc-by-nc-4.0'}
+                                                                            onClick={() => setSelectedSaveLicense('cc-by-nc-4.0')}
+                                                                            className={`p-1.5 border text-[9px] font-pixel-hans cursor-pointer transition-colors ${selectedSaveLicense === 'cc-by-nc-4.0'
+                                                                                ? 'border-blue-400/60 bg-blue-500/20 text-blue-200'
+                                                                                : 'border-white/10 bg-black/20 text-white/50 hover:bg-white/5'
+                                                                                }`}
+                                                                        >
+                                                                            CC BY-NC 4.0
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                             <button
-                                                                onClick={() => !isParentPrivate && handleSaveToCreation(true)}
-                                                                disabled={isSavingToCreation || isParentPrivate}
-                                                                className={`text-left p-1.5 text-[10px] cursor-pointer flex items-center gap-1 transition-colors ${isParentPrivate
+                                                                onClick={() => !isPublicSaveDisabled && handleSaveToCreation(true)}
+                                                                disabled={isPublicSaveDisabled}
+                                                                className={`text-left p-1.5 text-[10px] flex items-center gap-1 transition-colors ${isPublicSaveDisabled
                                                                     ? 'opacity-40 cursor-not-allowed bg-white/5 border border-white/5 text-white/30'
-                                                                    : 'bg-[#3c8527]/20 border border-[#3c8527]/40 hover:bg-[#3c8527]/40 text-white/80'
+                                                                    : 'cursor-pointer bg-[#3c8527]/20 border border-[#3c8527]/40 hover:bg-[#3c8527]/40 text-white/80'
                                                                     }`}
                                                             >
                                                                 <Icon icon="pixelarticons:folder" className="text-[#4ea632]" />
@@ -1069,12 +1232,16 @@ export function EditPage({ current }: EditPageProps) {
                                                                 </div>
                                                             )}
                                                             <button
-                                                                onClick={() => handleSaveToCreation(false)}
-                                                                disabled={isSavingToCreation}
-                                                                className="text-left p-1.5 hover:bg-white/10 text-[10px] text-white/80 cursor-pointer flex items-center gap-1 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                                                                onClick={() => !isPrivateSaveDisabled && handleSaveToCreation(false)}
+                                                                disabled={isPrivateSaveDisabled}
+                                                                className={`text-left p-1.5 text-[10px] flex items-center gap-1 border transition-colors ${isPrivateSaveDisabled
+                                                                    ? 'cursor-not-allowed bg-white/[0.03] border-white/5 text-white/30 opacity-60'
+                                                                    : 'cursor-pointer bg-white/5 border-white/10 text-white/80 hover:bg-white/10'
+                                                                    }`}
                                                             >
                                                                 <Icon icon="pixelarticons:folder" className="text-white/60" />
                                                                 <span className={current.fontClass}>{current.edit.saveAsPrivate}</span>
+                                                                <span className="ml-auto px-1 py-0.5 border border-amber-400/40 bg-amber-500/10 text-amber-300 text-[8px] font-pixel-hans">PRO</span>
                                                             </button>
                                                             {isSavingToCreation && <div className="text-[9px] text-white/40 text-center animate-pulse">{current.edit.saving}</div>}
                                                         </div>
@@ -1186,6 +1353,8 @@ export function EditPage({ current }: EditPageProps) {
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     setParentSkinId(null);
+                                    setIsParentPrivate(false);
+                                    setIsLocalImport(false);
                                     setBasedOnSkinRenderUrl(null);
                                     setIsEmptyModel(true);
                                     setTexture(null);

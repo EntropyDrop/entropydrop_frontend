@@ -261,6 +261,10 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
     const [currentUser, setCurrentUser] = useState<any>(null);
     const isLoggedIn = !!localStorage.getItem('token');
+    const isOwner = Boolean(currentUser && item.creator?.id === currentUser.id);
+    const licenseCode = item.license?.code || 'unknown';
+    const publicLicense = item.license?.public_license;
+    const hasCreatorCommercialLicense = isOwner && licenseCode === 'entropydrop-commercial-1.0';
     const [isEditingName, setIsEditingName] = useState(false);
     const [editedName, setEditedName] = useState('');
     const [hasFeedback, setHasFeedback] = useState(false);
@@ -339,6 +343,77 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         } finally {
             setIsSettingSkin(false);
         }
+    };
+
+    const renderLicenseInfo = () => {
+        if (!item.id || !item.license) return null;
+
+        return (
+            <div className={`border p-3 flex flex-col gap-2 ${licenseCode === 'unknown'
+                ? 'bg-orange-500/5 border-orange-500/20'
+                : hasCreatorCommercialLicense
+                    ? 'bg-emerald-500/5 border-emerald-500/20'
+                    : 'bg-blue-500/5 border-blue-500/20'
+                }`}>
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-[10px] font-pixel-hans uppercase tracking-widest text-white/50">
+                        <Icon icon="pixelarticons:shield" className="text-sm" />
+                        <span>{current.mcmodal.licenseTitle}</span>
+                    </div>
+                    <span className={`text-[9px] font-pixel-hans px-2 py-0.5 border ${licenseCode === 'unknown'
+                        ? 'text-orange-300 border-orange-500/30 bg-orange-500/10'
+                        : hasCreatorCommercialLicense
+                            ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10'
+                            : 'text-blue-300 border-blue-500/30 bg-blue-500/10'
+                        }`}>
+                        {licenseCode === 'unknown'
+                            ? current.mcmodal.licenseUnknown
+                            : hasCreatorCommercialLicense
+                                ? current.mcmodal.creatorCommercialLicense
+                                : 'CC BY-NC 4.0'}
+                    </span>
+                </div>
+
+                <p className="m-0 text-[10px] leading-relaxed text-white/60 font-pixel-hans">
+                    {licenseCode === 'unknown'
+                        ? current.mcmodal.licenseUnknownDescription
+                        : hasCreatorCommercialLicense
+                            ? current.mcmodal.creatorCommercialDescription
+                            : item.is_public
+                                ? current.mcmodal.publicNonCommercialDescription
+                                : current.mcmodal.privateLicenseDescription}
+                </p>
+
+                {item.is_public && licenseCode === 'entropydrop-commercial-1.0' && (
+                    <p className="m-0 text-[10px] leading-relaxed text-amber-300/80 font-pixel-hans">
+                        {isOwner
+                            ? current.mcmodal.publicDoesNotGrantCommercial
+                            : current.mcmodal.otherUserNoCommercial}
+                    </p>
+                )}
+
+                {!item.is_public && publicLicense === 'cc-by-nc-4.0' && (
+                    <p className="m-0 text-[10px] leading-relaxed text-amber-300/80 font-pixel-hans">
+                        {current.mcmodal.previousPublicLicense}
+                    </p>
+                )}
+
+                {publicLicense === 'cc-by-nc-4.0' && (
+                    <a
+                        href="https://creativecommons.org/licenses/by-nc/4.0/"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] text-blue-300 hover:text-blue-200 font-pixel-hans underline underline-offset-2"
+                    >
+                        {current.mcmodal.viewLicenseTerms}
+                    </a>
+                )}
+
+                <p className="m-0 pt-1 border-t border-white/5 text-[9px] leading-relaxed text-white/35 font-pixel-hans">
+                    {current.mcmodal.thirdPartyRightsNotice}
+                </p>
+            </div>
+        );
     };
 
     const renderEditableName = (label: string, value: string, isItalic = false) => {
@@ -1242,7 +1317,9 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                 </div>
                                                             )}
 
-                                                            {currentUser && item.result && item.is_public === true && (
+                                                            {renderLicenseInfo()}
+
+                                                            {isOwner && item.result && item.is_public === true && (
                                                                 <div className="flex flex-col gap-1.5 mt-2">
                                                                     <button
                                                                         type="button"

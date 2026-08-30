@@ -249,15 +249,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         );
     };
 
-    const handleUploadItem = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !currentCollection) return;
-
-        if (file.size > 512 * 1024) {
-            showError(current.collection.fileTooLarge);
-            return;
-        }
-
+    const uploadConfirmedItem = async (file: File, collection: Collection) => {
         const processFile = async (): Promise<Blob> => {
             return new Promise((resolve) => {
                 const img = new Image();
@@ -297,12 +289,13 @@ export function CollectionPage({ current }: CollectionPageProps) {
         const formData = new FormData();
         const finalBlob = await processFile();
         formData.append('file', finalBlob, file.name);
+        formData.append('license_consent', 'true');
 
         try {
-            let uploadColId = currentCollection.id;
-            const isCustom = !['creations_public', 'creations_private'].includes(String(currentCollection.id));
+            let uploadColId = collection.id;
+            const isCustom = !['creations_public', 'creations_private'].includes(String(collection.id));
             if (isCustom) {
-                uploadColId = currentCollection.is_public ? 'creations_public' : 'creations_private';
+                uploadColId = collection.is_public ? 'creations_public' : 'creations_private';
             }
 
             const response = await apiFetch(`/api/collections/${uploadColId}/upload`, {
@@ -315,7 +308,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                     const linkResponse = await apiFetch('/api/collections/items', {
                         method: 'POST',
                         body: JSON.stringify({
-                            collection_id: String(currentCollection.id),
+                            collection_id: String(collection.id),
                             name: data.name || file.name.replace(/\.[^/.]+$/, ""),
                             type: 'human_upload',
                             log_id: data.log_id || data.id,
@@ -323,23 +316,42 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         })
                     });
                     if (linkResponse.ok) {
-                        fetchItems(currentCollection.id, itemPage);
+                        fetchItems(collection.id, itemPage);
                     } else {
                         const errorData = await linkResponse.json().catch(() => ({}));
                         showError(errorData.detail || current.collection.uploadFailed);
                     }
                 } else {
-                    fetchItems(currentCollection.id, itemPage);
+                    fetchItems(collection.id, itemPage);
                 }
             } else {
                 showError(current.collection.uploadFailed);
             }
         } catch (e) {
             console.error('Failed to upload item', e);
-        } finally {
-            // Reset file input value so same file can be uploaded again if needed
-            e.target.value = '';
         }
+    };
+
+    const handleUploadItem = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        const collection = currentCollection;
+        // Reset immediately so choosing the same file again still triggers change.
+        e.target.value = '';
+        if (!file || !collection) return;
+
+        if (file.size > 512 * 1024) {
+            showError(current.collection.fileTooLarge);
+            return;
+        }
+
+        setConfirmModal({
+            isOpen: true,
+            title: current.collection.uploadLicenseTitle,
+            message: current.collection.uploadLicenseMessage,
+            onConfirm: () => {
+                void uploadConfirmedItem(file, collection);
+            }
+        });
     };
 
     const handleMoveItem = async (targetCollectionId: string | number) => {

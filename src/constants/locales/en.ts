@@ -166,6 +166,8 @@ export default {
         creationsPrivate: 'Creations (Private)',
         share: 'Share',
         upload: 'Upload Skin',
+        uploadLicenseTitle: 'Confirm Upload License',
+        uploadLicenseMessage: 'By uploading, you confirm that you hold the rights needed to grant this license and agree to offer the skin under CC BY-NC 4.0. Anyone may use, share, and adapt it for non-commercial purposes with attribution. This license is irrevocable; making the skin private limits new access but does not withdraw licenses already validly received.',
         empty: 'It\'s empty here',
         create: 'Create Collection',
         name: 'Name',
@@ -209,7 +211,7 @@ export default {
         colorPicker: 'Color Picker',
         undo: 'Undo',
         redo: 'Redo',
-        import: 'Upload',
+        import: 'Import',
         export: 'Download',
         collect: 'Save',
         saveToCreations: 'Save to Original Creations',
@@ -220,6 +222,20 @@ export default {
         exitReference: 'Exit Reference Model',
         saveSuccess: 'Saved to creations',
         saveFailed: 'Failed to save',
+        saveLicenseTitle: 'License after saving',
+        saveLicenseChoose: 'Choose the saved license',
+        saveLicenseCommercial: 'Creator commercial license',
+        saveLicenseCommercialOption: 'Commercial',
+        saveLicenseCommercialDescription: 'This edit keeps your perpetual commercial-use license. If saved as Public, other users receive only CC BY-NC 4.0.',
+        saveLicenseCommercialNewDescription: 'By saving, you confirm that you hold the necessary commercial rights. The commercial license applies only to your account; a Public save gives other users only CC BY-NC 4.0.',
+        saveLicenseNonCommercialDescription: 'By saving, you confirm you hold the necessary rights and agree to record this edit under CC BY-NC 4.0. A Public save lets anyone reuse it non-commercially with attribution.',
+        saveLicenseUnknown: 'Unknown license',
+        saveLicenseUnknownDescription: 'Editing does not expand unknown source rights. A Public save does not grant other users reuse rights.',
+        saveLicenseLoading: 'Checking license...',
+        saveLicenseLoadingDescription: 'Checking the source skin before showing the license that will be saved.',
+        saveLicenseUnavailable: 'License unavailable',
+        saveLicenseUnavailableDescription: 'The source license could not be verified. Reopen the original skin or try again before saving.',
+        privateProRequired: 'Saving private creations requires Pro.',
         fileTooLarge: 'File too large, max support 512KB',
         invalidDimensions: 'Invalid dimensions, must be 64x64',
         slimMode: 'Slim',
@@ -372,7 +388,7 @@ export default {
                 private: 'No private space',
                 priority: 'Regular priority',
                 experimental: 'Basic model access',
-                commercial: 'Generated skins for personal use only (non-commercial)'
+                commercial: 'Generated skins are available to anyone for non-commercial use under CC BY-NC 4.0'
             },
             pro_plus: {
                 title: 'Pro-Plus',
@@ -569,9 +585,15 @@ We may change prices, allowances, or plan features. We will provide reasonable a
                 title: '6. Licenses for Generated Works',
                 content: `To the extent you hold the relevant rights, you retain rights in content you independently create and upload. Uploading content does not automatically transfer ownership to EntropyDrop.
 
-Works generated under the Free plan are licensed only for personal, educational, research, and non-commercial entertainment purposes. They may not be used directly or indirectly in commercial sales, commercial promotions, paid projects, or other revenue-generating activities.
+Works generated under the Free plan are offered under CC BY-NC 4.0. To the extent EntropyDrop can grant the relevant rights, the generating user and other users may, with attribution, use, copy, share, and adapt them for personal, educational, research, and other non-commercial purposes. They may not be used directly or indirectly in commercial sales, commercial promotions, paid projects, or other revenue-generating activities.
 
-For works generated during an active Pro-Plus, Pro-Max, or other paid period expressly marked as including commercial rights, you receive a perpetual, worldwide, non-exclusive commercial-use license. Works generated during that paid period remain commercially licensed after the subscription ends. This license covers only rights that EntropyDrop can grant in the generated output and does not include third-party trademarks, characters, likenesses, copyrighted material, or other third-party rights.
+For a work generated during an active Pro-Plus, Pro-Max, or other paid period expressly marked as including commercial rights, and that is not restricted by an upstream non-commercial or unknown license, the account that generated it receives a perpetual, worldwide, non-exclusive commercial-use license. A commercial license already obtained remains valid after the subscription ends. If the work is Public, other users receive only the CC BY-NC 4.0 non-commercial license; public display, viewability, or download access does not grant them commercial-use rights.
+
+Editing or regenerating a work does not broaden the source work’s license. An edit or regeneration based on a CC BY-NC 4.0 work remains non-commercial; one based on a legacy upload with an unknown license remains unknown. A generating user editing their own commercially licensed work may retain that commercial license. Another user editing or regenerating a Public work may rely only on the non-commercial license offered to the public.
+
+Before saving an independently created or imported skin, the interface requires you to confirm that you hold the rights needed for the selected license. Where the selector is available, an active Pro account may choose the displayed EntropyDrop commercial-use license for that saving account; this choice does not create, clear, or transfer any third-party rights that you do not already hold. If the commercial option is unavailable or you choose CC BY-NC 4.0, the saved work is recorded as non-commercial. When either version is made Public, other users receive only CC BY-NC 4.0; a creator-only commercial license never extends to them. Private saving grants no new public access. Skins uploaded before license tracking was introduced are marked “Unknown license.” A valid CC BY-NC 4.0 license is irrevocable; deleting a work or making it Private does not withdraw a license already validly received by another person.
+
+These licenses cover only rights that EntropyDrop, the uploader, or another licensor can grant and exclude third-party trademarks, characters, likenesses, copyrighted material, and other third-party rights. Whether an AI output is protected by intellectual-property rights may depend on the jurisdiction, the human creative contribution, and the particular work.
 
 Outputs produced through an AI Agent or API are governed by the license shown for the applicable plan, API documentation, or developer console at the time of the request. Unless otherwise stated, the same rules apply as for comparable outputs generated directly under the same account and paid tier.
 
@@ -581,9 +603,9 @@ Because of the nature of AI, other users may receive identical or similar output
                 title: '7. Public Content, Private Content, and Platform License',
                 content: `When you designate a work as “Public,” its output, prompt, source image, intermediate processing results, author name, avatar, model parameters, and related public interactions may be accessed, displayed, or downloaded by anyone through pages, shared links, or public interfaces. Do not make content public if it contains identity documents, contact information, private photographs, information about minors, or other sensitive information.
 
-For Public Content, you grant EntropyDrop a worldwide, non-exclusive, royalty-free, sublicensable license to store, reproduce, transform, and display the content; provide search, sharing, recommendation, derivative-creation, and community features; conduct safety review, moderation, and infringement handling; reasonably promote the Services; and evaluate, fine-tune, or train models using Public Content that is expressly identified as eligible for model improvement.
+For Public Content, in addition to the user-to-user public license shown on the work detail page, you grant EntropyDrop a worldwide, non-exclusive, royalty-free, sublicensable license to store, reproduce, transform, and display the content; provide search, sharing, recommendation, derivative-creation, and community features; conduct safety review, moderation, and infringement handling; reasonably promote the Services; and evaluate, fine-tune, or train models using Public Content that is expressly identified as eligible for model improvement. A work’s Public status is independent of the generating user’s license; a creator-only commercial license displayed on the detail page does not extend to other users merely because the work is Public.
 
-If you delete Public Content or make it Private, we will stop using it for new public displays and new training runs. However, content already used in completed model training may not be separable or capable of being reverse-removed from model parameters, except where mandatory requirements provide otherwise.
+If you delete Public Content or make it Private, we will stop using it for new public displays and new training runs. However, content already used in completed model training may not be separable or capable of being reverse-removed from model parameters, and rights already validly received by third parties under an irrevocable public license are unaffected, except where mandatory requirements provide otherwise.
 
 Direct messages, chats limited to specified participants, and non-public friend information are also treated as Private Content. Private Content is used only to provide generation, storage, editing, download, message delivery, security, and necessary technical support. Without your separate permission, we will not publicly display Private Content, provide it to ordinary users other than recipients or participants you designate, or use it for model fine-tuning or training. Authorized personnel and service providers may process Private Content on a need-to-know basis to complete a generation or deliver a message, respond to a report or security incident, investigate an issue you submit, or fulfill necessary obligations.`
             },
@@ -701,7 +723,7 @@ This Policy applies to the EntropyDrop website, AI generation services, AI Agent
 • Browsing and access data: IP address, browser and device type, language, page visits, timestamps, network data, and error information, used to deliver pages, protect security, rate-limit requests, troubleshoot failures, and improve the Services;
 • Google Sign-In data: Google ID, email address, account name, and avatar, used to create and authenticate accounts, send notices, and manage accounts;
 • Profile data: display name, avatar, game character skin, and character model type, used for author attribution, community profiles, and Space characters;
-• AI generation and editing data: prompts, source images, outputs, intermediate results, model versions, parameters, seeds, visibility settings, and feedback, used to complete generations, store history, charge Credits, recover from failures, and improve models;
+• AI generation, editing, and license data: prompts, source images, outputs, intermediate results, model versions, parameters, seeds, visibility settings, license type and version, grant timestamp, commercial licensee, upload-license confirmation, and feedback, used to complete generations, store history, display and enforce licenses, record grants, charge Credits, recover from failures, and improve models;
 • AI Agent and API data: conversations, instructions, context, files, and objects you choose to provide; tool calls and returned results; generated code; execution and action records; API-key identifiers; request and response metadata; usage, quotas, errors, and audit logs, used to understand requests, perform tasks, provide APIs, bill usage, debug failures, audit security, and prevent abuse;
 • Community data: posts, comments, images, video links, collections, likes, reports, and notifications, used to provide community interaction, display content, and address violations;
 • Friend and communications data: friend requests, friend lists, blocks, sender and recipient identifiers, chat and direct-message content and attachments, the relevant Space or channel, sent, delivery, and read status, timestamps, reports, and moderation records, used to establish friend connections, deliver and synchronize messages, provide blocking and reporting, protect safety, and prevent abuse;
@@ -730,9 +752,9 @@ Refusing optional information will not affect basic features. Refusing informati
             },
             {
                 title: '5. Public and Private Content',
-                content: `If you choose “Public,” outputs, source images, intermediate processing results, prompts, titles, model parameters, derivation relationships, display name, avatar, character skin, author identifier, public collections, like counts, forum content, world- or channel-visible Space chat, and Space marketplace resources may be visible to the applicable participants or anyone. Other users may view, download, capture, share, link to, or redistribute Public Content outside the Platform. Copies previously saved by third parties may remain beyond our control after you delete the content.
+                content: `If you choose “Public,” outputs, source images, intermediate processing results, prompts, titles, model parameters, derivation relationships, license type and status, display name, avatar, character skin, generating-user identifier, public collections, like counts, forum content, world- or channel-visible Space chat, and Space marketplace resources may be visible to the applicable participants or anyone. Other users may view, download, capture, share, link to, or redistribute Public Content outside the Platform. Copies previously saved by third parties may remain beyond our control after you delete the content, and an irrevocable license already validly received by a third party may remain effective.
 
-Under the Free plan, generated content generally can only be stored as Public. Check the visibility setting before submission and do not upload personal photographs or sensitive information that you do not want made public. After clear notice and the relevant authorization, we may use Public Content, prompts, and quality feedback for model evaluation, fine-tuning, or training.
+Under the Free plan, generated content generally can only be stored as Public and is offered to anyone for non-commercial use under CC BY-NC 4.0. When you save or import a skin, we record your rights confirmation, selected creator license, applicable public license, confirmation time, and associated work to evidence and administer the license. An eligible Pro account may select a creator-only commercial license where offered, while other users of a Public work still receive only CC BY-NC 4.0; legacy uploads may display “Unknown license.” Check the visibility and license notice before submission, and do not upload personal photographs, sensitive information, or a work you lack authority to license. After clear notice and the relevant authorization, we may use Public Content, prompts, and quality feedback for model evaluation, fine-tuning, or training.
 
 Direct messages, chats limited to specified participants, non-public friend information, AI Agent conversations, API inputs, context you provide, and private data obtained through tools are treated as Private Content. Private Content is not displayed to ordinary users other than recipients or participants you select and is not used for model fine-tuning or training. We access Private Content only to provide generation, respond to an API request, perform an Agent task you authorize, deliver messages, provide storage, editing, security, respond to reports or an issue you submit, or perform another necessary function, subject to access controls.
 
@@ -862,7 +884,19 @@ Email: support@entropydrop.com`
         settingMyCharacter: 'Setting...',
         setMyCharacterSuccess: 'Set successfully!',
         setMyCharacterFailed: 'Failed to set',
-        setMyCharacterNetworkError: 'Network error, please try again'
+        setMyCharacterNetworkError: 'Network error, please try again',
+        licenseTitle: 'License',
+        licenseUnknown: 'Unknown license',
+        licenseUnknownDescription: 'This work was uploaded before license tracking was introduced. EntropyDrop cannot confirm its permitted uses; contact the uploader before using it.',
+        creatorCommercialLicense: 'Creator commercial license',
+        creatorCommercialDescription: 'You generated this work and hold a perpetual, worldwide, non-exclusive commercial-use license.',
+        publicNonCommercialDescription: 'Anyone may use, share, and adapt this work for non-commercial purposes with attribution under CC BY-NC 4.0.',
+        privateLicenseDescription: 'This work is currently private and is not offered for new public access.',
+        publicDoesNotGrantCommercial: 'Your commercial license belongs only to the generating account. Public display does not grant commercial rights to other users.',
+        otherUserNoCommercial: 'You receive only the CC BY-NC 4.0 non-commercial license. Public visibility or download access does not grant commercial rights.',
+        previousPublicLicense: 'This work was previously public. CC BY-NC 4.0 licenses already validly received are not withdrawn when it becomes private.',
+        viewLicenseTerms: 'View the full CC BY-NC 4.0 terms',
+        thirdPartyRightsNotice: 'The license covers only rights the licensor can grant and excludes third-party trademarks, characters, likenesses, copyrighted material, and other third-party rights.'
     },
     public_page: {
         title: 'Open Production',

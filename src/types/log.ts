@@ -3,6 +3,15 @@ export interface GenerationLogItemBrief {
     result: string
     is_public: boolean
     id: string
+    license?: SkinLicense
+}
+
+export interface SkinLicense {
+    code: 'unknown' | 'cc-by-nc-4.0' | 'entropydrop-commercial-1.0'
+    public_license: 'cc-by-nc-4.0' | null
+    version: number
+    granted_at: string | null
+    commercial_licensee_user_id: string | null
 }
 export interface GenerationLogItem extends GenerationLogItemBrief {
     result_render_2d?: string
