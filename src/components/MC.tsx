@@ -345,6 +345,49 @@ function createCuteFaceMaterials(imageData: ImageData | null, texture: THREE.Tex
     return materials;
 }
 
+function sampleLimbSectionColor(imageData: ImageData | null, upperMap: Pos, lowerMap: Pos) {
+    if (!imageData) return 0x000000;
+
+    let nearestColor = 0x000000;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    const sampleFrontFace = (map: Pos, isUpper: boolean) => {
+        const front = map.front;
+        if (!front) return;
+
+        const [u, v, rawWidth, rawHeight] = front;
+        const width = Math.floor(rawWidth);
+        const height = Math.floor(rawHeight);
+        const centerX = (width - 1) / 2;
+
+        for (let localY = 0; localY < height; localY++) {
+            const distanceFromSection = isUpper ? height - 1 - localY : localY;
+            for (let localX = 0; localX < width; localX++) {
+                const x = Math.floor(u) + localX;
+                const y = Math.floor(v) + localY;
+                if (x < 0 || x >= imageData.width || y < 0 || y >= imageData.height) continue;
+
+                const index = (y * imageData.width + x) * 4;
+                if (imageData.data[index + 3] === 0) continue;
+
+                // Prefer a block touching the section, then the one closest to
+                // the horizontal center. Upper wins an otherwise exact tie.
+                const distance = distanceFromSection * (width + 1) + Math.abs(localX - centerX);
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestColor = (imageData.data[index] << 16)
+                        + (imageData.data[index + 1] << 8)
+                        + imageData.data[index + 2];
+                }
+            }
+        }
+    };
+
+    sampleFrontFace(upperMap, true);
+    sampleFrontFace(lowerMap, false);
+    return nearestColor;
+}
+
 // Generate 3D voxel group based on pixel data (for performance, we do not generate meshes in bulk in JSX, but reuse native logic to generate Groups)
 function createVoxelGroup(imageData: ImageData | null, cfg: any, showEdges = false, printMode = false, isCute = false) {
     const group = new THREE.Group();
@@ -602,6 +645,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
     useFrame(({ clock }) => {
         const t = clock.getElapsedTime() * 10;
+        const cuteArmTilt = 0.20;
         const refs = partsRefs.current;
         const setRot = (name: string, x: number, y: number, z: number = 0) => {
             if ((refs as any)[name]) {
@@ -613,10 +657,8 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             if (isCute) {
                 const breath = Math.sin(t * 0.25) * 0.1;
                 const headTilt = isAlex ? Math.sin(t * 0.15) * 0.025 : 0;
-                // Female (Alex): hands flared outward (A-pose); Male (Steve): hands inward / arms straight
-                const armZ = isAlex ? 0.20 : -0.05;
-                setRot('left_arm', 0.05, 0, armZ);
-                setRot('right_arm', 0.05, 0, -armZ);
+                setRot('left_arm', 0.05, 0, cuteArmTilt);
+                setRot('right_arm', 0.05, 0, -cuteArmTilt);
                 setRot('left_low_arm', 0, 0, 0);
                 setRot('right_low_arm', 0, 0, 0);
                 setRot('left_leg', 0, isAlex ? 0.04 : 0, 0);
@@ -648,9 +690,8 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                 const swing = Math.sin(t * 0.5) * 0.5;
                 const roll = Math.sin(t * 0.5) * (isAlex ? 0.06 : 0.03);
                 const bob = Math.abs(Math.sin(t * 0.5)) * 0.2;
-                const armZ = isAlex ? 0.20 : -0.05;
-                setRot('left_arm', -swing, 0, armZ);
-                setRot('right_arm', swing, 0, -armZ);
+                setRot('left_arm', -swing, 0, cuteArmTilt);
+                setRot('right_arm', swing, 0, -cuteArmTilt);
                 setRot('left_low_arm', 0, 0, 0);
                 setRot('right_low_arm', 0, 0, 0);
                 setRot('left_leg', swing, isAlex ? 0.04 : 0, 0);
@@ -748,17 +789,22 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             }
             return createFaceMaterials(processedTexture, 64, map, missing);
         };
+        const leftArmSection = sampleLimbSectionColor(rawImageData, uvMaps.leftArm, uvMaps.leftArmLow);
+        const rightArmSection = sampleLimbSectionColor(rawImageData, uvMaps.rightArm, uvMaps.rightArmLow);
+        const leftLegSection = sampleLimbSectionColor(rawImageData, uvMaps.leftLeg, uvMaps.leftLegLow);
+        const rightLegSection = sampleLimbSectionColor(rawImageData, uvMaps.rightLeg, uvMaps.rightLegLow);
+
         return {
             head: createMat(uvMaps.head),
             body: createMat(uvMaps.body),
-            leftArm: createMat(uvMaps.leftArm, { bottom: 0xffffff }),
-            leftArmLow: createMat(uvMaps.leftArmLow, { top: 0xffffff }),
-            rightArm: createMat(uvMaps.rightArm, { bottom: 0xffffff }),
-            rightArmLow: createMat(uvMaps.rightArmLow, { top: 0xffffff }),
-            leftLeg: createMat(uvMaps.leftLeg, { bottom: 0xffffff }),
-            leftLegLow: createMat(uvMaps.leftLegLow, { top: 0xffffff }),
-            rightLeg: createMat(uvMaps.rightLeg, { bottom: 0xffffff }),
-            rightLegLow: createMat(uvMaps.rightLegLow, { top: 0xffffff }),
+            leftArm: createMat(uvMaps.leftArm, { bottom: leftArmSection }),
+            leftArmLow: createMat(uvMaps.leftArmLow, { top: leftArmSection }),
+            rightArm: createMat(uvMaps.rightArm, { bottom: rightArmSection }),
+            rightArmLow: createMat(uvMaps.rightArmLow, { top: rightArmSection }),
+            leftLeg: createMat(uvMaps.leftLeg, { bottom: leftLegSection }),
+            leftLegLow: createMat(uvMaps.leftLegLow, { top: leftLegSection }),
+            rightLeg: createMat(uvMaps.rightLeg, { bottom: rightLegSection }),
+            rightLegLow: createMat(uvMaps.rightLegLow, { top: rightLegSection }),
             // Overlay mats
             headOverlay: createMat(shiftpos(uvMaps.head, 32, 0)),
             bodyOverlay: createMat(shiftpos(uvMaps.body, 0, 16)),
@@ -780,7 +826,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
         const { armWidth } = armConfig;
         const bodyVoxelGroup = createVoxelGroup(rawImageData, [shiftpos(uvMaps.body, 0, 16), 0.5, [8, isCute ? 8 : 12, 4]], showEdges, printMode, isCute);
-        if (isCute && isAlex && bodyVoxelGroup) {
+        if (isCute && bodyVoxelGroup) {
             bodyVoxelGroup.children.forEach((child: any) => {
                 if (child instanceof THREE.Mesh && child.position) {
                     const t = Math.max(0, Math.min(1, (child.position.y + 4) / 8));
@@ -813,12 +859,12 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             rightLeg: createVoxelGroup(rawImageData, [shiftpos(uvMaps.rightLeg, 0, 16), 0.5, [4, limbH, 4]], showEdges, printMode, isCute),
             rightLegLow: createVoxelGroup(rawImageData, [shiftpos(uvMaps.rightLegLow, 0, 16), 0.5, [4, limbH, 4]], showEdges, printMode, isCute)
         };
-    }, [mode, rawImageData, armConfig, uvMaps, showEdges, printMode, isCute, isAlex]);
+    }, [mode, rawImageData, armConfig, uvMaps, showEdges, printMode, isCute]);
 
     const bodyGeometry = useMemo(() => {
         const h = isCute ? 8 : 12;
         const geo = new THREE.BoxGeometry(8, h, 4, 8, h, 4);
-        if (isCute && isAlex) {
+        if (isCute) {
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
                 const y = pos.getY(i);
@@ -830,12 +876,12 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             geo.computeVertexNormals();
         }
         return geo;
-    }, [isCute, isAlex]);
+    }, [isCute]);
 
     const bodyOverlayGeometry = useMemo(() => {
         const h = isCute ? 8.5 : 12.5;
         const geo = new THREE.BoxGeometry(8.5, h, 4.5, 8, isCute ? 8 : 12, 4);
-        if (isCute && isAlex) {
+        if (isCute) {
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
                 const y = pos.getY(i);
@@ -847,7 +893,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             geo.computeVertexNormals();
         }
         return geo;
-    }, [isCute, isAlex]);
+    }, [isCute]);
 
     const coreEdgeGeometries = useMemo(() => {
         const createEdges = (w: number, h: number, d: number) => {
@@ -859,7 +905,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         const createBodyEdges = () => {
             const h = isCute ? 8 : 12;
             const box = new THREE.BoxGeometry(8, h, 4);
-            if (isCute && isAlex) {
+            if (isCute) {
                 const pos = box.attributes.position;
                 for (let i = 0; i < pos.count; i++) {
                     const y = pos.getY(i);
@@ -884,7 +930,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             legLow: createEdges(4.002, limbH, 4.002),
             rightLegLow: createEdges(4.003, limbH, 4.003)
         };
-    }, [armConfig.armWidth, isCute, isAlex]);
+    }, [armConfig.armWidth, isCute]);
 
     useEffect(() => {
         return () => {
@@ -969,19 +1015,22 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                 hipPosX: 2,
             };
         }
+        const cuteLimbScale = 0.85;
         return {
             bodyPosY: 8.5,
-            bodyScale: [0.85, 0.85, 1] as [number, number, number],
+            bodyScale: [cuteLimbScale, cuteLimbScale, 1] as [number, number, number],
             headPosY: 3.4,
             headScale: [1, 1, 1] as [number, number, number],
-            armScale: [0.85, 0.85, 1] as [number, number, number],
-            legScale: [0.85, 0.85, 1] as [number, number, number],
+            armScale: [cuteLimbScale, cuteLimbScale, 1] as [number, number, number],
+            legScale: [cuteLimbScale, cuteLimbScale, 1] as [number, number, number],
             shoulderPosY: 3.4,
-            shoulderPosX: isAlex ? 3.3 : 4.8,
+            // Keep the inner edge aligned with the slim arm while letting a
+            // strong arm's extra pixel extend outward from the shared torso.
+            shoulderPosX: 3.3 + ((armConfig.armWidth - 3) * cuteLimbScale) / 2,
             hipPosY: -3.4,
             hipPosX: 1.7,
         };
-    }, [isCute, isAlex, armConfig.armPositionX]);
+    }, [isCute, armConfig.armPositionX, armConfig.armWidth]);
 
     return (
         <group ref={characterRef} onPointerLeave={() => onHoverEnd?.()}>
