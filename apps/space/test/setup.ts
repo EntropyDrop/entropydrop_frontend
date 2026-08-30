@@ -45,3 +45,9 @@ Object.defineProperty(globalThis, '__SPACE_SCRIPT_SYNC__', {
 if (typeof (globalThis as any).ProgressEvent === 'undefined') {
   (globalThis as any).ProgressEvent = class ProgressEvent extends Event {};
 }
+
+// Production initializes QuickJS on the first programmable entity so Space's
+// entry path never waits for WASM. Tests preload once to keep synchronous unit
+// assertions deterministic after importing Contraption.
+const { preloadQuickJSScriptRuntime } = await import('../src/engine/scripting/QuickJSScriptWorkerCore.ts');
+await preloadQuickJSScriptRuntime();

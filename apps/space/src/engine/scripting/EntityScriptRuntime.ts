@@ -1,18 +1,14 @@
 import { parse } from 'acorn';
-
-const SYNC_RESPONSE_BYTES = 4 * 1024 * 1024;
-const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+import {
+  createQuickJSScriptRuntimeService,
+  isQuickJSScriptRuntimeReady,
+  preloadQuickJSScriptRuntime
+} from './QuickJSScriptWorkerCore.ts';
 
 type WorkerResponse = {
   requestId: number;
   ok: boolean;
   [key: string]: any;
-};
-
-type PendingRequest = {
-  resolve: (value: WorkerResponse) => void;
-  reject: (reason: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
 };
 
 /** Parse only; user source is never evaluated in the page realm. */
@@ -29,85 +25,35 @@ export function validateEntityScriptSyntax(code: string): string | null {
   }
 }
 
-function isSynchronousTestRuntime(): boolean {
-  return globalThis['__SPACE_SCRIPT_SYNC__'] === true;
-}
-
-class EntityScriptWorkerBroker {
-  worker: Worker | null = null;
+class EntityScriptMainThreadBroker {
+  service: ReturnType<typeof createQuickJSScriptRuntimeService> | null = null;
+  ready: Promise<ReturnType<typeof createQuickJSScriptRuntimeService>> | null = null;
   nextRequestId = 1;
-  pending = new Map<number, PendingRequest>();
-
-  ensureWorker(): Worker {
-    if (this.worker) return this.worker;
-    const worker = new Worker(new URL('./EntityScriptWorker.ts', import.meta.url), {
-      type: 'module',
-      name: 'space-entity-quickjs'
-    });
-    worker.onmessage = event => this.handleMessage(event.data);
-    worker.onerror = event => {
-      const message = event?.message || 'Entity script Worker crashed';
-      this.failAll(new Error(message));
-      this.worker = null;
-    };
-    this.worker = worker;
-    return worker;
-  }
-
-  handleMessage(message: WorkerResponse) {
-    const pending = this.pending.get(message?.requestId);
-    if (!pending) return;
-    clearTimeout(pending.timeout);
-    this.pending.delete(message.requestId);
-    pending.resolve(message);
-  }
-
-  failAll(error: Error) {
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timeout);
-      pending.reject(error);
-    }
-    this.pending.clear();
-  }
 
   request(message: Record<string, any>): WorkerResponse | Promise<WorkerResponse> {
     const requestId = this.nextRequestId++;
-    const worker = this.ensureWorker();
-    if (isSynchronousTestRuntime()) {
-      const shared = new SharedArrayBuffer(SYNC_RESPONSE_BYTES);
-      const header = new Int32Array(shared, 0, 2);
-      worker.postMessage({ ...message, requestId, syncResponse: shared });
-      const waitResult = Atomics.wait(header, 0, 0, DEFAULT_REQUEST_TIMEOUT_MS);
-      if (waitResult === 'timed-out') {
-        throw new Error(`Entity script Worker timed out handling ${message.type}`);
-      }
-      const byteLength = Atomics.load(header, 1);
-      if (byteLength < 0 || byteLength > SYNC_RESPONSE_BYTES - 8) {
-        throw new Error('Entity script Worker returned an invalid synchronized response');
-      }
-      const bytes = new Uint8Array(shared, 8, byteLength);
-      return JSON.parse(new TextDecoder().decode(bytes));
+    const request = { ...message, requestId };
+    if (!this.service && isQuickJSScriptRuntimeReady()) {
+      this.service = createQuickJSScriptRuntimeService();
     }
-
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(requestId);
-        reject(new Error(`Entity script Worker timed out handling ${message.type}`));
-      }, DEFAULT_REQUEST_TIMEOUT_MS);
-      this.pending.set(requestId, { resolve, reject, timeout });
-      worker.postMessage({ ...message, requestId });
-    });
+    if (this.service) return this.service.handle(request);
+    if (!this.ready) {
+      this.ready = preloadQuickJSScriptRuntime().then(() => {
+        this.service ||= createQuickJSScriptRuntimeService();
+        return this.service;
+      });
+    }
+    return this.ready.then(service => service.handle(request));
   }
 }
 
-const broker = new EntityScriptWorkerBroker();
+const broker = new EntityScriptMainThreadBroker();
 let nextEntityRuntimeId = 1;
 
 /**
- * Page-side handle for one QuickJS Runtime. In browsers ticks are pipelined;
- * the Node test adapter uses a SharedArrayBuffer response to preserve the
- * engine's synchronous unit-test contract without ever evaluating guest code
- * on the main thread.
+ * Page-side handle for one sandboxed QuickJS Runtime. Guest code executes
+ * synchronously inside QuickJS/WASM on the page thread; it never evaluates in
+ * the page's JavaScript realm and only sees explicitly registered host APIs.
  */
 export class EntityScriptRuntimeClient {
   readonly runtimeId: string;
@@ -140,13 +86,14 @@ export class EntityScriptRuntimeClient {
     return response;
   }
 
-  tick(snapshot: any): { submitted: boolean; result: any | null } {
+  tick(snapshot: any, hostApi: any = null): { submitted: boolean; result: any | null } {
     if (this.disposed || this.inFlight) return { submitted: false, result: null };
     this.initialized = true;
     const response = broker.request({
       type: 'tick',
       entityRuntimeId: this.runtimeId,
-      snapshot
+      snapshot,
+      hostApi
     });
     if (response instanceof Promise) {
       this.inFlight = true;

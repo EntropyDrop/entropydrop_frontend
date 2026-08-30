@@ -979,6 +979,7 @@ export class ContraptionPhysics {
     const boxes = [];
     for (const cell of contraption.collisionEntries || []) {
       if (!attached.has(cell.entityId)) continue;
+      if (contraption.isNodeCollisionEnabled?.(cell.entityId) === false) continue;
       const node = contraption.getEntityNode?.(cell.entityId) || contraption.getEntityNode?.('root');
       const quaternion = node?.group?.getWorldQuaternion?.(new THREE.Quaternion())
         || body.quaternion.clone();

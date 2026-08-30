@@ -41,7 +41,7 @@ self.state.escapedWindowType = Function('return typeof window')();
   assert.equal(state.escapedWindowType, 'undefined', 'Function constructor must remain inside the QuickJS realm');
 });
 
-test('an infinite loop is interrupted and healthy sibling component scripts continue', () => {
+test('an infinite loop is interrupted and immediately stops the whole entity', () => {
   const contraption = entity(2, [
     { id: 'arm', parentId: 'root', pivot: [1.5, 0.5, 0.5], blockKeys: [['1', '0', '0']] }
   ]);
@@ -53,10 +53,11 @@ test('an infinite loop is interrupted and healthy sibling component scripts cont
   const elapsed = performance.now() - started;
 
   assert.ok(elapsed < 1000, `interrupt should return promptly, took ${elapsed.toFixed(1)} ms`);
+  assert.equal(contraption.scriptStatus, 'error');
   assert.equal(contraption.isNodeScriptEnabled('root'), false);
-  assert.match(contraption.nodeScriptErrors.get('root'), /interrupt|exceed/i);
-  assert.equal(contraption.isNodeScriptEnabled('arm'), true);
-  assert.equal(contraption.getComponentState('arm').runs, 1);
+  assert.equal(contraption.isNodeScriptEnabled('arm'), false);
+  assert.match(contraption.scriptError, /64 VM checkpoints/, 'the deterministic frame counter should trip before the wall-clock fallback');
+  assert.equal(contraption.getComponentState('arm').runs, undefined);
 });
 
 test('each entity has an independent memory-limited runtime', () => {
@@ -73,12 +74,51 @@ test('each entity has an independent memory-limited runtime', () => {
   assert.equal(healthy.isNodeScriptEnabled('root'), true);
 });
 
-test('the worker caps component count and aggregate script time per entity tick', () => {
+test('the main-thread runtime caps components, VM checkpoints, and aggregate script time', () => {
   const source = readFileSync(new URL('../src/engine/scripting/QuickJSScriptWorkerCore.ts', import.meta.url), 'utf8');
+  const clientSource = readFileSync(new URL('../src/engine/scripting/EntityScriptRuntime.ts', import.meta.url), 'utf8');
   assert.match(source, /MAX_SCRIPT_COMPONENTS = 64/);
   assert.match(source, /ENTITY_TICK_DEADLINE_MS = 25/);
+  assert.match(source, /ENTITY_FRAME_INTERRUPT_LIMIT = 64/);
   assert.match(source, /slice\(0, MAX_SCRIPT_COMPONENTS\)/);
   assert.match(source, /exceeded the aggregate/);
+  assert.doesNotMatch(source, /const QuickJS = await/, 'Space startup must not wait for QuickJS WASM');
+  assert.doesNotMatch(clientSource, /new Worker\(/, 'entity QuickJS must execute on the page thread');
+});
+
+test('main-thread QuickJS exposes a bounded synchronous world raycast', () => {
+  const contraption = entity(9);
+  contraption.setScript(`
+const hit = ctx.world.raycast([1, 2, 3], [0, -1, 0], 4);
+self.state.hit = hit;
+self.state.frozen = Object.isFrozen(hit) && Object.isFrozen(hit.normal) && Object.isFrozen(hit.position);
+`);
+  const calls: any[] = [];
+  contraption.update(1 / 60, null, {
+    world: {
+      entities: () => [],
+      raycast: (...args) => {
+        calls.push(args);
+        return {
+          block: 1,
+          color: 0x123456,
+          normal: [0, 1, 0],
+          position: [1, 0, 3],
+          distance: 2
+        };
+      }
+    }
+  });
+
+  assert.deepEqual(calls, [[[1, 2, 3], [0, -1, 0], 4]]);
+  assert.deepEqual(contraption.getComponentState('root').hit, {
+    block: 1,
+    color: 0x123456,
+    normal: [0, 1, 0],
+    position: [1, 0, 3],
+    distance: 2
+  });
+  assert.equal(contraption.getComponentState('root').frozen, true);
 });
 
 test('untrusted force vectors cannot introduce non-finite physics state', () => {
@@ -105,7 +145,7 @@ self.applyTorque([0, 1e308, 0]);
   assert.equal(contraption.scriptApi.body.applyTorque([0, 0, 1e13]), false);
 });
 
-test('worker world snapshots share admitted overlays and keep entity descriptors immutable', () => {
+test('world snapshots share admitted overlays and keep entity descriptors immutable', () => {
   const contraption = entity(6, [
     { id: 'arm', parentId: 'root', pivot: [1.5, 0.5, 0.5], blockKeys: [['1', '0', '0']] }
   ]);

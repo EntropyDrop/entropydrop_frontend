@@ -202,3 +202,45 @@ test('driving input W pitches the quadcopter down and moves forward', () => {
   assert.ok(contraption.velocity.z < -0.5, `tilted lift should drive forward: vel.z=${contraption.velocity.z.toFixed(2)}`);
   assert.ok(contraption.position.z < 0, `position should move forward: pos.z=${contraption.position.z.toFixed(1)}`);
 });
+
+test('yawed quadcopter uses body-axis rate damping without cross-axis twitch', () => {
+  const blueprint = BLUEPRINTS.find(item => item.id === 'smart_drone');
+  const minX = Math.min(...blueprint.blocks.map((block: any) => Math.floor(block.dx)));
+  const minY = Math.min(...blueprint.blocks.map((block: any) => Math.floor(block.dy)));
+  const minZ = Math.min(...blueprint.blocks.map((block: any) => Math.floor(block.dz)));
+  const blocks = blueprint.blocks.map((block: any) => ({
+    localX: block.dx - minX,
+    localY: block.dy - minY,
+    localZ: block.dz - minZ,
+    size: block.size || 1,
+    block: block.block,
+    color: block.color
+  }));
+  const contraption = new Contraption(
+    10,
+    blocks,
+    new THREE.Vector3(0, 3.5, 0),
+    new THREE.Scene(),
+    { mode: blueprint.defaultMode, ...blueprint.defaultOptions }
+  ) as any;
+  contraption.groundDistance = 4.5;
+  contraption.quaternion.setFromEuler(new THREE.Euler(0, Math.PI / 2, 0, 'YXZ'));
+  const physics = new ContraptionPhysics({
+    getBlock: () => BlockTypes.AIR,
+    raycast: point => ({ hit: true, distance: Math.max(0, point.y) }),
+    raycastMicro: () => ({ hit: false })
+  });
+  const input = { down: new Set(['KeyW']), pressed: new Set(), released: new Set() };
+  let maxRoll = 0;
+
+  for (let frame = 0; frame < 360; frame++) {
+    contraption.update(1 / 60, input, { gravity: [0, -18, 0], world: null });
+    physics.update(contraption, 1 / 60);
+    const attitude = new THREE.Euler().setFromQuaternion(contraption.quaternion, 'YXZ');
+    maxRoll = Math.max(maxRoll, Math.abs(attitude.z));
+  }
+
+  assert.ok(maxRoll < 0.005, `body pitch input must not leak into roll after yaw: ${maxRoll}`);
+  assert.ok(contraption.velocity.x < -0.5, 'a 90-degree-yawed craft should fly along its own forward axis');
+  assert.ok(Math.abs(contraption.velocity.z) < 0.05, 'cross-axis velocity should stay negligible');
+});

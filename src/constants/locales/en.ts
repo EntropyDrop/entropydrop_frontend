@@ -906,9 +906,9 @@ Email: support@entropydrop.com`
     space_page: {
         title: 'EntropyDrop Space',
         eyebrow: 'Playable prototype',
-        platform: 'WebGL 2 · Shared Persistent World · AI Agent Native',
-        tagline: 'High-freedom voxel building, powered by collaborative AI Agents.',
-        description: 'An AI-native programmable voxel sandbox world where any structure can be sculpted with dual-scale precision, entityized into dynamic rigid bodies with physics constraints, and programmed via natural language with autonomous AI agents.',
+        platform: 'WebGL 2 · Realtime Multiplayer · Torus Topology',
+        tagline: 'High-freedom voxel building · Voxel physics engine · Programmable AI · Realtime multiplayer · Seamless Torus world (Donut)',
+        description: 'An in-browser programmable voxel world. Sculpt freely across a seamless toroidal donut universe, entityize structures into rigid bodies with physics and collision, compile natural language into intelligent behaviors with AI agents, and build cooperatively in real time with players worldwide.',
         primaryCta: 'Enter Space',
         secondaryCta: 'Gameplay Guide',
         skinNotice: {
@@ -918,44 +918,52 @@ Email: support@entropydrop.com`
         },
         stats: {
             scale: '0.2m / 1.0m Dual-Scale',
-            physics: '60 Hz Physics Engine',
-            runtime: 'WebGL 2 Browser Native',
-            agents: 'Agent / MCP API Ready'
+            physics: 'RigidBody // Dynamics & Collision',
+            programmable: 'NL Compiler · Open API',
+            multiplayer: 'Shared Persistent World',
+            torus: 'Torus Donut · Seamless Loop'
         },
-        pillarsTitle: 'Core Capabilities & Gameplay Matrix',
-        pillarsSubtitle: 'From macro terrain architectures to programmable kinetic entities, seamlessly orchestrated with AI agents.',
+        pillarsTitle: 'Five Core Elements & Gameplay Matrix',
+        pillarsSubtitle: 'High-freedom building, voxel physics, programmable AI, realtime multiplayer, and seamless toroidal donut geometry.',
         pillars: [
             {
-                tag: 'BUILDING',
+                tag: 'HIGH FREEDOM',
                 title: 'Dual-Scale Voxel Sculpting',
                 description: 'Build terrain and architecture with 1x1x1 standard blocks, or switch to 0.2x0.2x0.2 micro voxels (5x5x5 resolution) with full RGB custom palette.',
-                badge: '1x1 & 0.2m'
+                badge: '1x1 & 0.2m // TrueColor'
             },
             {
-                tag: 'PHYSICS',
-                title: 'One-Click Entityization',
-                description: 'Box-select or flood-select connected structures and press G to turn them into dynamic or kinematic rigid bodies with mass, inertia, and joint constraints.',
+                tag: 'VOXEL PHYSICS',
+                title: 'Voxel Physics Engine & RigidBody',
+                description: 'Box-select connected structures and press G to turn them into dynamic or kinematic rigid bodies with mass, inertia, and joint constraints.',
                 badge: 'RigidBody // G Key'
             },
             {
-                tag: 'AI AGENTS',
-                title: 'Natural Language Programming',
+                tag: 'PROGRAMMABLE',
+                title: 'Natural Language Programmable',
                 description: 'Press C to invoke the behavior compiler. Describe movement, hover, tracking, or patrolling intents in plain text, compiling directly into inspectable controller code.',
-                badge: 'NL -> Controller'
+                badge: 'NL -> Controller // C Key'
             },
             {
-                tag: 'COLLABORATION',
-                title: 'Multiplayer & Open Agent API',
-                description: 'A shared persistent toroidal world with WebGL 60FPS streaming, real-time chunk delta sync, and open REST/WebSocket & MCP interfaces for external AI bots.',
-                badge: 'MCP & Multi-Agent'
+                tag: 'MULTIPLAYER',
+                title: 'Real-time Multiplayer Building',
+                description: 'A persistent shared world where players collaboratively construct, modify terrain in real time, and interact with synchronized 3D Minecraft skin avatars.',
+                badge: 'Realtime Co-build // Shared World'
+            },
+            {
+                tag: 'SEAMLESS TORUS',
+                title: 'Seamless Torus World (Donut)',
+                description: 'A boundary-free toroidal universe without invisible walls. Moving in any direction wraps smoothly around the donut surface for endless exploration.',
+                badge: 'Torus Topology // Donut'
             }
         ],
         interactiveTitle: 'Interactive Engine Sandbox',
-        interactiveSubtitle: 'Explore how voxel geometry, physical entityization, and AI Agent behavior compilation work together.',
+        interactiveSubtitle: 'Explore voxel micro-sculpting, physics entityization, AI Agent behavior compilation, and toroidal geometry.',
         tabs: {
-            agentCompiler: 'AI Behavior Compiler',
-            voxelScale: 'Dual-Scale Voxel Engine',
-            entityWorkflow: 'Entityization Pipeline'
+            agentCompiler: 'Programmable: AI Compiler',
+            voxelScale: 'High Freedom: Dual-Scale',
+            entityWorkflow: 'Physics Engine: RigidBody',
+            torusWorld: 'Seamless World: Torus Donut'
         },
         compilerDemo: {
             badge: 'AI AGENT BEHAVIOR COMPILER',
@@ -1094,18 +1102,16 @@ self.applyForce([
             step3Title: '3. Program Behavior (C Key)',
             step3Desc: 'Attach AI behavior controllers or hook up external Agent automation via open APIs.'
         },
-        keybindingsTitle: 'Controls & Shortcut Matrix',
-        keybindingsSubtitle: 'Master the keyboard controls for high-efficiency sandbox construction and programming.',
-        keybindings: [
-            { key: 'W A S D', action: 'Movement', desc: 'Navigate the 3D Torus world' },
-            { key: 'SPACE / SHIFT', action: 'Jump / Crouch', desc: 'Vertical movement and precision positioning' },
-            { key: '1 / 2', action: 'Shovel & Spoon', desc: '1.0m Standard Blocks / 0.2m Micro Voxels' },
-            { key: '3 / 4', action: 'Selector & Color', desc: 'Region selection (A/B) and RGB palette' },
-            { key: 'G', action: 'Entityize', desc: 'Convert selected blocks to a dynamic physics entity' },
-            { key: 'C', action: 'Agent Terminal', desc: 'Open in-game Behavior Code Editor & API terminal' },
-            { key: 'E', action: 'Backpack', desc: 'Manage inventory, tools, and saved blueprints' },
-            { key: 'ESC', action: 'Unlock Cursor', desc: 'Release pointer lock and access 2D UI panels' }
-        ],
+        torusDemo: {
+            title: 'Toroidal Topology (Donut) World Principles',
+            desc: 'Space is not a flat box or limited cube; it is a topologically connected 3-manifold torus (donut shape). Coordinates continuously loop in X and Z axes without artificial barriers.',
+            feature1Title: 'Seamless Boundary Loop',
+            feature1Desc: 'Traveling in any direction smoothly wraps around the world, eliminating invisible walls.',
+            feature2Title: 'Bent-Space Shaders & Distant LOD',
+            feature2Desc: 'The rendering engine applies coordinate transformations in shaders to project panoramic torus horizons.',
+            feature3Title: 'Continuous Physics & Raycasts',
+            feature3Desc: 'Rigid-body kinematics, gravity fields, and raycast algorithms are tuned for toroidal topology.'
+        },
         agentDevTitle: 'AI Agent & Developer Protocol',
         agentDevSubtitle: 'First-class support for AI Agents, MCP Tools, and automated programmatic construction.',
         agentDevCards: [
@@ -1123,25 +1129,6 @@ self.applyForce([
                 icon: 'pixelarticons:bot',
                 title: 'Autonomous Construction Agents',
                 desc: 'Feed structural blueprints and schemas to AI bots that autonomously place, sculpt, recolor, and assemble kinetic machinery directly in the shared world.'
-            }
-        ],
-        workflowTitle: 'Quickstart: 3 Steps to Your First Creation',
-        workflowSubtitle: 'From imagination to an autonomous flying contraption in under 60 seconds.',
-        workflowSteps: [
-            {
-                number: '01',
-                title: 'Enter with Your Minecraft Avatar',
-                desc: 'Log in with your EntropyDrop account. Your custom Minecraft skin automatically renders in full 3D as your identity.'
-            },
-            {
-                number: '02',
-                title: 'Sculpt & Entityize (G Key)',
-                desc: 'Build your ship, rover, or robot using shovel and spoon. Use the Selector tool, then press G to bring it to life as a rigid body.'
-            },
-            {
-                number: '03',
-                title: 'Prompt & Program (C Key)',
-                desc: 'Press C, tell the AI agent what you want your entity to do, inspect the live controller code, and watch it fly in the world.'
             }
         ],
         closingTitle: 'The Shared Voxel Universe Awaits.',

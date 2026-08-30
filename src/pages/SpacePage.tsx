@@ -14,7 +14,7 @@ export function SpacePage({ current }: SpacePageProps) {
     const data = current.space_page
     const spaceAppUrl = import.meta.env.VITE_SPACE_URL || '/space/app/'
 
-    const [activeTab, setActiveTab] = useState<'compiler' | 'voxel' | 'workflow'>('compiler')
+    const [activeTab, setActiveTab] = useState<'compiler' | 'voxel' | 'workflow' | 'torus'>('compiler')
     const [selectedPresetId, setSelectedPresetId] = useState<string>('hover')
     const [voxelMode, setVoxelMode] = useState<'standard' | 'micro'>('micro')
     const [copiedCode, setCopiedCode] = useState(false)
@@ -65,23 +65,27 @@ export function SpacePage({ current }: SpacePageProps) {
                         </p>
                     </div>
 
-                    {/* Stat Badges Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 py-2">
+                    {/* Stat Badges Grid: The 5 Elements */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 py-1.5">
                         <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">GEOMETRY</span>
-                            <span className={`text-xs font-bold text-white ${current.fontClass}`}>{data.stats.scale}</span>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">高自由度建造</span>
+                            <span className={`text-[11px] font-bold text-white ${current.fontClass}`}>{data.stats.scale}</span>
                         </div>
                         <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">SIMULATION</span>
-                            <span className={`text-xs font-bold text-green-400 ${current.fontClass}`}>{data.stats.physics}</span>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">体素物理引擎</span>
+                            <span className={`text-[11px] font-bold text-white ${current.fontClass}`}>{data.stats.physics}</span>
                         </div>
                         <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">ENGINE</span>
-                            <span className={`text-xs font-bold text-white ${current.fontClass}`}>{data.stats.runtime}</span>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">可编程</span>
+                            <span className={`text-[11px] font-bold text-blue-300 ${current.fontClass}`}>{data.stats.programmable}</span>
                         </div>
                         <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">INTELLIGENCE</span>
-                            <span className={`text-xs font-bold text-blue-400 ${current.fontClass}`}>{data.stats.agents}</span>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">实时多人建造</span>
+                            <span className={`text-[11px] font-bold text-white ${current.fontClass}`}>{data.stats.multiplayer}</span>
+                        </div>
+                        <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">无边世界</span>
+                            <span className={`text-[11px] font-bold text-yellow-300 ${current.fontClass}`}>{data.stats.torus}</span>
                         </div>
                     </div>
 
@@ -142,7 +146,7 @@ export function SpacePage({ current }: SpacePageProps) {
                                 </span>
                             </div>
                             <span className="font-mono text-[10px] text-white/40 uppercase tracking-widest">
-                                TORUS WORLD
+                                TORUS WORLD (DONUT)
                             </span>
                         </div>
 
@@ -204,13 +208,13 @@ export function SpacePage({ current }: SpacePageProps) {
             </section>
 
 
-            {/* ===================== CORE PILLARS MATRIX ===================== */}
+            {/* ===================== FIVE CORE ELEMENTS MATRIX ===================== */}
             <section className="flex flex-col gap-6 shrink-0 w-full">
                 <div className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-2 text-green-400">
                         <Icon icon="pixelarticons:sparkles" className="text-xl" />
                         <span className="font-mono text-xs uppercase tracking-widest text-green-400 font-bold">
-                            CORE ARCHITECTURE
+                            FIVE CORE PILLARS
                         </span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
@@ -223,13 +227,14 @@ export function SpacePage({ current }: SpacePageProps) {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                     {data.pillars.map((pillar, index) => {
                         const pillarIcons = [
                             'pixelarticons:buildings',
                             'pixelarticons:box',
                             'pixelarticons:code',
                             'pixelarticons:users',
+                            'pixelarticons:globe',
                         ]
 
                         return (
@@ -246,6 +251,9 @@ export function SpacePage({ current }: SpacePageProps) {
                                             {pillar.badge}
                                         </span>
                                     </div>
+                                    <span className="font-mono text-[10px] uppercase text-green-400/70 font-bold tracking-wider">
+                                        {pillar.tag}
+                                    </span>
                                     <h3 className={`m-0 text-base font-bold text-white group-hover:text-green-300 transition-colors ${current.fontClass}`}>
                                         {pillar.title}
                                     </h3>
@@ -317,6 +325,17 @@ export function SpacePage({ current }: SpacePageProps) {
                         >
                             <Icon icon="pixelarticons:zap" className="text-base" />
                             <span>{data.tabs.entityWorkflow}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('torus')}
+                            className={`flex items-center gap-2 px-3 py-2 text-xs font-bold transition-all cursor-pointer border-none ${activeTab === 'torus'
+                                ? 'bg-[#3c8527] text-white shadow-sm'
+                                : 'bg-transparent text-white/60 hover:text-white hover:bg-white/5'
+                                } ${current.fontClass}`}
+                        >
+                            <Icon icon="pixelarticons:globe" className="text-base" />
+                            <span>{data.tabs.torusWorld}</span>
                         </button>
                     </div>
                 </div>
@@ -569,48 +588,61 @@ export function SpacePage({ current }: SpacePageProps) {
                         </div>
                     </div>
                 )}
-            </section>
 
+                {/* TAB 4: SEAMLESS TORUS DONUT WORLD */}
+                {activeTab === 'torus' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-black/30 border border-white/10 p-4 sm:p-6 animate-in fade-in duration-300">
+                        <div className="lg:col-span-6 flex flex-col gap-4">
+                            <span className="font-mono text-xs text-yellow-400 font-bold uppercase tracking-wider flex items-center gap-2">
+                                <Icon icon="pixelarticons:globe" className="text-base" />
+                                {data.torusDemo.title}
+                            </span>
+                            <p className={`text-sm text-white/70 leading-relaxed m-0 ${current.fontClass}`}>
+                                {data.torusDemo.desc}
+                            </p>
+                            <div className="flex flex-col gap-3 pt-2">
+                                <div className="border border-white/10 bg-white/5 p-3 flex flex-col gap-1">
+                                    <span className={`text-xs font-bold text-green-300 ${current.fontClass}`}>{data.torusDemo.feature1Title}</span>
+                                    <span className={`text-[11px] text-white/60 ${current.fontClass}`}>{data.torusDemo.feature1Desc}</span>
+                                </div>
+                                <div className="border border-white/10 bg-white/5 p-3 flex flex-col gap-1">
+                                    <span className={`text-xs font-bold text-blue-300 ${current.fontClass}`}>{data.torusDemo.feature2Title}</span>
+                                    <span className={`text-[11px] text-white/60 ${current.fontClass}`}>{data.torusDemo.feature2Desc}</span>
+                                </div>
+                                <div className="border border-white/10 bg-white/5 p-3 flex flex-col gap-1">
+                                    <span className={`text-xs font-bold text-yellow-300 ${current.fontClass}`}>{data.torusDemo.feature3Title}</span>
+                                    <span className={`text-[11px] text-white/60 ${current.fontClass}`}>{data.torusDemo.feature3Desc}</span>
+                                </div>
+                            </div>
+                        </div>
 
-            {/* ===================== KEYBOARD & CONTROLS MATRIX ===================== */}
-            <section className="flex flex-col gap-6 shrink-0 w-full">
-                <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center gap-2 text-green-400">
-                        <Icon icon="pixelarticons:device-laptop" className="text-xl" />
-                        <span className="font-mono text-xs uppercase tracking-widest text-green-400 font-bold">
-                            CONTROLS & SHORTCUTS
-                        </span>
-                    </div>
-                    <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
-                        <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${current.fontClass}`}>
-                            {data.keybindingsTitle}
-                        </h2>
-                        <span className={`text-xs text-white/50 ${current.fontClass}`}>
-                            {data.keybindingsSubtitle}
-                        </span>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {data.keybindings.map((kb) => (
-                        <div
-                            key={kb.key}
-                            className="border border-white/10 bg-white/5 p-4 flex flex-col justify-between gap-3 hover:border-green-500/30 hover:bg-white/[0.08] transition-all"
-                        >
-                            <div className="flex items-center justify-between">
-                                <span className="font-mono text-xs font-bold text-green-300 border border-green-500/30 bg-green-500/10 px-2 py-0.5 shadow-sm">
-                                    {kb.key}
-                                </span>
-                                <span className={`text-xs font-bold text-white ${current.fontClass}`}>
-                                    {kb.action}
+                        {/* Right: Torus Donut Visualizer Diagram */}
+                        <div className="lg:col-span-6 flex flex-col items-center justify-center border border-white/10 bg-black/60 p-6 min-h-[320px] relative overflow-hidden">
+                            <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#3c8527_1px,transparent_1px)] bg-[size:20px_20px]" />
+                            <div className="relative z-10 flex flex-col items-center gap-4 text-center">
+                                {/* Stylized Torus Graphic */}
+                                <div className="relative w-44 h-44 flex items-center justify-center">
+                                    <div className="absolute inset-2 border-4 border-dashed border-green-400/40 rounded-full animate-spin [animation-duration:20s]" />
+                                    <div className="absolute inset-8 border-2 border-yellow-400/50 rounded-full" />
+                                    <div className="w-20 h-20 bg-green-500/10 border border-green-400/60 rounded-full flex flex-col items-center justify-center shadow-[0_0_40px_rgba(74,222,128,0.25)]">
+                                        <Icon icon="pixelarticons:globe" className="text-3xl text-green-300 animate-pulse" />
+                                    </div>
+                                    {/* Orbiting player marker */}
+                                    <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/80 border border-green-400 px-2 py-0.5 text-[10px] font-mono text-green-300">
+                                        <span className="w-1.5 h-1.5 bg-green-400 animate-ping" />
+                                        <span>WRAP: (X mod L, Z mod W)</span>
+                                    </div>
+                                </div>
+                                <div className="font-mono text-xs text-green-300 font-bold">
+                                    TOPOLOGICAL TORUS · ZERO SEAMLESS BOUNDARIES
+                                </div>
+                                <span className="font-mono text-[11px] text-white/50 max-w-sm">
+                                    No invisible walls. Walk straight ahead forever to circumnavigate the continuous torus world.
                                 </span>
                             </div>
-                            <span className={`text-xs text-white/50 leading-relaxed ${current.fontClass}`}>
-                                {kb.desc}
-                            </span>
                         </div>
-                    ))}
-                </div>
+                    </div>
+                )}
             </section>
 
 
@@ -647,47 +679,6 @@ export function SpacePage({ current }: SpacePageProps) {
                             </h3>
                             <p className={`text-xs sm:text-sm text-white/60 leading-relaxed m-0 ${current.fontClass}`}>
                                 {card.desc}
-                            </p>
-                        </div>
-                    ))}
-                </div>
-            </section>
-
-
-            {/* ===================== QUICKSTART WORKFLOW ===================== */}
-            <section className="flex flex-col gap-6 shrink-0 w-full border-t border-white/10 pt-10">
-                <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center gap-2 text-green-400">
-                        <Icon icon="pixelarticons:zap" className="text-xl" />
-                        <span className="font-mono text-xs uppercase tracking-widest text-green-400 font-bold">
-                            QUICKSTART
-                        </span>
-                    </div>
-                    <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${current.fontClass}`}>
-                        {data.workflowTitle}
-                    </h2>
-                    <p className={`m-0 text-xs sm:text-sm text-white/60 ${current.fontClass}`}>
-                        {data.workflowSubtitle}
-                    </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {data.workflowSteps.map((step) => (
-                        <div
-                            key={step.number}
-                            className="relative border border-white/10 bg-black/30 p-5 flex flex-col gap-3 hover:border-green-500/30 transition-all"
-                        >
-                            <div className="flex items-center justify-between">
-                                <span className="font-mono text-sm font-bold text-green-400 border border-green-500/30 bg-green-500/10 px-2 py-0.5">
-                                    STEP {step.number}
-                                </span>
-                                <span className="font-mono text-[10px] text-white/30">LIFECYCLE</span>
-                            </div>
-                            <h3 className={`text-base font-bold text-white m-0 ${current.fontClass}`}>
-                                {step.title}
-                            </h3>
-                            <p className={`text-xs sm:text-sm text-white/60 leading-relaxed m-0 ${current.fontClass}`}>
-                                {step.desc}
                             </p>
                         </div>
                     ))}

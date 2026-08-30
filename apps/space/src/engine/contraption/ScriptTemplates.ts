@@ -65,44 +65,69 @@ if (ctx.tick % 120 === 0) {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const wrapAngle = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const scale = (v, amount) => [v[0] * amount, v[1] * amount, v[2] * amount];
 
 // 1. Initialize target height and heading
 if (self.state.targetHeight === undefined) {
   self.state.targetHeight = 4.5;
   self.state.targetYaw = ctx.rotation[1];
+  self.state.filteredGroundDistance = ctx.groundDistance;
+  self.state.commandPitch = 0;
+  self.state.commandRoll = 0;
 }
 
 if (ctx.input.down('Space')) self.state.targetHeight += 2.0 * ctx.deltaTime;
 if (ctx.input.down('Shift')) self.state.targetHeight = Math.max(1.5, self.state.targetHeight - 2.0 * ctx.deltaTime);
+const yawInput = (ctx.input.down('ArrowLeft') ? 1 : 0) - (ctx.input.down('ArrowRight') ? 1 : 0);
+self.state.targetYaw = wrapAngle(self.state.targetYaw + yawInput * 1.1 * ctx.deltaTime);
 
-// 2. Height PD: total lift the four propellers must provide together
+// 2. Height PD: filter voxel-height steps so flying over a one-block edge does
+//    not turn into an instantaneous collective-thrust kick.
+const groundBlend = 1 - Math.exp(-5.0 * ctx.deltaTime);
+self.state.filteredGroundDistance += (ctx.groundDistance - self.state.filteredGroundDistance) * groundBlend;
 const gravityAcceleration = Math.abs(ctx.gravity[1]);
-const heightError = self.state.targetHeight - ctx.groundDistance;
-let collective = ctx.mass * gravityAcceleration
+const heightError = self.state.targetHeight - self.state.filteredGroundDistance;
+let collectiveTarget = ctx.mass * gravityAcceleration
   + heightError * ctx.mass * 8.0
   - ctx.velocity[1] * ctx.mass * 5.0;
 
 // When tilted, only the vertical thrust component supports the weight, so compensate for the cos loss.
 const tiltCos = Math.max(0.55, Math.cos(ctx.rotation[0]) * Math.cos(ctx.rotation[2]));
-collective = clamp(collective / tiltCos, 0, ctx.limits.maxForce * 0.90);
+collectiveTarget = clamp(collectiveTarget / tiltCos, 0, ctx.limits.maxForce * 0.90);
+if (self.state.collective === undefined) self.state.collective = collectiveTarget;
+const collectiveBlend = 1 - Math.exp(-12.0 * ctx.deltaTime);
+self.state.collective += (collectiveTarget - self.state.collective) * collectiveBlend;
+const collective = self.state.collective;
 
-// 3. Attitude PD. W/S change target pitch, A/D change target roll; releasing returns to level.
+// 3. Attitude PD. Smooth stick steps and project the world angular velocity
+//    onto the craft axes. Differential lift acts around those craft axes, so
+//    damping it with raw world X/Z rates caused cross-axis fighting after yaw.
 const maxTilt = 0.16;
-const targetPitch = (ctx.input.down('KeyW') ? -maxTilt : 0) + (ctx.input.down('KeyS') ? maxTilt : 0);
-const targetRoll = (ctx.input.down('KeyA') ? maxTilt : 0) + (ctx.input.down('KeyD') ? -maxTilt : 0);
+const rawPitch = (ctx.input.down('KeyW') ? -maxTilt : 0) + (ctx.input.down('KeyS') ? maxTilt : 0);
+const rawRoll = (ctx.input.down('KeyA') ? maxTilt : 0) + (ctx.input.down('KeyD') ? -maxTilt : 0);
+const stickBlend = 1 - Math.exp(-10.0 * ctx.deltaTime);
+self.state.commandPitch += (rawPitch - self.state.commandPitch) * stickBlend;
+self.state.commandRoll += (rawRoll - self.state.commandRoll) * stickBlend;
+const pitchAxis = self.localToWorldDirection([1, 0, 0]);
+const yawAxis = self.localToWorldDirection([0, 1, 0]);
+const rollAxis = self.localToWorldDirection([0, 0, 1]);
+const pitchRate = dot(ctx.angularVelocity, pitchAxis);
+const yawRate = dot(ctx.angularVelocity, yawAxis);
+const rollRate = dot(ctx.angularVelocity, rollAxis);
 
 const pitchMoment = clamp(
-  (targetPitch - ctx.rotation[0]) * ctx.mass * 42.0 - ctx.angularVelocity[0] * ctx.mass * 14.0,
+  (self.state.commandPitch - ctx.rotation[0]) * ctx.mass * 42.0 - pitchRate * ctx.mass * 14.0,
   -ctx.mass * 24.0,
   ctx.mass * 24.0
 );
 const rollMoment = clamp(
-  (targetRoll - ctx.rotation[2]) * ctx.mass * 42.0 - ctx.angularVelocity[2] * ctx.mass * 14.0,
+  (self.state.commandRoll - ctx.rotation[2]) * ctx.mass * 42.0 - rollRate * ctx.mass * 14.0,
   -ctx.mass * 24.0,
   ctx.mass * 24.0
 );
 const yawMoment = clamp(
-  wrapAngle(self.state.targetYaw - ctx.rotation[1]) * ctx.mass * 1.2 - ctx.angularVelocity[1] * ctx.mass * 0.8,
+  wrapAngle(self.state.targetYaw - ctx.rotation[1]) * ctx.mass * 1.2 - yawRate * ctx.mass * 0.8,
   -ctx.mass * 0.8,
   ctx.mass * 0.8
 );
@@ -141,12 +166,145 @@ for (const name of ['nw', 'ne', 'sw', 'se']) {
 }
 
 // 6. Yaw: propeller drag counter-torque is gone (spin and thrust decoupled),
-//    so heading is controlled directly with torque.
-self.applyTorque([0, yawMoment, 0]);
+//    so heading is controlled directly around the craft's current up axis.
+self.applyTorque(scale(yawAxis, yawMoment));
 
 // 7. Debug log: show the four independent motor outputs so the mixing can be observed.
 if (ctx.tick % 60 === 0) {
   ctx.log(\`[Quadcopter] Height \${ctx.groundDistance.toFixed(2)}/\${self.state.targetHeight.toFixed(1)}m | Motor NW:\${motor.nw.toFixed(0)} NE:\${motor.ne.toFixed(0)} SW:\${motor.sw.toFixed(0)} SE:\${motor.se.toFixed(0)}N\`);
+}
+`
+  },
+  {
+    id: 'raycast_offroad_rover',
+    name: 'Raycast Suspension Off-Road Rover',
+    description: 'Four independent wheel raycasts drive spring-damper suspension, tire grip, steering, braking, and wheel animation on one dynamic chassis.',
+    code: `/**
+ * Four-wheel off-road rover with raycast suspension.
+ *
+ * The chassis is the only dynamic rigid body. Each wheel casts from its
+ * suspension mount along body -Y; hit distance minus tire radius is the
+ * current strut length. Spring, damper, drive, and lateral tire forces are
+ * applied at that mount, so bumps create real chassis pitch and roll.
+ *
+ * Controls: W/S drive, A/D steer, Space brake.
+ */
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const scale = (v, amount) => [v[0] * amount, v[1] * amount, v[2] * amount];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0]
+];
+
+const wheels = [
+  { id: 'wheel_fl', anchor: [0.5, 2.2, 0.8], front: true },
+  { id: 'wheel_fr', anchor: [3.5, 2.2, 0.8], front: true },
+  { id: 'wheel_rl', anchor: [0.5, 2.2, 5.2], front: false },
+  { id: 'wheel_rr', anchor: [3.5, 2.2, 5.2], front: false }
+];
+const restLength = 1.2;
+const wheelRadius = 0.8;
+const springStrength = ctx.mass * 55.0;
+const damperStrength = ctx.mass * 7.5;
+const maxSpringForce = ctx.mass * 16.0;
+
+if (!self.state.initialized) {
+  self.state.initialized = true;
+  self.state.throttle = 0;
+  self.state.steer = 0;
+  self.state.wheelBase = {};
+  self.setCockpitPosition([0, 1.0, -0.45]);
+  self.setVehicle(true);
+  for (const spec of wheels) {
+    const wheel = self.child(spec.id);
+    if (wheel) self.state.wheelBase[spec.id] = wheel.getLocalPosition();
+  }
+}
+
+// Smooth keyboard steps before they reach the tire forces.
+const rawThrottle = (ctx.input.down('KeyW') ? 1 : 0) - (ctx.input.down('KeyS') ? 1 : 0);
+const rawSteer = (ctx.input.down('KeyA') ? 1 : 0) - (ctx.input.down('KeyD') ? 1 : 0);
+const throttleBlend = 1 - Math.exp(-6.0 * ctx.deltaTime);
+const steerBlend = 1 - Math.exp(-9.0 * ctx.deltaTime);
+self.state.throttle += (rawThrottle - self.state.throttle) * throttleBlend;
+self.state.steer += (rawSteer - self.state.steer) * steerBlend;
+
+const pivot = self.getPivot();
+const down = self.localToWorldDirection([0, -1, 0]);
+const up = scale(down, -1);
+const speed = Math.sqrt(dot(ctx.velocity, ctx.velocity));
+const steerAngle = self.state.steer * 0.48 / (1 + speed * 0.045);
+const brake = ctx.input.down('Space');
+let contacts = 0;
+
+for (const spec of wheels) {
+  const localOffset = sub(spec.anchor, pivot);
+  const worldOffset = self.localToWorldDirection(localOffset);
+  const origin = add(ctx.position, worldOffset);
+  const pointVelocity = add(ctx.velocity, cross(ctx.angularVelocity, worldOffset));
+  const localSteer = spec.front ? steerAngle : 0;
+  const forward = self.localToWorldDirection([
+    -Math.sin(localSteer),
+    0,
+    -Math.cos(localSteer)
+  ]);
+  const side = self.localToWorldDirection([
+    Math.cos(localSteer),
+    0,
+    -Math.sin(localSteer)
+  ]);
+  const longitudinalSpeed = dot(pointVelocity, forward);
+  const lateralSpeed = dot(pointVelocity, side);
+  const hit = ctx.world.raycast(origin, down, restLength + wheelRadius);
+  let compression = 0;
+
+  if (hit) {
+    contacts++;
+    const suspensionLength = clamp(hit.distance - wheelRadius, 0, restLength);
+    compression = restLength - suspensionLength;
+    const suspensionSpeed = dot(pointVelocity, up);
+    const springForce = clamp(
+      compression * springStrength - suspensionSpeed * damperStrength,
+      0,
+      maxSpringForce
+    );
+
+    // Four driven tires, speed-proportional lateral grip, and a stronger
+    // longitudinal force while the brake is held.
+    let longitudinalForce = self.state.throttle * ctx.mass * 1.8
+      - longitudinalSpeed * ctx.mass * 0.22;
+    if (brake) longitudinalForce += -longitudinalSpeed * ctx.mass * 2.4;
+    longitudinalForce = clamp(longitudinalForce, -ctx.mass * 4.0, ctx.mass * 4.0);
+    const lateralForce = clamp(
+      -lateralSpeed * ctx.mass * 1.7,
+      -ctx.mass * 4.5,
+      ctx.mass * 4.5
+    );
+    const tireForce = add(
+      scale(up, springForce),
+      add(scale(forward, longitudinalForce), scale(side, lateralForce))
+    );
+    self.applyForceAt(tireForce, spec.anchor);
+  }
+
+  // Wheels are visual-only kinematic children. Their collision is disabled by
+  // the blueprint; the raycasts are the tire contact model.
+  const wheel = self.child(spec.id);
+  const base = self.state.wheelBase[spec.id];
+  if (wheel && base) {
+    wheel.setLocalPosition([base[0], base[1] + compression, base[2]]);
+    const rpm = clamp(-longitudinalSpeed * 60 / (Math.PI * 2 * wheelRadius), -360, 360);
+    wheel.setLocalSpin([1, 0, 0], rpm);
+  }
+}
+
+self.state.contacts = contacts;
+if (ctx.tick % 120 === 0) {
+  ctx.log(\`[Rover] contacts \${contacts}/4 | speed \${speed.toFixed(1)} m/s | steer \${(steerAngle * 57.3).toFixed(0)}°\`);
 }
 `
   },

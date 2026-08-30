@@ -117,6 +117,29 @@ test('front third-person camera sits ahead of the player and looks back', () => 
   assert.ok(controller.camera.position.distanceTo(new THREE.Vector3(1, 2, -1)) < 1e-8);
 });
 
+test('mounted camera re-seats from the vehicle pose solved later in the frame', () => {
+  const controller = Object.create(PlayerController.prototype) as any;
+  const seat = new THREE.Vector3(1, 2, 3);
+  controller.isDriving = true;
+  controller.drivenContraption = {
+    getCockpitWorldPosition: () => seat.clone()
+  };
+  controller.physics = {
+    position: new THREE.Vector3(),
+    velocity: new THREE.Vector3(4, 5, 6)
+  };
+
+  assert.equal(controller.syncDrivenVehiclePose(), true);
+  assert.deepEqual(controller.physics.position.toArray(), [1, 2, 3]);
+  assert.deepEqual(controller.physics.velocity.toArray(), [0, 0, 0]);
+
+  // Simulate the quadcopter moving during ContraptionManager.update(). The
+  // post-physics pass must use this new pose rather than the previous frame's.
+  seat.set(2.5, 3.25, -4);
+  controller.syncDrivenVehiclePose();
+  assert.deepEqual(controller.physics.position.toArray(), [2.5, 3.25, -4]);
+});
+
 test('entity program queries down, pressed and released by KeyboardEvent.code', () => {
   const contraption = new Contraption(
     1,

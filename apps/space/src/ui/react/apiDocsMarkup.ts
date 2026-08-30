@@ -108,7 +108,7 @@ const dy = playerPos[1] - ctx.position[1]; // no wrap on Y</code></pre>
             <li><b>Every script</b> receives <code>(self, ctx)</code>: <code>self</code> is that component's action API; <code>ctx</code> is a read-only sensor snapshot whose body fields (<code>position</code>, <code>velocity</code>, <code>rotation</code>, <code>mass</code>, <code>bodyType</code>) always describe the root entity.</li>
             <li><code>ctx.root</code> is the root component. Traverse the real hierarchy recursively with <code>node.children()</code>; there is no flat component snapshot.</li>
             <li>Store cross-frame values in <code>self.state</code>. State is isolated by component, so sibling scripts cannot accidentally reuse the same variable name. Global Stop clears all component state.</li>
-            <li>Scripts are submitted once per physics frame to a shared Worker; each loaded scripted entity owns an isolated QuickJS Runtime. Completed command buffers normally commit on the following frame.</li>
+            <li>Scripts execute synchronously once per physics frame in isolated QuickJS/WASM Runtimes on the page thread. Memory, stack, wall-time, VM-checkpoint and command-count limits protect the host; completed command buffers commit immediately after the entity tick.</li>
             <li>Read state from <code>ctx</code>. Dynamic bodies move through force/torque APIs and cannot accept direct pose writes; kinematic bodies additionally accept the documented <code>setLocalPosition</code>/<code>setLocalRotation</code>/<code>setLocalEuler</code> commands. No public API directly sets velocity.</li>
             <li><b>Ordering</b>: the root script runs first, then child scripts in the order their code was first set. All components of one entity share a single frozen <code>ctx</code> snapshot: rigid-body fields (<code>position</code>, <code>velocity</code>, <code>rotation</code>, …) are sampled at frame start, so siblings cannot read each other's motion within the same frame.</li>
             <li>Mutations are queued and revalidated on the main thread. An admitted immediate result is provisional with <code>reason: 'queued'</code>; a full 256-command entity buffer returns <code>ok: false</code> with <code>reason: 'command_limit'</code>. Standard-world writes are visible to later sibling scripts through the current frame's overlay.</li>
@@ -286,14 +286,14 @@ if (ctx.blocks.pressed()) {
               <tr><td><code>ctx.world.voxels.paint([x,y,z], options?)</code></td><td>Queue repainting one existing standard world voxel</td></tr>
               <tr><td><code>ctx.world.voxels.clearCell([x,y,z])</code></td><td>Queue removal of all standard and micro voxels in one world cell</td></tr>
               <tr><td><code>ctx.world.voxels.subdivide([x,y,z], clearOffset?)</code></td><td>Queue conversion of one standard voxel into 125 micro voxels with optional offset removal</td></tr>
-              <tr><td><code>ctx.world.microVoxels.get(cell, offset)</code></td><td>Full synchronous micro-world reads are unavailable across the Worker boundary; currently returns air</td></tr>
+              <tr><td><code>ctx.world.microVoxels.get(cell, offset)</code></td><td>Full synchronous micro-world reads are not exposed; currently returns air</td></tr>
               <tr><td><code>ctx.world.microVoxels.set(cell, offset, options?)</code></td><td>Queue placement of one 0.2 m world voxel</td></tr>
               <tr><td><code>ctx.world.microVoxels.clear(cell, offset)</code></td><td>Queue removal of one exact 0.2 m world voxel</td></tr>
               <tr><td><code>ctx.world.microVoxels.paint(cell, offset, options?)</code></td><td>Queue repainting one existing micro world voxel</td></tr>
               <tr><td><code>ctx.world.entities(origin, radius?)</code></td><td>Filter the frame's nearby-entity snapshot, prefetched to 64 m, by shortest wrapped X/Z distance</td></tr>
               <tr><td><code>ctx.world.entities.get(id, chunkId?)</code></td><td>Look up one entity in the frame's nearby-entity snapshot</td></tr>
               <tr><td><code>ctx.world.entities.list(chunkId)</code> / <code>ctx.world.entities.inChunk(chunkId)</code></td><td>Filter the nearby-entity snapshot by wrapped chunk id <code>"cx,cz"</code></td></tr>
-              <tr><td><code>ctx.world.raycast(origin, direction, maxDistance?)</code></td><td>Full synchronous raycasts over standard world voxels are unavailable across the Worker boundary and currently return <code>null</code></td></tr>
+              <tr><td><code>ctx.world.raycast(origin, direction, maxDistance?)</code></td><td>Bounded synchronous raycast over standard world voxels; returns <code>{block,color,normal,position,distance}</code> or <code>null</code>. Maximum 64 calls per entity tick.</td></tr>
             </tbody>
           </table>
           <p class="api-sub">The API never overwrites occupied cells and never converts between standard and micro voxels implicitly. World X/Z wrap on the torus — see <b>World topology</b> above.</p>
@@ -354,7 +354,7 @@ if (ctx.blocks.pressed()) {
             <li>Press <b>V</b> to mount an entity <em>before</em> writing a driving script — only mounted entities receive keyboard input. Press C while mounted to open the editor directly.</li>
             <li><code>self.state</code> is the right place for persistent state: target altitude, phase counters, timers, etc. Each component owns a separate state object.</li>
             <li>Use <code>ctx.deltaTime</code> only when integrating an explicit rate. Force and torque commands are already in N/N·m; do not multiply them by <code>deltaTime</code>.</li>
-            <li>Use the Selector to select an entity and press <b>R</b> to copy it. Copying automatically switches to Hammer, which previews and builds the inventory item with left-click. Hold Wrench left-click on a dynamic entity to grab its exact hit point; release to drop it. Wrench right-click toggles its runtime. The blueprint library (<b>B</b>) contains ready-made drone, windmill, and Ferris wheel examples.</li>
+            <li>Use the Selector to select an entity and press <b>R</b> to copy it. Copying automatically switches to Hammer, which previews and builds the inventory item with left-click. Hold Wrench left-click on a dynamic entity to grab its exact hit point; release to drop it. Wrench right-click toggles its runtime. The blueprint library (<b>B</b>) contains ready-made quadcopter, raycast-suspension rover, helicopter, windmill, and Ferris wheel examples.</li>
           </ul>
         </div>
 

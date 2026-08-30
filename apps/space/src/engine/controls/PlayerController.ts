@@ -3261,6 +3261,7 @@ export class PlayerController {
         id: String(definition.id || ''),
         parentId: String(definition.parentId || definition.parent || 'root'),
         ...(definition.kind === 'child' ? { kind: 'child' } : {}),
+        ...(definition.collisionEnabled === false ? { collisionEnabled: false } : {}),
         ...(vector3(definition.pivot) ? { pivot: vector3(definition.pivot) } : {}),
         ...(['dynamic', 'kinematic'].includes(definition.bodyType) ? { bodyType: definition.bodyType } : {}),
         ...(optionalNumber(definition.mass) !== undefined ? { mass: optionalNumber(definition.mass) } : {}),
@@ -3501,6 +3502,7 @@ export class PlayerController {
           id,
           parentId,
           ...(definition.kind === 'child' ? { kind: 'child' } : {}),
+          ...(definition.collisionEnabled === false ? { collisionEnabled: false } : {}),
           ...(Array.isArray(pivot) ? { pivot: pivot.slice(0, 3).map(Number) } : {}),
           ...(bodyType ? { bodyType } : {}),
           ...(Number.isFinite(mass) && mass > 0 ? { mass } : {}),
@@ -4168,17 +4170,26 @@ export class PlayerController {
     }
   }
 
+  /**
+   * Re-seat a mounted player from the vehicle's latest solved transform.
+   * Contraption physics runs after PlayerController.update(), so doing this
+   * again from the post-physics aim pass prevents the camera from rendering a
+   * one-frame-old cockpit pose while a vehicle accelerates or rotates.
+   */
+  syncDrivenVehiclePose() {
+    if (!this.isDriving || !this.drivenContraption) return false;
+    const cockpitWorld = this.drivenContraption.getCockpitWorldPosition
+      ? this.drivenContraption.getCockpitWorldPosition()
+      : this.drivenContraption.position.clone();
+    this.physics.position.copy(cockpitWorld);
+    this.physics.velocity.set(0, 0, 0);
+    return true;
+  }
+
   update(dt) {
     this.processBulkEditFrame();
 
-    if (this.isDriving && this.drivenContraption) {
-      // Seat the player at the cockpit position relative to pivot and rotate it with the entity.
-      const cockpitWorld = this.drivenContraption.getCockpitWorldPosition
-        ? this.drivenContraption.getCockpitWorldPosition()
-        : this.drivenContraption.position.clone();
-      this.physics.position.copy(cockpitWorld);
-      this.physics.velocity.set(0, 0, 0);
-    } else {
+    if (!this.syncDrivenVehiclePose()) {
       this.physics.update(dt, this.keys, this.yaw);
     }
 
@@ -4252,6 +4263,9 @@ export class PlayerController {
    * components are tested at the same transform that will be rendered.
    */
   updateAimRaycast() {
+    // This pass runs after ContraptionManager.update(), so it is the first
+    // point in the frame where the mounted body's final physics pose exists.
+    this.syncDrivenVehiclePose();
     this.updateCameraPosition();
     const eyePos = this.physics.getEyePosition();
 

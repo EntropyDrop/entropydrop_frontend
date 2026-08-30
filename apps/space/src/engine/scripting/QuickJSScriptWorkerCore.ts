@@ -1,9 +1,41 @@
+import { newQuickJSWASMModuleFromVariant } from 'quickjs-emscripten-core';
+import quickJSVariant from '@jitl/quickjs-wasmfile-release-sync';
+
 const ENTITY_MEMORY_LIMIT_BYTES = 4 * 1024 * 1024;
 const ENTITY_STACK_LIMIT_BYTES = 512 * 1024;
 const COMPONENT_DEADLINE_MS = 5;
 const ENTITY_TICK_DEADLINE_MS = 25;
+// QuickJS calls the interrupt handler at deterministic VM checkpoints. The
+// wall-clock deadline protects the page on fast and slow devices; this second,
+// per-entity frame budget also stops scripts whose work grows without bound,
+// independent of timer resolution.
+const ENTITY_FRAME_INTERRUPT_LIMIT = 64;
+const MAX_HOST_RAYCASTS_PER_TICK = 64;
 const MAX_SCRIPT_COMPONENTS = 64;
 const BOOTSTRAP_DEADLINE_MS = 100;
+
+// Do not put WASM initialization behind a module-level await: this module is in
+// Space's application import graph, so doing that makes entering the world wait
+// for QuickJS even when no programmable entity is loaded. The first actual
+// script request starts this promise; evals remain synchronous after it resolves.
+type QuickJSModule = Awaited<ReturnType<typeof newQuickJSWASMModuleFromVariant>>;
+let quickJSModule: QuickJSModule | null = null;
+let quickJSModulePromise: Promise<QuickJSModule> | null = null;
+
+export function preloadQuickJSScriptRuntime() {
+  if (quickJSModule) return Promise.resolve(quickJSModule);
+  if (!quickJSModulePromise) {
+    quickJSModulePromise = newQuickJSWASMModuleFromVariant(quickJSVariant).then(module => {
+      quickJSModule = module;
+      return module;
+    });
+  }
+  return quickJSModulePromise;
+}
+
+export function isQuickJSScriptRuntimeReady() {
+  return quickJSModule !== null;
+}
 
 const QUICKJS_BOOTSTRAP = String.raw`
 (() => {
@@ -289,7 +321,14 @@ const QUICKJS_BOOTSTRAP = String.raw`
       voxels,
       microVoxels,
       entities,
-      raycast: () => null
+      raycast: (origin, direction, maxDistance = 24) => {
+        try {
+          const encoded = globalThis.__spaceHostRaycast(origin, direction, maxDistance);
+          return typeof encoded === 'string' ? frozenClone(JSON.parse(encoded)) : null;
+        } catch (_) {
+          return null;
+        }
+      }
     });
   }
 
@@ -437,6 +476,11 @@ type EntityRuntime = {
   stateCheckpoint: Record<string, any>;
   deadline: number;
   interruptBudgetMs: number;
+  interruptReason: 'time' | 'count' | null;
+  frameBudgetActive: boolean;
+  frameInterruptChecks: number;
+  hostApi: any;
+  hostRaycastCount: number;
 };
 
 type WorkerPort = {
@@ -469,26 +513,19 @@ function writeSynchronizedResponse(buffer: SharedArrayBuffer, response: any) {
   Atomics.notify(header, 0);
 }
 
-export function startQuickJSScriptWorker(port: WorkerPort) {
+export function createQuickJSScriptRuntimeService() {
+  const QuickJS = quickJSModule;
+  if (!QuickJS) {
+    throw new Error('QuickJS runtime is not initialized; call preloadQuickJSScriptRuntime() first');
+  }
   const runtimes = new Map<string, EntityRuntime>();
-  let quickJSPromise: Promise<any> | null = null;
-  let queue = Promise.resolve();
-
-  const getModule = () => {
-    if (!quickJSPromise) {
-      quickJSPromise = Promise.all([
-        import('quickjs-emscripten-core'),
-        import('@jitl/quickjs-wasmfile-release-sync')
-      ]).then(([core, variant]) => core.newQuickJSWASMModuleFromVariant(variant.default));
-    }
-    return quickJSPromise;
-  };
 
   const evaluate = (entity: EntityRuntime, expression: string, deadlineMs = BOOTSTRAP_DEADLINE_MS) => {
-    // Start charging wall time at QuickJS's first interrupt check. This keeps
-    // Worker scheduling/preemption before evalCode out of the guest budget.
+    // Start charging wall time at QuickJS's first interrupt check. VM checkpoint
+    // counting remains active for the whole entity tick and is not reset here.
     entity.interruptBudgetMs = deadlineMs;
     entity.deadline = 0;
+    entity.interruptReason = null;
     let result;
     try {
       result = entity.context.evalCode(expression);
@@ -505,8 +542,7 @@ export function startQuickJSScriptWorker(port: WorkerPort) {
     return { ok: true, value };
   };
 
-  const createEntity = async (entityRuntimeId: string) => {
-    const QuickJS = await getModule();
+  const createEntity = (entityRuntimeId: string) => {
     const runtime = QuickJS.newRuntime();
     const entity: EntityRuntime = {
       runtime,
@@ -514,19 +550,51 @@ export function startQuickJSScriptWorker(port: WorkerPort) {
       scripts: new Map(),
       stateCheckpoint: {},
       deadline: Number.POSITIVE_INFINITY,
-      interruptBudgetMs: BOOTSTRAP_DEADLINE_MS
+      interruptBudgetMs: BOOTSTRAP_DEADLINE_MS,
+      interruptReason: null,
+      frameBudgetActive: false,
+      frameInterruptChecks: 0,
+      hostApi: null,
+      hostRaycastCount: 0
     };
     runtime.setMemoryLimit(ENTITY_MEMORY_LIMIT_BYTES);
     runtime.setMaxStackSize(ENTITY_STACK_LIMIT_BYTES);
     runtime.setInterruptHandler(() => {
+      if (entity.frameBudgetActive) {
+        entity.frameInterruptChecks++;
+        if (entity.frameInterruptChecks > ENTITY_FRAME_INTERRUPT_LIMIT) {
+          entity.interruptReason = 'count';
+          return true;
+        }
+      }
       if (entity.deadline === Number.POSITIVE_INFINITY) return false;
       if (entity.deadline === 0) {
         entity.deadline = performance.now() + entity.interruptBudgetMs;
         return false;
       }
-      return performance.now() > entity.deadline;
+      if (performance.now() <= entity.deadline) return false;
+      entity.interruptReason = 'time';
+      return true;
     });
     entity.context = runtime.newContext();
+    const hostRaycast = entity.context.newFunction('__spaceHostRaycast', (...args: any[]) => {
+      let encoded = 'null';
+      try {
+        if (entity.hostRaycastCount >= MAX_HOST_RAYCASTS_PER_TICK) {
+          return entity.context.newString(encoded);
+        }
+        entity.hostRaycastCount++;
+        const origin = entity.context.dump(args[0]);
+        const direction = entity.context.dump(args[1]);
+        const maxDistance = entity.context.dump(args[2]);
+        const result = entity.hostApi?.worldRaycast?.(origin, direction, maxDistance);
+        const json = JSON.stringify(result ?? null);
+        if (typeof json === 'string' && json.length <= 64 * 1024) encoded = json;
+      } catch (_) {}
+      return entity.context.newString(encoded);
+    });
+    entity.context.setProp(entity.context.global, '__spaceHostRaycast', hostRaycast);
+    hostRaycast.dispose();
     const boot = evaluate(entity, QUICKJS_BOOTSTRAP, BOOTSTRAP_DEADLINE_MS);
     if (!boot.ok) {
       entity.context.dispose();
@@ -537,7 +605,7 @@ export function startQuickJSScriptWorker(port: WorkerPort) {
     return entity;
   };
 
-  const getEntity = async (entityRuntimeId: string) => (
+  const getEntity = (entityRuntimeId: string) => (
     runtimes.get(entityRuntimeId) || createEntity(entityRuntimeId)
   );
 
@@ -549,7 +617,7 @@ export function startQuickJSScriptWorker(port: WorkerPort) {
     entity.runtime.dispose();
   };
 
-  const handle = async (message: any) => {
+  const handle = (message: any) => {
     const { type, entityRuntimeId, requestId } = message;
     try {
       if (type === 'dispose') {
@@ -557,7 +625,7 @@ export function startQuickJSScriptWorker(port: WorkerPort) {
         return { requestId, ok: true };
       }
 
-      const entity = await getEntity(entityRuntimeId);
+      const entity = getEntity(entityRuntimeId);
       if (type === 'set-script') {
         const nodeId = String(message.nodeId || 'root');
         const code = String(message.code || '');
@@ -577,54 +645,90 @@ export function startQuickJSScriptWorker(port: WorkerPort) {
       if (type === 'tick') {
         const started = performance.now();
         const snapshot = message.snapshot || {};
-        const begin = evaluate(entity, jsonExpression('__spaceBeginTick', snapshot));
-        if (!begin.ok) return { requestId, ok: false, fatal: true, error: begin.error };
-        const scriptsStarted = performance.now();
+        entity.frameBudgetActive = true;
+        entity.frameInterruptChecks = 0;
+        entity.hostRaycastCount = 0;
+        entity.hostApi = message.hostApi || null;
+        try {
+          const begin = evaluate(entity, jsonExpression('__spaceBeginTick', snapshot));
+          if (!begin.ok) return { requestId, ok: false, fatal: true, error: begin.error };
+          const scriptsStarted = performance.now();
 
-        const errors: any[] = [];
-        const executionTimes: Record<string, number> = {};
-        const order = (Array.isArray(snapshot.scriptOrder) ? snapshot.scriptOrder : [...entity.scripts.keys()])
-          .slice(0, MAX_SCRIPT_COMPONENTS);
-        for (const nodeId of order) {
-          if (snapshot.enabled?.[nodeId] === false || !entity.scripts.get(nodeId)?.trim()) continue;
-          const componentStarted = performance.now();
-          const run = evaluate(entity, jsonExpression('__spaceRunNode', nodeId), COMPONENT_DEADLINE_MS);
-          executionTimes[nodeId] = performance.now() - componentStarted;
-          if (!run.ok) {
-            errors.push({
-              nodeId,
-              error: run.error === 'interrupted'
-                ? `Script exceeded ${COMPONENT_DEADLINE_MS} ms and was interrupted`
-                : run.error
-            });
+          const errors: any[] = [];
+          const executionTimes: Record<string, number> = {};
+          const order = (Array.isArray(snapshot.scriptOrder) ? snapshot.scriptOrder : [...entity.scripts.keys()])
+            .slice(0, MAX_SCRIPT_COMPONENTS);
+          for (const nodeId of order) {
+            if (snapshot.enabled?.[nodeId] === false || !entity.scripts.get(nodeId)?.trim()) continue;
+            const componentStarted = performance.now();
+            const run = evaluate(entity, jsonExpression('__spaceRunNode', nodeId), COMPONENT_DEADLINE_MS);
+            executionTimes[nodeId] = performance.now() - componentStarted;
+            if (!run.ok) {
+              const budgetError = entity.interruptReason === 'count'
+                ? `Entity exceeded ${ENTITY_FRAME_INTERRUPT_LIMIT} VM checkpoints in one frame and was stopped`
+                : run.error === 'interrupted' || entity.interruptReason === 'time'
+                  ? `Script exceeded ${COMPONENT_DEADLINE_MS} ms and the entity was stopped`
+                  : null;
+              if (budgetError) {
+                return {
+                  requestId,
+                  ok: false,
+                  fatal: true,
+                  errors,
+                  executionTimes,
+                  error: budgetError
+                };
+              }
+              errors.push({ nodeId, error: run.error });
+            }
+            const shouldStop = evaluate(entity, '__spaceShouldStop()', COMPONENT_DEADLINE_MS);
+            if (!shouldStop.ok && entity.interruptReason) {
+              return {
+                requestId,
+                ok: false,
+                fatal: true,
+                errors,
+                executionTimes,
+                error: entity.interruptReason === 'count'
+                  ? `Entity exceeded ${ENTITY_FRAME_INTERRUPT_LIMIT} VM checkpoints in one frame and was stopped`
+                  : `Script exceeded ${COMPONENT_DEADLINE_MS} ms and the entity was stopped`
+              };
+            }
+            if (shouldStop.ok && shouldStop.value === true) break;
+            if (performance.now() - scriptsStarted > ENTITY_TICK_DEADLINE_MS) {
+              return {
+                requestId,
+                ok: false,
+                fatal: true,
+                errors,
+                executionTimes,
+                error: `Entity scripts exceeded the aggregate ${ENTITY_TICK_DEADLINE_MS} ms tick limit and were stopped`
+              };
+            }
           }
-          const shouldStop = evaluate(entity, '__spaceShouldStop()', COMPONENT_DEADLINE_MS);
-          if (shouldStop.ok && shouldStop.value === true) break;
-          if (performance.now() - scriptsStarted > ENTITY_TICK_DEADLINE_MS) {
-            return {
-              requestId,
-              ok: false,
-              fatal: true,
-              errors,
-              executionTimes,
-              error: `Entity scripts exceeded the aggregate ${ENTITY_TICK_DEADLINE_MS} ms tick limit`
-            };
-          }
-        }
 
-        const finish = evaluate(entity, '__spaceFinishTick()', BOOTSTRAP_DEADLINE_MS);
-        if (!finish.ok) {
-          return { requestId, ok: false, fatal: true, errors, executionTimes, error: finish.error };
+          const finish = evaluate(entity, '__spaceFinishTick()', BOOTSTRAP_DEADLINE_MS);
+          if (!finish.ok) {
+            const error = entity.interruptReason === 'count'
+              ? `Entity exceeded ${ENTITY_FRAME_INTERRUPT_LIMIT} VM checkpoints in one frame and was stopped`
+              : finish.error;
+            return { requestId, ok: false, fatal: true, errors, executionTimes, error };
+          }
+          const output = JSON.parse(finish.value);
+          entity.stateCheckpoint = output.states || {};
+          return {
+            requestId,
+            ...output,
+            errors: [...(output.errors || []), ...errors],
+            executionTimes,
+            interruptChecks: entity.frameInterruptChecks,
+            elapsedMs: performance.now() - started
+          };
+        } finally {
+          entity.frameBudgetActive = false;
+          entity.hostApi = null;
+          entity.deadline = Number.POSITIVE_INFINITY;
         }
-        const output = JSON.parse(finish.value);
-        entity.stateCheckpoint = output.states || {};
-        return {
-          requestId,
-          ...output,
-          errors: [...(output.errors || []), ...errors],
-          executionTimes,
-          elapsedMs: performance.now() - started
-        };
       }
 
       return { requestId, ok: false, error: `Unknown worker message: ${type}` };
@@ -633,6 +737,15 @@ export function startQuickJSScriptWorker(port: WorkerPort) {
     }
   };
 
+  return Object.freeze({ handle });
+}
+
+/** Legacy worker adapter retained for old hosts. The desktop/browser app now
+ * uses createQuickJSScriptRuntimeService() directly on the page thread. */
+export async function startQuickJSScriptWorker(port: WorkerPort) {
+  await preloadQuickJSScriptRuntime();
+  const service = createQuickJSScriptRuntimeService();
+  let queue = Promise.resolve();
   const respond = (message: any, response: any) => {
     if (typeof SharedArrayBuffer !== 'undefined' && message.syncResponse instanceof SharedArrayBuffer) {
       writeSynchronizedResponse(message.syncResponse, response);
@@ -642,7 +755,7 @@ export function startQuickJSScriptWorker(port: WorkerPort) {
   };
 
   port.onMessage(message => {
-    queue = queue.then(async () => respond(message, await handle(message))).catch(error => {
+    queue = queue.then(() => respond(message, service.handle(message))).catch(error => {
       respond(message, {
         requestId: message.requestId,
         ok: false,

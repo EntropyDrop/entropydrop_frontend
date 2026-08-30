@@ -63,6 +63,86 @@ const QUADCOPTER_BLOCKS = [
   ...propeller(3, 1, 3)
 ];
 
+// Off-road rover: one dynamic chassis plus four visual-only wheel components.
+// The wheel disks are micro-carved in the YZ plane and move with the scripted
+// struts; collisionEnabled=false is deliberate because raycasts, not rigid
+// wheel voxels, provide the tire contacts.
+const ROVER_WHEELS = [
+  { id: 'wheel_fl', x: -1.6, z: -2.2 },
+  { id: 'wheel_fr', x: 1.4, z: -2.2 },
+  { id: 'wheel_rl', x: -1.6, z: 2.2 },
+  { id: 'wheel_rr', x: 1.4, z: 2.2 }
+];
+
+function roverWheel(spec) {
+  const cells = [];
+  for (let iy = -4; iy <= 3; iy++) {
+    for (let iz = -4; iz <= 3; iz++) {
+      const dy = (iy + 0.5) * 0.2;
+      const dz = (iz + 0.5) * 0.2;
+      const radius = Math.sqrt(dy * dy + dz * dz);
+      if (radius > 0.8) continue;
+      const color = radius > 0.56 ? C.dark : radius < 0.25 ? C.brass : C.white;
+      cells.push(micro(
+        spec.x,
+        1.0 + iy * 0.2,
+        spec.z + iz * 0.2,
+        color
+      ));
+    }
+  }
+  return cells;
+}
+
+const ROVER_WHEEL_BLOCKS = new Map(
+  ROVER_WHEELS.map(spec => [spec.id, roverWheel(spec)])
+);
+const ROVER_CHASSIS_BLOCKS = [
+  // Ladder frame and bumpers; nose points toward -Z.
+  ...[-2, -1, 0, 1, 2].flatMap(z => [
+    block(-1, 2, z, z === -2 ? C.cyan : C.dark),
+    block(0, 2, z, z === -2 ? C.cyan : C.dark)
+  ]),
+  // Cabin, hood and rear deck.
+  ...[-1, 0, 1].flatMap(z => [
+    block(-1, 3, z, z === -1 ? C.cyan : C.white),
+    block(0, 3, z, z === -1 ? C.cyan : C.white)
+  ]),
+  block(-1, 3, -2, C.brass),
+  block(0, 3, -2, C.brass),
+  block(-1, 3, 2, C.red),
+  block(0, 3, 2, C.red)
+];
+const ROVER_BLOCKS = [
+  ...ROVER_CHASSIS_BLOCKS,
+  ...ROVER_WHEELS.flatMap(spec => ROVER_WHEEL_BLOCKS.get(spec.id))
+];
+const ROVER_LOCAL_OFFSET = [2, 0, 3];
+const roverWheelChild = spec => {
+  const blocks = ROVER_WHEEL_BLOCKS.get(spec.id) || [];
+  const ownedCells = new Map();
+  for (const wheelBlock of blocks) {
+    const cell = [
+      Math.floor(wheelBlock.dx) + ROVER_LOCAL_OFFSET[0],
+      Math.floor(wheelBlock.dy) + ROVER_LOCAL_OFFSET[1],
+      Math.floor(wheelBlock.dz) + ROVER_LOCAL_OFFSET[2]
+    ];
+    ownedCells.set(cell.join(','), cell);
+  }
+  return {
+    id: spec.id,
+    parentId: 'root',
+    collisionEnabled: false,
+    pivot: [
+      spec.x + 0.1 + ROVER_LOCAL_OFFSET[0],
+      1.0 + ROVER_LOCAL_OFFSET[1],
+      spec.z + ROVER_LOCAL_OFFSET[2]
+    ],
+    blockKeys: [...ownedCells.values()]
+  };
+};
+const ROVER_WHEEL_CHILDREN = ROVER_WHEELS.map(roverWheelChild);
+
 // Ferris wheel coordinates are authored around an axle at (0.5, 7.5, 0.5).
 // The assembled entity starts at the minimum blueprint cell (-6, 0, -1), so
 // hierarchy pivots and blockKeys below are translated into entity-local space.
@@ -256,6 +336,20 @@ export const BLUEPRINTS = [
       ]
     },
     blocks: QUADCOPTER_BLOCKS
+  },
+  {
+    id: 'suspension_rover',
+    name: 'Raycast Suspension Off-Road Rover',
+    description: 'A dynamic chassis on four independent spring-damper raycast struts. W/S drive, A/D steer, Space brakes; tire forces create real pitch, roll, grip, and wheel travel over voxel terrain.',
+    defaultMode: ContraptionMode.PROGRAMMABLE,
+    defaultOptions: {
+      bodyType: BodyType.DYNAMIC,
+      restitution: 0.05,
+      friction: 0.35,
+      scriptCode: SCRIPT_TEMPLATES.find(t => t.id === 'raycast_offroad_rover')?.code || '',
+      childEntities: ROVER_WHEEL_CHILDREN
+    },
+    blocks: ROVER_BLOCKS
   },
   {
     id: 'helicopter',

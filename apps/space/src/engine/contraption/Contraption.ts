@@ -3326,7 +3326,11 @@ export class Contraption {
     const nextTime = this.scriptRuntime + dt;
     const nextTick = this.tickCount + 1;
     const snapshot = this.buildScriptRuntimeSnapshot(dt, inputState, runtimeContext, nextTime, nextTick);
-    const submission = this.scriptRuntimeClient.tick(snapshot);
+    const submission = this.scriptRuntimeClient.tick(snapshot, {
+      // QuickJS runs on the page thread, but receives only this bounded host
+      // callback rather than the mutable World/manager objects themselves.
+      worldRaycast: runtimeContext?.world?.raycast
+    });
     if (!submission.submitted) return;
     this.scriptRuntime = nextTime;
     this.tickCount = nextTick;
@@ -3410,6 +3414,14 @@ export class Contraption {
     return attached;
   }
 
+  /** Visual-only blueprint components (for example raycast-suspension wheels)
+   * remain editable/rendered but do not become terrain, player, or entity
+   * collision shapes. Root collision is always enabled. */
+  isNodeCollisionEnabled(nodeId) {
+    const id = String(nodeId || 'root');
+    return id === 'root' || this.childDefinitions.get(id)?.collisionEnabled !== false;
+  }
+
   getCollisionSamplePoints(bodyId = null, includeAttached = false) {
     const points = [];
     const low = 0.001;
@@ -3418,6 +3430,7 @@ export class Contraption {
 
     for (const cell of this.collisionEntries) {
       if (bodyId && cell.entityId !== bodyId && (!attached || !attached.has(cell.entityId))) continue;
+      if (!this.isNodeCollisionEnabled(cell.entityId)) continue;
       // Box corners in flat entity-local space, inset one millimetre so the
       // samples stay strictly inside the 0.2-quantized collision box.
       const sx = cell.span * MICRO_SIZE;
@@ -3458,6 +3471,7 @@ export class Contraption {
     const boxes = [];
 
     for (const cell of this.collisionEntries) {
+      if (!this.isNodeCollisionEnabled(cell.entityId)) continue;
       const node = this.entityNodes.get(cell.entityId) || this.entityNodes.get('root');
       const x0 = cell.x * MICRO_SIZE, x1 = (cell.x + cell.span) * MICRO_SIZE;
       const y0 = cell.y * MICRO_SIZE, y1 = (cell.y + cell.span) * MICRO_SIZE;

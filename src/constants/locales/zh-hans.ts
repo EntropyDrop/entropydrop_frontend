@@ -906,9 +906,9 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
     space_page: {
         title: 'EntropyDrop Space',
         eyebrow: '可游玩原型',
-        platform: 'WebGL 2 · 共享永恒世界 · AI Agent 原生',
-        tagline: '高自由度体素建造，赋能 AI Agent 协同创造。',
-        description: '一个完全运行在浏览器中的 AI 原生可编程体素世界。你可以随意搭建或微雕体素、将几何结构实体化为物理刚体，并通过自然语言与 AI Agent 赋予造物智能行为与自动构建能力。',
+        platform: 'WebGL 2 · 实时多人 · 环面拓扑',
+        tagline: '高自由度体素建造 · 体素物理引擎 · 自然语言可编程 · 实时多人共建 · 环面无边世界（甜甜圈）',
+        description: '一个运行在现代浏览器中的 AI 原生可编程体素世界。你可以在无边界的环面甜甜圈几何世界中自由雕刻体素，一键将结构实体化为支持力矩与碰撞的物理刚体，通过自然语言与 AI Agent 赋予造物智能行为，并与全球玩家实时多人协同共建。',
         primaryCta: '进入 Space 世界',
         secondaryCta: '玩法指南',
         skinNotice: {
@@ -918,44 +918,52 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         },
         stats: {
             scale: '0.2m / 1.0m 双尺度雕刻',
-            physics: '60 Hz 刚体物理引擎',
-            runtime: 'WebGL 2 浏览器即开即玩',
-            agents: '原生支持 Agent / MCP 协议'
+            physics: '刚体组件化 · 力矩与碰撞',
+            programmable: '自然语言编译 · 开放 API',
+            multiplayer: '共享持久化 · 实时协同',
+            torus: '环面拓扑（甜甜圈）· 循环无界'
         },
-        pillarsTitle: '核心特性与玩法矩阵',
-        pillarsSubtitle: '从宏观地形建筑到微观可编程动态实体，人机无缝协同共建同一个持续演化的世界。',
+        pillarsTitle: '五大核心要素与玩法矩阵',
+        pillarsSubtitle: '高自由度建造、体素物理、智能可编程、实时多人与环面无边几何深度交融。',
         pillars: [
             {
-                tag: '自由建造',
+                tag: '高自由度建造',
                 title: '双尺度精细体素雕刻',
-                description: '用铲子放置/破坏 1×1×1 标准方块，或用勺子无损切换至 0.2×0.2×0.2 精细微体素（5×5×5 分辨率），搭配全 RGB 调色盘任意涂装。',
-                badge: '1x1 & 0.2m'
+                description: '用铲子放置/破坏 1×1×1 标准方块，用勺子无损切换至 0.2×0.2×0.2 精细微体素（5×5×5 分辨率），搭配 24 位全彩调色盘自由创作。',
+                badge: '1x1 & 0.2m // 全彩'
             },
             {
-                tag: '刚体物理',
-                title: '一键实体化与物理系统',
-                description: '使用选区工具框选任意连通体素结构，按下 G 键瞬间实体化为可动组件树，自动计算质量、惯性，支持力/力矩驱动与刚体物理碰撞。',
-                badge: '刚体组件 // G 键'
+                tag: '体素物理引擎',
+                title: '一键实体化与刚体物理',
+                description: '框选任意连通结构按 G 键一键实体化为刚体组件树，自动计算质心与惯性张量，支持动力学力矩驱动与物理碰撞模拟。',
+                badge: 'RigidBody // G 键'
             },
             {
-                tag: '语言编程',
-                title: '自然语言编译智能行为',
-                description: '对准实体按 C 呼出控制器终端，用自然语言描述悬浮、跟随、巡逻或姿态稳定意图，实时编译为透明可读且支持单步调试的代码。',
-                badge: '自然语言 -> 控制器'
+                tag: '可编程',
+                title: '自然语言编译与 AI 协同',
+                description: '对准实体按 C 呼出终端，用自然语言描述悬浮、伴飞、巡逻等行为意图，实时编译为透明可读控制器，支持挂载 AI Agent。',
+                badge: 'NL -> 控制器 // C 键'
             },
             {
-                tag: '多人与协同',
-                title: '多人共享世界与开放 API',
-                description: '基于环面（Torus）几何的共享世界，支持 WebGL 60FPS 实时渲染、数据持久化与增量同步，提供标准 REST/WebSocket 与 MCP 智能体接口。',
-                badge: 'MCP 协议 & 多智能体'
+                tag: '实时多人建造',
+                title: '多人共享世界与实时协同',
+                description: '多玩家共享同一个持续演化的世界，实时增量广播体素修改与位姿状态，以 Minecraft 皮肤形象在同一个世界中协同建造。',
+                badge: '实时协同 // 共享持久化'
+            },
+            {
+                tag: '无边世界（甜甜圈）',
+                title: '环面拓扑与无界循环漫游',
+                description: '基于环面（Torus，甜甜圈形状）几何打造的无边界宇宙，无任何空气墙与人工阻隔，向任意方向前行都将自然环绕漫游。',
+                badge: '环面几何 // 甜甜圈'
             }
         ],
         interactiveTitle: '交互式引擎沙盒',
-        interactiveSubtitle: '在线体验体素几何微雕、物理刚体实体化与 AI Agent 行为编译器的协同运作。',
+        interactiveSubtitle: '在线体验高自由度微雕、物理引擎实体化、AI 行为编译器与环面无边几何。',
         tabs: {
-            agentCompiler: 'AI 行为编译器模拟器',
-            voxelScale: '双尺度体素对照',
-            entityWorkflow: '实体化物理工作流'
+            agentCompiler: '可编程：AI 行为编译器',
+            voxelScale: '高自由度：双尺度体素',
+            entityWorkflow: '物理引擎：刚体实体化',
+            torusWorld: '无边世界：环面甜甜圈'
         },
         compilerDemo: {
             badge: 'AI AGENT 行为编译器',
@@ -1094,18 +1102,16 @@ self.applyForce([
             step3Title: '3. 赋予行为 (C 键)',
             step3Desc: '挂载 AI 行为控制器，或通过开放接口与外部 Agent 建立协同。'
         },
-        keybindingsTitle: '按键操作与控制矩阵',
-        keybindingsSubtitle: '熟悉 Space 中的快捷键位，高效进行沙盒建造与控制器编程。',
-        keybindings: [
-            { key: 'W A S D', action: '角色移动', desc: '在 3D 环面世界中自由穿行' },
-            { key: 'SPACE / SHIFT', action: '跳跃 / 下潜', desc: '垂直位移与高精度空中对齐' },
-            { key: '1 / 2', action: '铲子 / 勺子', desc: '1.0m 标准方块建造 / 0.2m 精细微体素雕刻' },
-            { key: '3 / 4', action: '选区 / 调色盘', desc: 'A/B 角点选区与 24 位全彩拾色器' },
-            { key: 'G', action: '结构实体化', desc: '将当前选中的方块组转为物理刚体' },
-            { key: 'C', action: '代码/Agent终端', desc: '呼出实体控制器编辑器与 AI 意图编译器' },
-            { key: 'E', action: '物品背包', desc: '管理建造材料、工具与蓝图存档' },
-            { key: 'ESC', action: '释放鼠标指针', desc: '退出视口锁定，操作 2D 悬浮界面' }
-        ],
+        torusDemo: {
+            title: '环面拓扑（甜甜圈）几何原理',
+            desc: 'Space 的世界并非传统的平面或有限盒子，而是拓扑闭合的环面几何（Torus）。两极坐标自然平滑对接，构建一个真正无边界且持续相连的虚拟宇宙。',
+            feature1Title: '无缝循环漫游',
+            feature1Desc: '在 X 轴与 Z 轴上向任意方向前行，都会平滑折跃回原点，不存在人工空气墙。',
+            feature2Title: '弯曲空间视效与远景 LOD',
+            feature2Desc: '引擎底层结合着色器进行环面空间几何投影，远景地平线呈现震撼的环面全景。',
+            feature3Title: '全局物理与光线连续性',
+            feature3Desc: '刚体物理、重力矢量与光线投射均针对环面拓扑专门优化，跨边界飞行与碰撞平滑自然。'
+        },
         agentDevTitle: 'AI Agent 与开发者协议',
         agentDevSubtitle: '面向智能体与开发者的标准化接口，赋能多智能体自主世界构建。',
         agentDevCards: [
@@ -1123,25 +1129,6 @@ self.applyForce([
                 icon: 'pixelarticons:bot',
                 title: '自主建造智能体 (Autonomous Builders)',
                 desc: '向 Agent 输入蓝图规范与场景语义，由智能体在世界中自主规划路径、自动化雕刻微体素并组装可动机件。'
-            }
-        ],
-        workflowTitle: '快速上手：三步创造属于你的第一台造物',
-        workflowSubtitle: '从天马行空的构想，到在世界中自主翱翔的智能实体，只需不到 60 秒。',
-        workflowSteps: [
-            {
-                number: '01',
-                title: '以个人形象进入世界',
-                desc: '登录 EntropyDrop 账号，你的专属 Minecraft 皮肤将自动渲染为 3D 虚拟人形象。'
-            },
-            {
-                number: '02',
-                title: '自由建造并实体化 (G 键)',
-                desc: '利用铲子与勺子搭建飞船、载具或机器，使用选区工具框选后按 G 键化为物理刚体。'
-            },
-            {
-                number: '03',
-                title: 'Prompt 赋予意图 (C 键)',
-                desc: '按 C 呼出终端，用一句话告诉 AI 你希望造物做什么，点击编译并见证它在世界中运行。'
             }
         ],
         closingTitle: '无限创意的体素宇宙，已经就绪。',
