@@ -51,6 +51,7 @@ export interface SpaceBootstrapPayload {
   player: {
     user_id: string;
     username: string | null;
+    is_admin?: boolean;
     player_entity_id: string;
     minecraft_skin_url: string;
     minecraft_skin_model: MinecraftSkinModel;

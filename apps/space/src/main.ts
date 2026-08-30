@@ -114,6 +114,7 @@ class Game {
 
     this.playerPhysics = new PlayerPhysics(this.world, this.contraptionManager);
     this.uiStore = spaceUiStore;
+    this.uiStore.setMarketSession(session.api_origin, session.token, session.player.is_admin === true);
     this.minimap = new Minimap(this.world, this.contraptionManager);
 
     // 2. Player Controller

@@ -262,12 +262,40 @@ test('serialize/parse round-trips entities with scripts and hierarchy', () => {
       { localX: 1.2, localY: 0.4, localZ: 2.8, size: 0.2, block: 1, color: 0x123456, entityId: 'arm', part: 'tip' },
       { localX: -0.2, localY: -1.4, localZ: -2, size: 0.2, block: 1, color: 0x654321, entityId: 'root' }
     ],
-    childEntities: [{ id: 'arm', parentId: 'root', pivot: [1.5, 0.5, 0.5] }],
+    childEntities: [{
+      id: 'arm',
+      parentId: 'root',
+      pivot: [1.5, 0.5, 0.5],
+      bodyType: 'dynamic',
+      mass: 2,
+      runtimeOnly: 'must not be exported'
+    }],
     scripts: [{ id: 'arm', code: 'self.applyForce([0,1,0]);' }],
     enabled: [{ id: 'root', enabled: true }],
-    constraints: [],
+    constraints: [{
+      id: 'arm_hinge',
+      type: 'hinge',
+      bodyA: 'root',
+      bodyB: 'arm',
+      anchorA: [1, 0, 0],
+      anchorB: [0, 0, 0],
+      axisA: [0, 1, 0],
+      axisB: [0, 1, 0],
+      limits: { min: -1, max: 1 },
+      stiffness: 0.8,
+      collideConnected: false,
+      runtimeOnly: 'must not be exported'
+    }],
     mode: 'programmable',
-    bodyType: 'dynamic'
+    bodyType: 'dynamic',
+    useGravity: false,
+    bearingAxis: [0, 1, 0],
+    bearingRpm: 42,
+    pistonAxis: [1, 0, 0],
+    pistonDistance: 3,
+    pistonSpeed: 1.5,
+    cockpitPosition: [0.5, 1, 0.5],
+    isVehicle: true
   };
   const serialized = controller.serializeInventoryItem('entity', slot);
   assert.equal(serialized.version, 2);
@@ -287,6 +315,8 @@ test('serialize/parse round-trips entities with scripts and hierarchy', () => {
       if (block[key] !== undefined) assert.equal(Number.isInteger(block[key]), true, `${key} must be an integer`);
     }
   }
+  assert.equal('runtimeOnly' in serialized.childEntities[0], false);
+  assert.equal('runtimeOnly' in serialized.constraints[0], false);
 
   const text = JSON.stringify(serialized);
   const parsed = controller.parseInventoryImport(text, 'entity');
@@ -305,7 +335,17 @@ test('serialize/parse round-trips entities with scripts and hierarchy', () => {
   assert.equal(parsed.item.blocks[2].part, 'tip');
   assert.deepEqual(parsed.item.scripts, [{ id: 'arm', code: 'self.applyForce([0,1,0]);' }]);
   assert.equal(parsed.item.childEntities.length, 1);
+  assert.equal(parsed.item.constraints.length, 1);
+  assert.deepEqual(parsed.item.constraints[0].limits, { min: -1, max: 1 });
   assert.equal(parsed.item.mode, 'programmable');
+  assert.equal(parsed.item.useGravity, false);
+  assert.deepEqual(parsed.item.bearingAxis, [0, 1, 0]);
+  assert.equal(parsed.item.bearingRpm, 42);
+  assert.deepEqual(parsed.item.pistonAxis, [1, 0, 0]);
+  assert.equal(parsed.item.pistonDistance, 3);
+  assert.equal(parsed.item.pistonSpeed, 1.5);
+  assert.deepEqual(parsed.item.cockpitPosition, [0.5, 1, 0.5]);
+  assert.equal(parsed.item.isVehicle, true);
   assert.equal(parsed.item.name, 'robot');
 
   // The parsed entity can actually build through buildFromSlot.
@@ -817,4 +857,3 @@ test('backpack bar title in HUD has transparent background and clean button styl
   assert.match(styleSource, /#backpack-bar-title[^}]*border:\s*none/);
   assert.match(styleSource, /#backpack-bar-title[^}]*cursor:\s*pointer/);
 });
-

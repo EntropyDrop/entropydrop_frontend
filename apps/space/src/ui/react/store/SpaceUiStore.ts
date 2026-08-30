@@ -11,6 +11,7 @@ import {
 import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../../../engine/torus/TorusWorld.ts';
 import { triggerJsonDownload } from '../browser/downloadJson.ts';
 import { colorToHex, normalizeColor, PRESET_COLORS } from '../../../engine/voxel/BlockTypes.ts';
+import { SpaceMarketClient } from '../../../bootstrap/SpaceMarketClient.ts';
 
 export type SpaceModal = 'inventory' | 'blueprints' | 'code' | 'settings' | null;
 
@@ -114,6 +115,7 @@ export interface SpaceUiSnapshot {
   gravity: number;
   renderDistance: number;
   toast: { id: number; message: string } | null;
+  isAdmin: boolean;
 }
 
 type Listener = () => void;
@@ -190,6 +192,7 @@ export class SpaceUiStore {
   private lastHudPublishAt = 0;
   private toastSequence = 0;
   private remotePlayers: any[] = [];
+  private marketClient: SpaceMarketClient | null = null;
 
   private snapshot: SpaceUiSnapshot = {
     revision: 0,
@@ -233,7 +236,8 @@ export class SpaceUiStore {
     cameraDistance: 4,
     gravity: -18,
     renderDistance: 12,
-    toast: null
+    toast: null,
+    isAdmin: false
   };
 
   subscribe = (listener: Listener): (() => void) => {
@@ -282,6 +286,15 @@ export class SpaceUiStore {
       if (savedPerspective) this.setPerspective(savedPerspective, false);
       if (savedDistance) this.setCameraDistance(Number(savedDistance), false);
     } catch {}
+  }
+
+  setMarketSession(apiOrigin: string, token: string, isAdmin = false): void {
+    this.marketClient = new SpaceMarketClient(apiOrigin, token);
+    this.patch({ isAdmin: !!isAdmin });
+  }
+
+  getMarketClient(): SpaceMarketClient | null {
+    return this.marketClient;
   }
 
   setWorld(world: any): void {

@@ -3218,7 +3218,11 @@ export class PlayerController {
         name: this.inventoryItemName('blockset', item),
         blockCount: item.blockCount || item.blocks?.length || 0,
         blocks: (item.blocks || []).map(b => {
-          const shared = { block: b.block, color: b.color, ...(b.part ? { part: b.part } : {}) };
+          const shared = {
+            block: Number.isSafeInteger(Number(b.block)) ? Number(b.block) : BlockTypes.COLOR_BLOCK,
+            color: normalizeColor(b.color ?? 0xf2a93b),
+            ...(b.part ? { part: String(b.part).slice(0, 64) } : {})
+          };
           if ((b.size ?? 1) < 1) {
             // Block-set files keep every coordinate integral. dx/dy/dz select
             // the standard cell; mx/my/mz select one of its 5 subdivisions.
@@ -3248,6 +3252,39 @@ export class PlayerController {
       };
     }
     if (category === 'entity') {
+      const vector3 = value => Array.isArray(value) && value.length >= 3
+        && value.slice(0, 3).every(component => Number.isFinite(Number(component)))
+        ? value.slice(0, 3).map(Number)
+        : undefined;
+      const optionalNumber = value => Number.isFinite(Number(value)) ? Number(value) : undefined;
+      const childEntities = (item.childEntities || []).map(definition => ({
+        id: String(definition.id || ''),
+        parentId: String(definition.parentId || definition.parent || 'root'),
+        ...(definition.kind === 'child' ? { kind: 'child' } : {}),
+        ...(vector3(definition.pivot) ? { pivot: vector3(definition.pivot) } : {}),
+        ...(['dynamic', 'kinematic'].includes(definition.bodyType) ? { bodyType: definition.bodyType } : {}),
+        ...(optionalNumber(definition.mass) !== undefined ? { mass: optionalNumber(definition.mass) } : {}),
+        ...(optionalNumber(definition.restitution) !== undefined ? { restitution: optionalNumber(definition.restitution) } : {}),
+        ...(optionalNumber(definition.friction) !== undefined ? { friction: optionalNumber(definition.friction) } : {})
+      }));
+      const constraints = (item.constraints || []).map(constraint => ({
+        id: String(constraint.id || ''),
+        type: ['point', 'hinge', 'weld'].includes(constraint.type) ? constraint.type : 'point',
+        bodyA: String(constraint.bodyA || constraint.other || 'world'),
+        bodyB: String(constraint.bodyB || constraint.nodeId || ''),
+        ...(vector3(constraint.anchorA) ? { anchorA: vector3(constraint.anchorA) } : {}),
+        ...(vector3(constraint.anchorB) ? { anchorB: vector3(constraint.anchorB) } : {}),
+        ...(vector3(constraint.axisA) ? { axisA: vector3(constraint.axisA) } : {}),
+        ...(vector3(constraint.axisB) ? { axisB: vector3(constraint.axisB) } : {}),
+        ...(vector3(constraint.referenceA) ? { referenceA: vector3(constraint.referenceA) } : {}),
+        ...(vector3(constraint.referenceB) ? { referenceB: vector3(constraint.referenceB) } : {}),
+        ...(constraint.limits && Number.isFinite(Number(constraint.limits.min))
+          && Number.isFinite(Number(constraint.limits.max))
+          ? { limits: { min: Number(constraint.limits.min), max: Number(constraint.limits.max) } }
+          : {}),
+        stiffness: Number.isFinite(Number(constraint.stiffness)) ? Number(constraint.stiffness) : 0.9,
+        collideConnected: constraint.collideConnected === true
+      }));
       return {
         type: 'space-entity',
         version: 2,
@@ -3257,19 +3294,12 @@ export class PlayerController {
         nodeCount: item.nodeCount,
         blockCount: item.blockCount || item.blocks?.length || 0,
         blocks: (item.blocks || []).map(b => {
-          const {
-            localX: _localX,
-            localY: _localY,
-            localZ: _localZ,
-            dx: _dx,
-            dy: _dy,
-            dz: _dz,
-            mx: _mx,
-            my: _my,
-            mz: _mz,
-            size: _size,
-            ...shared
-          } = b;
+          const shared = {
+            block: Number.isSafeInteger(Number(b.block)) ? Number(b.block) : BlockTypes.COLOR_BLOCK,
+            color: normalizeColor(b.color ?? 0xf2a93b),
+            entityId: String(b.entityId || item.rootId || item.rootIds?.[0] || 'root'),
+            ...(b.part ? { part: String(b.part).slice(0, 64) } : {})
+          };
           const x = Number(b.localX ?? b.dx);
           const y = Number(b.localY ?? b.dy);
           const z = Number(b.localZ ?? b.dz);
@@ -3297,16 +3327,22 @@ export class PlayerController {
             ...shared
           };
         }),
-        childEntities: item.childEntities || [],
-        scripts: item.scripts || [],
-        enabled: item.enabled || [],
-        constraints: item.constraints || [],
+        childEntities,
+        scripts: (item.scripts || []).map(script => ({ id: String(script.id || ''), code: String(script.code || '') })),
+        enabled: (item.enabled || []).map(entry => ({ id: String(entry.id || ''), enabled: entry.enabled === true })),
+        constraints,
         mode: item.mode,
         bodyType: item.bodyType,
         mass: item.mass,
         restitution: item.restitution,
         friction: item.friction,
-        cockpitPosition: item.cockpitPosition,
+        useGravity: item.useGravity,
+        bearingAxis: vector3(item.bearingAxis),
+        bearingRpm: optionalNumber(item.bearingRpm),
+        pistonAxis: vector3(item.pistonAxis),
+        pistonDistance: optionalNumber(item.pistonDistance),
+        pistonSpeed: optionalNumber(item.pistonSpeed),
+        cockpitPosition: vector3(item.cockpitPosition),
         isVehicle: item.isVehicle
       };
     }
@@ -3355,6 +3391,20 @@ export class PlayerController {
     const safePart = value => typeof value === 'string' && value.length > 0
       ? value.slice(0, 64)
       : undefined;
+    const validateVoxelOccupancy = (blocks, coordinateKeys, ownerKey = null) => {
+      const occupied = new Set();
+      for (const block of blocks) {
+        const owner = ownerKey ? String(block[ownerKey] || 'root') : 'resource';
+        const coordinates = coordinateKeys.map(key => Number(block[key]));
+        const base = coordinates.map(value => Math.floor(value + 1e-6));
+        const isMicro = Number(block.size) < 1;
+        const fine = coordinates.map(value => Math.round(value * MICRO_DIVISIONS));
+        const key = `${owner}:${isMicro ? fine.join(',') : base.join(',')}:${isMicro ? 'micro' : 'standard'}`;
+        if (occupied.has(key)) return false;
+        occupied.add(key);
+      }
+      return true;
+    };
 
     if (category === 'blockset') {
       if (data?.type !== 'space-blockset' || data?.version !== 2) return fail('Expected a space-blockset v2 file');
@@ -3400,6 +3450,9 @@ export class PlayerController {
       if (!withinEntityBounds(blocks, ['dx', 'dy', 'dz'])) {
         return fail(`Block-set bounds may not exceed ${MAX_ENTITY_BOUNDS} cells per axis`);
       }
+      if (!validateVoxelOccupancy(blocks, ['dx', 'dy', 'dz'])) {
+        return fail('Block set contains duplicate voxels');
+      }
       const name = data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH);
       return { ok: true, item: { kind: 'blockset', name, blocks, blockCount: blocks.length } };
     }
@@ -3438,11 +3491,21 @@ export class PlayerController {
         if (pivot !== undefined && (!Array.isArray(pivot) || pivot.length < 3 || !pivot.slice(0, 3).map(Number).every(Number.isFinite))) {
           return fail(`Invalid pivot for component ${id}`);
         }
+        const bodyType = definition.bodyType === 'dynamic' || definition.bodyType === 'kinematic'
+          ? definition.bodyType
+          : undefined;
+        const mass = Number(definition.mass);
+        const restitution = Number(definition.restitution);
+        const friction = Number(definition.friction);
         childEntities.push({
-          ...definition,
           id,
           parentId,
-          ...(Array.isArray(pivot) ? { pivot: pivot.slice(0, 3).map(Number) } : {})
+          ...(definition.kind === 'child' ? { kind: 'child' } : {}),
+          ...(Array.isArray(pivot) ? { pivot: pivot.slice(0, 3).map(Number) } : {}),
+          ...(bodyType ? { bodyType } : {}),
+          ...(Number.isFinite(mass) && mass > 0 ? { mass } : {}),
+          ...(Number.isFinite(restitution) ? { restitution: Math.max(0, Math.min(1, restitution)) } : {}),
+          ...(Number.isFinite(friction) ? { friction: Math.max(0, Math.min(1, friction)) } : {})
         });
       }
       const knownNodeIds = new Set(['root', ...rootIds, ...childIdSet]);
@@ -3502,6 +3565,9 @@ export class PlayerController {
       if (!withinEntityBounds(blocks, ['localX', 'localY', 'localZ'])) {
         return fail(`Entity bounds may not exceed ${MAX_ENTITY_BOUNDS} cells per axis`);
       }
+      if (!validateVoxelOccupancy(blocks, ['localX', 'localY', 'localZ'], 'entityId')) {
+        return fail('Entity contains duplicate voxels');
+      }
 
       const scripts = [];
       const scriptIds = new Set();
@@ -3541,11 +3607,64 @@ export class PlayerController {
         if ((bodyA !== 'world' && !knownNodeIds.has(bodyA)) || !knownNodeIds.has(bodyB) || bodyA === bodyB) {
           return fail(`Constraint ${id} references an invalid component`);
         }
+        const vectorFields = ['anchorA', 'anchorB', 'axisA', 'axisB', 'referenceA', 'referenceB'];
+        const vectors: Record<string, number[]> = {};
+        for (const field of vectorFields) {
+          if (constraint[field] === undefined) continue;
+          if (!Array.isArray(constraint[field]) || constraint[field].length < 3
+            || !constraint[field].slice(0, 3).map(Number).every(Number.isFinite)) {
+            return fail(`Constraint ${id} has an invalid ${field}`);
+          }
+          vectors[field] = constraint[field].slice(0, 3).map(Number);
+        }
+        let limits;
+        if (constraint.limits !== undefined && constraint.limits !== null) {
+          const min = Number(constraint.limits?.min);
+          const max = Number(constraint.limits?.max);
+          if (!Number.isFinite(min) || !Number.isFinite(max)) return fail(`Constraint ${id} has invalid limits`);
+          limits = { min: Math.min(min, max), max: Math.max(min, max) };
+        }
+        const stiffness = Number(constraint.stiffness ?? 0.9);
+        if (!Number.isFinite(stiffness)) return fail(`Constraint ${id} has invalid stiffness`);
         constraintIds.add(id);
-        constraints.push({ ...constraint, id, bodyA, bodyB });
+        constraints.push({
+          id,
+          type: ['point', 'hinge', 'weld'].includes(constraint.type) ? constraint.type : 'point',
+          bodyA,
+          bodyB,
+          ...vectors,
+          ...(limits ? { limits } : {}),
+          stiffness: Math.max(0, Math.min(1, stiffness)),
+          collideConnected: constraint.collideConnected === true
+        });
       }
 
       const validModes = new Set(Object.values(ContraptionMode));
+      const portableVector = (value, maxAbs = MAX_IMPORT_COORDINATE) => {
+        if (value === undefined) return undefined;
+        if (!Array.isArray(value) || value.length < 3) return null;
+        const vector = value.slice(0, 3).map(Number);
+        return vector.every(component => Number.isFinite(component) && Math.abs(component) <= maxAbs)
+          ? vector
+          : null;
+      };
+      const bearingAxis = portableVector(data.bearingAxis);
+      const pistonAxis = portableVector(data.pistonAxis);
+      const cockpitPosition = portableVector(data.cockpitPosition);
+      if (bearingAxis === null || pistonAxis === null || cockpitPosition === null) {
+        return fail('Entity axes and cockpit position must be bounded finite 3D vectors');
+      }
+      const optionalBoundedNumber = (value, min, max) => {
+        if (value === undefined) return undefined;
+        const number = Number(value);
+        return Number.isFinite(number) && number >= min && number <= max ? number : null;
+      };
+      const bearingRpm = optionalBoundedNumber(data.bearingRpm, -10_000, 10_000);
+      const pistonDistance = optionalBoundedNumber(data.pistonDistance, 0, MAX_IMPORT_COORDINATE);
+      const pistonSpeed = optionalBoundedNumber(data.pistonSpeed, 0, 10_000);
+      if (bearingRpm === null || pistonDistance === null || pistonSpeed === null) {
+        return fail('Entity bearing and piston parameters are outside portable bounds');
+      }
       const item = {
         name: data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH),
         rootId: rootIds[0],
@@ -3561,10 +3680,13 @@ export class PlayerController {
         mass: Number.isFinite(Number(data.mass)) && Number(data.mass) > 0 ? Number(data.mass) : undefined,
         restitution: Number.isFinite(Number(data.restitution)) ? Math.max(0, Math.min(1, Number(data.restitution))) : undefined,
         friction: Number.isFinite(Number(data.friction)) ? Math.max(0, Math.min(1, Number(data.friction))) : undefined,
-        cockpitPosition: Array.isArray(data.cockpitPosition) && data.cockpitPosition.length >= 3
-          && data.cockpitPosition.slice(0, 3).map(Number).every(Number.isFinite)
-          ? data.cockpitPosition.slice(0, 3).map(Number)
-          : undefined,
+        useGravity: typeof data.useGravity === 'boolean' ? data.useGravity : undefined,
+        bearingAxis,
+        bearingRpm,
+        pistonAxis,
+        pistonDistance,
+        pistonSpeed,
+        cockpitPosition,
         isVehicle: data.isVehicle === true,
         rootIds: Array.isArray(data.rootIds) && data.rootIds.length > 0 ? rootIds : undefined
       };

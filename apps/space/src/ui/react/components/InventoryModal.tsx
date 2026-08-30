@@ -1,9 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { InventoryThumbnailRenderer } from '../../../engine/render/InventoryThumbnailRenderer.ts';
 import { MAX_STL_FILE_BYTES } from '../../../engine/voxel/STLVoxelizer.ts';
 import { colorToHex, normalizeColor } from '../../../engine/voxel/BlockTypes.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
+import {
+  SpaceMarketError,
+  type SpaceMarketQuota,
+  type SpaceMarketResource,
+  type SpaceMarketSort,
+} from '../../../bootstrap/SpaceMarketClient.ts';
 
 export type InventoryCategory = 'blockset' | 'entity' | 'colorset';
 
@@ -27,6 +33,30 @@ function PixelDeleteIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
       <path fillRule="evenodd" clipRule="evenodd" d="M5 2h6v2h4v2h-1v8H2V6H1V4h4V2zm-1 4v6h8V6H4zm2 1h2v4H6V7zm4 0h2v4h-2V7z" />
+    </svg>
+  );
+}
+
+function PixelPublishIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
+      <path d="M7 15V6H4l4-5 4 5H9v9H7zM2 10h3v2H4v2h8v-2h-1v-2h3v6H2v-6z" />
+    </svg>
+  );
+}
+
+function PixelDownloadIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
+      <path d="M7 1h2v8h3l-4 4-4-4h3V1zM2 12h2v2h8v-2h2v4H2v-4z" />
+    </svg>
+  );
+}
+
+function PixelHeartIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
+      <path d="M2 3h4v2h4V3h4v2h2v5h-2v2h-2v2h-2v2H6v-2H4v-2H2v-2H0V5h2V3z" />
     </svg>
   );
 }
@@ -82,7 +112,17 @@ function EmptyColorSetSlot() {
   );
 }
 
-function InventoryItemCard({ category, index, item }: { category: 'blockset' | 'entity'; index: number; item: any }) {
+function InventoryItemCard({
+  category,
+  index,
+  item,
+  onPublish,
+}: {
+  category: 'blockset' | 'entity';
+  index: number;
+  item: any;
+  onPublish: (category: InventoryCategory, item: any) => void;
+}) {
   const controller = useSpaceUi(state => state.controller);
   const fallback = category === 'blockset' ? `Block set ${index + 1}` : `Entity ${index + 1}`;
   const name = typeof item?.name === 'string' ? item.name : (controller?.inventoryItemName?.(category, item, index) || fallback);
@@ -111,6 +151,16 @@ function InventoryItemCard({ category, index, item }: { category: 'blockset' | '
         />
         <div className="backpack-item-meta">{meta}</div>
         <div className="inv-item-actions">
+          <button
+            type="button"
+            tabIndex={-1}
+            className="backpack-pixel-btn publish"
+            title="Publish to market (AGPL-3.0)"
+            aria-label="Publish item to market"
+            onClick={() => onPublish(category, item)}
+          >
+            <PixelPublishIcon />
+          </button>
           <button
             type="button"
             tabIndex={-1}
@@ -150,7 +200,17 @@ function InventoryItemCard({ category, index, item }: { category: 'blockset' | '
   );
 }
 
-function ColorSetCard({ index, item, totalCount }: { index: number; item: any; totalCount?: number }) {
+function ColorSetCard({
+  index,
+  item,
+  totalCount,
+  onPublish,
+}: {
+  index: number;
+  item: any;
+  totalCount?: number;
+  onPublish: (category: InventoryCategory, item: any) => void;
+}) {
   const state = useSpaceUi(s => s);
   const controller = state.controller;
   const fallback = `Color set ${index + 1}`;
@@ -228,6 +288,19 @@ function ColorSetCard({ index, item, totalCount }: { index: number; item: any; t
           <button
             type="button"
             tabIndex={-1}
+            className="backpack-pixel-btn publish"
+            title="Publish to market (AGPL-3.0)"
+            aria-label="Publish color set to market"
+            onClick={event => {
+              event.stopPropagation();
+              onPublish('colorset', item);
+            }}
+          >
+            <PixelPublishIcon />
+          </button>
+          <button
+            type="button"
+            tabIndex={-1}
             className="backpack-pixel-btn"
             title="Copy color set"
             aria-label="Copy color set"
@@ -273,6 +346,106 @@ function ColorSetCard({ index, item, totalCount }: { index: number; item: any; t
         </div>
       </div>
     </div>
+  );
+}
+
+function MarketResourceCard({
+  resource,
+  isAdmin,
+  onDownload,
+  onLike,
+  onDelete,
+}: {
+  resource: SpaceMarketResource;
+  isAdmin: boolean;
+  onDownload: (resource: SpaceMarketResource) => void;
+  onLike: (resource: SpaceMarketResource) => void;
+  onDelete: (resource: SpaceMarketResource) => void;
+}) {
+  const previewBlocks = (resource.preview?.blocks || []).map(block => resource.kind === 'entity'
+    ? {
+        localX: block.x,
+        localY: block.y,
+        localZ: block.z,
+        size: block.size,
+        color: block.color,
+        entityId: 'root'
+      }
+    : {
+        dx: block.x,
+        dy: block.y,
+        dz: block.z,
+        size: block.size,
+        color: block.color
+      });
+  const thumbnail = resource.kind === 'colorset'
+    ? null
+    : InventoryThumbnailRenderer.getInstance().getThumbnail({
+        kind: resource.kind,
+        name: resource.digest,
+        blockCount: resource.block_count,
+        blocks: previewBlocks
+      }, 96);
+  const publishedAt = new Date(resource.created_at);
+  const publisher = resource.publisher.username || resource.publisher.id || 'Former player';
+
+  return (
+    <article className="inventory-card market-resource-card">
+      <div className={`market-resource-preview ${resource.kind}`}>
+        {resource.kind === 'colorset' ? (
+          <div className="market-colorset-preview">
+            {(resource.preview.colors || []).map((color, index) => (
+              <span key={`${color}:${index}`} style={{ background: color }} />
+            ))}
+          </div>
+        ) : thumbnail ? (
+          <img className="inv-slot-thumb" src={thumbnail} alt="" draggable={false} />
+        ) : (
+          <span className="market-resource-glyph">{resource.kind === 'entity' ? 'E' : 'B'}</span>
+        )}
+        <span className="market-license-badge">AGPL-3.0</span>
+      </div>
+      <div className="market-resource-body">
+        <div className="market-resource-kind">{resource.kind === 'blockset' ? 'BLOCK SET' : resource.kind.toUpperCase()}</div>
+        <h3 title={resource.name}>{resource.name}</h3>
+        <div className="market-resource-author">by {publisher}</div>
+        <div className="market-resource-meta">
+          {resource.kind === 'colorset'
+            ? '9 colors'
+            : `${resource.block_count} voxels${resource.kind === 'entity' ? ` · ${resource.node_count} nodes · ${resource.script_count} scripts` : ''}`}
+        </div>
+        <div className="market-resource-meta">{Number.isNaN(publishedAt.getTime()) ? resource.created_at : publishedAt.toLocaleDateString()}</div>
+        <div className="market-resource-stats">
+          <span>↓ {resource.downloads_count}</span>
+          <span>♥ {resource.likes_count}</span>
+          <span title={resource.digest}>#{resource.digest.slice(0, 8)}</span>
+        </div>
+        <div className="market-resource-actions">
+          <button type="button" className="backpack-section-btn primary" onClick={() => onDownload(resource)}>
+            <PixelDownloadIcon /> Download
+          </button>
+          <button
+            type="button"
+            className={`backpack-section-btn market-like-btn ${resource.is_liked ? 'active' : ''}`}
+            aria-pressed={resource.is_liked}
+            onClick={() => onLike(resource)}
+          >
+            <PixelHeartIcon /> {resource.is_liked ? 'Liked' : 'Like'}
+          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              className="backpack-pixel-btn danger"
+              title="Admin delete market resource"
+              aria-label="Admin delete market resource"
+              onClick={() => onDelete(resource)}
+            >
+              <PixelDeleteIcon />
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -411,6 +584,57 @@ function StlImportCard() {
 
 export function InventoryModal() {
   const state = useSpaceUi(snapshot => snapshot);
+  const activeCategory: InventoryCategory = state.activeInventoryCategory === 'entity'
+    ? 'entity'
+    : state.activeInventoryCategory === 'colorset'
+      ? 'colorset'
+      : 'blockset';
+  const [view, setView] = useState<'backpack' | 'market'>('backpack');
+  const [marketSort, setMarketSort] = useState<SpaceMarketSort>('latest');
+  const [marketItems, setMarketItems] = useState<SpaceMarketResource[]>([]);
+  const [marketTotal, setMarketTotal] = useState(0);
+  const [marketQuota, setMarketQuota] = useState<SpaceMarketQuota | null>(null);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketError, setMarketError] = useState('');
+  const marketRequestIdRef = useRef(0);
+  const marketClient = spaceUiStore.getMarketClient();
+
+  const marketErrorMessage = (error: unknown) => {
+    if (error instanceof SpaceMarketError) {
+      if (error.code === 'RESOURCE_ALREADY_PUBLISHED') return 'This exact resource is already published.';
+      if (error.code === 'DAILY_PUBLISH_LIMIT_REACHED') return 'Daily publication limit reached (10/10).';
+      if (error.code === 'INVALID_MARKET_RESOURCE') return `Resource validation failed: ${error.message}`;
+      return error.message;
+    }
+    return error instanceof Error ? error.message : String(error);
+  };
+
+  const loadMarket = useCallback(async (
+    category: InventoryCategory = activeCategory,
+    sort: SpaceMarketSort = marketSort
+  ) => {
+    if (!marketClient) return;
+    const requestId = ++marketRequestIdRef.current;
+    setMarketLoading(true);
+    setMarketError('');
+    try {
+      const response = await marketClient.listResources(category, sort);
+      if (requestId !== marketRequestIdRef.current) return;
+      setMarketItems(response.items);
+      setMarketTotal(response.total);
+      setMarketQuota(response.quota);
+    } catch (error) {
+      if (requestId !== marketRequestIdRef.current) return;
+      setMarketError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (requestId === marketRequestIdRef.current) setMarketLoading(false);
+    }
+  }, [activeCategory, marketClient, marketSort]);
+
+  useEffect(() => {
+    if (state.activeModal === 'inventory' && view === 'market') void loadMarket();
+  }, [state.activeModal, view, activeCategory, marketSort, loadMarket]);
+
   if (state.activeModal !== 'inventory') return null;
 
   const inventories = state.controller?.inventories || {};
@@ -418,11 +642,72 @@ export function InventoryModal() {
   const entities = inventories.entity?.items || [];
   const colorsets = inventories.colorset?.items || [];
 
-  const activeCategory: InventoryCategory = state.activeInventoryCategory === 'entity'
-    ? 'entity'
-    : state.activeInventoryCategory === 'colorset'
-      ? 'colorset'
-      : 'blockset';
+  const publishItem = async (category: InventoryCategory, item: any) => {
+    if (!marketClient || !state.controller) return;
+    const payload = state.controller.serializeInventoryItem?.(category, item);
+    if (!payload) {
+      spaceUiStore.showToast('Could not serialize this backpack item.');
+      return;
+    }
+    try {
+      const result = await marketClient.publishResource(category, payload);
+      setMarketQuota(result.quota);
+      setView('market');
+      spaceUiStore.showToast(`Published "${result.resource.name}" under AGPL-3.0`);
+      await loadMarket(category, marketSort);
+    } catch (error) {
+      spaceUiStore.showToast(marketErrorMessage(error));
+    }
+  };
+
+  const downloadResource = async (resource: SpaceMarketResource) => {
+    if (!marketClient || !state.controller) return;
+    try {
+      const downloaded = await marketClient.downloadResource(resource.id);
+      const parsed = state.controller.parseInventoryImport?.(
+        JSON.stringify(downloaded.payload),
+        downloaded.kind
+      );
+      if (!parsed?.ok) throw new Error(parsed?.error || 'Downloaded resource failed local validation.');
+      const index = state.controller.addInventoryItem?.(downloaded.kind, parsed.item);
+      if (index === null || index === undefined) {
+        throw new Error(`${downloaded.kind} backpack is full (9/9).`);
+      }
+      state.controller.setActiveInventoryCategory?.(downloaded.kind);
+      spaceUiStore.syncInventoryState();
+      setMarketItems(items => items.map(item => item.id === resource.id
+        ? { ...item, downloads_count: downloaded.downloads_count }
+        : item));
+      spaceUiStore.showToast(`Downloaded to ${downloaded.kind} slot ${index + 1} · AGPL-3.0`);
+    } catch (error) {
+      spaceUiStore.showToast(marketErrorMessage(error));
+    }
+  };
+
+  const likeResource = async (resource: SpaceMarketResource) => {
+    if (!marketClient) return;
+    try {
+      const result = await marketClient.toggleLike(resource.id);
+      setMarketItems(items => items.map(item => item.id === resource.id
+        ? { ...item, is_liked: result.is_liked, likes_count: result.likes_count }
+        : item));
+    } catch (error) {
+      spaceUiStore.showToast(marketErrorMessage(error));
+    }
+  };
+
+  const deleteResource = async (resource: SpaceMarketResource) => {
+    if (!marketClient || !state.isAdmin) return;
+    if (!window.confirm(`Delete "${resource.name}" from the market?`)) return;
+    try {
+      await marketClient.deleteResource(resource.id);
+      setMarketItems(items => items.filter(item => item.id !== resource.id));
+      setMarketTotal(total => Math.max(0, total - 1));
+      spaceUiStore.showToast(`Deleted "${resource.name}" from the market.`);
+    } catch (error) {
+      spaceUiStore.showToast(marketErrorMessage(error));
+    }
+  };
 
   return (
     <div
@@ -435,8 +720,30 @@ export function InventoryModal() {
       <div className="modal-content inventory-modal-content">
         <div className="modal-header">
           <div className="inventory-header-title-group">
-            <h2>Backpack</h2>
-            <div className="backpack-tabs-bar" role="tablist" aria-label="Backpack categories">
+            <div className="inventory-title-row">
+              <h2>Resources</h2>
+              <div className="inventory-view-switch" role="tablist" aria-label="Resource source">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'backpack'}
+                  className={view === 'backpack' ? 'active' : ''}
+                  onClick={() => setView('backpack')}
+                >
+                  My Backpack
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'market'}
+                  className={view === 'market' ? 'active' : ''}
+                  onClick={() => setView('market')}
+                >
+                  Market
+                </button>
+              </div>
+            </div>
+            <div className="backpack-tabs-bar" role="tablist" aria-label="Resource categories">
               <button
                 type="button"
                 id="backpack-tab-blockset"
@@ -485,13 +792,13 @@ export function InventoryModal() {
           </button>
         </div>
 
-        {activeCategory === 'blockset' && (
+        {view === 'backpack' && activeCategory === 'blockset' && (
           <div className="backpack-tab-panel" id="backpack-panel-blockset">
             <div className="inventory-grid" id="inventory-grid">
               {Array.from({ length: 9 }, (_, index) => {
                 const item = blocksets[index];
                 return item ? (
-                  <InventoryItemCard key={item.id || `b:${index}`} category="blockset" index={index} item={item} />
+                  <InventoryItemCard key={item.id || `b:${index}`} category="blockset" index={index} item={item} onPublish={publishItem} />
                 ) : (
                   <EmptySlot key={`empty-b:${index}`} index={index} label={`Empty slot ${index + 1} · R copy or import`} />
                 );
@@ -506,13 +813,13 @@ export function InventoryModal() {
           </div>
         )}
 
-        {activeCategory === 'entity' && (
+        {view === 'backpack' && activeCategory === 'entity' && (
           <div className="backpack-tab-panel" id="backpack-panel-entity">
             <div className="inventory-grid" id="inventory-grid">
               {Array.from({ length: 9 }, (_, index) => {
                 const item = entities[index];
                 return item ? (
-                  <InventoryItemCard key={item.id || `e:${index}`} category="entity" index={index} item={item} />
+                  <InventoryItemCard key={item.id || `e:${index}`} category="entity" index={index} item={item} onPublish={publishItem} />
                 ) : (
                   <EmptySlot key={`empty-e:${index}`} index={index} label={`Empty slot ${index + 1} · R copy or import`} />
                 );
@@ -524,7 +831,7 @@ export function InventoryModal() {
           </div>
         )}
 
-        {activeCategory === 'colorset' && (
+        {view === 'backpack' && activeCategory === 'colorset' && (
           <div className="backpack-tab-panel" id="backpack-panel-colorset">
             <div className="inventory-grid" id="inventory-grid">
               {(() => {
@@ -532,7 +839,7 @@ export function InventoryModal() {
                 return Array.from({ length: 9 }, (_, index) => {
                   const item = colorsets[index];
                   return item ? (
-                    <ColorSetCard key={item.id || `c:${index}`} index={index} item={item} totalCount={totalCount} />
+                    <ColorSetCard key={item.id || `c:${index}`} index={index} item={item} totalCount={totalCount} onPublish={publishItem} />
                   ) : (
                     <EmptyColorSetSlot key={`empty-c:${index}`} />
                   );
@@ -542,6 +849,59 @@ export function InventoryModal() {
             <div className="backpack-panel-footer">
               <ImportJsonButton category="colorset" />
             </div>
+          </div>
+        )}
+
+        {view === 'market' && (
+          <div className="backpack-tab-panel market-panel" id={`market-panel-${activeCategory}`}>
+            <div className="market-toolbar">
+              <div className="market-license-note">
+                All resources are published under <strong>AGPL-3.0-only</strong>.
+                {marketQuota && (
+                  <span className="market-quota">
+                    Today: {marketQuota.published_today}/{marketQuota.daily_limit} published · {marketQuota.remaining_today} remaining
+                  </span>
+                )}
+              </div>
+              <div className="market-sort-buttons" role="group" aria-label="Market ranking">
+                {([
+                  ['downloads', 'Most downloaded'],
+                  ['likes', 'Most liked'],
+                  ['latest', 'Newest'],
+                ] as Array<[SpaceMarketSort, string]>).map(([sort, label]) => (
+                  <button
+                    key={sort}
+                    type="button"
+                    className={`backpack-section-btn ${marketSort === sort ? 'active' : ''}`}
+                    onClick={() => setMarketSort(sort)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {marketError && <div className="market-state error">{marketError}</div>}
+            {marketLoading && marketItems.length === 0 ? (
+              <div className="market-state">Loading market…</div>
+            ) : marketItems.length === 0 ? (
+              <div className="market-state">No {activeCategory} resources have been published yet.</div>
+            ) : (
+              <>
+                <div className="market-result-summary">{marketTotal} resources · ranked by {marketSort}</div>
+                <div className="market-grid">
+                  {marketItems.map(resource => (
+                    <MarketResourceCard
+                      key={resource.id}
+                      resource={resource}
+                      isAdmin={state.isAdmin}
+                      onDownload={downloadResource}
+                      onLike={likeResource}
+                      onDelete={deleteResource}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
