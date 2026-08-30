@@ -906,45 +906,250 @@ Email: support@entropydrop.com`
     space_page: {
         title: 'EntropyDrop Space',
         eyebrow: 'Playable prototype',
-        platform: 'WebGL · Shared world · AI agents',
-        tagline: 'Build anything. Tell it what to do.',
-        description: 'An AI-native programmable voxel world where every structure can become an entity, every entity can gain behavior, and every player can help shape the same persistent world.',
+        platform: 'WebGL 2 · Shared Persistent World · AI Agent Native',
+        tagline: 'High-freedom voxel building, powered by collaborative AI Agents.',
+        description: 'An AI-native programmable voxel sandbox world where any structure can be sculpted with dual-scale precision, entityized into dynamic rigid bodies with physics constraints, and programmed via natural language with autonomous AI agents.',
         primaryCta: 'Enter Space',
-        secondaryCta: 'How it works',
-        heroPlaceholder: {
-            label: 'Space world screenshot',
-            hint: 'Replace with a product screenshot or gameplay video cover'
+        secondaryCta: 'Gameplay Guide',
+        skinNotice: {
+            title: 'Minecraft Skin Required',
+            description: 'Space uses your EntropyDrop Minecraft skin as your shared-world avatar. Please configure a skin before entering.',
+            action: 'Configure Skin'
         },
-        featuresTitle: 'A world made to be changed',
-        features: [
-            { title: 'Build freely', description: 'Place, remove, recolor, and combine voxels into terrain, machines, architecture, and anything between.' },
-            { title: 'Sculpt at two scales', description: 'Move from standard blocks to precise micro voxels when an idea needs finer geometry and detail.' },
-            { title: 'Program with language', description: 'Select a creation, describe what it should do, inspect the controller, and run its behavior in the world.' },
-            { title: 'Share one world', description: 'Meet other players, watch constructions evolve, and leave durable changes in a continuous multiplayer space.' }
+        stats: {
+            scale: '0.2m / 1.0m Dual-Scale',
+            physics: '60 Hz Physics Engine',
+            runtime: 'WebGL 2 Browser Native',
+            agents: 'Agent / MCP API Ready'
+        },
+        pillarsTitle: 'Core Capabilities & Gameplay Matrix',
+        pillarsSubtitle: 'From macro terrain architectures to programmable kinetic entities, seamlessly orchestrated with AI agents.',
+        pillars: [
+            {
+                tag: 'BUILDING',
+                title: 'Dual-Scale Voxel Sculpting',
+                description: 'Build terrain and architecture with 1x1x1 standard blocks, or switch to 0.2x0.2x0.2 micro voxels (5x5x5 resolution) with full RGB custom palette.',
+                badge: '1x1 & 0.2m'
+            },
+            {
+                tag: 'PHYSICS',
+                title: 'One-Click Entityization',
+                description: 'Box-select or flood-select connected structures and press G to turn them into dynamic or kinematic rigid bodies with mass, inertia, and joint constraints.',
+                badge: 'RigidBody // G Key'
+            },
+            {
+                tag: 'AI AGENTS',
+                title: 'Natural Language Programming',
+                description: 'Press C to invoke the behavior compiler. Describe movement, hover, tracking, or patrolling intents in plain text, compiling directly into inspectable controller code.',
+                badge: 'NL -> Controller'
+            },
+            {
+                tag: 'COLLABORATION',
+                title: 'Multiplayer & Open Agent API',
+                description: 'A shared persistent toroidal world with WebGL 60FPS streaming, real-time chunk delta sync, and open REST/WebSocket & MCP interfaces for external AI bots.',
+                badge: 'MCP & Multi-Agent'
+            }
         ],
-        showcase: {
-            eyebrow: 'From blocks to behavior',
-            title: 'Your creation is not just scenery.',
-            description: 'A selected structure can become a programmable component tree with physical constraints and an agent-controlled behavior. Build a vehicle, a machine, a creature—or something without a name yet.',
-            placeholder: 'Gameplay / programmable creation screenshot',
-            bullets: [
-                'One freely colorable voxel material, from full blocks to micro details',
-                'Entity components with kinematic and dynamic physical behavior',
-                'Natural-language intent with an inspectable controller and API'
+        interactiveTitle: 'Interactive Engine Sandbox',
+        interactiveSubtitle: 'Explore how voxel geometry, physical entityization, and AI Agent behavior compilation work together.',
+        tabs: {
+            agentCompiler: 'AI Behavior Compiler',
+            voxelScale: 'Dual-Scale Voxel Engine',
+            entityWorkflow: 'Entityization Pipeline'
+        },
+        compilerDemo: {
+            badge: 'AI AGENT BEHAVIOR COMPILER',
+            promptLabel: 'Natural Language Intent Prompt',
+            codeLabel: 'Generated Controller Script (TypeScript/JS)',
+            consoleLabel: 'Simulated Engine Telemetry & Log Output',
+            presets: [
+                {
+                    id: 'hover',
+                    name: 'PD Anti-Gravity Hover',
+                    desc: 'Maintain stable levitation 2.5m above ground with PD force & torque compensation',
+                    prompt: 'Keep this entity stably hovering 2.5 meters above ground, compensating for tilt attitude.',
+                    code: `/**
+ * Agent Generated Controller: PD Hover
+ * Intent: Keep entity stably hovering 2.5m above ground
+ */
+const targetHeight = 2.50;
+const heightError = targetHeight - ctx.groundDistance;
+const lift = ctx.mass * Math.abs(ctx.gravity[1])
+  + heightError * 34.0
+  - ctx.velocity[1] * 13.0;
+
+self.applyForce([0, Math.max(0, lift), 0]);
+self.applyTorque([
+  -ctx.rotation[0] * 32.0 - ctx.angularVelocity[0] * 10.0,
+  -ctx.angularVelocity[1] * 3.0,
+  -ctx.rotation[2] * 32.0 - ctx.angularVelocity[2] * 10.0
+]);
+
+if (ctx.tick % 60 === 0) {
+  ctx.log(\`Agent · Hover altitude: \${ctx.groundDistance.toFixed(2)}m (err: \${heightError.toFixed(2)}m)\`);
+}`,
+                    log: `[Agent Runtime] Initialized PD hover controller for Entity #0x7F2B
+[Physics 60Hz] Mass: 48.0 kg | Gravity: [0, -9.81, 0] m/s²
+[Agent Log] Ground sensor: 2.48 m | Applying lift: 476.2 N
+[Attitude PID] Angular damping active, pitch/roll locked to 0.00 rad
+[Agent Log] Status: Stable hover maintained at 2.50 m`
+                },
+                {
+                    id: 'follow',
+                    name: 'Player Companion & Escort',
+                    desc: 'Track nearest player, maintain 3.5m escort distance with obstacle avoidance',
+                    prompt: 'Detect the nearest player, fly 3.5m behind their shoulder, and smoothly follow them.',
+                    code: `/**
+ * Agent Generated Controller: Companion Escort
+ * Intent: Follow player at 3.5m offset
+ */
+if (!ctx.players || ctx.players.length === 0) {
+  self.applyForce([0, ctx.mass * 9.81, 0]);
+} else {
+  const leader = ctx.players[0];
+  const target = [leader.position[0], leader.position[1] + 1.8, leader.position[2] + 3.5];
+  const delta = [
+    target[0] - ctx.position[0],
+    target[1] - ctx.position[1],
+    target[2] - ctx.position[2]
+  ];
+  const force = delta.map((d, i) => d * 22.0 - ctx.velocity[i] * 9.0);
+  self.applyForce(force);
+  if (ctx.tick % 90 === 0) ctx.log(\`Agent · Escorting player \${leader.name || 'User'} (dist: \${Math.hypot(...delta).toFixed(1)}m)\`);
+}`,
+                    log: `[Agent Runtime] Radar lock: Player "EntropyVoyager" detected at [42.1, 16.0, 88.3]
+[Pathfinder] Computing vector delta: dx=+1.2m, dy=+0.8m, dz=+3.4m
+[Thruster Array] Force vector: [26.4N, 492.1N, 74.8N]
+[Agent Log] Escorting player EntropyVoyager (dist: 3.5m, velocity: 2.1 m/s)
+[Safety Sensor] Collision cone clear, escort route locked`
+                },
+                {
+                    id: 'spin',
+                    name: 'Attitude Stabilization & Spin',
+                    desc: 'Constant 2.0 rad/s yaw spin with horizontal gyro stabilization',
+                    prompt: 'Spin around the Y-axis at 2.0 rad/s while keeping horizontal axes gyro-locked.',
+                    code: `/**
+ * Agent Generated Controller: Gyro Spin
+ * Intent: 2.0 rad/s yaw spin with horizontal attitude lock
+ */
+const targetSpin = 2.0;
+const yawTorque = (targetSpin - ctx.angularVelocity[1]) * 15.0;
+const pitchTorque = -ctx.rotation[0] * 40.0 - ctx.angularVelocity[0] * 12.0;
+const rollTorque = -ctx.rotation[2] * 40.0 - ctx.angularVelocity[2] * 12.0;
+
+self.applyTorque([pitchTorque, yawTorque, rollTorque]);
+self.applyForce([0, ctx.mass * 9.81, 0]);`,
+                    log: `[Agent Runtime] Gyro stabilizer activated. Target yaw rate: 2.00 rad/s
+[IMU Telemetry] Current yaw velocity: 1.98 rad/s (Torque output: 0.30 N·m)
+[Gyroscope] Pitch deviation: 0.001 rad | Roll deviation: 0.002 rad
+[Agent Log] Continuous angular momentum stabilized`
+                },
+                {
+                    id: 'patrol',
+                    name: 'Orbital Patrol Drone',
+                    desc: 'Autonomous circular waypoint patrol and perimeter radar beacon',
+                    prompt: 'Patrol in a 12-meter circular orbit around point [0, 20, 0] at 4 m/s.',
+                    code: `/**
+ * Agent Generated Controller: Orbital Patrol
+ * Intent: 12m radius orbital patrol at height 20m
+ */
+const angle = (ctx.tick * 0.02) % (Math.PI * 2);
+const targetX = Math.cos(angle) * 12.0;
+const targetZ = Math.sin(angle) * 12.0;
+const targetY = 20.0;
+
+const errX = targetX - ctx.position[0];
+const errY = targetY - ctx.position[1];
+const errZ = targetZ - ctx.position[2];
+
+self.applyForce([
+  errX * 16.0 - ctx.velocity[0] * 7.0,
+  errY * 20.0 - ctx.velocity[1] * 8.0 + ctx.mass * 9.81,
+  errZ * 16.0 - ctx.velocity[2] * 7.0
+]);`,
+                    log: `[Agent Runtime] Waypoint sequence online. Perimeter radius: 12.0m
+[Orbit Vector] θ = 1.42 rad | Target pos: [1.8m, 20.0m, 11.9m]
+[Navigation] Trajectory error: 0.04m | Ground clearance: 18.2m
+[Agent Log] Waypoint check-in OK. Perimeter radar scan clear.`
+                }
             ]
         },
-        workflow: {
-            title: 'Three steps from idea to behavior',
-            description: 'Space keeps the creative loop short: enter as your EntropyDrop character, build directly in the world, then give the result a behavior.',
-            steps: [
-                { title: 'Enter as yourself', description: 'Use your EntropyDrop account and Minecraft skin as your identity in the shared world.' },
-                { title: 'Shape the world', description: 'Build with standard or micro voxels, select connected structures, and turn them into entities.' },
-                { title: 'Give it intent', description: 'Describe a behavior in natural language, review the generated controller, and watch it act.' }
-            ]
+        voxelDemo: {
+            title: 'Dual-Scale Geometric Architecture',
+            desc: 'Seamlessly transition between macro structural building and intricate mechanical micro-detailing.',
+            standardLabel: 'Standard Voxel (1.0m³)',
+            standardDesc: 'Ideal for terrain contours, towering walls, massive frames, and architectural structures.',
+            microLabel: 'Micro Voxel (0.2m³ = 1/125th)',
+            microDesc: 'Ideal for cockpits, control panels, thrusters, hinges, weapons, and intricate sculptures.',
+            paletteTitle: '24-bit TrueColor Palette',
+            paletteDesc: 'Every single voxel stores full RGB color data without restrictive palette constraints.'
         },
-        closing: {
-            title: 'The prototype is open. Bring an idea.',
-            description: 'Space runs directly in a modern desktop browser. A configured Minecraft skin is required before entering.'
+        entityDemo: {
+            title: 'From Static Blocks to Living Entities',
+            desc: 'Transform any connected cluster of voxels into an interactive dynamic physics entity in three simple steps.',
+            step1Title: '1. Select Structure',
+            step1Desc: 'Use Selector tool corners A and B or click to flood-select any connected block cluster.',
+            step2Title: '2. Entityize (G Key)',
+            step2Desc: 'Convert voxel cluster into a rigid body with computed mass, center of gravity, and collision hull.',
+            step3Title: '3. Program Behavior (C Key)',
+            step3Desc: 'Attach AI behavior controllers or hook up external Agent automation via open APIs.'
+        },
+        keybindingsTitle: 'Controls & Shortcut Matrix',
+        keybindingsSubtitle: 'Master the keyboard controls for high-efficiency sandbox construction and programming.',
+        keybindings: [
+            { key: 'W A S D', action: 'Movement', desc: 'Navigate the 3D Torus world' },
+            { key: 'SPACE / SHIFT', action: 'Jump / Crouch', desc: 'Vertical movement and precision positioning' },
+            { key: '1 / 2', action: 'Shovel & Spoon', desc: '1.0m Standard Blocks / 0.2m Micro Voxels' },
+            { key: '3 / 4', action: 'Selector & Color', desc: 'Region selection (A/B) and RGB palette' },
+            { key: 'G', action: 'Entityize', desc: 'Convert selected blocks to a dynamic physics entity' },
+            { key: 'C', action: 'Agent Terminal', desc: 'Open in-game Behavior Code Editor & API terminal' },
+            { key: 'E', action: 'Backpack', desc: 'Manage inventory, tools, and saved blueprints' },
+            { key: 'ESC', action: 'Unlock Cursor', desc: 'Release pointer lock and access 2D UI panels' }
+        ],
+        agentDevTitle: 'AI Agent & Developer Protocol',
+        agentDevSubtitle: 'First-class support for AI Agents, MCP Tools, and automated programmatic construction.',
+        agentDevCards: [
+            {
+                icon: 'pixelarticons:code',
+                title: 'MCP Server & Agent Tools',
+                desc: 'Integrate external LLMs (Claude, OpenAI, DeepSeek) using Model Context Protocol tools for reading world state, querying entities, and dispatching construction jobs.'
+            },
+            {
+                icon: 'pixelarticons:zap',
+                title: 'Realtime WebSocket & REST API',
+                desc: 'Low-latency streaming of world chunk deltas, player poses, entity telemetry, and idempotent mutation outbox synchronization via /space/api/v2.'
+            },
+            {
+                icon: 'pixelarticons:bot',
+                title: 'Autonomous Construction Agents',
+                desc: 'Feed structural blueprints and schemas to AI bots that autonomously place, sculpt, recolor, and assemble kinetic machinery directly in the shared world.'
+            }
+        ],
+        workflowTitle: 'Quickstart: 3 Steps to Your First Creation',
+        workflowSubtitle: 'From imagination to an autonomous flying contraption in under 60 seconds.',
+        workflowSteps: [
+            {
+                number: '01',
+                title: 'Enter with Your Minecraft Avatar',
+                desc: 'Log in with your EntropyDrop account. Your custom Minecraft skin automatically renders in full 3D as your identity.'
+            },
+            {
+                number: '02',
+                title: 'Sculpt & Entityize (G Key)',
+                desc: 'Build your ship, rover, or robot using shovel and spoon. Use the Selector tool, then press G to bring it to life as a rigid body.'
+            },
+            {
+                number: '03',
+                title: 'Prompt & Program (C Key)',
+                desc: 'Press C, tell the AI agent what you want your entity to do, inspect the live controller code, and watch it fly in the world.'
+            }
+        ],
+        closingTitle: 'The Shared Voxel Universe Awaits.',
+        closingSubtitle: 'Zero installation required. Jump straight into the persistent WebGL 2 world from any modern desktop browser.',
+        communityLinks: {
+            github: 'GitHub Repo',
+            discord: 'Discord Community',
+            apiDocs: 'API Docs'
         }
     },
     public_page: {

@@ -906,45 +906,250 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
     space_page: {
         title: 'EntropyDrop Space',
         eyebrow: '可游玩原型',
-        platform: 'WebGL · 共享世界 · AI Agent',
-        tagline: '创造任何东西，然后告诉它该做什么。',
-        description: '一个 AI 原生的可编程体素世界：每座建筑都可以成为实体，每个实体都能获得行为，每位玩家都能共同塑造同一个持续演化的世界。',
-        primaryCta: '进入 Space',
-        secondaryCta: '了解玩法',
-        heroPlaceholder: {
-            label: 'Space 世界截图',
-            hint: '可替换为产品截图或玩法视频封面'
+        platform: 'WebGL 2 · 共享永恒世界 · AI Agent 原生',
+        tagline: '高自由度体素建造，赋能 AI Agent 协同创造。',
+        description: '一个完全运行在浏览器中的 AI 原生可编程体素世界。你可以随意搭建或微雕体素、将几何结构实体化为物理刚体，并通过自然语言与 AI Agent 赋予造物智能行为与自动构建能力。',
+        primaryCta: '进入 Space 世界',
+        secondaryCta: '玩法指南',
+        skinNotice: {
+            title: '需要配置 Minecraft 皮肤',
+            description: 'Space 使用您的 EntropyDrop 皮肤作为共享世界中的 3D 虚拟形象。进入世界前请确保已配置皮肤。',
+            action: '前往配置皮肤'
         },
-        featuresTitle: '一个生来就能被改变的世界',
-        features: [
-            { title: '自由建造', description: '放置、移除、重新着色并组合体素，创造地形、机器、建筑，以及介于它们之间的一切。' },
-            { title: '双尺度雕刻', description: '从标准方块切换到精细微体素，让复杂轮廓、细节和结构不再受单一网格限制。' },
-            { title: '用语言编程', description: '选择你的造物，描述它应该做什么，检查生成的控制器，然后让行为在世界中运行。' },
-            { title: '共建同一世界', description: '遇见其他玩家，观察造物持续演化，并在同一个多人世界里留下持久的改变。' }
+        stats: {
+            scale: '0.2m / 1.0m 双尺度雕刻',
+            physics: '60 Hz 刚体物理引擎',
+            runtime: 'WebGL 2 浏览器即开即玩',
+            agents: '原生支持 Agent / MCP 协议'
+        },
+        pillarsTitle: '核心特性与玩法矩阵',
+        pillarsSubtitle: '从宏观地形建筑到微观可编程动态实体，人机无缝协同共建同一个持续演化的世界。',
+        pillars: [
+            {
+                tag: '自由建造',
+                title: '双尺度精细体素雕刻',
+                description: '用铲子放置/破坏 1×1×1 标准方块，或用勺子无损切换至 0.2×0.2×0.2 精细微体素（5×5×5 分辨率），搭配全 RGB 调色盘任意涂装。',
+                badge: '1x1 & 0.2m'
+            },
+            {
+                tag: '刚体物理',
+                title: '一键实体化与物理系统',
+                description: '使用选区工具框选任意连通体素结构，按下 G 键瞬间实体化为可动组件树，自动计算质量、惯性，支持力/力矩驱动与刚体物理碰撞。',
+                badge: '刚体组件 // G 键'
+            },
+            {
+                tag: '语言编程',
+                title: '自然语言编译智能行为',
+                description: '对准实体按 C 呼出控制器终端，用自然语言描述悬浮、跟随、巡逻或姿态稳定意图，实时编译为透明可读且支持单步调试的代码。',
+                badge: '自然语言 -> 控制器'
+            },
+            {
+                tag: '多人与协同',
+                title: '多人共享世界与开放 API',
+                description: '基于环面（Torus）几何的共享世界，支持 WebGL 60FPS 实时渲染、数据持久化与增量同步，提供标准 REST/WebSocket 与 MCP 智能体接口。',
+                badge: 'MCP 协议 & 多智能体'
+            }
         ],
-        showcase: {
-            eyebrow: '从方块到行为',
-            title: '你的造物不只是场景。',
-            description: '被选中的结构可以转化为可编程组件树，拥有物理约束与 Agent 控制的行为。造一辆车、一台机器、一个生物，或者某种还没有名字的东西。',
-            placeholder: '玩法 / 可编程造物截图',
-            bullets: [
-                '一种可自由着色的体素材料，覆盖标准方块与微体素细节',
-                '支持运动学、动力学与物理约束的实体组件',
-                '自然语言意图、可检查的控制器与开放 API'
+        interactiveTitle: '交互式引擎沙盒',
+        interactiveSubtitle: '在线体验体素几何微雕、物理刚体实体化与 AI Agent 行为编译器的协同运作。',
+        tabs: {
+            agentCompiler: 'AI 行为编译器模拟器',
+            voxelScale: '双尺度体素对照',
+            entityWorkflow: '实体化物理工作流'
+        },
+        compilerDemo: {
+            badge: 'AI AGENT 行为编译器',
+            promptLabel: '自然语言行为提示词 (Prompt)',
+            codeLabel: '生成的控制器脚本 (TypeScript/JS)',
+            consoleLabel: '模拟引擎遥测数据与运行日志',
+            presets: [
+                {
+                    id: 'hover',
+                    name: 'PD 反重力悬浮护卫',
+                    desc: '在离地 2.5 米高度保持反重力悬浮，通过 PD 算法实时补偿倾角姿态',
+                    prompt: '让该实体在离地 2.5 米高度保持稳定悬浮，自动平衡俯仰和横滚姿态。',
+                    code: `/**
+ * Agent 生成控制器: PD 反重力悬浮
+ * 意图: 保持实体离地 2.5m 稳定悬浮并姿态自平衡
+ */
+const targetHeight = 2.50;
+const heightError = targetHeight - ctx.groundDistance;
+const lift = ctx.mass * Math.abs(ctx.gravity[1])
+  + heightError * 34.0
+  - ctx.velocity[1] * 13.0;
+
+self.applyForce([0, Math.max(0, lift), 0]);
+self.applyTorque([
+  -ctx.rotation[0] * 32.0 - ctx.angularVelocity[0] * 10.0,
+  -ctx.angularVelocity[1] * 3.0,
+  -ctx.rotation[2] * 32.0 - ctx.angularVelocity[2] * 10.0
+]);
+
+if (ctx.tick % 60 === 0) {
+  ctx.log(\`Agent · 悬浮高度: \${ctx.groundDistance.toFixed(2)}m (误差: \${heightError.toFixed(2)}m)\`);
+}`,
+                    log: `[Agent 运行环境] 为实体 #0x7F2B 初始化 PD 悬浮控制器
+[物理引擎 60Hz] 实体质量: 48.0 kg | 重力矢量: [0, -9.81, 0] m/s²
+[Agent 遥测] 测距传感器: 2.48 m | 施加垂直升力: 476.2 N
+[姿态 PID] 角度阻尼已生效，俯仰/横滚姿态偏差: 0.00 rad
+[Agent 日志] 状态正常: 已在 2.50m 保持稳定悬浮`
+                },
+                {
+                    id: 'follow',
+                    name: '玩家护卫与伴飞跟随',
+                    desc: '锁定最近玩家，保持 3.5 米护卫距离并进行平滑航向跟随',
+                    prompt: '检测最近的玩家位置，在玩家右后上方 3.5 米处保持护卫伴飞。',
+                    code: `/**
+ * Agent 生成控制器: 伴飞护卫
+ * 意图: 保持距玩家 3.5m 相对偏移跟随
+ */
+if (!ctx.players || ctx.players.length === 0) {
+  self.applyForce([0, ctx.mass * 9.81, 0]);
+} else {
+  const leader = ctx.players[0];
+  const target = [leader.position[0], leader.position[1] + 1.8, leader.position[2] + 3.5];
+  const delta = [
+    target[0] - ctx.position[0],
+    target[1] - ctx.position[1],
+    target[2] - ctx.position[2]
+  ];
+  const force = delta.map((d, i) => d * 22.0 - ctx.velocity[i] * 9.0);
+  self.applyForce(force);
+  if (ctx.tick % 90 === 0) ctx.log(\`Agent · 正在伴飞护卫玩家 \${leader.name || 'User'} (间距: \${Math.hypot(...delta).toFixed(1)}m)\`);
+}`,
+                    log: `[Agent 运行环境] 雷达锁定: 检测到玩家 "EntropyVoyager" 位于 [42.1, 16.0, 88.3]
+[航线规划] 计算矢量误差: dx=+1.2m, dy=+0.8m, dz=+3.4m
+[推力矩阵] 输出力矢量: [26.4N, 492.1N, 74.8N]
+[Agent 日志] 正在护卫玩家 EntropyVoyager (距离: 3.5m, 巡航速度: 2.1 m/s)
+[避障传感器] 锥形扫描无障碍，伴飞航线锁定`
+                },
+                {
+                    id: 'spin',
+                    name: '恒定自旋与水平陀螺锁',
+                    desc: '维持 2.0 rad/s 恒定偏航自转，同时锁定水平轴姿态水平',
+                    prompt: '绕 Y 轴以 2.0 rad/s 恒定自转，同时利用陀螺力矩维持水平平衡。',
+                    code: `/**
+ * Agent 生成控制器: 陀螺自旋稳定
+ * 意图: 维持 2.0 rad/s 偏航角速度，锁定水平轴平衡
+ */
+const targetSpin = 2.0;
+const yawTorque = (targetSpin - ctx.angularVelocity[1]) * 15.0;
+const pitchTorque = -ctx.rotation[0] * 40.0 - ctx.angularVelocity[0] * 12.0;
+const rollTorque = -ctx.rotation[2] * 40.0 - ctx.angularVelocity[2] * 12.0;
+
+self.applyTorque([pitchTorque, yawTorque, rollTorque]);
+self.applyForce([0, ctx.mass * 9.81, 0]);`,
+                    log: `[Agent 运行环境] 陀螺自旋稳定器已就绪。目标角速度: 2.00 rad/s
+[惯导遥测] 当前偏航速度: 1.98 rad/s (力矩输出: 0.30 N·m)
+[陀螺仪] 俯仰偏角: 0.001 rad | 横滚偏角: 0.002 rad
+[Agent 日志] 连续角动量平衡维持中`
+                },
+                {
+                    id: 'patrol',
+                    name: '环形轨道巡航无人机',
+                    desc: '在半径 12 米环形轨道自主航行巡检，广播雷达侦测遥测',
+                    prompt: '以 [0, 20, 0] 为中心执行 12 米半径的环形轨道巡逻，高度 20 米。',
+                    code: `/**
+ * Agent 生成控制器: 轨道巡航
+ * 意图: 以 12m 半径、20m 高度进行圆形轨道巡检
+ */
+const angle = (ctx.tick * 0.02) % (Math.PI * 2);
+const targetX = Math.cos(angle) * 12.0;
+const targetZ = Math.sin(angle) * 12.0;
+const targetY = 20.0;
+
+const errX = targetX - ctx.position[0];
+const errY = targetY - ctx.position[1];
+const errZ = targetZ - ctx.position[2];
+
+self.applyForce([
+  errX * 16.0 - ctx.velocity[0] * 7.0,
+  errY * 20.0 - ctx.velocity[1] * 8.0 + ctx.mass * 9.81,
+  errZ * 16.0 - ctx.velocity[2] * 7.0
+]);`,
+                    log: `[Agent 运行环境] 航点序列已加载。巡航半径: 12.0m
+[轨道矢量] θ = 1.42 rad | 目标航点: [1.8m, 20.0m, 11.9m]
+[导航系统] 航迹误差: 0.04m | 对地高度: 18.2m
+[Agent 日志] 航点核验通过，外围雷达扫描正常`
+                }
             ]
         },
-        workflow: {
-            title: '从想法到行为，只需三步',
-            description: 'Space 尽量缩短创造循环：以 EntropyDrop 角色进入，直接在世界中建造，再赋予成品一个行为。',
-            steps: [
-                { title: '以自己的形象进入', description: '使用 EntropyDrop 账号与 Minecraft 皮肤，成为共享世界中的你。' },
-                { title: '塑造这个世界', description: '用标准或微体素建造，选中连通结构，并把它转化为实体。' },
-                { title: '赋予它意图', description: '用自然语言描述行为，检查生成的控制器，然后看着它开始行动。' }
-            ]
+        voxelDemo: {
+            title: '双尺度几何架构',
+            desc: '在宏观结构建造与精细机械微雕之间无缝自由切换。',
+            standardLabel: '标准方块 (1.0m³)',
+            standardDesc: '适合大尺度地形构建、建筑外墙、巨型结构框架与宏观场景。',
+            microLabel: '精细微体素 (0.2m³ = 1/125 体积)',
+            microDesc: '适合驾驶舱内部、仪表盘、动力推进器、武器管线与高精度雕塑。',
+            paletteTitle: '24 位 TrueColor 全彩调色盘',
+            paletteDesc: '每一个体素均存储独立 RGB 颜色数据，无任何色彩调色板限制。'
         },
-        closing: {
-            title: '原型已经开放，带上一个想法来吧。',
-            description: 'Space 可直接在现代桌面浏览器中运行；进入前需要先为账号设置 Minecraft 皮肤。'
+        entityDemo: {
+            title: '从静态方块到动态实体',
+            desc: '只需简单三步，即可将世界中的任意方块簇转化为支持物理模拟的可动实体。',
+            step1Title: '1. 框选结构',
+            step1Desc: '使用选区工具指定 A、B 两点角点，或单机连通选区自动提取结构。',
+            step2Title: '2. 实体化 (G 键)',
+            step2Desc: '方块组转化为刚体实体，自动计算质心、质量与碰撞外壳。',
+            step3Title: '3. 赋予行为 (C 键)',
+            step3Desc: '挂载 AI 行为控制器，或通过开放接口与外部 Agent 建立协同。'
+        },
+        keybindingsTitle: '按键操作与控制矩阵',
+        keybindingsSubtitle: '熟悉 Space 中的快捷键位，高效进行沙盒建造与控制器编程。',
+        keybindings: [
+            { key: 'W A S D', action: '角色移动', desc: '在 3D 环面世界中自由穿行' },
+            { key: 'SPACE / SHIFT', action: '跳跃 / 下潜', desc: '垂直位移与高精度空中对齐' },
+            { key: '1 / 2', action: '铲子 / 勺子', desc: '1.0m 标准方块建造 / 0.2m 精细微体素雕刻' },
+            { key: '3 / 4', action: '选区 / 调色盘', desc: 'A/B 角点选区与 24 位全彩拾色器' },
+            { key: 'G', action: '结构实体化', desc: '将当前选中的方块组转为物理刚体' },
+            { key: 'C', action: '代码/Agent终端', desc: '呼出实体控制器编辑器与 AI 意图编译器' },
+            { key: 'E', action: '物品背包', desc: '管理建造材料、工具与蓝图存档' },
+            { key: 'ESC', action: '释放鼠标指针', desc: '退出视口锁定，操作 2D 悬浮界面' }
+        ],
+        agentDevTitle: 'AI Agent 与开发者协议',
+        agentDevSubtitle: '面向智能体与开发者的标准化接口，赋能多智能体自主世界构建。',
+        agentDevCards: [
+            {
+                icon: 'pixelarticons:code',
+                title: 'MCP Server 与 Agent 工具集',
+                desc: '支持通过 Model Context Protocol 协议让 Claude / OpenAI / DeepSeek 等外部智能体读取世界状态、查询实体信息并执行建造任务。'
+            },
+            {
+                icon: 'pixelarticons:zap',
+                title: '实时 WebSocket 与 REST API',
+                desc: '低延迟接收区块增量、玩家位姿、实体遥测数据流，支持幂等批量修改同步与持久化存储。'
+            },
+            {
+                icon: 'pixelarticons:bot',
+                title: '自主建造智能体 (Autonomous Builders)',
+                desc: '向 Agent 输入蓝图规范与场景语义，由智能体在世界中自主规划路径、自动化雕刻微体素并组装可动机件。'
+            }
+        ],
+        workflowTitle: '快速上手：三步创造属于你的第一台造物',
+        workflowSubtitle: '从天马行空的构想，到在世界中自主翱翔的智能实体，只需不到 60 秒。',
+        workflowSteps: [
+            {
+                number: '01',
+                title: '以个人形象进入世界',
+                desc: '登录 EntropyDrop 账号，你的专属 Minecraft 皮肤将自动渲染为 3D 虚拟人形象。'
+            },
+            {
+                number: '02',
+                title: '自由建造并实体化 (G 键)',
+                desc: '利用铲子与勺子搭建飞船、载具或机器，使用选区工具框选后按 G 键化为物理刚体。'
+            },
+            {
+                number: '03',
+                title: 'Prompt 赋予意图 (C 键)',
+                desc: '按 C 呼出终端，用一句话告诉 AI 你希望造物做什么，点击编译并见证它在世界中运行。'
+            }
+        ],
+        closingTitle: '无限创意的体素宇宙，已经就绪。',
+        closingSubtitle: '无需下载任何客户端，在现代桌面浏览器中即刻开启 WebGL 2 共享世界探索。',
+        communityLinks: {
+            github: 'GitHub 仓库',
+            discord: 'Discord 社区',
+            apiDocs: 'API 开发文档'
         }
     },
     public_page: {
