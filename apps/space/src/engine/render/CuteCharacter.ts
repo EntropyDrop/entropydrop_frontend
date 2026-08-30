@@ -474,6 +474,8 @@ export class CuteCharacter {
   private smoothedSpeed = 0;
   private smoothedForward = 0;
   private smoothedSide = 0;
+  private wasGrounded = true;
+  private jumpPoseDirection = 1;
   private readonly overlayGroups: THREE.Group[];
   private shadowsEnabled: boolean;
 
@@ -513,10 +515,8 @@ export class CuteCharacter {
     this.overlayGroups = overlays ? Object.values(overlays) : [];
 
     const bodyGeometry = new THREE.BoxGeometry(8, CUTE_SIDE_ROWS, 4, 8, CUTE_SIDE_ROWS, 4);
-    if (this.model === 'slim') {
-      taperGeometry(bodyGeometry, CUTE_SIDE_ROWS);
-      if (overlays) taperVoxelGroup(overlays.body, CUTE_SIDE_ROWS);
-    }
+    taperGeometry(bodyGeometry, CUTE_SIDE_ROWS);
+    if (overlays) taperVoxelGroup(overlays.body, CUTE_SIDE_ROWS);
 
     const body = new THREE.Group();
     body.position.y = 8.5;
@@ -553,8 +553,10 @@ export class CuteCharacter {
       return limb;
     };
 
-    const shoulderX = this.model === 'slim' ? 3.3 : 4.8;
     const armScale: [number, number, number] = [CUTE_X_SCALE, CUTE_Y_CELL_SCALE, 1];
+    // Both cute models share the slim torso. Keep the inner arm edge aligned
+    // while allowing the strong model's fourth pixel to extend outward.
+    const shoulderX = 3.3 + ((uv.armWidth - 3) * armScale[0]) / 2;
     const leftArm = addLimb(
       shoulderX, CUTE_HALF_SIDE_HEIGHT, armScale,
       new THREE.BoxGeometry(uv.armWidth, CUTE_SIDE_ROWS, 4), materials.leftArm, overlays?.leftArm ?? null
@@ -663,6 +665,13 @@ export class CuteCharacter {
     const maxSpeed = Math.max(1, Number(motion.maxSpeed) || 5);
     const grounded = motion.grounded !== false;
     const flying = motion.flying === true;
+    if (!grounded && this.wasGrounded && !flying) {
+      const gait = Math.sin(this.gaitPhase);
+      this.jumpPoseDirection = Math.abs(gait) > 0.15
+        ? Math.sign(gait)
+        : (Math.cos(this.gaitPhase) >= 0 ? 1 : -1);
+    }
+    this.wasGrounded = grounded;
     const movingAmount = THREE.MathUtils.clamp((speed - 0.08) / 0.9, 0, 1);
     const movingTarget = grounded && !flying
       ? movingAmount * movingAmount * (3 - 2 * movingAmount)
@@ -695,7 +704,7 @@ export class CuteCharacter {
 
     this.action = movingTarget > 0.05 ? 'walk' : 'idle';
     const slim = this.model === 'slim';
-    const armZ = slim ? 0.2 : -0.05;
+    const armZ = 0.2;
     const blend = this.locomotionBlend;
     const air = this.airborneBlend;
     const speedRatio = THREE.MathUtils.clamp(this.smoothedSpeed / maxSpeed, 0, 1);
@@ -725,23 +734,22 @@ export class CuteCharacter {
     let bodyY = 8.5 + idleBreath * 0.07 * idleWeight + walkBob;
 
     if (air > 0.001) {
-      const vertical = THREE.MathUtils.clamp((Number(motion.verticalSpeed) || 0) / 8.8, -1, 1);
-      const rising = Math.max(0, vertical);
-      const falling = Math.max(0, -vertical);
       const flight = this.flightBlend;
       const flightSpeed = speedRatio * speedRatio * (3 - 2 * speedRatio);
       const forwardFlight = Math.max(0, this.smoothedForward) * flightSpeed;
       const backwardFlight = Math.max(0, -this.smoothedForward) * flightSpeed;
       const flightFlutter = Math.sin(this.animationTime * 2.1) * 0.025;
+      const jumpLegSwing = this.jumpPoseDirection * 0.62;
+      const jumpArmSwing = jumpLegSwing * 0.78;
 
-      // Jump/fall pose remains compact. Flight gradually leans the whole body
-      // into the direction of travel, with arms relaxed beside the torso and
-      // slightly asymmetric trailing legs instead of a rigid Superman pose.
+      // At takeoff, carry the current gait direction into one full extension
+      // and hold it instead of cycling the limbs in mid-air. Flight gradually
+      // replaces this jump pose with relaxed arms and trailing legs.
       const jumpBodyPitch = 0.025 * this.smoothedForward;
-      const jumpLeftArm = -0.12 - rising * 0.14;
-      const jumpRightArm = -0.08 - rising * 0.1;
-      const jumpLeftLeg = -0.2 + falling * 0.08;
-      const jumpRightLeg = 0.14 - falling * 0.06;
+      const jumpLeftArm = -jumpArmSwing;
+      const jumpRightArm = jumpArmSwing;
+      const jumpLeftLeg = jumpLegSwing;
+      const jumpRightLeg = -jumpLegSwing;
       // Forward flight leans into travel and lets the limbs trail. Backward
       // flight is intentionally not the same pose played in reverse: the body
       // leans back less aggressively while arms and legs reach forward for

@@ -5,12 +5,12 @@ import * as THREE from 'three';
 import { CuteCharacter, detectSkinModel } from '../src/engine/render/CuteCharacter.ts';
 import { decodePng } from '../tools/png-decode.mjs';
 
-function createTestCharacter() {
+function createTestCharacter(model: 'strong' | 'slim' = 'strong') {
   const data = new Uint8ClampedArray(64 * 64 * 4).fill(255);
   return new CuteCharacter(
     new THREE.Texture(),
     { width: 64, height: 64, data } as ImageData,
-    { model: 'strong', showOverlay: false, castShadow: false }
+    { model, showOverlay: false, castShadow: false }
   );
 }
 
@@ -26,6 +26,30 @@ test('skin model detection recognizes the slim arm metadata pixel', () => {
   const data = new Uint8ClampedArray(64 * 64 * 4).fill(255);
   data[(20 * 64 + 55) * 4 + 3] = 0;
   assert.equal(detectSkinModel({ width: 64, height: 64, data }), 'slim');
+});
+
+test('strong uses the slim cute torso with four-pixel outward-tilted arms', () => {
+  const strong = createTestCharacter('strong');
+  const slim = createTestCharacter('slim');
+  const strongRig = strong as any;
+  const slimRig = slim as any;
+  const strongTorso = strongRig.parts.body.children[0].children[0] as THREE.Mesh;
+  const slimTorso = slimRig.parts.body.children[0].children[0] as THREE.Mesh;
+  const strongArm = strongRig.parts.leftArm.getObjectByProperty('type', 'Mesh') as THREE.Mesh;
+
+  assert.deepEqual(
+    Array.from(strongTorso.geometry.attributes.position.array),
+    Array.from(slimTorso.geometry.attributes.position.array),
+    'strong and slim should share the same tapered torso geometry'
+  );
+  assert.equal((strongArm.geometry as THREE.BoxGeometry).parameters.width, 4);
+  assert.ok(Math.abs(strongRig.parts.leftArm.position.x - 3.725) < 1e-12);
+  assert.ok(Math.abs(strongRig.parts.rightArm.position.x + 3.725) < 1e-12);
+  assert.equal(strongRig.parts.leftArm.rotation.z, 0.2);
+  assert.equal(strongRig.parts.rightArm.rotation.z, -0.2);
+
+  strong.dispose();
+  slim.dispose();
 });
 
 test('remote characters expose a one-plane billboard and switch expensive details off', () => {
@@ -153,8 +177,43 @@ test('walking swings one-piece Y-downsampled limbs and airborne/look states rece
     });
   }
   assert.ok(rig.airborneBlend > 0.98);
-  assert.ok(rig.parts.leftLeg.rotation.x < -0.1);
-  assert.ok(rig.parts.leftArm.rotation.x < -0.1);
+  assert.ok(Math.abs(rig.parts.leftLeg.rotation.x) > 0.5);
+  assert.ok(Math.abs(rig.parts.rightLeg.rotation.x) > 0.5);
+  assert.ok(Math.abs(rig.parts.leftArm.rotation.x) > 0.38);
+  assert.ok(Math.abs(rig.parts.rightArm.rotation.x) > 0.38);
+  assert.ok(rig.parts.leftLeg.rotation.x * rig.parts.rightLeg.rotation.x < 0);
+  assert.ok(rig.parts.leftArm.rotation.x * rig.parts.rightArm.rotation.x < 0);
+  character.dispose();
+});
+
+test('jumping extends all limbs once and holds the maximum pose', () => {
+  const character = createTestCharacter();
+  const rig = character as any;
+  let minimumLeft = Number.POSITIVE_INFINITY;
+  let maximumLeft = Number.NEGATIVE_INFINITY;
+  let takeoffPhase = 0;
+
+  for (let frame = 0; frame < 180; frame++) {
+    character.update(1 / 60, {
+      speed: 5,
+      forwardSpeed: 5,
+      verticalSpeed: 0,
+      maxSpeed: 5,
+      grounded: false
+    });
+    if (frame === 0) takeoffPhase = rig.gaitPhase;
+    if (frame < 90) continue;
+    minimumLeft = Math.min(minimumLeft, rig.parts.leftArm.rotation.x);
+    maximumLeft = Math.max(maximumLeft, rig.parts.leftArm.rotation.x);
+  }
+
+  assert.ok(rig.airborneBlend > 0.99);
+  assert.equal(rig.gaitPhase, takeoffPhase, 'the gait cycle should pause in the air');
+  assert.ok(maximumLeft - minimumLeft < 0.001, 'the extended jump pose should not oscillate');
+  assert.ok(Math.abs(Math.abs(rig.parts.leftArm.rotation.x) - 0.62 * 0.78) < 0.001);
+  assert.ok(Math.abs(Math.abs(rig.parts.rightArm.rotation.x) - 0.62 * 0.78) < 0.001);
+  assert.ok(Math.abs(Math.abs(rig.parts.leftLeg.rotation.x) - 0.62) < 0.001);
+  assert.ok(Math.abs(Math.abs(rig.parts.rightLeg.rotation.x) - 0.62) < 0.001);
   character.dispose();
 });
 
