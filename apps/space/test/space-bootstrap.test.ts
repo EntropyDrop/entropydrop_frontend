@@ -8,6 +8,7 @@ import {
   resolveApiOrigin,
   resolveInitialPlayerPose,
   terrainStreamAreaForPosition,
+  terrainStreamAreaForPositionWithHysteresis,
 } from '../src/bootstrap/SpaceBootstrap.ts';
 
 test('Space derives the API origin from the main frontend API configuration', () => {
@@ -56,7 +57,10 @@ test('Space loads every terrain snapshot page and posts authenticated mutation b
     terrainStreamAreaForPosition(8192, 1024)
   );
   const initialRequestCount = requests.length;
-  await remote.loadArea?.(516, 68, 32);
+  const streamedPages: number[][] = [];
+  await remote.loadArea?.(516, 68, 32, chunks => {
+    streamedPages.push(chunks.map(chunk => chunk.chunk_x));
+  });
   await remote.sendBatch('00000000-0000-4000-8000-000000000001', [{
     kind: 'set_standard', x: 1, y: 80, z: 1, block: 1, color: 0x123456
   }]);
@@ -65,11 +69,13 @@ test('Space loads every terrain snapshot page and posts authenticated mutation b
   assert.equal(requests.length, 5);
   assert.equal(initialRequestCount, 2);
   assert.equal((requests[0].options.headers as any).Authorization, 'Bearer test-token');
+  assert.match(requests[0].url, /limit=64/);
   assert.match(requests[0].url, /center_chunk_x=516/);
   assert.match(requests[0].url, /center_chunk_z=68/);
   assert.match(requests[0].url, /radius_chunks=32/);
   assert.match(requests[1].url, /cursor=0%2C0/);
   assert.match(requests[3].url, /cursor=0%2C0/);
+  assert.deepEqual(streamedPages, [[0], [2]]);
   assert.deepEqual(JSON.parse(String(requests[4].options.body)), {
     batch_id: '00000000-0000-4000-8000-000000000001',
     mutations: [{ kind: 'set_standard', x: 1, y: 80, z: 1, block: 1, color: 0x123456 }]
@@ -85,6 +91,32 @@ test('terrain AOI windows are tiled, wrapped, and overlap the maximum render dis
   });
   assert.equal(terrainStreamAreaForPosition(-1, -1).centerChunkX, 1020);
   assert.equal(terrainStreamAreaForPosition(-1, -1).centerChunkZ, 124);
+});
+
+test('terrain AOI hysteresis suppresses repeated loads around tile boundaries', () => {
+  const leftArea = terrainStreamAreaForPosition(127, 64);
+  const rightArea = terrainStreamAreaForPosition(129, 64);
+  assert.notEqual(leftArea.key, rightArea.key);
+
+  // Crossing the raw 128m tile edge by a small amount keeps the loaded AOI.
+  assert.equal(
+    terrainStreamAreaForPositionWithHysteresis(129, 64, leftArea).key,
+    leftArea.key
+  );
+  // The switch commits after moving 1.5 chunks beyond the raw boundary.
+  assert.equal(
+    terrainStreamAreaForPositionWithHysteresis(153, 64, leftArea).key,
+    rightArea.key
+  );
+  // Switching back also requires meaningful penetration into the old tile.
+  assert.equal(
+    terrainStreamAreaForPositionWithHysteresis(127, 64, rightArea).key,
+    rightArea.key
+  );
+  assert.equal(
+    terrainStreamAreaForPositionWithHysteresis(103, 64, rightArea).key,
+    leftArea.key
+  );
 });
 
 test('Space consumes one unified backend start pose for resume or samples random spawn when not resumed', () => {

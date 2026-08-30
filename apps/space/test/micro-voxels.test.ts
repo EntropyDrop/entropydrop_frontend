@@ -57,6 +57,16 @@ test('micro voxel edits rebuild only their dirty horizontal mesh chunk', () => {
   assert.equal(layer.meshChunks.get(farEntry[0]).geometry, farGeometry);
 });
 
+test('micro voxel chunk replacement clears only the indexed target chunk', () => {
+  const layer = new MicroVoxelLayer();
+  layer.set(1, 10, 1, 0xff0000);
+  layer.set(81, 10, 1, 0x00ff00);
+
+  assert.equal(layer.clearChunk(0, 0), 1);
+  assert.equal(layer.get(1, 10, 1), null);
+  assert.equal(layer.get(81, 10, 1), 0x00ff00);
+});
+
 test('selected micro voxels become one programmable rigid body and can be restored', () => {
   const scene = new THREE.Scene();
   const world = new World(scene) as any;

@@ -307,6 +307,41 @@ test('World.applyRemoteChunkUpdates updates loaded chunk blocks and microblocks 
   assert.equal(world.microVoxels.parts.get('25,200,25'), 'part_1');
 });
 
+test('queued remote chunks are coalesced and applied during the bounded frame update', () => {
+  const world = new World(new THREE.Scene(), 12345);
+  world.getOrCreateChunk(0, 0);
+  world.queueRemoteChunkUpdates([
+    {
+      chunk_x: 0,
+      chunk_z: 0,
+      revision: 1,
+      standard: [[5, 40, 5, BlockTypes.COLOR_BLOCK, 0x111111]],
+      micro: []
+    },
+    {
+      chunk_x: 0,
+      chunk_z: 0,
+      revision: 2,
+      standard: [[5, 40, 5, BlockTypes.COLOR_BLOCK, 0x222222]],
+      micro: []
+    }
+  ]);
+
+  assert.notEqual(world.getBlockColor(5, 40, 5), 0x222222);
+  world.updateChunksAround(0, 0);
+  assert.equal(world.getBlockColor(5, 40, 5), 0x222222);
+
+  world.queueRemoteChunkUpdates([{
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 1,
+    standard: [[5, 40, 5, BlockTypes.COLOR_BLOCK, 0x333333]],
+    micro: []
+  }]);
+  world.updateChunksAround(0, 0);
+  assert.equal(world.getBlockColor(5, 40, 5), 0x222222, 'an older AOI page must not regress a newer heartbeat');
+});
+
 test('remote chunk snapshots are cached without echoing them back as local mutations', async () => {
   const scene = new THREE.Scene();
   const sent: any[] = [];

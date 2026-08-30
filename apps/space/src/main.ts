@@ -14,10 +14,12 @@ import {
   enterSpace,
   initialTerrainStreamArea,
   resolveInitialPlayerPose,
-  terrainStreamAreaForPosition,
+  TERRAIN_STREAM_SWITCH_DEBOUNCE_MS,
+  terrainStreamAreaForPositionWithHysteresis,
   type PlayerPositionPayload,
   type PlayerPositionRemote,
   type ReadySpaceSession,
+  type TerrainStreamArea,
 } from './bootstrap/SpaceBootstrap.ts';
 import { loadDistantLodCache } from './bootstrap/DistantLodCache.ts';
 import type { DistantLodCacheData } from './engine/render/DistantLodCacheFormat.ts';
@@ -59,7 +61,11 @@ class Game {
   multiplayerSync: MultiplayerSync;
   remotePlayers: RemotePlayerInfo[];
   terrainEditRemote: ReadySpaceSession['terrain_edit_remote'];
-  terrainAreaKey: string;
+  terrainArea: TerrainStreamArea;
+  terrainAreaLoadedKey: string;
+  terrainAreaCandidateKey: string;
+  terrainAreaCandidateSince: number;
+  terrainAreaLoadInFlight: boolean;
   terrainAreaRetryAt: number;
 
   constructor(
@@ -163,14 +169,17 @@ class Game {
     this.terrainEditRemote = session.terrain_edit_remote;
     this.pendingPlayerPosition = null;
     this.playerPositionSaveInFlight = false;
-    this.terrainAreaKey = '';
+    this.terrainArea = initialTerrainStreamArea(session.player);
+    this.terrainAreaLoadedKey = this.terrainArea.key;
+    this.terrainAreaCandidateKey = '';
+    this.terrainAreaCandidateSince = 0;
+    this.terrainAreaLoadInFlight = false;
     this.terrainAreaRetryAt = 0;
 
     // 5. Initial Spawn & Worldgen
     this.initializeSpawn(session);
     // bootstrapSpace already loaded this window. If a first-entry random spawn
     // crosses into an adjacent tile, the first frame will fetch that tile too.
-    this.terrainAreaKey = initialTerrainStreamArea(session.player).key;
     this.lastSavedPlayerPosition = session.player.resumed
       ? JSON.stringify(this.currentPlayerPosition())
       : '';
@@ -193,7 +202,7 @@ class Game {
         this.uiStore.setRemotePlayers(players);
       },
       onTerrainUpdate: (chunks) => {
-        this.world.applyRemoteChunkUpdates(chunks);
+        this.world.queueRemoteChunkUpdates(chunks);
       }
     });
     this.multiplayerSync.getPlayerPosition = () => ({
@@ -279,16 +288,52 @@ class Game {
 
   ensureTerrainArea(playerX: number, playerZ: number) {
     const remote = this.terrainEditRemote;
-    if (!remote?.loadArea || Date.now() < this.terrainAreaRetryAt) return;
-    const area = terrainStreamAreaForPosition(playerX, playerZ);
-    if (area.key === this.terrainAreaKey) return;
-    this.terrainAreaKey = area.key;
-    void remote.loadArea(area.centerChunkX, area.centerChunkZ, area.radiusChunks)
-      .then(chunks => this.world.applyRemoteChunkUpdates(chunks))
+    if (!remote?.loadArea) return;
+
+    const now = Date.now();
+    const candidate = terrainStreamAreaForPositionWithHysteresis(
+      playerX,
+      playerZ,
+      this.terrainArea
+    );
+    if (candidate.key === this.terrainArea.key) {
+      this.terrainAreaCandidateKey = '';
+      this.terrainAreaCandidateSince = 0;
+    } else if (candidate.key !== this.terrainAreaCandidateKey) {
+      this.terrainAreaCandidateKey = candidate.key;
+      this.terrainAreaCandidateSince = now;
+    } else if (now - this.terrainAreaCandidateSince >= TERRAIN_STREAM_SWITCH_DEBOUNCE_MS) {
+      this.terrainArea = candidate;
+      this.terrainAreaCandidateKey = '';
+      this.terrainAreaCandidateSince = 0;
+    }
+
+    const area = this.terrainArea;
+    if (
+      area.key === this.terrainAreaLoadedKey
+      || this.terrainAreaLoadInFlight
+      || now < this.terrainAreaRetryAt
+    ) return;
+
+    // Serialize AOI loads. If the player crosses another tile while this one is
+    // loading, the next frame starts the latest target after this request ends.
+    this.terrainAreaLoadInFlight = true;
+    void remote.loadArea(
+      area.centerChunkX,
+      area.centerChunkZ,
+      area.radiusChunks,
+      chunks => this.world.queueRemoteChunkUpdates(chunks)
+    )
+      .then(() => {
+        this.terrainAreaLoadedKey = area.key;
+        this.terrainAreaRetryAt = 0;
+      })
       .catch(error => {
-        if (this.terrainAreaKey === area.key) this.terrainAreaKey = '';
         this.terrainAreaRetryAt = Date.now() + 2_000;
         console.warn('Space terrain area loading is temporarily unavailable.', error);
+      })
+      .finally(() => {
+        this.terrainAreaLoadInFlight = false;
       });
   }
 

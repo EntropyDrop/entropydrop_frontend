@@ -94,8 +94,9 @@ test('LatencyMonitor start and stop control background polling schedule', async 
   assert.equal(probeCount, countAfterStop);
 });
 
-test('createPlayerPositionRemote and loadTerrainEditRemote record network latency', async () => {
+test('operation requests do not contaminate the dedicated ping latency', async () => {
   const monitor = new LatencyMonitor({ apiOrigin: 'http://localhost:8000' });
+  monitor.recordPing(42);
   const fetchImpl = async (url: string | URL | Request) => {
     const str = String(url);
     if (str.includes('/players/me/position')) {
@@ -117,9 +118,8 @@ test('createPlayerPositionRemote and loadTerrainEditRemote record network latenc
     monitor
   );
   await posRemote.save({ x_cm: 100, y_cm: 200, z_cm: 300, yaw_q15: 0 });
-  assert.ok(monitor.getPing() !== null);
+  assert.equal(monitor.getPing(), 42);
 
-  const prevPing = monitor.getPing();
   const terrainRemote = await loadTerrainEditRemote(
     'http://localhost:8000',
     'token',
@@ -128,6 +128,5 @@ test('createPlayerPositionRemote and loadTerrainEditRemote record network latenc
     monitor
   );
   await terrainRemote.sendBatch('batch-1', [{ kind: 'clear_micro_cell', x: 0, y: 0, z: 0 }]);
-  assert.ok(monitor.getPing() !== null);
-  assert.ok(typeof monitor.getPing() === 'number');
+  assert.equal(monitor.getPing(), 42);
 });

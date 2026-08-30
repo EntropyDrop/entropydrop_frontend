@@ -33,6 +33,7 @@ export class MicroVoxelLayer {
   meshChunks: Map<string, THREE.Mesh>;
   private chunkCells: Map<string, Set<string>>;
   private dirtyMeshChunks: Set<string>;
+  private recentlyRebuiltMeshes: THREE.Mesh[];
   material: THREE.MeshStandardMaterial;
 
   constructor() {
@@ -49,6 +50,7 @@ export class MicroVoxelLayer {
     this.meshChunks = new Map();
     this.chunkCells = new Map();
     this.dirtyMeshChunks = new Set();
+    this.recentlyRebuiltMeshes = [];
     this.material = new THREE.MeshStandardMaterial({
       vertexColors: true,
       flatShading: true,
@@ -225,6 +227,44 @@ export class MicroVoxelLayer {
     return false;
   }
 
+  /** Clear one horizontal 16x16 standard chunk without scanning all microcells. */
+  clearChunk(chunkX, chunkZ) {
+    const originMx = chunkX * MICRO_CHUNK_SIZE;
+    const originMz = chunkZ * MICRO_CHUNK_SIZE;
+    const chunkKey = meshChunkKey(originMx, originMz);
+    const cellKeys = this.chunkCells.get(chunkKey);
+    if (!cellKeys?.size) return 0;
+
+    let removed = 0;
+    let touchesMinX = false;
+    let touchesMaxX = false;
+    let touchesMinZ = false;
+    let touchesMaxZ = false;
+    for (const cellKey of [...cellKeys]) {
+      const [mx, my, mz] = cellKey.split(',').map(Number);
+      if (!this.cells.delete(cellKey)) continue;
+      this.parts.delete(cellKey);
+      this.removeChunkCell(cellKey, mx, mz);
+      this.indexCellDelete(mx, my, mz);
+      const localX = wrapMicroX(mx) % MICRO_CHUNK_SIZE;
+      const localZ = wrapMicroZ(mz) % MICRO_CHUNK_SIZE;
+      touchesMinX ||= localX === 0;
+      touchesMaxX ||= localX === MICRO_CHUNK_SIZE - 1;
+      touchesMinZ ||= localZ === 0;
+      touchesMaxZ ||= localZ === MICRO_CHUNK_SIZE - 1;
+      removed++;
+    }
+    if (removed === 0) return 0;
+
+    this.dirtyMeshChunks.add(chunkKey);
+    if (touchesMinX) this.dirtyMeshChunks.add(meshChunkKey(originMx - 1, originMz));
+    if (touchesMaxX) this.dirtyMeshChunks.add(meshChunkKey(originMx + MICRO_CHUNK_SIZE, originMz));
+    if (touchesMinZ) this.dirtyMeshChunks.add(meshChunkKey(originMx, originMz - 1));
+    if (touchesMaxZ) this.dirtyMeshChunks.add(meshChunkKey(originMx, originMz + MICRO_CHUNK_SIZE));
+    this.dirty = true;
+    return removed;
+  }
+
   extractRegion(minX, minY, minZ, maxX, maxY, maxZ) {
     const extracted = [];
     const minMx = minX * MICRO_DIVISIONS;
@@ -380,11 +420,17 @@ export class MicroVoxelLayer {
     return { hit: false };
   }
 
-  updateMesh() {
+  updateMesh(maxChunks = Number.POSITIVE_INFINITY) {
     if (!this.dirty) return false;
-    this.dirty = false;
-    const dirtyChunks = [...this.dirtyMeshChunks];
-    this.dirtyMeshChunks.clear();
+    this.recentlyRebuiltMeshes.length = 0;
+    const limit = Number.isFinite(maxChunks) ? Math.max(1, Math.floor(maxChunks)) : Infinity;
+    const dirtyChunks = [];
+    for (const chunkKey of this.dirtyMeshChunks) {
+      this.dirtyMeshChunks.delete(chunkKey);
+      dirtyChunks.push(chunkKey);
+      if (dirtyChunks.length >= limit) break;
+    }
+    this.dirty = this.dirtyMeshChunks.size > 0;
     const tempColor = new THREE.Color();
     const faces = [
       { d: [0, 1, 0], n: [0, 1, 0], s: 1.0, q: [[0,1,1],[1,1,1],[1,1,0],[0,1,0]] },
@@ -458,8 +504,13 @@ export class MicroVoxelLayer {
       mesh.receiveShadow = true;
       this.meshChunks.set(chunkKey, mesh);
       this.group.add(mesh);
+      this.recentlyRebuiltMeshes.push(mesh);
     }
     this.mesh = this.meshChunks.values().next().value || null;
     return true;
+  }
+
+  takeRecentlyRebuiltMeshes() {
+    return this.recentlyRebuiltMeshes.splice(0);
   }
 }

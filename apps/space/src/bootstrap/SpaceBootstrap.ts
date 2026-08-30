@@ -23,6 +23,9 @@ export { LatencyMonitor, type LatencyMonitorOptions };
 
 export const TERRAIN_STREAM_RADIUS_CHUNKS = 32;
 export const TERRAIN_STREAM_TILE_CHUNKS = 8;
+export const TERRAIN_STREAM_PAGE_SIZE = 64;
+export const TERRAIN_STREAM_HYSTERESIS_CHUNKS = 1.5;
+export const TERRAIN_STREAM_SWITCH_DEBOUNCE_MS = 500;
 
 export interface TerrainStreamArea {
   centerChunkX: number;
@@ -181,6 +184,45 @@ export function terrainStreamAreaForPosition(
   };
 }
 
+function wrappedChunkDelta(position: number, center: number, chunkCount: number) {
+  let delta = position - center;
+  if (delta > chunkCount / 2) delta -= chunkCount;
+  if (delta < -chunkCount / 2) delta += chunkCount;
+  return delta;
+}
+
+/**
+ * Keep the current snapshot window while the player is close to a tile edge.
+ * The overlap prevents tiny back-and-forth movements from repeatedly loading
+ * two otherwise equivalent 65x65-chunk AOIs.
+ */
+export function terrainStreamAreaForPositionWithHysteresis(
+  xMeters: number,
+  zMeters: number,
+  currentArea: TerrainStreamArea,
+  hysteresisChunks = TERRAIN_STREAM_HYSTERESIS_CHUNKS
+): TerrainStreamArea {
+  const nextArea = terrainStreamAreaForPosition(
+    xMeters,
+    zMeters,
+    currentArea.radiusChunks
+  );
+  if (nextArea.key === currentArea.key) return currentArea;
+
+  const chunkCountX = TORUS_SIZE_X / CHUNK_SIZE_X;
+  const chunkCountZ = TORUS_SIZE_Z / CHUNK_SIZE_Z;
+  const chunkX = wrapX(xMeters) / CHUNK_SIZE_X;
+  const chunkZ = wrapZ(zMeters) / CHUNK_SIZE_Z;
+  const keepDistance = TERRAIN_STREAM_TILE_CHUNKS / 2
+    + Math.max(0, hysteresisChunks);
+  const deltaX = wrappedChunkDelta(chunkX, currentArea.centerChunkX, chunkCountX);
+  const deltaZ = wrappedChunkDelta(chunkZ, currentArea.centerChunkZ, chunkCountZ);
+
+  return Math.abs(deltaX) < keepDistance && Math.abs(deltaZ) < keepDistance
+    ? currentArea
+    : nextArea;
+}
+
 export function initialTerrainStreamArea(player: SpaceBootstrapPayload['player']) {
   const resumed = player.resumed
     && typeof player.start_x_cm === 'number'
@@ -294,14 +336,17 @@ export async function loadTerrainEditRemote(
   token: string,
   worldId: string,
   fetchImpl: typeof fetch = fetch,
-  latencyMonitor?: LatencyMonitor,
+  _latencyMonitor?: LatencyMonitor,
   initialArea?: TerrainStreamArea
 ): Promise<WorldEditRemote> {
   const baseUrl = `${apiOrigin}/space/api/v2/worlds/${encodeURIComponent(worldId)}/terrain-edits`;
   const retryUrl = typeof window === 'undefined' ? '/' : window.location.href;
   const areaRequests = new Map<string, Promise<TerrainEditChunk[]>>();
 
-  const fetchPages = async (area?: TerrainStreamArea) => {
+  const fetchPages = async (
+    area?: TerrainStreamArea,
+    onPage?: (chunks: TerrainEditChunk[]) => void
+  ) => {
     const chunks: TerrainEditChunk[] = [];
     const seenCursors = new Set<string>();
     let cursor: string | null = null;
@@ -311,14 +356,15 @@ export async function loadTerrainEditRemote(
         baseUrl,
         typeof window === 'undefined' ? 'http://localhost' : window.location.href
       );
-      url.searchParams.set('limit', '256');
+      // Keep JSON decoding and validation below a long-task-sized response;
+      // subsequent pages yield back to the browser between network awaits.
+      url.searchParams.set('limit', String(TERRAIN_STREAM_PAGE_SIZE));
       if (area) {
         url.searchParams.set('center_chunk_x', String(area.centerChunkX));
         url.searchParams.set('center_chunk_z', String(area.centerChunkZ));
         url.searchParams.set('radius_chunks', String(area.radiusChunks));
       }
       if (cursor) url.searchParams.set('cursor', cursor);
-      const start = performance.now();
       const response = await fetchImpl(url.toString(), {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -326,7 +372,6 @@ export async function loadTerrainEditRemote(
         },
         cache: 'no-store'
       });
-      if (response.ok) latencyMonitor?.recordPing(performance.now() - start);
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         throw new SpaceEntryError(
@@ -344,7 +389,9 @@ export async function loadTerrainEditRemote(
           '重试'
         );
       }
-      chunks.push(...body.chunks);
+      const pageChunks = body.chunks as TerrainEditChunk[];
+      chunks.push(...pageChunks);
+      onPage?.(pageChunks);
       const nextCursor = typeof body.next_cursor === 'string' ? body.next_cursor : null;
       if (nextCursor && seenCursors.has(nextCursor)) {
         throw new SpaceEntryError(
@@ -363,7 +410,8 @@ export async function loadTerrainEditRemote(
   const loadArea = (
     centerChunkX: number,
     centerChunkZ: number,
-    radiusChunks: number
+    radiusChunks: number,
+    onPage?: (chunks: TerrainEditChunk[]) => void
   ) => {
     const area = {
       centerChunkX: Math.floor(centerChunkX),
@@ -376,7 +424,7 @@ export async function loadTerrainEditRemote(
     // Coalesce only concurrent requests. A completed area must be fetched again
     // when the player later returns, because other players may have edited it
     // while the global terrain cursor advanced in another AOI.
-    const request = fetchPages(area).finally(() => areaRequests.delete(area.key));
+    const request = fetchPages(area, onPage).finally(() => areaRequests.delete(area.key));
     areaRequests.set(area.key, request);
     return request;
   };
@@ -392,7 +440,6 @@ export async function loadTerrainEditRemote(
       if (mutations.length < 1 || mutations.length > 256) {
         throw new Error('Space terrain mutation batches must contain 1-256 operations.');
       }
-      const start = performance.now();
       const requestBody: Record<string, unknown> = { batch_id: batchId, mutations };
       if (metadata?.dedupeEpoch === 1 && Number.isFinite(Number(metadata.createdAtMs))) {
         requestBody.dedupe_epoch = 1;
@@ -407,9 +454,6 @@ export async function loadTerrainEditRemote(
         },
         body: JSON.stringify(requestBody)
       });
-      if (response.ok) {
-        latencyMonitor?.recordPing(performance.now() - start);
-      }
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         const code = body?.detail?.code || `HTTP_${response.status}`;
@@ -440,12 +484,11 @@ export function createPlayerPositionRemote(
   token: string,
   worldId: string,
   fetchImpl: typeof fetch = fetch,
-  latencyMonitor?: LatencyMonitor
+  _latencyMonitor?: LatencyMonitor
 ): PlayerPositionRemote {
   const url = `${apiOrigin}/space/api/v2/worlds/${encodeURIComponent(worldId)}/players/me/position`;
   return {
     async save(position: PlayerPositionPayload, keepalive = false) {
-      const start = performance.now();
       const response = await fetchImpl(url, {
         method: 'PUT',
         headers: {
@@ -456,9 +499,6 @@ export function createPlayerPositionRemote(
         body: JSON.stringify(position),
         keepalive
       });
-      if (response.ok) {
-        latencyMonitor?.recordPing(performance.now() - start);
-      }
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         const code = body?.detail?.code || `HTTP_${response.status}`;

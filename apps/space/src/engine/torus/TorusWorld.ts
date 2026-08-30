@@ -364,9 +364,13 @@ export function cullChunks(camera, world) {
   if (!world || !world.chunks) return;
   _projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   _frustum.setFromProjectionMatrix(_projScreen);
-  for (const chunk of world.chunks.values()) {
+  for (const [chunkKey, chunk] of world.chunks) {
     const mesh = chunk.mesh;
     if (!mesh) continue;
+    if (world.activeChunkKeys && !world.activeChunkKeys.has(chunkKey)) {
+      mesh.visible = false;
+      continue;
+    }
     const bs = mesh.userData && mesh.userData.bentSphere;
     if (!bs) {
       mesh.visible = true;

@@ -41,7 +41,12 @@ export interface TerrainEditChunk {
 
 export interface WorldEditRemote {
   chunks: TerrainEditChunk[];
-  loadArea?(centerChunkX: number, centerChunkZ: number, radiusChunks: number): Promise<TerrainEditChunk[]>;
+  loadArea?(
+    centerChunkX: number,
+    centerChunkZ: number,
+    radiusChunks: number,
+    onPage?: (chunks: TerrainEditChunk[]) => void
+  ): Promise<TerrainEditChunk[]>;
   sendBatch(
     batchId: string,
     mutations: TerrainMutation[],
@@ -105,6 +110,17 @@ function chunkKeyForWorldCell(x: number, z: number) {
   return `${Math.floor(x / CHUNK_SIZE_X)},${Math.floor(z / CHUNK_SIZE_Z)}`;
 }
 
+function chunkKeyForMicroCell(mx: number, mz: number) {
+  return `${Math.floor(mx / (CHUNK_SIZE_X * MICRO_DIVISIONS))},${Math.floor(mz / (CHUNK_SIZE_Z * MICRO_DIVISIONS))}`;
+}
+
+function chunkKeyForMutation(mutation: TerrainMutation) {
+  if (mutation.kind === 'set_micro' || mutation.kind === 'remove_micro') {
+    return chunkKeyForMicroCell(mutation.mx, mutation.mz);
+  }
+  return chunkKeyForWorldCell(mutation.x, mutation.z);
+}
+
 function finiteInteger(value: unknown) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.floor(numeric) : null;
@@ -156,6 +172,7 @@ export class WorldEditPersistence {
   private readonly standardEdits = new Map<string, PersistedStandardEdit>();
   private readonly standardEditsByChunk = new Map<string, Map<string, PersistedStandardEdit>>();
   private readonly microEdits = new Map<string, PersistedMicroEdit>();
+  private readonly microEditsByChunk = new Map<string, Map<string, PersistedMicroEdit>>();
   private readonly pendingBatches: PersistedMutationBatch[] = [];
   /** A transmitted (or reload-restored) batch id must never gain new mutations. */
   private readonly sealedBatchIds = new Set<string>();
@@ -223,16 +240,8 @@ export class WorldEditPersistence {
     return this.microEdits.values();
   }
 
-  *getMicroEditsForChunk(cx: number, cz: number) {
-    const minMx = cx * CHUNK_SIZE_X * MICRO_DIVISIONS;
-    const maxMx = minMx + CHUNK_SIZE_X * MICRO_DIVISIONS;
-    const minMz = cz * CHUNK_SIZE_Z * MICRO_DIVISIONS;
-    const maxMz = minMz + CHUNK_SIZE_Z * MICRO_DIVISIONS;
-    for (const edit of this.microEdits.values()) {
-      if (edit.mx >= minMx && edit.mx < maxMx && edit.mz >= minMz && edit.mz < maxMz) {
-        yield edit;
-      }
-    }
+  getMicroEditsForChunk(cx: number, cz: number) {
+    return this.microEditsByChunk.get(`${cx},${cz}`)?.values() ?? [][Symbol.iterator]();
   }
 
   /** Replace one server-authored chunk snapshot without creating an outgoing echo batch. */
@@ -248,21 +257,17 @@ export class WorldEditPersistence {
       this.standardEditsByChunk.delete(chunkKey);
     }
 
-    const minMx = cx * CHUNK_SIZE_X * MICRO_DIVISIONS;
-    const maxMx = minMx + CHUNK_SIZE_X * MICRO_DIVISIONS;
-    const minMz = cz * CHUNK_SIZE_Z * MICRO_DIVISIONS;
-    const maxMz = minMz + CHUNK_SIZE_Z * MICRO_DIVISIONS;
-    for (const [key, edit] of this.microEdits) {
-      if (edit.mx >= minMx && edit.mx < maxMx && edit.mz >= minMz && edit.mz < maxMz) {
-        this.microEdits.delete(key);
-      }
+    const previousMicro = this.microEditsByChunk.get(chunkKey);
+    if (previousMicro) {
+      for (const key of previousMicro.keys()) this.microEdits.delete(key);
+      this.microEditsByChunk.delete(chunkKey);
     }
 
     this.loadPackedEdits(chunk.standard, chunk.micro);
     // A remote snapshot can race a still-unacknowledged local batch. Reapply
     // the durable outbox so local intent stays visible and is not discarded.
-    this.replayPendingBatches();
-    this.reconcileStandardMicroExclusion();
+    this.replayPendingBatchesForChunk(chunkKey);
+    this.reconcileStandardMicroExclusionForChunk(chunkKey);
   }
 
   recordStandard(x: number, y: number, z: number, block: number, color: number) {
@@ -283,7 +288,7 @@ export class WorldEditPersistence {
   recordMicro(mx: number, my: number, mz: number, color: number, part: unknown = null) {
     const edit = this.normalizeMicroEdit(mx, my, mz, color, part);
     if (!edit) return;
-    this.microEdits.set(microKey(edit.mx, edit.my, edit.mz), edit);
+    this.addMicroEdit(edit);
     this.enqueueMutation({
       kind: 'set_micro',
       mx: edit.mx,
@@ -298,7 +303,7 @@ export class WorldEditPersistence {
     const normalizedX = Math.floor(wrapMicroX(mx));
     const normalizedY = Math.floor(my);
     const normalizedZ = Math.floor(wrapMicroZ(mz));
-    const removed = this.microEdits.delete(microKey(normalizedX, normalizedY, normalizedZ));
+    const removed = this.deleteMicroEdit(normalizedX, normalizedY, normalizedZ);
     if (removed) {
       this.enqueueMutation({ kind: 'remove_micro', mx: normalizedX, my: normalizedY, mz: normalizedZ });
     }
@@ -408,6 +413,29 @@ export class WorldEditPersistence {
     chunkEdits.set(key, edit);
   }
 
+  private addMicroEdit(edit: PersistedMicroEdit) {
+    const key = microKey(edit.mx, edit.my, edit.mz);
+    this.microEdits.set(key, edit);
+    const chunkKey = chunkKeyForMicroCell(edit.mx, edit.mz);
+    let chunkEdits = this.microEditsByChunk.get(chunkKey);
+    if (!chunkEdits) {
+      chunkEdits = new Map();
+      this.microEditsByChunk.set(chunkKey, chunkEdits);
+    }
+    chunkEdits.set(key, edit);
+  }
+
+  private deleteMicroEdit(mx: number, my: number, mz: number) {
+    const key = microKey(mx, my, mz);
+    const removed = this.microEdits.delete(key);
+    if (!removed) return false;
+    const chunkKey = chunkKeyForMicroCell(mx, mz);
+    const chunkEdits = this.microEditsByChunk.get(chunkKey);
+    chunkEdits?.delete(key);
+    if (chunkEdits?.size === 0) this.microEditsByChunk.delete(chunkKey);
+    return true;
+  }
+
   private removeMicroStandardCellLocal(wx: number, wy: number, wz: number) {
     const baseX = wx * MICRO_DIVISIONS;
     const baseY = wy * MICRO_DIVISIONS;
@@ -416,7 +444,7 @@ export class WorldEditPersistence {
     for (let dx = 0; dx < MICRO_DIVISIONS; dx++) {
       for (let dy = 0; dy < MICRO_DIVISIONS; dy++) {
         for (let dz = 0; dz < MICRO_DIVISIONS; dz++) {
-          if (this.microEdits.delete(microKey(baseX + dx, baseY + dy, baseZ + dz))) removed++;
+          if (this.deleteMicroEdit(baseX + dx, baseY + dy, baseZ + dz)) removed++;
         }
       }
     }
@@ -425,6 +453,12 @@ export class WorldEditPersistence {
 
   private reconcileStandardMicroExclusion() {
     for (const edit of this.standardEdits.values()) {
+      if (edit.block !== 0) this.removeMicroStandardCellLocal(edit.x, edit.y, edit.z);
+    }
+  }
+
+  private reconcileStandardMicroExclusionForChunk(chunkKey: string) {
+    for (const edit of this.standardEditsByChunk.get(chunkKey)?.values() ?? []) {
       if (edit.block !== 0) this.removeMicroStandardCellLocal(edit.x, edit.y, edit.z);
     }
   }
@@ -622,7 +656,7 @@ export class WorldEditPersistence {
         || my < 0 || my >= CHUNK_SIZE_Y * MICRO_DIVISIONS
         || mz < 0 || mz >= TORUS_SIZE_Z * MICRO_DIVISIONS
       ) continue;
-      this.microEdits.set(microKey(mx, my, mz), {
+      this.addMicroEdit({
         mx,
         my,
         mz,
@@ -657,6 +691,7 @@ export class WorldEditPersistence {
         this.standardEdits.clear();
         this.standardEditsByChunk.clear();
         this.microEdits.clear();
+        this.microEditsByChunk.clear();
       }
       this.pendingBatches.length = 0;
     }
@@ -742,6 +777,14 @@ export class WorldEditPersistence {
     }
   }
 
+  private replayPendingBatchesForChunk(chunkKey: string) {
+    for (const batch of this.pendingBatches) {
+      for (const mutation of batch.mutations) {
+        if (chunkKeyForMutation(mutation) === chunkKey) this.applyMutationLocally(mutation);
+      }
+    }
+  }
+
   private applyMutationLocally(mutation: TerrainMutation) {
     if (mutation.kind === 'set_standard') {
       const edit = this.normalizeStandardEdit(
@@ -756,15 +799,15 @@ export class WorldEditPersistence {
       const edit = this.normalizeMicroEdit(
         mutation.mx, mutation.my, mutation.mz, mutation.color, mutation.part
       );
-      if (edit) this.microEdits.set(microKey(edit.mx, edit.my, edit.mz), edit);
+      if (edit) this.addMicroEdit(edit);
       return;
     }
     if (mutation.kind === 'remove_micro') {
-      this.microEdits.delete(microKey(
+      this.deleteMicroEdit(
         Math.floor(wrapMicroX(mutation.mx)),
         Math.floor(mutation.my),
         Math.floor(wrapMicroZ(mutation.mz))
-      ));
+      );
       return;
     }
     this.removeMicroStandardCellLocal(

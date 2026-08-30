@@ -6,6 +6,7 @@ import { LowPolyMesher } from '../mesher/LowPolyMesher.ts';
 import { MicroVoxelLayer, MICRO_DIVISIONS } from './MicroVoxelLayer.ts';
 import {
   WorldEditPersistence,
+  type TerrainEditChunk,
   type WorldEditPersistenceOptions,
 } from './WorldEditPersistence.ts';
 import {
@@ -31,7 +32,12 @@ const DISTANT_SEGMENTS_Z = DISTANT_LOD_SEGMENTS_Z;
 const DISTANT_TERRAIN_COLOR = 0x718f61;
 const DISTANT_UPDATE_INTERVAL_MS = 200;
 const DISTANT_COLUMNS_PER_FLUSH = 48;
-const MAX_STREAM_CHUNKS_PER_FRAME = 64;
+const STREAM_WORK_BUDGET_MS = 7;
+const MAX_STREAM_CHUNKS_PER_FRAME = 6;
+const MAX_CHUNK_MESHES_PER_FRAME = 1;
+const MAX_REMOTE_CHUNKS_PER_FRAME = 2;
+const MAX_MICRO_MESH_CHUNKS_PER_FRAME = 1;
+const MAX_CHUNK_EVICTIONS_PER_FRAME = 8;
 export const DEFAULT_RENDER_DISTANCE = 8;
 
 // Matches LowPolyMesher and MicroVoxelLayer exactly: each rendered quad is
@@ -73,6 +79,9 @@ export class World {
   activeChunkKeys: Set<string>;
   lastStreamCenterKey: string;
   private pendingStreamChunks: { cx: number; cz: number; distanceSq: number }[];
+  private pendingChunkEvictions: Map<string, Chunk>;
+  private pendingRemoteChunkUpdates: Map<string, TerrainEditChunk>;
+  private remoteChunkRevisions: Map<string, number>;
   private rayBentPoint: THREE.Vector3;
   private rayFlatPoint: THREE.Vector3;
   /** Bumped on any block/micro-voxel mutation — lets caches (e.g. minimap) know terrain changed. */
@@ -161,6 +170,14 @@ export class World {
     this.activeChunkKeys = new Set();
     this.lastStreamCenterKey = '';
     this.pendingStreamChunks = [];
+    this.pendingChunkEvictions = new Map();
+    this.pendingRemoteChunkUpdates = new Map();
+    this.remoteChunkRevisions = new Map();
+    for (const chunk of persistenceOptions?.remote?.chunks ?? []) {
+      const key = World.getChunkKey(wrapChunkX(chunk.chunk_x), wrapChunkZ(chunk.chunk_z));
+      const revision = Number.isFinite(Number(chunk.revision)) ? Number(chunk.revision) : 0;
+      this.remoteChunkRevisions.set(key, Math.max(this.remoteChunkRevisions.get(key) ?? -1, revision));
+    }
     this.rayBentPoint = new THREE.Vector3();
     this.rayFlatPoint = new THREE.Vector3();
   }
@@ -906,6 +923,8 @@ export class World {
    * Update and regenerate dirty chunks
    */
   updateChunksAround(playerX, playerZ) {
+    const frameWorkStartedAt = performance.now();
+    this.processPendingRemoteChunkUpdates(frameWorkStartedAt);
     const centerCx = Math.floor(wrapX(playerX) / CHUNK_SIZE_X);
     const centerCz = Math.floor(wrapZ(playerZ) / CHUNK_SIZE_Z);
     const r = this.renderDistance;
@@ -923,9 +942,12 @@ export class World {
           const cz = wrapChunkZ(centerCz + dz);
           const key = World.getChunkKey(cx, cz);
           nextActive.add(key);
+          this.pendingChunkEvictions.delete(key);
           const chunk = this.getChunk(cx, cz);
           if (!chunk) {
             pending.push({ cx, cz, distanceSq: dx * dx + dz * dz });
+          } else if (chunk.mesh) {
+            chunk.mesh.visible = true;
           } else if (!chunk.mesh) {
             chunk.isDirty = true;
             this.dirtyChunks.add(chunk);
@@ -935,9 +957,9 @@ export class World {
 
       for (const [key, chunk] of this.chunks) {
         if (nextActive.has(key)) continue;
-        if (chunk.mesh) this.disposeChunkMesh(chunk);
         this.dirtyChunks.delete(chunk);
-        if (!chunk.hasUserEdits) this.chunks.delete(key);
+        if (chunk.mesh) chunk.mesh.visible = false;
+        this.pendingChunkEvictions.set(key, chunk);
       }
 
       this.activeChunkKeys = nextActive;
@@ -945,10 +967,28 @@ export class World {
       this.lastStreamCenterKey = streamCenterKey;
     }
 
+    this.processPendingChunkEvictions(frameWorkStartedAt);
+
+    // Player-authored and remote micro edits are visible work; service one
+    // dirty micro mesh before spending the remaining frame budget on new
+    // procedural chunks.
+    if (
+      performance.now() - frameWorkStartedAt < STREAM_WORK_BUDGET_MS
+      && this.microVoxels.updateMesh(MAX_MICRO_MESH_CHUNKS_PER_FRAME)
+    ) {
+      for (const mesh of this.microVoxels.takeRecentlyRebuiltMeshes()) {
+        hookSceneMaterials(mesh);
+      }
+    }
+
     // Allocate/generate the nearest missing chunks progressively instead of
     // synchronously constructing the entire window during one frame.
-    const streamBatch = this.pendingStreamChunks.splice(0, MAX_STREAM_CHUNKS_PER_FRAME);
-    for (const { cx, cz } of streamBatch) {
+    let generated = 0;
+    while (this.pendingStreamChunks.length > 0 && generated < MAX_STREAM_CHUNKS_PER_FRAME) {
+      if (performance.now() - frameWorkStartedAt >= STREAM_WORK_BUDGET_MS) break;
+      const next = this.pendingStreamChunks.shift();
+      if (!next) break;
+      const { cx, cz } = next;
       const key = World.getChunkKey(cx, cz);
       if (!this.activeChunkKeys.has(key)) continue;
       const chunk = this.getOrCreateChunk(cx, cz);
@@ -956,14 +996,16 @@ export class World {
         chunk.isDirty = true;
         this.dirtyChunks.add(chunk);
       }
+      generated++;
     }
 
     // Process dirty chunks
     let updates = 0;
-    const maxUpdatesPerFrame = 4;
+    const maxUpdatesPerFrame = MAX_CHUNK_MESHES_PER_FRAME;
 
     for (const chunk of this.dirtyChunks) {
       if (updates >= maxUpdatesPerFrame) break;
+      if (performance.now() - frameWorkStartedAt >= STREAM_WORK_BUDGET_MS) break;
       const key = World.getChunkKey(chunk.cx, chunk.cz);
       if (!this.activeChunkKeys.has(key)) continue;
 
@@ -992,12 +1034,9 @@ export class World {
       updates++;
     }
 
-    // Micro-carving replaces its mesh as well; apply the same same-frame
-    // render/depth contract whenever that replacement occurs.
-    if (this.microVoxels.updateMesh()) {
-      hookSceneMaterials(this.microVoxels.group);
+    if (performance.now() - frameWorkStartedAt < STREAM_WORK_BUDGET_MS) {
+      this.flushDistantSurfaceUpdates();
     }
-    this.flushDistantSurfaceUpdates();
   }
 
   setRenderDistance(distance) {
@@ -1025,6 +1064,20 @@ export class World {
       if (child.isMesh && child.geometry) child.geometry.dispose();
     });
     chunk.mesh = null;
+  }
+
+  private processPendingChunkEvictions(frameWorkStartedAt: number) {
+    let processed = 0;
+    for (const [key, chunk] of this.pendingChunkEvictions) {
+      if (processed >= MAX_CHUNK_EVICTIONS_PER_FRAME) break;
+      if (performance.now() - frameWorkStartedAt >= STREAM_WORK_BUDGET_MS) break;
+      this.pendingChunkEvictions.delete(key);
+      if (this.activeChunkKeys.has(key)) continue;
+      if (chunk.mesh) this.disposeChunkMesh(chunk);
+      this.dirtyChunks.delete(chunk);
+      if (!chunk.hasUserEdits) this.chunks.delete(key);
+      processed++;
+    }
   }
 
   /**
@@ -1250,66 +1303,97 @@ export class World {
   }
 
   /**
-   * Apply incoming remote chunk updates from other players in real-time.
+   * Coalesce network/AOI updates and apply a small bounded batch per animation
+   * frame. A direct synchronous entry point remains for tests and explicit
+   * callers that need immediate visibility.
    */
-  applyRemoteChunkUpdates(updates: Array<{ chunk_x: number; chunk_z: number; revision: number; standard: any[]; micro: any[] }>) {
+  queueRemoteChunkUpdates(updates: TerrainEditChunk[]) {
     if (!Array.isArray(updates) || updates.length === 0) return;
-
     for (const update of updates) {
       const cx = wrapChunkX(update.chunk_x);
       const cz = wrapChunkZ(update.chunk_z);
-
-      const minX = cx * CHUNK_SIZE_X;
-      const maxX = (cx + 1) * CHUNK_SIZE_X - 1;
-      const minZ = cz * CHUNK_SIZE_Z;
-      const maxZ = (cz + 1) * CHUNK_SIZE_Z - 1;
-
-      this.editPersistence?.replaceRemoteChunk({
+      const key = World.getChunkKey(cx, cz);
+      const revision = Number.isFinite(Number(update.revision)) ? Number(update.revision) : 0;
+      if ((this.remoteChunkRevisions.get(key) ?? -1) >= revision) continue;
+      const previous = this.pendingRemoteChunkUpdates.get(key);
+      if (previous && Number(previous.revision) >= revision) continue;
+      this.pendingRemoteChunkUpdates.set(key, {
         chunk_x: cx,
         chunk_z: cz,
-        revision: update.revision,
-        standard: update.standard,
-        micro: update.micro,
+        revision,
+        standard: Array.isArray(update.standard) ? update.standard : [],
+        micro: Array.isArray(update.micro) ? update.micro : [],
       });
-
-      // Clear existing microcells in this chunk bounding box
-      this.microVoxels.extractRegion(minX, 0, minZ, maxX, CHUNK_SIZE_Y - 1, maxZ);
-
-      const microEdits = this.editPersistence
-        ? [...this.editPersistence.getMicroEditsForChunk(cx, cz)]
-        : (Array.isArray(update.micro) ? update.micro : [])
-          .filter(edit => Array.isArray(edit) && edit.length >= 4)
-          .map(edit => ({ mx: edit[0], my: edit[1], mz: edit[2], color: edit[3], part: edit[4] || null }));
-      for (const edit of microEdits) {
-        this.microVoxels.set(edit.mx, edit.my, edit.mz, edit.color, edit.part);
-      }
-
-      const standardEdits = this.editPersistence
-        ? [...this.editPersistence.getStandardEditsForChunk(cx, cz)]
-        : (Array.isArray(update.standard) ? update.standard : [])
-          .filter(edit => Array.isArray(edit) && edit.length >= 5)
-          .map(edit => ({ x: edit[0], y: edit[1], z: edit[2], block: edit[3], color: edit[4] }));
-
-      // If chunk is currently loaded in memory, regenerate and apply standard blocks
-      const key = World.getChunkKey(cx, cz);
-      const chunk = this.chunks.get(key);
-      if (chunk) {
-        this.terrainGen.generateChunk(chunk);
-        for (const edit of standardEdits) {
-          const lx = edit.x - cx * CHUNK_SIZE_X;
-          const lz = edit.z - cz * CHUNK_SIZE_Z;
-          chunk.setLocalBlock(lx, edit.y, lz, edit.block, edit.color);
-          this.queueDistantSurfaceUpdate(edit.x, edit.z);
-        }
-        chunk.hasUserEdits = true;
-        chunk.isDirty = true;
-        this.dirtyChunks.add(chunk);
-      } else {
-        for (const edit of standardEdits) {
-          this.queueDistantSurfaceUpdate(edit.x, edit.z);
-        }
-      }
-      this.terrainVersion++;
     }
+  }
+
+  private processPendingRemoteChunkUpdates(frameWorkStartedAt: number) {
+    let processed = 0;
+    for (const [key, update] of this.pendingRemoteChunkUpdates) {
+      if (processed >= MAX_REMOTE_CHUNKS_PER_FRAME) break;
+      if (processed > 0 && performance.now() - frameWorkStartedAt >= STREAM_WORK_BUDGET_MS) break;
+      this.pendingRemoteChunkUpdates.delete(key);
+      this.applyRemoteChunkUpdate(update);
+      processed++;
+    }
+  }
+
+  applyRemoteChunkUpdates(updates: TerrainEditChunk[]) {
+    if (!Array.isArray(updates) || updates.length === 0) return;
+    for (const update of updates) this.applyRemoteChunkUpdate(update);
+  }
+
+  private applyRemoteChunkUpdate(update: TerrainEditChunk) {
+    const cx = wrapChunkX(update.chunk_x);
+    const cz = wrapChunkZ(update.chunk_z);
+    const key = World.getChunkKey(cx, cz);
+    const revision = Number.isFinite(Number(update.revision)) ? Number(update.revision) : 0;
+    if ((this.remoteChunkRevisions.get(key) ?? -1) >= revision) return;
+
+    this.editPersistence?.replaceRemoteChunk({
+      chunk_x: cx,
+      chunk_z: cz,
+      revision,
+      standard: update.standard,
+      micro: update.micro,
+    });
+
+    this.microVoxels.clearChunk(cx, cz);
+
+    const microEdits = this.editPersistence
+      ? [...this.editPersistence.getMicroEditsForChunk(cx, cz)]
+      : (Array.isArray(update.micro) ? update.micro : [])
+        .filter(edit => Array.isArray(edit) && edit.length >= 4)
+        .map(edit => ({ mx: edit[0], my: edit[1], mz: edit[2], color: edit[3], part: edit[4] || null }));
+    for (const edit of microEdits) {
+      this.microVoxels.set(edit.mx, edit.my, edit.mz, edit.color, edit.part);
+    }
+
+    const standardEdits = this.editPersistence
+      ? [...this.editPersistence.getStandardEditsForChunk(cx, cz)]
+      : (Array.isArray(update.standard) ? update.standard : [])
+        .filter(edit => Array.isArray(edit) && edit.length >= 5)
+        .map(edit => ({ x: edit[0], y: edit[1], z: edit[2], block: edit[3], color: edit[4] }));
+
+    // If chunk is currently loaded in memory, regenerate and apply standard blocks
+    const chunk = this.chunks.get(key);
+    if (chunk) {
+      this.terrainGen.generateChunk(chunk);
+      for (const edit of standardEdits) {
+        const lx = edit.x - cx * CHUNK_SIZE_X;
+        const lz = edit.z - cz * CHUNK_SIZE_Z;
+        chunk.setLocalBlock(lx, edit.y, lz, edit.block, edit.color);
+        this.queueDistantSurfaceUpdate(edit.x, edit.z);
+      }
+      chunk.hasUserEdits = true;
+      chunk.isDirty = true;
+      this.dirtyChunks.add(chunk);
+    } else {
+      for (const edit of standardEdits) {
+        this.queueDistantSurfaceUpdate(edit.x, edit.z);
+      }
+    }
+    this.remoteChunkRevisions.set(key, revision);
+    this.terrainVersion++;
   }
 }

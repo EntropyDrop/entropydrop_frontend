@@ -99,6 +99,57 @@ test('world edit storage is isolated by world id and solid cells remove stale mi
   assert.deepEqual([...otherWorld.getMicroEdits()], []);
 });
 
+test('remote snapshot replacement touches only its indexed standard and micro chunk', () => {
+  const persistence = new WorldEditPersistence({
+    worldId: 'indexed-remote-world',
+    storage: null,
+    remote: {
+      chunks: [
+        {
+          chunk_x: 0,
+          chunk_z: 0,
+          revision: 1,
+          standard: [[1, 80, 1, BlockTypes.COLOR_BLOCK, 0x111111]],
+          micro: [[5, 100, 5, 0xaaaaaa]],
+        },
+        {
+          chunk_x: 1,
+          chunk_z: 0,
+          revision: 1,
+          standard: [[17, 80, 1, BlockTypes.COLOR_BLOCK, 0x222222]],
+          micro: [[85, 100, 5, 0xbbbbbb]],
+        },
+      ],
+      async sendBatch() {}
+    }
+  });
+
+  persistence.replaceRemoteChunk({
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 2,
+    standard: [[2, 80, 1, BlockTypes.COLOR_BLOCK, 0x333333]],
+    micro: [[10, 100, 5, 0xcccccc]],
+  });
+
+  assert.deepEqual(
+    [...persistence.getStandardEditsForChunk(0, 0)].map(edit => edit.x),
+    [2]
+  );
+  assert.deepEqual(
+    [...persistence.getMicroEditsForChunk(0, 0)].map(edit => edit.mx),
+    [10]
+  );
+  assert.deepEqual(
+    [...persistence.getStandardEditsForChunk(1, 0)].map(edit => edit.x),
+    [17]
+  );
+  assert.deepEqual(
+    [...persistence.getMicroEditsForChunk(1, 0)].map(edit => edit.mx),
+    [85]
+  );
+});
+
 test('remote terrain mutations are split into stable batches of at most 256 operations', async () => {
   const storage = new MemoryStorage();
   const sent: { batchId: string; mutations: any[] }[] = [];

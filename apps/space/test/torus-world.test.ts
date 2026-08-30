@@ -199,12 +199,12 @@ test('torus rendering honors full-ring LOD and near-field bent-space culling con
 
   world.updateChunksAround(TORUS_SPAWN_X, TORUS_SPAWN_Z);
   const expectedChunkCount = (2 * world.renderDistance + 1) ** 2;
-  assert.ok(world.chunks.size > 0 && world.chunks.size <= 64,
+  assert.ok(world.chunks.size > 0 && world.chunks.size <= 6,
     'the first streaming frame should allocate only the nearest bounded chunk batch');
   assert.equal(world.activeChunkKeys.size, expectedChunkCount,
     'the full configured window should be tracked while allocation proceeds');
   const meshed = [...world.chunks.values()].filter((chunk: any) => chunk.mesh);
-  assert.ok(meshed.length > 0 && meshed.length <= 4, 'at most four chunk meshes should build per frame');
+  assert.equal(meshed.length, 1, 'only one expensive chunk mesh should build per frame');
   for (const chunk of meshed) {
     chunk.mesh.traverse((child) => {
       if (!child.isMesh) return;
@@ -236,7 +236,8 @@ test('chunk streaming evicts procedural arrays but retains authored edits', () =
   world.updateChunksAround(TORUS_SPAWN_X + 10 * 16, TORUS_SPAWN_Z);
   assert.equal(world.chunks.has(editedKey), true, 'authored chunks must remain available for persistence/re-entry');
   assert.equal(world.chunks.has(uneditedKey), false, 'procedural chunks should be regenerated instead of retained');
-  assert.equal(world.chunks.size, world.activeChunkKeys.size + 1);
+  assert.ok(world.chunks.size <= world.activeChunkKeys.size + 1,
+    'progressive streaming may leave active chunks pending without retaining inactive procedural chunks');
   for (const chunk of world.dirtyChunks) {
     assert.equal(world.activeChunkKeys.has(`${chunk.cx},${chunk.cz}`), true, 'inactive chunks must leave the rebuild queue');
   }
