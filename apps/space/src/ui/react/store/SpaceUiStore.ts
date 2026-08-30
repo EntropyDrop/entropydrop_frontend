@@ -1097,12 +1097,9 @@ export class SpaceUiStore {
     if (persist) try { localStorage.setItem('space_setting_cam_dist', String(value)); } catch {}
   }
 
-  setGravity(gravity: number): void {
-    const value = Number(gravity);
-    const game = (window as any).game;
-    if (game?.contraptionPhysics?.gravity) game.contraptionPhysics.gravity.y = value;
-    this.patch({ gravity: value });
-    this.showToast(`Gravity set to ${value} m/s²`);
+  setGravity(_gravity?: number): void {
+    // Global gravity is unified and fixed at -18.0 m/s²
+    this.patch({ gravity: -18 });
   }
 
   setRenderDistance(distance: number, persist = true): void {

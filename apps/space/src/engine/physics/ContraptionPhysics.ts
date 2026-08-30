@@ -28,13 +28,15 @@ const TERRAIN_FACE_NORMALS = [
   new THREE.Vector3(0, 0, 1)
 ];
 
+export const GLOBAL_GRAVITY = -18.0;
+export const GLOBAL_GRAVITY_VECTOR = new THREE.Vector3(0, GLOBAL_GRAVITY, 0);
+
 export class ContraptionPhysics {
   private world: World;
-  private gravity: THREE.Vector3;
+  readonly gravity: THREE.Vector3 = new THREE.Vector3(0, GLOBAL_GRAVITY, 0);
 
   constructor(world) {
     this.world = world;
-    this.gravity = new THREE.Vector3(0, -18.0, 0);
   }
 
   /**

@@ -26,7 +26,7 @@ export function TermsOfServicePage({ current }: TermsOfServicePageProps) {
 
                 <footer className="mt-20 pt-8 border-t border-gray-200 text-sm text-gray-500">
                     <p>© {new Date().getFullYear()} EntropyDrop • All Rights Reserved</p>
-                    <p className="mt-2 italic">Last updated: {new Date().toLocaleDateString()}</p>
+                    <p className="mt-2 italic">{data.lastUpdatedLabel}: {data.lastUpdated}</p>
                 </footer>
             </div>
         </div>

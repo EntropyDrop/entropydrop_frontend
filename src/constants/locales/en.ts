@@ -517,24 +517,301 @@ export default {
         privacy: 'Privacy Policy'
     },
     termsOfService: {
-        title: 'Terms of Service',
+        title: 'EntropyDrop Terms of Service',
+        lastUpdatedLabel: 'Last updated',
+        lastUpdated: 'August 30, 2026',
         sections: [
-            { title: '1. Service Disclaimer', content: 'Entropydrop provides 3D model and skin generation services based on Artificial Intelligence (AIGC). Content is AI-generated, and due to technical characteristics, we cannot guarantee absolute accuracy or satisfy your specific aesthetics.' },
-            { title: '2. Intellectual Property & Authorization', content: 'Works created by you belong to you. Note that your right to use the generated works commercially depends on your subscription tier: works generated under the Free plan are strictly for personal, non-commercial use (such as learning, research, and non-commercial entertainment) and must not be used for any commercial purpose; works generated during an active Pro subscription (including Pro-Plus and Pro-Max) enjoy a permanent commercial license (even after the subscription expires, works generated during that period remain licensed for commercial use). For works set to "Public", you authorize Entropydrop a free, irrevocable right to publicly display, publish, and use for model fine-tuning/training.' },
-            { title: '3. Compliance Guidelines', content: 'It is strictly forbidden to generate, upload, edit, or create any content involving political sensitivity, pornography, violence, terror, or copyright infringement. Entropydrop reserves the right to delete violating content without notice. You bear full legal and community responsibility for all outputs and published content.' },
-            { title: '4. Disclaimer', content: 'This service is for artistic creation and entertainment only. If you encounter disputes when using it on other platforms (e.g., in games), Entropydrop bears no joint responsibility.' },
-            { title: '5. Value-Added Services & Customization', content: 'Entropydrop provides value-added services such as virtual points, generation quotas, and 3D printing. All 3D printed physical products provided by this platform are "14+ Adult Collectibles" and are not toys for children. Regarding Resale: You own the physical products you purchase and have the right to resell that specific item. Additionally, if the model involves third-party copyright (such as fan art), resale may involve legal risks, which you must bear yourself. Entropydrop reserves the right to refuse service for any localized physical customization that involves infringement or violation of our guidelines (such as politically sensitive, pornographic, or violent content). Virtual items are generally non-refundable once consumed. For customized physical products, refunds are not supported unless there is logistics damage or severe quality issues.' },
-            { title: '6. Minor Protection & Service Changes', content: 'If you are a minor, you should read and use this service with the consent of a guardian. Entropydrop reserves the right to adjust, suspend, or terminate service functions due to upgrades, maintenance, or compliance needs.' },
-            { title: '7. Abuse and Bot Behavior Restrictions', content: 'We strictly prohibit any form of service abuse, including but not limited to the use of automated scripts, bots, or crawlers for abnormal service usage, interfering with system operations, or excessively occupying computing resources. Upon detection of such behavior, Entropydrop reserves the right to restrict services, temporarily suspend, or permanently terminate account access without prior notice.' }
+            {
+                title: '1. Acceptance and Scope',
+                content: `The Services are operated by Shanghai EqualRank Technology Co., Ltd. (“EntropyDrop,” “we,” “us,” or the “Platform”). Please read these Terms carefully before registering an account, making a purchase, or using EntropyDrop, especially the provisions concerning public content, intellectual property, paid services, and limitations of liability.
+
+By clicking “Agree & Continue,” registering an account, purchasing a Service, or continuing to use EntropyDrop, you acknowledge that you have read, understood, and agreed to these Terms and the Privacy Policy. If you do not agree, stop using the Services.
+
+The “Services” include the entropydrop.com website and its AI image, game character skin, and 3D model generation, editing, and conversion tools; content storage, display, search, collections, likes, and sharing; forums and community features; friend connections, Space chat, direct messages, and other social features; the EntropyDrop Space multiplayer world, world editing, programmable entities, and resource marketplace; AI Agents, developer APIs, Credits, Pro subscriptions, custom 3D-printed products; and other related features we may introduce. Some features may be experimental or subject to additional rules displayed in the applicable interface, API documentation, or developer console.`
+            },
+            {
+                title: '2. Eligibility and Minors',
+                content: `The Services are generally intended for users who are at least 14 years old.
+
+Users under 18 must review these Terms, use the Services, and make purchases with the consent and guidance of a parent or legal guardian. Guardians should reasonably supervise a minor’s usage time, interactions, and purchases.
+
+We do not knowingly offer account services to children under 14. If we learn that we collected a child’s personal information without valid guardian authorization, we will delete it or take other necessary protective measures. If we later permit children under 14 to use a particular Service, we will publish separate children’s privacy rules and obtain guardian consent.`
+            },
+            {
+                title: '3. Accounts and Security',
+                content: `You may currently sign in using a Google account or another supported method. You must provide accurate information that you are authorized to use, protect your login credentials, refrain from renting, selling, gifting, or sharing your account, refrain from impersonating others or Platform personnel, and contact us promptly if you discover unauthorized access or suspicious activity.
+
+To the extent permitted, you are responsible for losses resulting from your failure to secure your account, voluntary sharing of credentials, or use of an insecure third-party service.`
+            },
+            {
+                title: '4. AI Services, AI Agents, APIs, and Outputs',
+                content: `AI outputs are probabilistic and uncertain. We do not guarantee that an output will be accurate, unique, error-free, or aligned with your preferences; qualify for intellectual-property protection; differ from outputs provided to other users; be suitable for any particular commercial, manufacturing, safety-critical, or professional purpose; or function on every third-party platform.
+
+A future AI Agent may, at your direction, read context you choose to provide, generate or execute code, call tools, APIs, or third-party services, and create, modify, publish, or delete content or objects in Space. An Agent may misunderstand instructions, produce inaccurate results, or take an unintended action. Review the scope of an Agent’s permissions before authorization, and review and confirm payments, publications, deletions, external communications, changes to important data, and other difficult-to-reverse actions before execution. Agent actions authorized through your account are generally treated as initiated by you. We may require additional confirmation, restrict permissions, or pause execution for higher-risk tools.
+
+If we provide developer APIs, you must follow the API documentation and protect API keys. Requests, usage, and fees associated with your key are generally attributed to your account. You may not share, publish, sell, or misuse a key; circumvent rate, quota, billing, permission, or security limits; or resell, relay, or provide the API in a manner that directly substitutes for the EntropyDrop Service without written permission. We may set or change model, rate, concurrency, quota, file-size, context, and other technical limits for security, capacity, and fair-use reasons, and may upgrade or retire older API versions. We will provide advance notice where reasonably possible for material breaking changes.
+
+Before publishing, selling, commercially using, or relying on generated content, Agent results, or API outputs, you must review their content, technical suitability, and rights status. Do not use them as the sole basis for medical, legal, financial, personal-safety, or other high-impact decisions. You are responsible for obtaining any necessary permission for content involving a person’s likeness, brand, character, building, artwork, or other third-party material.`
+            },
+            {
+                title: '5. Credits, Subscriptions, and Virtual Items',
+                content: `Credits are digital benefits usable only for designated EntropyDrop features. They are not currency, have no cash value, and generally may not be transferred, sold, redeemed for cash, or traded outside the Platform. In the future, the Platform may allow you to use Credits to obtain virtual items, resources, or related usage entitlements in the Space marketplace. Unless the purchase page states otherwise, acquiring a virtual item provides only a limited right to use it within the Services under the displayed rules; it does not transfer intellectual-property rights or ownership of real-world property. Virtual items may not be redeemed for cash or traded outside the Platform.
+
+If a generation fails because of a technical failure confirmed by us, or a marketplace purchase for which Credits were deducted is not delivered because of a Platform failure, we may return the corresponding Credits. Credits used for a successfully processed generation or a properly delivered virtual item are generally non-refundable unless the purchase page states otherwise, a systemic Platform error occurred, or applicable requirements provide otherwise.
+
+Pro-Plus, Pro-Max, and similar subscriptions renew automatically for the period shown at purchase until you cancel. After cancellation, benefits generally continue through the current paid billing period, after which renewal stops. Unless the purchase page, payment-provider rules, or mandatory requirements provide otherwise, a billing period that has already begun is generally not prorated based on unused time.
+
+AI Agent or API Services may be billed by request count, input and output volume, compute time, tool calls, storage, bandwidth, or another metric displayed on the purchase page or developer console. Fees charged by third-party tools or services may be billed separately by those providers. Except for billing errors, duplicate charges, a confirmed Service failure, or another applicable exception, Agent or API usage that was actually processed is generally non-refundable.
+
+We may change prices, allowances, or plan features. We will provide reasonable advance notice of material changes to renewal prices or core benefits. We may revoke Credits, subscription benefits, or virtual resources obtained through fraud, chargebacks, exploitation of a vulnerability, or other improper means.`
+            },
+            {
+                title: '6. Licenses for Generated Works',
+                content: `To the extent you hold the relevant rights, you retain rights in content you independently create and upload. Uploading content does not automatically transfer ownership to EntropyDrop.
+
+Works generated under the Free plan are licensed only for personal, educational, research, and non-commercial entertainment purposes. They may not be used directly or indirectly in commercial sales, commercial promotions, paid projects, or other revenue-generating activities.
+
+For works generated during an active Pro-Plus, Pro-Max, or other paid period expressly marked as including commercial rights, you receive a perpetual, worldwide, non-exclusive commercial-use license. Works generated during that paid period remain commercially licensed after the subscription ends. This license covers only rights that EntropyDrop can grant in the generated output and does not include third-party trademarks, characters, likenesses, copyrighted material, or other third-party rights.
+
+Outputs produced through an AI Agent or API are governed by the license shown for the applicable plan, API documentation, or developer console at the time of the request. Unless otherwise stated, the same rules apply as for comparable outputs generated directly under the same account and paid tier.
+
+Because of the nature of AI, other users may receive identical or similar outputs. We do not promise exclusive rights solely because you generated or used a particular output.`
+            },
+            {
+                title: '7. Public Content, Private Content, and Platform License',
+                content: `When you designate a work as “Public,” its output, prompt, source image, intermediate processing results, author name, avatar, model parameters, and related public interactions may be accessed, displayed, or downloaded by anyone through pages, shared links, or public interfaces. Do not make content public if it contains identity documents, contact information, private photographs, information about minors, or other sensitive information.
+
+For Public Content, you grant EntropyDrop a worldwide, non-exclusive, royalty-free, sublicensable license to store, reproduce, transform, and display the content; provide search, sharing, recommendation, derivative-creation, and community features; conduct safety review, moderation, and infringement handling; reasonably promote the Services; and evaluate, fine-tune, or train models using Public Content that is expressly identified as eligible for model improvement.
+
+If you delete Public Content or make it Private, we will stop using it for new public displays and new training runs. However, content already used in completed model training may not be separable or capable of being reverse-removed from model parameters, except where mandatory requirements provide otherwise.
+
+Direct messages, chats limited to specified participants, and non-public friend information are also treated as Private Content. Private Content is used only to provide generation, storage, editing, download, message delivery, security, and necessary technical support. Without your separate permission, we will not publicly display Private Content, provide it to ordinary users other than recipients or participants you designate, or use it for model fine-tuning or training. Authorized personnel and service providers may process Private Content on a need-to-know basis to complete a generation or deliver a message, respond to a report or security incident, investigate an issue you submit, or fulfill necessary obligations.`
+            },
+            {
+                title: '8. Social Features, Space Multiplayer World, and Marketplace',
+                content: `In the future, the Platform may provide friend requests, friend lists, blocking, Space chat, direct messages, and other social features on the main site or in Space. Respect other users’ choices. You may not evade a rejection or block by repeatedly sending requests or messages or by switching accounts. We do not guarantee another user’s identity, statements, or intentions. If you encounter harassment, fraud, threats, or inappropriate content, stop interacting and use available blocking, reporting, or support channels.
+
+World, channel, group, or proximity chat in Space may be visible to other participants within the applicable audience. Direct messages are generally displayed only to recipients you select, but “direct” or “private” does not mean end-to-end encrypted unless the product expressly says so. A recipient may save, capture, forward, or report a message. Do not send passwords, API keys, payment credentials, identity documents, precise locations, or other information you do not want the recipient to retain.
+
+Space is a shared multiplayer environment. Other players may see your display name, character appearance, position, actions, world edits, and public resources in real time. Your terrain or structure edits may be merged with edits made by other players. To preserve world integrity, respond to abuse, and protect other users’ creations, some edits already incorporated into a shared world may remain in de-identified form after account deletion.
+
+Blocksets, entities, colorsets, scripts, and other resources you publish to the Space marketplace are governed by the license and usage rules displayed in the publishing interface or resource detail page. We may change the licenses available for future publications or otherwise update marketplace rules, but doing so will not revoke licenses or usage entitlements already lawfully obtained by other users.
+
+In the future, the Space marketplace may allow users to use Credits to obtain virtual items, resources, or related usage entitlements. The price, functionality, license scope, availability period, transfer restrictions, and other conditions shown on the resource detail page at the time of purchase apply. Purchasing a virtual item does not transfer intellectual-property rights belonging to the publisher or another rights holder.
+
+You must ensure that published scripts and resources do not contain malicious code, backdoors, undisclosed data collection, or material that infringes third-party rights.`
+            },
+            {
+                title: '9. Community Conduct and Prohibited Uses',
+                content: `You may not use the Services to:
+
+• Publish unlawful, sexually explicit, child-exploitative, terrorist, hateful, severely violent, fraudulent, or rights-infringing content;
+• Harass, threaten, stalk, insult, discriminate against, or expose private information about another person;
+• Send bulk or repeated unsolicited friend requests, direct messages, advertisements, promotions, phishing links, scams, or other spam;
+• Groom, coerce, or deceive a minor into providing sensitive information, intimate content, off-platform contact details, or participating in inappropriate sexual interactions;
+• Use another person’s likeness, work, trademark, trade secret, or personal information without authorization;
+• Create or distribute cheats, unauthorized modifications, malicious scripts, viruses, or destructive code;
+• Bypass authentication, access controls, content restrictions, payment mechanisms, or security measures;
+• Access, probe, attack, or interfere with servers, accounts, networks, or databases without authorization;
+• Use bots, crawlers, or automated scripts for bulk registration, artificial engagement, resource stockpiling, abnormal API use, or excessive consumption of computing resources;
+• Disclose, sell, or misuse an API key; bypass API rate, quota, billing, permission, or security limits; or resell or relay an API without permission;
+• Use an AI Agent or API to send spam, manipulate others, automate fraud, attack or monitor systems, or perform another unauthorized action;
+• Scrape, mirror, bulk-download, or redistribute Platform data, public materials, or models without written permission;
+• Impersonate another person or otherwise mislead users; or
+• Use the Services in another manner that seriously harms the Platform or its users.
+
+Lawful security research, expressly permitted interoperability, and code expressly released under an open-source license are not unreasonably restricted, but remain subject to the applicable license and responsible-disclosure practices.`
+            },
+            {
+                title: '10. Moderation and Account Action',
+                content: `Based on applicable rules, user reports, and reasonable safety judgments, we may reduce distribution, restrict interactions, temporarily hide or remove content, withdraw a resource, restrict features, suspend or terminate an account, or preserve necessary evidence.
+
+To deliver messages, filter spam and malicious links, respond to reports, investigate fraud or security incidents, and fulfill necessary obligations, we may use automated systems and authorized personnel to review relevant accounts, friend relationships, chats, or direct messages on a need-to-know basis. When a direct message is reported, we may receive the reported message, necessary surrounding context, and related account information.
+
+We may act immediately without advance notice in response to an urgent security risk, clearly unlawful content, fraud, attacks, cheating, or large-scale abuse. If you believe an action was mistaken, you may appeal at support@entropydrop.com.`
+            },
+            {
+                title: '11. Custom Physical Products',
+                content: `EntropyDrop’s 3D-printed products are “14+ collectibles,” not children’s toys, and are unsuitable for infants or young children.
+
+Custom products are manufactured from the model you select or upload. Reasonable differences may exist between an on-screen preview and the physical product because of printing processes, materials, stickers, display color, and manual assembly. After a custom-product exclusion is conspicuously disclosed during checkout and separately confirmed by you, the product may be ineligible for return without cause. You may still request repair, remanufacture, replacement, return, or refund if the product has a serious quality problem, is incorrect or incomplete, is damaged in transit, or materially fails to match the order.
+
+Once production begins, an order generally cannot be canceled unless otherwise required or agreed by us. Production and delivery times are estimates and may be affected by destination, customs, carriers, or events beyond reasonable control.
+
+Purchasing a physical item gives you ownership of that item but does not transfer third-party rights in characters, artwork, or other protected material contained in it. You are responsible for custom content and resale activity involving third-party rights.`
+            },
+            {
+                title: '12. Third-Party Services',
+                content: `EntropyDrop may use or link to third-party services such as Google Sign-In, Google Analytics, AWS, PayPal, YouTube, shipping providers, foundation-model providers, tool or connector providers, and AI endpoints selected by users.
+
+When you authorize an AI Agent to call a third-party tool or connect an external account, the Agent may send that third party instructions, content, and context needed to complete the task and receive results in return. Review the permission scope and third-party terms before authorization, and connect only accounts and data you are authorized to use.
+
+Third-party services are independently provided and governed by their own terms and privacy practices. We will provide reasonable assistance with issues caused by a third-party service interruption, restriction, account action, or policy change, but we do not control third-party conduct.`
+            },
+            {
+                title: '13. Service Changes and Availability',
+                content: `We may modify, suspend, or discontinue parts of the Services for upgrades, security, maintenance, compliance, cost, or business reasons. For material changes to core subscription benefits, personal-data processing, or discontinuation of the Services as a whole, we will provide advance notice where reasonably possible and provide necessary export, refund, or other arrangements as applicable.
+
+Experimental features may lose data, change compatibility, or be discontinued at any time. Do not rely on an experimental feature as your only critical production environment. AI models, Agent tools, API fields, response formats, and versions may also change as the Services evolve. We will use documentation, versioning, or migration periods where reasonably possible for material breaking changes.`
+            },
+            {
+                title: '14. Disclaimers',
+                content: `To the extent permitted, the Services are provided “as is” and “as available.” We do not guarantee that the Services will always be uninterrupted, error-free, or completely secure, or that an AI Agent or API will always follow instructions accurately, remain compatible, or complete every task. You should maintain your own backups of important works, source files, and scripts, grant Agents only the minimum permissions needed, and retain human review and recovery measures for important actions. We take reasonable measures to protect data, but no online service can promise absolute freedom from failures or security risks.`
+            },
+            {
+                title: '15. Scope of Responsibility',
+                content: `No limitation of responsibility applies where such a limitation is prohibited, including responsibility arising from intentional misconduct, gross negligence, personal injury, fraud, or infringement of mandatory consumer rights.
+
+These Terms do not exclude or restrict any right you have to complain, report, seek mediation, request a refund, bring a claim, or exercise another non-waivable consumer right. Responsibility arising from a user’s breach of these Terms, infringement of third-party rights, or unlawful use of the Services remains with the responsible party.`
+            },
+            {
+                title: '16. Account Termination and Data Handling',
+                content: `You may stop using the Services and request account deletion by contacting support@entropydrop.com.
+
+After deletion, you will no longer be able to access your works, Credits, subscription benefits, Space state, virtual items, or other account data. Order, payment, tax, security, and dispute records that must be retained may continue to be stored for the necessary period.
+
+Termination does not affect payment obligations accrued before termination, valid licenses or usage entitlements already lawfully obtained by third parties, necessary preservation of evidence, or provisions that by their nature should survive.`
+            },
+            {
+                title: '17. Updates and Contact',
+                content: `We may update these Terms as the Services, our business, or applicable rules change. We will notify you of material changes through an in-product notice, email, or another reasonable method. If a material change requires renewed consent, we will ask for consent before it takes effect.
+
+Operator: Shanghai EqualRank Technology Co., Ltd.
+Product: EntropyDrop
+Website: entropydrop.com
+Email: support@entropydrop.com`
+            }
         ]
     },
     privacyPolicy: {
-        title: 'Privacy Policy',
+        title: 'EntropyDrop Privacy Policy',
+        lastUpdatedLabel: 'Last updated',
+        lastUpdated: 'August 30, 2026',
         sections: [
-            { title: '1. Data Collection', content: 'We collect your email and profile information through Google Login. Your email address is used solely for account identification and system notifications, and is treated as strictly confidential; your Google account name and avatar will be used for the public display of author information for your creations.' },
-            { title: '2. Data Security & Protection', content: 'For works set to "Private", Entropydrop will strictly encrypt and protect them, and will never display them publicly or use them for training.' },
-            { title: '3. Data Retention & Deletion', content: 'You can request the deletion of your account and all associated data at any time. To exercise this right, please contact us at support@entropydrop.com. We will process your request in accordance with applicable laws.' },
-            { title: '4. Anti-Scraping', content: 'No person or third party is allowed to scrape or download any data from this platform (including public materials and models). Entropydrop reserves the right to pursue legal liability.' }
+            {
+                title: '1. Scope and Controller',
+                content: `Shanghai EqualRank Technology Co., Ltd. is the controller of personal information processed in connection with EntropyDrop. We process personal information lawfully, fairly, transparently, and only to the extent reasonably necessary.
+
+This Policy applies to the EntropyDrop website, AI generation services, AI Agents and developer APIs we may offer in the future, friend, chat, direct-message, and other social features, community, Space, subscriptions, Credits, and custom-product services.`
+            },
+            {
+                title: '2. Information We Collect',
+                content: `Depending on the features you use, we may process:
+
+• Browsing and access data: IP address, browser and device type, language, page visits, timestamps, network data, and error information, used to deliver pages, protect security, rate-limit requests, troubleshoot failures, and improve the Services;
+• Google Sign-In data: Google ID, email address, account name, and avatar, used to create and authenticate accounts, send notices, and manage accounts;
+• Profile data: display name, avatar, game character skin, and character model type, used for author attribution, community profiles, and Space characters;
+• AI generation and editing data: prompts, source images, outputs, intermediate results, model versions, parameters, seeds, visibility settings, and feedback, used to complete generations, store history, charge Credits, recover from failures, and improve models;
+• AI Agent and API data: conversations, instructions, context, files, and objects you choose to provide; tool calls and returned results; generated code; execution and action records; API-key identifiers; request and response metadata; usage, quotas, errors, and audit logs, used to understand requests, perform tasks, provide APIs, bill usage, debug failures, audit security, and prevent abuse;
+• Community data: posts, comments, images, video links, collections, likes, reports, and notifications, used to provide community interaction, display content, and address violations;
+• Friend and communications data: friend requests, friend lists, blocks, sender and recipient identifiers, chat and direct-message content and attachments, the relevant Space or channel, sent, delivery, and read status, timestamps, reports, and moderation records, used to establish friend connections, deliver and synchronize messages, provide blocking and reporting, protect safety, and prevent abuse;
+• Space data: user and player identifiers, world identifiers, character position and state, world edits, public resources, scripts, marketplace listings, purchases, downloads, and virtual-item entitlement records, used for multiplayer synchronization, reconnect recovery, world persistence, marketplace operations, virtual-item delivery, and abuse prevention;
+• Subscription and Credit data: plans, Credit balances and history, records of Credits used to obtain virtual items, PayPal order identifiers, subscription status, payment amounts, and timestamps, used for payment, entitlement delivery, renewal, refunds, reconciliation, and fraud prevention;
+• Custom-product data: country or region, telephone number, postal code, state or province, city, street address, custom model, order, and shipment status, used for production, delivery, support, and necessary recordkeeping;
+• Analytics data: cookies or similar identifiers, page visits, interaction events, device information, and approximate region, used to understand usage and improve the product; and
+• Support data: email address, message content, attachments, and communication timestamps, used to answer questions, handle complaints, and provide after-sales support.
+
+An uploaded image containing a face, identity document, health information, precise location, financial account information, or information about a minor may contain sensitive personal information. Do not upload such content unless the feature requires it and you have all necessary rights. We do not use uploaded photographs for facial identification.`
+            },
+            {
+                title: '3. Sources of Information',
+                content: `We obtain information:
+
+• Directly from you when you register, complete a form, upload or create content, make a purchase, or contact us;
+• Automatically when you use the website, an API, or Space;
+• From third parties such as Google, PayPal, or shipping providers based on your authorization or transaction; and
+• From interactions by other users, such as likes, comments, reports, or replies involving your content.`
+            },
+            {
+                title: '4. Purposes and Grounds for Processing',
+                content: `We process personal information only where necessary to create an account, establish friend connections, deliver chats or direct messages, complete a generation, respond to an API request, perform an Agent task you authorize, provide a multiplayer world, or fulfill an order or subscription; where you have provided consent or separate consent; to fulfill necessary obligations; to protect users, the Platform, or the public from threats to personal or property safety; where permitted for cybersecurity, fraud prevention, troubleshooting, and reasonable product improvement; or within a reasonable scope when processing information you made public or that was otherwise lawfully made public.
+
+Refusing optional information will not affect basic features. Refusing information required for a specific Service may prevent that Service from functioning.`
+            },
+            {
+                title: '5. Public and Private Content',
+                content: `If you choose “Public,” outputs, source images, intermediate processing results, prompts, titles, model parameters, derivation relationships, display name, avatar, character skin, author identifier, public collections, like counts, forum content, world- or channel-visible Space chat, and Space marketplace resources may be visible to the applicable participants or anyone. Other users may view, download, capture, share, link to, or redistribute Public Content outside the Platform. Copies previously saved by third parties may remain beyond our control after you delete the content.
+
+Under the Free plan, generated content generally can only be stored as Public. Check the visibility setting before submission and do not upload personal photographs or sensitive information that you do not want made public. After clear notice and the relevant authorization, we may use Public Content, prompts, and quality feedback for model evaluation, fine-tuning, or training.
+
+Direct messages, chats limited to specified participants, non-public friend information, AI Agent conversations, API inputs, context you provide, and private data obtained through tools are treated as Private Content. Private Content is not displayed to ordinary users other than recipients or participants you select and is not used for model fine-tuning or training. We access Private Content only to provide generation, respond to an API request, perform an Agent task you authorize, deliver messages, provide storage, editing, security, respond to reports or an issue you submit, or perform another necessary function, subject to access controls.
+
+A direct-message recipient may save, capture, forward, or report content they receive. When a message is reported, the reported content, necessary surrounding context, and related account information may be provided to Platform reviewers. Direct messages are not end-to-end encrypted unless the product expressly says otherwise.`
+            },
+            {
+                title: '6. Cookies, Browser Storage, and Analytics',
+                content: `We use cookies, localStorage, sessionStorage, and IndexedDB to store login tokens; language, interface, and camera settings; Space backpacks, palettes, and unsynchronized world edits; resource caches and temporary session state; and AI Agent endpoint, model, and context settings.
+
+Space API keys remain only in the current page session and are not persisted to localStorage. When you use a custom AI endpoint, your prompt, necessary game context, and API key are sent directly by your browser to the provider you select and are governed by that provider’s privacy policy.
+
+When configured, the website may use Google Analytics. Where required, we will obtain consent before enabling analytics and provide a method to reject or withdraw analytics-cookie consent. PayPal, Google Sign-In, and embedded YouTube content may also set cookies or similar identifiers under their own practices.`
+            },
+            {
+                title: '7. Sharing, Service Providers, and Disclosure',
+                content: `We do not sell personal information or provide it to third parties for their independent behavioral advertising.
+
+To provide the Services, we may share the minimum necessary information with Google for account sign-in and website analytics; AWS for servers, databases, object storage, content delivery, and backups; PayPal for payments, subscriptions, refunds, reconciliation, and fraud prevention; YouTube for user-submitted public videos; 3D-printing, logistics, and shipping providers for custom-product production and delivery; foundation-model, AI endpoint, tool, or connector providers for a request you submit or an Agent task you authorize; and professional providers supporting security, auditing, legal services, or necessary technical operations.
+
+An Agent should connect to external services only within the permission scope you authorize. Instructions, content, context, and tool results needed to complete a task may be transferred between EntropyDrop and the relevant third party. You may stop future access by disconnecting a service, revoking authorization, or changing Agent permissions, but this does not affect processing completed before revocation.
+
+When you send a friend request, chat, or direct message, your display name, avatar, account identifier, message, attachment, and necessary status information are provided to recipients you select or who are within the feature’s stated audience. Recipients are responsible for information they independently retain or reshare.
+
+We may also make necessary disclosures in response to an authorized governmental request, to address fraud, attacks, infringement, or an urgent safety incident, or in connection with a merger, restructuring, or asset transfer, subject to continued appropriate protection by the recipient.
+
+If the Platform’s public financial pages display transaction information, names, email addresses, and other direct identifiers will be removed, masked, or de-identified.`
+            },
+            {
+                title: '8. International Processing',
+                content: `Because Google, AWS, PayPal, YouTube, and other providers may operate in different countries or regions, your information may be transferred to or stored outside your country or region.
+
+We will take appropriate measures such as data minimization, contractual safeguards, security assessments, certification, standard contractual clauses, or separate consent where applicable. Where required, we will provide information about the overseas recipient, processing purpose, data categories, and available methods for exercising your rights.`
+            },
+            {
+                title: '9. Retention',
+                content: `We retain information only for the shortest period reasonably necessary for the purposes described in this Policy:
+
+• Account data: while the account remains active; after a verified deletion request, primary systems are generally deleted or anonymized within 30 days;
+• Generation records and works: until you delete them or delete the account; public caches may take up to 30 days to update;
+• AI Agent conversations, task context, and execution records: until you delete the relevant task, disable the applicable history, or delete the account; records needed for security, billing, and auditing may remain for the necessary period;
+• API request metadata, usage, and security logs: generally no longer than six months; records needed for billing, refunds, disputes, or abuse prevention are retained for the necessary period;
+• Friend and block relationships: until you remove the relationship, delete the account, or the feature ends; records needed for reports, safety, or prevention of repeated harassment may remain for the necessary period;
+• Chats and direct messages: for the period shown in the product, or until you delete a message, the relevant conversation ends, or the account is deleted; delivered messages may remain in a recipient’s account, and report evidence or safety records may remain for the necessary period;
+• System backups: generally overwritten on a rolling basis within 90 days;
+• Space player state: until account deletion; shared-world edits may remain in de-identified form;
+• Space marketplace resources and virtual-item records: while a resource is listed or as needed to provide purchasers with entitlements or maintain transaction integrity; publisher identity links may be removed after account deletion, while necessary transaction and entitlement records may remain;
+• Technical and security logs: generally no longer than six months unless a longer period is necessary for an active security incident or another applicable requirement;
+• Shipping addresses: until you delete the address or account;
+• Order, payment, refund, and financial records: for necessary tax, accounting, and consumer-protection retention periods;
+• Support records: generally for three months after resolution, unless a dispute or another necessary circumstance requires longer retention; and
+• Browser-local data: on your device until you clear site data or uninstall the relevant application.`
+            },
+            {
+                title: '10. Security',
+                content: `We apply safeguards appropriate to the risk, including encryption in transit, access control, separation of public and private storage, least-privilege access, logging and monitoring, backups, security updates, and confidentiality obligations.
+
+No online service can guarantee absolute security. If personal information is leaked, altered, or lost in a manner that may affect your interests, we will take remedial measures and provide notifications to affected users and relevant authorities as applicable.`
+            },
+            {
+                title: '11. Your Rights',
+                content: `Where applicable, you may request access to, a copy of, or export of personal information; correct or supplement inaccurate information; manage friends, remove a friend connection, or block another user; delete messages where the product supports deletion, works, addresses, or an account; change content visibility; withdraw consent; restrict or object to particular processing; close an account; request an explanation of our processing practices; or appeal an account, content, or privacy decision.
+
+Withdrawal does not affect processing completed before the withdrawal. You may exercise available rights through product features or by emailing support@entropydrop.com. We may reasonably verify your identity to protect account security.`
+            },
+            {
+                title: '12. Minors',
+                content: `We do not knowingly offer account services to children under 14. If you are at least 14 but under 18, use the Services with the consent and guidance of a parent or legal guardian. A guardian may contact us to request access to, correction of, or deletion of a minor’s information.
+
+If we learn that we collected information from a child under 14 without valid authorization, we will promptly stop processing and delete it.`
+            },
+            {
+                title: '13. Policy Updates and Contact',
+                content: `We may update this Policy as our features, providers, or applicable rules change. We will provide an in-product notice, email, or another prominent notice of material changes. If a change involving a new processing purpose, sensitive personal information, public display, model training, or international transfer requires renewed consent, we will ask for it again.
+
+Controller: Shanghai EqualRank Technology Co., Ltd.
+Product: EntropyDrop
+Website: entropydrop.com
+Email: support@entropydrop.com`
+            }
         ]
     },
     mcmodal: {

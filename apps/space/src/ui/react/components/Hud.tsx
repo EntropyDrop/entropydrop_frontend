@@ -11,6 +11,14 @@ const SELECTOR_ICON = (
   </svg>
 );
 
+function PixelGearIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }} aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M6 1h4v2h1l1-1 2 2-1 1v1h2v4h-2v1l1 1-2 2-1-1h-1v2H6v-2H5l-1 1-2-2 1-1V9H1V5h2V4l-1-1 2-2 1 1h1V1zm2 4a3 3 0 100 6 3 3 0 000-6zm-1 3a1 1 0 102 0 1 1 0 00-2 0z" />
+    </svg>
+  );
+}
+
 function NearbyEntities() {
   const { nearbyEntities, navigationSystem } = useSpaceUi(state => state);
   const [expanded, setExpanded] = useState(false);
@@ -256,7 +264,7 @@ export function Hud() {
             <div id="pos-val">{state.positionText}</div>
             <NearbyEntities />
           </div>
-          <div className="hud-actions"><button id="global-settings-btn" tabIndex={-1} className="icon-btn" title="Global Settings (O)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(true)}>⚙</button></div>
+          <div className="hud-actions"><button id="global-settings-btn" tabIndex={-1} className="icon-btn" title="Global Settings (O)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(true)}><PixelGearIcon /></button></div>
         </div>
         <div className="hud-bottom">
           <div className="hud-bottom-stack">
