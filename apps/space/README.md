@@ -8,7 +8,7 @@ the main site's `localStorage` login token. It does not own an account system.
 Before constructing the Three.js scene it calls `POST /space/api/v2/bootstrap`,
 loads the existing EntropyDrop user's latest backend state, or receives an
 ephemeral random position when no snapshot exists, and downloads that user's
-immutable `minecraft_skin_url` PNG. The first random position is checkpointed
+immutable `skin_url` PNG. The first random position is checkpointed
 immediately; later wrapped position/yaw updates are saved every two seconds and
 before page suspension. A user without a configured skin is blocked
 and sent to `/skin/edit`. Backpack data remains browser-local under

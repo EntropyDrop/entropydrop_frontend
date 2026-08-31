@@ -29,8 +29,8 @@ export interface GenerationLogItem extends GenerationLogItemBrief {
         id: string
         username: string
         avatar_url?: string
-        minecraft_skin_url?: string | null
-        minecraft_skin_model?: string | null
+        skin_url?: string | null
+        skin_type?: string | null
     }
     timestamp: string
     likes_count: number

@@ -777,10 +777,10 @@ test('inventory copy prunes empty ghost children and scripts from a block select
   const slot = controller.inventorySlots[0];
   assert.ok(slot);
   assert.equal(slot.blockCount, 1);
-  assert.deepEqual([...new Set(slot.blocks.map(b => b.entityId || 'root'))], ['arm']);
+  assert.deepEqual([...new Set(slot.blocks.map(b => b.entityId || 'root'))], ['root']);
   assert.equal(slot.childEntities.length, 0, 'hand definition should be pruned because its blocks are not selected');
-  assert.deepEqual(slot.scripts.map(s => s.id), ['arm'], 'only the copied level script should remain');
-  assert.deepEqual(slot.enabled.map(e => e.id), ['arm']);
+  assert.deepEqual(slot.scripts.map(s => s.id), ['root'], 'the copied level script should move to the canonical root');
+  assert.deepEqual(slot.enabled.map(e => e.id), ['root']);
 
   // Pasting should not create ghost children.
   const scene = new THREE.Scene();

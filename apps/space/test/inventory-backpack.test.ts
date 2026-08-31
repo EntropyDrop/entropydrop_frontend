@@ -265,6 +265,7 @@ test('serialize/parse round-trips entities with scripts and hierarchy', () => {
     childEntities: [{
       id: 'arm',
       parentId: 'root',
+      collisionEnabled: false,
       pivot: [1.5, 0.5, 0.5],
       bodyType: 'dynamic',
       mass: 2,
@@ -317,6 +318,9 @@ test('serialize/parse round-trips entities with scripts and hierarchy', () => {
   }
   assert.equal('runtimeOnly' in serialized.childEntities[0], false);
   assert.equal('runtimeOnly' in serialized.constraints[0], false);
+  assert.equal(serialized.rootId, 'root');
+  assert.equal('rootIds' in serialized, false);
+  assert.equal(serialized.childEntities[0].collisionEnabled, false);
 
   const text = JSON.stringify(serialized);
   const parsed = controller.parseInventoryImport(text, 'entity');
@@ -335,6 +339,7 @@ test('serialize/parse round-trips entities with scripts and hierarchy', () => {
   assert.equal(parsed.item.blocks[2].part, 'tip');
   assert.deepEqual(parsed.item.scripts, [{ id: 'arm', code: 'self.applyForce([0,1,0]);' }]);
   assert.equal(parsed.item.childEntities.length, 1);
+  assert.equal(parsed.item.childEntities[0].collisionEnabled, false);
   assert.equal(parsed.item.constraints.length, 1);
   assert.deepEqual(parsed.item.constraints[0].limits, { min: -1, max: 1 });
   assert.equal(parsed.item.mode, 'programmable');
@@ -411,6 +416,34 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
   };
   assert.equal(controller.parseInventoryImport(JSON.stringify({
     ...baseEntity,
+    rootId: 'arm'
+  }), 'entity').ok, false, 'entity files must use the one explicit root');
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    ...baseEntity,
+    rootIds: ['root', 'arm']
+  }), 'entity').ok, false, 'multi-root entity files are rejected');
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    ...baseEntity,
+    childEntities: Array.from({ length: 64 }, (_, index) => ({ id: `node_${index}`, parentId: 'root' }))
+  }), 'entity').ok, false, 'one root leaves room for at most 63 children');
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    ...baseEntity,
+    blocks: [{ dx: 0, dy: 0, dz: 0, entityId: 'root', block: 2 }]
+  }), 'entity').ok, false, 'only color block id 1 is portable');
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    ...baseEntity,
+    blocks: [{ dx: 0, dy: 0, dz: 0, entityId: 'root', block: true }]
+  }), 'entity').ok, false, 'boolean values are not block ids');
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    ...baseEntity,
+    childEntities: [{ id: 'arm', parentId: 'root', pivot: [129, 0, 0] }]
+  }), 'entity').ok, false, 'component pivots use the portable coordinate bound');
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    ...baseEntity,
+    mass: 1e12 + 1
+  }), 'entity').ok, false, 'entity mass uses the backend safety bound');
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    ...baseEntity,
     blocks: [{ dx: 0, dy: 0, dz: 0 }, { dx: 64, dy: 0, dz: 0 }]
   }), 'entity').ok, false, 'a 65-cell AABB must be rejected');
   assert.equal(controller.parseInventoryImport(JSON.stringify({
@@ -421,6 +454,15 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
     ...baseEntity,
     scripts: [{ id: 'root', code: 'x'.repeat(MAX_INVENTORY_SCRIPT_BYTES + 1) }]
   }), 'entity').ok, false, 'oversized scripts must be rejected');
+  assert.equal(controller.parseInventoryImport(JSON.stringify({
+    type: 'space-blockset',
+    version: 2,
+    name: 'overlap',
+    blocks: [
+      { dx: 0, dy: 0, dz: 0, block: 1 },
+      { dx: 0, dy: 0, dz: 0, mx: 0, my: 0, mz: 0, block: 1 }
+    ]
+  }), 'blockset').ok, false, 'standard and micro voxels may not share one cell');
 
   const repeatedBlock = { dx: 0, dy: 0, dz: 0 };
   assert.equal(controller.parseInventoryImport(JSON.stringify({

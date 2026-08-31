@@ -1379,11 +1379,12 @@ export class Contraption {
    * be passed directly to ContraptionManager.buildFromSlot to create an independent entity.
    */
   serializeSubtree(rootNodeId = 'root') {
-    const rootId = String(rootNodeId || 'root');
-    const nodeIds = this.collectSubtreeNodeIds(rootId);
-    const massOverride = rootId === 'root'
+    const sourceRootId = String(rootNodeId || 'root');
+    const nodeIds = this.collectSubtreeNodeIds(sourceRootId);
+    const mapId = id => id === sourceRootId ? 'root' : id;
+    const massOverride = sourceRootId === 'root'
       ? this.massOverride
-      : normalizeBodyMass(this.childDefinitions.get(rootId)?.mass);
+      : normalizeBodyMass(this.childDefinitions.get(sourceRootId)?.mass);
 
     const blocks = this.blocks
       .filter(b => nodeIds.has(b.entityId || 'root'))
@@ -1395,27 +1396,37 @@ export class Contraption {
         color: b.color,
         block: b.block,
         part: b.part,
-        entityId: b.entityId || 'root'
+        entityId: mapId(b.entityId || 'root')
       }));
 
     const childEntities = [...this.childDefinitions.values()]
-      .filter(d => nodeIds.has(d.id))
-      .map(d => ({ ...d }));
+      .filter(d => nodeIds.has(d.id) && d.id !== sourceRootId)
+      .map(d => ({
+        ...d,
+        id: mapId(d.id),
+        parentId: mapId(d.parentId)
+      }));
 
     const scripts = [...this.nodeScripts.entries()]
       .filter(([id]) => nodeIds.has(id))
-      .map(([id, code]) => ({ id, code }));
+      .map(([id, code]) => ({ id: mapId(id), code }));
 
     const enabled = [...this.entityNodes.keys()]
       .filter(id => nodeIds.has(id))
-      .map(id => ({ id, enabled: this.isNodeScriptEnabled(id) }));
+      .map(id => ({ id: mapId(id), enabled: this.isNodeScriptEnabled(id) }));
     const constraints = [...this.constraintDefinitions.values()]
       .filter(constraint => nodeIds.has(constraint.bodyB) && (constraint.bodyA === 'world' || nodeIds.has(constraint.bodyA)))
-      .map(constraint => ({ ...constraint, limits: constraint.limits ? { ...constraint.limits } : null }));
+      .map(constraint => ({
+        ...constraint,
+        bodyA: constraint.bodyA === 'world' ? 'world' : mapId(constraint.bodyA),
+        bodyB: mapId(constraint.bodyB),
+        limits: constraint.limits ? { ...constraint.limits } : null
+      }));
 
     return {
-      rootId,
-      nodeCount: nodeIds.size,
+      name: `Entity ${sourceRootId}`,
+      rootId: 'root',
+      nodeCount: 1 + childEntities.length,
       blockCount: blocks.length,
       blocks,
       childEntities,
@@ -1423,10 +1434,10 @@ export class Contraption {
       enabled,
       constraints,
       mode: this.mode,
-      bodyType: rootId === 'root' ? this.bodyType : this.getNodeBodyType(rootId),
+      bodyType: sourceRootId === 'root' ? this.bodyType : this.getNodeBodyType(sourceRootId),
       ...(massOverride !== null ? { mass: massOverride } : {}),
-      restitution: rootId === 'root' ? this.restitution : this.getRigidBody(rootId)?.restitution,
-      friction: rootId === 'root' ? this.friction : this.getRigidBody(rootId)?.friction,
+      restitution: sourceRootId === 'root' ? this.restitution : this.getRigidBody(sourceRootId)?.restitution,
+      friction: sourceRootId === 'root' ? this.friction : this.getRigidBody(sourceRootId)?.friction,
       useGravity: this.useGravity,
       bearingAxis: this.bearingAxis.toArray(),
       bearingRpm: this.bearingRpm,
@@ -1439,12 +1450,24 @@ export class Contraption {
   }
 
   /**
-   * Serialize the union of several component roots and all descendants into one slot.
-   * rootId is null, rootIds records each root, and paste preserves original hierarchy.
-   */
+   * Serialize several independent component subtrees under one explicit root.
+   * The root may own no voxels; every selected subtree root becomes its child.
+  */
   serializeSubtrees(rootIds) {
-    const roots = (rootIds || []).filter(Boolean);
+    const normalizedRoots: string[] = (rootIds || []).map(id => String(id || '')).filter(Boolean);
+    const requestedRoots = [...new Set<string>(normalizedRoots)];
+    if (requestedRoots.includes('root')) return this.serializeSubtree('root');
+    const requestedSet = new Set(requestedRoots);
+    const roots = requestedRoots.filter(id => {
+      let parentId = this.childDefinitions.get(id)?.parentId;
+      while (parentId && parentId !== 'root') {
+        if (requestedSet.has(parentId)) return false;
+        parentId = this.childDefinitions.get(parentId)?.parentId;
+      }
+      return true;
+    });
     if (roots.length === 0) return null;
+    if (roots.length === 1) return this.serializeSubtree(roots[0]);
 
     const nodeIds = new Set();
     for (const id of roots) {
@@ -1466,7 +1489,10 @@ export class Contraption {
 
     const childEntities = [...this.childDefinitions.values()]
       .filter(d => nodeIds.has(d.id))
-      .map(d => ({ ...d }));
+      .map(d => ({
+        ...d,
+        parentId: roots.includes(d.id) || !nodeIds.has(d.parentId) ? 'root' : d.parentId
+      }));
 
     const scripts = [...this.nodeScripts.entries()]
       .filter(([id]) => nodeIds.has(id))
@@ -1480,9 +1506,9 @@ export class Contraption {
       .map(constraint => ({ ...constraint, limits: constraint.limits ? { ...constraint.limits } : null }));
 
     return {
-      rootId: null,
-      rootIds: [...roots],
-      nodeCount: nodeIds.size,
+      name: `Entity ${roots.length} components`,
+      rootId: 'root',
+      nodeCount: 1 + childEntities.length,
       blockCount: blocks.length,
       blocks,
       childEntities,

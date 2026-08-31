@@ -119,7 +119,7 @@ export function PostDetailView({
                     <div className="flex items-center gap-1.5">
                         <span>{current.figureForum.postedBy}</span>
                         <SkinAvatarImage
-                            textureUrl={selectedPost.authorMinecraftSkinUrl}
+                            textureUrl={selectedPost.authorSkinUrl}
                             fallbackSrc={selectedPost.authorAvatar}
                             alt={selectedPost.author}
                             className="w-4 h-4"

@@ -8,8 +8,8 @@ export interface RemotePlayerInfo {
   user_id: string;
   username: string;
   player_entity_id: string;
-  minecraft_skin_url: string;
-  minecraft_skin_model: 'strong' | 'slim';
+  skin_url: string;
+  skin_type: 'strong' | 'slim';
   x: number;
   y: number;
   z: number;
@@ -299,8 +299,8 @@ export class MultiplayerSync {
       user_id: String(player.user_id || ''),
       username: String(player.username || 'Player'),
       player_entity_id: String(player.player_entity_id || player.user_id || ''),
-      minecraft_skin_url: String(player.minecraft_skin_url || '/skin/default.png'),
-      minecraft_skin_model: player.minecraft_skin_model === 'slim' ? 'slim' : 'strong',
+      skin_url: String(player.skin_url || '/skin/default.png'),
+      skin_type: player.skin_type === 'slim' ? 'slim' : 'strong',
       x: Number(player.x_cm) / 100,
       y: Number(player.y_cm) / 100,
       z: Number(player.z_cm) / 100,

@@ -44,7 +44,7 @@ export function PostItemShowcase({
                     <div className="flex items-center justify-between text-[10px] text-white/40 mb-2">
                         <div className="flex items-center gap-1.5">
                             <SkinAvatarImage
-                                textureUrl={post.authorMinecraftSkinUrl}
+                                textureUrl={post.authorSkinUrl}
                                 fallbackSrc={post.authorAvatar}
                                 alt={post.author}
                                 className="w-4 h-4"

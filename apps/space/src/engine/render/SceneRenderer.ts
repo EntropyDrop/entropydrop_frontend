@@ -176,19 +176,15 @@ export function getInventoryPreviewBlocks(slot) {
   }
 
   if (slot.blocks.length === 0) return [];
-  const singleRoot = !!slot.rootId;
-  const rootId = slot.rootId || null;
-  const mapId = id => (singleRoot && id === rootId ? 'root' : id);
   const sourceChildIds = new Set((slot.childEntities || []).map(definition => definition.id));
   const blocks = slot.blocks.map(block => ({
     ...block,
-    entityId: mapId(block.entityId || 'root')
+    entityId: block.entityId || 'root'
   }));
   const definitions = (slot.childEntities || []).map(definition => ({
     ...definition,
-    id: mapId(definition.id),
     parentId: sourceChildIds.has(definition.parentId)
-      ? mapId(definition.parentId)
+      ? definition.parentId
       : 'root'
   })).filter(definition => definition.id !== 'root');
 
@@ -2017,8 +2013,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
           },
           lastMotionSampleAt: now,
           sampleVelocity: new THREE.Vector3(),
-          skinUrl: p.minecraft_skin_url,
-          skinModel: p.minecraft_skin_model || 'strong',
+          skinUrl: p.skin_url,
+          skinModel: p.skin_type || 'strong',
           loadedSkinUrl: null,
           loadedSkinModel: null,
           highDetail: false,
@@ -2062,9 +2058,9 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         record.targetPitch = p.pitch || 0;
         record.lastSeen = now;
       }
-      if (p.minecraft_skin_url && record.skinUrl !== p.minecraft_skin_url) {
-        record.skinUrl = p.minecraft_skin_url;
-        record.skinModel = p.minecraft_skin_model || 'strong';
+      if (p.skin_url && record.skinUrl !== p.skin_url) {
+        record.skinUrl = p.skin_url;
+        record.skinModel = p.skin_type || 'strong';
       }
 
       // Smoothly interpolate position with toroidal wrap

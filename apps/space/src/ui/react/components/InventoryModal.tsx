@@ -1076,9 +1076,19 @@ export function InventoryModal() {
 
   const publishItem = async (category: InventoryCategory, item: any) => {
     if (!marketClient || !state.controller) return;
-    const payload = state.controller.serializeInventoryItem?.(category, item);
-    if (!payload) {
+    const serialized = state.controller.serializeInventoryItem?.(category, item);
+    if (!serialized) {
       spaceUiStore.showToast('Could not serialize this backpack item.');
+      return;
+    }
+    const validated = state.controller.parseInventoryImport?.(JSON.stringify(serialized), category);
+    if (!validated?.ok) {
+      spaceUiStore.showToast(validated?.error || 'This backpack item is not portable.');
+      return;
+    }
+    const payload = state.controller.serializeInventoryItem?.(category, validated.item);
+    if (!payload) {
+      spaceUiStore.showToast('Could not canonicalize this backpack item.');
       return;
     }
     try {

@@ -324,8 +324,8 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    minecraft_skin_url: item.result,
-                    minecraft_skin_model: skinModel
+                    skin_url: item.result,
+                    skin_type: skinModel
                 })
             });
             if (res.ok) {
@@ -1172,7 +1172,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                         className={`flex items-center gap-2 p-2 border cursor-pointer transition-all group ${showSidebar && sidebarType === 'author' ? 'bg-[#4ea632]/5 border-[#4ea632]/30' : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'}`}
                                                                     >
                                                                         <SkinAvatarImage
-                                                                            textureUrl={item.creator?.minecraft_skin_url}
+                                                                            textureUrl={item.creator?.skin_url}
                                                                             fallbackSrc={item.creator?.avatar_url}
                                                                             alt={item.creator?.username || "Avatar"}
                                                                             className="w-8 h-8 bg-[#222] border border-white/10 group-hover:border-[#4ea632]/40 transition-colors shrink-0"

@@ -80,7 +80,7 @@ class Game {
     // 1. Core Engine Systems
     this.sceneRenderer = new SceneRenderer(this.canvasContainer, {
       skinUrl: session.skin_object_url,
-      skinModel: session.player.minecraft_skin_model
+      skinModel: session.player.skin_type
     });
     // Procedural terrain and every derived LOD/cache must use the durable,
     // server-authoritative seed so all players reconstruct the same base world.

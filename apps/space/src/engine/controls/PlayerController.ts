@@ -46,6 +46,9 @@ export const MAX_INVENTORY_SCRIPT_BYTES = 64 * 1024;
 export const MAX_INVENTORY_TOTAL_SCRIPT_BYTES = 512 * 1024;
 const MAX_INVENTORY_CONSTRAINTS = 256;
 const MAX_IMPORT_COORDINATE = MAX_ENTITY_BOUNDS * 2;
+const MAX_PORTABLE_VECTOR_COMPONENT = 256;
+const MAX_PORTABLE_BODY_MASS = 1e12;
+const MAX_PORTABLE_CONSTRAINT_VALUE = 10_000;
 export const BULK_EDIT_THRESHOLD = 256;
 export const BULK_EDIT_MAX_OPERATIONS_PER_FRAME = 128;
 export const BULK_EDIT_FRAME_BUDGET_MS = 5;
@@ -230,7 +233,7 @@ export class PlayerController {
     // Hammer placement ghost: { slot, kind, position } | null
     this.inventoryPlacementPreview = null;
     // Entity/component selector + inventory clipboard
-    this.selectedSubtree = null;          // { contraption, rootId, rootIds?, nodeIds: Set }
+    this.selectedSubtree = null;          // { contraption, rootId, nodeIds: Set }
     this.selectedBlockSelection = null;   // { contraption, nodeId, blocks: [] }
     this.selectorLevel = null;            // Active box-selection level { contraption, nodeId } — decoupled from block selection
     this.selectorRange = null;            // { contraption, nodeId, pointA, pointB }
@@ -1494,20 +1497,17 @@ export class PlayerController {
         return null;
       }
       const slot = contraption.serializeSubtree(nodeId);
-      slot.blocks = blocks.map(b => ({ ...b }));
+      slot.blocks = blocks.map(b => ({ ...b, entityId: 'root' }));
       slot.blockCount = blocks.length;
       // A block selection copies only the level's own blocks (children excluded), so
-      // descendants whose blocks were not selected must be pruned — otherwise pasting
-      // would recreate them as empty ghost components with orphaned scripts. The level
-      // itself maps to the new root on paste, so it never appears in childEntities.
-      const owningIds = new Set(slot.blocks.map(b => b.entityId || 'root'));
-      const keepNode = id => owningIds.has(id) || (slot.childEntities || []).some(d => d.parentId === id && keepNode(d.id));
-      slot.childEntities = (slot.childEntities || [])
-        .filter(d => d.id !== nodeId)
-        .filter(d => keepNode(d.id));
-      slot.scripts = (slot.scripts || []).filter(s => s.id === nodeId || keepNode(s.id));
-      slot.enabled = (slot.enabled || []).filter(e => e.id === nodeId || keepNode(e.id));
-      slot.nodeCount = 1 + slot.childEntities.length;
+      // descendants must be pruned to avoid empty ghost components and orphaned scripts.
+      slot.childEntities = [];
+      slot.scripts = (slot.scripts || []).filter(s => s.id === 'root');
+      slot.enabled = (slot.enabled || []).filter(e => e.id === 'root');
+      slot.constraints = (slot.constraints || []).filter(constraint => (
+        constraint.bodyA === 'world' && constraint.bodyB === 'root'
+      ));
+      slot.nodeCount = 1;
       const index = this.addInventoryItem('entity', slot);
       if (index === null) {
         this.ui?.showToast?.(`Entity inventory is full (${this.inventories.entity.items.length}) - delete one first`);
@@ -2889,18 +2889,14 @@ export class PlayerController {
       if (this.ui) this.ui.showToast('Nothing selected - point at an entity/component with the selector first');
       return null;
     }
-    const { contraption, rootId, rootIds } = this.selectedSubtree;
-    const containsInternalRoot = rootIds?.length > 0
-      ? rootIds.some(id => id !== 'root')
-      : rootId !== 'root';
+    const { contraption, rootId } = this.selectedSubtree;
+    const containsInternalRoot = rootId !== 'root';
     if (containsInternalRoot && !this.canEditEntityInternals(contraption)) {
       this.clearSelection();
       this.ui?.showToast?.('Stop the entity before copying one of its internal components');
       return null;
     }
-    const slot = rootIds && rootIds.length > 0
-      ? contraption.serializeSubtrees(rootIds)
-      : contraption.serializeSubtree(rootId);
+    const slot = contraption.serializeSubtree(rootId);
     const index = this.addInventoryItem('entity', slot);
     if (index === null) {
       this.ui?.showToast?.(`Entity inventory is full (${this.inventories.entity.items.length}) - delete one first`);
@@ -2911,8 +2907,7 @@ export class PlayerController {
     this.clearSelection();
     this.activateTool(SpecialTool.HAMMER);
     if (this.ui) {
-      const label = slot.rootId ? slot.rootId : `${slot.rootIds.length} components`;
-      this.ui.showToast(`Copied [${label}] (${slot.blockCount} blocks, ${slot.scripts.length} scripts) to entity slot ${index + 1} · switched to Hammer`);
+      this.ui.showToast(`Copied [${rootId}] (${slot.blockCount} blocks, ${slot.scripts.length} scripts) to entity slot ${index + 1} · switched to Hammer`);
     }
     return slot;
   }
@@ -3102,8 +3097,7 @@ export class PlayerController {
       return `Block set ${index + 1}`;
     }
     if (category === 'entity') {
-      const source = item?.rootId || (item?.rootIds?.length ? `${item.rootIds.length} components` : `${index + 1}`);
-      return `Entity ${source}`.slice(0, MAX_INVENTORY_NAME_LENGTH);
+      return `Entity ${index + 1}`;
     }
     return `Color set ${index + 1}`;
   }
@@ -3285,7 +3279,7 @@ export class PlayerController {
         blockCount: item.blockCount || item.blocks?.length || 0,
         blocks: (item.blocks || []).map(b => {
           const shared = {
-            block: Number.isSafeInteger(Number(b.block)) ? Number(b.block) : BlockTypes.COLOR_BLOCK,
+            block: BlockTypes.COLOR_BLOCK,
             color: normalizeColor(b.color ?? 0xf2a93b),
             ...(b.part ? { part: String(b.part).slice(0, 64) } : {})
           };
@@ -3322,7 +3316,9 @@ export class PlayerController {
         && value.slice(0, 3).every(component => Number.isFinite(Number(component)))
         ? value.slice(0, 3).map(Number)
         : undefined;
-      const optionalNumber = value => Number.isFinite(Number(value)) ? Number(value) : undefined;
+      const optionalNumber = value => value !== null && value !== undefined && Number.isFinite(Number(value))
+        ? Number(value)
+        : undefined;
       const childEntities = (item.childEntities || []).map(definition => ({
         id: String(definition.id || ''),
         parentId: String(definition.parentId || definition.parent || 'root'),
@@ -3356,15 +3352,14 @@ export class PlayerController {
         type: 'space-entity',
         version: 2,
         name: this.inventoryItemName('entity', item),
-        rootId: item.rootId ?? null,
-        ...(item.rootIds ? { rootIds: [...item.rootIds] } : {}),
-        nodeCount: item.nodeCount,
+        rootId: 'root',
+        nodeCount: 1 + childEntities.length,
         blockCount: item.blockCount || item.blocks?.length || 0,
         blocks: (item.blocks || []).map(b => {
           const shared = {
-            block: Number.isSafeInteger(Number(b.block)) ? Number(b.block) : BlockTypes.COLOR_BLOCK,
+            block: BlockTypes.COLOR_BLOCK,
             color: normalizeColor(b.color ?? 0xf2a93b),
-            entityId: String(b.entityId || item.rootId || item.rootIds?.[0] || 'root'),
+            entityId: String(b.entityId || 'root'),
             ...(b.part ? { part: String(b.part).slice(0, 64) } : {})
           };
           const x = Number(b.localX ?? b.dx);
@@ -3458,17 +3453,28 @@ export class PlayerController {
     const safePart = value => typeof value === 'string' && value.length > 0
       ? value.slice(0, 64)
       : undefined;
+    const isPortableBlockId = value => value === undefined
+      || (typeof value === 'number' && Number.isInteger(value) && value === BlockTypes.COLOR_BLOCK);
     const validateVoxelOccupancy = (blocks, coordinateKeys, ownerKey = null) => {
-      const occupied = new Set();
+      const standardCells = new Set();
+      const microCells = new Set();
+      const microParents = new Set();
       for (const block of blocks) {
         const owner = ownerKey ? String(block[ownerKey] || 'root') : 'resource';
         const coordinates = coordinateKeys.map(key => Number(block[key]));
         const base = coordinates.map(value => Math.floor(value + 1e-6));
         const isMicro = Number(block.size) < 1;
+        const parentKey = `${owner}:${base.join(',')}`;
         const fine = coordinates.map(value => Math.round(value * MICRO_DIVISIONS));
-        const key = `${owner}:${isMicro ? fine.join(',') : base.join(',')}:${isMicro ? 'micro' : 'standard'}`;
-        if (occupied.has(key)) return false;
-        occupied.add(key);
+        if (isMicro) {
+          const key = `${owner}:${fine.join(',')}`;
+          if (standardCells.has(parentKey) || microCells.has(key)) return false;
+          microCells.add(key);
+          microParents.add(parentKey);
+        } else {
+          if (standardCells.has(parentKey) || microParents.has(parentKey)) return false;
+          standardCells.add(parentKey);
+        }
       }
       return true;
     };
@@ -3481,6 +3487,9 @@ export class PlayerController {
       if (rawBlocks.length > MAX_INVENTORY_BLOCKS) return fail(`A block set may contain at most ${MAX_INVENTORY_BLOCKS} voxels`);
       const blocks = [];
       for (const b of rawBlocks) {
+        if (!isPortableBlockId(b?.block)) {
+          return fail('Block-set v2 supports only color block id 1');
+        }
         const baseCoordinates = [b?.dx, b?.dy, b?.dz].map(Number);
         if (!baseCoordinates.every(Number.isFinite)) return fail('A block has non-numeric coordinates');
         if (!validBaseCoordinates(baseCoordinates)) return fail('Block-set v2 coordinates must be bounded safe integers');
@@ -3518,7 +3527,7 @@ export class PlayerController {
         return fail(`Block-set bounds may not exceed ${MAX_ENTITY_BOUNDS} cells per axis`);
       }
       if (!validateVoxelOccupancy(blocks, ['dx', 'dy', 'dz'])) {
-        return fail('Block set contains duplicate voxels');
+        return fail('Block set contains duplicate voxels or standard/micro overlap');
       }
       const name = data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH);
       return { ok: true, item: { kind: 'blockset', name, blocks, blockCount: blocks.length } };
@@ -3529,22 +3538,27 @@ export class PlayerController {
       if (typeof data.name !== 'string' || !data.name.trim()) return fail('An entity must have a name');
       if (!data || !Array.isArray(data.blocks) || data.blocks.length === 0) return fail('No entity found (expected a "blocks" array)');
       if (data.blocks.length > MAX_INVENTORY_BLOCKS) return fail(`An entity may contain at most ${MAX_INVENTORY_BLOCKS} voxels`);
+      if (data.rootIds !== undefined) return fail('Entity v2 supports exactly one root');
+      if (data.rootId !== undefined && data.rootId !== 'root') return fail('Entity rootId must be "root"');
 
       const rawChildEntities = Array.isArray(data.childEntities) ? data.childEntities : [];
-      const rawRootIds = Array.isArray(data.rootIds) && data.rootIds.length > 0
-        ? data.rootIds
-        : [typeof data.rootId === 'string' && data.rootId ? data.rootId : 'root'];
-      if (rawRootIds.length > MAX_ENTITY_COMPONENTS) return fail(`An entity may contain at most ${MAX_ENTITY_COMPONENTS} components`);
-      const rootIds = [];
-      const rootIdSet = new Set();
-      for (const rawId of rawRootIds) {
-        if (!isValidComponentId(rawId) || rootIdSet.has(rawId)) return fail('Entity root ids must be unique portable identifiers');
-        rootIdSet.add(rawId);
-        rootIds.push(rawId);
-      }
-      if (rawChildEntities.length + rootIds.filter(id => !rawChildEntities.some(def => def?.id === id)).length > MAX_ENTITY_COMPONENTS) {
+      if (rawChildEntities.length > MAX_ENTITY_COMPONENTS - 1) {
         return fail(`An entity may contain at most ${MAX_ENTITY_COMPONENTS} components`);
       }
+      const portableVector = (value, maxAbs = MAX_PORTABLE_VECTOR_COMPONENT) => {
+        if (value === undefined) return undefined;
+        if (!Array.isArray(value) || value.length < 3) return null;
+        const vector = value.slice(0, 3).map(Number);
+        return vector.every(component => Number.isFinite(component) && Math.abs(component) <= maxAbs)
+          ? vector
+          : null;
+      };
+      const portableMass = value => {
+        if (value === undefined || value === null) return undefined;
+        const mass = Number(value);
+        if (!Number.isFinite(mass) || mass <= 0 || mass > MAX_PORTABLE_BODY_MASS) return null;
+        return Math.max(0.1, mass);
+      };
 
       const childEntities = [];
       const childIdSet = new Set();
@@ -3554,38 +3568,43 @@ export class PlayerController {
         childIdSet.add(id);
         const parentId = String(definition.parentId || definition.parent || 'root');
         if (!isValidComponentId(parentId)) return fail(`Invalid parent id for component ${id}`);
-        const pivot = definition.pivot;
-        if (pivot !== undefined && (!Array.isArray(pivot) || pivot.length < 3 || !pivot.slice(0, 3).map(Number).every(Number.isFinite))) {
+        const pivot = portableVector(definition.pivot, MAX_IMPORT_COORDINATE);
+        if (pivot === null) {
           return fail(`Invalid pivot for component ${id}`);
         }
         const bodyType = definition.bodyType === 'dynamic' || definition.bodyType === 'kinematic'
           ? definition.bodyType
           : undefined;
-        const mass = Number(definition.mass);
-        const restitution = Number(definition.restitution);
-        const friction = Number(definition.friction);
+        const mass = portableMass(definition.mass);
+        if (mass === null) return fail(`Invalid mass for component ${id}`);
+        const restitution = definition.restitution === undefined || definition.restitution === null
+          ? Number.NaN
+          : Number(definition.restitution);
+        const friction = definition.friction === undefined || definition.friction === null
+          ? Number.NaN
+          : Number(definition.friction);
         childEntities.push({
           id,
           parentId,
           ...(definition.kind === 'child' ? { kind: 'child' } : {}),
           ...(definition.collisionEnabled === false ? { collisionEnabled: false } : {}),
-          ...(Array.isArray(pivot) ? { pivot: pivot.slice(0, 3).map(Number) } : {}),
+          ...(pivot ? { pivot } : {}),
           ...(bodyType ? { bodyType } : {}),
-          ...(Number.isFinite(mass) && mass > 0 ? { mass } : {}),
+          ...(mass !== undefined ? { mass } : {}),
           ...(Number.isFinite(restitution) ? { restitution: Math.max(0, Math.min(1, restitution)) } : {}),
           ...(Number.isFinite(friction) ? { friction: Math.max(0, Math.min(1, friction)) } : {})
         });
       }
-      const knownNodeIds = new Set(['root', ...rootIds, ...childIdSet]);
+      const knownNodeIds = new Set(['root', ...childIdSet]);
       for (const definition of childEntities) {
-        if (!rootIdSet.has(definition.id) && !knownNodeIds.has(definition.parentId)) {
+        if (!knownNodeIds.has(definition.parentId)) {
           return fail(`Unknown parent ${definition.parentId} for component ${definition.id}`);
         }
       }
       for (const definition of childEntities) {
         const visited = new Set([definition.id]);
         let parentId = definition.parentId;
-        while (childIdSet.has(parentId) && !rootIdSet.has(parentId)) {
+        while (childIdSet.has(parentId)) {
           if (visited.has(parentId)) return fail('Component hierarchy contains a cycle');
           visited.add(parentId);
           parentId = childEntities.find(candidate => candidate.id === parentId)?.parentId || 'root';
@@ -3594,6 +3613,9 @@ export class PlayerController {
 
       const blocks = [];
       for (const b of data.blocks) {
+        if (!isPortableBlockId(b?.block)) {
+          return fail('Entity v2 supports only color block id 1');
+        }
         const baseCoordinates = [b?.dx, b?.dy, b?.dz].map(Number);
         if (!baseCoordinates.every(Number.isFinite)) return fail('An entity block has non-numeric coordinates');
         if (!validBaseCoordinates(baseCoordinates)) return fail('Entity v2 coordinates must be bounded safe integers');
@@ -3616,7 +3638,7 @@ export class PlayerController {
           );
         }
 
-        const entityId = typeof b?.entityId === 'string' ? b.entityId : rootIds[0];
+        const entityId = typeof b?.entityId === 'string' ? b.entityId : 'root';
         if (!knownNodeIds.has(entityId)) return fail(`A block references unknown component ${entityId}`);
         const part = safePart(b?.part);
         blocks.push({
@@ -3634,7 +3656,7 @@ export class PlayerController {
         return fail(`Entity bounds may not exceed ${MAX_ENTITY_BOUNDS} cells per axis`);
       }
       if (!validateVoxelOccupancy(blocks, ['localX', 'localY', 'localZ'], 'entityId')) {
-        return fail('Entity contains duplicate voxels');
+        return fail('Entity contains duplicate voxels or standard/micro overlap');
       }
 
       const scripts = [];
@@ -3679,17 +3701,21 @@ export class PlayerController {
         const vectors: Record<string, number[]> = {};
         for (const field of vectorFields) {
           if (constraint[field] === undefined) continue;
-          if (!Array.isArray(constraint[field]) || constraint[field].length < 3
-            || !constraint[field].slice(0, 3).map(Number).every(Number.isFinite)) {
+          const vector = portableVector(constraint[field]);
+          if (vector === null) {
             return fail(`Constraint ${id} has an invalid ${field}`);
           }
-          vectors[field] = constraint[field].slice(0, 3).map(Number);
+          vectors[field] = vector;
         }
         let limits;
         if (constraint.limits !== undefined && constraint.limits !== null) {
           const min = Number(constraint.limits?.min);
           const max = Number(constraint.limits?.max);
-          if (!Number.isFinite(min) || !Number.isFinite(max)) return fail(`Constraint ${id} has invalid limits`);
+          if (!Number.isFinite(min) || !Number.isFinite(max)
+            || Math.abs(min) > MAX_PORTABLE_CONSTRAINT_VALUE
+            || Math.abs(max) > MAX_PORTABLE_CONSTRAINT_VALUE) {
+            return fail(`Constraint ${id} has invalid limits`);
+          }
           limits = { min: Math.min(min, max), max: Math.max(min, max) };
         }
         const stiffness = Number(constraint.stiffness ?? 0.9);
@@ -3708,22 +3734,14 @@ export class PlayerController {
       }
 
       const validModes = new Set(Object.values(ContraptionMode));
-      const portableVector = (value, maxAbs = MAX_IMPORT_COORDINATE) => {
-        if (value === undefined) return undefined;
-        if (!Array.isArray(value) || value.length < 3) return null;
-        const vector = value.slice(0, 3).map(Number);
-        return vector.every(component => Number.isFinite(component) && Math.abs(component) <= maxAbs)
-          ? vector
-          : null;
-      };
       const bearingAxis = portableVector(data.bearingAxis);
       const pistonAxis = portableVector(data.pistonAxis);
-      const cockpitPosition = portableVector(data.cockpitPosition);
+      const cockpitPosition = portableVector(data.cockpitPosition, MAX_IMPORT_COORDINATE);
       if (bearingAxis === null || pistonAxis === null || cockpitPosition === null) {
         return fail('Entity axes and cockpit position must be bounded finite 3D vectors');
       }
       const optionalBoundedNumber = (value, min, max) => {
-        if (value === undefined) return undefined;
+        if (value === undefined || value === null) return undefined;
         const number = Number(value);
         return Number.isFinite(number) && number >= min && number <= max ? number : null;
       };
@@ -3733,9 +3751,11 @@ export class PlayerController {
       if (bearingRpm === null || pistonDistance === null || pistonSpeed === null) {
         return fail('Entity bearing and piston parameters are outside portable bounds');
       }
+      const mass = portableMass(data.mass);
+      if (mass === null) return fail('Entity mass is outside portable bounds');
       const item = {
         name: data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH),
-        rootId: rootIds[0],
+        rootId: 'root',
         nodeCount: knownNodeIds.size,
         blockCount: blocks.length,
         blocks,
@@ -3745,9 +3765,13 @@ export class PlayerController {
         constraints,
         mode: validModes.has(data.mode) ? data.mode : ContraptionMode.FREE_PHYSICS,
         bodyType: data.bodyType === 'kinematic' ? 'kinematic' : 'dynamic',
-        mass: Number.isFinite(Number(data.mass)) && Number(data.mass) > 0 ? Number(data.mass) : undefined,
-        restitution: Number.isFinite(Number(data.restitution)) ? Math.max(0, Math.min(1, Number(data.restitution))) : undefined,
-        friction: Number.isFinite(Number(data.friction)) ? Math.max(0, Math.min(1, Number(data.friction))) : undefined,
+        mass,
+        restitution: data.restitution !== undefined && data.restitution !== null && Number.isFinite(Number(data.restitution))
+          ? Math.max(0, Math.min(1, Number(data.restitution)))
+          : undefined,
+        friction: data.friction !== undefined && data.friction !== null && Number.isFinite(Number(data.friction))
+          ? Math.max(0, Math.min(1, Number(data.friction)))
+          : undefined,
         useGravity: typeof data.useGravity === 'boolean' ? data.useGravity : undefined,
         bearingAxis,
         bearingRpm,
@@ -3755,10 +3779,8 @@ export class PlayerController {
         pistonDistance,
         pistonSpeed,
         cockpitPosition,
-        isVehicle: data.isVehicle === true,
-        rootIds: Array.isArray(data.rootIds) && data.rootIds.length > 0 ? rootIds : undefined
+        isVehicle: data.isVehicle === true
       };
-      if (item.rootIds) delete item.rootId;
       return { ok: true, item };
     }
 
@@ -3782,7 +3804,7 @@ export class PlayerController {
     const created = this.contraptions.buildFromSlot(slot, position, null, true, preparedBlocks);
     if (created) {
       this.sound?.playBlockPlace?.();
-      const builtLabel = slot.name || slot.rootId || (slot.rootIds ? `${slot.rootIds.length} components` : 'entity');
+      const builtLabel = slot.name || 'entity';
       this.ui?.showToast?.(`Built [${builtLabel}] (${slot.blockCount} blocks) as entity #${created.id}`);
     }
     return created;
@@ -3792,9 +3814,6 @@ export class PlayerController {
   private startLargeEntitySlotBuild(slot, position) {
     const source = [...slot.blocks];
     const preparedBlocks: any[] = [];
-    const singleRoot = slot.rootId && slot.rootId !== null;
-    const rootId = slot.rootId || null;
-    const mapId = id => (singleRoot && id === rootId ? 'root' : id);
     return this.startBulkEditJob({
       label: 'Building entity',
       total: source.length,
@@ -3810,7 +3829,7 @@ export class PlayerController {
           color: block.color,
           block: block.block,
           part: block.part,
-          entityId: mapId(block.entityId || 'root')
+          entityId: block.entityId || 'root'
         });
         return 1;
       },

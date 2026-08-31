@@ -34,8 +34,8 @@ interface UserInfo {
     terms_agreed: boolean
     pro_level: string
     paypal_subscription_status?: string
-    minecraft_skin_url?: string | null
-    minecraft_skin_model?: string | null
+    skin_url?: string | null
+    skin_type?: string | null
     credits?: number
 }
 
@@ -46,7 +46,7 @@ interface GoogleCredentialResponse {
 interface NotificationInfo {
     id: string | number
     senderAvatar?: string
-    senderMinecraftSkinUrl?: string
+    senderSkinUrl?: string
     senderName: string
     type: string
     postId?: string | number
@@ -147,7 +147,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ minecraft_skin_url: null })
+                body: JSON.stringify({ skin_url: null })
             })
 
             if (res.ok) {
@@ -400,7 +400,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                 className={`p-3 border-b border-white/5 hover:bg-white/5 flex gap-2.5 items-start cursor-pointer transition-colors ${!n.isRead ? 'bg-white/5' : ''} ${current.fontClass}`}
                                             >
                                                 <SkinAvatarImage
-                                                    textureUrl={n.senderMinecraftSkinUrl}
+                                                    textureUrl={n.senderSkinUrl}
                                                     fallbackSrc={n.senderAvatar}
                                                     alt="avatar"
                                                     className="w-6 h-6"
@@ -484,7 +484,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         className="flex items-center hover:bg-black/30 h-10 w-10 sm:w-auto sm:px-2 sm:gap-2.5 transition-colors cursor-pointer group shrink-0 overflow-hidden justify-center sm:justify-start"
                     >
                         <SkinAvatarImage
-                            textureUrl={user.minecraft_skin_url}
+                            textureUrl={user.skin_url}
                             fallbackSrc={user.picture}
                             alt="avatar"
                             className="w-10 h-10 min-w-[2.5rem] max-w-[2.5rem] min-h-[2.5rem] max-h-[2.5rem] flex-none p-1"
@@ -795,7 +795,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                 <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>
                                     {current.user.profileDialog.myCharacter}
                                 </span>
-                                {user.minecraft_skin_url && (
+                                {user.skin_url && (
                                     <button
                                         type="button"
                                         onClick={handleResetCharacter}
@@ -808,11 +808,11 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                     </button>
                                 )}
                             </div>
-                            {user.minecraft_skin_url ? (
+                            {user.skin_url ? (
                                 <div className="bg-black/25 border border-white/10 p-3 flex flex-col gap-2">
-                                    <Suspense fallback={<ProfileSkinPreviewFallback textureUrl={user.minecraft_skin_url} />}>
+                                    <Suspense fallback={<ProfileSkinPreviewFallback textureUrl={user.skin_url} />}>
                                         <ProfileSkinPreview
-                                            textureUrl={user.minecraft_skin_url}
+                                            textureUrl={user.skin_url}
                                             current={current}
                                             className="w-full h-72 sm:h-80"
                                         />
@@ -835,14 +835,14 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             </span>
                             <div className="flex items-center gap-3">
                                 <SkinAvatarImage
-                                    textureUrl={user.minecraft_skin_url}
+                                    textureUrl={user.skin_url}
                                     fallbackSrc={user.picture}
                                     alt="current avatar"
                                     className="w-12 h-12"
                                 />
                                 <div className="flex flex-col">
                                     <span className={`text-[10px] text-white/50 ${current.fontClass}`}>
-                                        {user.minecraft_skin_url
+                                        {user.skin_url
                                             ? current.user.profileDialog.generatedFromMyCharacter
                                             : current.user.profileDialog.syncedFromGoogle}
                                     </span>

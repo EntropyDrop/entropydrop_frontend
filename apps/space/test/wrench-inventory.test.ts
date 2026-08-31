@@ -73,7 +73,9 @@ test('rebuilding a serialized child subtree remaps its root to the new root', ()
   const slot = original.serializeSubtree('arm');
   assert.equal(slot.blockCount, 2, 'arm and hand should contribute two blocks');
   assert.equal(slot.nodeCount, 2);
-  assert.equal(slot.rootId, 'arm');
+  assert.equal(slot.rootId, 'root');
+  assert.equal('rootIds' in slot, false, 'inventory entities always have one explicit root');
+  assert.deepEqual(slot.childEntities.map(child => child.id), ['hand']);
 
   const copy = manager.buildFromSlot(slot, new THREE.Vector3(0, 0, 0));
   assert.ok(copy);
@@ -85,6 +87,41 @@ test('rebuilding a serialized child subtree remaps its root to the new root', ()
   assert.equal(copy.getEntityNode('hand').parentId, 'root', 'hand should attach to the new root');
   assert.equal(copy.getNodeScript('root'), 'self.setLocalSpin([0, 1, 0], 60);', 'arm script should map to root');
   assert.equal(copy.isNodeScriptEnabled('root'), false, 'arm enabled state should map to root');
+});
+
+test('serializing several subtrees attaches them below one explicit root', () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null);
+  const original = new Contraption(
+    2,
+    [
+      { localX: 1, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, entityId: 'arm' },
+      { localX: -1, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, entityId: 'wing' }
+    ],
+    new THREE.Vector3(),
+    scene,
+    {
+      childEntities: [
+        { id: 'arm', parentId: 'root', collisionEnabled: false },
+        { id: 'wing', parentId: 'root' }
+      ]
+    }
+  );
+
+  const slot = original.serializeSubtrees(['arm', 'wing']);
+
+  assert.equal(slot.rootId, 'root');
+  assert.equal('rootIds' in slot, false);
+  assert.equal(slot.nodeCount, 3);
+  assert.deepEqual(slot.childEntities.map(child => [child.id, child.parentId]), [
+    ['arm', 'root'],
+    ['wing', 'root']
+  ]);
+  const copy = manager.buildFromSlot(slot, new THREE.Vector3());
+  assert.ok(copy);
+  assert.equal(copy.getEntityNode('arm').parentId, 'root');
+  assert.equal(copy.getEntityNode('wing').parentId, 'root');
+  assert.equal(copy.isNodeCollisionEnabled('arm'), false);
 });
 
 test('recursive selection collects a component and all descendants', () => {

@@ -28,7 +28,7 @@ export function CommentNode({ comment, current, onReply }: CommentNodeProps) {
             <div className="flex gap-3 items-start">
                 {/* Avatar icon */}
                 <SkinAvatarImage
-                    textureUrl={comment.minecraftSkinUrl}
+                    textureUrl={comment.skinUrl}
                     fallbackSrc={comment.avatarUrl}
                     alt={comment.author}
                     className="w-6 h-6 mt-0.5"

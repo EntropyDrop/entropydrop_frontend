@@ -34,7 +34,7 @@ export interface TerrainStreamArea {
   key: string;
 }
 
-export type MinecraftSkinModel = 'strong' | 'slim';
+export type SkinType = 'strong' | 'slim';
 
 export interface SpaceBootstrapPayload {
   protocol_version: 2;
@@ -53,8 +53,8 @@ export interface SpaceBootstrapPayload {
     username: string | null;
     is_admin?: boolean;
     player_entity_id: string;
-    minecraft_skin_url: string;
-    minecraft_skin_model: MinecraftSkinModel;
+    skin_url: string;
+    skin_type: SkinType;
     start_x_cm: number | null;
     start_y_cm: number | null;
     start_z_cm: number | null;
@@ -535,7 +535,7 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
   if (!response.ok) throw entryErrorFromResponse(response.status, body);
 
   const payload = body as SpaceBootstrapPayload;
-  if (!payload?.player?.minecraft_skin_url) {
+  if (!payload?.player?.skin_url) {
     throw new SpaceEntryError(
       'SKIN_REQUIRED',
       '进入 Space 前需要先设置角色皮肤。',
@@ -545,7 +545,7 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
   }
 
   const [skinObjectUrl, terrainEditRemote] = await Promise.all([
-    downloadSkinPng(payload.player.minecraft_skin_url),
+    downloadSkinPng(payload.player.skin_url),
     loadTerrainEditRemote(
       apiOrigin,
       token,

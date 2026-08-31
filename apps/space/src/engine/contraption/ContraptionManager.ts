@@ -1686,17 +1686,13 @@ export class ContraptionManager {
 
   /**
    * Rebuild an entity from a serialized inventory slot.
-   * - A component rootId remaps that subtree root to the new entity root while preserving descendants.
-   * - A null rootId denotes a multi-root range; component ids remain and attach to the new root.
+   * Inventory slots already contain one explicit root and need no identity remapping.
    * @returns The registered entity, or null for an empty slot.
    */
   buildFromSlot(slot, position, restoreState = null, autoSave = true, preparedBlocks = null) {
     if (!slot || !Array.isArray(slot.blocks) || slot.blocks.length === 0) return null;
 
-    const singleRoot = slot.rootId && slot.rootId !== null;
-    const rootId = slot.rootId || null;
     const subtreeChildIds = new Set((slot.childEntities || []).map(d => d.id));
-    const mapId = (id) => (singleRoot && id === rootId ? 'root' : id);
 
     const blocks = Array.isArray(preparedBlocks) ? preparedBlocks : slot.blocks.map(b => ({
       localX: b.localX,
@@ -1706,23 +1702,17 @@ export class ContraptionManager {
       color: b.color,
       block: b.block,
       part: b.part,
-      entityId: mapId(b.entityId || 'root')
+      entityId: b.entityId || 'root'
     }));
 
-    // Keep child definitions within the subtree; attach externally parented nodes to the new root.
+    // Keep only the explicit single-root tree carried by the slot.
     const childEntities = (slot.childEntities || [])
       .filter(d => subtreeChildIds.has(d.id))
       .map(d => ({
         ...d,
-        id: mapId(d.id),
-        parentId: subtreeChildIds.has(d.parentId) ? mapId(d.parentId) : 'root'
+        parentId: subtreeChildIds.has(d.parentId) ? d.parentId : 'root'
       }));
     const constraints = (slot.constraints || [])
-      .map(constraint => ({
-        ...constraint,
-        bodyA: constraint.bodyA === 'world' ? 'world' : mapId(constraint.bodyA),
-        bodyB: mapId(constraint.bodyB)
-      }))
       .filter(constraint => (
         constraint.bodyB === 'root' || subtreeChildIds.has(constraint.bodyB)
       ) && (
@@ -1762,10 +1752,10 @@ export class ContraptionManager {
     if (slot.isVehicle !== undefined) contraption.isVehicle = !!slot.isVehicle;
 
     for (const entry of slot.scripts || []) {
-      contraption.setNodeScript(mapId(entry.id), entry.code);
+      contraption.setNodeScript(entry.id, entry.code);
     }
     for (const entry of slot.enabled || []) {
-      contraption.setNodeScriptEnabled(mapId(entry.id), entry.enabled);
+      contraption.setNodeScriptEnabled(entry.id, entry.enabled);
     }
 
     this.registerContraption(contraption);

@@ -27,7 +27,7 @@ export function PostItemDiscussions({
                 <div className="flex items-center flex-wrap gap-2 text-[10px] text-white/40 mb-2">
                     <div className="flex items-center gap-1">
                         <SkinAvatarImage
-                            textureUrl={post.authorMinecraftSkinUrl}
+                            textureUrl={post.authorSkinUrl}
                             fallbackSrc={post.authorAvatar}
                             alt={post.author}
                             className="w-3.5 h-3.5"
