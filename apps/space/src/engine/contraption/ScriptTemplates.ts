@@ -218,18 +218,21 @@ if (!self.state.initialized) {
   self.state.steer = 0;
   self.state.wheelBase = {};
   self.state.wheelRoll = {};
+  self.state.wheelCompression = {};
   self.setCockpitPosition([0, 1.0, -0.45]);
   self.setVehicle(true);
   for (const spec of wheels) {
     const wheel = self.child(spec.id);
     if (wheel) self.state.wheelBase[spec.id] = wheel.getLocalPosition();
     self.state.wheelRoll[spec.id] = 0;
+    self.state.wheelCompression[spec.id] = 0;
   }
 }
 
 // Keep old placed rovers compatible when this controller gains new state.
 if (!self.state.wheelBase) self.state.wheelBase = {};
 if (!self.state.wheelRoll) self.state.wheelRoll = {};
+if (!self.state.wheelCompression) self.state.wheelCompression = {};
 
 // Smooth keyboard steps before they reach the tire forces.
 const rawThrottle = (ctx.input.down('KeyW') ? 1 : 0) - (ctx.input.down('KeyS') ? 1 : 0);
@@ -241,13 +244,20 @@ const steerResponse = rawSteer === 0 ? 12.0 : 8.0;
 const steerBlend = 1 - Math.exp(-steerResponse * ctx.deltaTime);
 self.state.throttle += (rawThrottle - self.state.throttle) * throttleBlend;
 self.state.steer += (rawSteer - self.state.steer) * steerBlend;
+// Exponential smoothing only approaches zero. Snap the inaudible tail so an
+// idle vehicle stops receiving alternating sub-pixel force and pose updates.
+if (rawThrottle === 0 && Math.abs(self.state.throttle) < 0.002) self.state.throttle = 0;
+if (rawSteer === 0 && Math.abs(self.state.steer) < 0.001) self.state.steer = 0;
 
 const pivot = self.getPivot();
 const down = self.localToWorldDirection([0, -1, 0]);
 const up = scale(down, -1);
 const speed = Math.sqrt(dot(ctx.velocity, ctx.velocity));
+const angularSpeed = Math.sqrt(dot(ctx.angularVelocity, ctx.angularVelocity));
 const steerAngle = self.state.steer * 0.48 / (1 + speed * 0.045);
 const brake = ctx.input.down('Space');
+const controlsSettled = rawThrottle === 0 && rawSteer === 0
+  && self.state.throttle === 0 && self.state.steer === 0;
 let contacts = 0;
 
 for (const spec of wheels) {
@@ -268,6 +278,11 @@ for (const spec of wheels) {
   ]);
   const longitudinalSpeed = dot(pointVelocity, forward);
   const lateralSpeed = dot(pointVelocity, side);
+  // Stop sub-pixel tire animation without removing the low-speed physical
+  // grip that keeps a resting rover stable on uneven ground.
+  const visualLongitudinalSpeed = controlsSettled && Math.abs(longitudinalSpeed) < 0.04
+    ? 0
+    : longitudinalSpeed;
   const hit = ctx.world.raycast(origin, down, restLength + wheelRadius);
   let compression = 0;
 
@@ -305,11 +320,17 @@ for (const spec of wheels) {
   const wheel = self.child(spec.id);
   const base = self.state.wheelBase[spec.id];
   if (wheel && base) {
-    wheel.setLocalPosition([base[0], base[1] + compression, base[2]]);
+    const previousCompression = self.state.wheelCompression[spec.id];
+    const holdVisualSuspension = controlsSettled && speed < 0.08 && angularSpeed < 0.08
+      && Number.isFinite(previousCompression)
+      && Math.abs(compression - previousCompression) < 0.002;
+    const visualCompression = holdVisualSuspension ? previousCompression : compression;
+    self.state.wheelCompression[spec.id] = visualCompression;
+    wheel.setLocalPosition([base[0], base[1] + visualCompression, base[2]]);
     // Compose rolling around local X with steering around local Y. Calling
     // setLocalSpin alone would roll the tire but leave both front wheels
     // visually pointing straight ahead even while their tire forces steer.
-    const rollSpeed = clamp(-longitudinalSpeed / wheelRadius, -Math.PI * 12, Math.PI * 12);
+    const rollSpeed = clamp(-visualLongitudinalSpeed / wheelRadius, -Math.PI * 12, Math.PI * 12);
     const rollAngle = (self.state.wheelRoll[spec.id] || 0) + rollSpeed * ctx.deltaTime;
     self.state.wheelRoll[spec.id] = rollAngle % (Math.PI * 2);
     wheel.setLocalEuler([self.state.wheelRoll[spec.id], localSteer, 0]);

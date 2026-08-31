@@ -161,7 +161,64 @@ test('front wheels visibly steer and automatically return to center', () => {
   const centeredRight = new THREE.Euler().setFromQuaternion(frontRight.localQuaternion, 'YXZ');
   assert.ok(Math.abs(centeredLeft.y) < 0.001, `front-left wheel should self-center: ${centeredLeft.y}`);
   assert.ok(Math.abs(centeredRight.y) < 0.001, `front-right wheel should self-center: ${centeredRight.y}`);
-  assert.ok(Math.abs(rover.getComponentState('root').steer) < 0.001, 'released steering state should return to zero');
+  assert.equal(rover.getComponentState('root').steer, 0, 'released steering state should settle at exact zero');
+
+  const settledLeft = frontLeft.localQuaternion.clone();
+  const settledRight = frontRight.localQuaternion.clone();
+  for (let tick = 0; tick < 4; tick++) rover.update(0.05, released, runtime);
+  assert.ok(frontLeft.localQuaternion.equals(settledLeft), 'settled front-left wheel must stop receiving tiny rotations');
+  assert.ok(frontRight.localQuaternion.equals(settledRight), 'settled front-right wheel must stop receiving tiny rotations');
+});
+
+test('resting suspension stays settled at the fixed 20 Hz entity rate', () => {
+  const rover = buildRover(35);
+  const physics = airPhysics();
+  const runtime = runtimeContext(planeRaycast(x => x < 0 ? 0.3 : 0));
+  const idle = { down: new Set(), pressed: new Set(), released: new Set() };
+  // Blueprint placement releases the chassis above its exact spring
+  // equilibrium; the controller must converge instead of entering a limit cycle.
+  rover.position.y += 0.35;
+  rover.updateTransform();
+  let minimumY = Infinity;
+  let maximumY = -Infinity;
+  let maximumSpeed = 0;
+
+  for (let tick = 0; tick < 200; tick++) {
+    rover.update(0.05, idle, runtime);
+    physics.update(rover, 0.05);
+    if (tick < 100) continue;
+    minimumY = Math.min(minimumY, rover.position.y);
+    maximumY = Math.max(maximumY, rover.position.y);
+    maximumSpeed = Math.max(maximumSpeed, rover.velocity.length());
+  }
+
+  assert.ok(maximumY - minimumY < 1e-12, `resting chassis jittered by ${maximumY - minimumY}m`);
+  assert.ok(maximumSpeed < 1e-12, `resting chassis reached ${maximumSpeed}m/s`);
+
+  const settledWheelPositions = ['wheel_fl', 'wheel_fr', 'wheel_rl', 'wheel_rr']
+    .map(id => rover.getEntityNode(id).localPosition.clone());
+  for (let tick = 0; tick < 10; tick++) {
+    rover.update(0.05, idle, runtime);
+    physics.update(rover, 0.05);
+  }
+  for (const [index, id] of ['wheel_fl', 'wheel_fr', 'wheel_rl', 'wheel_rr'].entries()) {
+    assert.ok(
+      rover.getEntityNode(id).localPosition.equals(settledWheelPositions[index]),
+      `${id} should hold its settled suspension pose`
+    );
+  }
+});
+
+test('released throttle reaches exact idle instead of creeping forever', () => {
+  const rover = buildRover(36);
+  const runtime = runtimeContext();
+  const accelerate = { down: new Set(['KeyW']), pressed: new Set(), released: new Set() };
+  const released = { down: new Set(), pressed: new Set(), released: new Set(['KeyW']) };
+
+  for (let tick = 0; tick < 12; tick++) rover.update(0.05, accelerate, runtime);
+  assert.ok(rover.getComponentState('root').throttle > 0.9, 'throttle should approach full input');
+  for (let tick = 0; tick < 24; tick++) rover.update(0.05, released, runtime);
+  assert.equal(rover.getComponentState('root').throttle, 0, 'released throttle should settle at exact zero');
 });
 
 test('mounted W input drives the suspended rover forward without hard wheel contacts', () => {
