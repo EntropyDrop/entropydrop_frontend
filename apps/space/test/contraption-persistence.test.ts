@@ -130,6 +130,93 @@ test('contraption manager saves assembled entity and restores it after simulated
   assert.deepEqual(restored.angularVelocity.toArray(), created.angularVelocity.toArray());
 });
 
+test('refresh preserves the root pivot after live block edits change the bounds', () => {
+  const storage = new MockStorage();
+  const worldId = 'test-world-persist-edited-pivot';
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null);
+  manager.setWorldId(worldId);
+  const entity = manager.buildFromSlot({
+    rootId: 'root',
+    mode: ContraptionMode.PROGRAMMABLE,
+    bodyType: 'kinematic',
+    blocks: [
+      { localX: 0, localY: 0, localZ: 0, size: 1, color: 0xff0000, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }
+    ],
+    childEntities: [],
+    scripts: [],
+    enabled: [],
+    constraints: []
+  }, new THREE.Vector3(20, 5, 20), null, false);
+  assert.ok(entity);
+
+  const originalPivot = entity.scriptApi.getPivot();
+  entity.blocks.push({
+    localX: 3,
+    localY: 0,
+    localZ: 0,
+    size: 1,
+    color: 0x00ff00,
+    block: BlockTypes.COLOR_BLOCK,
+    entityId: 'root'
+  });
+  entity.rebuildAfterBlockChange('place', 'root');
+
+  assert.deepEqual(entity.scriptApi.getBounds().center, [2, 0.5, 0.5]);
+  assert.deepEqual(entity.scriptApi.getPivot(), originalPivot, 'live edits keep the original pivot');
+  const blockWorldBefore = entity.getBlockWorldCenter(entity.blocks[0]);
+
+  assert.equal(manager.saveEntitiesToStorage(storage as any), true);
+  const saved = JSON.parse(storage.getItem(worldEntitiesStorageKey(worldId))!);
+  assert.deepEqual(saved.entities[0].localCenter, originalPivot);
+
+  const reloaded = new ContraptionManager(new THREE.Scene(), null, null, null);
+  reloaded.setWorldId(worldId);
+  assert.equal(reloaded.loadEntitiesFromStorage(storage as any), 1);
+  const restored = reloaded.contraptions[0];
+
+  assert.deepEqual(restored.scriptApi.getPivot(), originalPivot);
+  assert.deepEqual(restored.localCenter.toArray(), originalPivot);
+  assert.ok(
+    restored.getBlockWorldCenter(restored.blocks[0]).distanceTo(blockWorldBefore) < 1e-12,
+    'reload keeps the edited entity blocks at the same world positions'
+  );
+});
+
+test('refresh applies an explicit root pivot before rebuilding the hierarchy', () => {
+  const storage = new MockStorage();
+  const worldId = 'test-world-persist-explicit-pivot';
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null);
+  manager.setWorldId(worldId);
+  const entity = manager.buildFromSlot({
+    rootId: 'root',
+    mode: ContraptionMode.PROGRAMMABLE,
+    bodyType: 'kinematic',
+    blocks: [
+      { localX: 0, localY: 0, localZ: 0, size: 1, color: 0xff0000, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }
+    ],
+    childEntities: [],
+    scripts: [],
+    enabled: [],
+    constraints: []
+  }, new THREE.Vector3(30, 5, 30), null, false);
+  assert.ok(entity);
+
+  entity.scriptApi.setPivot([2, 0.5, 0.5]);
+  const blockWorldBefore = entity.getBlockWorldCenter(entity.blocks[0]);
+  assert.equal(manager.saveEntitiesToStorage(storage as any), true);
+
+  const reloaded = new ContraptionManager(new THREE.Scene(), null, null, null);
+  reloaded.setWorldId(worldId);
+  assert.equal(reloaded.loadEntitiesFromStorage(storage as any), 1);
+  const restored = reloaded.contraptions[0];
+
+  assert.deepEqual(restored.scriptApi.getPivot(), [2, 0.5, 0.5]);
+  assert.ok(
+    restored.getBlockWorldCenter(restored.blocks[0]).distanceTo(blockWorldBefore) < 1e-12,
+    'reload keeps blocks fixed around an explicit pivot'
+  );
+});
+
 test('refresh persistence restores dynamic child body parameters and motion', () => {
   const storage = new MockStorage();
   const worldId = 'test-world-persist-child-body';

@@ -445,6 +445,13 @@ export class Contraption {
     // inflating their whole 1x1x1 parent cell.
     this.buildCollisionCells();
     this.calculateBoundsAndCenter();
+    // A live block edit keeps the entity's original coordinate anchor instead
+    // of re-centering it on the new bounds. Restore that anchor before any
+    // transforms or hierarchy nodes are created so a persisted entity uses the
+    // same pivot after a reload.
+    if (isFiniteVector3Array(options.localCenter)) {
+      this.localCenter.fromArray(options.localCenter);
+    }
 
     // 3D Object Hierarchy
     this.rootGroup = new THREE.Group();
@@ -510,7 +517,9 @@ export class Contraption {
     this.slowScriptFrames = new Map();
     this.blocksChangedThisFrame = false;
     this.lastBlocksChangedEvent = null;
-    this.rootPivotOverride = null;
+    this.rootPivotOverride = isFiniteVector3Array(options.rootPivotOverride)
+      ? new THREE.Vector3().fromArray(options.rootPivotOverride)
+      : null;
     this.cockpitPosition = [0, 0, 0];
     this.isVehicle = true;
     this.scriptLogs = [];

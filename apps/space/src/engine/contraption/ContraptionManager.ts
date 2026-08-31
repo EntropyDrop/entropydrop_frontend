@@ -490,6 +490,10 @@ export class ContraptionManager {
       quaternion: contraption.quaternion.toArray(),
       velocity: contraption.velocity.toArray(),
       angularVelocity: contraption.angularVelocity.toArray(),
+      // localCenter is the root's original coordinate anchor. It intentionally
+      // stays fixed while live block edits change the bounds, so it must be
+      // persisted separately from the final voxel layout.
+      localCenter: contraption.localCenter?.toArray?.() || null,
       nodes,
       bodies,
       states,
@@ -1748,6 +1752,8 @@ export class ContraptionManager {
         pistonAxis: slot.pistonAxis,
         pistonDistance: slot.pistonDistance,
         pistonSpeed: slot.pistonSpeed,
+        localCenter: restoreState?.localCenter,
+        rootPivotOverride: restoreState?.rootPivotOverride,
         childEntities,
         constraints
       }
