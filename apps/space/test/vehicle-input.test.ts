@@ -71,6 +71,7 @@ test('F3 toggles perspective and perspective shortcuts stay engine-owned', () =>
   assert.equal(isPerspectiveToggleCode('KeyF'), false);
   assert.equal(RESERVED_ENTITY_INPUT_CODES.has('F3'), true);
   assert.equal(RESERVED_ENTITY_INPUT_CODES.has('F5'), true);
+  assert.equal(RESERVED_ENTITY_INPUT_CODES.has('KeyB'), false, 'the removed blueprint shortcut is available to entity scripts');
 });
 
 test('perspective cycles first, third-person back, then third-person front', () => {

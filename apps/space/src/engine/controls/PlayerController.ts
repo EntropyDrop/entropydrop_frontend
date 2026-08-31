@@ -22,7 +22,7 @@ export const RESERVED_ENTITY_INPUT_CODES = new Set([
   'Escape',
   'Backspace', 'Delete',
   'F3', 'F5',
-  'KeyB', 'KeyC', 'KeyE', 'KeyF', 'KeyG', 'KeyR', 'KeyV',
+  'KeyC', 'KeyE', 'KeyF', 'KeyG', 'KeyR', 'KeyV',
   'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5',
   'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'
 ]);
@@ -463,10 +463,6 @@ export class PlayerController {
         case 'KeyF': // F key: Fly toggle
           this.physics.isFlying = !this.physics.isFlying;
           if (this.ui) this.ui.showToast(this.physics.isFlying ? 'FLY MODE ON' : 'FLY MODE OFF');
-          break;
-
-        case 'KeyB': // B key: Blueprints Modal
-          if (this.ui) this.ui.toggleBlueprintsModal();
           break;
 
         case 'KeyE': // E key: Inventory Palette
@@ -1204,6 +1200,53 @@ export class PlayerController {
     const node = range.contraption.entityNodes.get(range.nodeId);
     if (!node) return null;
     return node.group.localToWorld(new THREE.Vector3(point.x, point.y, point.z));
+  }
+
+  /**
+   * Describe an entity selection range in its authored voxel grid. Range
+   * points are stored relative to the node pivot, while renderer cell
+   * quantization expects entity-local voxel coordinates, so the pivot is
+   * added back here. The renderer uses the live node group as the frame so
+   * previews inherit root and child rotations, including render interpolation.
+   */
+  rangePreviewFrame(range) {
+    if (!range || !range.contraption) return null;
+    const node = range.contraption.entityNodes.get(range.nodeId);
+    if (!node) return null;
+    const blocks = range.contraption.blocks.filter(block => (
+      (block.entityId || 'root') === range.nodeId
+      && (!this.selectorMicroMode || (block.size || 1) < 1)
+    ));
+    if (blocks.length === 0) return null;
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    for (const block of blocks) {
+      const size = block.size || 1;
+      min.x = Math.min(min.x, block.localX);
+      min.y = Math.min(min.y, block.localY);
+      min.z = Math.min(min.z, block.localZ);
+      max.x = Math.max(max.x, block.localX + size);
+      max.y = Math.max(max.y, block.localY + size);
+      max.z = Math.max(max.z, block.localZ + size);
+    }
+    return {
+      object: node.group,
+      pivot: node.pivotLocal.clone(),
+      // The live range is only a selector aid. Clamp it to real component
+      // bounds so pointing outside the entity cannot draw cyan ghost cells.
+      bounds: { min, max }
+    };
+  }
+
+  rangePointToPreviewGrid(range, point) {
+    const frame = this.rangePreviewFrame(range);
+    if (!frame || !point) return null;
+    return new THREE.Vector3(point.x, point.y, point.z).add(frame.pivot);
+  }
+
+  worldPointToRangePreviewGrid(range, worldPoint) {
+    const local = this.rangePointToLocal(range, worldPoint);
+    return local ? this.rangePointToPreviewGrid(range, local) : null;
   }
 
   /**
@@ -4312,17 +4355,22 @@ export class PlayerController {
         }
       }
       this.hoveredContraption = hovered;
-      if (this.hoveredContraption) {
-        this.hoveredContraption.setHighlighted(true);
-      }
     }
 
-    if (this.hoveredContraption && this.hoveredContraptionHit) {
-      const hitNodeId = this.canEditEntityInternals(this.hoveredContraption)
-        ? this.hoveredContraptionHit.entityId || 'root'
-        : 'root';
-      if (!this.contraptions.hasChildSelection() || this.contraptions.childSelection?.contraption !== this.hoveredContraption) {
-        this.hoveredContraption.setFocusHighlight(hitNodeId);
+    if (this.hoveredContraption) {
+      if (this.activeTool === SpecialTool.WRENCH) {
+        this.hoveredContraption.setHighlighted(false);
+        this.hoveredContraption.clearFocusHighlight();
+      } else {
+        this.hoveredContraption.setHighlighted(true);
+        if (this.hoveredContraptionHit) {
+          const hitNodeId = this.canEditEntityInternals(this.hoveredContraption)
+            ? this.hoveredContraptionHit.entityId || 'root'
+            : 'root';
+          if (!this.contraptions.hasChildSelection() || this.contraptions.childSelection?.contraption !== this.hoveredContraption) {
+            this.hoveredContraption.setFocusHighlight(hitNodeId);
+          }
+        }
       }
     }
 
@@ -4404,6 +4452,10 @@ export class PlayerController {
       // must never fall through to the spoon micro-voxel grid.
       if (selectorActive) {
         if (this.selectorRange.contraption === contraption) {
+          const focusNode = contraption.entityNodes.get(nodeId);
+          focusNode?.group?.updateWorldMatrix?.(true, false);
+          const focusQuaternion = focusNode?.group
+            ?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
           // In micro mode, hovering a 0.2 m block focuses the guide on that
           // block instead of the 1 m standard cell containing it.
           const microTarget = this.selectorMicroMode && hit.block && (hit.block.size || 1) < 1;
@@ -4411,17 +4463,29 @@ export class PlayerController {
             ? {
                 center: contraption.getBlockWorldCenter(hit.block),
                 cellSize: hit.block.size || 0.2,
-                active: !!this.selectorRange.pointA
+                active: !!this.selectorRange.pointA,
+                quaternion: focusQuaternion
               }
             : {
-                center: cellOrigin.clone().add(new THREE.Vector3(0.5, 0.5, 0.5)),
+                center: contraption.entityLocalToWorld(
+                  nodeId,
+                  new THREE.Vector3(hit.cell.x + 0.5, hit.cell.y + 0.5, hit.cell.z + 0.5)
+                ),
                 cellSize: 1,
-                active: !!this.selectorRange.pointA
+                active: !!this.selectorRange.pointA,
+                quaternion: focusQuaternion
               };
           if (this.selectorRange.pointA && !this.selectorRange.pointB && hit.point) {
-            const pointAWorld = this.rangePointToWorld(this.selectorRange, this.selectorRange.pointA);
-            if (pointAWorld) {
-              this.boxSelectionPreview = { pointA: pointAWorld, cursor: hit.point.clone(), micro: this.selectorMicroMode === true };
+            const pointA = this.rangePointToPreviewGrid(this.selectorRange, this.selectorRange.pointA);
+            const cursor = this.worldPointToRangePreviewGrid(this.selectorRange, hit.point);
+            const frame = this.rangePreviewFrame(this.selectorRange);
+            if (pointA && cursor && frame) {
+              this.boxSelectionPreview = {
+                pointA,
+                cursor,
+                micro: this.selectorMicroMode === true,
+                frame
+              };
             }
           }
         }
@@ -4456,19 +4520,25 @@ export class PlayerController {
     // Selector (world hit): corner 1 is set — show live AABB preview (re-project corner 1 from
     // node-local to current world space so it follows component movement).
     if (isSelectorTool && this.selectorRange && this.selectorRange.pointA && !this.selectorRange.pointB && this.currentRaycast && this.currentRaycast.hit) {
-      const pointAWorld = this.rangePointToWorld(this.selectorRange, this.selectorRange.pointA);
-      if (pointAWorld) {
+      const pointA = this.rangePointToPreviewGrid(this.selectorRange, this.selectorRange.pointA);
+      if (pointA) {
         // Cursor must use the same quantization the click applies: in micro mode
         // the corner snaps to the 0.2 m surface cell under the crosshair, not to
         // the whole standard cell (hitPos).
         const microCell = this.selectorMicroMode ? this.selectorMicroCellFromRaycast() : null;
-        this.boxSelectionPreview = {
-          pointA: pointAWorld,
-          cursor: microCell
-            ? { x: microCell.x / 5, y: microCell.y / 5, z: microCell.z / 5 }
-            : new THREE.Vector3(this.currentRaycast.hitPos.x, this.currentRaycast.hitPos.y, this.currentRaycast.hitPos.z),
-          micro: this.selectorMicroMode === true
-        };
+        const cursorWorld = microCell
+          ? new THREE.Vector3(microCell.x / 5, microCell.y / 5, microCell.z / 5)
+          : new THREE.Vector3(this.currentRaycast.hitPos.x, this.currentRaycast.hitPos.y, this.currentRaycast.hitPos.z);
+        const cursor = this.worldPointToRangePreviewGrid(this.selectorRange, cursorWorld);
+        const frame = this.rangePreviewFrame(this.selectorRange);
+        if (cursor && frame) {
+          this.boxSelectionPreview = {
+            pointA,
+            cursor,
+            micro: this.selectorMicroMode === true,
+            frame
+          };
+        }
       }
       return;
     }

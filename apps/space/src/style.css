@@ -93,7 +93,7 @@ button, input, select, textarea, label,
 .editor-btn, .mini-toggle-btn, .small-btn, .small-action-btn, .icon-btn,
 .code-tab, .component-tree-node, .inspector-input,
 .agent-chat-input, .agent-send-btn, .agent-apply-btn, .config-input,
-.hotbar-slot, .color-chip, .blueprint-card, .inventory-card,
+.hotbar-slot, .color-chip, .inventory-card,
 .panel-title, .tele-label, .banner-title,
 .start-btn, .key-badge, .settings-panel {
   font-family: 'Fusion-Pixel-Zh-Hans', 'FusionPixel', sans-serif !important;
@@ -1557,7 +1557,7 @@ button.palette-title:hover {
 }
 
 /* =========================================================================
-   MODAL SYSTEM (Backpack, Blueprints, API Docs)
+   MODAL SYSTEM (Backpack, API Docs)
    ========================================================================= */
 
 .custom-modal {
@@ -2529,109 +2529,6 @@ button.palette-title:hover {
   min-width: 0;
   min-height: 0;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
-}
-
-/* =========================================================================
-   BLUEPRINTS GRID (B key)
-   ========================================================================= */
-
-.blueprints-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 12px;
-  overflow-y: auto;
-  max-height: 520px;
-  padding-right: 4px;
-}
-
-.blueprint-card {
-  background: #1e1e22;
-  border: 1px solid var(--border-subtle);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  transition: all 0.15s ease;
-}
-
-.blueprint-card:hover {
-  border-color: var(--accent-base);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-  transform: translateY(-2px);
-}
-
-.bp-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.bp-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #ffffff;
-  text-shadow: 1px 1px 0px #000;
-}
-
-.bp-mode-badge {
-  background: var(--accent-bg-subtle);
-  color: var(--accent-light);
-  border: 1px solid var(--accent-border);
-  padding: 1px 6px;
-  font-size: 10px;
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.bp-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.45;
-}
-
-.bp-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.bp-btn {
-  flex: 1;
-  padding: 6px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  border: 2px solid #000;
-  box-shadow: var(--btn-shadow);
-  transition: all 0.12s ease;
-}
-
-.bp-btn.assemble-direct {
-  background: var(--accent-base);
-  color: #ffffff;
-}
-
-.bp-btn.assemble-direct:hover {
-  background: var(--accent-hover);
-  transform: translate(-1px, -1px);
-}
-
-.bp-btn.assemble-direct:active {
-  transform: translate(1px, 1px);
-}
-
-.bp-btn.spawn-world {
-  background: #27272a;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.bp-btn.spawn-world:hover {
-  background: #3f3f46;
-  color: #ffffff;
-  transform: translate(-1px, -1px);
-}
-
-.bp-btn.spawn-world:active {
-  transform: translate(1px, 1px);
 }
 
 /* =========================================================================

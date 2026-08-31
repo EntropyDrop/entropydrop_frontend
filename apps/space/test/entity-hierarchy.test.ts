@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { BLUEPRINTS, spawnBlueprintInWorld } from '../src/engine/contraption/Blueprints.ts';
 import { BodyType, Contraption, ContraptionMode } from '../src/engine/contraption/Contraption.ts';
 import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
 import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
@@ -173,36 +172,6 @@ test('Super Glue world selection switches between three-point and sparse single-
   assert.equal(world.getBlock(3, 10, 2), BlockTypes.COLOR_BLOCK);
   assert.equal(world.getBlock(2, 10, 2), BlockTypes.AIR);
   assert.equal(world.getBlock(4, 10, 2), BlockTypes.AIR);
-});
-
-test('windmill blueprint is a kinematic root with a code-driven blades child', () => {
-  const blueprint = BLUEPRINTS.find(item => item.id === 'giant_windmill');
-  const scene = new THREE.Scene();
-  const world = new World(scene);
-  const origin = { x: 10, y: 20, z: 10 };
-  // Clear the placement area so torus terrain up to y=30 cannot enter the blueprint selection.
-  for (let x = origin.x - 4; x <= origin.x + 4; x++) {
-    for (let y = origin.y - 5; y <= origin.y + 9; y++) {
-      for (let z = origin.z - 1; z <= origin.z + 1; z++) {
-        world.setBlock(x, y, z, BlockTypes.AIR, false);
-      }
-    }
-  }
-  spawnBlueprintInWorld(blueprint, world, origin.x, origin.y, origin.z);
-  const manager = new ContraptionManager(scene, world, null, null) as any;
-  manager.setCornerA({ x: origin.x - 3, y: origin.y - 3, z: origin.z });
-  manager.setCornerB({ x: origin.x + 3, y: origin.y + 3, z: origin.z });
-  const windmill = manager.assembleSelection(blueprint.defaultMode, blueprint.defaultOptions) as any;
-
-  assert.equal(windmill.bodyType, BodyType.KINEMATIC);
-  assert.equal(windmill.getEntityNode('blades').parentId, 'root');
-  assert.equal(windmill.blocks.filter(block => block.entityId === 'root').length, 1);
-  assert.equal(windmill.blocks.filter(block => block.entityId === 'blades').length, 12);
-  assert.ok(windmill.scriptCode.includes("self.child('blades')"));
-
-  const before = windmill.getEntityNode('blades').localQuaternion.clone();
-  windmill.update(0.25, null, { gravity: [0, -18, 0], world: null });
-  assert.equal(windmill.getEntityNode('blades').localQuaternion.equals(before), false);
 });
 
 test('getHierarchyTree builds complete component hierarchy and setHighlightedNode highlights node', () => {

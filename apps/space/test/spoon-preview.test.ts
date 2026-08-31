@@ -153,6 +153,37 @@ test('selector hover shows a focus wireframe after selecting that entity', () =>
   assert.equal(controller.focusBlockPreview.cellSize, 1);
 });
 
+test('selector focus preview inherits a tilted entity orientation', () => {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    1,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0, 10, 0),
+    scene
+  );
+  contraption.quaternion.setFromEuler(new THREE.Euler(0.35, 0.2, -0.4));
+  contraption.rootGroup.updateMatrixWorld(true);
+  const controller = makeController(SpecialTool.SELECTOR);
+  controller.selectorRange = { contraption, nodeId: 'root', pointA: null, pointB: null };
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'root',
+    cell: { x: 0, y: 0, z: 0 }
+  };
+
+  controller.updateMicroCarvePreview();
+
+  const expectedCenter = contraption.getBlockWorldCenter(contraption.blocks[0]);
+  assert.ok(
+    controller.focusBlockPreview.center.distanceTo(expectedCenter) < 1e-12,
+    'focus guide center should rotate with the tilted block'
+  );
+  assert.ok(
+    Math.abs(controller.focusBlockPreview.quaternion.dot(contraption.quaternion)) > 1 - 1e-12,
+    'focus guide orientation should match the tilted root'
+  );
+});
+
 test('selector hover on entity B shows no guide while entity A is selected', () => {
   const scene = new THREE.Scene();
   const entityA = new Contraption(
@@ -212,20 +243,23 @@ test('boxSelectionPreview follows the crosshair after point 1 is set', () => {
   const p1Local = contraption.entityNodes.get('root').group.worldToLocal(p1World.clone());
   controller.selectorRange = { contraption, nodeId: 'root', pointA: p1Local, pointB: null };
 
-  // Entity hover previews from p1 in world space to the hit point.
+  // Entity hover previews in the node's voxel grid and carries its live frame.
   controller.hoveredContraptionHit = { contraption, entityId: 'root', cell: { x: 0, y: 0, z: 0 }, point: new THREE.Vector3(1.5, 11.5, 1.5) };
   controller.updateMicroCarvePreview();
   assert.ok(controller.boxSelectionPreview, 'point 1 should enable a live preview');
-  assert.deepEqual(controller.boxSelectionPreview.pointA.toArray(), [0.5, 10.5, 0.5], 'anchor should convert back to world space');
-  assert.deepEqual(controller.boxSelectionPreview.cursor.toArray(), [1.5, 11.5, 1.5], 'preview should follow the crosshair');
+  assert.deepEqual(controller.boxSelectionPreview.pointA.toArray(), [0.5, 0.5, 0.5], 'anchor should use entity-local voxel coordinates');
+  assert.deepEqual(controller.boxSelectionPreview.cursor.toArray(), [1.5, 1.5, 1.5], 'cursor should use the same voxel grid');
+  assert.equal(controller.boxSelectionPreview.frame.object, contraption.entityNodes.get('root').group);
+  assert.deepEqual(controller.boxSelectionPreview.frame.bounds.min.toArray(), [0, 0, 0]);
+  assert.deepEqual(controller.boxSelectionPreview.frame.bounds.max.toArray(), [1, 1, 1]);
 
-  // World hits should preview identically.
+  // World hits are projected into that same tilted/local frame.
   controller.hoveredContraptionHit = null;
   controller.currentRaycast = { hit: true, kind: 'standard', hitPos: { x: 3, y: 4, z: 5 } };
   controller.updateMicroCarvePreview();
   assert.ok(controller.boxSelectionPreview, 'world hits should also show a live preview');
-  assert.deepEqual(controller.boxSelectionPreview.pointA.toArray(), [0.5, 10.5, 0.5], 'the anchor should stay on the original block');
-  assert.deepEqual(controller.boxSelectionPreview.cursor.toArray(), [3, 4, 5]);
+  assert.deepEqual(controller.boxSelectionPreview.pointA.toArray(), [0.5, 0.5, 0.5], 'the anchor should stay on the original block');
+  assert.deepEqual(controller.boxSelectionPreview.cursor.toArray(), [3, -6, 5]);
 });
 
 test('no point 1 or no hit produces no box preview', () => {

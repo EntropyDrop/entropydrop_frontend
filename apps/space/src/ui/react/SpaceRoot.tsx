@@ -3,7 +3,7 @@ import { colorToHex } from '../../engine/voxel/BlockTypes.ts';
 import { ApiDocsModal, CodeEditorModal } from './components/EditorModal.tsx';
 import { Hud } from './components/Hud.tsx';
 import { InventoryModal } from './components/InventoryModal.tsx';
-import { BlueprintsModal, GlobalSettingsModal, PauseScreen } from './components/SimpleModals.tsx';
+import { GlobalSettingsModal, PauseScreen } from './components/SimpleModals.tsx';
 import { MinimapCanvas, NavigationPanel } from './components/WorldWidgets.tsx';
 import { spaceUiStore } from './store/SpaceUiStore.ts';
 import { useSpaceUi } from './store/useSpaceUi.ts';
@@ -71,7 +71,6 @@ export function SpaceRoot() {
       <NavigationPanel />
       <MinimapCanvas />
       <InventoryModal />
-      <BlueprintsModal />
       <GlobalSettingsModal />
       <CodeEditorModal />
       <ApiDocsModal />

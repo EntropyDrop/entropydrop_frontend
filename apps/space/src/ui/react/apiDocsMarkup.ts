@@ -331,7 +331,7 @@ if (ctx.blocks.pressed()) {
             <li><code>ctx.input.released(code)</code> — true only on the frame the key was released (trailing edge)</li>
             <li><code>code</code> uses <code>KeyboardEvent.code</code> values: <code>KeyW</code> <code>KeyA</code> <code>KeyS</code> <code>KeyD</code> <code>Space</code> <code>ShiftLeft</code> …; the generic modifiers <code>Shift</code>, <code>Control</code> and <code>Alt</code> are accepted and match either side.</li>
             <li>Only the entity currently <b>mounted</b> (press V to mount/leave) receives player input; autonomous entities always see empty input.</li>
-            <li>Editor-reserved keys are never forwarded to scripts: <code>Escape</code>, <code>Backspace</code>, <code>Delete</code>, <code>F3</code>, <code>F5</code>, <code>KeyB</code>, <code>KeyC</code>, <code>KeyE</code>, <code>KeyF</code>, <code>KeyG</code>, <code>KeyR</code>, <code>KeyV</code>, <code>Digit0</code>, <code>Digit1</code>, <code>Digit2</code>, <code>Digit3</code>, <code>Digit4</code>, <code>Digit5</code>, <code>Digit6</code>, <code>Digit7</code>, <code>Digit8</code>, <code>Digit9</code>. Scripts therefore <b>cannot use number keys</b>.</li>
+            <li>Editor-reserved keys are never forwarded to scripts: <code>Escape</code>, <code>Backspace</code>, <code>Delete</code>, <code>F3</code>, <code>F5</code>, <code>KeyC</code>, <code>KeyE</code>, <code>KeyF</code>, <code>KeyG</code>, <code>KeyR</code>, <code>KeyV</code>, <code>Digit0</code>, <code>Digit1</code>, <code>Digit2</code>, <code>Digit3</code>, <code>Digit4</code>, <code>Digit5</code>, <code>Digit6</code>, <code>Digit7</code>, <code>Digit8</code>, <code>Digit9</code>. Scripts therefore <b>cannot use number keys</b>.</li>
           </ul>
         </div>
 
@@ -354,7 +354,7 @@ if (ctx.blocks.pressed()) {
             <li>Press <b>V</b> to mount an entity <em>before</em> writing a driving script — only mounted entities receive keyboard input. Press C while mounted to open the editor directly.</li>
             <li><code>self.state</code> is the right place for persistent state: target altitude, phase counters, timers, etc. Each component owns a separate state object.</li>
             <li>Use <code>ctx.deltaTime</code> only when integrating an explicit rate. Force and torque commands are already in N/N·m; do not multiply them by <code>deltaTime</code>.</li>
-            <li>Use the Selector to select an entity and press <b>R</b> to copy it. Copying automatically switches to Hammer, which previews and builds the inventory item with left-click. Hold Wrench left-click on a dynamic entity to grab its exact hit point; release to drop it. Wrench right-click toggles its runtime. The blueprint library (<b>B</b>) contains ready-made quadcopter, raycast-suspension rover, helicopter, windmill, and Ferris wheel examples.</li>
+            <li>Use the Selector to select an entity and press <b>R</b> to copy it. Copying automatically switches to Hammer, which previews and builds the inventory item with left-click. Hold Wrench left-click on a dynamic entity to grab its exact hit point; release to drop it. Wrench right-click toggles its runtime.</li>
           </ul>
         </div>
 

@@ -21,7 +21,7 @@ const REQUIRED_UI_IDS = [
   'selector-panel-wrapper', 'hotbar', 'toast', 'code-editor-modal',
   'global-playback-group', 'component-tree-list', 'component-inspector-panel',
   'code-tab-bar', 'script-textarea', 'entity-preview-canvas', 'tele-console-logs',
-  'agent-chat-box', 'blueprints-modal', 'blueprints-grid', 'inventory-modal',
+  'agent-chat-box', 'inventory-modal',
   'inventory-grid', 'api-docs-modal', 'api-docs-body', 'global-settings-modal',
   'pause-screen', 'start-btn', 'minimap-container', 'nav-system-container', 'nav-start-btn'
 ];

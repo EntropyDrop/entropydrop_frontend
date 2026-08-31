@@ -1444,13 +1444,16 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     this.scene.add(this.focusBlockGuide);
   }
 
-  setFocusBlockGuide(center, active = false, cellSize = 1) {
+  setFocusBlockGuide(center, active = false, cellSize = 1, quaternion = null) {
     if (!this.focusBlockGuide) return;
     if (!center) {
       this.focusBlockGuide.visible = false;
       return;
     }
     this.focusBlockGuide.position.set(center.x, center.y, center.z);
+    this.focusBlockGuide.quaternion.copy(
+      quaternion?.isQuaternion ? quaternion : new THREE.Quaternion()
+    );
     // The geometry is 1.04 m across, so scaling by the target cell size makes
     // the guide hug a 1 m standard cell or a 0.2 m micro block.
     this.focusBlockGuide.scale.setScalar(cellSize);
@@ -1533,42 +1536,77 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     this.scene.add(this.boxSelectionGroup);
   }
 
-  setBoxSelectionPreview(a, b, micro = false) {
+  setBoxSelectionPreview(a, b, micro = false, frame = null) {
     if (!this.boxSelectionGroup) return;
     if (!a || !b) {
       this.boxSelectionGroup.visible = false;
       return;
     }
+    const applyFrame = center => {
+      this.boxSelectionGroup.scale.set(1, 1, 1);
+      if (frame?.object?.localToWorld) {
+        frame.object.updateWorldMatrix?.(true, false);
+        const pivot = previewVector3(frame.pivot);
+        this.boxSelectionGroup.position.copy(
+          frame.object.localToWorld(center.clone().sub(pivot))
+        );
+        frame.object.getWorldQuaternion(this.boxSelectionGroup.quaternion);
+      } else {
+        this.boxSelectionGroup.position.copy(center);
+        this.boxSelectionGroup.quaternion.identity();
+      }
+    };
+    const frameLimits = divisions => {
+      if (!frame?.bounds?.min || !frame?.bounds?.max) return null;
+      const min = previewVector3(frame.bounds.min).multiplyScalar(divisions);
+      const max = previewVector3(frame.bounds.max).multiplyScalar(divisions);
+      return {
+        minX: Math.floor(min.x + 1e-6),
+        minY: Math.floor(min.y + 1e-6),
+        minZ: Math.floor(min.z + 1e-6),
+        maxX: Math.ceil(max.x - 1e-6) - 1,
+        maxY: Math.ceil(max.y - 1e-6) - 1,
+        maxZ: Math.ceil(max.z - 1e-6) - 1
+      };
+    };
+    const clampCell = (value, min, max) => Math.max(min, Math.min(max, value));
     if (micro) {
       // Micro mode (Selector Tab): a/b are the meter-space origins of 0.2 m
       // cells, so quantize to micro indices and span whole micro cells.
-      const aMx = Math.floor(a.x * 5 + 1e-6);
-      const bMx = unwrapPeriodicNear(
-        Math.floor(b.x * 5 + 1e-6),
-        aMx,
-        TORUS_SIZE_X * 5
-      );
+      let aMx = Math.floor(a.x * 5 + 1e-6);
+      let bMx = frame
+        ? Math.floor(b.x * 5 + 1e-6)
+        : unwrapPeriodicNear(Math.floor(b.x * 5 + 1e-6), aMx, TORUS_SIZE_X * 5);
+      let aMy = Math.floor(a.y * 5 + 1e-6);
+      let bMy = Math.floor(b.y * 5 + 1e-6);
+      let aMz = Math.floor(a.z * 5 + 1e-6);
+      let bMz = frame
+        ? Math.floor(b.z * 5 + 1e-6)
+        : unwrapPeriodicNear(Math.floor(b.z * 5 + 1e-6), aMz, TORUS_SIZE_Z * 5);
+      const limits = frameLimits(5);
+      if (limits) {
+        aMx = clampCell(aMx, limits.minX, limits.maxX);
+        bMx = clampCell(bMx, limits.minX, limits.maxX);
+        aMy = clampCell(aMy, limits.minY, limits.maxY);
+        bMy = clampCell(bMy, limits.minY, limits.maxY);
+        aMz = clampCell(aMz, limits.minZ, limits.maxZ);
+        bMz = clampCell(bMz, limits.minZ, limits.maxZ);
+      }
       const minMx = Math.min(aMx, bMx);
       const maxMx = Math.max(aMx, bMx);
-      const minMy = Math.floor(Math.min(a.y, b.y) * 5 + 1e-6);
-      const maxMy = Math.floor(Math.max(a.y, b.y) * 5 + 1e-6);
-      const aMz = Math.floor(a.z * 5 + 1e-6);
-      const bMz = unwrapPeriodicNear(
-        Math.floor(b.z * 5 + 1e-6),
-        aMz,
-        TORUS_SIZE_Z * 5
-      );
+      const minMy = Math.min(aMy, bMy);
+      const maxMy = Math.max(aMy, bMy);
       const minMz = Math.min(aMz, bMz);
       const maxMz = Math.max(aMz, bMz);
       const sx = (maxMx - minMx + 1) * 0.2;
       const sy = (maxMy - minMy + 1) * 0.2;
       const sz = (maxMz - minMz + 1) * 0.2;
       updateTorusSelectionBoxGeometry(this.boxSelectionFill, this.boxSelectionEdges, sx, sy, sz);
-      this.boxSelectionGroup.position.set(
+      applyFrame(new THREE.Vector3(
         minMx * 0.2 + sx / 2,
         minMy * 0.2 + sy / 2,
         minMz * 0.2 + sz / 2
-      );
+      ));
       this.boxSelectionFill.scale.set(sx, sy, sz);
       this.boxSelectionEdges.scale.set(sx, sy, sz);
       this.boxSelectionGroup.visible = true;
@@ -1577,18 +1615,33 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     // Block alignment rounds corners, adds one cell to the span, and centers on
     // cell centers. This exactly matches updateSelectionHologram, so the preview
     // and confirmed selection have identical geometry.
-    const aX = Math.floor(a.x);
-    const bX = unwrapPeriodicNear(Math.floor(b.x), aX, TORUS_SIZE_X);
+    let aX = Math.floor(a.x);
+    let bX = frame ? Math.floor(b.x) : unwrapPeriodicNear(Math.floor(b.x), aX, TORUS_SIZE_X);
+    let aY = Math.floor(a.y);
+    let bY = Math.floor(b.y);
+    let aZ = Math.floor(a.z);
+    let bZ = frame ? Math.floor(b.z) : unwrapPeriodicNear(Math.floor(b.z), aZ, TORUS_SIZE_Z);
+    const limits = frameLimits(1);
+    if (limits) {
+      aX = clampCell(aX, limits.minX, limits.maxX);
+      bX = clampCell(bX, limits.minX, limits.maxX);
+      aY = clampCell(aY, limits.minY, limits.maxY);
+      bY = clampCell(bY, limits.minY, limits.maxY);
+      aZ = clampCell(aZ, limits.minZ, limits.maxZ);
+      bZ = clampCell(bZ, limits.minZ, limits.maxZ);
+    }
     const minX = Math.min(aX, bX), maxX = Math.max(aX, bX);
-    const minY = Math.floor(Math.min(a.y, b.y)), maxY = Math.floor(Math.max(a.y, b.y));
-    const aZ = Math.floor(a.z);
-    const bZ = unwrapPeriodicNear(Math.floor(b.z), aZ, TORUS_SIZE_Z);
+    const minY = Math.min(aY, bY), maxY = Math.max(aY, bY);
     const minZ = Math.min(aZ, bZ), maxZ = Math.max(aZ, bZ);
     const sx = Math.max(0.001, maxX - minX + 1);
     const sy = Math.max(0.001, maxY - minY + 1);
     const sz = Math.max(0.001, maxZ - minZ + 1);
     updateTorusSelectionBoxGeometry(this.boxSelectionFill, this.boxSelectionEdges, sx, sy, sz);
-    this.boxSelectionGroup.position.set((minX + maxX + 1) / 2, (minY + maxY + 1) / 2, (minZ + maxZ + 1) / 2);
+    applyFrame(new THREE.Vector3(
+      (minX + maxX + 1) / 2,
+      (minY + maxY + 1) / 2,
+      (minZ + maxZ + 1) / 2
+    ));
     this.boxSelectionFill.scale.set(sx, sy, sz);
     this.boxSelectionEdges.scale.set(sx, sy, sz);
     this.boxSelectionGroup.visible = true;

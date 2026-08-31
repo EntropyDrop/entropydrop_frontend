@@ -59,31 +59,6 @@ export function GlobalSettingsModal() {
   );
 }
 
-export function BlueprintsModal() {
-  const open = useSpaceUi(state => state.activeModal === 'blueprints');
-  if (!open) return null;
-  return (
-    <ModalBackdrop id="blueprints-modal" onClose={() => spaceUiStore.toggleBlueprintsModal(false)}>
-      <div className="modal-content large">
-        <div className="modal-header"><h2>Structure Blueprints</h2><button id="close-blueprints-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} onClick={() => spaceUiStore.toggleBlueprintsModal(false)}>✕</button></div>
-        <div className="modal-sub">Click to spawn a colored structure in front of you — ready to use!</div>
-        <div id="blueprints-grid" className="blueprints-grid">
-          {spaceUiStore.getBlueprints().map(blueprint => (
-            <div className="blueprint-card" key={blueprint.id || blueprint.name}>
-              <div className="bp-header"><span className="bp-title">{blueprint.name}</span><span className="bp-mode-badge">{blueprint.defaultMode}</span></div>
-              <div className="bp-desc">{blueprint.description}</div>
-              <div className="bp-actions">
-                <button tabIndex={-1} className="bp-btn assemble-direct" onClick={() => { spaceUiStore.spawnBlueprintDirect(blueprint); spaceUiStore.toggleBlueprintsModal(false); }}>Assemble Directly</button>
-                <button tabIndex={-1} className="bp-btn spawn-world" onClick={() => { spaceUiStore.spawnBlueprintToWorld(blueprint); spaceUiStore.toggleBlueprintsModal(false); }}>Place as Blocks</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </ModalBackdrop>
-  );
-}
-
 export function PauseScreen() {
   const hasStarted = useSpaceUi(state => state.hasStarted);
   return (
@@ -107,7 +82,6 @@ export function PauseScreen() {
           <span><kbd className="key-badge">C</kbd> Entity editor</span>
           <span><kbd className="key-badge">G</kbd> Assemble physics entity</span>
           <span><kbd className="key-badge">V</kbd> Mount / leave drivable entity</span>
-          <span><kbd className="key-badge">B</kbd> Structure blueprint library</span>
           <span><kbd className="key-badge">F</kbd> Fly mode</span>
           <span><kbd className="key-badge">F3</kbd> Cycle 1st / 3rd Back / 3rd Front</span>
           <span><kbd className="key-badge">ESC</kbd> Settings / release cursor</span>

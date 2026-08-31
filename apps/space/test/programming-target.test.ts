@@ -226,6 +226,49 @@ test('aim refresh uses the latest entity transform rather than a previous-frame 
   assert.equal(controller.hoveredContraptionHit, null);
 });
 
+test('wrench keeps entity picking active without showing hover wireframes', () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null) as any;
+  const contraption = new Contraption(
+    8,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(TORUS_SPAWN_X, 18, TORUS_SPAWN_Z - 5),
+    scene
+  );
+  manager.contraptions.push(contraption);
+
+  const eye = new THREE.Vector3(TORUS_SPAWN_X + 0.5, 18.5, TORUS_SPAWN_Z);
+  const controller = Object.create(PlayerController.prototype);
+  Object.assign(controller, {
+    physics: { getEyePosition: () => eye.clone() },
+    camera: new THREE.PerspectiveCamera(),
+    world: {
+      raycastBent: () => ({ hit: false }),
+      raycastMicroBent: () => ({ hit: false })
+    },
+    contraptions: manager,
+    hoveredContraption: null,
+    hoveredContraptionHit: null,
+    activeTool: SpecialTool.WRENCH,
+    selectorRange: null,
+    selectedSubtree: null,
+    selectedBlockSelection: null
+  });
+
+  controller.updateAimRaycast();
+  assert.equal(controller.hoveredContraptionHit?.contraption, contraption, 'wrench interactions still receive the exact entity hit');
+  assert.equal(contraption.isHighlighted, false);
+  assert.equal(contraption.highlightBox.material.opacity, 0);
+  assert.equal(contraption.focusedHighlightNodeId, null);
+  assert.equal(contraption.focusHighlightEntries.length, 0);
+
+  controller.activeTool = SpecialTool.SHOVEL;
+  controller.updateAimRaycast();
+  assert.equal(contraption.isHighlighted, true, 'switching away from wrench restores normal hover feedback');
+  assert.equal(contraption.highlightBox.material.opacity, 0.9);
+  assert.equal(contraption.focusedHighlightNodeId, 'root');
+});
+
 test('programming preview camera is fitted behind the entity bounding box', () => {
   const contraption = {
     position: new THREE.Vector3(10, 4, -2),

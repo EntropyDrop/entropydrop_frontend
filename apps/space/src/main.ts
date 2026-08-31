@@ -424,7 +424,7 @@ class Game {
     // when aiming at a 0.2 m block in the selector's Tab micro mode).
     if (this.controller.focusBlockPreview) {
       const p = this.controller.focusBlockPreview;
-      this.sceneRenderer.setFocusBlockGuide(p.center, !!p.active, p.cellSize ?? 1);
+      this.sceneRenderer.setFocusBlockGuide(p.center, !!p.active, p.cellSize ?? 1, p.quaternion);
     } else {
       this.sceneRenderer.clearFocusBlockGuide();
     }
@@ -434,7 +434,8 @@ class Game {
       this.sceneRenderer.setBoxSelectionPreview(
         this.controller.boxSelectionPreview.pointA,
         this.controller.boxSelectionPreview.cursor,
-        this.controller.boxSelectionPreview.micro === true
+        this.controller.boxSelectionPreview.micro === true,
+        this.controller.boxSelectionPreview.frame
       );
     } else {
       this.sceneRenderer.clearBoxSelectionPreview();

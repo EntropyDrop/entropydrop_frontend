@@ -1,6 +1,4 @@
-import * as THREE from 'three';
 import { ActionDomain } from '../../../engine/actions/BasicActions.ts';
-import { BLUEPRINTS, spawnBlueprintInWorld } from '../../../engine/contraption/Blueprints.ts';
 import { loadAgentConfig, runAgentTurn, saveAgentConfig } from '../../../engine/contraption/AgentChat.ts';
 import { ContraptionMode } from '../../../engine/contraption/Contraption.ts';
 import {
@@ -13,7 +11,7 @@ import { triggerJsonDownload } from '../browser/downloadJson.ts';
 import { colorToHex, normalizeColor, PRESET_COLORS } from '../../../engine/voxel/BlockTypes.ts';
 import { SpaceMarketClient } from '../../../bootstrap/SpaceMarketClient.ts';
 
-export type SpaceModal = 'inventory' | 'blueprints' | 'code' | 'settings' | null;
+export type SpaceModal = 'inventory' | 'code' | 'settings' | null;
 
 export interface NearbyEntityItem {
   id: string | number;
@@ -408,10 +406,6 @@ export class SpaceUiStore {
     this.toggleModal('inventory', forceState);
   }
 
-  toggleBlueprintsModal(forceState: boolean | null = null): void {
-    this.toggleModal('blueprints', forceState);
-  }
-
   toggleGlobalSettingsModal(forceState: boolean | null = null): void {
     this.syncSettingsUI();
     this.toggleModal('settings', forceState);
@@ -742,58 +736,6 @@ export class SpaceUiStore {
     }
     this.syncInventoryState();
   }
-
-  spawnBlueprintDirect(bp: any): void {
-    const { controller, world, contraptions } = this.snapshot;
-    if (!controller || !world || !contraptions) return;
-    let minDx = 0, maxDx = 0, minDy = 0, maxDy = 0, minDz = 0, maxDz = 0;
-    for (const block of bp.blocks) {
-      minDx = Math.min(minDx, block.dx); maxDx = Math.max(maxDx, block.dx);
-      minDy = Math.min(minDy, block.dy); maxDy = Math.max(maxDy, block.dy);
-      minDz = Math.min(minDz, block.dz); maxDz = Math.max(maxDz, block.dz);
-    }
-    const position = controller.physics.position;
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(controller.camera.quaternion);
-    forward.y = 0; forward.normalize();
-    const footprint = Math.max(maxDx - minDx + 1, maxDz - minDz + 1);
-    const distance = Math.max(4, Math.min(7, Math.ceil(footprint / 2) + 3));
-    const x = Math.floor(position.x + forward.x * distance);
-    const y = Math.floor(position.y + 2) - minDy;
-    const z = Math.floor(position.z + forward.z * distance);
-    spawnBlueprintInWorld(bp, world, x, y, z);
-    controller.performBasicAction({
-      domain: ActionDomain.SELECTION,
-      action: 'box',
-      cornerA: { x: x + minDx, y: y + minDy, z: z + minDz },
-      cornerB: { x: x + maxDx, y: y + maxDy, z: z + maxDz }
-    });
-    const entity = controller.performBasicAction({
-      domain: ActionDomain.SELECTION,
-      action: 'assemble',
-      mode: bp.defaultMode,
-      options: bp.defaultOptions || {}
-    }).entity;
-    if (entity) this.showToast(`Spawned ${bp.name}! Point at it with the selector and press C to program`);
-  }
-
-  spawnBlueprintToWorld(bp: any): void {
-    const { controller, world } = this.snapshot;
-    if (!controller || !world) return;
-    const xs = bp.blocks.map((block: any) => block.dx);
-    const zs = bp.blocks.map((block: any) => block.dz);
-    const footprint = Math.max(Math.max(...xs) - Math.min(...xs) + 1, Math.max(...zs) - Math.min(...zs) + 1);
-    const position = controller.physics.position;
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(controller.camera.quaternion);
-    forward.y = 0; forward.normalize();
-    const distance = Math.max(5, Math.ceil(footprint / 2) + 4);
-    spawnBlueprintInWorld(bp, world,
-      Math.floor(position.x + forward.x * distance),
-      Math.floor(position.y),
-      Math.floor(position.z + forward.z * distance));
-    this.showToast(`Placed structure: ${bp.name} (box-select with the selector to assemble)`);
-  }
-
-  getBlueprints(): any[] { return BLUEPRINTS; }
 
   openCodeEditor(contraption: any): void {
     if (!contraption) return;

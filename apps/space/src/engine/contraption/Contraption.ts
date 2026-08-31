@@ -1866,8 +1866,7 @@ export class Contraption {
       });
     }
 
-    // Explicit definitions may claim whole 1x1 collision cells. This is used
-    // by standard-block blueprints such as the programmable windmill.
+    // Explicit definitions may claim whole 1x1 collision cells.
     for (const definition of this.childDefinitions.values()) {
       if (!Array.isArray(definition.blockKeys)) continue;
       const ownedCells = new Set(definition.blockKeys.map(key => Array.isArray(key) ? key.join(',') : String(key)));
@@ -3554,7 +3553,7 @@ export class Contraption {
     return attached;
   }
 
-  /** Visual-only blueprint components (for example raycast-suspension wheels)
+  /** Visual-only components (for example raycast-suspension wheels)
    * remain editable/rendered but do not become terrain, player, or entity
    * collision shapes. Root collision is always enabled. */
   isNodeCollisionEnabled(nodeId) {

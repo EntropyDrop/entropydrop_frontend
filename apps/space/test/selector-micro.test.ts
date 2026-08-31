@@ -606,8 +606,9 @@ test('entity-range world hover preview quantizes the cursor to the surface micro
   controller.handleLeftClick();
 
   // Hover the terrain (top face of cell (0,12,0), entry (0.3, 13.0, 0.6)).
-  // The preview cursor must match what the click will store: the surface
-  // micro cell origin (0.2, 12.8, 0.6), not the standard cell corner (0,12,0).
+  // The preview cursor must match what the click will store, expressed in the
+  // entity's oriented voxel grid: the surface micro cell origin
+  // (0.2, 2.8, 0.6), not the standard cell corner (0,2,0).
   controller.hoveredContraptionHit = null;
   controller.currentRaycast = {
     hit: true, kind: 'standard', hitPos: { x: 0, y: 12, z: 0 },
@@ -617,12 +618,13 @@ test('entity-range world hover preview quantizes the cursor to the surface micro
   const preview = controller.boxSelectionPreview;
   assert.ok(preview, 'entity-range hover shows the live box preview');
   assert.equal(preview.micro, true);
-  assert.deepEqual(preview.cursor, { x: 1 / 5, y: 64 / 5, z: 3 / 5 });
+  assert.ok(preview.cursor.distanceTo(new THREE.Vector3(1 / 5, 14 / 5, 3 / 5)) < 1e-12);
+  assert.equal(preview.frame.object, node.group, 'preview should inherit the entity node transform');
 
-  // In standard mode the cursor stays the whole hit cell.
+  // In standard mode the cursor stays the whole hit cell in the same grid.
   controller.selectorMicroMode = false;
   controller.updateMicroCarvePreview();
-  assert.deepEqual(controller.boxSelectionPreview.cursor, new THREE.Vector3(0, 12, 0));
+  assert.ok(controller.boxSelectionPreview.cursor.distanceTo(new THREE.Vector3(0, 2, 0)) < 1e-12);
 });
 
 test('standard selection is unaffected: micro flag defaults to off', () => {

@@ -76,6 +76,19 @@ test('focusBlockGuide registers and positions a 1x1x1 X-ray wireframe', () => {
   assert.equal(renderer.focusBlockGuide.visible, false);
 });
 
+test('focusBlockGuide applies and clears entity orientation', () => {
+  const renderer: any = Object.create(SceneRenderer.prototype);
+  renderer.scene = { add() {} };
+  renderer.setupFocusBlockGuide();
+  const tilted = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.4, 0.2, -0.3));
+
+  renderer.setFocusBlockGuide({ x: 2.5, y: 3.5, z: 4.5 }, false, 1, tilted);
+  assert.ok(Math.abs(renderer.focusBlockGuide.quaternion.dot(tilted)) > 1 - 1e-12);
+
+  renderer.setFocusBlockGuide({ x: 2.5, y: 3.5, z: 4.5 });
+  assert.deepEqual(renderer.focusBlockGuide.quaternion.toArray(), [0, 0, 0, 1], 'world guides reset stale entity tilt');
+});
+
 test('setBoxSelectionPreview creates a live block-aligned translucent box', () => {
   const renderer = makeRendererWithPreview();
   renderer.setupBoxSelectionPreview();
@@ -109,6 +122,65 @@ test('setBoxSelectionPreview rounds fractional corners to confirmed-box geometry
   );
   assert.deepEqual(renderer.boxSelectionGroup.position.toArray(), [1.5, 11.5, 31], 'center should include both endpoint cells');
   assert.deepEqual(renderer.boxSelectionFill.scale.toArray(), [3, 3, 2], 'size should equal span plus one');
+});
+
+test('entity box selection preview follows a tilted node frame', () => {
+  const renderer: any = Object.create(SceneRenderer.prototype);
+  renderer.scene = { add() {} };
+  renderer.setupBoxSelectionPreview();
+  const frame = new THREE.Group();
+  frame.position.set(10, 20, 30);
+  frame.quaternion.setFromEuler(new THREE.Euler(0, 0, Math.PI / 2));
+  frame.updateMatrixWorld(true);
+
+  renderer.setBoxSelectionPreview(
+    { x: 0.1, y: 0.1, z: 0.1 },
+    { x: 0.9, y: 0.9, z: 0.9 },
+    false,
+    { object: frame, pivot: new THREE.Vector3(0.5, 0.5, 0.5) }
+  );
+
+  assert.ok(Math.abs(renderer.boxSelectionGroup.quaternion.dot(frame.quaternion)) > 1 - 1e-12);
+  assert.ok(renderer.boxSelectionGroup.position.distanceTo(frame.position) < 1e-12);
+  assert.deepEqual(renderer.boxSelectionFill.scale.toArray(), [1, 1, 1]);
+
+  renderer.setBoxSelectionPreview({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
+  assert.deepEqual(renderer.boxSelectionGroup.quaternion.toArray(), [0, 0, 0, 1], 'world previews reset stale entity tilt');
+});
+
+test('entity box selection preview is clamped to real component bounds', () => {
+  const renderer: any = Object.create(SceneRenderer.prototype);
+  renderer.scene = { add() {} };
+  renderer.setupBoxSelectionPreview();
+  const frame = new THREE.Group();
+  frame.position.set(10, 20, 30);
+  frame.updateMatrixWorld(true);
+  const entityFrame = {
+    object: frame,
+    pivot: new THREE.Vector3(1, 0.5, 0.5),
+    bounds: {
+      min: new THREE.Vector3(0, 0, 0),
+      max: new THREE.Vector3(2, 1, 1)
+    }
+  };
+
+  renderer.setBoxSelectionPreview(
+    { x: 0.1, y: 0.1, z: 0.1 },
+    { x: 100, y: 100, z: 100 },
+    false,
+    entityFrame
+  );
+
+  assert.deepEqual(renderer.boxSelectionFill.scale.toArray(), [2, 1, 1], 'cyan range stops at the component bounds');
+  assert.ok(renderer.boxSelectionGroup.position.distanceTo(frame.position) < 1e-12);
+
+  renderer.setBoxSelectionPreview(
+    { x: 0.01, y: 0.01, z: 0.01 },
+    { x: 100, y: 100, z: 100 },
+    true,
+    entityFrame
+  );
+  assert.deepEqual(renderer.boxSelectionFill.scale.toArray(), [2, 1, 1], 'micro preview is clamped to the same physical bounds');
 });
 
 test('confirmed selection hologram is torus-segmented and remains visible over terrain', () => {
