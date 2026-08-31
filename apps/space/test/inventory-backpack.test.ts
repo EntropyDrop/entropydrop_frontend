@@ -94,18 +94,18 @@ test('R copies into the entity category, T into the blockset category', () => {
   assert.equal(controller2.activeInventoryCategory, 'blockset');
 });
 
-test('each category caps at 9 items and the copy reports the limit', () => {
+test('each category caps at 99 items and the copy reports the limit', () => {
   const { contraption, manager } = makeEntity();
   const controller = makeController({ manager, world: {} as any });
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < controller.inventories.entity.items.length; i++) {
     controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm']) };
     assert.ok(controller.copySelectionToInventory(), 'copy ' + (i + 1) + ' should be accepted');
   }
   controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm']) };
-  const tenth = controller.copySelectionToInventory();
-  assert.equal(tenth, null, 'the tenth entity copy must be rejected');
-  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 9);
-  assert.ok(controller.__toasts.some(m => m.includes('full (9)')));
+  const hundredth = controller.copySelectionToInventory();
+  assert.equal(hundredth, null, 'the 100th entity copy must be rejected');
+  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 99);
+  assert.ok(controller.__toasts.some(m => m.includes('full (99)')));
 });
 
 test('deleteInventoryItem frees a slot and keeps a valid selection', () => {
@@ -131,7 +131,7 @@ test('deleteInventoryItem frees a slot and keeps a valid selection', () => {
 test('inventory slots bridge to the active category', () => {
   const controller = makeController();
   assert.equal(controller.activeInventoryCategory, 'blockset');
-  assert.equal(controller.inventorySlots.length, 9);
+  assert.equal(controller.inventorySlots.length, 99);
   controller.inventorySlots[0] = { kind: 'blockset', blocks: [], blockCount: 0, name: 'x' };
   assert.equal(controller.selectedInventoryIndex, 0);
   controller.selectedInventoryIndex = 4;
@@ -573,21 +573,21 @@ test('assembleSelection creates the contraption without automatically writing to
   assert.ok(controller.__toasts.some(m => m.includes('assembled as root body')));
 });
 
-test('copySelectionToInventory reports an error toast and rejects writing when entity inventory is full (9)', () => {
+test('copySelectionToInventory reports an error toast and rejects writing when entity inventory is full', () => {
   const { contraption, manager } = makeEntity();
   const controller = makeController({ manager, world: {} as any });
 
-  // Fill all 9 entity slots
-  for (let i = 0; i < 9; i++) {
+  // Fill all entity slots
+  for (let i = 0; i < controller.inventories.entity.items.length; i++) {
     controller.inventories.entity.items[i] = { rootId: 'root', blockCount: 1, blocks: [{}], name: `E${i + 1}` };
   }
-  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 9);
+  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 99);
 
   controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm']) };
   const result = controller.copySelectionToInventory();
   assert.equal(result, null, 'copy must be rejected when entity inventory is full');
-  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 9);
-  assert.ok(controller.__toasts.some(m => m.includes('full (9)')), 'toast must report that entity inventory is full');
+  assert.equal(controller.inventories.entity.items.filter(Boolean).length, 99);
+  assert.ok(controller.__toasts.some(m => m.includes('full (99)')), 'toast must report that entity inventory is full');
 });
 
 test('copySelectionAsBlockSet reports an error toast and rejects writing when blockset inventory is full (9)', () => {
@@ -598,19 +598,19 @@ test('copySelectionAsBlockSet reports an error toast and rejects writing when bl
   const controller = makeController({ manager, world });
   manager.selectionHost = controller;
 
-  // Fill all 9 blockset slots
-  for (let i = 0; i < 9; i++) {
+  // Fill all blockset slots
+  for (let i = 0; i < controller.inventories.blockset.items.length; i++) {
     controller.inventories.blockset.items[i] = { kind: 'blockset', blockCount: 1, blocks: [{}], name: `B${i + 1}` };
   }
-  assert.equal(controller.inventories.blockset.items.filter(Boolean).length, 9);
+  assert.equal(controller.inventories.blockset.items.filter(Boolean).length, 99);
 
   manager.setCornerA({ x: 5, y: 5, z: 5 });
   manager.setCornerB({ x: 5, y: 5, z: 5 });
 
   const result = controller.copySelectionAsBlockSet();
   assert.equal(result, null, 'copy must be rejected when blockset inventory is full');
-  assert.equal(controller.inventories.blockset.items.filter(Boolean).length, 9);
-  assert.ok(controller.__toasts.some(m => m.includes('full (9)')), 'toast must report that block set inventory is full');
+  assert.equal(controller.inventories.blockset.items.filter(Boolean).length, 99);
+  assert.ok(controller.__toasts.some(m => m.includes('full (99)')), 'toast must report that block set inventory is full');
 });
 
 test('copySelectionSmart handles both entity and world block selection with unified R key', () => {

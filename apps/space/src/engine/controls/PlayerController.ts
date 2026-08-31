@@ -1510,7 +1510,7 @@ export class PlayerController {
       slot.nodeCount = 1 + slot.childEntities.length;
       const index = this.addInventoryItem('entity', slot);
       if (index === null) {
-        this.ui?.showToast?.('Entity inventory is full (9) - delete one first');
+        this.ui?.showToast?.(`Entity inventory is full (${this.inventories.entity.items.length}) - delete one first`);
         return null;
       }
       this.setActiveInventoryCategory('entity');
@@ -1553,7 +1553,7 @@ export class PlayerController {
     const slot = { kind: 'blockset', name, blocks: rawBlocks, blockCount: rawBlocks.length };
     const index = this.addInventoryItem('blockset', slot);
     if (index === null) {
-      this.ui?.showToast?.('Block set inventory is full (9) - delete one first');
+      this.ui?.showToast?.(`Block set inventory is full (${this.inventories.blockset.items.length}) - delete one first`);
       return null;
     }
     this.setActiveInventoryCategory('blockset');
@@ -2903,7 +2903,7 @@ export class PlayerController {
       : contraption.serializeSubtree(rootId);
     const index = this.addInventoryItem('entity', slot);
     if (index === null) {
-      this.ui?.showToast?.('Entity inventory is full (9) - delete one first');
+      this.ui?.showToast?.(`Entity inventory is full (${this.inventories.entity.items.length}) - delete one first`);
       return null;
     }
     this.setActiveInventoryCategory('entity');
@@ -2943,8 +2943,8 @@ export class PlayerController {
 
   createEmptyInventories() {
     return {
-      blockset: { items: new Array(9).fill(null), selected: 0 },
-      entity: { items: new Array(9).fill(null), selected: 0 },
+      blockset: { items: new Array(99).fill(null), selected: 0 },
+      entity: { items: new Array(99).fill(null), selected: 0 },
       colorset: { items: new Array(9).fill(null), selected: 0 }
     };
   }
@@ -3082,14 +3082,14 @@ export class PlayerController {
         ? `${prefix}${globalThis.crypto.randomUUID()}`
         : `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     }
-    // Prefer the currently shown selected slot only when it belongs to this
-    // category; otherwise the first empty slot. Full categories reject.
-    let index = this.activeInventoryCategory === category && !group.items[group.selected] ? group.selected : -1;
-    if (index < 0) index = group.items.findIndex(slot => !slot);
+    // Put an item into the first available empty slot in the category.
+    const index = group.items.findIndex(slot => !slot);
     if (index < 0) return null;
     item.name = this.inventoryItemName(category, item, index);
     group.items[index] = item;
-    group.selected = index;
+    if (index < 9) {
+      group.selected = index;
+    }
     this.saveInventoriesToLocalStorage();
     return index;
   }
@@ -3146,6 +3146,28 @@ export class PlayerController {
     return true;
   }
 
+  /** Swap two slots within an inventory category. */
+  swapInventorySlots(category, fromIndex, toIndex) {
+    if (!this.inventories) this.inventoryCategory();
+    const group = this.inventories?.[category];
+    if (!group || !Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return false;
+    const maxLen = group.items.length;
+    if (fromIndex < 0 || fromIndex >= maxLen || toIndex < 0 || toIndex >= maxLen || fromIndex === toIndex) return false;
+
+    const temp = group.items[fromIndex];
+    group.items[fromIndex] = group.items[toIndex];
+    group.items[toIndex] = temp;
+
+    if (group.selected === fromIndex) {
+      group.selected = toIndex;
+    } else if (group.selected === toIndex) {
+      group.selected = fromIndex;
+    }
+
+    this.saveInventoriesToLocalStorage();
+    return true;
+  }
+
   inventoryStorage() {
     if (this.persistentStorage) return this.persistentStorage;
     try {
@@ -3193,7 +3215,7 @@ export class PlayerController {
       const group = this.inventories[category];
       categories[category] = {
         selected: group.selected,
-        items: group.items.slice(0, 9).map(item => item ? this.serializeInventoryItem(category, item) : null)
+        items: group.items.map(item => item ? this.serializeInventoryItem(category, item) : null)
       };
     }
     try {
@@ -3224,7 +3246,8 @@ export class PlayerController {
         if (data?.type === 'space-backpack' && data?.version === INVENTORY_STORAGE_VERSION) {
           for (const category of INVENTORY_CATEGORIES) {
             const storedGroup = data.categories?.[category];
-            const storedItems = Array.isArray(storedGroup?.items) ? storedGroup.items.slice(0, 9) : [];
+            const maxLen = inventories[category].items.length;
+            const storedItems = Array.isArray(storedGroup?.items) ? storedGroup.items.slice(0, maxLen) : [];
             for (let index = 0; index < storedItems.length; index++) {
               if (!storedItems[index]) continue;
               const parsed = this.parseInventoryImport(JSON.stringify(storedItems[index]), category);
@@ -3232,7 +3255,7 @@ export class PlayerController {
               else changed = true;
             }
             const selected = Number(storedGroup?.selected);
-            inventories[category].selected = Number.isInteger(selected) && selected >= 0 && selected < 9 ? selected : 0;
+            inventories[category].selected = Number.isInteger(selected) && selected >= 0 && selected < maxLen ? selected : 0;
           }
           if (INVENTORY_CATEGORIES.includes(data.activeCategory)) activeCategory = data.activeCategory;
           loaded = true;

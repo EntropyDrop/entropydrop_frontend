@@ -737,6 +737,13 @@ export class SpaceUiStore {
     this.syncInventoryState();
   }
 
+  swapInventorySlots(category: string, fromIndex: number, toIndex: number): void {
+    const success = this.snapshot.controller?.swapInventorySlots?.(category, fromIndex, toIndex);
+    if (success) {
+      this.syncInventoryState();
+    }
+  }
+
   openCodeEditor(contraption: any): void {
     if (!contraption) return;
     const selectedComponentNodeId = 'root';

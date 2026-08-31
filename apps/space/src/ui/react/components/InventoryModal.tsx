@@ -30,27 +30,27 @@ import {
 export type InventoryCategory = 'blockset' | 'entity' | 'colorset';
 
 export function PixelCopyIcon() {
-  return <LiaCopySolid size={13} style={{ display: 'block' }} />;
+  return <LiaCopySolid size={14} style={{ display: 'block' }} />;
 }
 
 export function PixelExportIcon() {
-  return <LiaFileExportSolid size={13} style={{ display: 'block' }} />;
+  return <LiaFileExportSolid size={14} style={{ display: 'block' }} />;
 }
 
 export function PixelDeleteIcon() {
-  return <LiaTrashAltSolid size={13} style={{ display: 'block' }} />;
+  return <LiaTrashAltSolid size={14} style={{ display: 'block' }} />;
 }
 
 export function PixelPublishIcon() {
-  return <LiaCloudUploadAltSolid size={13} style={{ display: 'block' }} />;
+  return <LiaCloudUploadAltSolid size={14} style={{ display: 'block' }} />;
 }
 
 export function PixelDownloadIcon() {
-  return <LiaDownloadSolid size={13} style={{ display: 'block' }} />;
+  return <LiaDownloadSolid size={14} style={{ display: 'block' }} />;
 }
 
 export function PixelHeartIcon() {
-  return <LiaHeartSolid size={13} style={{ display: 'block' }} />;
+  return <LiaHeartSolid size={14} style={{ display: 'block' }} />;
 }
 
 function ImportJsonButton({ category }: { category: InventoryCategory }) {
@@ -73,7 +73,7 @@ function ImportJsonButton({ category }: { category: InventoryCategory }) {
         className="backpack-section-btn"
         onClick={() => input.current?.click()}
       >
-        <LiaFileImportSolid size={13} style={{ marginRight: 4, display: 'inline', verticalAlign: 'text-bottom' }} />
+        <LiaFileImportSolid size={15} style={{ marginRight: 4, display: 'inline', verticalAlign: 'text-bottom' }} />
         Import JSON
       </button>
     </>
@@ -186,7 +186,7 @@ function Import3DModelPopover() {
         title="Import 3D Model (.glb / .gltf / .stl)"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <LiaCubeSolid size={13} style={{ marginRight: 4, display: 'inline', verticalAlign: 'text-bottom' }} />
+        <LiaCubeSolid size={15} style={{ marginRight: 4, display: 'inline', verticalAlign: 'text-bottom' }} />
         Import 3D Model
       </button>
 
@@ -195,7 +195,7 @@ function Import3DModelPopover() {
           {/* Header */}
           <div className="stl-popover-header">
             <div className="stl-popover-title">
-              <LiaCubeSolid size={16} className="stl-title-icon" />
+              <LiaCubeSolid size={18} className="stl-title-icon" />
               <span>Import 3D Model</span>
             </div>
             <button
@@ -358,84 +358,248 @@ function InventoryItemCard({
   category,
   index,
   item,
+  isHotbar,
   onPublish,
+  draggedIndex,
+  dragOverIndex,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }: {
   category: 'blockset' | 'entity';
   index: number;
   item: any;
+  isHotbar?: boolean;
   onPublish: (category: InventoryCategory, item: any) => void;
+  draggedIndex?: number | null;
+  dragOverIndex?: number | null;
+  onDragStart?: (e: React.DragEvent, index: number) => void;
+  onDragOver?: (e: React.DragEvent, index: number) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent, index: number) => void;
+  onDragEnd?: () => void;
 }) {
   const controller = useSpaceUi(state => state.controller);
   const fallback = category === 'blockset' ? `Block set ${index + 1}` : `Entity ${index + 1}`;
   const name = typeof item?.name === 'string' ? item.name : (controller?.inventoryItemName?.(category, item, index) || fallback);
-  const count = item.blockCount || item.blocks?.length || 0;
-  const thumbnail = InventoryThumbnailRenderer.getInstance().getThumbnail(item, 96);
-  const meta = category === 'blockset'
-    ? `${count} voxels`
-    : `${count} blocks · ${item.scripts?.length || 0} scripts · ${item.mode || 'free_physics'}`;
+  const count = item ? (item.blockCount || item.blocks?.length || 0) : 0;
+  const thumbnail = item ? InventoryThumbnailRenderer.getInstance().getThumbnail(item, isHotbar ? 144 : 96) : null;
+  const isDragging = draggedIndex === index;
+  const isDragOver = dragOverIndex === index;
+
   return (
-    <div className="inventory-card backpack-item">
-      <div className="backpack-slot-preview-box filled">
-        <span className="backpack-slot-index">#{index + 1}</span>
-        {thumbnail ? <img className="inv-slot-thumb" src={thumbnail} alt={name || fallback} draggable={false} /> : null}
-        {count > 0 ? <span className="backpack-slot-count">{count}</span> : null}
+    <div
+      className={`backpack-slot-card group ${item ? 'filled' : 'empty'} ${isHotbar ? 'hotbar-slot' : 'storage-slot'} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`}
+      draggable={Boolean(item)}
+      onDragStart={e => {
+        const target = e.target as HTMLElement | null;
+        if (target?.tagName === 'INPUT' || target?.closest('.backpack-slot-name-row')) {
+          e.preventDefault();
+          return;
+        }
+        onDragStart?.(e, index);
+      }}
+      onDragOver={e => onDragOver?.(e, index)}
+      onDragLeave={onDragLeave}
+      onDrop={e => onDrop?.(e, index)}
+      onDragEnd={onDragEnd}
+      title={item ? `${name} (Slot #${index + 1}${isHotbar ? ' · Hotbar' : ''}) · Drag to reorder` : `Empty slot #${index + 1}`}
+    >
+      <div className="backpack-slot-thumb-container">
+        <span className={`backpack-slot-index ${isHotbar ? 'hotbar-badge' : ''}`}>#{index + 1}</span>
+        {thumbnail ? (
+          <img className="inv-slot-thumb" src={thumbnail} alt={name || fallback} draggable={false} />
+        ) : item ? (
+          <span className="backpack-slot-empty-icon">{category === 'blockset' ? 'B' : 'E'}</span>
+        ) : (
+          <span className="backpack-slot-empty-icon">+</span>
+        )}
+        {count > 0 && <span className="backpack-slot-count">{count}</span>}
+
+        {item && (
+          <div className="backpack-slot-edge-actions" onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              className="backpack-pixel-btn publish"
+              title="Publish to market (AGPL-3.0)"
+              aria-label="Publish item to market"
+              onClick={() => onPublish(category, item)}
+            >
+              <PixelPublishIcon />
+            </button>
+            <button
+              type="button"
+              className="backpack-pixel-btn"
+              title={`Copy ${category === 'blockset' ? 'block set' : 'entity'}`}
+              aria-label="Copy item"
+              onClick={() => spaceUiStore.copyInventoryItem(category, index)}
+            >
+              <PixelCopyIcon />
+            </button>
+            <button
+              type="button"
+              className="backpack-pixel-btn"
+              title="Export JSON"
+              aria-label="Export JSON"
+              onClick={() => spaceUiStore.downloadJson(
+                spaceUiStore.inventoryJsonFilename(item.name || fallback, fallback),
+                controller?.serializeInventoryItem?.(category, item) || item
+              )}
+            >
+              <PixelExportIcon />
+            </button>
+            <button
+              type="button"
+              className="backpack-pixel-btn danger"
+              title="Delete item"
+              aria-label="Delete item"
+              onClick={() => spaceUiStore.deleteInventoryItem(category, index)}
+            >
+              <PixelDeleteIcon />
+            </button>
+          </div>
+        )}
       </div>
-      <div className="backpack-item-details">
-        <input
-          type="text"
-          className="backpack-item-name-input"
-          maxLength={80}
-          value={name}
-          placeholder={fallback}
-          aria-label={`${category} slot ${index + 1} name`}
-          onChange={event => spaceUiStore.renameInventoryItem(category, index, event.target.value)}
-          onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
-        />
-        <div className="backpack-item-meta">{meta}</div>
-        <div className="inv-item-actions">
-          <button
-            type="button"
-            tabIndex={-1}
-            className="backpack-pixel-btn publish"
-            title="Publish to market (AGPL-3.0)"
-            aria-label="Publish item to market"
-            onClick={() => onPublish(category, item)}
-          >
-            <PixelPublishIcon />
-          </button>
-          <button
-            type="button"
-            tabIndex={-1}
-            className="backpack-pixel-btn"
-            title={`Copy ${category === 'blockset' ? 'block set' : 'entity'}`}
-            aria-label="Copy item"
-            onClick={() => spaceUiStore.copyInventoryItem(category, index)}
-          >
-            <PixelCopyIcon />
-          </button>
-          <button
-            type="button"
-            tabIndex={-1}
-            className="backpack-pixel-btn"
-            title="Export JSON"
-            aria-label="Export JSON"
-            onClick={() => spaceUiStore.downloadJson(
-              spaceUiStore.inventoryJsonFilename(item.name || fallback, fallback),
-              controller?.serializeInventoryItem?.(category, item) || item
-            )}
-          >
-            <PixelExportIcon />
-          </button>
-          <button
-            type="button"
-            tabIndex={-1}
-            className="backpack-pixel-btn danger"
-            title="Delete item"
-            aria-label="Delete item"
-            onClick={() => spaceUiStore.deleteInventoryItem(category, index)}
-          >
-            <PixelDeleteIcon />
-          </button>
+
+      <div
+        className="backpack-slot-name-row"
+        draggable={false}
+        onClick={e => e.stopPropagation()}
+        onMouseDown={e => e.stopPropagation()}
+        onDragStart={e => {
+          e.stopPropagation();
+          e.preventDefault();
+        }}
+      >
+        {item ? (
+          <input
+            type="text"
+            className="backpack-item-name-input"
+            maxLength={60}
+            value={name}
+            placeholder={fallback}
+            aria-label={`${category} slot ${index + 1} name`}
+            draggable={false}
+            onMouseDown={e => e.stopPropagation()}
+            onDragStart={e => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+            onChange={event => spaceUiStore.renameInventoryItem(category, index, event.target.value)}
+            onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+            title="Click to edit name"
+          />
+        ) : (
+          <span className="backpack-slot-empty-label">Empty</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InventorySlotsRow({
+  category,
+  items,
+  onPublish,
+}: {
+  category: 'blockset' | 'entity';
+  items: any[];
+  onPublish: (category: InventoryCategory, item: any) => void;
+}) {
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.setData('text/plain', String(index));
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    const sourceStr = e.dataTransfer.getData('text/plain');
+    const sourceIndex = Number(sourceStr);
+    if (!Number.isNaN(sourceIndex) && sourceIndex !== targetIndex) {
+      spaceUiStore.swapInventorySlots(category, sourceIndex, targetIndex);
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  return (
+    <div className="backpack-slots-container" id="inventory-grid">
+      {/* Hotbar Section (Row 1: Slots #1 - #9) */}
+      <div className="backpack-section-subgroup hotbar-group">
+        <div className="backpack-subgroup-header">
+          <span className="backpack-hotbar-label">Active Hotbar</span>
+          <span className="backpack-subgroup-hint">Drag items here from storage to equip</span>
+        </div>
+        <div className="backpack-slots-row backpack-hotbar-row">
+          {Array.from({ length: 9 }, (_, index) => (
+            <InventoryItemCard
+              key={items[index]?.id || `${category}:${index}`}
+              category={category}
+              index={index}
+              item={items[index]}
+              isHotbar={true}
+              onPublish={onPublish}
+              draggedIndex={draggedIndex}
+              dragOverIndex={dragOverIndex}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onDragEnd={handleDragEnd}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Storage Section (Rows 2 - 11: Slots #10 - #99) */}
+      <div className="backpack-section-subgroup storage-group">
+        <div className="backpack-subgroup-header">
+          <span className="backpack-storage-label">Storage</span>
+        </div>
+        <div className="backpack-slots-grid backpack-storage-grid">
+          {Array.from({ length: 90 }, (_, offset) => {
+            const index = offset + 9;
+            return (
+              <InventoryItemCard
+                key={items[index]?.id || `${category}:${index}`}
+                category={category}
+                index={index}
+                item={items[index]}
+                isHotbar={false}
+                onPublish={onPublish}
+                draggedIndex={draggedIndex}
+                dragOverIndex={dragOverIndex}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
+              />
+            );
+          })}
         </div>
       </div>
     </div>
@@ -947,7 +1111,7 @@ export function InventoryModal() {
       if (!parsed?.ok) throw new Error(parsed?.error || 'Downloaded resource failed local validation.');
       const index = state.controller.addInventoryItem?.(downloaded.kind, parsed.item);
       if (index === null || index === undefined) {
-        throw new Error(`${downloaded.kind} backpack is full (9/9).`);
+        throw new Error(`${downloaded.kind} backpack is full.`);
       }
       state.controller.setActiveInventoryCategory?.(downloaded.kind);
       spaceUiStore.syncInventoryState();
@@ -1012,7 +1176,7 @@ export function InventoryModal() {
             id="close-inv-btn"
             tabIndex={-1}
             className="icon-btn"
-            style={{ width: 28, height: 28, fontSize: 13 }}
+            style={{ width: 32, height: 32, fontSize: 16 }}
             title="Close backpack (ESC)"
             onClick={() => spaceUiStore.toggleInventoryModal(false)}
           >
@@ -1021,108 +1185,110 @@ export function InventoryModal() {
         </div>
 
         {activeCategory === 'blockset' && (
-          <div className="backpack-tab-panel" id="backpack-panel-blockset">
-            <div className="backpack-section-header">
-              <div className="backpack-section-title">
-                <LiaBoxesSolid size={16} />
-                <span>My Block Sets (9 slots)</span>
-              </div>
-              <div className="backpack-panel-footer">
-                <div className="backpack-panel-actions">
-                  <Import3DModelPopover />
-                  <ImportJsonButton category="blockset" />
+          <div className="backpack-tab-panel backpack-split-layout" id="backpack-panel-blockset">
+            <div className="backpack-main-col">
+              <div className="backpack-section-header">
+                <div className="backpack-section-title">
+                  <LiaBoxesSolid size={18} />
+                  <span>My Block Sets (99 slots)</span>
+                </div>
+                <div className="backpack-panel-footer">
+                  <div className="backpack-panel-actions">
+                    <Import3DModelPopover />
+                    <ImportJsonButton category="blockset" />
+                  </div>
                 </div>
               </div>
+
+              <InventorySlotsRow
+                category="blockset"
+                items={blocksets}
+                onPublish={publishItem}
+              />
             </div>
 
-            <div className="inventory-grid" id="inventory-grid">
-              {Array.from({ length: 9 }, (_, index) => {
-                const item = blocksets[index];
-                return item ? (
-                  <InventoryItemCard key={item.id || `b:${index}`} category="blockset" index={index} item={item} onPublish={publishItem} />
-                ) : (
-                  <EmptySlot key={`empty-b:${index}`} index={index} label={`Empty slot ${index + 1} · R copy or import`} />
-                );
-              })}
-            </div>
-
-            <MarketSection
-              category="blockset"
-              isAdmin={state.isAdmin}
-              onDownload={downloadResource}
-              refreshKey={marketRefreshKey}
-            />
+            <aside className="backpack-market-sidebar">
+              <MarketSection
+                category="blockset"
+                isAdmin={state.isAdmin}
+                onDownload={downloadResource}
+                refreshKey={marketRefreshKey}
+              />
+            </aside>
           </div>
         )}
 
         {activeCategory === 'entity' && (
-          <div className="backpack-tab-panel" id="backpack-panel-entity">
-            <div className="backpack-section-header">
-              <div className="backpack-section-title">
-                <LiaBoxesSolid size={16} />
-                <span>My Entities (9 slots)</span>
-              </div>
-              <div className="backpack-panel-footer">
-                <div className="backpack-panel-actions">
-                  <ImportJsonButton category="entity" />
+          <div className="backpack-tab-panel backpack-split-layout" id="backpack-panel-entity">
+            <div className="backpack-main-col">
+              <div className="backpack-section-header">
+                <div className="backpack-section-title">
+                  <LiaBoxesSolid size={18} />
+                  <span>My Entities (99 slots)</span>
+                </div>
+                <div className="backpack-panel-footer">
+                  <div className="backpack-panel-actions">
+                    <ImportJsonButton category="entity" />
+                  </div>
                 </div>
               </div>
+
+              <InventorySlotsRow
+                category="entity"
+                items={entities}
+                onPublish={publishItem}
+              />
             </div>
 
-            <div className="inventory-grid" id="inventory-grid">
-              {Array.from({ length: 9 }, (_, index) => {
-                const item = entities[index];
-                return item ? (
-                  <InventoryItemCard key={item.id || `e:${index}`} category="entity" index={index} item={item} onPublish={publishItem} />
-                ) : (
-                  <EmptySlot key={`empty-e:${index}`} index={index} label={`Empty slot ${index + 1} · R copy or import`} />
-                );
-              })}
-            </div>
-
-            <MarketSection
-              category="entity"
-              isAdmin={state.isAdmin}
-              onDownload={downloadResource}
-              refreshKey={marketRefreshKey}
-            />
+            <aside className="backpack-market-sidebar">
+              <MarketSection
+                category="entity"
+                isAdmin={state.isAdmin}
+                onDownload={downloadResource}
+                refreshKey={marketRefreshKey}
+              />
+            </aside>
           </div>
         )}
 
         {activeCategory === 'colorset' && (
-          <div className="backpack-tab-panel" id="backpack-panel-colorset">
-            <div className="backpack-section-header">
-              <div className="backpack-section-title">
-                <LiaBoxesSolid size={16} />
-                <span>My Color Sets (9 slots)</span>
-              </div>
-              <div className="backpack-panel-footer">
-                <div className="backpack-panel-actions">
-                  <ImportJsonButton category="colorset" />
+          <div className="backpack-tab-panel backpack-split-layout" id="backpack-panel-colorset">
+            <div className="backpack-main-col">
+              <div className="backpack-section-header">
+                <div className="backpack-section-title">
+                  <LiaBoxesSolid size={18} />
+                  <span>My Color Sets (9 slots)</span>
+                </div>
+                <div className="backpack-panel-footer">
+                  <div className="backpack-panel-actions">
+                    <ImportJsonButton category="colorset" />
+                  </div>
                 </div>
               </div>
+
+              <div className="inventory-grid" id="inventory-grid">
+                {(() => {
+                  const totalCount = colorsets.filter(Boolean).length;
+                  return Array.from({ length: 9 }, (_, index) => {
+                    const item = colorsets[index];
+                    return item ? (
+                      <ColorSetCard key={item.id || `c:${index}`} index={index} item={item} totalCount={totalCount} onPublish={publishItem} />
+                    ) : (
+                      <EmptyColorSetSlot key={`empty-c:${index}`} />
+                    );
+                  });
+                })()}
+              </div>
             </div>
 
-            <div className="inventory-grid" id="inventory-grid">
-              {(() => {
-                const totalCount = colorsets.filter(Boolean).length;
-                return Array.from({ length: 9 }, (_, index) => {
-                  const item = colorsets[index];
-                  return item ? (
-                    <ColorSetCard key={item.id || `c:${index}`} index={index} item={item} totalCount={totalCount} onPublish={publishItem} />
-                  ) : (
-                    <EmptyColorSetSlot key={`empty-c:${index}`} />
-                  );
-                });
-              })()}
-            </div>
-
-            <MarketSection
-              category="colorset"
-              isAdmin={state.isAdmin}
-              onDownload={downloadResource}
-              refreshKey={marketRefreshKey}
-            />
+            <aside className="backpack-market-sidebar">
+              <MarketSection
+                category="colorset"
+                isAdmin={state.isAdmin}
+                onDownload={downloadResource}
+                refreshKey={marketRefreshKey}
+              />
+            </aside>
           </div>
         )}
       </div>
