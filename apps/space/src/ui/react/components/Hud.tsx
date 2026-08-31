@@ -290,6 +290,25 @@ export function Hud() {
   return (
     <>
       <div id="crosshair" />
+      {state.sessionMode === 'offline' ? (
+        <div className={`space-session-status ${state.onlineReady ? 'ready' : state.queuePosition !== null ? 'queued' : 'offline'}`} role="status" aria-live="polite">
+          <span>{state.onlineReady ? '排队完成' : state.queuePosition !== null ? `排队 #${state.queuePosition}` : '离线模式'}</span>
+          {state.onlineReady ? (
+            <>
+              <button type="button" tabIndex={-1} onClick={() => spaceUiStore.enterOnlineSpace()}>
+                进入在线 Space
+              </button>
+              <button type="button" tabIndex={-1} onClick={() => { void spaceUiStore.cancelSpaceQueue(); }}>
+                留在离线模式
+              </button>
+            </>
+          ) : state.queuePosition !== null ? (
+            <button type="button" tabIndex={-1} onClick={() => { void spaceUiStore.cancelSpaceQueue(); }}>
+              取消排队
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div id="hud-overlay">
         <div className="hud-top">
           <div className="hud-card">
@@ -316,4 +335,3 @@ export function Hud() {
     </>
   );
 }
-

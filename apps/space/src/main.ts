@@ -60,7 +60,7 @@ class Game {
   lastSavedPlayerPosition: string;
   pendingPlayerPosition: PlayerPositionPayload | null;
   playerPositionSaveInFlight: boolean;
-  multiplayerSync: MultiplayerSync;
+  multiplayerSync: MultiplayerSync | null;
   remotePlayers: RemotePlayerInfo[];
   terrainEditRemote: ReadySpaceSession['terrain_edit_remote'];
   terrainArea: TerrainStreamArea;
@@ -96,7 +96,9 @@ class Game {
         // A batch older than the bounded server dedupe window is intentionally
         // not replayed over newer shared-world edits. Reload the authoritative
         // AOI after removing that stale outbox entry.
-        onResyncRequired: () => window.location.reload()
+        onResyncRequired: () => {
+          if (session.mode === 'online') window.location.reload();
+        }
       }
     );
     this.sceneRenderer.setWorld(this.world);
@@ -116,7 +118,11 @@ class Game {
 
     this.playerPhysics = new PlayerPhysics(this.world, this.contraptionManager);
     this.uiStore = spaceUiStore;
-    this.uiStore.setMarketSession(session.api_origin, session.token, session.player.is_admin === true);
+    this.uiStore.setMarketSession(
+      session.api_origin,
+      session.mode === 'online' ? session.token : '',
+      session.mode === 'online' && session.player.is_admin === true
+    );
     this.minimap = new Minimap(this.world, this.contraptionManager);
 
     // 2. Player Controller
@@ -192,32 +198,35 @@ class Game {
     if (!session.player.resumed) this.queuePlayerPositionSave(true);
 
     // 5b. Multiplayer Synchronizer (Real-time player presence & terrain updates)
-    this.multiplayerSync = new MultiplayerSync({
-      apiOrigin: session.api_origin,
-      token: session.token,
-      worldId: session.world.id,
-      currentUserId: session.player.user_id,
-      websocketUrl: session.websocket_url,
-      poseIntervalMs: 50,
-      terrainPollIntervalMs: 1000,
-      onPlayersUpdate: (players) => {
-        this.remotePlayers = players;
-        this.minimap.setRemotePlayers(players);
-        this.uiStore.setRemotePlayers(players);
-      },
-      onTerrainUpdate: (chunks) => {
-        this.world.queueRemoteChunkUpdates(chunks);
-      }
-    });
-    this.multiplayerSync.getPlayerPosition = () => ({
-      x: this.playerPhysics.position.x,
-      y: this.playerPhysics.position.y,
-      z: this.playerPhysics.position.z,
-      yaw: this.controller.yaw,
-      pitch: this.controller.pitch
-    });
-    this.multiplayerSync.setSinceTerrainRevision(session.world.terrain_revision);
-    this.multiplayerSync.start();
+    this.multiplayerSync = null;
+    if (session.mode === 'online') {
+      this.multiplayerSync = new MultiplayerSync({
+        apiOrigin: session.api_origin,
+        token: session.token,
+        worldId: session.world.id,
+        currentUserId: session.player.user_id,
+        websocketUrl: session.websocket_url,
+        poseIntervalMs: 50,
+        terrainPollIntervalMs: 1000,
+        onPlayersUpdate: (players) => {
+          this.remotePlayers = players;
+          this.minimap.setRemotePlayers(players);
+          this.uiStore.setRemotePlayers(players);
+        },
+        onTerrainUpdate: (chunks) => {
+          this.world.queueRemoteChunkUpdates(chunks);
+        }
+      });
+      this.multiplayerSync.getPlayerPosition = () => ({
+        x: this.playerPhysics.position.x,
+        y: this.playerPhysics.position.y,
+        z: this.playerPhysics.position.z,
+        yaw: this.controller.yaw,
+        pitch: this.controller.pitch
+      });
+      this.multiplayerSync.setSinceTerrainRevision(session.world.terrain_revision);
+      this.multiplayerSync.start();
+    }
 
     // 6. Start Loop
     this.animate = this.animate.bind(this);
@@ -473,15 +482,28 @@ class Game {
 
 // Start Game on page load
 window.addEventListener('DOMContentLoaded', () => {
-  void enterSpace(async session => {
-    const [distantLodCache, persistentStorage] = await Promise.all([
-      loadDistantLodCache(
-        session.world.seed,
-        session.world.terrain_generator_version
-      ),
-      createSpacePersistentStorage()
-    ]);
-    (window as any).spaceSession = session;
-    (window as any).game = new Game(session, distantLodCache, persistentStorage);
-  });
+  void enterSpace(
+    async session => {
+      const [distantLodCache, persistentStorage] = await Promise.all([
+        loadDistantLodCache(
+          session.world.seed,
+          session.world.terrain_generator_version
+        ),
+        createSpacePersistentStorage()
+      ]);
+      (window as any).spaceSession = session;
+      (window as any).game = new Game(session, distantLodCache, persistentStorage);
+    },
+    {
+      onStateChange: state => {
+        spaceUiStore.setSessionState(
+          state.mode,
+          state.queuePosition,
+          state.cancelQueue,
+          state.onlineReady,
+          state.enterOnline
+        );
+      }
+    }
+  );
 });

@@ -115,6 +115,9 @@ export interface SpaceUiSnapshot {
   toast: { id: number; message: string } | null;
   isAdmin: boolean;
   isMuted: boolean;
+  sessionMode: 'online' | 'offline';
+  queuePosition: number | null;
+  onlineReady: boolean;
 }
 
 type Listener = () => void;
@@ -192,6 +195,8 @@ export class SpaceUiStore {
   private toastSequence = 0;
   private remotePlayers: any[] = [];
   private marketClient: SpaceMarketClient | null = null;
+  private queueCancelHandler: (() => Promise<void>) | null = null;
+  private enterOnlineHandler: (() => void) | null = null;
 
   private snapshot: SpaceUiSnapshot = {
     revision: 0,
@@ -237,7 +242,10 @@ export class SpaceUiStore {
     renderDistance: 12,
     toast: null,
     isAdmin: false,
-    isMuted: false
+    isMuted: false,
+    sessionMode: 'online',
+    queuePosition: null,
+    onlineReady: false
   };
 
   subscribe = (listener: Listener): (() => void) => {
@@ -291,8 +299,39 @@ export class SpaceUiStore {
   }
 
   setMarketSession(apiOrigin: string, token: string, isAdmin = false): void {
+    if (!token) {
+      this.marketClient = null;
+      this.patch({ isAdmin: false });
+      return;
+    }
     this.marketClient = new SpaceMarketClient(apiOrigin, token);
     this.patch({ isAdmin: !!isAdmin });
+  }
+
+  setSessionState(
+    mode: 'online' | 'offline',
+    queuePosition: number | null = null,
+    cancelQueue: (() => Promise<void>) | null = null,
+    onlineReady = false,
+    enterOnline: (() => void) | null = null
+  ): void {
+    this.queueCancelHandler = cancelQueue;
+    this.enterOnlineHandler = enterOnline;
+    this.patch({ sessionMode: mode, queuePosition, onlineReady });
+  }
+
+  async cancelSpaceQueue(): Promise<void> {
+    const cancel = this.queueCancelHandler;
+    if (!cancel) return;
+    try {
+      await cancel();
+    } catch {
+      this.showToast('取消排队失败，请稍后重试。');
+    }
+  }
+
+  enterOnlineSpace(): void {
+    this.enterOnlineHandler?.();
   }
 
   getMarketClient(): SpaceMarketClient | null {

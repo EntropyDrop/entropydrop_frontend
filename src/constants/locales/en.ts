@@ -910,6 +910,7 @@ Email: support@entropydrop.com`
         tagline: 'High-freedom voxel building · Voxel physics engine · Programmable AI · Realtime multiplayer · Seamless Torus world (Donut)',
         description: 'An in-browser programmable voxel world. Sculpt freely across a seamless toroidal donut universe, entityize structures into rigid bodies with physics and collision, compile natural language into intelligent behaviors with AI agents, and build cooperatively in real time with players worldwide.',
         primaryCta: 'Enter Space',
+        offlineCta: 'Play Offline',
         secondaryCta: 'Gameplay Guide',
         skinNotice: {
             title: 'Minecraft Skin Required',

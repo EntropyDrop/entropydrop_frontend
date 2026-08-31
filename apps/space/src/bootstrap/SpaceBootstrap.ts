@@ -35,6 +35,12 @@ export interface TerrainStreamArea {
 }
 
 export type SkinType = 'strong' | 'slim';
+export type SpaceSessionMode = 'online' | 'offline';
+
+export const OFFLINE_WORLD_ID = 'offline-sandbox-v1';
+export const OFFLINE_PLAYER_POSITION_KEY = 'space.offline.player-position.v1';
+const OFFLINE_WORLD_SEED = 20260827;
+const OFFLINE_SKIN_URL = new URL('../../skin_7JM3SJAW.png', import.meta.url).href;
 
 export interface SpaceBootstrapPayload {
   protocol_version: 2;
@@ -76,12 +82,39 @@ export interface PlayerPositionRemote {
 }
 
 export interface ReadySpaceSession extends SpaceBootstrapPayload {
+  mode: SpaceSessionMode;
   api_origin: string;
   token: string;
   skin_object_url: string;
-  terrain_edit_remote: WorldEditRemote;
+  terrain_edit_remote: WorldEditRemote | null;
   player_position_remote: PlayerPositionRemote;
-  latency_monitor: LatencyMonitor;
+  latency_monitor: LatencyMonitor | null;
+}
+
+export interface SpaceAdmissionStatus {
+  state: 'admitted' | 'queued' | 'cancelled';
+  position: number | null;
+  poll_after_ms: number;
+}
+
+export interface SpaceEntryState {
+  mode: SpaceSessionMode;
+  queuePosition: number | null;
+  onlineReady: boolean;
+  cancelQueue: (() => Promise<void>) | null;
+  enterOnline: (() => void) | null;
+}
+
+export interface SpaceEntryHooks {
+  onStateChange?: (state: SpaceEntryState) => void;
+}
+
+export interface PreparedOnlineSpace {
+  payload: SpaceBootstrapPayload;
+  apiOrigin: string;
+  token: string;
+  skinObjectUrl: string;
+  latencyMonitor: LatencyMonitor;
 }
 
 export type SpaceEntryErrorCode =
@@ -509,7 +542,7 @@ export function createPlayerPositionRemote(
   };
 }
 
-export async function bootstrapSpace(): Promise<ReadySpaceSession> {
+async function prepareOnlineSpace(): Promise<PreparedOnlineSpace> {
   const token = localStorage.getItem('token');
   if (!token) {
     throw new SpaceEntryError(
@@ -522,7 +555,6 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
 
   const apiOrigin = resolveApiOrigin(import.meta.env.VITE_API_BASE_URL, window.location.origin);
   const latencyMonitor = new LatencyMonitor({ apiOrigin });
-  latencyMonitor.start();
 
   const response = await fetch(`${apiOrigin}/space/api/v2/bootstrap`, {
     method: 'POST',
@@ -544,19 +576,88 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
     );
   }
 
-  const [skinObjectUrl, terrainEditRemote] = await Promise.all([
-    downloadSkinPng(payload.player.skin_url),
-    loadTerrainEditRemote(
+  const skinObjectUrl = await downloadSkinPng(payload.player.skin_url);
+  return { payload, apiOrigin, token, skinObjectUrl, latencyMonitor };
+}
+
+export async function requestSpaceAdmission(
+  apiOrigin: string,
+  token: string,
+  worldId: string,
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal
+): Promise<SpaceAdmissionStatus> {
+  const response = await fetchImpl(
+    `${apiOrigin}/space/api/v2/worlds/${encodeURIComponent(worldId)}/admission`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json'
+      },
+      signal
+    }
+  );
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw entryErrorFromResponse(response.status, body);
+  if (!body || !['admitted', 'queued'].includes(body.state)) {
+    throw new SpaceEntryError(
+      'BOOTSTRAP_FAILED',
+      'Space 排队状态无效，请稍后重试。',
+      window.location.href,
+      '重试'
+    );
+  }
+  return {
+    state: body.state,
+    position: body.state === 'queued' ? Math.max(1, Number(body.position) || 1) : null,
+    poll_after_ms: Math.max(500, Math.min(5_000, Number(body.poll_after_ms) || 2_000))
+  };
+}
+
+export async function cancelSpaceAdmission(
+  apiOrigin: string,
+  token: string,
+  worldId: string,
+  fetchImpl: typeof fetch = fetch,
+  keepalive = false
+): Promise<void> {
+  const response = await fetchImpl(
+    `${apiOrigin}/space/api/v2/worlds/${encodeURIComponent(worldId)}/admission`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json'
+      },
+      keepalive
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`Space queue cancellation failed with HTTP ${response.status}`);
+  }
+}
+
+async function completeOnlineSpace(prepared: PreparedOnlineSpace): Promise<ReadySpaceSession> {
+  const { payload, apiOrigin, token, skinObjectUrl, latencyMonitor } = prepared;
+  latencyMonitor.start();
+  let terrainEditRemote: WorldEditRemote;
+  try {
+    terrainEditRemote = await loadTerrainEditRemote(
       apiOrigin,
       token,
       payload.world.id,
       fetch,
       latencyMonitor,
       initialTerrainStreamArea(payload.player)
-    )
-  ]);
+    );
+  } catch (error) {
+    latencyMonitor.stop();
+    throw error;
+  }
   return {
     ...payload,
+    mode: 'online',
     api_origin: apiOrigin,
     token,
     skin_object_url: skinObjectUrl,
@@ -564,6 +665,103 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
     player_position_remote: createPlayerPositionRemote(apiOrigin, token, payload.world.id, fetch, latencyMonitor),
     latency_monitor: latencyMonitor
   };
+}
+
+function readOfflinePlayerPosition(): PlayerPositionPayload | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(OFFLINE_PLAYER_POSITION_KEY) || 'null');
+    if (
+      Number.isFinite(parsed?.x_cm)
+      && Number.isFinite(parsed?.y_cm)
+      && Number.isFinite(parsed?.z_cm)
+      && Number.isFinite(parsed?.yaw_q15)
+    ) {
+      return {
+        x_cm: Number(parsed.x_cm),
+        y_cm: Number(parsed.y_cm),
+        z_cm: Number(parsed.z_cm),
+        yaw_q15: Number(parsed.yaw_q15),
+        pitch_q15: Number(parsed.pitch_q15) || 0
+      };
+    }
+  } catch {
+    // A corrupt offline checkpoint is isolated and safe to replace.
+  }
+  return null;
+}
+
+function createOfflinePlayerPositionRemote(): PlayerPositionRemote {
+  return {
+    async save(position: PlayerPositionPayload): Promise<void> {
+      try {
+        localStorage.setItem(OFFLINE_PLAYER_POSITION_KEY, JSON.stringify(position));
+      } catch {
+        // Private browsing may make storage unavailable; offline play still works.
+      }
+    }
+  };
+}
+
+export function createOfflineSpaceSession(
+  prepared: PreparedOnlineSpace | null = null
+): ReadySpaceSession {
+  const savedPosition = readOfflinePlayerPosition();
+  const sourcePlayer = prepared?.payload.player;
+  const pageOrigin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
+  const configuredApiBase = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined;
+  const apiOrigin = prepared?.apiOrigin
+    || resolveApiOrigin(configuredApiBase, pageOrigin);
+  return {
+    protocol_version: 2,
+    max_online_players: 32,
+    queue_enabled: true,
+    websocket_url: '',
+    world: {
+      id: OFFLINE_WORLD_ID,
+      name: 'Offline Sandbox',
+      seed: OFFLINE_WORLD_SEED,
+      terrain_generator_version: 1,
+      terrain_revision: 0
+    },
+    player: {
+      user_id: sourcePlayer?.user_id || 'offline-player',
+      username: sourcePlayer?.username || 'Offline Player',
+      is_admin: false,
+      player_entity_id: 'offline-player',
+      skin_url: sourcePlayer?.skin_url || OFFLINE_SKIN_URL,
+      skin_type: sourcePlayer?.skin_type || 'strong',
+      start_x_cm: savedPosition?.x_cm ?? null,
+      start_y_cm: savedPosition?.y_cm ?? null,
+      start_z_cm: savedPosition?.z_cm ?? null,
+      start_yaw_q15: savedPosition?.yaw_q15 ?? null,
+      resumed: savedPosition !== null
+    },
+    mode: 'offline',
+    api_origin: apiOrigin,
+    token: prepared?.token || '',
+    skin_object_url: prepared?.skinObjectUrl || OFFLINE_SKIN_URL,
+    terrain_edit_remote: null,
+    player_position_remote: createOfflinePlayerPositionRemote(),
+    latency_monitor: null
+  };
+}
+
+export async function bootstrapSpace(): Promise<ReadySpaceSession> {
+  const prepared = await prepareOnlineSpace();
+  const admission = await requestSpaceAdmission(
+    prepared.apiOrigin,
+    prepared.token,
+    prepared.payload.world.id
+  );
+  if (admission.state !== 'admitted') {
+    throw new SpaceEntryError(
+      'BOOTSTRAP_FAILED',
+      `Space 排队 #${admission.position}`,
+      `${window.location.pathname}?mode=offline`,
+      '进入离线模式'
+    );
+  }
+  return completeOnlineSpace(prepared);
 }
 
 function renderEntryError(error: unknown) {
@@ -587,7 +785,10 @@ function renderEntryError(error: unknown) {
   }
 }
 
-export async function enterSpace(startGame: (session: ReadySpaceSession) => void | Promise<void>) {
+export async function enterSpace(
+  startGame: (session: ReadySpaceSession) => void | Promise<void>,
+  hooks: SpaceEntryHooks = {}
+) {
   const gate = document.getElementById('space-entry-gate');
   const status = document.getElementById('space-entry-status');
   const action = document.getElementById('space-entry-action') as HTMLAnchorElement | null;
@@ -596,10 +797,153 @@ export async function enterSpace(startGame: (session: ReadySpaceSession) => void
   if (action) action.hidden = true;
 
   try {
-    const session = await bootstrapSpace();
-    if (status) status.textContent = '正在加载共享远景缓存…';
-    await startGame(session);
+    const requestedMode = new URLSearchParams(window.location.search).get('mode');
+    if (requestedMode === 'offline') {
+      const session = createOfflineSpaceSession();
+      hooks.onStateChange?.({
+        mode: 'offline',
+        queuePosition: null,
+        onlineReady: false,
+        cancelQueue: null,
+        enterOnline: null
+      });
+      if (status) status.textContent = '正在加载离线世界…';
+      await startGame(session);
+      if (gate) gate.hidden = true;
+      return;
+    }
+
+    const prepared = await prepareOnlineSpace();
+    const admission = await requestSpaceAdmission(
+      prepared.apiOrigin,
+      prepared.token,
+      prepared.payload.world.id
+    );
+    if (admission.state === 'admitted') {
+      const session = await completeOnlineSpace(prepared);
+      hooks.onStateChange?.({
+        mode: 'online',
+        queuePosition: null,
+        onlineReady: false,
+        cancelQueue: null,
+        enterOnline: null
+      });
+      if (status) status.textContent = '正在加载共享远景缓存…';
+      await startGame(session);
+      if (gate) gate.hidden = true;
+      return;
+    }
+
+    let queueActive = true;
+    let queueCancelling = false;
+    let onlineReady = false;
+    let pollAfterMs = admission.poll_after_ms;
+    let pollController: AbortController | null = null;
+    let currentPoll: Promise<SpaceAdmissionStatus> | null = null;
+    let cancelBeforeUnload: (() => void) | null = null;
+    const worldId = prepared.payload.world.id;
+    const cancelQueue = async () => {
+      if (!queueActive || queueCancelling) return;
+      queueCancelling = true;
+      pollController?.abort();
+      await currentPoll?.catch(() => undefined);
+      try {
+        await cancelSpaceAdmission(prepared.apiOrigin, prepared.token, worldId);
+      } catch (error) {
+        queueCancelling = false;
+        throw error;
+      }
+      queueActive = false;
+      onlineReady = false;
+      const url = new URL(window.location.href);
+      url.searchParams.set('mode', 'offline');
+      window.history.replaceState(null, '', url);
+      hooks.onStateChange?.({
+        mode: 'offline',
+        queuePosition: null,
+        onlineReady: false,
+        cancelQueue: null,
+        enterOnline: null
+      });
+    };
+    const enterOnline = () => {
+      if (!queueActive || queueCancelling || !onlineReady) return;
+      queueActive = false;
+      if (cancelBeforeUnload) {
+        window.removeEventListener('pagehide', cancelBeforeUnload);
+      }
+      window.location.reload();
+    };
+    hooks.onStateChange?.({
+      mode: 'offline',
+      queuePosition: admission.position,
+      onlineReady: false,
+      cancelQueue,
+      enterOnline: null
+    });
+    if (status) status.textContent = `Space 排队 #${admission.position}，正在进入离线世界…`;
+    await startGame(createOfflineSpaceSession(prepared));
     if (gate) gate.hidden = true;
+
+    cancelBeforeUnload = () => {
+      if (!queueActive) return;
+      queueActive = false;
+      void cancelSpaceAdmission(
+        prepared.apiOrigin,
+        prepared.token,
+        worldId,
+        fetch,
+        true
+      ).catch(() => undefined);
+    };
+    window.addEventListener('pagehide', cancelBeforeUnload, { once: true });
+
+    void (async () => {
+      while (queueActive) {
+        await new Promise(resolve => setTimeout(resolve, pollAfterMs));
+        if (!queueActive) break;
+        if (queueCancelling) continue;
+        let poll: Promise<SpaceAdmissionStatus> | null = null;
+        try {
+          pollController = new AbortController();
+          poll = requestSpaceAdmission(
+            prepared.apiOrigin,
+            prepared.token,
+            worldId,
+            fetch,
+            pollController.signal
+          );
+          currentPoll = poll;
+          const next = await poll;
+          if (!queueActive || queueCancelling) continue;
+          pollAfterMs = next.poll_after_ms;
+          if (next.state === 'admitted') {
+            onlineReady = true;
+            hooks.onStateChange?.({
+              mode: 'offline',
+              queuePosition: null,
+              onlineReady: true,
+              cancelQueue,
+              enterOnline
+            });
+            continue;
+          }
+          onlineReady = false;
+          hooks.onStateChange?.({
+            mode: 'offline',
+            queuePosition: next.position,
+            onlineReady: false,
+            cancelQueue,
+            enterOnline: null
+          });
+        } catch {
+          // Stay in the isolated offline world and retry without disrupting play.
+        } finally {
+          if (currentPoll === poll) currentPoll = null;
+          pollController = null;
+        }
+      }
+    })();
   } catch (error) {
     renderEntryError(error);
   }

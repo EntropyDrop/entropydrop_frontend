@@ -13,6 +13,7 @@ interface SpacePageProps {
 export function SpacePage({ current }: SpacePageProps) {
     const data = current.space_page
     const spaceAppUrl = import.meta.env.VITE_SPACE_URL || '/space/app/'
+    const offlineSpaceAppUrl = `${spaceAppUrl}${spaceAppUrl.includes('?') ? '&' : '?'}mode=offline`
 
     const [activeTab, setActiveTab] = useState<'compiler' | 'voxel' | 'workflow' | 'torus'>('compiler')
     const [selectedPresetId, setSelectedPresetId] = useState<string>('hover')
@@ -98,6 +99,13 @@ export function SpacePage({ current }: SpacePageProps) {
                             <Icon icon="pixelarticons:play" className="text-xl" />
                             <span>{data.primaryCta}</span>
                             <Icon icon="pixelarticons:arrow-right" className="text-lg transition-transform group-hover:translate-x-1.5" />
+                        </a>
+                        <a
+                            href={offlineSpaceAppUrl}
+                            className={`inline-flex min-h-12 items-center justify-center gap-2 border border-green-500/35 bg-green-500/10 px-6 py-3 text-sm font-bold text-green-200 transition-all hover:border-green-400/60 hover:bg-green-500/20 hover:text-white no-underline ${current.fontClass}`}
+                        >
+                            <Icon icon="pixelarticons:cloud-off" className="text-lg" />
+                            <span>{data.offlineCta}</span>
                         </a>
                         <a
                             href="#space-sandbox"

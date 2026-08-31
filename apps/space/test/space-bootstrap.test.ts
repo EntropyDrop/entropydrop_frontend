@@ -1,15 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  cancelSpaceAdmission,
+  createOfflineSpaceSession,
   createPlayerPositionRemote,
   encodePlayerPosition,
   hasPngSignature,
   loadTerrainEditRemote,
+  OFFLINE_PLAYER_POSITION_KEY,
+  OFFLINE_WORLD_ID,
+  requestSpaceAdmission,
   resolveApiOrigin,
   resolveInitialPlayerPose,
   terrainStreamAreaForPosition,
   terrainStreamAreaForPositionWithHysteresis,
 } from '../src/bootstrap/SpaceBootstrap.ts';
+import { worldEntitiesStorageKey } from '../src/engine/contraption/ContraptionManager.ts';
+import { worldEditStorageKey } from '../src/engine/voxel/WorldEditPersistence.ts';
 
 test('Space derives the API origin from the main frontend API configuration', () => {
   assert.equal(resolveApiOrigin('http://localhost:8000/skin', 'http://localhost:5173'), 'http://localhost:8000');
@@ -188,4 +195,82 @@ test('Space wraps and saves a small authenticated position checkpoint with keepa
   assert.equal((requests[0].options.headers as any).Authorization, 'Bearer test-token');
   assert.deepEqual(JSON.parse(String(requests[0].options.body)), position);
   assert.match(requests[0].url, /players\/me\/position$/);
+});
+
+test('Space admission exposes only FIFO position and cancellation uses the same authenticated endpoint', async () => {
+  const requests: { url: string; options: RequestInit }[] = [];
+  const fetchImpl = async (url: string | URL | Request, options: RequestInit = {}) => {
+    requests.push({ url: String(url), options });
+    return new Response(JSON.stringify({
+      state: options.method === 'DELETE' ? 'cancelled' : 'queued',
+      position: 7,
+      poll_after_ms: 2000
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+
+  const status = await requestSpaceAdmission(
+    'https://api.entropydrop.com',
+    'token-queue',
+    'world-1',
+    fetchImpl as typeof fetch
+  );
+  await cancelSpaceAdmission(
+    'https://api.entropydrop.com',
+    'token-queue',
+    'world-1',
+    fetchImpl as typeof fetch
+  );
+
+  assert.deepEqual(status, { state: 'queued', position: 7, poll_after_ms: 2000 });
+  assert.equal(requests[0].options.method, 'POST');
+  assert.equal(requests[1].options.method, 'DELETE');
+  assert.equal((requests[0].options.headers as any).Authorization, 'Bearer token-queue');
+  assert.equal(requests[0].url, 'https://api.entropydrop.com/space/api/v2/worlds/world-1/admission');
+  assert.equal('estimated_wait_ms' in status, false);
+});
+
+test('offline Space isolates world, entity, and player state while retaining shared backpack storage', async () => {
+  const values = new Map<string, string>();
+  const originalStorage = (globalThis as any).localStorage;
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, String(value)),
+      removeItem: (key: string) => values.delete(key)
+    }
+  });
+  try {
+    const session = createOfflineSpaceSession();
+    assert.equal(session.mode, 'offline');
+    assert.equal(session.world.id, OFFLINE_WORLD_ID);
+    assert.equal(session.terrain_edit_remote, null);
+    assert.equal(session.latency_monitor, null);
+    assert.equal(session.token, '');
+
+    const onlineWorldId = '00000000-0000-4000-8000-000000000001';
+    assert.notEqual(worldEditStorageKey(session.world.id), worldEditStorageKey(onlineWorldId));
+    assert.notEqual(worldEntitiesStorageKey(session.world.id), worldEntitiesStorageKey(onlineWorldId));
+
+    values.set('space.backpack.v2', 'shared-backpack');
+    await session.player_position_remote.save({
+      x_cm: 10,
+      y_cm: 20,
+      z_cm: 30,
+      yaw_q15: 40,
+      pitch_q15: 0
+    });
+    assert.equal(values.get('space.backpack.v2'), 'shared-backpack');
+    assert.match(values.get(OFFLINE_PLAYER_POSITION_KEY) || '', /"x_cm":10/);
+    assert.equal(values.has(`space.player-position.${onlineWorldId}`), false);
+  } finally {
+    if (originalStorage === undefined) {
+      delete (globalThis as any).localStorage;
+    } else {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: originalStorage
+      });
+    }
+  }
 });

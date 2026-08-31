@@ -2776,7 +2776,7 @@ export class PlayerController {
     }
     this.updateInventoryPlacementPreview();
 
-    InventoryThumbnailRenderer.getInstance().invalidateCache?.(slot);
+    InventoryThumbnailRenderer.getInstance().clearCache();
 
     this.sound?.playWrenchClick?.();
     this.ui?.showToast?.(`Rotated "${slot.name || 'item'}" 90°`);

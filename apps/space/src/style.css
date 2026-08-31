@@ -5012,6 +5012,65 @@ button.palette-title:hover {
   text-decoration: none;
 }
 
+.space-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.space-entry-action.secondary {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.space-entry-action.secondary:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
 .space-entry-action:hover {
   background: #4b9d33;
+}
+
+.space-session-status {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(139, 214, 109, 0.7);
+  background: rgba(7, 10, 7, 0.9);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.42);
+  color: #d8ffd0;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  pointer-events: auto;
+}
+
+.space-session-status.queued {
+  border-color: rgba(243, 190, 71, 0.78);
+  color: #ffe5a3;
+}
+
+.space-session-status.ready {
+  border-color: rgba(112, 224, 91, 0.9);
+  color: #d8ffd0;
+}
+
+.space-session-status button {
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  padding: 3px 7px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.space-session-status button:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
