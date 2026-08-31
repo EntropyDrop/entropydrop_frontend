@@ -4186,9 +4186,8 @@ export class PlayerController {
     return true;
   }
 
-  update(dt) {
-    this.processBulkEditFrame();
-
+  updateSimulation(dt) {
+    if (this.isDriving) this.physics.capturePreviousPosition?.();
     if (!this.syncDrivenVehiclePose()) {
       this.physics.update(dt, this.keys, this.yaw);
     }
@@ -4253,14 +4252,25 @@ export class PlayerController {
     } else {
       this.sceneRenderer?.setWrenchTether?.(null, null);
     }
+  }
 
+  updateRender() {
+    this.processBulkEditFrame();
+    this.updateCameraPosition();
+  }
+
+  /** Compatibility one-call form used by focused controller tests. The game
+   * loop invokes updateSimulation at 20 Hz and updateRender on every RAF. */
+  update(dt) {
+    this.processBulkEditFrame();
+    this.updateSimulation(dt);
     this.updateCameraPosition();
   }
 
   /**
    * Refresh crosshair picking after all scene kinematics have advanced.
-   * Game.animate calls this after ContraptionManager.update so moving child
-   * components are tested at the same transform that will be rendered.
+   * Game.animate calls this after ContraptionManager.update so interactions use
+   * the latest solved pose before presentation-only interpolation is applied.
    */
   updateAimRaycast() {
     // This pass runs after ContraptionManager.update(), so it is the first

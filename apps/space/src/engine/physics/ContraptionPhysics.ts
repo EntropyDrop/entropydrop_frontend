@@ -1,14 +1,12 @@
 import * as THREE from 'three';
 import { BlockTypes } from '../voxel/BlockTypes.ts';
 import { BodyType } from '../contraption/Contraption.ts';
+import { PHYSICS_SUBSTEPS_PER_ENTITY_UPDATE } from '../simulation/EntitySimulationClock.ts';
 import type { World } from '../voxel/World.ts';
 
 const ENTITY_BROADPHASE_CELL_SIZE = 32;
 const ENTITY_SWEEP_THRESHOLD = 0.05;
 const TERRAIN_SWEEP_THRESHOLD = 0.1;
-const MIN_PHYSICS_SUBSTEPS = 2;
-const MAX_PHYSICS_SUBSTEPS = 16;
-const MAX_SUBSTEP_SURFACE_TRAVEL = 0.15;
 const ENTITY_CONTACT_ITERATIONS = 10;
 const EXACT_TERRAIN_CONTACT_SLOP = 0.005;
 // Entity contacts share the terrain resting rules: separation leaves one
@@ -63,8 +61,8 @@ export class ContraptionPhysics {
   }
 
   /**
-   * Begin one contraption's physics frame: snapshot the accumulated script
-   * forces, reset ground flags, and choose the adaptive substep count.
+   * Begin one fixed entity update: snapshot the accumulated script forces and
+   * split its 50 ms interval into three immutable 60 Hz physics substeps.
    */
   prepareContraptionFrame(contraption, dt) {
     if (!contraption || !(dt > 0)) return null;
@@ -85,21 +83,7 @@ export class ContraptionPhysics {
       body.isOnGround = false;
     }
 
-    const radius = Math.max(0.5, Number(contraption.boundingRadius) || 0.5);
-    let estimatedSurfaceTravel = 0;
-    for (const body of dynamicBodies) {
-      const input = frameInputs.get(body.id);
-      const linearAcceleration = (input?.force?.length?.() || 0) / Math.max(0.1, body.mass || 0.1)
-        + (body.id === 'root' && contraption.useGravity === false ? 0 : this.gravity.length());
-      const angularAcceleration = (input?.torque?.length?.() || 0) * Math.max(0, body.inverseInertia || 0);
-      const linearTravel = (body.velocity.length() + linearAcceleration * dt) * dt;
-      const angularTravel = (body.angularVelocity.length() + angularAcceleration * dt) * radius * dt;
-      estimatedSurfaceTravel = Math.max(estimatedSurfaceTravel, linearTravel + angularTravel);
-    }
-    const subSteps = Math.max(
-      MIN_PHYSICS_SUBSTEPS,
-      Math.min(MAX_PHYSICS_SUBSTEPS, Math.ceil(estimatedSurfaceTravel / MAX_SUBSTEP_SURFACE_TRAVEL))
-    );
+    const subSteps = PHYSICS_SUBSTEPS_PER_ENTITY_UPDATE;
     return {
       contraption,
       dynamicBodies,
@@ -109,7 +93,7 @@ export class ContraptionPhysics {
     };
   }
 
-  /** Run exactly one adaptive substep: integrate, solve constraints, then
+  /** Run exactly one fixed substep: integrate, solve constraints, then
    * resolve terrain contacts with the same body poses every other entity
    * currently has, so entity-pair collision can run between substeps. */
   stepContraptionFrame(frame) {
@@ -297,6 +281,16 @@ export class ContraptionPhysics {
    * entity contacts are caught at the same cadence as terrain contacts.
    */
   resolveContraptionPairs(contraptions, dt = 1 / 60, broadphaseBounds = null) {
+    return this.resolvePreparedContraptionPairs(
+      this.prepareContraptionPairFrame(contraptions, broadphaseBounds),
+      dt
+    );
+  }
+
+  /** Build the spatial-hash candidate set once for a whole entity update.
+   * Its broadphase bounds already cover all three fixed physics substeps, so
+   * rebuilding identical buckets only creates garbage. */
+  prepareContraptionPairFrame(contraptions, broadphaseBounds = null) {
     const colliders = (contraptions || []).filter(c => c?.getRigidBodies?.().length > 0);
     const buckets = new Map<string, number[]>();
     const candidates = new Map<string, [number, number]>();
@@ -328,12 +322,18 @@ export class ContraptionPhysics {
     const dynamicCandidates = [...candidates.values()].filter(([a, b]) => (
       this.isDynamicCollider(colliders[a]) || this.isDynamicCollider(colliders[b])
     ));
+    return { colliders, dynamicCandidates };
+  }
+
+  resolvePreparedContraptionPairs(pairFrame, dt = 1 / 60) {
+    const colliders = pairFrame?.colliders || [];
+    const dynamicCandidates = pairFrame?.dynamicCandidates || [];
     for (let iteration = 0; iteration < ENTITY_CONTACT_ITERATIONS; iteration++) {
       let resolvedContacts = 0;
       for (const [a, b] of dynamicCandidates) {
         // Every correction changes all world-space boxes on that body. Fresh
         // boxes let the solver propagate support through a stack instead of
-        // leaving the next pair embedded until the following rendered frame.
+        // leaving the next pair embedded until the following entity update.
         const boxesA = colliders[a].getCollisionWorldAABBs?.() || [];
         const boxesB = colliders[b].getCollisionWorldAABBs?.() || [];
         if (this.resolveContraptionPair(
@@ -356,7 +356,7 @@ export class ContraptionPhysics {
    */
   contraptionBroadphaseBounds(contraption) {
     const radius = Math.max(0.5, Number(contraption.boundingRadius) || 0.5) + 0.5;
-    const boxes = contraption.getCollisionWorldAABBs?.() || [];
+    const boxes = contraption.getCollisionWorldAABBs?.(true) || [];
     if (boxes.length === 0) {
       return {
         minX: contraption.position.x - radius,
@@ -768,6 +768,14 @@ export class ContraptionPhysics {
 
     for (const ba of boxesA) {
       for (const bb of boxesB) {
+        // min/max include both previous and current poses. If these swept
+        // hulls are disjoint, neither the current SAT nor CCD can possibly
+        // produce a contact, so avoid all body lookup/vector allocation work.
+        if (
+          ba.maxX < bb.minX || ba.minX > bb.maxX
+          || ba.maxY < bb.minY || ba.minY > bb.maxY
+          || ba.maxZ < bb.minZ || ba.minZ > bb.maxZ
+        ) continue;
         const bodyA = a.getRigidBody?.(ba.bodyId || ba.entityId || 'root');
         const bodyB = b.getRigidBody?.(bb.bodyId || bb.entityId || 'root');
         if (!bodyA || !bodyB || (bodyA.type !== BodyType.DYNAMIC && bodyB.type !== BodyType.DYNAMIC)) continue;
@@ -977,24 +985,37 @@ export class ContraptionPhysics {
     if (!contraption || !body) return [];
     const attached = contraption.getAttachedNodeIds?.(body.id) || new Set([body.id]);
     const boxes = [];
-    for (const cell of contraption.collisionEntries || []) {
+    const nodeTransforms = new Map();
+    for (const cell of contraption.collisionSurfaceEntries || contraption.collisionEntries || []) {
       if (!attached.has(cell.entityId)) continue;
       if (contraption.isNodeCollisionEnabled?.(cell.entityId) === false) continue;
       const node = contraption.getEntityNode?.(cell.entityId) || contraption.getEntityNode?.('root');
-      const quaternion = node?.group?.getWorldQuaternion?.(new THREE.Quaternion())
-        || body.quaternion.clone();
-      const axes = [
-        new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion).normalize(),
-        new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize(),
-        new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).normalize()
-      ];
+      let transform = nodeTransforms.get(cell.entityId);
+      if (!transform) {
+        node?.group?.updateWorldMatrix?.(true, false);
+        const quaternion = node?.group?.getWorldQuaternion?.(new THREE.Quaternion())
+          || body.quaternion.clone();
+        transform = {
+          matrix: node?.group?.matrixWorld || null,
+          pivot: node?.pivotLocal || new THREE.Vector3(),
+          axes: [
+            new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion).normalize(),
+            new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize(),
+            new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).normalize()
+          ]
+        };
+        nodeTransforms.set(cell.entityId, transform);
+      }
+      const axes = transform.axes;
       const size = cell.span * 0.2;
       const halfExtents = [size / 2, size / 2, size / 2];
-      const center = contraption.entityLocalToWorld(cell.entityId, new THREE.Vector3(
+      const center = new THREE.Vector3(
         (cell.x + cell.span / 2) * 0.2,
         (cell.y + cell.span / 2) * 0.2,
         (cell.z + cell.span / 2) * 0.2
-      ));
+      );
+      if (transform.matrix) center.sub(transform.pivot).applyMatrix4(transform.matrix);
+      else center.copy(contraption.localToWorld(center));
       const radiusX = halfExtents.reduce((sum, half, index) => sum + half * Math.abs(axes[index].x), 0);
       const radiusY = halfExtents.reduce((sum, half, index) => sum + half * Math.abs(axes[index].y), 0);
       const radiusZ = halfExtents.reduce((sum, half, index) => sum + half * Math.abs(axes[index].z), 0);
@@ -1074,9 +1095,15 @@ export class ContraptionPhysics {
 
   terrainBoxesOverlapping(obb) {
     const boxes = [];
-    for (let x = Math.floor(obb.minX); x <= Math.floor(obb.maxX); x++) {
-      for (let y = Math.floor(obb.minY); y <= Math.floor(obb.maxY); y++) {
-        for (let z = Math.floor(obb.minZ); z <= Math.floor(obb.maxZ); z++) {
+    // SAT requires positive overlap, so a box whose maximum lies exactly on a
+    // voxel boundary does not overlap the cell on the far side. Half-open
+    // ranges turn the common aligned case from eight queries into one.
+    const maxX = Math.floor(obb.maxX - 1e-7);
+    const maxY = Math.floor(obb.maxY - 1e-7);
+    const maxZ = Math.floor(obb.maxZ - 1e-7);
+    for (let x = Math.floor(obb.minX); x <= maxX; x++) {
+      for (let y = Math.floor(obb.minY); y <= maxY; y++) {
+        for (let z = Math.floor(obb.minZ); z <= maxZ; z++) {
           if (this.world.getBlock(x, y, z) === BlockTypes.AIR) continue;
           boxes.push({ minX: x, maxX: x + 1, minY: y, maxY: y + 1, minZ: z, maxZ: z + 1 });
         }
@@ -1105,9 +1132,12 @@ export class ContraptionPhysics {
         });
       }
     } else if (typeof (this.world as any).getMicroBlock === 'function') {
-      for (let mx = Math.floor(obb.minX * 5); mx <= Math.floor(obb.maxX * 5); mx++) {
-        for (let my = Math.floor(obb.minY * 5); my <= Math.floor(obb.maxY * 5); my++) {
-          for (let mz = Math.floor(obb.minZ * 5); mz <= Math.floor(obb.maxZ * 5); mz++) {
+      const maxMx = Math.floor(obb.maxX * 5 - 1e-7);
+      const maxMy = Math.floor(obb.maxY * 5 - 1e-7);
+      const maxMz = Math.floor(obb.maxZ * 5 - 1e-7);
+      for (let mx = Math.floor(obb.minX * 5); mx <= maxMx; mx++) {
+        for (let my = Math.floor(obb.minY * 5); my <= maxMy; my++) {
+          for (let mz = Math.floor(obb.minZ * 5); mz <= maxMz; mz++) {
             const micro = (this.world as any).getMicroBlock(mx, my, mz);
             if (micro === null || micro === undefined) continue;
             boxes.push({
@@ -1249,7 +1279,10 @@ export class ContraptionPhysics {
       if (overtravel <= 0) continue;
       return {
         normal,
-        penetration: overtravel + 0.001,
+        // solveTerrainContact retains one millimetre of resting slop. Add a
+        // second millimetre here so a swept sample finishes strictly outside
+        // the entry plane and the next fixed substep can sweep it again.
+        penetration: overtravel + 0.002,
         hitPosition: start.clone().addScaledVector(direction, hit.distance)
       };
     }
@@ -1575,9 +1608,9 @@ export class ContraptionPhysics {
       addContact(exactContact, exactContact.hitPosition);
     }
 
-    // Resolve independent exposed faces in one sub-step (for example floor +
-    // wall at a corner). The ground flag is reset once per frame by update(),
-    // so a contact found in any adaptive sub-step remains stable for that frame.
+    // Resolve independent exposed faces in one substep (for example floor +
+    // wall at a corner). The ground flag is reset once per entity update, so a
+    // contact found in any of its three substeps remains stable for that update.
     const groups = [...contacts.values()].sort((a, b) => b.penetration - a.penetration);
     for (const group of groups) {
       group.hitPosition.divideScalar(group.count);
@@ -1589,6 +1622,16 @@ export class ContraptionPhysics {
         group.points,
         dt
       );
+    }
+    // Solving another face can reintroduce a small inward centre velocity on a
+    // face that was handled earlier. Project all resolved normals once more so
+    // a sustained force cannot ratchet a body through a wall between fixed
+    // substeps.
+    for (const group of groups) {
+      const inwardVelocity = body.velocity.dot(group.normal);
+      if (inwardVelocity < 0) {
+        body.velocity.addScaledVector(group.normal, -inwardVelocity);
+      }
     }
   }
 

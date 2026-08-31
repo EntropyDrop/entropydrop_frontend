@@ -14,6 +14,9 @@ export class PlayerPhysics {
 
   // Player position (bottom center of bounding box)
   position: THREE.Vector3;
+  previousPosition: THREE.Vector3;
+  renderSimulationPosition: THREE.Vector3;
+  renderInterpolated: boolean;
   velocity: THREE.Vector3;
 
   // Dimensions
@@ -45,6 +48,9 @@ export class PlayerPhysics {
 
     // Player position (bottom center of bounding box)
     this.position = new THREE.Vector3(8, 20, 8);
+    this.previousPosition = this.position.clone();
+    this.renderSimulationPosition = this.position.clone();
+    this.renderInterpolated = false;
     this.velocity = new THREE.Vector3(0, 0, 0);
 
     // Dimensions
@@ -96,7 +102,32 @@ export class PlayerPhysics {
     };
   }
 
+  resetRenderInterpolation() {
+    this.previousPosition.copy(this.position);
+    this.renderSimulationPosition.copy(this.position);
+    this.renderInterpolated = false;
+  }
+
+  capturePreviousPosition() {
+    this.previousPosition.copy(this.position);
+  }
+
+  beginRenderInterpolation(alpha) {
+    if (this.renderInterpolated) return;
+    const amount = Math.max(0, Math.min(1, Number(alpha) || 0));
+    this.renderSimulationPosition.copy(this.position);
+    this.position.lerpVectors(this.previousPosition, this.renderSimulationPosition, amount);
+    this.renderInterpolated = true;
+  }
+
+  endRenderInterpolation() {
+    if (!this.renderInterpolated) return;
+    this.position.copy(this.renderSimulationPosition);
+    this.renderInterpolated = false;
+  }
+
   update(dt, moveInput, cameraYaw) {
+    this.capturePreviousPosition();
     if (dt > 0.1) dt = 0.1;
 
     // 1. Moving Platform Attachment (Ride on moving contraptions smoothly)

@@ -4,6 +4,7 @@ import { World } from './engine/voxel/World.ts';
 import { PlayerPhysics } from './engine/physics/PlayerPhysics.ts';
 import { ContraptionPhysics } from './engine/physics/ContraptionPhysics.ts';
 import { ContraptionManager } from './engine/contraption/ContraptionManager.ts';
+import { EntitySimulationClock } from './engine/simulation/EntitySimulationClock.ts';
 import { PlayerController } from './engine/controls/PlayerController.ts';
 import { SoundManager } from './engine/audio/SoundManager.ts';
 import { ParticleSystem } from './engine/render/ParticleSystem.ts';
@@ -50,6 +51,7 @@ class Game {
   navigationSystem: NavigationSystem;
   controller: PlayerController;
   clock: THREE.Clock;
+  entitySimulationClock: EntitySimulationClock;
   frameCount: number;
   lastFpsTime: number;
   currentFps: number;
@@ -162,6 +164,7 @@ class Game {
 
     // 4. Clock & FPS tracking
     this.clock = new THREE.Clock();
+    this.entitySimulationClock = new EntitySimulationClock();
     this.frameCount = 0;
     this.lastFpsTime = performance.now();
     this.currentFps = 60;
@@ -230,6 +233,7 @@ class Game {
     this.world.updateChunksAround(pose.x, pose.z);
 
     this.playerPhysics.position.set(pose.x, pose.y, pose.z);
+    this.playerPhysics.resetRenderInterpolation();
     this.sceneRenderer.camera.position.copy(this.playerPhysics.getEyePosition());
 
     // The initial view follows the inner-ring horizon; look up through the central hole to see the opposite surface.
@@ -352,28 +356,43 @@ class Game {
       this.lastFpsTime = now;
     }
 
-    // 1. Update Player & Controls
-    this.controller.update(dt);
-    // 2. Stream World Chunks around Player. Entity streaming consumes this
-    // exact active window below, so chunks must be current before entities run.
+    // Render-owned work remains responsive at the display refresh rate. Player
+    // movement, entity code, and entity physics advance only on the immutable
+    // 20 Hz simulation clock below.
+    this.controller.updateRender();
+    const simulation = this.entitySimulationClock.advance(dt, simulationDt => {
+      this.controller.updateSimulation(simulationDt);
+
+      // Entity streaming consumes this exact active window, so chunks must be
+      // current after player movement and before entities run.
+      const simulationPlayerPos = this.playerPhysics.position;
+      this.world.updateChunksAround(simulationPlayerPos.x, simulationPlayerPos.z);
+
+      const entityInput = this.controller.consumeEntityInputFrame();
+      this.contraptionManager.update(simulationDt, entityInput);
+
+      // A contraption can move into the player after the player's own physics
+      // step. Resolve that new overlap now. Mounted players are re-seated by
+      // updateAimRaycast after the vehicle's solved pose is available.
+      if (!this.controller.isDriving) {
+        this.playerPhysics.resolveDynamicContraptionOverlaps();
+      }
+    });
+
     const playerPos = this.playerPhysics.position;
     this.world.updateChunksAround(playerPos.x, playerPos.z);
     this.ensureTerrainArea(playerPos.x, playerPos.z);
 
-    // 3. Update Contraptions & Physics Simulation
-    const entityInput = this.controller.consumeEntityInputFrame();
-    this.contraptionManager.update(dt, entityInput);
-
-    // A contraption can move into the player after the player's own physics
-    // step. Resolve that new overlap now and keep the camera in sync. Mounted
-    // players intentionally remain attached to the driven entity.
-    if (!this.controller.isDriving && this.playerPhysics.resolveDynamicContraptionOverlaps()) {
-      this.controller.camera.position.copy(this.playerPhysics.getEyePosition());
-    }
-
     // Pick only after programmable child motion and rigid-body physics have
-    // finished. Rendering uses these same transforms later in this frame.
+    // finished, before presentation-only interpolation changes the scene graph.
     this.controller.updateAimRaycast();
+
+    // Physics state stays on exact 50 ms boundaries. Only the temporary scene
+    // graph pose is interpolated for this render, then restored below.
+    this.contraptionManager.beginRenderInterpolation(simulation.alpha);
+    this.playerPhysics.beginRenderInterpolation(simulation.alpha);
+    this.controller.syncDrivenVehiclePose();
+    this.controller.updateCameraPosition();
 
     // 4. Update Particles
     this.particleSystem.update(dt);
@@ -446,6 +465,8 @@ class Game {
 
     // 8. Render 3D Scene
     this.sceneRenderer.render();
+    this.playerPhysics.endRenderInterpolation();
+    this.contraptionManager.endRenderInterpolation();
   }
 }
 

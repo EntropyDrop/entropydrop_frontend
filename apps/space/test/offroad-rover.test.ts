@@ -92,7 +92,7 @@ test('off-road rover blueprint has four visual wheels and real raycast struts', 
   const rover = buildRover();
   assert.equal(rover.entityNodes.size, 5);
   assert.equal(rover.getCollisionWorldAABBs().length, 20, 'only the chassis collides');
-  assert.equal(rover.getCollisionSamplePoints('root', true).length, 20 * 9);
+  assert.equal(rover.getCollisionSamplePoints('root', true).length, 20 * 10);
 
   const controller = Object.create(PlayerController.prototype) as any;
   controller.inventoryItemName = () => 'Suspension Rover';

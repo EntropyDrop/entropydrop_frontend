@@ -128,7 +128,7 @@ const dy = playerPos[1] - ctx.position[1]; // no wrap on Y</code></pre>
               <tr><td><code>entityId</code></td><td>string</td><td>Stable random ID of the current entity, also shown in the Behavior Terminal header</td></tr>
               <tr><td><code>root</code></td><td>ComponentAPI</td><td>Root component and entry point for recursive tree traversal</td></tr>
               <tr><td><code>time</code></td><td>number</td><td>Seconds with at least one component script enabled; Pause freezes it and Stop resets it</td></tr>
-              <tr><td><code>deltaTime</code></td><td>number</td><td>Current simulation step in seconds — use it only when explicitly integrating a rate</td></tr>
+              <tr><td><code>deltaTime</code></td><td>number</td><td>Fixed entity simulation step: always <code>0.05</code> seconds (20 Hz). The engine owns this rate and code cannot change it</td></tr>
               <tr><td><code>tick</code></td><td>number</td><td>Executed script-frame count; Pause freezes it and Stop resets it</td></tr>
               <tr><td><code>position</code></td><td>[x,y,z]</td><td>Root entity world position</td></tr>
               <tr><td><code>velocity</code></td><td>[x,y,z]</td><td>World-space velocity (m/s)</td></tr>
@@ -192,7 +192,7 @@ const dy = playerPos[1] - ctx.position[1]; // no wrap on Y</code></pre>
               <tr><td><code>self.setLocalPosition([x,y,z])</code></td><td>Set kinematic-child position relative to the parent, or kinematic-root world position</td></tr>
               <tr><td><code>self.setLocalEuler([x,y,z])</code></td><td>Set kinematic-child relative orientation, or kinematic-root world orientation, as Euler angles (radians, YXZ order)</td></tr>
               <tr><td><code>self.setLocalRotation([x,y,z,w])</code></td><td>Set kinematic-child relative orientation, or kinematic-root world orientation, as a quaternion</td></tr>
-              <tr><td><code>self.setLocalSpin([ax,ay,az], rpm)</code></td><td>Spin continuously around a local axis at the given RPM; call every frame to sustain the speed</td></tr>
+              <tr><td><code>self.setLocalSpin([ax,ay,az], rpm)</code></td><td>Spin continuously around a local axis at the given RPM; call every entity tick to sustain the speed</td></tr>
               <tr><td><code>self.getLocalPosition()</code></td><td>Returns current local position as <code>[x,y,z]</code></td></tr>
               <tr><td><code>self.getLocalRotation()</code></td><td>Returns current local quaternion as <code>[x,y,z,w]</code></td></tr>
               <tr><td><code>self.setPivot([x,y,z])</code></td><td>Update a kinematic body's rotation center explicitly (entity-local coordinates, same frame as <code>getBounds()</code>). The pivot does <b>not</b> auto-update when blocks change. Dynamic bodies use their physical center of mass. Rebuilding the hierarchy invalidates previously obtained component APIs — re-fetch with <code>self.child(id)</code></td></tr>
@@ -259,7 +259,7 @@ visit(ctx.root);</code></pre>
             <li>The <b>pivot is never updated automatically</b>: adding, removing, repainting or subdividing blocks keeps the old rotation center. Update it explicitly with <code>self.getBounds()</code> → <code>self.setPivot(bounds.center)</code> (blocks stay in place; only the axis moves).</li>
           </ul>
           <pre class="api-code"><code>// Root script: keep a component's pivot centered on its current block layout.
-// No registration needed — just query every frame (like ctx.input).
+// No registration needed — just query every entity tick (like ctx.input).
 if (ctx.blocks.pressed()) {
   const arm = self.child('arm');
   if (arm) {
@@ -280,7 +280,7 @@ if (ctx.blocks.pressed()) {
             <thead><tr><th>Method</th><th>Description</th></tr></thead>
             <tbody>
               <tr><td><code>ctx.world.apiVersion</code></td><td>Current world API version: <code>2</code></td></tr>
-              <tr><td><code>ctx.world.voxels.get([x,y,z])</code></td><td>Read the current script frame's standard-write overlay; cells not written this frame currently return air</td></tr>
+              <tr><td><code>ctx.world.voxels.get([x,y,z])</code></td><td>Read the current entity tick's standard-write overlay; cells not written this tick currently return air</td></tr>
               <tr><td><code>ctx.world.voxels.set([x,y,z], options?)</code></td><td>Queue one standard voxel placement. An admitted result is provisional <code>{ok:true,placed:1,reason:'queued'}</code>; a full buffer returns <code>{ok:false,placed:0,reason:'command_limit'}</code>. The main thread validates occupancy and bounds before commit</td></tr>
               <tr><td><code>ctx.world.voxels.clear([x,y,z])</code></td><td>Queue removal of one standard voxel without deleting micro voxels in that cell</td></tr>
               <tr><td><code>ctx.world.voxels.paint([x,y,z], options?)</code></td><td>Queue repainting one existing standard world voxel</td></tr>
@@ -319,7 +319,7 @@ if (ctx.blocks.pressed()) {
             </tbody>
           </table>
           <p class="api-sub">Assembly defaults: <code>bodyType: 'dynamic'</code>, <code>restitution: 0.1</code>, <code>friction: 0.7</code>, gravity enabled for dynamic bodies and disabled for kinematic bodies, and mass equal to owned block count × 10 kg (minimum 0.1 kg). Restitution/friction clamp to [0,1]; invalid mass falls back to the block-count default. Reasons are <code>assembled</code>, <code>no_selection</code>, <code>empty</code>, and <code>invalid_mode</code>; failures return null IDs, and an invalid mode is rejected before changing the selection or world.</p>
-          <p class="api-sub">Mouse selector input and entity code dispatch through the same engine action layer, but the mouse adapter retains its own active interaction selection for R/T/Delete. Script-created selections should therefore be read and consumed through <code>ctx.selection</code>. Gate destructive operations with <code>self.state</code> or an input edge so they run once, not on every script frame.</p>
+          <p class="api-sub">Mouse selector input and entity code dispatch through the same engine action layer, but the mouse adapter retains its own active interaction selection for R/T/Delete. Script-created selections should therefore be read and consumed through <code>ctx.selection</code>. Gate destructive operations with <code>self.state</code> or an input edge so they run once, not on every entity tick.</p>
         </div>
 
         <!-- ================= input ================= -->

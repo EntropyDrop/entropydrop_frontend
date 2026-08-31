@@ -121,6 +121,39 @@ self.state.frozen = Object.isFrozen(hit) && Object.isFrozen(hit.normal) && Objec
   assert.equal(contraption.getComponentState('root').frozen, true);
 });
 
+test('entity code receives the engine-owned fixed simulation step', () => {
+  const contraption = entity(10, [
+    { id: 'arm', parentId: 'root', pivot: [1.5, 0.5, 0.5], blockKeys: [['1', '0', '0']] }
+  ]);
+  contraption.setScript(`
+self.state.runs = (self.state.runs || 0) + 1;
+self.state.tickRateType = typeof ctx.setTickRate;
+self.state.deltaTime = ctx.deltaTime;
+if (ctx.input.pressed('KeyW')) self.state.presses = (self.state.presses || 0) + 1;
+if (ctx.input.released('KeyW')) self.state.releases = (self.state.releases || 0) + 1;
+self.applyForce([0, 10, 0]);
+self.child('arm').setLocalSpin([0, 1, 0], 60);
+`);
+
+  const step = input => contraption.update(0.05, input, {});
+  step({ down: new Set(['KeyW']), pressed: new Set(['KeyW']), released: new Set() });
+  const arm = contraption.getEntityNode('arm');
+  const rotation = arm.localQuaternion.clone();
+
+  contraption.appliedForces.set(0, 0, 0);
+  step({ down: new Set(), pressed: new Set(), released: new Set(['KeyW']) });
+
+  const state = contraption.getComponentState('root');
+  assert.equal(contraption.tickCount, 2);
+  assert.equal(state.runs, 2);
+  assert.equal(state.tickRateType, 'undefined');
+  assert.equal(state.deltaTime, 0.05);
+  assert.equal(state.presses, 1);
+  assert.equal(state.releases, 1);
+  assert.ok(!arm.localQuaternion.equals(rotation));
+  assert.equal(contraption.appliedForces.y, 10);
+});
+
 test('untrusted force vectors cannot introduce non-finite physics state', () => {
   const contraption = entity(5);
   contraption.setScript(`

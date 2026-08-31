@@ -18,7 +18,7 @@ if (wheel) {
   wheel.setLocalSpin([0, 0, 1], wheelRpm);
 }
 
-if (ctx.tick % 180 === 0) {
+if (ctx.tick % 60 === 0) {
   ctx.log('[Ferris wheel] wheel runs at 4 RPM; dynamic cabins hang on hinges');
 }
 `

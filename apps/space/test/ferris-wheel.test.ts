@@ -33,6 +33,8 @@ test('ferris wheel uses kinematic drive and dynamic hinge cabins', () => {
   const cabins = [...contraption.entityNodes.values()].filter(node => node.parentId === 'wheel');
   assert.equal(contraption.bodyType, BodyType.KINEMATIC);
   assert.equal(contraption.getNodeBodyType('wheel'), BodyType.KINEMATIC);
+  assert.doesNotMatch(contraption.scriptCode, /setTickRate/);
+  assert.match(contraption.scriptCode, /wheel\.setLocalSpin\(\[0, 0, 1\], wheelRpm\)/);
   assert.equal(cabins.length, 8);
   assert.ok(cabins.every(node => contraption.getNodeBodyType(node.id) === BodyType.DYNAMIC));
   assert.ok(cabins.every(node => contraption.blocks.some(block => block.entityId === node.id)));
@@ -49,9 +51,9 @@ test('ferris wheel uses kinematic drive and dynamic hinge cabins', () => {
     getBlock: () => BlockTypes.AIR
   });
 
-  for (let frame = 0; frame < 180; frame++) {
-    contraption.update(1 / 60, null, { gravity: [0, -18, 0], world: null });
-    physics.update(contraption, 1 / 60);
+  for (let tick = 0; tick < 60; tick++) {
+    contraption.update(0.05, null, { gravity: [0, -18, 0], world: null });
+    physics.update(contraption, 0.05);
   }
   contraption.rootGroup.updateMatrixWorld(true);
 
@@ -67,4 +69,18 @@ test('ferris wheel uses kinematic drive and dynamic hinge cabins', () => {
   assert.ok(anchorA.distanceTo(anchorB) < 0.08, 'hinge anchors should remain together');
   assert.ok(cabinUp.y > 0.8, 'gravity should keep the dynamic cabin mostly upright');
   assert.ok(startRotation.angleTo(endRotation) > 0.001, 'the cabin orientation should be solved physically, not frozen by counter-spin code');
+  assert.equal(contraption.tickCount, 60);
+  assert.equal(contraption.scriptRuntimeClient.initialized, true);
+
+  const runningRotation = wheel.localQuaternion.clone();
+  contraption.stopAllNodeScripts();
+  contraption.update(0.05, null, { gravity: [0, -18, 0], world: null });
+  assert.ok(wheel.localQuaternion.equals(new THREE.Quaternion()), 'stop resets scripted motion to its authored pose');
+  const stoppedRotation = wheel.localQuaternion.clone();
+  contraption.update(0.05, null, { gravity: [0, -18, 0], world: null });
+  assert.ok(wheel.localQuaternion.equals(stoppedRotation), 'stopped script must remain still');
+  contraption.enableAllNodeScripts();
+  contraption.update(0.05, null, { gravity: [0, -18, 0], world: null });
+  assert.ok(!wheel.localQuaternion.equals(stoppedRotation), 'enabling components resumes the scripted controller');
+  assert.ok(!runningRotation.equals(new THREE.Quaternion()), 'wheel had rotated before stop');
 });

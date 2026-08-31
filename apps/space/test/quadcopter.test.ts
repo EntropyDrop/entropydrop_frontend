@@ -30,7 +30,7 @@ test('micro voxels keep their own 0.2-unit collision boxes', () => {
   assert.equal(contraption.getLocalBlock(1.3, 0.3, 0.3), BlockTypes.COLOR_BLOCK);
   // ...and empty micro cells no longer inherit the parent cell.
   assert.equal(contraption.getLocalBlock(0.95, 0.05, 0.95), 0);
-  assert.equal(contraption.getCollisionSamplePoints().length, 27);
+  assert.equal(contraption.getCollisionSamplePoints().length, 30);
   const boxes = contraption.getCollisionWorldAABBs()
     .map(box => JSON.stringify([box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ]))
     .sort();
@@ -89,7 +89,7 @@ test('quadcopter uses four plain child propellers: spin + per-component thrust',
   assert.equal(contraption.blocks.filter(b => (b.entityId || 'root') === 'rotor_nw').length, 11);
   // 14 standard blocks + 44 micro blocks = one collision box per voxel.
   assert.equal(contraption.collisionCellCount, 58);
-  assert.equal(contraption.getCollisionSamplePoints().length, 58 * 9);
+  assert.equal(contraption.getCollisionSamplePoints().length, 58 * 10);
 
   // Level hover: each propeller supplies one quarter of lift and spins.
   contraption.groundDistance = 4.5;

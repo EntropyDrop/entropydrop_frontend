@@ -126,6 +126,14 @@ const SCRIPT_COMPONENT_COMMANDS = new Set([
   'voxels.paint', 'voxels.clearCell', 'voxels.subdivide', 'microVoxels.set', 'microVoxels.clear',
   'microVoxels.paint'
 ]);
+// These commands describe continuous physical output. If a runtime is still
+// finishing an earlier request, its latest output remains held instead of
+// dropping a motor or force command for one fixed simulation update.
+const LATCHED_SCRIPT_COMPONENT_COMMANDS = new Set([
+  'applyThrust', 'setLocalPosition', 'setLocalRotation', 'setLocalEuler', 'setLocalSpin',
+  'applyForce', 'applyLocalForce', 'applyForceAt', 'applyTorque',
+  'body.applyForce', 'body.applyLocalForce', 'body.applyTorque'
+]);
 const SCRIPT_WORLD_COMMANDS = new Set([
   'voxels.set', 'voxels.clear', 'voxels.paint', 'voxels.clearCell', 'voxels.subdivide',
   'microVoxels.set', 'microVoxels.clear', 'microVoxels.paint'
@@ -253,6 +261,8 @@ export interface EntityNode {
   children: Set<string>;
   kind?: string;
   previousWorldMatrix?: THREE.Matrix4;
+  previousLocalPosition?: THREE.Vector3;
+  previousLocalQuaternion?: THREE.Quaternion;
   bodyType: string;
 }
 
@@ -319,6 +329,11 @@ export class Contraption {
   // --- Physics state ---
   position: THREE.Vector3;
   quaternion: THREE.Quaternion;
+  previousPosition: THREE.Vector3;
+  previousQuaternion: THREE.Quaternion;
+  renderSimulationPosition: THREE.Vector3;
+  renderSimulationQuaternion: THREE.Quaternion;
+  renderInterpolated: boolean;
   velocity: THREE.Vector3;
   angularVelocity: THREE.Vector3;
   voxelVolume: number;
@@ -346,7 +361,13 @@ export class Contraption {
    *  voxel, 1 for a micro voxel). */
   collisionCells: Array<{ x: number; y: number; z: number; span: number }>;
   collisionEntries: Array<{ x: number; y: number; z: number; span: number; entityId: string }>;
+  /** Collision entries that can actually reach the exterior of their node's
+   * voxel union. Fully enclosed voxels never contribute a contact. */
+  collisionSurfaceEntries: Array<{ x: number; y: number; z: number; span: number; entityId: string }>;
   collisionCellCount: number;
+  collisionPoseVersion: number;
+  collisionWorldAabbCache: { version: number; all?: any[]; surface?: any[] } | null;
+  collisionSamplePointCache: Map<string, { version: number; points: THREE.Vector3[] }>;
 
   // --- Applied forces ---
   appliedForces: THREE.Vector3;
@@ -381,6 +402,11 @@ export class Contraption {
   tickCount: number;
   scriptRuntime: number;
   totalRuntime: number;
+  latchedScriptCommands: any[];
+  pendingScriptInputDown: string[];
+  pendingScriptInputPressed: Set<string>;
+  pendingScriptInputReleased: Set<string>;
+  pendingScriptBlocksEvent: any;
   scriptRuntimeClient: EntityScriptRuntimeClient;
   behaviorPrompt: string;
   agentInterpretation: string;
@@ -410,6 +436,9 @@ export class Contraption {
     }
     this.scene = scene;
     this.originWorldPos = originWorldPos.clone();
+    this.collisionPoseVersion = 0;
+    this.collisionWorldAabbCache = null;
+    this.collisionSamplePointCache = new Map();
 
     // Collision is a union of per-voxel boxes quantized to the 0.2 micro
     // grid, so micro voxels keep their own 0.2-size collision shape instead of
@@ -425,6 +454,11 @@ export class Contraption {
     // Physics Transform
     this.position = this.rootGroup.position;
     this.quaternion = this.rootGroup.quaternion;
+    this.previousPosition = this.position.clone();
+    this.previousQuaternion = this.quaternion.clone();
+    this.renderSimulationPosition = this.position.clone();
+    this.renderSimulationQuaternion = this.quaternion.clone();
+    this.renderInterpolated = false;
     this.velocity = new THREE.Vector3(0, 0, 0);
     this.angularVelocity = new THREE.Vector3(0, 0, 0);
 
@@ -484,6 +518,11 @@ export class Contraption {
     this.tickCount = 0;
     this.scriptRuntime = 0;
     this.totalRuntime = 0;
+    this.latchedScriptCommands = [];
+    this.pendingScriptInputDown = [];
+    this.pendingScriptInputPressed = new Set();
+    this.pendingScriptInputReleased = new Set();
+    this.pendingScriptBlocksEvent = null;
     this.scriptRuntimeClient = new EntityScriptRuntimeClient();
     this.scriptRuntimeClient.onCompileResult = result => this.handleWorkerCompileResult(result);
     this.behaviorPrompt = options.behaviorPrompt || '';
@@ -1111,6 +1150,7 @@ export class Contraption {
 
   setNodeScript(nodeId, code) {
     const id = String(nodeId || 'root');
+    this.latchedScriptCommands = [];
     this.nodeScripts.set(id, code || '');
     this.nodeScriptErrors.delete(id);
     this.slowScriptFrames.delete(id);
@@ -1145,6 +1185,7 @@ export class Contraption {
       }
       this.scriptStatus = [...this.compiledNodeScripts.keys()]
         .some(nodeId => this.isNodeScriptEnabled(nodeId)) ? 'running' : 'stopped';
+      this.latchedScriptCommands = [];
       this.scriptError = null;
       this.log(`[OK] [${id}] Script compiled and loaded successfully!`);
       return true;
@@ -1205,6 +1246,7 @@ export class Contraption {
     const id = String(nodeId || 'root');
     const state = !!enabled;
     this.nodeScriptEnabled.set(id, state);
+    this.latchedScriptCommands = [];
 
     if (!state) {
       const node = this.entityNodes.get(id);
@@ -1226,6 +1268,7 @@ export class Contraption {
     for (const id of this.entityNodes.keys()) {
       this.nodeScriptEnabled.set(id, true);
     }
+    this.latchedScriptCommands = [];
     if (this.compiledScript || this.compiledNodeScripts.size > 0) {
       this.scriptStatus = 'running';
     }
@@ -1233,6 +1276,7 @@ export class Contraption {
   }
 
   disableAllNodeScripts() {
+    this.latchedScriptCommands = [];
     this.nodeScriptEnabled.set('root', false);
     for (const id of this.entityNodes.keys()) {
       this.nodeScriptEnabled.set(id, false);
@@ -1289,6 +1333,11 @@ export class Contraption {
     this.lastAppliedTorque.set(0, 0, 0);
     this.scriptRuntime = 0;
     this.tickCount = 0;
+    this.latchedScriptCommands = [];
+    this.pendingScriptInputDown = [];
+    this.pendingScriptInputPressed.clear();
+    this.pendingScriptInputReleased.clear();
+    this.pendingScriptBlocksEvent = null;
     this.lastExecutionTimeMs = 0;
     this.slowScriptFrames.clear();
     this.scriptRuntimeClient.reset(this.getSerializableComponentStates());
@@ -1726,7 +1775,24 @@ export class Contraption {
     }
     this.collisionCells = [...cells.values()];
     this.collisionEntries = [...entries.values()];
+    // A voxel completely enclosed by six same-resolution neighbours cannot
+    // reach an exterior terrain contact. Keeping a conservative surface set
+    // avoids thousands of invisible terrain boxes in solid imported
+    // structures. Entity/player narrow phase still uses the complete set so a
+    // direct editor teleport into a solid can recover from deep penetration.
+    const entryKeys = new Set(this.collisionEntries.map(entry => (
+      `${entry.entityId}:${entry.x},${entry.y},${entry.z}:${entry.span}`
+    )));
+    this.collisionSurfaceEntries = this.collisionEntries.filter(entry => {
+      const { entityId, x, y, z, span } = entry;
+      return ![
+        [x - span, y, z], [x + span, y, z],
+        [x, y - span, z], [x, y + span, z],
+        [x, y, z - span], [x, y, z + span]
+      ].every(([nx, ny, nz]) => entryKeys.has(`${entityId}:${nx},${ny},${nz}:${span}`));
+    });
     this.collisionCellCount = this.collisionCells.length;
+    this.invalidateCollisionPoseCache?.();
   }
 
   calculateBoundsAndCenter() {
@@ -1843,6 +1909,8 @@ export class Contraption {
       commandedThisFrame: false,
       initialLocalPosition: new THREE.Vector3(),
       initialLocalQuaternion: new THREE.Quaternion(),
+      previousLocalPosition: new THREE.Vector3(),
+      previousLocalQuaternion: new THREE.Quaternion(),
       group: this.meshGroup,
       children: new Set<string>(),
       bodyType: this.bodyType
@@ -1881,6 +1949,8 @@ export class Contraption {
           commandedThisFrame: false,
           initialLocalPosition: localPosition.clone(),
           initialLocalQuaternion: localQuaternion.clone(),
+          previousLocalPosition: localPosition.clone(),
+          previousLocalQuaternion: localQuaternion.clone(),
           group,
           children: new Set<string>(),
           kind: definition.kind || 'child',
@@ -1911,6 +1981,8 @@ export class Contraption {
         localPosition: group.position.clone(),
         localQuaternion: new THREE.Quaternion(),
         localAngularVelocity: new THREE.Vector3(),
+        previousLocalPosition: group.position.clone(),
+        previousLocalQuaternion: group.quaternion.clone(),
         group,
         children: new Set<string>(),
         kind: definition.kind || 'child',
@@ -3072,15 +3144,14 @@ export class Contraption {
 
     // Component command flags are consumed by updateChildEntities above, then
     // reset for the next frame. A component may only keep spinning while code
-    // re-commands it each frame: no command this frame (switch off, code
+    // re-commands it each simulation update: no command this update (switch off, code
     // cleared, compile error) leaves its angular velocity at the default 0,
     // mirroring how forces are cleared by physics.
     for (const node of this.entityNodes.values()) {
       node.commandedThisFrame = false;
     }
-    // Blocks-changed edge is a one-frame snapshot (ctx.blocks.pressed()).
-    // Edits happen between rendered frames, so the flag survives exactly one
-    // script evaluation and is cleared at frame end.
+    // Blocks-changed is an edge snapshot (ctx.blocks.pressed()). Edits happen
+    // between simulation updates, so the flag survives one script evaluation.
     this.blocksChangedThisFrame = false;
   }
 
@@ -3110,12 +3181,19 @@ export class Contraption {
   }
 
   capturePreviousEntityTransforms() {
+    this.previousPosition.copy(this.position);
+    this.previousQuaternion.copy(this.quaternion);
     this.rootGroup.updateMatrixWorld(true);
     for (const node of this.entityNodes.values()) {
+      node.previousLocalPosition ||= node.localPosition.clone();
+      node.previousLocalQuaternion ||= node.localQuaternion.clone();
+      node.previousLocalPosition.copy(node.localPosition);
+      node.previousLocalQuaternion.copy(node.localQuaternion);
       node.group.updateWorldMatrix(true, false);
       if (!node.previousWorldMatrix) node.previousWorldMatrix = new THREE.Matrix4();
       node.previousWorldMatrix.copy(node.group.matrixWorld);
     }
+    this.invalidateCollisionPoseCache();
   }
 
   getSerializableComponentStates() {
@@ -3193,8 +3271,8 @@ export class Contraption {
         released: scriptInputCodes(inputState, 'released')
       },
       blocks: {
-        changed: this.blocksChangedThisFrame,
-        event: this.lastBlocksChangedEvent
+        changed: !!this.pendingScriptBlocksEvent,
+        event: this.pendingScriptBlocksEvent || this.lastBlocksChangedEvent
       },
       players,
       components,
@@ -3238,6 +3316,38 @@ export class Contraption {
     return typeof method === 'function' ? { target, method } : null;
   }
 
+  capturePendingScriptEvents(inputState) {
+    this.pendingScriptInputDown = scriptInputCodes(inputState, 'down');
+    for (const code of scriptInputCodes(inputState, 'pressed')) {
+      this.pendingScriptInputPressed.add(code);
+    }
+    for (const code of scriptInputCodes(inputState, 'released')) {
+      this.pendingScriptInputReleased.add(code);
+    }
+    if (this.blocksChangedThisFrame) {
+      this.pendingScriptBlocksEvent = this.lastBlocksChangedEvent;
+    }
+  }
+
+  clearPendingScriptEvents() {
+    this.pendingScriptInputPressed.clear();
+    this.pendingScriptInputReleased.clear();
+    this.pendingScriptBlocksEvent = null;
+  }
+
+  applyLatchedScriptCommands(runtimeContext) {
+    if (this.scriptStatus === 'stopped') return;
+    for (const command of this.latchedScriptCommands) {
+      if (!this.isNodeScriptEnabled(String(command.nodeId || 'root'))) continue;
+      const api = this.getChildScriptApi(String(command.nodeId || 'root'));
+      const resolved = this.resolveScriptCommandTarget(api, command.path);
+      const args = Array.isArray(command.args) ? command.args : [];
+      try { resolved?.method.apply(resolved.target, args); } catch (_) {}
+    }
+    this.lastAppliedForce.copy(this.appliedForces);
+    this.lastAppliedTorque.copy(this.appliedTorques);
+  }
+
   applyScriptRuntimeResult(result, runtimeContext) {
     if (!result) return;
     this.lastExecutionTimeMs = Number(result.elapsedMs) || 0;
@@ -3268,7 +3378,16 @@ export class Contraption {
       this.log(`[ERR] [${nodeId}] Runtime error: ${message}`);
     }
 
-    for (const command of (result.commands || []).slice(0, 256)) {
+    const commands = (result.commands || []).slice(0, 256);
+    this.latchedScriptCommands = (result.errors?.length || result.stopped)
+      ? []
+      : commands
+        .filter(command => command?.scope === 'component'
+          && LATCHED_SCRIPT_COMPONENT_COMMANDS.has(command.path))
+        .map(command => cloneScriptData(command, null))
+        .filter(Boolean);
+
+    for (const command of commands) {
       const args = Array.isArray(command?.args) ? command.args : [];
       if (command?.scope === 'log') {
         this.log(String(args[0] ?? '').slice(0, 1000));
@@ -3319,21 +3438,33 @@ export class Contraption {
       return;
     }
 
+    this.capturePendingScriptEvents(inputState);
+
     this.powerUtilization = 0;
     this.applyScriptRuntimeResult(this.scriptRuntimeClient.takePendingResult(), runtimeContext);
-    if (this.scriptStatus === 'stopped') return;
+    if (this.scriptStatus === 'stopped'
+      || ![...this.compiledNodeScripts.keys()].some(nodeId => this.isNodeScriptEnabled(nodeId))) return;
 
     const nextTime = this.scriptRuntime + dt;
     const nextTick = this.tickCount + 1;
-    const snapshot = this.buildScriptRuntimeSnapshot(dt, inputState, runtimeContext, nextTime, nextTick);
+    const scheduledInput = {
+      down: this.pendingScriptInputDown,
+      pressed: [...this.pendingScriptInputPressed],
+      released: [...this.pendingScriptInputReleased]
+    };
+    const snapshot = this.buildScriptRuntimeSnapshot(dt, scheduledInput, runtimeContext, nextTime, nextTick);
     const submission = this.scriptRuntimeClient.tick(snapshot, {
       // QuickJS runs on the page thread, but receives only this bounded host
       // callback rather than the mutable World/manager objects themselves.
       worldRaycast: runtimeContext?.world?.raycast
     });
-    if (!submission.submitted) return;
+    if (!submission.submitted) {
+      this.applyLatchedScriptCommands(runtimeContext);
+      return;
+    }
     this.scriptRuntime = nextTime;
     this.tickCount = nextTick;
+    this.clearPendingScriptEvents();
     if (submission.result) this.applyScriptRuntimeResult(submission.result, runtimeContext);
   }
 
@@ -3423,14 +3554,31 @@ export class Contraption {
   }
 
   getCollisionSamplePoints(bodyId = null, includeAttached = false) {
+    const cacheKey = `${bodyId || '*'}:${includeAttached ? 1 : 0}`;
+    const cached = this.collisionSamplePointCache.get(cacheKey);
+    if (cached?.version === this.collisionPoseVersion) return cached.points;
     const points = [];
     const low = 0.001;
     const high = 0.999;
     const attached = bodyId && includeAttached ? this.getAttachedNodeIds(bodyId) : null;
+    const nodeTransforms = new Map();
 
-    for (const cell of this.collisionEntries) {
+    const transformFor = entityId => {
+      let transform = nodeTransforms.get(entityId);
+      if (transform) return transform;
+      const node = this.entityNodes.get(entityId) || this.entityNodes.get('root');
+      node?.group?.updateWorldMatrix?.(true, false);
+      transform = node?.group
+        ? { matrix: node.group.matrixWorld, pivot: node.pivotLocal }
+        : null;
+      nodeTransforms.set(entityId, transform);
+      return transform;
+    };
+
+    for (const cell of this.collisionSurfaceEntries || this.collisionEntries) {
       if (bodyId && cell.entityId !== bodyId && (!attached || !attached.has(cell.entityId))) continue;
       if (!this.isNodeCollisionEnabled(cell.entityId)) continue;
+      const transform = transformFor(cell.entityId);
       // Box corners in flat entity-local space, inset one millimetre so the
       // samples stay strictly inside the 0.2-quantized collision box.
       const sx = cell.span * MICRO_SIZE;
@@ -3440,24 +3588,39 @@ export class Contraption {
       // Point probes provide the swept contact manifold; exact OBB-vs-terrain
       // SAT in ContraptionPhysics covers face-edge and edge-edge intersections
       // that no finite set of surface samples can represent reliably.
-      for (const dx of [low, high]) {
-        for (const dy of [low, high]) {
-          for (const dz of [low, high]) {
-            points.push(this.entityLocalToWorld(cell.entityId, new THREE.Vector3(
-              x0 + dx * sx,
-              y0 + dy * sy,
-              z0 + dz * sz
-            )));
+      for (let ix = 0; ix < 2; ix++) {
+        for (let iy = 0; iy < 2; iy++) {
+          for (let iz = 0; iz < 2; iz++) {
+            const point = new THREE.Vector3(
+              x0 + (ix ? high : low) * sx,
+              y0 + (iy ? high : low) * sy,
+              z0 + (iz ? high : low) * sz
+            );
+            if (transform) point.sub(transform.pivot).applyMatrix4(transform.matrix);
+            else point.copy(this.localToWorld(point));
+            points.push(point);
           }
         }
       }
-      points.push(this.entityLocalToWorld(cell.entityId, new THREE.Vector3(
-        x0 + 0.5 * sx,
-        y0 + low * sy,
-        z0 + 0.5 * sz
-      )));
+      // The two Y-face centres stabilize broad floor/ceiling contact without
+      // biasing a wall manifold toward the bottom of the body. Keeping the
+      // pair symmetric also prevents centred wall forces from inventing spin.
+      for (const dy of [low, high]) {
+        const faceCenter = new THREE.Vector3(
+          x0 + 0.5 * sx,
+          y0 + dy * sy,
+          z0 + 0.5 * sz
+        );
+        if (transform) faceCenter.sub(transform.pivot).applyMatrix4(transform.matrix);
+        else faceCenter.copy(this.localToWorld(faceCenter));
+        points.push(faceCenter);
+      }
     }
 
+    this.collisionSamplePointCache.set(cacheKey, {
+      version: this.collisionPoseVersion,
+      points
+    });
     return points;
   }
 
@@ -3467,12 +3630,31 @@ export class Contraption {
    * The entity itself may be rotated, so all eight corners are transformed
    * independently instead of treating the whole contraption as one box.
    */
-  getCollisionWorldAABBs() {
+  getCollisionWorldAABBs(surfaceOnly = false) {
+    const cacheKey: 'all' | 'surface' = surfaceOnly ? 'surface' : 'all';
+    if (
+      this.collisionWorldAabbCache?.version === this.collisionPoseVersion
+      && this.collisionWorldAabbCache[cacheKey]
+    ) {
+      return this.collisionWorldAabbCache[cacheKey];
+    }
     const boxes = [];
+    const nodeTransforms = new Map();
 
-    for (const cell of this.collisionEntries) {
+    const entries = surfaceOnly
+      ? (this.collisionSurfaceEntries || this.collisionEntries)
+      : this.collisionEntries;
+    for (const cell of entries) {
       if (!this.isNodeCollisionEnabled(cell.entityId)) continue;
       const node = this.entityNodes.get(cell.entityId) || this.entityNodes.get('root');
+      let transform = nodeTransforms.get(cell.entityId);
+      if (!transform) {
+        node?.group?.updateWorldMatrix?.(true, false);
+        transform = node?.group
+          ? { matrix: node.group.matrixWorld, pivot: node.pivotLocal }
+          : null;
+        nodeTransforms.set(cell.entityId, transform);
+      }
       const x0 = cell.x * MICRO_SIZE, x1 = (cell.x + cell.span) * MICRO_SIZE;
       const y0 = cell.y * MICRO_SIZE, y1 = (cell.y + cell.span) * MICRO_SIZE;
       const z0 = cell.z * MICRO_SIZE, z1 = (cell.z + cell.span) * MICRO_SIZE;
@@ -3483,10 +3665,15 @@ export class Contraption {
       let previousMinX = Infinity, previousMinY = Infinity, previousMinZ = Infinity;
       let previousMaxX = -Infinity, previousMaxY = -Infinity, previousMaxZ = -Infinity;
 
-      for (const cx of [x0, x1]) {
-        for (const cy of [y0, y1]) {
-          for (const cz of [z0, z1]) {
-            const corner = this.entityLocalToWorld(cell.entityId, new THREE.Vector3(cx, cy, cz));
+      for (let ix = 0; ix < 2; ix++) {
+        for (let iy = 0; iy < 2; iy++) {
+          for (let iz = 0; iz < 2; iz++) {
+            const cx = ix ? x1 : x0;
+            const cy = iy ? y1 : y0;
+            const cz = iz ? z1 : z0;
+            const corner = new THREE.Vector3(cx, cy, cz);
+            if (transform) corner.sub(transform.pivot).applyMatrix4(transform.matrix);
+            else corner.copy(this.localToWorld(corner));
             minX = Math.min(minX, corner.x);
             minY = Math.min(minY, corner.y);
             minZ = Math.min(minZ, corner.z);
@@ -3537,6 +3724,10 @@ export class Contraption {
       });
     }
 
+    if (this.collisionWorldAabbCache?.version !== this.collisionPoseVersion) {
+      this.collisionWorldAabbCache = { version: this.collisionPoseVersion };
+    }
+    this.collisionWorldAabbCache[cacheKey] = boxes;
     return boxes;
   }
 
@@ -3767,6 +3958,61 @@ export class Contraption {
     this.rootGroup.position.copy(this.position);
     this.rootGroup.quaternion.copy(this.quaternion);
     this.rootGroup.updateMatrixWorld(true);
+    this.invalidateCollisionPoseCache();
+  }
+
+  /** Apply a temporary presentation pose between the last two fixed entity
+   * updates. Physics state is restored immediately after the Three.js render. */
+  beginRenderInterpolation(alpha) {
+    if (this.renderInterpolated) return;
+    const amount = Math.max(0, Math.min(1, Number(alpha) || 0));
+    this.renderSimulationPosition.copy(this.position);
+    this.renderSimulationQuaternion.copy(this.quaternion);
+
+    this.rootGroup.position.lerpVectors(
+      this.previousPosition,
+      this.renderSimulationPosition,
+      amount
+    );
+    this.rootGroup.quaternion.slerpQuaternions(
+      this.previousQuaternion,
+      this.renderSimulationQuaternion,
+      amount
+    );
+    for (const node of this.entityNodes.values()) {
+      if (node.id === 'root') continue;
+      node.group.position.lerpVectors(
+        node.previousLocalPosition || node.localPosition,
+        node.localPosition,
+        amount
+      );
+      node.group.quaternion.slerpQuaternions(
+        node.previousLocalQuaternion || node.localQuaternion,
+        node.localQuaternion,
+        amount
+      );
+    }
+    this.rootGroup.updateMatrixWorld(true);
+    this.renderInterpolated = true;
+  }
+
+  endRenderInterpolation() {
+    if (!this.renderInterpolated) return;
+    this.rootGroup.position.copy(this.renderSimulationPosition);
+    this.rootGroup.quaternion.copy(this.renderSimulationQuaternion);
+    for (const node of this.entityNodes.values()) {
+      if (node.id === 'root') continue;
+      node.group.position.copy(node.localPosition);
+      node.group.quaternion.copy(node.localQuaternion);
+    }
+    this.rootGroup.updateMatrixWorld(true);
+    this.renderInterpolated = false;
+  }
+
+  invalidateCollisionPoseCache() {
+    this.collisionPoseVersion = (this.collisionPoseVersion || 0) + 1;
+    this.collisionWorldAabbCache = null;
+    this.collisionSamplePointCache?.clear();
   }
 
   dispose() {

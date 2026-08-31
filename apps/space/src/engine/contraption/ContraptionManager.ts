@@ -1895,6 +1895,18 @@ export class ContraptionManager {
     return this.raycastContraptionHit(rayOrigin, rayDir, maxDistance)?.contraption || null;
   }
 
+  beginRenderInterpolation(alpha) {
+    for (const contraption of this.contraptions) {
+      contraption.beginRenderInterpolation?.(alpha);
+    }
+  }
+
+  endRenderInterpolation() {
+    for (const contraption of this.contraptions) {
+      contraption.endRenderInterpolation?.();
+    }
+  }
+
   // =========================================================================
   // 5. UPDATE LOOP
   // =========================================================================
@@ -1913,7 +1925,7 @@ export class ContraptionManager {
 
     // 1. Update internal kinematics or programmable script evaluation for
     // every entity first, so every controller evaluates against the same
-    // frame-start state and every entity's swept "previous" pose is captured
+    // update-start state and every entity's swept "previous" pose is captured
     // before any body moves.
     const supportsSubstepFrames = !!(
       this.physics?.prepareContraptionFrame
@@ -1945,7 +1957,7 @@ export class ContraptionManager {
     // substep, and entity-vs-entity collision resolves at the same substep
     // cadence, so a body resting on another entity is caught within a
     // millimetre of sinking - exactly like terrain - instead of falling
-    // through the whole frame first and being popped back out afterwards.
+    // through the whole entity update first and being popped back afterwards.
     if (this.physics) {
       if (supportsSubstepFrames) {
         let maxSubSteps = 0;
@@ -1958,16 +1970,24 @@ export class ContraptionManager {
             broadphaseBounds.set(c, this.physics.frameBroadphaseBounds(c, dt));
           }
         }
+        const pairFrame = this.physics.prepareContraptionPairFrame?.(
+          this.contraptions,
+          broadphaseBounds || undefined
+        );
         for (let step = 0; step < substepCount; step++) {
           for (const frame of frames) {
             if (step < frame.subSteps) this.physics.stepContraptionFrame(frame);
           }
           // Entity vs entity collisions (dynamic-dynamic + dynamic-static)
-          this.physics.resolveContraptionPairs?.(
-            this.contraptions,
-            dt / substepCount,
-            broadphaseBounds || undefined
-          );
+          if (pairFrame && this.physics.resolvePreparedContraptionPairs) {
+            this.physics.resolvePreparedContraptionPairs(pairFrame, dt / substepCount);
+          } else {
+            this.physics.resolveContraptionPairs?.(
+              this.contraptions,
+              dt / substepCount,
+              broadphaseBounds || undefined
+            );
+          }
         }
         for (const frame of frames) this.physics.finishContraptionFrame(frame);
       } else {
@@ -1978,7 +1998,7 @@ export class ContraptionManager {
     // 3. Safety checks: streaming edge and falling into the void.
     // Autonomous entities can cross the streaming edge during this physics
     // step. Snapshot and destroy them instead of allowing one extra off-chunk
-    // script/physics frame.
+    // script/physics update.
     for (let i = this.contraptions.length - 1; i >= 0; i--) {
       const c = this.contraptions[i];
       const chunk = this.getContraptionChunk(c);
