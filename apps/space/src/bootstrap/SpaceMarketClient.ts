@@ -41,8 +41,11 @@ export interface SpaceMarketDownload {
   license: 'AGPL-3.0-only';
   digest: string;
   downloads_count: number;
+  download_url: string;
   payload: Record<string, unknown>;
 }
+
+type SpaceMarketDownloadDescriptor = Omit<SpaceMarketDownload, 'payload'>;
 
 export class SpaceMarketError extends Error {
   readonly status: number;
@@ -118,8 +121,33 @@ export class SpaceMarketClient {
     });
   }
 
-  downloadResource(resourceId: string): Promise<SpaceMarketDownload> {
-    return this.request<SpaceMarketDownload>(`/resources/${encodeURIComponent(resourceId)}/download`);
+  async downloadResource(resourceId: string): Promise<SpaceMarketDownload> {
+    const descriptor = await this.request<SpaceMarketDownloadDescriptor>(
+      `/resources/${encodeURIComponent(resourceId)}/download`
+    );
+    let response: Response;
+    try {
+      response = await this.fetchImpl(descriptor.download_url, {
+        headers: { Accept: 'application/json' }
+      });
+    } catch (error) {
+      throw new SpaceMarketError(
+        0,
+        'MARKET_CDN_DOWNLOAD_FAILED',
+        'Could not download the market resource from the CDN.',
+        error
+      );
+    }
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new SpaceMarketError(
+        response.status,
+        'MARKET_CDN_DOWNLOAD_FAILED',
+        'The CDN returned an invalid market resource.',
+        payload
+      );
+    }
+    return { ...descriptor, payload: payload as Record<string, unknown> };
   }
 
   toggleLike(resourceId: string) {
@@ -130,7 +158,12 @@ export class SpaceMarketClient {
   }
 
   deleteResource(resourceId: string) {
-    return this.request<{ deleted: boolean; resource_id: string }>(
+    return this.request<{
+      deleted: boolean;
+      resource_id: string;
+      cdn_object_deleted: boolean;
+      cdn_invalidation_requested: boolean;
+    }>(
       `/resources/${encodeURIComponent(resourceId)}`,
       { method: 'DELETE' }
     );

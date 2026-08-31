@@ -7,8 +7,15 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
   const fetchImpl = async (url: string | URL | Request, options: RequestInit = {}) => {
     calls.push({ url: String(url), options });
     const value = String(url);
+    if (value === 'https://cdn.example.test/space-market/resources/r1/content.json') {
+      return new Response(JSON.stringify({ type: 'space-colorset' }), { status: 200 });
+    }
     if (value.endsWith('/download')) {
-      return new Response(JSON.stringify({ id: 'r1', kind: 'colorset', payload: { type: 'space-colorset' } }), { status: 200 });
+      return new Response(JSON.stringify({
+        id: 'r1',
+        kind: 'colorset',
+        download_url: 'https://cdn.example.test/space-market/resources/r1/content.json'
+      }), { status: 200 });
     }
     if (value.endsWith('/like')) {
       return new Response(JSON.stringify({ is_liked: true, likes_count: 1 }), { status: 200 });
@@ -25,11 +32,11 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
 
   await client.listResources('entity', 'downloads');
   await client.publishResource('colorset', { type: 'space-colorset', version: 2 });
-  await client.downloadResource('r1');
+  const downloaded = await client.downloadResource('r1');
   await client.toggleLike('r1');
   await client.deleteResource('r1');
 
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 6);
   assert.match(calls[0].url, /kind=entity/);
   assert.match(calls[0].url, /sort=downloads/);
   assert.equal((calls[0].options.headers as any).Authorization, 'Bearer token-1');
@@ -38,8 +45,35 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
     payload: { type: 'space-colorset', version: 2 }
   });
   assert.equal(calls[2].options.method, undefined);
-  assert.equal(calls[3].options.method, 'POST');
-  assert.equal(calls[4].options.method, 'DELETE');
+  assert.equal(calls[3].url, 'https://cdn.example.test/space-market/resources/r1/content.json');
+  assert.equal((calls[3].options.headers as any).Authorization, undefined);
+  assert.deepEqual(downloaded.payload, { type: 'space-colorset' });
+  assert.equal(calls[4].options.method, 'POST');
+  assert.equal(calls[5].options.method, 'DELETE');
+});
+
+test('SpaceMarketClient reports invalid CDN responses separately from API errors', async () => {
+  const fetchImpl = async (url: string | URL | Request) => {
+    if (String(url).includes('/download')) {
+      return new Response(JSON.stringify({
+        id: 'r1',
+        kind: 'blockset',
+        download_url: 'https://cdn.example.test/missing.json'
+      }), { status: 200 });
+    }
+    return new Response('missing', { status: 404 });
+  };
+  const client = new SpaceMarketClient('https://api.example.test', 'token', fetchImpl as typeof fetch);
+
+  await assert.rejects(
+    () => client.downloadResource('r1'),
+    (error: any) => {
+      assert.ok(error instanceof SpaceMarketError);
+      assert.equal(error.status, 404);
+      assert.equal(error.code, 'MARKET_CDN_DOWNLOAD_FAILED');
+      return true;
+    }
+  );
 });
 
 test('SpaceMarketClient exposes structured backend errors', async () => {
