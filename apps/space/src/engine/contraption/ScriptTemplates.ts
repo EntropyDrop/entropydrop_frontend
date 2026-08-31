@@ -178,7 +178,7 @@ if (ctx.tick % 60 === 0) {
   {
     id: 'raycast_offroad_rover',
     name: 'Raycast Suspension Off-Road Rover',
-    description: 'Four independent wheel raycasts drive spring-damper suspension, tire grip, steering, braking, and wheel animation on one dynamic chassis.',
+    description: 'Four independent wheel raycasts drive spring-damper suspension, tire grip, braking, self-centering front-wheel steering, and wheel animation on one dynamic chassis.',
     code: `/**
  * Four-wheel off-road rover with raycast suspension.
  *
@@ -217,19 +217,28 @@ if (!self.state.initialized) {
   self.state.throttle = 0;
   self.state.steer = 0;
   self.state.wheelBase = {};
+  self.state.wheelRoll = {};
   self.setCockpitPosition([0, 1.0, -0.45]);
   self.setVehicle(true);
   for (const spec of wheels) {
     const wheel = self.child(spec.id);
     if (wheel) self.state.wheelBase[spec.id] = wheel.getLocalPosition();
+    self.state.wheelRoll[spec.id] = 0;
   }
 }
+
+// Keep old placed rovers compatible when this controller gains new state.
+if (!self.state.wheelBase) self.state.wheelBase = {};
+if (!self.state.wheelRoll) self.state.wheelRoll = {};
 
 // Smooth keyboard steps before they reach the tire forces.
 const rawThrottle = (ctx.input.down('KeyW') ? 1 : 0) - (ctx.input.down('KeyS') ? 1 : 0);
 const rawSteer = (ctx.input.down('KeyA') ? 1 : 0) - (ctx.input.down('KeyD') ? 1 : 0);
 const throttleBlend = 1 - Math.exp(-6.0 * ctx.deltaTime);
-const steerBlend = 1 - Math.exp(-9.0 * ctx.deltaTime);
+// Steering moves progressively while held and returns to center more quickly
+// when released, avoiding keyboard-snap while making the wheels visibly self-center.
+const steerResponse = rawSteer === 0 ? 12.0 : 8.0;
+const steerBlend = 1 - Math.exp(-steerResponse * ctx.deltaTime);
 self.state.throttle += (rawThrottle - self.state.throttle) * throttleBlend;
 self.state.steer += (rawSteer - self.state.steer) * steerBlend;
 
@@ -297,8 +306,13 @@ for (const spec of wheels) {
   const base = self.state.wheelBase[spec.id];
   if (wheel && base) {
     wheel.setLocalPosition([base[0], base[1] + compression, base[2]]);
-    const rpm = clamp(-longitudinalSpeed * 60 / (Math.PI * 2 * wheelRadius), -360, 360);
-    wheel.setLocalSpin([1, 0, 0], rpm);
+    // Compose rolling around local X with steering around local Y. Calling
+    // setLocalSpin alone would roll the tire but leave both front wheels
+    // visually pointing straight ahead even while their tire forces steer.
+    const rollSpeed = clamp(-longitudinalSpeed / wheelRadius, -Math.PI * 12, Math.PI * 12);
+    const rollAngle = (self.state.wheelRoll[spec.id] || 0) + rollSpeed * ctx.deltaTime;
+    self.state.wheelRoll[spec.id] = rollAngle % (Math.PI * 2);
+    wheel.setLocalEuler([self.state.wheelRoll[spec.id], localSteer, 0]);
   }
 }
 

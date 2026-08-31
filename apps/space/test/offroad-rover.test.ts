@@ -88,6 +88,7 @@ test('off-road rover blueprint has four visual wheels and real raycast struts', 
   assert.equal(wheels.every((wheel: any) => wheel.collisionEnabled === false), true);
   assert.match(blueprint.defaultOptions.scriptCode, /ctx\.world\.raycast/);
   assert.match(blueprint.defaultOptions.scriptCode, /self\.applyForceAt/);
+  assert.match(blueprint.defaultOptions.scriptCode, /wheel\.setLocalEuler/);
 
   const rover = buildRover();
   assert.equal(rover.entityNodes.size, 5);
@@ -132,6 +133,35 @@ test('four suspension rays support the chassis and rough ground produces roll', 
     rover.getEntityNode('wheel_fl').localPosition.y > rover.getEntityNode('wheel_fr').localPosition.y,
     'the left visual wheel follows its shorter compressed strut'
   );
+});
+
+test('front wheels visibly steer and automatically return to center', () => {
+  const rover = buildRover(34);
+  const runtime = runtimeContext();
+  const steerLeft = { down: new Set(['KeyA']), pressed: new Set(), released: new Set() };
+  const released = { down: new Set(), pressed: new Set(), released: new Set(['KeyA']) };
+
+  for (let tick = 0; tick < 12; tick++) rover.update(0.05, steerLeft, runtime);
+
+  const frontLeft = rover.getEntityNode('wheel_fl');
+  const frontRight = rover.getEntityNode('wheel_fr');
+  const rearLeft = rover.getEntityNode('wheel_rl');
+  const frontLeftEuler = new THREE.Euler().setFromQuaternion(frontLeft.localQuaternion, 'YXZ');
+  const frontRightEuler = new THREE.Euler().setFromQuaternion(frontRight.localQuaternion, 'YXZ');
+  const rearLeftEuler = new THREE.Euler().setFromQuaternion(rearLeft.localQuaternion, 'YXZ');
+
+  assert.ok(frontLeftEuler.y > 0.4, `front-left wheel should visibly steer: ${frontLeftEuler.y}`);
+  assert.ok(frontRightEuler.y > 0.4, `front-right wheel should visibly steer: ${frontRightEuler.y}`);
+  assert.ok(Math.abs(rearLeftEuler.y) < 1e-6, 'rear wheels should remain unsteered');
+  assert.ok(rover.getComponentState('root').steer > 0.9, 'steering state should approach full lock');
+
+  for (let tick = 0; tick < 14; tick++) rover.update(0.05, released, runtime);
+
+  const centeredLeft = new THREE.Euler().setFromQuaternion(frontLeft.localQuaternion, 'YXZ');
+  const centeredRight = new THREE.Euler().setFromQuaternion(frontRight.localQuaternion, 'YXZ');
+  assert.ok(Math.abs(centeredLeft.y) < 0.001, `front-left wheel should self-center: ${centeredLeft.y}`);
+  assert.ok(Math.abs(centeredRight.y) < 0.001, `front-right wheel should self-center: ${centeredRight.y}`);
+  assert.ok(Math.abs(rover.getComponentState('root').steer) < 0.001, 'released steering state should return to zero');
 });
 
 test('mounted W input drives the suspended rover forward without hard wheel contacts', () => {

@@ -340,7 +340,7 @@ export const BLUEPRINTS = [
   {
     id: 'suspension_rover',
     name: 'Raycast Suspension Off-Road Rover',
-    description: 'A dynamic chassis on four independent spring-damper raycast struts. W/S drive, A/D steer, Space brakes; tire forces create real pitch, roll, grip, and wheel travel over voxel terrain.',
+    description: 'A dynamic chassis on four independent spring-damper raycast struts. W/S drive, A/D steer, Space brakes; the visible front wheels steer and self-center while tire forces create real pitch, roll, grip, and wheel travel over voxel terrain.',
     defaultMode: ContraptionMode.PROGRAMMABLE,
     defaultOptions: {
       bodyType: BodyType.DYNAMIC,
