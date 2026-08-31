@@ -114,6 +114,7 @@ export interface SpaceUiSnapshot {
   renderDistance: number;
   toast: { id: number; message: string } | null;
   isAdmin: boolean;
+  isMuted: boolean;
 }
 
 type Listener = () => void;
@@ -121,10 +122,10 @@ type Listener = () => void;
 const HOTBAR_SLOTS = [
   { type: 'tool', value: SpecialTool.SHOVEL, name: 'Shovel', icon: '', desc: 'Remove / place 1x1x1 standard blocks' },
   { type: 'tool', value: SpecialTool.SPOON, name: 'Spoon', icon: '', desc: 'Carve 5x5x5 micro voxels cell by cell' },
-  { type: 'tool', value: SpecialTool.BRUSH, name: 'Brush', icon: '', desc: 'Left-click paint · right-click sample color' },
   { type: 'tool', value: SpecialTool.SELECTOR, name: 'Selector', icon: '', desc: 'Select and copy world/entity regions (max 64×64×64); no build action' },
-  { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'Preview and left-click build inventory items' },
-  { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Hold left-click to grab · right-click start/stop' }
+  { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'LMB build · RMB rotate 90°' },
+  { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Hold left-click to grab · right-click start/stop' },
+  { type: 'tool', value: SpecialTool.BRUSH, name: 'Brush', icon: '', desc: 'Left-click paint · right-click sample color' }
 ];
 
 const EMPTY_SELECTOR: SelectorView = {
@@ -235,7 +236,8 @@ export class SpaceUiStore {
     gravity: -18,
     renderDistance: 12,
     toast: null,
-    isAdmin: false
+    isAdmin: false,
+    isMuted: false
   };
 
   subscribe = (listener: Listener): (() => void) => {
@@ -280,9 +282,11 @@ export class SpaceUiStore {
       const savedFov = localStorage.getItem('space_setting_fov');
       const savedPerspective = localStorage.getItem('space_setting_perspective') as PlayerPerspective | null;
       const savedDistance = localStorage.getItem('space_setting_cam_dist');
+      const savedMuted = localStorage.getItem('space_setting_muted');
       if (savedFov) this.setFov(Number(savedFov), false);
       if (savedPerspective) this.setPerspective(savedPerspective, false);
       if (savedDistance) this.setCameraDistance(Number(savedDistance), false);
+      if (savedMuted !== null) this.setMuted(savedMuted === 'true', false);
     } catch { }
   }
 
@@ -1018,12 +1022,32 @@ export class SpaceUiStore {
   syncSettingsUI(): void {
     const { controller, world } = this.snapshot;
     if (!controller) return;
+    const isMuted = controller.sound?.getMuted?.() ?? this.snapshot.isMuted;
     this.patch({
       fov: Number(controller.fov || 75),
       perspective: controller.perspective || 'first_person',
       cameraDistance: Number(controller.thirdPersonDistance || 4),
-      renderDistance: Number(world?.renderDistance || this.snapshot.renderDistance)
+      renderDistance: Number(world?.renderDistance || this.snapshot.renderDistance),
+      isMuted
     });
+  }
+
+  setMuted(muted: boolean, persist = true): void {
+    const value = Boolean(muted);
+    this.snapshot.controller?.sound?.setMuted?.(value);
+    const game = typeof window !== 'undefined' ? (window as any).game : (globalThis as any).game;
+    if (game?.soundManager?.setMuted) {
+      game.soundManager.setMuted(value);
+    }
+    this.patch({ isMuted: value });
+    if (persist) {
+      try { localStorage.setItem('space_setting_muted', String(value)); } catch { }
+      this.showToast(value ? 'Audio Muted' : 'Audio Unmuted');
+    }
+  }
+
+  toggleMute(): void {
+    this.setMuted(!this.snapshot.isMuted);
   }
 
   setFov(fov: number, persist = true): void {
@@ -1048,7 +1072,7 @@ export class SpaceUiStore {
 
   setGravity(gravity: number): void {
     const value = Number(gravity);
-    const game = (window as any).game;
+    const game = typeof window !== 'undefined' ? (window as any).game : (globalThis as any).game;
     if (game?.contraptionPhysics?.gravity) game.contraptionPhysics.gravity.y = value;
     this.patch({ gravity: value });
     this.showToast(`Gravity set to ${value} m/s²`);

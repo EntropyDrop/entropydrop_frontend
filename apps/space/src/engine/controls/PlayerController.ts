@@ -14,6 +14,7 @@ import {
   wrapMicroX, wrapMicroZ
 } from '../torus/TorusWorld.ts';
 import { calculatePreviewDragForce } from '../render/SceneRenderer.ts';
+import { InventoryThumbnailRenderer } from '../render/InventoryThumbnailRenderer.ts';
 import type { SpaceStorage } from '../storage/BrowserStorage.ts';
 
 // Global editor/game commands stay engine-owned and are not exposed to entity
@@ -69,11 +70,11 @@ type BulkEditJob = {
 export const SpecialTool = {
   SHOVEL: 'shovel',         // 1. Shovel (remove / place 1x1x1 standard blocks)
   SPOON: 'spoon',           // 2. Spoon (carve 5x5x5 micro voxels)
-  BRUSH: 'brush',           // 3. Brush (repaint block colors)
+  SELECTOR: 'selector',     // 3. Selector (world/component selection and copy)
+  HAMMER: 'hammer',         // 4. Hammer (preview/place inventory items)
+  WRENCH: 'wrench',         // 5. Wrench (hold to grab, right start/stop)
+  BRUSH: 'brush',           // 6. Brush (repaint block colors)
   PIPETTE: 'pipette',       // Legacy alias; color sampling is part of Brush
-  SELECTOR: 'selector',     // 4. Selector (world/component selection and copy)
-  WRENCH: 'wrench',         // 6. Wrench (hold to grab, right start/stop)
-  HAMMER: 'hammer',         // 5. Hammer (preview/place inventory items)
   SUPER_GLUE: 'selector'    // alias for backwards compatibility
 };
 
@@ -2202,7 +2203,7 @@ export class PlayerController {
     this.setActiveInventoryCategory('blockset');
     this.ui?.renderInventoryBar?.();
     if (this.ui) {
-      this.ui.showToast(`Imported ${name}: ${blocks.length} voxels into block set slot ${index + 1} · Hammer LMB builds empty cells · RMB overwrites`);
+      this.ui.showToast(`Imported ${name}: ${blocks.length} voxels into block set slot ${index + 1} · Hammer LMB builds · RMB rotates 90°`);
     }
     return slot;
   }
@@ -2662,16 +2663,125 @@ export class PlayerController {
       return;
     }
 
-    // Hammer RMB pastes a block-set slot in overwrite mode; LMB still writes
-    // only into empty cells. Entity slots keep their left-click build.
+    // Hammer RMB rotates the active inventory item 90 degrees around Y axis,
+    // centered at the integer/grid-aligned center of the object.
     if (this.activeTool === SpecialTool.HAMMER) {
-      const slot = this.inventorySlots[this.selectedInventoryIndex];
-      if (slot && slot.kind === 'blockset') return this.pasteBlockSet(slot, true);
-      return;
+      return this.rotateActiveInventoryItem();
     }
 
     // Selector intentionally has no right-click action.
     return;
+  }
+
+  /**
+   * Rotate a set of voxel blocks 90 degrees around the Y axis, with the center
+   * at the integer/grid-aligned bounding box center so shape is perfectly preserved.
+   */
+  rotateBlocksY90(blocks: any[], direction = 1) {
+    if (!Array.isArray(blocks) || blocks.length === 0) return blocks;
+
+    const isEntity = 'localX' in blocks[0];
+    const hasMicro = blocks.some(b => (b.size && b.size < 1) || (isEntity ? (!Number.isInteger(b.localX) || !Number.isInteger(b.localZ)) : (!Number.isInteger(b.dx) || !Number.isInteger(b.dz))));
+    const S = hasMicro ? 0.2 : 1.0;
+
+    let minX = Infinity, maxX = -Infinity;
+    let minZ = Infinity, maxZ = -Infinity;
+
+    for (const b of blocks) {
+      const x = isEntity ? b.localX : b.dx;
+      const z = isEntity ? b.localZ : b.dz;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+
+    const cx = (minX + maxX) / 2;
+    const cz = (minZ + maxZ) / 2;
+
+    const sign = direction >= 0 ? 1 : -1;
+    const sampleX = sign > 0 ? (cx + cz - minZ) : (cx - cz + minZ);
+    const sampleZ = sign > 0 ? (cz - cx + minX) : (cz + cx - minX);
+    const gridUnitsX = sampleX / S;
+    const gridUnitsZ = sampleZ / S;
+    const remX = (gridUnitsX - Math.round(gridUnitsX)) * S;
+    const remZ = (gridUnitsZ - Math.round(gridUnitsZ)) * S;
+
+    return blocks.map(b => {
+      const x = isEntity ? b.localX : b.dx;
+      const z = isEntity ? b.localZ : b.dz;
+
+      let rx = (sign > 0 ? (cx + cz - z) : (cx - cz + z)) - remX;
+      let rz = (sign > 0 ? (cz - cx + x) : (cz + cx - x)) - remZ;
+
+      if (hasMicro) {
+        rx = Math.round(rx * 5) / 5;
+        rz = Math.round(rz * 5) / 5;
+      } else {
+        rx = Math.round(rx);
+        rz = Math.round(rz);
+      }
+
+      if (isEntity) {
+        return { ...b, localX: rx, localZ: rz };
+      } else {
+        return { ...b, dx: rx, dz: rz };
+      }
+    });
+  }
+
+  /**
+   * Rotate child entity definitions around the same center (cx, cz).
+   */
+  private rotateChildDefinitionsY90(childEntities: any[], direction = 1, center: { cx: number; cz: number } | null = null) {
+    if (!Array.isArray(childEntities) || childEntities.length === 0) return childEntities;
+    const sign = direction >= 0 ? 1 : -1;
+    return childEntities.map(child => {
+      const pos = child.position || { x: 0, y: 0, z: 0 };
+      const cx = center ? center.cx : 0;
+      const cz = center ? center.cz : 0;
+      const rx = (sign > 0 ? (cx + cz - pos.z) : (cx - cz + pos.z));
+      const rz = (sign > 0 ? (cz - cx + pos.x) : (cz + cx - pos.x));
+      return {
+        ...child,
+        position: {
+          x: Math.round(rx * 5) / 5,
+          y: pos.y,
+          z: Math.round(rz * 5) / 5
+        }
+      };
+    });
+  }
+
+  /**
+   * Rotate the active inventory slot (blockset or entity) 90 degrees around Y axis.
+   */
+  rotateActiveInventoryItem(direction = 1) {
+    const category = this.activeInventoryCategory;
+    if (category === 'colorset') return false;
+    const slot = this.inventorySlots?.[this.selectedInventoryIndex];
+    if (!slot || !Array.isArray(slot.blocks) || slot.blocks.length === 0) {
+      this.ui?.showToast?.('No item in current slot to rotate');
+      return false;
+    }
+
+    slot.blocks = this.rotateBlocksY90(slot.blocks, direction);
+
+    if (Array.isArray(slot.childEntities) && slot.childEntities.length > 0) {
+      slot.childEntities = this.rotateChildDefinitionsY90(slot.childEntities, direction);
+    }
+
+    if (this.sceneRenderer) {
+      this.sceneRenderer.inventoryPlacementSlot = null;
+    }
+    this.updateInventoryPlacementPreview();
+
+    InventoryThumbnailRenderer.getInstance().invalidateCache?.(slot);
+
+    this.sound?.playWrenchClick?.();
+    this.ui?.showToast?.(`Rotated "${slot.name || 'item'}" 90°`);
+    this.ui?.syncInventoryState?.();
+    return true;
   }
 
   getWrenchGrabBodyId(contraption, nodeId = 'root') {
@@ -3899,7 +4009,7 @@ export class PlayerController {
         : this.activeInventoryCategory === 'colorset'
           ? `${prefix}: ${slot.name || 'unnamed'} (Hammer LMB applies palette)`
         : this.activeInventoryCategory === 'blockset'
-            ? `${prefix}: ${slot.name || 'unnamed'} · ${slot.blockCount} voxels (Hammer LMB builds empty · RMB overwrites)`
+            ? `${prefix}: ${slot.name || 'unnamed'} · ${slot.blockCount} voxels (Hammer LMB builds · RMB rotates 90°)`
             : `${prefix}: ${slot.name || 'unnamed'} · ${slot.blockCount} blocks`);
     }
   }

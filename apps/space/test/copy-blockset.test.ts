@@ -243,7 +243,7 @@ test('R still copies an entity slot and paste creates an entity', () => {
   assert.equal(pasted.blocks.length, 1);
 });
 
-test('Hammer LMB builds block sets into empty cells only; RMB overwrites', () => {
+test('Hammer LMB builds block sets into empty cells only, skipping occupied cells; RMB rotates the block set 90°', () => {
   const scene = new THREE.Scene();
   const world = new World(scene) as any;
   clearRegion(world, 10, 20, 30, 12, 23, 32);
@@ -272,13 +272,13 @@ test('Hammer LMB builds block sets into empty cells only; RMB overwrites', () =>
   assert.equal(world.getBlockColor(11, 21, 30), 0x00ff00, 'LMB must not overwrite occupied cells');
   assert.ok(controller.__toasts.some(m => m.includes('occupied cell(s) skipped')));
 
-  // RMB: overwrite mode replaces the existing block and its color.
+  // RMB: rotates the active block set 90 degrees.
   controller.handleRightClick();
-  assert.equal(world.getBlockColor(11, 21, 30), 0x123456, 'RMB must overwrite occupied cells');
-  assert.ok(controller.__toasts.some(m => m.includes('Overwrote block set')));
+  assert.ok(controller.__toasts.some(m => m.includes('Rotated')));
+  assert.equal(controller.inventorySlots[0].blocks[0].dz !== 0 || controller.inventorySlots[0].blocks[1].dz !== 0, true);
 });
 
-test('Hammer RMB overwrite clears a standard block before placing a copied micro voxel', () => {
+test('pasteBlockSet in replace mode clears standard blocks before placing micro voxels', () => {
   const scene = new THREE.Scene();
   const world = new World(scene) as any;
   clearRegion(world, 10, 20, 30, 10, 22, 30);
@@ -286,25 +286,21 @@ test('Hammer RMB overwrite clears a standard block before placing a copied micro
   const manager = new ContraptionManager(scene, {}, null, null);
   const controller = makeController({ manager, world });
   controller.activeTool = SpecialTool.HAMMER;
-  controller.inventorySlots[0] = {
+  const slot = {
     kind: 'blockset',
     blockCount: 1,
     blocks: [{ dx: 0.2, dy: 0, dz: 0, size: 0.2, color: 0xabcd12 }]
   };
+  controller.inventorySlots[0] = slot;
   controller.currentRaycast = {
     hit: true,
     hitPos: { x: 10.2, y: 20.0, z: 30.1 },
     normal: { x: 0, y: 1, z: 0 }
   };
 
-  // LMB refuses: a micro voxel cannot coexist with the standard block.
-  controller.handleLeftClick();
-  assert.equal(world.getBlock(10, 21, 30), BlockTypes.COLOR_BLOCK, 'LMB must leave the standard block');
-  assert.equal(world.getMicroBlock(51, 105, 150), null);
-
-  // RMB overwrite: clears the standard block, then writes the micro voxel.
-  controller.handleRightClick();
-  assert.equal(world.getBlock(10, 21, 30), BlockTypes.AIR, 'overwrite removes the blocking standard cell');
+  // Calling pasteBlockSet with replace = true clears standard block and writes micro voxel
+  controller.pasteBlockSet(slot, true);
+  assert.equal(world.getBlock(10, 21, 30), BlockTypes.AIR, 'replace removes the blocking standard cell');
   const micro = world.getMicroBlock(51, 105, 150);
   assert.ok(micro, 'the micro voxel must land in the cleared cell');
   assert.equal(micro.color, 0xabcd12);
@@ -329,7 +325,6 @@ test('Hammer refuses to build when the crosshair is on open sky', () => {
   assert.equal(controller.getInventoryPlacementPose(controller.inventorySlots[0]), null,
     'no surface, no pose');
   assert.equal(controller.pasteInventorySlot(), false, 'LMB must not build in open air');
-  assert.equal(controller.handleRightClick() ?? false, false, 'RMB overwrite must not build in open air');
   assert.ok(controller.__toasts.some(m => m.includes('No surface under the crosshair')));
   for (let x = 0; x <= 6; x++) {
     for (let y = 0; y <= 6; y++) {

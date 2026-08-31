@@ -285,7 +285,7 @@ test('flight eases into a leaned trailing-limb pose and exposes one first-person
   assert.ok(rig.parts.body.rotation.x > 0.5);
   assert.ok(rig.parts.leftLeg.rotation.x > 0.2);
   assert.ok(rig.parts.rightLeg.rotation.x > rig.parts.leftLeg.rotation.x);
-  assert.ok(character.firstPersonHand.position.z < -0.65);
+  assert.ok(character.firstPersonHand.children[0].position.z < -0.65);
   character.dispose();
 });
 
@@ -332,9 +332,10 @@ test('the first-person arm enters from the near lower-right shoulder toward the 
   const character = createTestCharacter();
   const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 100);
   camera.add(character.firstPersonHand);
+  character.updateFirstPersonProjection(camera);
   camera.updateMatrixWorld(true);
 
-  const arm = character.firstPersonHand.children[0];
+  const arm = character.firstPersonHand.children[0].children[0];
   const shoulder = new THREE.Vector3(0, 0, 0).applyMatrix4(arm.matrixWorld);
   const hand = new THREE.Vector3(0, -8, 0).applyMatrix4(arm.matrixWorld);
   const shoulderScreen = shoulder.clone().project(camera);
@@ -343,6 +344,100 @@ test('the first-person arm enters from the near lower-right shoulder toward the 
   assert.ok(hand.z < shoulder.z, 'hand end should be farther from the camera');
   assert.ok(handScreen.x < shoulderScreen.x, 'hand should extend in from the right edge');
   assert.ok(handScreen.y > shoulderScreen.y, 'hand should extend up from the bottom edge');
-  assert.ok(handScreen.x < 0.75 && handScreen.y > -0.85, 'hand end should remain clearly visible');
+  assert.ok(shoulderScreen.x > 1 && shoulderScreen.y < -1, 'the shoulder joint should stay outside the viewport');
+  assert.ok(handScreen.x < 0.75 && handScreen.y > -0.75, 'hand end should remain clearly visible');
+  character.dispose();
+});
+
+test('the first-person hand keeps the same safe framing across camera FOVs and aspect ratios', () => {
+  const character = createTestCharacter();
+  const samples: Array<[number, number]> = [
+    [40, 1],
+    [50, 4 / 3],
+    [75, 16 / 9],
+    [90, 21 / 9],
+    [110, 16 / 10],
+    [120, 21 / 9]
+  ];
+  let reference: { shoulder: THREE.Vector3; hand: THREE.Vector3 } | null = null;
+
+  for (const [fov, aspect] of samples) {
+    const camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 100);
+    camera.add(character.firstPersonHand);
+    character.updateFirstPersonProjection(camera);
+    camera.updateMatrixWorld(true);
+
+    const arm = character.firstPersonHand.children[0].children[0];
+    const shoulder = new THREE.Vector3(0, 0, 0).applyMatrix4(arm.matrixWorld).project(camera);
+    const hand = new THREE.Vector3(0, -8, 0).applyMatrix4(arm.matrixWorld).project(camera);
+    assert.ok(shoulder.x > 1 && shoulder.y < -1, `shoulder leaked into view at ${fov} degrees`);
+    assert.ok(hand.x > -1 && hand.x < 1 && hand.y > -1 && hand.y < 1, `hand left view at ${fov} degrees`);
+
+    if (reference) {
+      assert.ok(shoulder.distanceTo(reference.shoulder) < 1e-10, `shoulder framing changed at ${fov} degrees`);
+      assert.ok(hand.distanceTo(reference.hand) < 1e-10, `hand framing changed at ${fov} degrees`);
+    } else {
+      reference = { shoulder, hand };
+    }
+    camera.remove(character.firstPersonHand);
+  }
+
+  character.dispose();
+});
+
+test('the first-person arm root and raised skin layer remain fully outside the viewport', () => {
+  const data = new Uint8ClampedArray(64 * 64 * 4).fill(255);
+  const character = new CuteCharacter(
+    new THREE.Texture(),
+    { width: 64, height: 64, data } as ImageData,
+    { model: 'strong', showOverlay: true, castShadow: false }
+  );
+
+  // Flight moves the hand closest to the viewport and is the least forgiving
+  // animation state for the shoulder edge.
+  for (let frame = 0; frame < 120; frame++) {
+    character.update(1 / 60, {
+      speed: 5,
+      forwardSpeed: 5,
+      maxSpeed: 5,
+      grounded: false,
+      flying: true
+    });
+  }
+
+  for (const fov of [40, 75, 120]) {
+    const camera = new THREE.PerspectiveCamera(fov, 16 / 9, 0.1, 100);
+    camera.add(character.firstPersonHand);
+    character.updateFirstPersonProjection(camera);
+    camera.updateMatrixWorld(true);
+
+    const arm = character.firstPersonHand.children[0].children[0];
+    const armWorldInverse = new THREE.Matrix4().copy(arm.matrixWorld).invert();
+    let rootVertexCount = 0;
+    let minimumRootScreenX = Number.POSITIVE_INFINITY;
+    let maximumRootScreenY = Number.NEGATIVE_INFINITY;
+    arm.traverse(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const positions = object.geometry.attributes.position;
+      for (let index = 0; index < positions.count; index++) {
+        const world = new THREE.Vector3()
+          .fromBufferAttribute(positions, index)
+          .applyMatrix4(object.matrixWorld);
+        const armLocal = world.clone().applyMatrix4(armWorldInverse);
+        if (armLocal.y < -0.4) continue;
+        rootVertexCount++;
+        const screen = world.project(camera);
+        minimumRootScreenX = Math.min(minimumRootScreenX, screen.x);
+        maximumRootScreenY = Math.max(maximumRootScreenY, screen.y);
+      }
+    });
+    assert.ok(rootVertexCount > 0, 'the test should inspect the base cap and raised skin layer');
+    assert.ok(
+      minimumRootScreenX > 1 || maximumRootScreenY < -1,
+      `root geometry leaked into view at ${fov} degrees`
+    );
+    camera.remove(character.firstPersonHand);
+  }
+
   character.dispose();
 });

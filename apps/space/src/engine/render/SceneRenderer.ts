@@ -1858,6 +1858,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       this.playerFirstPersonHand = character.firstPersonHand;
       this.playerFirstPersonHand.visible = !this.playerAvatar.visible;
       this.camera.add(this.playerFirstPersonHand);
+      character.updateFirstPersonProjection(this.camera);
       // The model arrives asynchronously, so hook it immediately instead of
       // waiting for the scene's periodic dynamic-material scan.
       hookSceneMaterials(character.object3d);
@@ -2177,6 +2178,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         flying: playerMotion?.flying,
         lookPitch: playerMotion?.lookPitch
       });
+      this.playerAvatarCharacter.updateFirstPersonProjection(this.camera);
     }
     if (this.playerAvatar.visible) this.playerAvatar.updateMatrixWorld(true);
   }

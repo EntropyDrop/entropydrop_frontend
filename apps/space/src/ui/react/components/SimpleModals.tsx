@@ -54,6 +54,27 @@ export function GlobalSettingsModal() {
             <div className="settings-control-group"><input id="setting-render-dist-slider" className="settings-slider" type="range" min="4" max="20" step="1" value={state.renderDistance} onChange={event => spaceUiStore.setRenderDistance(Number(event.target.value))} /><span id="setting-render-dist-val" className="settings-value-badge">{state.renderDistance} Chunks</span></div>
           </div>
         </div>
+        <div className="settings-section">
+          <div className="settings-section-title">AUDIO &amp; SOUND</div>
+          <div className="settings-row">
+            <div className="settings-label-group"><span className="settings-label">Mute Audio</span><span className="settings-desc">Disable all procedural sound effects and mechanical audio</span></div>
+            <div className="settings-segmented-control" id="setting-mute-group">
+              {([
+                [false, 'Sound ON'],
+                [true, 'Muted']
+              ] as const).map(([value, label]) => (
+                <button
+                  key={String(value)}
+                  tabIndex={-1}
+                  className={`segment-btn ${state.isMuted === value ? 'active' : ''}`}
+                  onClick={() => spaceUiStore.setMuted(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </ModalBackdrop>
   );
@@ -73,11 +94,10 @@ export function PauseScreen() {
           <span><kbd className="key-badge">E</kbd> Backpack / Set colors</span>
           <span><kbd className="key-badge">1</kbd> Shovel: remove / place 1m blocks</span>
           <span><kbd className="key-badge">2</kbd> Spoon: micro-carve 5x5x5</span>
-          <span><kbd className="key-badge">3</kbd> Brush: paint / right-click sample</span>
-          <span><kbd className="key-badge">MMB</kbd> Sample color anywhere</span>
-          <span><kbd className="key-badge">4</kbd> Selector: box select (max 64×64×64) · Tab standard/micro blocks · R copy</span>
-          <span><kbd className="key-badge">5</kbd> Hammer: preview &amp; LMB build / RMB overwrite</span>
-          <span><kbd className="key-badge">6</kbd> Wrench: hold LMB to grab · RMB start/stop</span>
+          <span><kbd className="key-badge">3</kbd> Selector: box select (max 64×64×64) · Tab standard/micro blocks · R copy</span>
+          <span><kbd className="key-badge">4</kbd> Hammer: preview &amp; LMB build · RMB rotate 90°</span>
+          <span><kbd className="key-badge">5</kbd> Wrench: hold LMB to grab · RMB start/stop</span>
+          <span><kbd className="key-badge">6</kbd> Brush: paint / right-click sample</span>
           <span><kbd className="key-badge">Shift+Click</kbd> Multi-select component blocks</span>
           <span><kbd className="key-badge">C</kbd> Entity editor</span>
           <span><kbd className="key-badge">G</kbd> Assemble physics entity</span>

@@ -44,6 +44,13 @@ const CUTE_TARGET_SIDE_HEIGHT = CUTE_SOURCE_SIDE_ROWS * 0.55;
 const CUTE_SIDE_ROWS = Math.round(CUTE_TARGET_SIDE_HEIGHT / CUTE_X_SCALE);
 const CUTE_Y_CELL_SCALE = CUTE_X_SCALE;
 const CUTE_HALF_SIDE_HEIGHT = CUTE_SIDE_ROWS * CUTE_Y_CELL_SCALE / 2;
+const FIRST_PERSON_REFERENCE_FOV = 75;
+const FIRST_PERSON_REFERENCE_ASPECT = 16 / 9;
+const FIRST_PERSON_REFERENCE_TAN = Math.tan(THREE.MathUtils.degToRad(FIRST_PERSON_REFERENCE_FOV * 0.5));
+const FIRST_PERSON_DEPTH = 0.8;
+const FIRST_PERSON_ROOT_NDC_X = 1.2;
+const FIRST_PERSON_ROOT_NDC_Y = -1.4;
+const FIRST_PERSON_SCALE = 0.09;
 
 function damp(current: number, target: number, responsiveness: number, dt: number) {
   return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-responsiveness * dt));
@@ -458,8 +465,9 @@ function addSkinnedPart(parent: THREE.Object3D, geometry: THREE.BufferGeometry, 
 
 export class CuteCharacter {
   readonly object3d = new THREE.Group();
-  /** Camera-local right arm used by the first-person view. */
+  /** Camera-local, projection-compensated right arm used by the first-person view. */
   readonly firstPersonHand = new THREE.Group();
+  private readonly firstPersonHandPose = new THREE.Group();
   readonly billboard: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null;
   readonly model: SkinModel;
   action: CuteCharacterAction = 'idle';
@@ -580,7 +588,8 @@ export class CuteCharacter {
     if (options.createFirstPersonHand !== false) {
       const firstPersonArm = new THREE.Group();
       firstPersonArm.scale.set(...armScale);
-      this.firstPersonHand.add(firstPersonArm);
+      this.firstPersonHandPose.add(firstPersonArm);
+      this.firstPersonHand.add(this.firstPersonHandPose);
       const firstPersonArmCenter = new THREE.Group();
       firstPersonArmCenter.position.y = -CUTE_SIDE_ROWS / 2;
       firstPersonArm.add(firstPersonArmCenter);
@@ -598,7 +607,8 @@ export class CuteCharacter {
           : null
       );
       this.firstPersonHand.name = 'CuteFirstPersonHand';
-      this.firstPersonHand.scale.setScalar(0.045);
+      this.firstPersonHandPose.name = 'CuteFirstPersonHandPose';
+      this.firstPersonHandPose.scale.setScalar(FIRST_PERSON_SCALE);
       this.firstPersonHand.traverse(object => {
         if (!(object instanceof THREE.Mesh)) return;
         object.castShadow = false;
@@ -655,6 +665,23 @@ export class CuteCharacter {
     this.object3d.traverse(object => {
       if (object instanceof THREE.Mesh) object.castShadow = enabled;
     });
+  }
+
+  /**
+   * Counter-scale the camera-local viewmodel in camera X/Y so changing the
+   * world camera's FOV or aspect ratio does not pull the shoulder cap into the
+   * viewport. Z deliberately stays unchanged to preserve near-plane and depth
+   * behavior.
+   */
+  updateFirstPersonProjection(camera: THREE.PerspectiveCamera) {
+    const fov = THREE.MathUtils.clamp(Number(camera?.fov) || FIRST_PERSON_REFERENCE_FOV, 1, 179);
+    const aspect = Math.max(0.01, Number(camera?.aspect) || FIRST_PERSON_REFERENCE_ASPECT);
+    const fovScale = Math.tan(THREE.MathUtils.degToRad(fov * 0.5)) / FIRST_PERSON_REFERENCE_TAN;
+    this.firstPersonHand.scale.set(
+      fovScale * aspect / FIRST_PERSON_REFERENCE_ASPECT,
+      fovScale,
+      1
+    );
   }
 
   update(deltaSeconds: number, motion: CuteCharacterMotion = {}) {
@@ -791,12 +818,14 @@ export class CuteCharacter {
     const handGround = blend * (1 - air);
     const handGait = Math.sin(this.gaitPhase) * handGround;
     const handFlight = air * this.flightBlend;
-    this.firstPersonHand.position.set(
-      0.8 + this.smoothedSide * 0.008 * handGround,
-      -0.6 - Math.abs(handGait) * 0.01 + handFlight * 0.015,
-      -0.8 - Math.abs(handGait) * 0.008 - handFlight * 0.04
+    this.firstPersonHandPose.position.set(
+      FIRST_PERSON_ROOT_NDC_X * FIRST_PERSON_DEPTH * FIRST_PERSON_REFERENCE_TAN * FIRST_PERSON_REFERENCE_ASPECT
+        + this.smoothedSide * 0.008 * handGround,
+      FIRST_PERSON_ROOT_NDC_Y * FIRST_PERSON_DEPTH * FIRST_PERSON_REFERENCE_TAN
+        - Math.abs(handGait) * 0.01 + handFlight * 0.015,
+      -FIRST_PERSON_DEPTH - Math.abs(handGait) * 0.008 - handFlight * 0.04
     );
-    this.firstPersonHand.rotation.set(
+    this.firstPersonHandPose.rotation.set(
       2.1 + handGait * 0.025 - handFlight * 0.04,
       0.05 - this.smoothedSide * 0.015 * handGround,
       -0.45 + handGait * 0.02

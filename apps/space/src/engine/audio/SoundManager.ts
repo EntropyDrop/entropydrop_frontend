@@ -31,6 +31,24 @@ export class SoundManager {
     }
   }
 
+  setMuted(muted: boolean) {
+    this.isMuted = Boolean(muted);
+    if (this.masterGain && this.ctx) {
+      try {
+        this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.3, this.ctx.currentTime);
+      } catch { }
+    }
+  }
+
+  getMuted(): boolean {
+    return this.isMuted;
+  }
+
+  toggleMute(): boolean {
+    this.setMuted(!this.isMuted);
+    return this.isMuted;
+  }
+
   // Wrench ratchet sound
   playWrenchClick() {
     this.ensureContext();

@@ -818,10 +818,10 @@ test('React UI store exposes palette, selector, and backpack tool modes', () => 
   ui.selectHotbarSlot(0);
   assert.equal(ui.getSnapshot().hotbarSlots[ui.getSnapshot().selectedHotbarIndex].value, SpecialTool.SHOVEL);
 
-  ui.selectHotbarSlot(3);
+  ui.selectHotbarSlot(2);
   assert.equal(ui.getSnapshot().hotbarSlots[ui.getSnapshot().selectedHotbarIndex].value, SpecialTool.SELECTOR);
 
-  ui.selectHotbarSlot(4);
+  ui.selectHotbarSlot(3);
   assert.equal(ui.getSnapshot().hotbarSlots[ui.getSnapshot().selectedHotbarIndex].value, SpecialTool.HAMMER);
 });
 
