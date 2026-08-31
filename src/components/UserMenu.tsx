@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { type LangData, type LangKey, SUPPORTED_LANGUAGES } from '../constants/lang'
 import { apiFetch } from '../utils/api'
+import { revokeAuthSession } from '../utils/fetchInterceptor'
 import { SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS } from "../constants/nav"
 import { SkinAvatarImage } from './SkinAvatarImage'
 
@@ -289,11 +290,11 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         }
     }
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
         import('@react-oauth/google')
             .then(({ googleLogout }) => googleLogout())
             .catch(() => undefined)
-        localStorage.removeItem('token')
+        await revokeAuthSession()
         setUser(null)
         setIsOpen(false)
         window.dispatchEvent(new Event('logout'))

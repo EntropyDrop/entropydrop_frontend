@@ -46,6 +46,75 @@ test('Hammer hover preview uses the same snapped pose as block-set placement', (
   assert.equal(controller.inventoryPlacementPreview.slot, slot);
 });
 
+test('Hammer aims a micro block set on the adjacent 0.2 m cell of a focused micro voxel', () => {
+  const slot = {
+    kind: 'blockset',
+    blockCount: 2,
+    blocks: [
+      { dx: 0, dy: 0, dz: 0, size: 0.2, color: 0x48dbfb },
+      { dx: 0.2, dy: 0, dz: 0, size: 0.2, color: 0xf2a93b }
+    ]
+  };
+  const controller = makeController(slot);
+  controller.currentRaycast = {
+    hit: true,
+    kind: 'micro',
+    microPos: { x: 12, y: 3, z: 7 },
+    placeMicroPos: { x: 13, y: 3, z: 7 },
+    hitPos: { x: 2.4, y: 0.6, z: 1.4 },
+    normal: { x: 1, y: 0, z: 0 }
+  };
+
+  controller.updateInventoryPlacementPreview();
+  const buildPose = controller.getInventoryPlacementPose(slot);
+
+  assert.deepEqual(controller.inventoryPlacementPreview.position.toArray(), [2.6, 0.6, 1.4]);
+  assert.deepEqual(buildPose.position.toArray(), [2.6, 0.6, 1.4]);
+});
+
+test('Hammer aims a micro block set at 0.2 m precision across a standard block face', () => {
+  const slot = {
+    kind: 'blockset',
+    blockCount: 1,
+    blocks: [{ dx: 0, dy: 0, dz: 0, size: 0.2, color: 0x48dbfb }]
+  };
+  const controller = makeController(slot);
+  controller.currentRaycast = {
+    hit: true,
+    kind: 'standard',
+    hitPos: { x: 4, y: 5, z: 7 },
+    entry: { x: 4.46, y: 6, z: 7.73 },
+    normal: { x: 0, y: 1, z: 0 }
+  };
+
+  const pose = controller.getInventoryPlacementPose(slot);
+
+  assert.deepEqual(pose.position.toArray(), [4.4, 6, 7.6]);
+});
+
+test('Hammer keeps block sets containing standard voxels on the 1 m grid', () => {
+  const slot = {
+    kind: 'blockset',
+    blockCount: 2,
+    blocks: [
+      { dx: 0, dy: 0, dz: 0, size: 0.2, color: 0x48dbfb },
+      { dx: 1, dy: 0, dz: 0, size: 1, color: 0xf2a93b }
+    ]
+  };
+  const controller = makeController(slot);
+  controller.currentRaycast = {
+    hit: true,
+    kind: 'micro',
+    placeMicroPos: { x: 13, y: 3, z: 7 },
+    hitPos: { x: 2.4, y: 0.6, z: 1.4 },
+    normal: { x: 1, y: 0, z: 0 }
+  };
+
+  const pose = controller.getInventoryPlacementPose(slot);
+
+  assert.deepEqual(pose.position.toArray(), [3, 0, 1]);
+});
+
 test('Hammer ghost hides without a hovered surface, on an empty slot, or in another tool', () => {
   const slot = {
     kind: 'blockset',
@@ -218,4 +287,3 @@ test('buildUnifiedInventoryPreviewMesh culls internal touching faces between adj
   assert.equal(cubeResult.patchCount, 54);
   assert.equal(cubeResult.fillGeometry.getAttribute('position').count, 324);
 });
-

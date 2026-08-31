@@ -9,6 +9,12 @@ import {
 } from '../src/engine/controls/PlayerController.ts';
 import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import {
+  bendPoint,
+  unbendDirection,
+  TORUS_SPAWN_X,
+  TORUS_SPAWN_Z
+} from '../src/engine/torus/TorusWorld.ts';
 
 /**
  * Selector copies entity/component selections; Hammer builds inventory items;
@@ -284,6 +290,93 @@ test('Wrench hold grabs the exact dynamic-body point and releases cleanly', () =
 
   assert.equal(controller.releaseWrenchGrab(), true);
   assert.equal(controller.wrenchGrab, null);
+});
+
+test('Wrench grab does not push a target that is closer than 1.5 metres', () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null);
+  const entity = makeContraptionWithChildren();
+  manager.registerContraption(entity);
+
+  const hitPoint = entity.position.clone();
+  const eye = hitPoint.clone().add(new THREE.Vector3(0, 0, -0.75));
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.copy(eye);
+  camera.lookAt(hitPoint);
+
+  const controller = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.WRENCH;
+  controller.contraptions = manager;
+  controller.hoveredContraption = entity;
+  controller.hoveredContraptionHit = { contraption: entity, entityId: 'root', point: hitPoint };
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+  controller.camera = camera;
+  controller.physics = {
+    update() {},
+    getEyePosition() { return eye.clone(); },
+    position: eye,
+    velocity: new THREE.Vector3()
+  };
+  controller.updateCameraPosition = () => {};
+
+  controller.handleLeftClick();
+  assert.ok(Math.abs(controller.wrenchGrab.targetDistance - 0.75) < 1e-9);
+
+  controller.update(1 / 60);
+  assert.ok(entity.velocity.length() < 1e-9, 'grabbing a close stationary point must not kick it away');
+});
+
+test('Wrench grab follows the bent aiming ray without an initial sideways push', () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null);
+  const entity = makeContraptionWithChildren();
+  manager.registerContraption(entity);
+
+  const eye = new THREE.Vector3(TORUS_SPAWN_X, 18, TORUS_SPAWN_Z);
+  const hitPoint = eye.clone().add(new THREE.Vector3(4, 0, 6));
+  entity.position.copy(hitPoint);
+  entity.updateTransform();
+
+  const eyeBent = bendPoint(eye.x, eye.y, eye.z);
+  const hitBent = bendPoint(hitPoint.x, hitPoint.y, hitPoint.z);
+  const bentDirection = hitBent.clone().sub(eyeBent).normalize();
+  const flatDirection = unbendDirection(
+    eye.x,
+    eye.y,
+    eye.z,
+    bentDirection,
+    new THREE.Vector3()
+  ).normalize();
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.copy(eye);
+  camera.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), flatDirection);
+
+  const controller = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.WRENCH;
+  controller.contraptions = manager;
+  controller.hoveredContraption = entity;
+  controller.hoveredContraptionHit = {
+    contraption: entity,
+    entityId: 'root',
+    point: hitPoint,
+    distance: eyeBent.distanceTo(hitBent)
+  };
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+  controller.camera = camera;
+  controller.physics = {
+    update() {},
+    getEyePosition() { return eye.clone(); },
+    position: eye,
+    velocity: new THREE.Vector3()
+  };
+  controller.updateCameraPosition = () => {};
+
+  controller.handleLeftClick();
+  controller.update(1 / 60);
+
+  assert.ok(entity.velocity.length() < 1e-6, 'an unchanged bent-space grab target must remain stationary');
 });
 
 test('Wrench grab holds a stationary target without pushing and follows player motion', () => {

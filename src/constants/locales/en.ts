@@ -766,7 +766,7 @@ A direct-message recipient may save, capture, forward, or report content they re
             },
             {
                 title: '6. Cookies, Browser Storage, and Analytics',
-                content: `We use cookies, localStorage, sessionStorage, and IndexedDB to store login tokens; language, interface, and camera settings; Space backpacks, palettes, and unsynchronized world edits; resource caches and temporary session state; and AI Agent endpoint, model, and context settings.
+                content: `We use an HttpOnly-protected cookie for the renewable login session and localStorage for a short-lived access token. We also use localStorage, sessionStorage, and IndexedDB for language, interface, and camera settings; Space backpacks, palettes, and unsynchronized world edits; resource caches and temporary session state; and AI Agent endpoint, model, and context settings.
 
 Space API keys remain only in the current page session and are not persisted to localStorage. When you use a custom AI endpoint, your prompt, necessary game context, and API key are sent directly by your browser to the provider you select and are governed by that provider’s privacy policy.
 

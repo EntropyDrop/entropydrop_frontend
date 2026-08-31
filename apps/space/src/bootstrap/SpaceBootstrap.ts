@@ -18,6 +18,10 @@ import {
   LatencyMonitor,
   type LatencyMonitorOptions,
 } from './LatencyMonitor.ts';
+import {
+  ensureSpaceAccessToken,
+  installSpaceAuthFetchInterceptor,
+} from './SpaceAuthSession.ts';
 
 export { LatencyMonitor, type LatencyMonitorOptions };
 
@@ -543,7 +547,9 @@ export function createPlayerPositionRemote(
 }
 
 async function prepareOnlineSpace(): Promise<PreparedOnlineSpace> {
-  const token = localStorage.getItem('token');
+  const apiOrigin = resolveApiOrigin(import.meta.env.VITE_API_BASE_URL, window.location.origin);
+  installSpaceAuthFetchInterceptor(apiOrigin);
+  const token = await ensureSpaceAccessToken(apiOrigin);
   if (!token) {
     throw new SpaceEntryError(
       'LOGIN_REQUIRED',
@@ -553,7 +559,6 @@ async function prepareOnlineSpace(): Promise<PreparedOnlineSpace> {
     );
   }
 
-  const apiOrigin = resolveApiOrigin(import.meta.env.VITE_API_BASE_URL, window.location.origin);
   const latencyMonitor = new LatencyMonitor({ apiOrigin });
 
   const response = await fetch(`${apiOrigin}/space/api/v2/bootstrap`, {

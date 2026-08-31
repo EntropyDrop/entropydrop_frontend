@@ -9,8 +9,8 @@ import {
 } from '../contraption/Contraption.ts';
 import { ActionDomain, executeBasicAction } from '../actions/BasicActions.ts';
 import {
-  bendPoint, bendDirection,
-  TORUS_GREF, TORUS_SPAWN_X, TORUS_SPAWN_Z,
+  bendPoint, bendDirection, unbendPoint, unwrapPeriodicNear,
+  TORUS_GREF, TORUS_SIZE_X, TORUS_SIZE_Z, TORUS_SPAWN_X, TORUS_SPAWN_Z,
   wrapMicroX, wrapMicroZ
 } from '../torus/TorusWorld.ts';
 import { calculatePreviewDragForce } from '../render/SceneRenderer.ts';
@@ -126,6 +126,9 @@ export class PlayerController {
   set activeTool(tool: string) {
     const prev = this._activeTool;
     if (prev === tool) return;
+    // Hammer rotation is a placement-only pose. Leaving (or entering) a tool
+    // must never carry that pose into a later Hammer session.
+    this.clearHammerRotation();
     if ((prev === SpecialTool.SELECTOR || prev === SpecialTool.SUPER_GLUE) &&
         (tool !== SpecialTool.SELECTOR && tool !== SpecialTool.SUPER_GLUE)) {
       this.clearSelection();
@@ -154,6 +157,10 @@ export class PlayerController {
   selectorMicroMode: boolean;
   inventories: any;
   activeInventoryCategory: string;
+  hammerRotationTurns: number;
+  private hammerRotatedSlotSource: any;
+  private hammerRotatedSlotTurns: number;
+  private hammerRotatedSlotCache: any;
   persistentStorage: SpaceStorage | null;
   bulkEditJob: BulkEditJob | null;
 
@@ -248,6 +255,10 @@ export class PlayerController {
     // - colorset: named sets of 9 palette colors, applied to the keyboard palette
     this.inventories = this.createEmptyInventories();
     this.activeInventoryCategory = 'blockset';
+    this.hammerRotationTurns = 0;
+    this.hammerRotatedSlotSource = null;
+    this.hammerRotatedSlotTurns = 0;
+    this.hammerRotatedSlotCache = null;
     this.loadInventoriesFromLocalStorage();
     // Driving State
     this.isDriving = false;
@@ -1489,6 +1500,24 @@ export class PlayerController {
    *   slot.
    * - **Subtree selection** (first-click level): copies the entire component subtree.
    */
+  private stripCopiedBottomGap(blocks, yKey) {
+    if (!Array.isArray(blocks) || blocks.length === 0) return blocks;
+    let minY = Infinity;
+    for (const block of blocks) {
+      const y = Number(block?.[yKey]);
+      if (Number.isFinite(y) && y < minY) minY = y;
+    }
+    if (!Number.isFinite(minY) || Math.abs(minY) < 1e-9) return blocks;
+
+    // A copied selection gets a fresh placement origin. Anchor its lowest
+    // occupied voxel there instead of preserving empty micro layers inherited
+    // from the source cell/component (for example, a top layer at y = 0.8).
+    return blocks.map(block => ({
+      ...block,
+      [yKey]: Math.round((Number(block[yKey]) - minY) * MICRO_DIVISIONS) / MICRO_DIVISIONS
+    }));
+  }
+
   copySelectionToInventory() {
     if (this.selectedBlockSelection && this.selectedBlockSelection.blocks.length > 0) {
       const { contraption, nodeId, blocks } = this.selectedBlockSelection;
@@ -1498,7 +1527,10 @@ export class PlayerController {
         return null;
       }
       const slot = contraption.serializeSubtree(nodeId);
-      slot.blocks = blocks.map(b => ({ ...b, entityId: 'root' }));
+      slot.blocks = this.stripCopiedBottomGap(
+        blocks.map(b => ({ ...b, entityId: 'root' })),
+        'localY'
+      );
       slot.blockCount = blocks.length;
       // A block selection copies only the level's own blocks (children excluded), so
       // descendants must be pruned to avoid empty ghost components and orphaned scripts.
@@ -1551,7 +1583,8 @@ export class PlayerController {
       this.ui?.showToast?.('Selection region is empty (no voxels to copy)');
       return null;
     }
-    const slot = { kind: 'blockset', name, blocks: rawBlocks, blockCount: rawBlocks.length };
+    const blocks = this.stripCopiedBottomGap(rawBlocks, 'dy');
+    const slot = { kind: 'blockset', name, blocks, blockCount: blocks.length };
     const index = this.addInventoryItem('blockset', slot);
     if (index === null) {
       this.ui?.showToast?.(`Block set inventory is full (${this.inventories.blockset.items.length}) - delete one first`);
@@ -2024,12 +2057,63 @@ export class PlayerController {
     if (entityHit?.point) {
       return {
         hitPos: entityHit.point,
-        normal: entityHit.normal || { x: 0, y: 1, z: 0 }
+        normal: entityHit.normal || { x: 0, y: 1, z: 0 },
+        microNormal: entityHit.worldNormal || entityHit.normal || { x: 0, y: 1, z: 0 },
+        entry: entityHit.point,
+        kind: entityHit.kind
       };
     }
     return this.currentRaycast?.hit
-      ? { hitPos: this.currentRaycast.hitPos, normal: this.currentRaycast.normal }
+      ? {
+          hitPos: this.currentRaycast.hitPos,
+          normal: this.currentRaycast.normal,
+          microNormal: this.currentRaycast.normal,
+          entry: this.currentRaycast.entry,
+          kind: this.currentRaycast.kind,
+          placeMicroPos: this.currentRaycast.placeMicroPos
+        }
       : null;
+  }
+
+  /** Pure-micro block sets can move on the 1/5 grid without invalidating a standard voxel. */
+  private usesMicroBlockSetPlacement(slot) {
+    return slot?.kind === 'blockset'
+      && Array.isArray(slot.blocks)
+      && slot.blocks.length > 0
+      && slot.blocks.every(block => (Number(block?.size) || 1) < 1);
+  }
+
+  /** Resolve the adjacent 0.2 m cell on either terrain or an entity surface. */
+  private getMicroBlockSetPlacementPosition(placementHit) {
+    if (placementHit.kind === 'micro' && placementHit.placeMicroPos) {
+      const micro = placementHit.placeMicroPos;
+      if ([micro.x, micro.y, micro.z].every(Number.isFinite)) {
+        return new THREE.Vector3(
+          micro.x / MICRO_DIVISIONS,
+          micro.y / MICRO_DIVISIONS,
+          micro.z / MICRO_DIVISIONS
+        );
+      }
+    }
+
+    const point = placementHit.entry;
+    if (!point) {
+      const hp = placementHit.hitPos;
+      if (!hp) return null;
+      const fallbackNormal = placementHit.normal || { x: 0, y: 1, z: 0 };
+      return new THREE.Vector3(
+        Math.floor(hp.x + (fallbackNormal.x || 0)),
+        Math.floor(hp.y + (fallbackNormal.y || 0)),
+        Math.floor(hp.z + (fallbackNormal.z || 0))
+      );
+    }
+    const normal = placementHit.microNormal || placementHit.normal || { x: 0, y: 1, z: 0 };
+    const outside = new THREE.Vector3(point.x, point.y, point.z).addScaledVector(
+      new THREE.Vector3(normal.x || 0, normal.y || 0, normal.z || 0),
+      0.02
+    );
+    const snap = value => Math.floor(value * MICRO_DIVISIONS + 1e-6) / MICRO_DIVISIONS;
+    return new THREE.Vector3(snap(outside.x), snap(outside.y), snap(outside.z));
   }
 
   /**
@@ -2037,15 +2121,21 @@ export class PlayerController {
    * build (LMB/RMB). Placement always requires a hovered surface — terrain
    * or entity — so aiming at the sky (high altitude, open air) yields no
    * pose instead of falling back to a point in front of the eye.
-   * Plain block sets snap to the world grid; entity slots preserve the
-   * precise hit point so their local voxel coordinates and collider remain
-   * aligned.
+   * Pure-micro block sets snap to the 1/5 grid; block sets containing standard
+   * voxels stay on the 1 m grid. Entity slots preserve the precise hit point
+   * so their local voxel coordinates and collider remain aligned.
    */
   getInventoryPlacementPose(slot) {
     if (!slot || !Array.isArray(slot.blocks) || slot.blocks.length === 0) return null;
 
     const placementHit = this.getInventoryPlacementHit();
     if (!placementHit) return null;
+
+    if (this.usesMicroBlockSetPlacement(slot)) {
+      const position = this.getMicroBlockSetPlacementPosition(placementHit);
+      if (!position) return null;
+      return { slot, kind: 'blockset', position };
+    }
 
     const hp = placementHit.hitPos;
     const n = placementHit.normal;
@@ -2076,7 +2166,7 @@ export class PlayerController {
     if (this.activeTool !== SpecialTool.HAMMER) return;
     // Color sets apply to the palette with left-click — no placement ghost.
     if (this.activeInventoryCategory === 'colorset') return;
-    const slot = this.inventorySlots?.[this.selectedInventoryIndex];
+    const slot = this.getActiveHammerInventoryItem();
     if (!slot) return;
     this.inventoryPlacementPreview = this.getInventoryPlacementPose(slot);
   }
@@ -2673,12 +2763,21 @@ export class PlayerController {
     return;
   }
 
+  private normalizeQuarterTurns(turns = 0) {
+    const wholeTurns = Number.isFinite(turns) ? Math.trunc(turns) : 0;
+    return ((wholeTurns % 4) + 4) % 4;
+  }
+
   /**
-   * Rotate a set of voxel blocks 90 degrees around the Y axis, with the center
-   * at the integer/grid-aligned bounding box center so shape is perfectly preserved.
+   * Rotate a set of voxel blocks around the Y axis by `quarterTurns * 90°`.
+   * The result is calculated directly from the supplied original coordinates,
+   * never by repeatedly rotating an already rounded intermediate result.
    */
-  rotateBlocksY90(blocks: any[], direction = 1) {
+  rotateBlocksY90(blocks: any[], quarterTurns = 1) {
     if (!Array.isArray(blocks) || blocks.length === 0) return blocks;
+
+    const turns = this.normalizeQuarterTurns(quarterTurns);
+    if (turns === 0) return blocks.map(block => ({ ...block }));
 
     const isEntity = 'localX' in blocks[0];
     const hasMicro = blocks.some(b => (b.size && b.size < 1) || (isEntity ? (!Number.isInteger(b.localX) || !Number.isInteger(b.localZ)) : (!Number.isInteger(b.dx) || !Number.isInteger(b.dz))));
@@ -2699,9 +2798,16 @@ export class PlayerController {
     const cx = (minX + maxX) / 2;
     const cz = (minZ + maxZ) / 2;
 
-    const sign = direction >= 0 ? 1 : -1;
-    const sampleX = sign > 0 ? (cx + cz - minZ) : (cx - cz + minZ);
-    const sampleZ = sign > 0 ? (cz - cx + minX) : (cz + cx - minX);
+    const rotatePoint = (x, z) => {
+      if (turns === 1) return [cx + cz - z, cz - cx + x];
+      if (turns === 2) return [2 * cx - x, 2 * cz - z];
+      return [cx - cz + z, cz + cx - x];
+    };
+
+    // Rotating an even-width shape around its geometric center can land its
+    // lower-corner coordinates on half cells. Apply one deterministic grid
+    // correction derived from the original bounds for this final orientation.
+    const [sampleX, sampleZ] = rotatePoint(minX, minZ);
     const gridUnitsX = sampleX / S;
     const gridUnitsZ = sampleZ / S;
     const remX = (gridUnitsX - Math.round(gridUnitsX)) * S;
@@ -2711,8 +2817,9 @@ export class PlayerController {
       const x = isEntity ? b.localX : b.dx;
       const z = isEntity ? b.localZ : b.dz;
 
-      let rx = (sign > 0 ? (cx + cz - z) : (cx - cz + z)) - remX;
-      let rz = (sign > 0 ? (cz - cx + x) : (cz + cx - x)) - remZ;
+      const rotated = rotatePoint(x, z);
+      let rx = rotated[0] - remX;
+      let rz = rotated[1] - remZ;
 
       if (hasMicro) {
         rx = Math.round(rx * 5) / 5;
@@ -2733,15 +2840,27 @@ export class PlayerController {
   /**
    * Rotate child entity definitions around the same center (cx, cz).
    */
-  private rotateChildDefinitionsY90(childEntities: any[], direction = 1, center: { cx: number; cz: number } | null = null) {
+  private rotateChildDefinitionsY90(childEntities: any[], quarterTurns = 1, center: { cx: number; cz: number } | null = null) {
     if (!Array.isArray(childEntities) || childEntities.length === 0) return childEntities;
-    const sign = direction >= 0 ? 1 : -1;
+    const turns = this.normalizeQuarterTurns(quarterTurns);
+    if (turns === 0) return childEntities.map(child => ({
+      ...child,
+      position: child.position ? { ...child.position } : child.position
+    }));
     return childEntities.map(child => {
       const pos = child.position || { x: 0, y: 0, z: 0 };
       const cx = center ? center.cx : 0;
       const cz = center ? center.cz : 0;
-      const rx = (sign > 0 ? (cx + cz - pos.z) : (cx - cz + pos.z));
-      const rz = (sign > 0 ? (cz - cx + pos.x) : (cz + cx - pos.x));
+      const rx = turns === 1
+        ? cx + cz - pos.z
+        : turns === 2
+          ? 2 * cx - pos.x
+          : cx - cz + pos.z;
+      const rz = turns === 1
+        ? cz - cx + pos.x
+        : turns === 2
+          ? 2 * cz - pos.z
+          : cz + cx - pos.x;
       return {
         ...child,
         position: {
@@ -2753,8 +2872,45 @@ export class PlayerController {
     });
   }
 
+  /** Clear the Hammer's placement-only rotation without touching inventory data. */
+  clearHammerRotation() {
+    this.hammerRotationTurns = 0;
+    this.hammerRotatedSlotSource = null;
+    this.hammerRotatedSlotTurns = 0;
+    this.hammerRotatedSlotCache = null;
+    this.inventoryPlacementPreview = null;
+    if (this.sceneRenderer) this.sceneRenderer.inventoryPlacementSlot = null;
+  }
+
+  /** Return the active item in its temporary Hammer placement orientation. */
+  getActiveHammerInventoryItem() {
+    const slot = this.inventorySlots?.[this.selectedInventoryIndex];
+    if (!slot) return null;
+
+    const turns = this.normalizeQuarterTurns(this.hammerRotationTurns);
+    if (turns === 0) return slot;
+    if (this.hammerRotatedSlotSource === slot &&
+        this.hammerRotatedSlotTurns === turns &&
+        this.hammerRotatedSlotCache) {
+      return this.hammerRotatedSlotCache;
+    }
+
+    const rotatedSlot = {
+      ...slot,
+      blocks: this.rotateBlocksY90(slot.blocks, turns),
+      childEntities: Array.isArray(slot.childEntities)
+        ? this.rotateChildDefinitionsY90(slot.childEntities, turns)
+        : slot.childEntities
+    };
+    this.hammerRotatedSlotSource = slot;
+    this.hammerRotatedSlotTurns = turns;
+    this.hammerRotatedSlotCache = rotatedSlot;
+    return rotatedSlot;
+  }
+
   /**
-   * Rotate the active inventory slot (blockset or entity) 90 degrees around Y axis.
+   * Advance the active inventory item's temporary Y rotation by one quarter turn.
+   * Every pose is derived from the untouched inventory item plus the total turn count.
    */
   rotateActiveInventoryItem(direction = 1) {
     const category = this.activeInventoryCategory;
@@ -2765,11 +2921,10 @@ export class PlayerController {
       return false;
     }
 
-    slot.blocks = this.rotateBlocksY90(slot.blocks, direction);
-
-    if (Array.isArray(slot.childEntities) && slot.childEntities.length > 0) {
-      slot.childEntities = this.rotateChildDefinitionsY90(slot.childEntities, direction);
-    }
+    const step = direction >= 0 ? 1 : -1;
+    this.hammerRotationTurns = this.normalizeQuarterTurns((this.hammerRotationTurns || 0) + step);
+    this.hammerRotatedSlotSource = null;
+    this.hammerRotatedSlotCache = null;
 
     if (this.sceneRenderer) {
       this.sceneRenderer.inventoryPlacementSlot = null;
@@ -2792,6 +2947,24 @@ export class PlayerController {
       currentId = contraption.getEntityNode?.(currentId)?.parentId || '';
     }
     return null;
+  }
+
+  getWrenchTargetPosition(eyePos, targetDistance, anchorPos = eyePos, targetSpace = 'flat') {
+    const lookDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
+    if (targetSpace !== 'bent') {
+      return eyePos.clone().addScaledVector(lookDir, targetDistance);
+    }
+
+    // Picking follows the rendered torus surface in bent space. Keep a held
+    // point on that same screen ray; a flat tangent ray can drift far enough
+    // from the original hit to kick the body when grabbing begins.
+    const eyeBent = bendPoint(eyePos.x, eyePos.y, eyePos.z);
+    const lookBent = bendDirection(eyePos.x, eyePos.y, eyePos.z, lookDir).normalize();
+    const targetBent = eyeBent.addScaledVector(lookBent, targetDistance);
+    const target = unbendPoint(targetBent.x, targetBent.y, targetBent.z);
+    target.x = unwrapPeriodicNear(target.x, anchorPos.x, TORUS_SIZE_X);
+    target.z = unwrapPeriodicNear(target.z, anchorPos.z, TORUS_SIZE_Z);
+    return target;
   }
 
   startWrenchGrab() {
@@ -2821,7 +2994,15 @@ export class PlayerController {
         ? contraption.worldToLocal(hitPoint.clone())
         : hitPoint.clone().sub(contraption.position || new THREE.Vector3());
 
-    const initialDistance = Math.max(1.5, eyePos.distanceTo(hitPoint));
+    const hitDistance = Number(this.hoveredContraptionHit?.distance);
+    const targetSpace = Number.isFinite(hitDistance) && hitDistance >= 0 ? 'bent' : 'flat';
+    const initialDistance = targetSpace === 'bent' ? hitDistance : eyePos.distanceTo(hitPoint);
+    const initialTargetPosition = this.getWrenchTargetPosition(
+      eyePos,
+      initialDistance,
+      hitPoint,
+      targetSpace
+    );
 
     this.releaseWrenchGrab();
     this.wrenchGrab = {
@@ -2829,7 +3010,8 @@ export class PlayerController {
       bodyId,
       localPoint,
       targetDistance: initialDistance,
-      lastTargetPosition: hitPoint.clone(),
+      targetSpace,
+      lastTargetPosition: initialTargetPosition,
       active: true
     };
     this.sound?.playWrenchClick?.();
@@ -3030,6 +3212,7 @@ export class PlayerController {
     return this.inventoryCategory().items;
   }
   set inventorySlots(value) {
+    this.clearHammerRotation();
     const items = new Array(9).fill(null);
     if (Array.isArray(value)) {
       for (let i = 0; i < Math.min(9, value.length); i++) items[i] = value[i];
@@ -3042,7 +3225,9 @@ export class PlayerController {
   }
   set selectedInventoryIndex(value) {
     const group = this.inventoryCategory();
-    group.selected = Number.isInteger(value) && value >= 0 && value < group.items.length ? value : 0;
+    const next = Number.isInteger(value) && value >= 0 && value < group.items.length ? value : 0;
+    if (group.selected !== next) this.clearHammerRotation();
+    group.selected = next;
     this.saveInventoriesToLocalStorage();
   }
 
@@ -3067,6 +3252,7 @@ export class PlayerController {
   setActiveInventoryCategory(category) {
     if (!this.inventories) this.inventoryCategory();
     if (!this.inventories[category]) return this.activeInventoryCategory;
+    if (this.activeInventoryCategory !== category) this.clearHammerRotation();
     this.activeInventoryCategory = category;
     const group = this.inventories[category];
     group.selected = Number.isInteger(group.selected) && group.selected >= 0 && group.selected < group.items.length
@@ -3193,6 +3379,7 @@ export class PlayerController {
     item.name = this.inventoryItemName(category, item, index);
     group.items[index] = item;
     if (index < 9) {
+      if (this.activeInventoryCategory === category && group.selected !== index) this.clearHammerRotation();
       group.selected = index;
     }
     this.saveInventoriesToLocalStorage();
@@ -3228,6 +3415,7 @@ export class PlayerController {
     if (!this.inventories) this.inventoryCategory();
     const group = this.inventories?.[category];
     if (!group || !Number.isInteger(index) || !group.items[index]) return false;
+    if (this.activeInventoryCategory === category) this.clearHammerRotation();
     if (category === 'colorset') {
       const nonNullCount = group.items.filter(Boolean).length;
       if (nonNullCount <= 1) return false;
@@ -3257,6 +3445,7 @@ export class PlayerController {
     if (!group || !Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return false;
     const maxLen = group.items.length;
     if (fromIndex < 0 || fromIndex >= maxLen || toIndex < 0 || toIndex >= maxLen || fromIndex === toIndex) return false;
+    if (this.activeInventoryCategory === category) this.clearHammerRotation();
 
     const temp = group.items[fromIndex];
     group.items[fromIndex] = group.items[toIndex];
@@ -3956,7 +4145,7 @@ export class PlayerController {
   pasteInventorySlot() {
     if (this.activeTool !== SpecialTool.HAMMER) return false;
     const category = this.activeInventoryCategory;
-    const slot = this.inventorySlots[this.selectedInventoryIndex];
+    const slot = this.getActiveHammerInventoryItem();
     if (!slot) {
       if (this.ui) this.ui.showToast(`${category} slot is empty - copy or import something first`);
       return false;
@@ -4399,8 +4588,12 @@ export class PlayerController {
           this.releaseWrenchGrab();
         } else {
           const eyePos = this.physics?.getEyePosition ? this.physics.getEyePosition() : this.camera.position.clone();
-          const lookDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
-          const targetPos = eyePos.clone().addScaledVector(lookDir, targetDistance);
+          const targetPos = this.getWrenchTargetPosition(
+            eyePos,
+            targetDistance,
+            grab.lastTargetPosition,
+            grab.targetSpace
+          );
           const anchorPos = contraption.entityLocalToWorld
             ? contraption.entityLocalToWorld(bodyId, localPoint.clone())
             : contraption.localToWorld

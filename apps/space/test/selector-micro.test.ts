@@ -403,6 +403,37 @@ test('entity 2-point box in micro mode keeps only 0.2 m blocks', () => {
   assert.equal(micro.selection.blocks[0].color, 0x00ff00);
 });
 
+test('copying an entity micro selection removes empty layers below its lowest voxel', () => {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    1,
+    [
+      { localX: 0, localY: 0, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK, color: 0x111111 },
+      { localX: 0, localY: 0.8, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK, color: 0x222222 },
+      { localX: 0.2, localY: 0.8, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK, color: 0x333333 }
+    ],
+    new THREE.Vector3(0, 10, 0),
+    scene
+  );
+  const manager = new ContraptionManager(scene, {}, null, null);
+  manager.registerContraption(contraption);
+  const controller = makeMicroController({ manager });
+  controller.selectorMicroMode = true;
+  controller.selectedBlockSelection = {
+    contraption,
+    nodeId: 'root',
+    blocks: contraption.blocks.filter(block => block.localY === 0.8)
+  };
+
+  const slot = controller.copySelectionToInventory();
+
+  assert.ok(slot);
+  assert.deepEqual(slot.blocks.map(block => block.localY), [0, 0],
+    'the copied top layer should move down four micro cells to y=0');
+  assert.deepEqual(contraption.blocks.map(block => block.localY), [0, 0.8, 0.8],
+    'copying must not move the source entity voxels');
+});
+
 test('pending micro box preview carries meter coordinates and the micro flag', () => {
   const scene = new THREE.Scene();
   const world = makeStubWorld([]);

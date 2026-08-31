@@ -1,4 +1,4 @@
-import './utils/fetchInterceptor'
+import { bootstrapAuthSession } from './utils/fetchInterceptor'
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -55,8 +55,12 @@ window.addEventListener('load', () => {
   sessionStorage.removeItem('chunk_reload');
 });
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+const renderApp = () => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+}
+
+void bootstrapAuthSession().finally(renderApp)

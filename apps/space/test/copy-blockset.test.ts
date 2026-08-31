@@ -275,7 +275,15 @@ test('Hammer LMB builds block sets into empty cells only, skipping occupied cell
   // RMB: rotates the active block set 90 degrees.
   controller.handleRightClick();
   assert.ok(controller.__toasts.some(m => m.includes('Rotated')));
-  assert.equal(controller.inventorySlots[0].blocks[0].dz !== 0 || controller.inventorySlots[0].blocks[1].dz !== 0, true);
+  const rotatedSlot = controller.getActiveHammerInventoryItem();
+  assert.equal(rotatedSlot.blocks[0].dz !== 0 || rotatedSlot.blocks[1].dz !== 0, true);
+  assert.deepEqual(controller.inventorySlots[0].blocks.map(block => [block.dx, block.dz]), [[0, 0], [1, 0]],
+    'RMB rotation must remain temporary and leave the backpack item unchanged');
+
+  const rotatedBlueBlock = rotatedSlot.blocks.find(block => block.color === 0x123456);
+  controller.handleLeftClick();
+  assert.equal(world.getBlockColor(10 + rotatedBlueBlock.dx, 21, 30 + rotatedBlueBlock.dz), 0x123456,
+    'Hammer placement must build from the temporary rotated view');
 });
 
 test('pasteBlockSet in replace mode clears standard blocks before placing micro voxels', () => {

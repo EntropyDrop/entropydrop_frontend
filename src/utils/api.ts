@@ -22,7 +22,8 @@ export const apiFetch = async (path: string, options: RequestOptions = {}) => {
 
     const response = await fetch(url, {
         ...options,
-        headers
+        headers,
+        credentials: options.credentials || 'include'
     });
 
     return response;

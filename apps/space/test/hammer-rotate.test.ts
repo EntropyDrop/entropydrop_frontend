@@ -81,16 +81,61 @@ test('rotateBlocksY90 rotates micro blocks and keeps exact 0.2 scale alignment',
   });
 });
 
-test('Hammer right-click rotates the active inventory item 90 degrees', () => {
+test('Hammer right-click rotates a temporary placement view without mutating the inventory item', () => {
   const controller = makeTestController();
   const slot = controller.inventories.blockset.items[0];
+  const originalBlocks = slot.blocks.map((block: any) => ({ ...block }));
   assert.equal(slot.blocks[0].dx, 0);
   assert.equal(slot.blocks[2].dx, 2);
 
   // Right click with Hammer
   controller.handleRightClick(null);
 
-  // Blocks should now be rotated along Z
-  const zVals = slot.blocks.map((b: any) => b.dz).sort((a: number, b: number) => a - b);
+  // The canonical backpack item stays untouched; only the placement view rotates.
+  assert.deepEqual(slot.blocks, originalBlocks);
+  const rotatedSlot = controller.getActiveHammerInventoryItem();
+  const zVals = rotatedSlot.blocks.map((b: any) => b.dz).sort((a: number, b: number) => a - b);
   assert.deepEqual(zVals, [-1, 0, 1]);
+});
+
+test('consecutive Hammer rotations are always derived from the original item and four clicks are exact', () => {
+  const controller = makeTestController();
+  const slot = controller.inventories.blockset.items[0];
+  const originalBlocks = slot.blocks.map((block: any) => ({ ...block }));
+
+  for (let turns = 1; turns <= 4; turns++) {
+    controller.handleRightClick(null);
+    const expected = controller.rotateBlocksY90(originalBlocks, turns);
+    assert.deepEqual(controller.getActiveHammerInventoryItem().blocks, expected);
+    assert.deepEqual(slot.blocks, originalBlocks, `click ${turns} must not change the source item`);
+  }
+
+  assert.equal(controller.hammerRotationTurns, 0);
+  assert.equal(controller.getActiveHammerInventoryItem(), slot, 'four clicks must use the exact original item again');
+});
+
+test('switching Hammer item or tool clears the temporary rotation', () => {
+  const controller = makeTestController();
+  const firstSlot = controller.inventories.blockset.items[0];
+  controller.inventories.blockset.items.push({
+    id: 'test_bs_2',
+    name: 'Single',
+    kind: 'blockset',
+    blocks: [{ dx: 4, dy: 0, dz: 2, size: 1, color: '#fff' }],
+    blockCount: 1
+  });
+
+  controller.handleRightClick(null);
+  assert.equal(controller.hammerRotationTurns, 1);
+  controller.selectedInventoryIndex = 1;
+  assert.equal(controller.hammerRotationTurns, 0, 'selecting another item clears rotation');
+  controller.selectedInventoryIndex = 0;
+  assert.equal(controller.getActiveHammerInventoryItem(), firstSlot, 'reselecting uses the original pose');
+
+  controller.handleRightClick(null);
+  assert.equal(controller.hammerRotationTurns, 1);
+  controller.activeTool = SpecialTool.SHOVEL;
+  assert.equal(controller.hammerRotationTurns, 0, 'switching tools clears rotation');
+  controller.activeTool = SpecialTool.HAMMER;
+  assert.equal(controller.getActiveHammerInventoryItem(), firstSlot, 'returning to Hammer uses the original pose');
 });

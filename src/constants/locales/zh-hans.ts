@@ -766,7 +766,7 @@ Space 市场未来可能允许用户使用 Credits 获取虚拟物品、资源�
             },
             {
                 title: '6. Cookie、浏览器存储与分析工具',
-                content: `我们使用 Cookie、localStorage、sessionStorage 和 IndexedDB 等技术保存登录令牌，语言、界面和摄像机设置，Space 背包、调色板及未同步世界编辑，资源缓存和临时会话状态，以及 AI Agent 的接口地址、模型和上下文设置。
+                content: `我们使用受 HttpOnly 保护的 Cookie 保存可续期登录会话，并在 localStorage 保存短期访问令牌；我们也使用 localStorage、sessionStorage 和 IndexedDB 保存语言、界面和摄像机设置，Space 背包、调色板及未同步世界编辑，资源缓存和临时会话状态，以及 AI Agent 的接口地址、模型和上下文设置。
 
 Space 的 API 密钥仅保存在当前页面会话中，不会持久写入 localStorage。使用自定义 AI 接口时，提示词、必要游戏上下文和 API 密钥会由浏览器直接发送给您选择的服务商，并适用该服务商的隐私政策。
 
