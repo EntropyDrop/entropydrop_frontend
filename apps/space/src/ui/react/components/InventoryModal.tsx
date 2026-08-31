@@ -1,4 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  LiaDownloadSolid,
+  LiaHeartSolid,
+  LiaHeart,
+  LiaTrashAltSolid,
+  LiaAngleLeftSolid,
+  LiaAngleRightSolid,
+  LiaStoreAltSolid,
+  LiaBoxesSolid,
+  LiaCloudUploadAltSolid,
+  LiaCopySolid,
+  LiaFileExportSolid,
+  LiaFileImportSolid,
+  LiaCubeSolid,
+  LiaFileUploadSolid,
+} from 'react-icons/lia';
 import { InventoryThumbnailRenderer } from '../../../engine/render/InventoryThumbnailRenderer.ts';
 import { MAX_STL_FILE_BYTES } from '../../../engine/voxel/STLVoxelizer.ts';
 import { colorToHex, normalizeColor } from '../../../engine/voxel/BlockTypes.ts';
@@ -13,52 +29,28 @@ import {
 
 export type InventoryCategory = 'blockset' | 'entity' | 'colorset';
 
-function PixelCopyIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
-      <path fillRule="evenodd" clipRule="evenodd" d="M2 2h8v2H4v8H2V2zm4 4h8v8H6V6zm2 2h4v4H8V8z" />
-    </svg>
-  );
+export function PixelCopyIcon() {
+  return <LiaCopySolid size={13} style={{ display: 'block' }} />;
 }
 
-function PixelExportIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
-      <path d="M7 1h2v5h3l-4 4-4-4h3V1zm-5 9h2v2h8v-2h2v4H2v-4z" />
-    </svg>
-  );
+export function PixelExportIcon() {
+  return <LiaFileExportSolid size={13} style={{ display: 'block' }} />;
 }
 
-function PixelDeleteIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
-      <path fillRule="evenodd" clipRule="evenodd" d="M5 2h6v2h4v2h-1v8H2V6H1V4h4V2zm-1 4v6h8V6H4zm2 1h2v4H6V7zm4 0h2v4h-2V7z" />
-    </svg>
-  );
+export function PixelDeleteIcon() {
+  return <LiaTrashAltSolid size={13} style={{ display: 'block' }} />;
 }
 
-function PixelPublishIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
-      <path d="M7 15V6H4l4-5 4 5H9v9H7zM2 10h3v2H4v2h8v-2h-1v-2h3v6H2v-6z" />
-    </svg>
-  );
+export function PixelPublishIcon() {
+  return <LiaCloudUploadAltSolid size={13} style={{ display: 'block' }} />;
 }
 
-function PixelDownloadIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
-      <path d="M7 1h2v8h3l-4 4-4-4h3V1zM2 12h2v2h8v-2h2v4H2v-4z" />
-    </svg>
-  );
+export function PixelDownloadIcon() {
+  return <LiaDownloadSolid size={13} style={{ display: 'block' }} />;
 }
 
-function PixelHeartIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
-      <path d="M2 3h4v2h4V3h4v2h2v5h-2v2h-2v2h-2v2H6v-2H4v-2H2v-2H0V5h2V3z" />
-    </svg>
-  );
+export function PixelHeartIcon() {
+  return <LiaHeartSolid size={13} style={{ display: 'block' }} />;
 }
 
 function ImportJsonButton({ category }: { category: InventoryCategory }) {
@@ -81,9 +73,259 @@ function ImportJsonButton({ category }: { category: InventoryCategory }) {
         className="backpack-section-btn"
         onClick={() => input.current?.click()}
       >
+        <LiaFileImportSolid size={13} style={{ marginRight: 4, display: 'inline', verticalAlign: 'text-bottom' }} />
         Import JSON
       </button>
     </>
+  );
+}
+
+function Import3DModelPopover() {
+  const controller = useSpaceUi(state => state.controller);
+  const [isOpen, setIsOpen] = useState(false);
+  const [precision, setPrecision] = useState(1);
+  const [sizeBlocks, setSizeBlocks] = useState(32);
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState('No file selected');
+  const workerRef = useRef<Worker | null>(null);
+  const timeoutRef = useRef<number | null>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const stopWorker = () => {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+  };
+  useEffect(() => stopWorker, []);
+
+  // Close on outside click or ESC
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const importModel = async () => {
+    if (workerRef.current) {
+      stopWorker();
+      setStatus('Import cancelled');
+      return;
+    }
+    if (!file) { setStatus('Choose a .glb, .gltf, or .stl file first'); return; }
+    if (file.size > MAX_STL_FILE_BYTES) { setStatus(`Error: Model files are limited to ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB`); return; }
+    if (!sizeBlocks || sizeBlocks < 1) { setStatus('Error: size in standard blocks must be at least 1'); return; }
+    try {
+      const worker = new Worker(new URL('../../../engine/voxel/STLImportWorker.ts', import.meta.url), { type: 'module' });
+      workerRef.current = worker;
+      setStatus(`Reading ${file.name}…`);
+      timeoutRef.current = window.setTimeout(() => {
+        if (workerRef.current === worker) {
+          stopWorker();
+          setStatus('Error: 3D model import exceeded the 120 second processing limit');
+        }
+      }, 120000);
+      worker.onmessage = event => {
+        if (workerRef.current !== worker) return;
+        try {
+          if (!event.data?.ok) throw new Error(event.data?.error || 'Model worker failed');
+          const result = event.data.result;
+          const sizeLabel = `prec ${precision} · size ${sizeBlocks} blocks`;
+          const slot = controller?.importBlockSetToInventory?.(result.blocks, `${file.name} @${sizeLabel}`);
+          if (!slot) throw new Error('Block set inventory is full');
+          const index = controller.inventories.blockset.items.indexOf(slot);
+          setStatus(`OK: ${result.blocks.length} voxels (${result.size.sx}×${result.size.sy}×${result.size.sz}) · ${sizeLabel} → block set slot ${index + 1}`);
+          spaceUiStore.syncInventoryState();
+          spaceUiStore.showToast(`Imported "${file.name}" to Block Set slot ${index + 1}`);
+          setTimeout(() => setIsOpen(false), 1200);
+        } catch (error: any) {
+          setStatus(`Error: ${error?.message || String(error)}`);
+        } finally {
+          stopWorker();
+        }
+      };
+      worker.onerror = event => { stopWorker(); setStatus(`Error: ${event.message || 'Model worker crashed'}`); };
+      const buffer = await file.arrayBuffer();
+      if (workerRef.current !== worker) return;
+      setStatus(`Voxelizing ${file.name} in background…`);
+      worker.postMessage({
+        buffer,
+        filename: file.name,
+        sizeBlocks,
+        precision,
+        color: controller?.selectedColor ?? 0xf2a93b
+      }, [buffer]);
+    } catch (error: any) {
+      stopWorker();
+      setStatus(`Error: ${error?.message || String(error)}`);
+    }
+  };
+
+  return (
+    <div className="stl-import-anchor" ref={popoverRef}>
+      <button
+        type="button"
+        tabIndex={-1}
+        className={`backpack-section-btn ${isOpen ? 'active' : ''}`}
+        title="Import 3D Model (.glb / .gltf / .stl)"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <LiaCubeSolid size={13} style={{ marginRight: 4, display: 'inline', verticalAlign: 'text-bottom' }} />
+        Import 3D Model
+      </button>
+
+      {isOpen && (
+        <div className="stl-popover-container" onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div className="stl-popover-header">
+            <div className="stl-popover-title">
+              <LiaCubeSolid size={16} className="stl-title-icon" />
+              <span>Import 3D Model</span>
+            </div>
+            <button
+              type="button"
+              className="icon-btn stl-popover-close"
+              title="Close"
+              onClick={() => setIsOpen(false)}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="stl-popover-sub">
+            Convert full-color .glb, .gltf, or .stl meshes into a voxel block set.
+          </div>
+
+          {/* Form Fields */}
+          <div className="stl-popover-body">
+            {/* Precision */}
+            <div className="stl-field-group">
+              <div className="stl-field-label">Voxel Precision</div>
+              <div className="stl-toggle-group">
+                <button
+                  type="button"
+                  className={`stl-toggle-option ${precision === 0.2 ? 'active' : ''}`}
+                  onClick={() => setPrecision(0.2)}
+                >
+                  0.2 (5×5×5 Micro)
+                </button>
+                <button
+                  type="button"
+                  className={`stl-toggle-option ${precision === 1 ? 'active' : ''}`}
+                  onClick={() => setPrecision(1)}
+                >
+                  1.0 (Standard)
+                </button>
+              </div>
+            </div>
+
+            {/* Size */}
+            <div className="stl-field-group">
+              <div className="stl-field-label">Size (Largest Axis)</div>
+              <div className="stl-size-row-inner">
+                <input
+                  type="number"
+                  id="stl-size-blocks"
+                  className="stl-number-input"
+                  value={sizeBlocks}
+                  min={1}
+                  max={256}
+                  step={1}
+                  required
+                  onChange={e => setSizeBlocks(Number(e.target.value))}
+                />
+                <span className="stl-size-unit">blocks</span>
+              </div>
+              <div className="stl-field-hint">Target size in 1×1×1 standard blocks (1-256)</div>
+            </div>
+
+            {/* File Dropzone */}
+            <div className="stl-field-group">
+              <div className="stl-field-label">3D Model File</div>
+              <div
+                className={`stl-dropzone ${file ? 'has-file' : ''}`}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  id="stl-file-input"
+                  accept=".glb,.gltf,.stl"
+                  hidden
+                  onChange={event => {
+                    const next = event.target.files?.[0] || null;
+                    setFile(next);
+                    setStatus(
+                      next && next.size > MAX_STL_FILE_BYTES
+                        ? `Error: ${next.name} exceeds ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB limit`
+                        : next
+                          ? `Ready: ${next.name}`
+                          : 'No file selected'
+                    );
+                  }}
+                />
+                <LiaFileUploadSolid size={20} className="stl-dropzone-icon" />
+                <div className="stl-dropzone-text">
+                  {file ? (
+                    <span className="stl-selected-name">{file.name} ({(file.size / 1024).toFixed(1)} KB)</span>
+                  ) : (
+                    <span>Click to choose .glb, .gltf, or .stl</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Status Feedback */}
+            {status && (
+              <div
+                id="stl-import-status"
+                className={`stl-import-status-bar ${
+                  status.startsWith('Error') ? 'error' : status.startsWith('OK') ? 'success' : ''
+                }`}
+              >
+                {status}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="stl-popover-actions">
+              <button
+                type="button"
+                className="backpack-section-btn"
+                onClick={() => setIsOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="stl-import-btn"
+                className="backpack-section-btn primary mc-btn-green"
+                onClick={importModel}
+                disabled={!file}
+              >
+                {workerRef.current ? 'Cancel' : 'Import & Voxelize'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -422,7 +664,7 @@ function MarketResourceCard({
         </div>
         <div className="market-resource-actions">
           <button type="button" className="backpack-section-btn primary" onClick={() => onDownload(resource)}>
-            <PixelDownloadIcon /> Download
+            <LiaDownloadSolid size={13} style={{ marginRight: 3, display: 'inline', verticalAlign: 'text-bottom' }} /> Download
           </button>
           <button
             type="button"
@@ -430,7 +672,12 @@ function MarketResourceCard({
             aria-pressed={resource.is_liked}
             onClick={() => onLike(resource)}
           >
-            <PixelHeartIcon /> {resource.is_liked ? 'Liked' : 'Like'}
+            {resource.is_liked ? (
+              <LiaHeartSolid size={13} style={{ marginRight: 3, display: 'inline', verticalAlign: 'text-bottom', color: '#ff6b81' }} />
+            ) : (
+              <LiaHeart size={13} style={{ marginRight: 3, display: 'inline', verticalAlign: 'text-bottom' }} />
+            )}
+            {resource.is_liked ? 'Liked' : 'Like'}
           </button>
           {isAdmin && (
             <button
@@ -440,7 +687,7 @@ function MarketResourceCard({
               aria-label="Admin delete market resource"
               onClick={() => onDelete(resource)}
             >
-              <PixelDeleteIcon />
+              <LiaTrashAltSolid size={13} />
             </button>
           )}
         </div>
@@ -449,135 +696,198 @@ function MarketResourceCard({
   );
 }
 
-function StlImportCard() {
-  const controller = useSpaceUi(state => state.controller);
-  const [precision, setPrecision] = useState(1);
-  const [sizeBlocks, setSizeBlocks] = useState(32);
-  const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState('No file selected');
-  const workerRef = useRef<Worker | null>(null);
-  const timeoutRef = useRef<number | null>(null);
+function MarketSection({
+  category,
+  isAdmin,
+  onDownload,
+  refreshKey,
+}: {
+  category: InventoryCategory;
+  isAdmin: boolean;
+  onDownload: (resource: SpaceMarketResource) => void;
+  refreshKey?: number;
+}) {
+  const [marketSort, setMarketSort] = useState<SpaceMarketSort>('latest');
+  const [marketPage, setMarketPage] = useState(1);
+  const pageSize = 9;
+  const [marketItems, setMarketItems] = useState<SpaceMarketResource[]>([]);
+  const [marketTotal, setMarketTotal] = useState(0);
+  const [marketQuota, setMarketQuota] = useState<SpaceMarketQuota | null>(null);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketError, setMarketError] = useState('');
+  const marketRequestIdRef = useRef(0);
+  const marketClient = spaceUiStore.getMarketClient();
 
-  const stopWorker = () => {
-    workerRef.current?.terminate();
-    workerRef.current = null;
-    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
-    timeoutRef.current = null;
-  };
-  useEffect(() => stopWorker, []);
-
-  const importModel = async () => {
-    if (workerRef.current) {
-      stopWorker();
-      setStatus('Import cancelled');
-      return;
-    }
-    if (!file) { setStatus('Choose a .glb, .gltf, or .stl file first'); return; }
-    if (file.size > MAX_STL_FILE_BYTES) { setStatus(`Error: Model files are limited to ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB`); return; }
-    if (!sizeBlocks || sizeBlocks < 1) { setStatus('Error: size in standard blocks must be at least 1'); return; }
+  const loadMarket = useCallback(async (
+    targetCategory: InventoryCategory,
+    sort: SpaceMarketSort,
+    page: number
+  ) => {
+    if (!marketClient) return;
+    const requestId = ++marketRequestIdRef.current;
+    setMarketLoading(true);
+    setMarketError('');
     try {
-      const worker = new Worker(new URL('../../../engine/voxel/STLImportWorker.ts', import.meta.url), { type: 'module' });
-      workerRef.current = worker;
-      setStatus(`Reading ${file.name}…`);
-      timeoutRef.current = window.setTimeout(() => {
-        if (workerRef.current === worker) {
-          stopWorker();
-          setStatus('Error: 3D model import exceeded the 120 second processing limit');
-        }
-      }, 120000);
-      worker.onmessage = event => {
-        if (workerRef.current !== worker) return;
-        try {
-          if (!event.data?.ok) throw new Error(event.data?.error || 'Model worker failed');
-          const result = event.data.result;
-          const sizeLabel = `prec ${precision} · size ${sizeBlocks} blocks`;
-          const slot = controller?.importBlockSetToInventory?.(result.blocks, `${file.name} @${sizeLabel}`);
-          if (!slot) throw new Error('Block set inventory is full');
-          const index = controller.inventories.blockset.items.indexOf(slot);
-          setStatus(`OK: ${result.blocks.length} voxels (${result.size.sx}×${result.size.sy}×${result.size.sz}) · ${sizeLabel} → block set slot ${index + 1}`);
-          spaceUiStore.syncInventoryState();
-        } catch (error: any) {
-          setStatus(`Error: ${error?.message || String(error)}`);
-        } finally {
-          stopWorker();
-        }
-      };
-      worker.onerror = event => { stopWorker(); setStatus(`Error: ${event.message || 'Model worker crashed'}`); };
-      const buffer = await file.arrayBuffer();
-      if (workerRef.current !== worker) return;
-      setStatus(`Voxelizing ${file.name} in background…`);
-      worker.postMessage({
-        buffer,
-        filename: file.name,
-        sizeBlocks,
-        precision,
-        color: controller?.selectedColor ?? 0xf2a93b
-      }, [buffer]);
+      const offset = (page - 1) * pageSize;
+      const response = await marketClient.listResources(targetCategory, sort, pageSize, offset);
+      if (requestId !== marketRequestIdRef.current) return;
+      setMarketItems(response.items);
+      setMarketTotal(response.total);
+      setMarketQuota(response.quota);
+    } catch (error) {
+      if (requestId !== marketRequestIdRef.current) return;
+      setMarketError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (requestId === marketRequestIdRef.current) setMarketLoading(false);
+    }
+  }, [marketClient]);
+
+  // When category, sort, or refreshKey changes, reload market
+  useEffect(() => {
+    setMarketPage(1);
+    void loadMarket(category, marketSort, 1);
+  }, [category, marketSort, refreshKey, loadMarket]);
+
+  const handlePageChange = (newPage: number) => {
+    setMarketPage(newPage);
+    void loadMarket(category, marketSort, newPage);
+  };
+
+  const handleLike = async (resource: SpaceMarketResource) => {
+    if (!marketClient) return;
+    try {
+      const result = await marketClient.toggleLike(resource.id);
+      setMarketItems(items => items.map(item => item.id === resource.id
+        ? { ...item, is_liked: result.is_liked, likes_count: result.likes_count }
+        : item));
     } catch (error: any) {
-      stopWorker();
-      setStatus(`Error: ${error?.message || String(error)}`);
+      spaceUiStore.showToast(error?.message || 'Failed to like resource');
     }
   };
+
+  const handleDelete = async (resource: SpaceMarketResource) => {
+    if (!marketClient || !isAdmin) return;
+    if (!window.confirm(`Delete "${resource.name}" from the market?`)) return;
+    try {
+      await marketClient.deleteResource(resource.id);
+      setMarketItems(items => items.filter(item => item.id !== resource.id));
+      setMarketTotal(total => Math.max(0, total - 1));
+      spaceUiStore.showToast(`Deleted "${resource.name}" from the market.`);
+    } catch (error: any) {
+      spaceUiStore.showToast(error?.message || 'Failed to delete resource');
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(marketTotal / pageSize));
 
   return (
-    <div className="inventory-card stl-import-card">
-      <div className="stl-card-header">
-        <span className="inv-icon">⬡</span>
-        <div style={{ flex: 1, textAlign: 'left' }}>
-          <div className="inv-name" style={{ color: 'var(--brass-light)' }}>IMPORT 3D MODEL (GLB / GLTF / STL) → BLOCK SET</div>
-          <div className="inv-desc">Convert full-color .glb, .gltf, or .stl models into a block set — Hammer left-click builds empty cells, right-click overwrites</div>
+    <div className="market-section-container" id={`market-section-${category}`}>
+      <div className="market-toolbar">
+        <div className="market-section-title-group">
+          <div className="backpack-section-title">
+            <LiaStoreAltSolid size={18} style={{ color: 'var(--accent-light)' }} />
+            <span>Community Market ({category === 'blockset' ? 'Block Sets' : category === 'entity' ? 'Entities' : 'Color Sets'})</span>
+          </div>
+          <div className="market-license-note">
+            Published under <strong>AGPL-3.0-only</strong>
+            {marketQuota && (
+              <span className="market-quota">
+                Today: {marketQuota.published_today}/{marketQuota.daily_limit} · {marketQuota.remaining_today} remaining
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="market-sort-buttons" role="group" aria-label="Market ranking">
+          {([
+            ['downloads', 'Most downloaded'],
+            ['likes', 'Most liked'],
+            ['latest', 'Newest'],
+          ] as Array<[SpaceMarketSort, string]>).map(([sort, label]) => (
+            <button
+              key={sort}
+              type="button"
+              className={`backpack-section-btn ${marketSort === sort ? 'active' : ''}`}
+              onClick={() => setMarketSort(sort)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
-      <div className="stl-size-row">
-        <span className="stl-size-label">Precision:</span>
-        <label className="stl-size-option">
-          <input type="radio" name="stl-size" value="0.2" checked={precision === 0.2} onChange={() => setPrecision(0.2)} />
-          <span> 0.2 (5×5×5 micro voxels)</span>
-        </label>
-        <label className="stl-size-option">
-          <input type="radio" name="stl-size" value="1" checked={precision === 1} onChange={() => setPrecision(1)} />
-          <span> 1 (standard blocks)</span>
-        </label>
-      </div>
-      <div className="stl-size-row">
-        <span className="stl-size-label">Size (largest axis):</span>
-        <input
-          type="number"
-          id="stl-size-blocks"
-          className="stl-max-select"
-          value={sizeBlocks}
-          min="1"
-          max="256"
-          step="1"
-          required
-          onChange={event => setSizeBlocks(Number(event.target.value))}
-        />
-        <span className="stl-size-hint">required · final model size in 1×1×1 standard blocks</span>
-      </div>
-      <input
-        type="file"
-        id="stl-file-input"
-        accept=".glb,.gltf,.stl"
-        className="stl-file-input"
-        onChange={event => {
-          const next = event.target.files?.[0] || null;
-          setFile(next);
-          setStatus(next && next.size > MAX_STL_FILE_BYTES ? `Error: ${next.name} exceeds the ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB limit` : next ? `Ready: ${next.name}` : 'No file selected');
-        }}
-      />
-      <div className="stl-actions">
-        <button
-          type="button"
-          tabIndex={-1}
-          className="banner-btn primary"
-          id="stl-import-btn"
-          style={{ fontSize: 11, padding: '4px 10px' }}
-          onClick={importModel}
-        >
-          {workerRef.current ? 'Cancel' : 'Import & Voxelize'}
-        </button>
-        <span id="stl-import-status" className="stl-import-status">{status}</span>
-      </div>
+
+      {marketError && <div className="market-state error">{marketError}</div>}
+
+      {marketLoading && marketItems.length === 0 ? (
+        <div className="market-state">Loading market resources…</div>
+      ) : marketItems.length === 0 ? (
+        <div className="market-state">No {category} resources have been published yet. Be the first to publish one!</div>
+      ) : (
+        <>
+          <div className="market-result-summary">
+            {marketTotal} resources available · Page {marketPage} of {totalPages}
+          </div>
+          <div className="market-grid">
+            {marketItems.map(resource => (
+              <MarketResourceCard
+                key={resource.id}
+                resource={resource}
+                isAdmin={isAdmin}
+                onDownload={onDownload}
+                onLike={handleLike}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+
+          {/* Market Pagination */}
+          {totalPages > 1 && (
+            <div className="market-pagination">
+              <button
+                type="button"
+                className="market-page-btn"
+                disabled={marketPage <= 1}
+                title="Previous page"
+                onClick={() => handlePageChange(Math.max(1, marketPage - 1))}
+              >
+                <LiaAngleLeftSolid />
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - marketPage) <= 2)
+                .map((p, idx, arr) => {
+                  const prev = arr[idx - 1];
+                  const hasGap = prev && p - prev > 1;
+                  return (
+                    <React.Fragment key={p}>
+                      {hasGap && <span className="market-page-ellipsis">…</span>}
+                      <button
+                        type="button"
+                        className={`market-page-btn ${marketPage === p ? 'active' : ''}`}
+                        onClick={() => handlePageChange(p)}
+                      >
+                        {p}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+
+              <button
+                type="button"
+                className="market-page-btn"
+                disabled={marketPage >= totalPages}
+                title="Next page"
+                onClick={() => handlePageChange(Math.min(totalPages, marketPage + 1))}
+              >
+                <LiaAngleRightSolid />
+              </button>
+              <span className="market-page-info">
+                {marketPage} / {totalPages}
+              </span>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -589,51 +899,9 @@ export function InventoryModal() {
     : state.activeInventoryCategory === 'colorset'
       ? 'colorset'
       : 'blockset';
-  const [view, setView] = useState<'backpack' | 'market'>('backpack');
-  const [marketSort, setMarketSort] = useState<SpaceMarketSort>('latest');
-  const [marketItems, setMarketItems] = useState<SpaceMarketResource[]>([]);
-  const [marketTotal, setMarketTotal] = useState(0);
-  const [marketQuota, setMarketQuota] = useState<SpaceMarketQuota | null>(null);
-  const [marketLoading, setMarketLoading] = useState(false);
-  const [marketError, setMarketError] = useState('');
-  const marketRequestIdRef = useRef(0);
+
+  const [marketRefreshKey, setMarketRefreshKey] = useState(0);
   const marketClient = spaceUiStore.getMarketClient();
-
-  const marketErrorMessage = (error: unknown) => {
-    if (error instanceof SpaceMarketError) {
-      if (error.code === 'RESOURCE_ALREADY_PUBLISHED') return 'This exact resource is already published.';
-      if (error.code === 'DAILY_PUBLISH_LIMIT_REACHED') return 'Daily publication limit reached (10/10).';
-      if (error.code === 'INVALID_MARKET_RESOURCE') return `Resource validation failed: ${error.message}`;
-      return error.message;
-    }
-    return error instanceof Error ? error.message : String(error);
-  };
-
-  const loadMarket = useCallback(async (
-    category: InventoryCategory = activeCategory,
-    sort: SpaceMarketSort = marketSort
-  ) => {
-    if (!marketClient) return;
-    const requestId = ++marketRequestIdRef.current;
-    setMarketLoading(true);
-    setMarketError('');
-    try {
-      const response = await marketClient.listResources(category, sort);
-      if (requestId !== marketRequestIdRef.current) return;
-      setMarketItems(response.items);
-      setMarketTotal(response.total);
-      setMarketQuota(response.quota);
-    } catch (error) {
-      if (requestId !== marketRequestIdRef.current) return;
-      setMarketError(error instanceof Error ? error.message : String(error));
-    } finally {
-      if (requestId === marketRequestIdRef.current) setMarketLoading(false);
-    }
-  }, [activeCategory, marketClient, marketSort]);
-
-  useEffect(() => {
-    if (state.activeModal === 'inventory' && view === 'market') void loadMarket();
-  }, [state.activeModal, view, activeCategory, marketSort, loadMarket]);
 
   if (state.activeModal !== 'inventory') return null;
 
@@ -651,12 +919,20 @@ export function InventoryModal() {
     }
     try {
       const result = await marketClient.publishResource(category, payload);
-      setMarketQuota(result.quota);
-      setView('market');
       spaceUiStore.showToast(`Published "${result.resource.name}" under AGPL-3.0`);
-      await loadMarket(category, marketSort);
-    } catch (error) {
-      spaceUiStore.showToast(marketErrorMessage(error));
+      setMarketRefreshKey(key => key + 1);
+    } catch (error: any) {
+      if (error instanceof SpaceMarketError) {
+        if (error.code === 'RESOURCE_ALREADY_PUBLISHED') {
+          spaceUiStore.showToast('This exact resource is already published.');
+          return;
+        }
+        if (error.code === 'DAILY_PUBLISH_LIMIT_REACHED') {
+          spaceUiStore.showToast('Daily publication limit reached (10/10).');
+          return;
+        }
+      }
+      spaceUiStore.showToast(error?.message || 'Publish failed');
     }
   };
 
@@ -675,37 +951,9 @@ export function InventoryModal() {
       }
       state.controller.setActiveInventoryCategory?.(downloaded.kind);
       spaceUiStore.syncInventoryState();
-      setMarketItems(items => items.map(item => item.id === resource.id
-        ? { ...item, downloads_count: downloaded.downloads_count }
-        : item));
       spaceUiStore.showToast(`Downloaded to ${downloaded.kind} slot ${index + 1} · AGPL-3.0`);
-    } catch (error) {
-      spaceUiStore.showToast(marketErrorMessage(error));
-    }
-  };
-
-  const likeResource = async (resource: SpaceMarketResource) => {
-    if (!marketClient) return;
-    try {
-      const result = await marketClient.toggleLike(resource.id);
-      setMarketItems(items => items.map(item => item.id === resource.id
-        ? { ...item, is_liked: result.is_liked, likes_count: result.likes_count }
-        : item));
-    } catch (error) {
-      spaceUiStore.showToast(marketErrorMessage(error));
-    }
-  };
-
-  const deleteResource = async (resource: SpaceMarketResource) => {
-    if (!marketClient || !state.isAdmin) return;
-    if (!window.confirm(`Delete "${resource.name}" from the market?`)) return;
-    try {
-      await marketClient.deleteResource(resource.id);
-      setMarketItems(items => items.filter(item => item.id !== resource.id));
-      setMarketTotal(total => Math.max(0, total - 1));
-      spaceUiStore.showToast(`Deleted "${resource.name}" from the market.`);
-    } catch (error) {
-      spaceUiStore.showToast(marketErrorMessage(error));
+    } catch (error: any) {
+      spaceUiStore.showToast(error?.message || 'Download failed');
     }
   };
 
@@ -721,27 +969,7 @@ export function InventoryModal() {
         <div className="modal-header">
           <div className="inventory-header-title-group">
             <div className="inventory-title-row">
-              <h2>Resources</h2>
-              <div className="inventory-view-switch" role="tablist" aria-label="Resource source">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={view === 'backpack'}
-                  className={view === 'backpack' ? 'active' : ''}
-                  onClick={() => setView('backpack')}
-                >
-                  My Backpack
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={view === 'market'}
-                  className={view === 'market' ? 'active' : ''}
-                  onClick={() => setView('market')}
-                >
-                  Market
-                </button>
-              </div>
+              <h2>Backpack &amp; Market</h2>
             </div>
             <div className="backpack-tabs-bar" role="tablist" aria-label="Resource categories">
               <button
@@ -792,8 +1020,21 @@ export function InventoryModal() {
           </button>
         </div>
 
-        {view === 'backpack' && activeCategory === 'blockset' && (
+        {activeCategory === 'blockset' && (
           <div className="backpack-tab-panel" id="backpack-panel-blockset">
+            <div className="backpack-section-header">
+              <div className="backpack-section-title">
+                <LiaBoxesSolid size={16} />
+                <span>My Block Sets (9 slots)</span>
+              </div>
+              <div className="backpack-panel-footer">
+                <div className="backpack-panel-actions">
+                  <Import3DModelPopover />
+                  <ImportJsonButton category="blockset" />
+                </div>
+              </div>
+            </div>
+
             <div className="inventory-grid" id="inventory-grid">
               {Array.from({ length: 9 }, (_, index) => {
                 const item = blocksets[index];
@@ -804,17 +1045,30 @@ export function InventoryModal() {
                 );
               })}
             </div>
-            <div className="stl-import-section">
-              <StlImportCard />
-            </div>
-            <div className="backpack-panel-footer">
-              <ImportJsonButton category="blockset" />
-            </div>
+
+            <MarketSection
+              category="blockset"
+              isAdmin={state.isAdmin}
+              onDownload={downloadResource}
+              refreshKey={marketRefreshKey}
+            />
           </div>
         )}
 
-        {view === 'backpack' && activeCategory === 'entity' && (
+        {activeCategory === 'entity' && (
           <div className="backpack-tab-panel" id="backpack-panel-entity">
+            <div className="backpack-section-header">
+              <div className="backpack-section-title">
+                <LiaBoxesSolid size={16} />
+                <span>My Entities (9 slots)</span>
+              </div>
+              <div className="backpack-panel-footer">
+                <div className="backpack-panel-actions">
+                  <ImportJsonButton category="entity" />
+                </div>
+              </div>
+            </div>
+
             <div className="inventory-grid" id="inventory-grid">
               {Array.from({ length: 9 }, (_, index) => {
                 const item = entities[index];
@@ -825,14 +1079,30 @@ export function InventoryModal() {
                 );
               })}
             </div>
-            <div className="backpack-panel-footer">
-              <ImportJsonButton category="entity" />
-            </div>
+
+            <MarketSection
+              category="entity"
+              isAdmin={state.isAdmin}
+              onDownload={downloadResource}
+              refreshKey={marketRefreshKey}
+            />
           </div>
         )}
 
-        {view === 'backpack' && activeCategory === 'colorset' && (
+        {activeCategory === 'colorset' && (
           <div className="backpack-tab-panel" id="backpack-panel-colorset">
+            <div className="backpack-section-header">
+              <div className="backpack-section-title">
+                <LiaBoxesSolid size={16} />
+                <span>My Color Sets (9 slots)</span>
+              </div>
+              <div className="backpack-panel-footer">
+                <div className="backpack-panel-actions">
+                  <ImportJsonButton category="colorset" />
+                </div>
+              </div>
+            </div>
+
             <div className="inventory-grid" id="inventory-grid">
               {(() => {
                 const totalCount = colorsets.filter(Boolean).length;
@@ -846,62 +1116,13 @@ export function InventoryModal() {
                 });
               })()}
             </div>
-            <div className="backpack-panel-footer">
-              <ImportJsonButton category="colorset" />
-            </div>
-          </div>
-        )}
 
-        {view === 'market' && (
-          <div className="backpack-tab-panel market-panel" id={`market-panel-${activeCategory}`}>
-            <div className="market-toolbar">
-              <div className="market-license-note">
-                All resources are published under <strong>AGPL-3.0-only</strong>.
-                {marketQuota && (
-                  <span className="market-quota">
-                    Today: {marketQuota.published_today}/{marketQuota.daily_limit} published · {marketQuota.remaining_today} remaining
-                  </span>
-                )}
-              </div>
-              <div className="market-sort-buttons" role="group" aria-label="Market ranking">
-                {([
-                  ['downloads', 'Most downloaded'],
-                  ['likes', 'Most liked'],
-                  ['latest', 'Newest'],
-                ] as Array<[SpaceMarketSort, string]>).map(([sort, label]) => (
-                  <button
-                    key={sort}
-                    type="button"
-                    className={`backpack-section-btn ${marketSort === sort ? 'active' : ''}`}
-                    onClick={() => setMarketSort(sort)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {marketError && <div className="market-state error">{marketError}</div>}
-            {marketLoading && marketItems.length === 0 ? (
-              <div className="market-state">Loading market…</div>
-            ) : marketItems.length === 0 ? (
-              <div className="market-state">No {activeCategory} resources have been published yet.</div>
-            ) : (
-              <>
-                <div className="market-result-summary">{marketTotal} resources · ranked by {marketSort}</div>
-                <div className="market-grid">
-                  {marketItems.map(resource => (
-                    <MarketResourceCard
-                      key={resource.id}
-                      resource={resource}
-                      isAdmin={state.isAdmin}
-                      onDownload={downloadResource}
-                      onLike={likeResource}
-                      onDelete={deleteResource}
-                    />
-                  ))}
-                </div>
-              </>
-            )}
+            <MarketSection
+              category="colorset"
+              isAdmin={state.isAdmin}
+              onDownload={downloadResource}
+              refreshKey={marketRefreshKey}
+            />
           </div>
         )}
       </div>

@@ -1,15 +1,44 @@
 import React, { useEffect, useState } from 'react';
+import {
+  LiaCubeSolid,
+  LiaUtensilSpoonSolid,
+  LiaPaintBrushSolid,
+  LiaVectorSquareSolid,
+  LiaHammerSolid,
+  LiaWrenchSolid,
+  LiaCogSolid,
+  LiaAngleLeftSolid,
+  LiaAngleRightSolid,
+  LiaAngleDownSolid,
+  LiaExchangeAltSolid,
+  LiaShapesSolid,
+  LiaBoxesSolid
+} from 'react-icons/lia';
 import { ContraptionMode } from '../../../engine/contraption/Contraption.ts';
 import { SpecialTool } from '../../../engine/controls/PlayerController.ts';
 import { InventoryThumbnailRenderer } from '../../../engine/render/InventoryThumbnailRenderer.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
 
-const SELECTOR_ICON = (
-  <svg className="slot-pixel-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-    <path d="M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm18 0v6h-6v-2h4v-4h2zM9 9h6v6H9V9zm2 2v2h2v-2h-2z" />
-  </svg>
-);
+import { LuShovel } from "react-icons/lu";
+function getHotbarToolIcon(toolValue: string): React.ReactNode {
+  switch (toolValue) {
+    case SpecialTool.SHOVEL:
+      return <LuShovel size={20} className="slot-pixel-icon" aria-hidden="true" />;
+    case SpecialTool.SPOON:
+      return <LiaUtensilSpoonSolid size={20} className="slot-pixel-icon" aria-hidden="true" />;
+    case SpecialTool.BRUSH:
+      return <LiaPaintBrushSolid size={20} className="slot-pixel-icon" aria-hidden="true" />;
+    case SpecialTool.SELECTOR:
+      return <LiaVectorSquareSolid size={20} className="slot-pixel-icon" aria-hidden="true" />;
+    case SpecialTool.HAMMER:
+      return <LiaHammerSolid size={20} className="slot-pixel-icon" aria-hidden="true" />;
+    case SpecialTool.WRENCH:
+      return <LiaWrenchSolid size={20} className="slot-pixel-icon" aria-hidden="true" />;
+    default:
+      return <LiaCubeSolid size={20} className="slot-pixel-icon" aria-hidden="true" />;
+  }
+}
 
 function NearbyEntities() {
   const { nearbyEntities, navigationSystem } = useSpaceUi(state => state);
@@ -38,7 +67,7 @@ function NearbyEntities() {
         }}
       >
         <div className="hud-entities-title">
-          <span className="hud-entities-icon">⬡</span>
+          <span className="hud-entities-icon"><LiaShapesSolid size={14} /></span>
           <span>Nearby Entities (<span id="hud-entities-count">{nearbyEntities.length}</span>)</span>
         </div>
         <button
@@ -51,7 +80,9 @@ function NearbyEntities() {
             event.stopPropagation();
             setExpanded(value => !value);
           }}
-        >▼</button>
+        >
+          <LiaAngleDownSolid style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+        </button>
       </div>
       <div className="hud-entities-body" id="hud-entities-body" style={{ display: expanded ? 'flex' : 'none' }}>
         <div className="hud-entities-list" id="hud-entities-list">
@@ -75,9 +106,13 @@ function NearbyEntities() {
           ))}
         </div>
         <div className="hud-entities-pagination" id="hud-entities-pagination" style={{ display: pageCount > 1 ? 'flex' : 'none' }}>
-          <button type="button" id="hud-entities-prev-btn" tabIndex={-1} className="hud-page-btn" disabled={currentPage <= 1} title="Previous page" onClick={() => setPage(value => Math.max(1, value - 1))}>◀</button>
+          <button type="button" id="hud-entities-prev-btn" tabIndex={-1} className="hud-page-btn" disabled={currentPage <= 1} title="Previous page" onClick={() => setPage(value => Math.max(1, value - 1))}>
+            <LiaAngleLeftSolid />
+          </button>
           <span id="hud-entities-page-info" className="hud-page-info">{currentPage} / {pageCount}</span>
-          <button type="button" id="hud-entities-next-btn" tabIndex={-1} className="hud-page-btn" disabled={currentPage >= pageCount} title="Next page" onClick={() => setPage(value => Math.min(pageCount, value + 1))}>▶</button>
+          <button type="button" id="hud-entities-next-btn" tabIndex={-1} className="hud-page-btn" disabled={currentPage >= pageCount} title="Next page" onClick={() => setPage(value => Math.min(pageCount, value + 1))}>
+            <LiaAngleRightSolid />
+          </button>
         </div>
       </div>
     </div>
@@ -89,7 +124,9 @@ function PaletteBar() {
   return (
     <div className="color-palette-bar-wrapper" id="color-palette-wrapper">
       <div className="palette-info-row">
-        <span className="palette-title">Palette</span>
+        <span className="palette-title flex items-center gap-1">
+          <LiaPaintBrushSolid size={14} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Palette
+        </span>
         <span className="palette-hotkey-hint"><b>Shift+1~9</b> pick · <b>E</b> set colors</span>
       </div>
       <div id="color-palette-bar" className="color-palette-bar">
@@ -118,7 +155,9 @@ function InventoryBar() {
     <div className="inventory-bar-wrapper" id="inventory-bar-wrapper">
       <div className="palette-info-row">
         <div className="palette-title-group">
-          <button type="button" tabIndex={-1} className="palette-title" id="backpack-bar-title" title="Click or press E to open full backpack" onClick={() => spaceUiStore.toggleInventoryModal(true)}>Backpack</button>
+          <button type="button" tabIndex={-1} className="palette-title" id="backpack-bar-title" title="Click or press E to open full backpack" onClick={() => spaceUiStore.toggleInventoryModal(true)}>
+            <LiaBoxesSolid size={14} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 3 }} />Backpack
+          </button>
           <div id="inv-cat-tabs" className="inv-cat-tabs">
             {(['blockset', 'entity'] as const).map(key => (
               <button type="button" tabIndex={-1} key={key} className={`inv-cat-tab ${category === key ? 'active' : ''}`} onClick={() => spaceUiStore.selectInventoryCategory(key)}>{key === 'blockset' ? 'BKS' : 'ENT'}</button>
@@ -161,14 +200,17 @@ function SelectorPanel() {
           <span className="palette-title">Selector</span>
           <button id="selector-mode-toggle" tabIndex={-1} className="selector-mode-btn" title="Click or press Tab to switch mode" onClick={() => controller?.toggleSelectorMicroMode?.()}>
             <span id="selector-mode-badge" className={`mode-badge ${selector.micro ? 'micro' : 'std'}`}>{selector.micro ? 'MICRO' : 'STANDARD'}</span>
-            <span className="mode-tab-hint">Tab ⇋</span>
+            <span className="mode-tab-hint flex items-center gap-0.5">Tab <LiaExchangeAltSolid style={{ display: 'inline' }} /></span>
           </button>
         </div>
         <span className="palette-hotkey-hint"><b>Tab</b> mode · <b>R</b> copy · <b>G</b> assemble</span>
       </div>
       <div className="selector-toolbox-content" id="selector-toolbox-content">
         <div className="selector-status-col">
-          <div className="selector-status-main"><span className="selector-icon">⬡</span><span id="selector-panel-title" className="selector-status-title">{selector.title}</span></div>
+          <div className="selector-status-main">
+            <span className="selector-icon"><LiaVectorSquareSolid size={16} /></span>
+            <span id="selector-panel-title" className="selector-status-title">{selector.title}</span>
+          </div>
           <div id="selector-panel-details" className="selector-status-sub">{selector.details}</div>
         </div>
         <div className="selector-action-buttons">
@@ -187,7 +229,7 @@ function Hotbar() {
       {hotbarSlots.map((slot, index) => (
         <button type="button" tabIndex={-1} key={slot.value} className={`hotbar-slot ${index === selectedHotbarIndex ? 'active' : ''}`} onClick={() => spaceUiStore.selectHotbarSlot(index)}>
           <span className="slot-num">{index + 1}</span>
-          <span className="slot-icon">{slot.value === SpecialTool.SELECTOR ? SELECTOR_ICON : slot.icon}</span>
+          <span className="slot-icon">{getHotbarToolIcon(slot.value)}</span>
           <span className="slot-name">{slot.name}</span>
           {slot.value === SpecialTool.SELECTOR ? <span className={`slot-mode-badge ${selector.micro ? 'micro' : 'std'}`}>{selector.micro ? 'MICRO' : 'STD'}</span> : null}
         </button>
@@ -256,7 +298,7 @@ export function Hud() {
             <div id="pos-val">{state.positionText}</div>
             <NearbyEntities />
           </div>
-          <div className="hud-actions"><button id="global-settings-btn" tabIndex={-1} className="icon-btn" title="Global Settings (O)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(true)}>⚙</button></div>
+          <div className="hud-actions"><button id="global-settings-btn" tabIndex={-1} className="icon-btn" title="Global Settings (O)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(true)}><LiaCogSolid size={18} /></button></div>
         </div>
         <div className="hud-bottom">
           <div className="hud-bottom-stack">
@@ -274,3 +316,4 @@ export function Hud() {
     </>
   );
 }
+
