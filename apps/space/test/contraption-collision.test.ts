@@ -817,3 +817,53 @@ test('the manager resolves entity collisions at substep cadence end to end', () 
     `the flyer must lose speed in the collision, vx=${flyer.velocity.x}`
   );
 });
+
+test('a 10m x 1m assembled entity collides and blocks another entity at its tip', () => {
+  const scene = new THREE.Scene();
+  const world = {
+    activeChunkKeys: new Set(['0,0']),
+    worldToChunkCoords: (x, z) => ({ cx: Math.floor(x / 16), cz: Math.floor(z / 16) }),
+    getBlock: (_x, y, _z) => (y <= 0 ? BlockTypes.COLOR_BLOCK : BlockTypes.AIR),
+    microVoxels: { get: () => null },
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false })
+  } as any;
+  const manager = new ContraptionManager(scene, world, null, null) as any;
+  manager.setPhysics(new ContraptionPhysics(world));
+
+  const blocks10m = [];
+  for (let x = 0; x < 10; x++) {
+    blocks10m.push({ localX: x, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK });
+  }
+
+  // 10m x 1m wall placed along X from x=0 to x=10 at y=1.
+  const wall10m = new Contraption(
+    301,
+    blocks10m,
+    new THREE.Vector3(0, 1, 0),
+    scene,
+    { mode: ContraptionMode.FREE_PHYSICS, bodyType: BodyType.KINEMATIC }
+  ) as any;
+
+  // Small 1m entity flying towards the tip (x=9) of the 10m wall.
+  const flyer = new Contraption(
+    302,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(9.5, 3, 0.5),
+    scene,
+    { mode: ContraptionMode.FREE_PHYSICS, bodyType: BodyType.DYNAMIC }
+  ) as any;
+  flyer.velocity.set(0, -5, 0); // Falling downward onto the 10m wall tip
+
+  manager.registerContraption(wall10m);
+  manager.registerContraption(flyer);
+
+  for (let frame = 0; frame < 60; frame++) {
+    manager.update(1 / 60, null);
+  }
+
+  assert.ok(
+    flyer.position.y > 1.5,
+    `flyer must land and stay on the 10m wall tip instead of falling through, posY=${flyer.position.y}`
+  );
+});

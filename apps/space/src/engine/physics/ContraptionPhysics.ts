@@ -358,13 +358,16 @@ export class ContraptionPhysics {
     const radius = Math.max(0.5, Number(contraption.boundingRadius) || 0.5) + 0.5;
     const boxes = contraption.getCollisionWorldAABBs?.(true) || [];
     if (boxes.length === 0) {
+      const center = typeof contraption.getWorldCenter === 'function'
+        ? contraption.getWorldCenter()
+        : (contraption.localCenter ? contraption.localToWorld(contraption.localCenter.clone()) : contraption.position);
       return {
-        minX: contraption.position.x - radius,
-        minY: contraption.position.y - radius,
-        minZ: contraption.position.z - radius,
-        maxX: contraption.position.x + radius,
-        maxY: contraption.position.y + radius,
-        maxZ: contraption.position.z + radius
+        minX: center.x - radius,
+        minY: center.y - radius,
+        minZ: center.z - radius,
+        maxX: center.x + radius,
+        maxY: center.y + radius,
+        maxZ: center.z + radius
       };
     }
     return boxes.reduce((result, box) => ({
@@ -1374,7 +1377,17 @@ export class ContraptionPhysics {
       const broadphaseDistance = Math.max(0.5, Number(contraption.boundingRadius) || 0.5)
         + Math.max(0.5, Number(other.boundingRadius) || 0.5)
         + probeDistance;
-      if (contraption.position.distanceToSquared(other.position) > broadphaseDistance * broadphaseDistance) continue;
+      const centerA = typeof contraption.getWorldCenter === 'function'
+        ? contraption.getWorldCenter()
+        : (contraption.localCenter ? contraption.localToWorld(contraption.localCenter.clone()) : contraption.position);
+      const centerB = typeof other.getWorldCenter === 'function'
+        ? other.getWorldCenter()
+        : (other.localCenter ? other.localToWorld(other.localCenter.clone()) : other.position);
+      const minDistanceSq = Math.min(
+        centerA.distanceToSquared(centerB),
+        contraption.position.distanceToSquared(other.position)
+      );
+      if (minDistanceSq > broadphaseDistance * broadphaseDistance) continue;
       const boxes = other.getCollisionWorldAABBs?.() || [];
       for (const start of samples) {
         for (const box of boxes) {
