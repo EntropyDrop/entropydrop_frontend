@@ -188,6 +188,8 @@ const QUICKJS_BOOTSTRAP = String.raw`
     let bodyType = node.body?.type || 'dynamic';
     let bodyMass = finite(node.body?.mass);
     let bodyMaterial = frozenClone(node.body?.material || { restitution: 0.1, friction: 0.7 });
+    let gravityEnabled = node.body?.useGravity !== false;
+    let collisionEnabled = node.body?.collisionEnabled !== false;
     api.body = Object.freeze({
       getType: () => bodyType,
       setType: type => {
@@ -215,6 +217,24 @@ const QUICKJS_BOOTSTRAP = String.raw`
         const accepted = emit('component', id, 'body.setMaterial', [material]);
         if (accepted) bodyMaterial = nextMaterial;
         return queuedResult(accepted, { material: nextMaterial }, { material: bodyMaterial });
+      },
+      getGravityEnabled: () => gravityEnabled,
+      setGravityEnabled: enabled => {
+        if (typeof enabled !== 'boolean') {
+          return Object.freeze({ ok: false, enabled: gravityEnabled, reason: 'invalid_enabled' });
+        }
+        const accepted = emit('component', id, 'body.setGravityEnabled', [enabled]);
+        if (accepted) gravityEnabled = enabled;
+        return queuedResult(accepted, { enabled }, { enabled: gravityEnabled });
+      },
+      getCollisionEnabled: () => collisionEnabled,
+      setCollisionEnabled: enabled => {
+        if (typeof enabled !== 'boolean') {
+          return Object.freeze({ ok: false, enabled: collisionEnabled, reason: 'invalid_enabled' });
+        }
+        const accepted = emit('component', id, 'body.setCollisionEnabled', [enabled]);
+        if (accepted) collisionEnabled = enabled;
+        return queuedResult(accepted, { enabled }, { enabled: collisionEnabled });
       },
       getVelocity: () => frozenClone(node.body?.velocity || [0, 0, 0]),
       getAngularVelocity: () => frozenClone(node.body?.angularVelocity || [0, 0, 0]),

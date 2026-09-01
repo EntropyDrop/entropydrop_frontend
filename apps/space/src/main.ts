@@ -143,11 +143,13 @@ class Game {
       const allPlayers = [
         {
           id: 'local',
-          position: [eye.x, eye.y, eye.z]
+          position: [eye.x, eye.y, eye.z],
+          mass: this.playerPhysics.mass
         },
         ...(this.remotePlayers || []).filter(p => !p.is_self).map(p => ({
           id: p.user_id,
-          position: [p.x, p.y + 1.62, p.z]
+          position: [p.x, p.y + 1.62, p.z],
+          mass: this.playerPhysics.mass
         }))
       ];
       return {

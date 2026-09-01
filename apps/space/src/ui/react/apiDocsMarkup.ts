@@ -78,6 +78,15 @@ export const apiDocsBodyMarkup = `
                   <code>ctx.limits.maxForce</code> / <code>ctx.limits.maxTorque</code> at runtime.
                 </td>
               </tr>
+              <tr>
+                <td><b>Collision default</b></td>
+                <td><code>collisionEnabled = true</code></td>
+                <td>
+                  Root and child components carry a persisted <code>collisionEnabled</code> default. A disabled component still renders and
+                  stays editable but produces no collision shapes against terrain, players, other entities, or raycasts. Scripts may change
+                  the runtime value through <code>self.body.setCollisionEnabled()</code>; <b>Stop</b> restores the persisted default.
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -109,10 +118,11 @@ const dy = playerPos[1] - ctx.position[1]; // no wrap on Y</code></pre>
             <li><code>ctx.root</code> is the root component. Traverse the real hierarchy recursively with <code>node.children()</code>; there is no flat component snapshot.</li>
             <li>Store cross-frame values in <code>self.state</code>. State is isolated by component, so sibling scripts cannot accidentally reuse the same variable name. Global Stop clears all component state.</li>
             <li>Scripts execute synchronously once per physics frame in isolated QuickJS/WASM Runtimes on the page thread. Memory, stack, wall-time, VM-checkpoint and command-count limits protect the host; completed command buffers commit immediately after the entity tick.</li>
+            <li><b>Per-entity hard limits</b>: each entity runs in its own isolated QuickJS/WASM runtime capped at <code>4 MiB</code> memory and <code>512 KiB</code> stack (a failure surfaces as that component script's error); an entity holds at most <b>64 components</b> including the root — <code>ctx.selection.createChild</code> fails once the cap is reached, and importing a portable entity definition with more components is rejected; a command buffer holds at most 256 commands per entity tick.</li>
             <li>Read state from <code>ctx</code>. Dynamic bodies move through force/torque APIs and cannot accept direct pose writes; kinematic bodies additionally accept the documented <code>setLocalPosition</code>/<code>setLocalRotation</code>/<code>setLocalEuler</code> commands. No public API directly sets velocity.</li>
             <li><b>Ordering</b>: the root script runs first, then child scripts in the order their code was first set. All components of one entity share a single frozen <code>ctx</code> snapshot: rigid-body fields (<code>position</code>, <code>velocity</code>, <code>rotation</code>, …) are sampled at frame start, so siblings cannot read each other's motion within the same frame.</li>
             <li>Mutations are queued and revalidated on the main thread. An admitted immediate result is provisional with <code>reason: 'queued'</code>; a full 256-command entity buffer returns <code>ok: false</code> with <code>reason: 'command_limit'</code>. Standard-world writes are visible to later sibling scripts through the current frame's overlay.</li>
-            <li>Thrown script exceptions are caught: only the failing component script is disabled and marked <b>ERROR</b>; sibling scripts continue. Every component invocation has a <code>5 ms</code> interrupt deadline, so an infinite loop cannot freeze the page.</li>
+            <li>Thrown script exceptions are caught: only the failing component script is disabled and marked <b>ERROR</b>; sibling scripts continue. Every component invocation has a <code>5 ms</code> interrupt deadline, so an infinite loop cannot freeze the page. Whole-entity budgets additionally disable the <b>entire entity's</b> scripts (every component, logged as <code>[ERR] [runtime] …</code>) when all component scripts together exceed <code>25 ms</code> in one entity tick or the VM reaches its <code>64</code>-interrupt-checkpoint budget in a single frame. <code>self.state</code> stays at the value of the last <i>completed</i> tick — commands emitted during the interrupted tick are discarded. Keep total per-tick work across all components well under both budgets.</li>
             <li>An entity is loaded and simulated only while its wrapped root chunk is active. Leaving the streaming window serializes its identity, hierarchy, physics, scripts, and <code>self.state</code>, then destroys its scene object and QuickJS Runtime. Reloading the chunk creates a fresh instance and resumes the frozen state.</li>
             <li>An entity whose root falls below <code>y = -30</code> is removed together with all component scripts and <code>self.state</code>.</li>
           </ul>
@@ -141,7 +151,7 @@ const dy = playerPos[1] - ctx.position[1]; // no wrap on Y</code></pre>
               <tr><td><code>limits</code></td><td>object</td><td><code>{maxForce, maxTorque}</code> — ceiling for the legacy root-body force surface only</td></tr>
               <tr><td><code>input</code></td><td>object</td><td>Keyboard input queries — see the <code>ctx.input</code> section below</td></tr>
               <tr><td><code>blocks</code></td><td>object</td><td>Block-edit queries (same frame-snapshot style as <code>ctx.input</code>): <code>pressed(type?)</code> — true when blocks were edited since the last frame (optionally filter by <code>'place'|'remove'|'color'|'subdivide'</code>); <code>event()</code> — the latest edit <code>{type, nodeId, blockCount}</code> or <code>null</code>. Fires even when the bounding box did not change (e.g. repainting only)</td></tr>
-              <tr><td><code>players</code></td><td>array</td><td>Player list (multiplayer-ready): <code>[{id: string, position:[x,y,z]}]</code>; empty array when no player context is available. <code>position</code> is the player's <b>eye</b> (feet + 1.62 m, + 1.3 m crouched), not the feet</td></tr>
+              <tr><td><code>players</code></td><td>array</td><td>Player list (multiplayer-ready): <code>[{id: string, position:[x,y,z], mass:number}]</code>; empty array when no player context is available. <code>position</code> is the player's <b>eye</b> (feet + 1.62 m, + 1.3 m crouched), not the feet; <code>mass</code> is the player's mass in kg (fixed at 50)</td></tr>
               <tr><td><code>world</code></td><td>object</td><td>World query API — see the <code>ctx.world</code> section below</td></tr>
               <tr><td><code>selection</code></td><td>object</td><td>Shared engine selection command API — see the <code>ctx.selection</code> section below</td></tr>
               <tr><td><code>log(msg)</code></td><td>fn</td><td>Append a line to CONSOLE LOGS</td></tr>
@@ -172,6 +182,8 @@ const dy = playerPos[1] - ctx.position[1]; // no wrap on Y</code></pre>
               <tr><td><code>self.getWorldRotation()</code></td><td>Returns the world-space quaternion <code>[x,y,z,w]</code> (includes all parent rotations)</td></tr>
               <tr><td><code>self.getPivot()</code></td><td>Returns the current rotation center (pivot) as <code>[x,y,z]</code> in entity-local coordinates, matching <code>getBounds()</code> and <code>setPivot()</code></td></tr>
               <tr><td><code>self.getBounds()</code></td><td>Returns this component's block bounding box in entity-local coordinates: <code>{min, max, size, center}</code> (each <code>[x,y,z]</code>); <code>null</code> if it has no blocks</td></tr>
+              <tr><td><code>self.setSeats([[x,y,z], ...])</code></td><td>Replace this component's driver-seat positions, relative to this component's pivot. Available on root and child components alike; an entity is mountable only when at least one of its components has a seat</td></tr>
+              <tr><td><code>self.getSeats()</code></td><td>Read this component's seat positions as <code>[x,y,z]</code> points relative to its pivot. Pressing <b>V</b> mounts the entity and selects the seat nearest the aimed entity block, searching every component</td></tr>
               <tr><td><code>self.voxels.set(position, options?)</code></td><td>Place one standard voxel at a component-local cell. <b>Cells are measured from this component's pivot</b> (the root pivot is the AABB centroid of its blocks), not from the entity corner; fractional coordinates are floored after applying the pivot. <code>options</code> accepts <code>{color:0xRRGGBB}</code> or <code>{r,g,b}</code>; when omitted the color inherits the component's first block (default <code>0xf2a93b</code> when it has no blocks yet). Returns <code>{ok,placed,reason}</code></td></tr>
               <tr><td><code>self.voxels.clear(position)</code></td><td>Remove this component's standard voxel only; returns <code>{ok,removed,reason}</code></td></tr>
               <tr><td><code>self.voxels.paint(position, options?)</code></td><td>Repaint one existing standard voxel through the same command used by the Brush; returns <code>{ok,painted,reason}</code></td></tr>
@@ -206,6 +218,8 @@ const dy = playerPos[1] - ctx.position[1]; // no wrap on Y</code></pre>
               <tr><td><code>self.body.getType()</code> / <code>self.body.setType(type)</code></td><td>Read <code>'kinematic'|'dynamic'</code>; setter returns <code>{ok,type,reason}</code>. World voxels are the static collision layer; entity bodies have no static type</td></tr>
               <tr><td><code>self.body.getMass()</code> / <code>self.body.setMass(kg)</code></td><td>Read mass; setter returns <code>{ok,mass,reason}</code>. Automatic mass defaults to owned block count × <code>10 kg</code>; a manual value survives hierarchy rebuilds. Non-positive/non-finite input returns <code>invalid_mass</code>; positive values below <code>0.1 kg</code> clamp to <code>0.1 kg</code></td></tr>
               <tr><td><code>self.body.getMaterial()</code> / <code>self.body.setMaterial({...})</code></td><td>Read <code>{restitution,friction}</code>; setter returns <code>{ok,material,reason}</code>. Both coefficients clamp to <code>[0,1]</code>. Restitution defaults to <code>0.1</code> and friction to <code>0.7</code></td></tr>
+              <tr><td><code>self.body.getGravityEnabled()</code> / <code>self.body.setGravityEnabled(enabled)</code></td><td>Read or change this body&apos;s runtime gravity switch. The setter returns <code>{ok,enabled,reason}</code>; kinematic bodies retain the value but gravity only affects dynamic bodies</td></tr>
+              <tr><td><code>self.body.getCollisionEnabled()</code> / <code>self.body.setCollisionEnabled(enabled)</code></td><td>Read or change this component&apos;s runtime collision participation, including root components. The setter returns <code>{ok,enabled,reason}</code></td></tr>
               <tr><td><code>self.body.getVelocity()</code> / <code>self.body.getAngularVelocity()</code></td><td>Read this component body's world-space velocities</td></tr>
               <tr><td><code>self.body.applyForce(force)</code> / <code>self.body.applyLocalForce(force)</code> / <code>self.body.applyTorque(torque)</code></td><td>Apply force or torque to this component body's independent accumulator; returns <code>true</code> only for a dynamic body with a valid vector and available command slot. Kinematic bodies ignore forces. These methods are not clamped by <code>ctx.limits</code> or included in the HUD meter, even when <code>self</code> is the root; all components must nevertheless be finite and at most <code>1e12</code> in magnitude</td></tr>
               <tr><td><code>self.constraints.all()</code></td><td>Frozen array of complete definitions: <code>{id,type,bodyA,bodyB,anchorA,anchorB,axisA,axisB,referenceA,referenceB,limits,stiffness,collideConnected}</code></td></tr>
@@ -213,6 +227,7 @@ const dy = playerPos[1] - ctx.position[1]; // no wrap on Y</code></pre>
               <tr><td><code>self.constraints.remove(id)</code></td><td>Remove one constraint; returns boolean</td></tr>
             </tbody>
           </table>
+          <p class="api-sub">Body setters change runtime values only. The Entity Editor changes the persisted PB defaults, and global <b>Stop</b> restores type, mass, material, gravity, and collision from those defaults. Pause preserves runtime values.</p>
           <pre class="api-code"><code>// Create a world-anchored hinge once, retain its generated id, then remove it.
 if (!self.state.anchorId) {
   const created = self.constraints.create({
@@ -228,12 +243,10 @@ if (self.state.anchorId && ctx.input.pressed('KeyQ')) {
   self.state.anchorId = null;
 }</code></pre>
 
-          <div class="api-h3">Root-only state (no-op on children)</div>
+          <div class="api-h3">Root-only (no-op on children)</div>
           <table class="api-table">
             <thead><tr><th>Method</th><th>Description</th></tr></thead>
             <tbody>
-              <tr><td><code>self.setSeats([[x,y,z], ...])</code></td><td>Replace this component's driver-seat positions relative to its pivot. An entity is mountable only when at least one component has a seat</td></tr>
-              <tr><td><code>self.getSeats()</code></td><td>Read this component's seat positions. Pressing <b>V</b> selects the seat nearest the aimed entity block</td></tr>
               <tr><td><code>self.stop()</code></td><td>Exactly the global Stop action: disable every component script and reset every <code>self.state</code>, script time/tick, child transforms/spins, and pending forces/torques. Root-only; child calls are no-ops, so child code should use <code>ctx.root.stop()</code>. It immediately ends the current script invocation</td></tr>
             </tbody>
           </table>
@@ -289,10 +302,10 @@ if (ctx.blocks.pressed()) {
               <tr><td><code>ctx.world.microVoxels.set(cell, offset, options?)</code></td><td>Queue placement of one 0.2 m world voxel</td></tr>
               <tr><td><code>ctx.world.microVoxels.clear(cell, offset)</code></td><td>Queue removal of one exact 0.2 m world voxel</td></tr>
               <tr><td><code>ctx.world.microVoxels.paint(cell, offset, options?)</code></td><td>Queue repainting one existing micro world voxel</td></tr>
-              <tr><td><code>ctx.world.entities(origin, radius?)</code></td><td>Filter the frame's nearby-entity snapshot, prefetched to 64 m, by shortest wrapped X/Z distance</td></tr>
+              <tr><td><code>ctx.world.entities(origin, radius?)</code></td><td>Filter the frame's nearby-entity snapshot, prefetched to 64 m, by shortest wrapped X/Z distance; default <code>radius</code> is 16 m</td></tr>
               <tr><td><code>ctx.world.entities.get(id, chunkId?)</code></td><td>Look up one entity in the frame's nearby-entity snapshot</td></tr>
               <tr><td><code>ctx.world.entities.list(chunkId)</code> / <code>ctx.world.entities.inChunk(chunkId)</code></td><td>Filter the nearby-entity snapshot by wrapped chunk id <code>"cx,cz"</code></td></tr>
-              <tr><td><code>ctx.world.raycast(origin, direction, maxDistance?)</code></td><td>Bounded synchronous raycast over standard world voxels; returns <code>{block,color,normal,position,distance}</code> or <code>null</code>. Maximum 64 calls per entity tick.</td></tr>
+              <tr><td><code>ctx.world.raycast(origin, direction, maxDistance?)</code></td><td>Bounded synchronous raycast over standard world voxels; returns <code>{block,color,normal,position,distance}</code> or <code>null</code>. Default <code>maxDistance</code> is 24 m; maximum 64 calls per entity tick.</td></tr>
             </tbody>
           </table>
           <p class="api-sub">The API never overwrites occupied cells and never converts between standard and micro voxels implicitly. World X/Z wrap on the torus — see <b>World topology</b> above.</p>

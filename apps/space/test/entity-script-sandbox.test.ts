@@ -178,6 +178,53 @@ self.applyTorque([0, 1e308, 0]);
   assert.equal(contraption.scriptApi.body.applyTorque([0, 0, 1e13]), false);
 });
 
+test('QuickJS can change every BodyConfig behavior at runtime and Stop restores PB defaults', () => {
+  const contraption = entity(12);
+  assert.ok(contraption.getCollisionWorldAABBs().length > 0);
+  contraption.setScript(`
+self.state.type = self.body.setType('kinematic');
+self.state.mass = self.body.setMass(65);
+self.state.material = self.body.setMaterial({ restitution: 0.8, friction: 0.2 });
+self.state.gravity = self.body.setGravityEnabled(false);
+self.state.collision = self.body.setCollisionEnabled(false);
+`);
+
+  contraption.update(1 / 60, null, {});
+
+  assert.equal(contraption.getNodeBodyType('root'), 'kinematic');
+  assert.equal(contraption.getNodeBodyMass('root'), 65);
+  assert.deepEqual(contraption.getNodeBodyMaterial('root'), { restitution: 0.8, friction: 0.2 });
+  assert.equal(contraption.getNodeGravityEnabled('root'), false);
+  assert.equal(contraption.getNodeCollisionEnabled('root'), false);
+  assert.equal(contraption.getCollisionWorldAABBs().length, 0,
+    'disabling root collision must remove its cached collision shapes');
+  assert.deepEqual(contraption.getComponentState('root').gravity,
+    { ok: true, enabled: false, reason: 'queued' });
+  assert.deepEqual(contraption.getComponentState('root').collision,
+    { ok: true, enabled: false, reason: 'queued' });
+
+  const serializedWhileRunning = contraption.serializeSubtree('root');
+  assert.equal(serializedWhileRunning.bodyType, 'dynamic');
+  assert.equal('mass' in serializedWhileRunning, false);
+  assert.equal(serializedWhileRunning.restitution, 0.1);
+  assert.equal(serializedWhileRunning.friction, 0.7);
+  assert.equal(serializedWhileRunning.useGravity, true);
+  assert.equal(serializedWhileRunning.collisionEnabled, true);
+
+  contraption.disableAllNodeScripts();
+  assert.equal(contraption.getNodeBodyMass('root'), 65, 'Pause preserves runtime BodyConfig values');
+  assert.equal(contraption.getNodeCollisionEnabled('root'), false);
+
+  contraption.stopAllNodeScripts();
+  assert.equal(contraption.getNodeBodyType('root'), 'dynamic');
+  assert.equal(contraption.getNodeBodyMass('root'), 20);
+  assert.deepEqual(contraption.getNodeBodyMaterial('root'), { restitution: 0.1, friction: 0.7 });
+  assert.equal(contraption.getNodeGravityEnabled('root'), true);
+  assert.equal(contraption.getNodeCollisionEnabled('root'), true);
+  assert.ok(contraption.getCollisionWorldAABBs().length > 0,
+    'Stop must invalidate caches and restore the default collision shapes');
+});
+
 test('world snapshots share admitted overlays and keep entity descriptors immutable', () => {
   const contraption = entity(6, [
     { id: 'arm', parentId: 'root', pivot: [1.5, 0.5, 0.5], blockKeys: [['1', '0', '0']] }

@@ -832,27 +832,31 @@ self.state.playersLen = ctx.players.length;
   assert.equal(state.playersLen, 0, 'no players should produce an empty array');
   assert.deepEqual(state.players, [], 'player list should be empty');
 
-  // Multiple players use {id, position} records.
+  // Multiple players use {id, position, mass} records.
   contraption.update(1 / 60, null, {
     gravity: [0, -18, 0],
     world: null,
     players: [
       { id: 'local', position: [1, 2, 3] },
-      { id: 'p2', position: [10, 20, 30] }
+      { id: 'p2', position: [10, 20, 30], mass: 75 }
     ]
   });
   const players = state.players;
   assert.equal(players.length, 2, 'two players should be present');
   assert.equal(players[0].id, 'local');
   assert.deepEqual(players[0].position, [1, 2, 3]);
+  assert.equal(players[0].mass, 50, 'missing mass should use the fixed player default');
   assert.equal(players[1].id, 'p2');
   assert.deepEqual(players[1].position, [10, 20, 30]);
+  assert.equal(players[1].mass, 75, 'an explicit valid runtime mass should be preserved');
+  assert.equal(Object.isFrozen(players[0]), true, 'player records should be frozen');
   assert.equal(Object.isFrozen(players[0].position), true, 'snapshot positions should be frozen');
 
   // Tolerate missing id or position.
-  contraption.update(1 / 60, null, { gravity: [0, -18, 0], world: null, players: [{ position: [5, 6, 7] }] });
+  contraption.update(1 / 60, null, { gravity: [0, -18, 0], world: null, players: [{ position: [5, 6, 7], mass: -1 }] });
   const fallback = state.players;
   assert.equal(fallback[0].id, 'player', 'missing id should use the default');
+  assert.equal(fallback[0].mass, 50, 'invalid mass should use the fixed player default');
 });
 
 test('ctx.entityId exposes the same stable random id shown by entity queries', () => {

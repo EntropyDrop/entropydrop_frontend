@@ -298,6 +298,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
     }],
     bodyType: 'dynamic',
     useGravity: false,
+    collisionEnabled: false,
     seats: [{ position: [0.5, 1, 0.5] }]
   };
 
@@ -306,6 +307,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.equal(serialized.root.id, 'root');
   assert.equal(serialized.root.body.type, 'dynamic');
   assert.equal(serialized.root.body.useGravity, false);
+  assert.equal(serialized.root.body.collisionEnabled, false);
   assert.deepEqual(serialized.root.seats, [{ position: [0.5, 1, 0.5] }]);
   assert.equal(serialized.root.children.length, 1);
   const arm = serialized.root.children[0];
@@ -349,6 +351,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.deepEqual(parsed.item.enabled, [{ id: 'arm', enabled: false }]);
   assert.equal(parsed.item.childEntities[0].collisionEnabled, false);
   assert.equal(parsed.item.childEntities[0].useGravity, false);
+  assert.equal(parsed.item.collisionEnabled, false);
   assert.deepEqual(parsed.item.childEntities[0].seats, [
     { position: [0, 1, 0] },
     { position: [1, 1, 0] }
@@ -362,6 +365,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.ok(built, 'the imported entity should build');
   assert.equal(built.blocks.length, 4);
   assert.ok(built.entityNodes.has('arm'));
+  assert.equal(built.getNodeCollisionEnabled('root'), false);
   assert.equal(built.getComponentSeats('arm').length, 2);
 
   const inferredMicro = controller.parseInventoryImport(encodeInventoryResource('entity', {

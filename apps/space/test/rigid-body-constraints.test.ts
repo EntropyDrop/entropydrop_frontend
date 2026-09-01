@@ -23,7 +23,7 @@ function makePhysics() {
   });
 }
 
-test('body type, mass and restitution use the shared physics action API', () => {
+test('body defaults persist while script body mutations remain runtime-only until Stop', () => {
   const contraption = new Contraption(
     1,
     [block(0), block(1)],
@@ -88,9 +88,17 @@ test('body type, mass and restitution use the shared physics action API', () => 
   const slot = contraption.serializeSubtree('root');
   assert.equal('fixed' in slot, false, 'new serialization must not write the removed fixed flag');
   assert.equal(slot.bodyType, BodyType.KINEMATIC);
-  assert.equal(slot.mass, 55, 'manual root mass should serialize');
-  assert.equal(slot.childEntities.find(def => def.id === 'payload').bodyType, BodyType.DYNAMIC);
-  assert.equal(slot.childEntities.find(def => def.id === 'payload').mass, 40, 'manual child mass should serialize');
+  assert.equal('mass' in slot, false, 'runtime root mass must not overwrite the PB default');
+  assert.equal(slot.childEntities.find(def => def.id === 'payload').bodyType, BodyType.KINEMATIC,
+    'the editor/shared action default survives a later runtime type change');
+  assert.equal('mass' in slot.childEntities.find(def => def.id === 'payload'), false,
+    'runtime child mass must not overwrite the PB default');
+
+  contraption.stopAllNodeScripts();
+  assert.equal(contraption.scriptApi.body.getMass(), 30, 'Stop restores automatic root mass from owned blocks');
+  assert.equal(payload.body.getMass(), 10, 'Stop restores automatic child mass');
+  assert.equal(payload.body.getType(), BodyType.KINEMATIC);
+  assert.deepEqual(payload.body.getMaterial(), { restitution: 0.1, friction: 0.7 });
 });
 
 test('automatic mass is omitted from serialization so copied bodies keep following block count', () => {
@@ -102,7 +110,55 @@ test('automatic mass is omitted from serialization so copied bodies keep followi
   ) as any;
   assert.equal(contraption.mass, 30);
   assert.equal(contraption.restitution, 0.1);
+  assert.equal(contraption.getNodeGravityEnabled('root'), true,
+    'older data without the optional gravity field keeps the existing default');
+  assert.equal(contraption.getNodeCollisionEnabled('root'), true,
+    'older data without the optional collision field keeps the existing default');
   assert.equal('mass' in contraption.serializeSubtree('root'), false);
+});
+
+test('an editor physics action updates the PB default even after a runtime override', () => {
+  const contraption = new Contraption(
+    3,
+    [block(0)],
+    new THREE.Vector3(),
+    new THREE.Scene()
+  ) as any;
+
+  contraption.scriptApi.body.setMass(60);
+  const edited = executeBasicAction({ contraption }, {
+    domain: ActionDomain.PHYSICS,
+    action: 'set-body-mass',
+    target: { contraption },
+    nodeId: 'root',
+    mass: 42
+  });
+  assert.equal(edited.ok, true);
+  assert.equal(contraption.serializeSubtree('root').mass, 42);
+  executeBasicAction({ contraption }, {
+    domain: ActionDomain.PHYSICS,
+    action: 'set-body-gravity-enabled',
+    target: { contraption },
+    nodeId: 'root',
+    enabled: false
+  });
+  executeBasicAction({ contraption }, {
+    domain: ActionDomain.PHYSICS,
+    action: 'set-body-type',
+    target: { contraption },
+    nodeId: 'root',
+    bodyType: BodyType.KINEMATIC
+  });
+  assert.equal(contraption.getNodeGravityEnabled('root'), false,
+    'changing body type must not overwrite an explicit gravity default');
+  assert.equal(contraption.serializeSubtree('root').useGravity, false);
+
+  contraption.scriptApi.body.setMass(80);
+  assert.equal(contraption.getNodeBodyMass('root'), 80);
+  contraption.stopAllNodeScripts();
+  assert.equal(contraption.getNodeBodyMass('root'), 42);
+  assert.equal(contraption.getNodeBodyType('root'), BodyType.KINEMATIC);
+  assert.equal(contraption.getNodeGravityEnabled('root'), false);
 });
 
 test('legacy fixed input migrates to kinematic without exposing fixed runtime state', () => {

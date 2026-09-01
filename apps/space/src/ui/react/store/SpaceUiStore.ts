@@ -863,7 +863,7 @@ export class SpaceUiStore {
       ? '> PLAY: all component scripts running'
       : value === 'pause'
         ? 'PAUSED: all component scripts stopped'
-        : 'STOPPED: all scripts off and state reset (state/clock/transforms/forces)';
+        : 'STOPPED: PB body defaults restored; state/clock/transforms/forces reset';
     this.showToast(message);
   }
 
@@ -925,6 +925,46 @@ export class SpaceUiStore {
     });
     this.refresh();
     this.showToast(result?.ok ? `Restitution: ${restitution.toFixed(2)}` : 'Unable to update restitution');
+  }
+
+  setSelectedFriction(value: number): void {
+    const friction = Math.max(0, Math.min(1, Number(value) || 0));
+    const { editingContraption, selectedComponentNodeId } = this.snapshot;
+    const result = this.snapshot.contraptions?.performBasicAction?.({
+      domain: ActionDomain.PHYSICS,
+      action: 'set-body-material',
+      target: { contraption: editingContraption },
+      nodeId: selectedComponentNodeId,
+      material: { friction }
+    });
+    this.refresh();
+    this.showToast(result?.ok ? `Friction: ${friction.toFixed(2)}` : 'Unable to update friction');
+  }
+
+  setSelectedGravityEnabled(enabled: boolean): void {
+    const { editingContraption, selectedComponentNodeId } = this.snapshot;
+    const result = this.snapshot.contraptions?.performBasicAction?.({
+      domain: ActionDomain.PHYSICS,
+      action: 'set-body-gravity-enabled',
+      target: { contraption: editingContraption },
+      nodeId: selectedComponentNodeId,
+      enabled
+    });
+    this.refresh();
+    this.showToast(result?.ok ? `Gravity: ${enabled ? 'enabled' : 'disabled'}` : 'Unable to update gravity');
+  }
+
+  setSelectedCollisionEnabled(enabled: boolean): void {
+    const { editingContraption, selectedComponentNodeId } = this.snapshot;
+    const result = this.snapshot.contraptions?.performBasicAction?.({
+      domain: ActionDomain.PHYSICS,
+      action: 'set-body-collision-enabled',
+      target: { contraption: editingContraption },
+      nodeId: selectedComponentNodeId,
+      enabled
+    });
+    this.refresh();
+    this.showToast(result?.ok ? `Collision: ${enabled ? 'enabled' : 'disabled'}` : 'Unable to update collision');
   }
 
   setSelectedMass(mass: number): void {

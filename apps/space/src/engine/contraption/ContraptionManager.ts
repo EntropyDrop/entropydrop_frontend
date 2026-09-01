@@ -472,6 +472,8 @@ export class ContraptionManager {
       inverseInertia: body.inverseInertia,
       restitution: body.restitution,
       friction: body.friction,
+      useGravity: contraption.getNodeGravityEnabled?.(body.id) ?? true,
+      collisionEnabled: contraption.getNodeCollisionEnabled?.(body.id) ?? true,
       linearDamping: body.linearDamping,
       angularDamping: body.angularDamping,
       centerOfMassLocal: body.centerOfMassLocal?.toArray?.() || [0, 0, 0],
@@ -553,7 +555,6 @@ export class ContraptionManager {
     contraption.quaternion.fromArray(record.quaternion || [0, 0, 0, 1]).normalize();
     contraption.velocity.fromArray(record.velocity || [0, 0, 0]);
     contraption.angularVelocity.fromArray(record.angularVelocity || [0, 0, 0]);
-    if (typeof record.useGravity === 'boolean') contraption.useGravity = record.useGravity;
     contraption.isOnGround = !!record.isOnGround;
     contraption.groundDistance = Number(record.groundDistance) || 0;
     contraption.rootPivotOverride = Array.isArray(record.rootPivotOverride)
@@ -573,6 +574,19 @@ export class ContraptionManager {
     for (const saved of record.bodies || []) {
       const body = contraption.getRigidBody(saved.id);
       if (!body) continue;
+      const savedUseGravity = typeof saved.useGravity === 'boolean'
+        ? saved.useGravity
+        : (body.id === 'root' && typeof record.useGravity === 'boolean' ? record.useGravity : undefined);
+      const restoresRuntimeMass = Number.isFinite(Number(saved.mass)) && Number(saved.mass) !== body.mass;
+      const restoresRuntimeOverride = saved.type !== body.type
+        || restoresRuntimeMass
+        || (Number.isFinite(Number(saved.restitution)) && Number(saved.restitution) !== body.restitution)
+        || (Number.isFinite(Number(saved.friction)) && Number(saved.friction) !== body.friction)
+        || (typeof savedUseGravity === 'boolean'
+          && savedUseGravity !== contraption.getNodeGravityEnabled?.(body.id))
+        || (typeof saved.collisionEnabled === 'boolean'
+          && saved.collisionEnabled !== contraption.getNodeCollisionEnabled?.(body.id));
+      if (restoresRuntimeOverride) contraption.captureRuntimeBodyConfigDefault?.(body.id);
       if (saved.type === BodyType.DYNAMIC || saved.type === BodyType.KINEMATIC) {
         body.type = saved.type;
         const node = contraption.entityNodes.get(String(saved.id));
@@ -609,6 +623,7 @@ export class ContraptionManager {
 
       if (body.id === 'root') {
         contraption.bodyType = body.type;
+        if (restoresRuntimeMass) contraption.massOverride = body.mass;
         contraption.mass = body.mass;
         contraption.restitution = body.restitution;
         contraption.friction = body.friction;
@@ -618,9 +633,18 @@ export class ContraptionManager {
         const definition = contraption.childDefinitions.get(body.id);
         if (definition) {
           definition.bodyType = body.type;
+          if (restoresRuntimeMass) definition.mass = body.mass;
           definition.restitution = body.restitution;
           definition.friction = body.friction;
         }
+      }
+      if (typeof savedUseGravity === 'boolean'
+        && savedUseGravity !== contraption.getNodeGravityEnabled?.(body.id)) {
+        contraption.setNodeGravityEnabled?.(body.id, savedUseGravity, { runtimeOnly: true });
+      }
+      if (typeof saved.collisionEnabled === 'boolean'
+        && saved.collisionEnabled !== contraption.getNodeCollisionEnabled?.(body.id)) {
+        contraption.setNodeCollisionEnabled?.(body.id, saved.collisionEnabled, { runtimeOnly: true });
       }
     }
     contraption.syncAllBodyTransforms?.();
@@ -1733,7 +1757,8 @@ export class ContraptionManager {
         mass: slot.mass,
         restitution: slot.restitution,
         friction: slot.friction,
-        useGravity: restoreState?.useGravity ?? slot.useGravity,
+        useGravity: slot.useGravity,
+        collisionEnabled: slot.collisionEnabled,
         seats: slot.seats,
         behaviorPrompt: restoreState?.behaviorPrompt,
         agentInterpretation: restoreState?.agentInterpretation,

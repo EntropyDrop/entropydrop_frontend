@@ -237,11 +237,15 @@ test('Wrench right-click toggles start and stop through the shared action API', 
   controller.performBasicAction = PlayerController.prototype.performBasicAction.bind(controller);
 
   entity.getComponentState('root').preserved = 42;
+  entity.childDefinitions.get('arm').collisionEnabled = false;
+  assert.equal(entity.isNodeCollisionEnabled('arm'), false);
   controller.handleRightClick();
   assert.equal(entity.isNodeScriptEnabled('root'), false);
   assert.equal(entity.isNodeScriptEnabled('arm'), false);
   assert.equal(entity.getComponentState('root').preserved, undefined, 'stop must reset state');
   assert.equal(entity.scriptStatus, 'stopped', 'right click stops running entity');
+  assert.equal(entity.isNodeCollisionEnabled('arm'), false,
+    'Stop restores the authored collision default instead of forcing every component on');
 
   controller.handleRightClick();
   assert.equal(entity.isNodeScriptEnabled('root'), true);

@@ -28,6 +28,7 @@ import {
   type InventoryKind,
   type PortableBackpack,
 } from '../storage/InventoryProtobuf.ts';
+import { PLAYER_GRAVITY_MPS2, PLAYER_MASS_KG } from '../physics/PlayerPhysics.ts';
 
 // Global editor/game commands stay engine-owned and are not exposed to entity
 // programs, avoiding collisions between scripts and C/V/tool shortcuts.
@@ -4432,6 +4433,14 @@ export class PlayerController {
     } else {
       if (this.ui) this.ui.showToast(`Aim at an entity block with a configured seat, then press V`);
     }
+  }
+
+  get mass(): number {
+    return this.physics?.mass ?? PLAYER_MASS_KG;
+  }
+
+  get weight(): number {
+    return this.physics?.weight ?? PLAYER_MASS_KG * Math.abs(PLAYER_GRAVITY_MPS2);
   }
 
   setSceneRenderer(sceneRenderer) {

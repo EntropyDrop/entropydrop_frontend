@@ -8,6 +8,9 @@ const FACE_TOLERANCE = 0.08;
 // on the platform, then lift the player to the top instead of pushing sideways.
 const STAND_TOLERANCE = 0.4;
 
+export const PLAYER_MASS_KG = 50;
+export const PLAYER_GRAVITY_MPS2 = -24;
+
 export class PlayerPhysics {
   world: World;
   contraptionManager: any;
@@ -31,6 +34,14 @@ export class PlayerPhysics {
   sprintSpeed: number;
   flySpeed: number;
 
+  // Fixed physical mass (kg). Weight is derived from the current gravity and
+  // exposed in newtons through the getter below.
+  readonly mass: number = PLAYER_MASS_KG;
+
+  get weight(): number {
+    return this.mass * Math.abs(this.gravity);
+  }
+
   // State flags
   isOnGround: boolean;
   isFlying: boolean;
@@ -40,6 +51,7 @@ export class PlayerPhysics {
 
   // Moving Platform attachment (when standing on a moving contraption)
   ridingContraption: any;
+  ridingBodyId: string | null;
   lastRidingPlatformPos: any;
 
   constructor(world, contraptionManager = null) {
@@ -59,11 +71,19 @@ export class PlayerPhysics {
     this.eyeHeight = 1.62;
 
     // Physics parameters
-    this.gravity = -24.0;
+    this.gravity = PLAYER_GRAVITY_MPS2;
     this.jumpForce = 8.8;
     this.walkSpeed = 5.0;
     this.sprintSpeed = 7.8;
     this.flySpeed = 14.0;
+
+    // Fixed physical mass: 50kg, immutable and non-writable at runtime.
+    Object.defineProperty(this, 'mass', {
+      value: PLAYER_MASS_KG,
+      writable: false,
+      configurable: false,
+      enumerable: true
+    });
 
     // State flags
     this.isOnGround = false;
@@ -74,6 +94,7 @@ export class PlayerPhysics {
 
     // Moving Platform attachment (when standing on a moving contraption)
     this.ridingContraption = null;
+    this.ridingBodyId = null;
     this.lastRidingPlatformPos = null;
   }
 
@@ -133,12 +154,17 @@ export class PlayerPhysics {
     // 1. Moving Platform Attachment (Ride on moving contraptions smoothly)
     if (this.ridingContraption && this.isOnGround) {
       if (this.contraptionManager && this.contraptionManager.contraptions.includes(this.ridingContraption)) {
-        const platVel = this.ridingContraption.getVelocityAtPoint(this.position);
+        const platVel = this.getContraptionBodyPointVelocity(
+          this.ridingContraption,
+          this.ridingBodyId || 'root',
+          this.position
+        );
         this.position.x += platVel.x * dt;
         this.position.y += platVel.y * dt;
         this.position.z += platVel.z * dt;
       } else {
         this.ridingContraption = null;
+        this.ridingBodyId = null;
       }
     }
 
@@ -175,6 +201,7 @@ export class PlayerPhysics {
       this.position.z += this.velocity.z * dt;
       this.isOnGround = false;
       this.ridingContraption = null;
+      this.ridingBodyId = null;
       return;
     }
 
@@ -189,9 +216,21 @@ export class PlayerPhysics {
 
     // Jump
     if (moveInput.jump && this.isOnGround) {
+      if (this.ridingContraption) {
+        // The character controller owns the requested jump velocity. Transfer
+        // its equal-and-opposite momentum change to the supporting dynamic body.
+        const jumpDeltaVelocity = Math.max(0, this.jumpForce - this.velocity.y);
+        this.applyContraptionImpulse(
+          this.ridingContraption,
+          this.ridingBodyId || 'root',
+          new THREE.Vector3(0, -this.mass * jumpDeltaVelocity, 0),
+          this.position.clone()
+        );
+      }
       this.velocity.y = this.jumpForce;
       this.isOnGround = false;
       this.ridingContraption = null;
+      this.ridingBodyId = null;
     }
 
     // Step-by-step collision resolution with terrain AND contraptions
@@ -278,6 +317,40 @@ export class PlayerPhysics {
     return boxes;
   }
 
+  getContraptionBodyPointVelocity(contraption, bodyId = 'root', worldPoint = this.position) {
+    const body = contraption?.getRigidBody?.(bodyId);
+    if (!body) return contraption?.getVelocityAtPoint?.(worldPoint) || new THREE.Vector3();
+    const lever = worldPoint.clone().sub(body.position);
+    return body.velocity.clone().add(body.angularVelocity.clone().cross(lever));
+  }
+
+  /** Apply a world-space impulse to one dynamic entity body. */
+  applyContraptionImpulse(contraption, bodyId, impulse, worldPoint) {
+    if (!contraption || !impulse || impulse.lengthSq() <= 1e-12) return false;
+    const body = contraption.getRigidBody?.(bodyId || 'root');
+    if (!body || body.type !== 'dynamic') return false;
+    const physics = this.contraptionManager?.physics;
+    if (typeof physics?.applyImpulse !== 'function') return false;
+    physics.applyImpulse(contraption, impulse, worldPoint, bodyId || 'root');
+    return true;
+  }
+
+  /**
+   * The player is an authoritative character controller, but presents a finite
+   * 50kg contact mass to dynamic entities. Whenever collision resolution removes
+   * relative closing velocity from the player, transfer that momentum to the body.
+   */
+  applyPlayerContactImpulse(box, direction, relativeClosingSpeed, worldPoint) {
+    if (!box || !(relativeClosingSpeed > 0)) return false;
+    const normal = direction.clone().normalize();
+    return this.applyContraptionImpulse(
+      box.contraption,
+      box.bodyId || box.entityId || 'root',
+      normal.multiplyScalar(this.mass * relativeClosingSpeed),
+      worldPoint
+    );
+  }
+
   intervalsOverlap(minA, maxA, minB, maxB) {
     return maxA > minB + COLLISION_EPSILON && minA < maxB - COLLISION_EPSILON;
   }
@@ -332,6 +405,7 @@ export class PlayerPhysics {
       this.position.y = surface;
       this.isOnGround = true;
       this.ridingContraption = null;
+      this.ridingBodyId = null;
     } else {
       const h = this.isCrouching ? 1.45 : this.height;
       this.position.y = surface - h;
@@ -379,24 +453,35 @@ export class PlayerPhysics {
           && currentAABB.minY <= box.maxY
           && currentAABB.maxY > box.minY;
         if (crossedTop && (!hit || box.maxY > hit.surface)) {
-          hit = { surface: box.maxY, contraption: box.contraption };
+          hit = { surface: box.maxY, contraption: box.contraption, box };
         }
       } else {
         const crossedBottom = previousAABB.maxY <= box.minY + COLLISION_EPSILON
           && currentAABB.maxY >= box.minY
           && currentAABB.minY < box.maxY;
         if (crossedBottom && (!hit || box.minY < hit.surface)) {
-          hit = { surface: box.minY, contraption: box.contraption };
+          hit = { surface: box.minY, contraption: box.contraption, box };
         }
       }
     }
 
     if (!hit) return false;
 
+    const contactPoint = new THREE.Vector3(this.position.x, hit.surface, this.position.z);
+    const bodyVelocity = this.getContraptionBodyPointVelocity(
+      hit.contraption,
+      hit.box.bodyId || hit.box.entityId || 'root',
+      contactPoint
+    );
+    const impulseDirection = new THREE.Vector3(0, dy < 0 ? -1 : 1, 0);
+    const relativeClosingSpeed = this.velocity.clone().sub(bodyVelocity).dot(impulseDirection);
+    this.applyPlayerContactImpulse(hit.box, impulseDirection, relativeClosingSpeed, contactPoint);
+
     if (dy < 0) {
       this.position.y = hit.surface;
       this.isOnGround = true;
       this.ridingContraption = hit.contraption;
+      this.ridingBodyId = hit.box.bodyId || hit.box.entityId || 'root';
     } else {
       const h = this.isCrouching ? 1.45 : this.height;
       this.position.y = hit.surface - h;
@@ -410,7 +495,7 @@ export class PlayerPhysics {
 
     const currentAABB = this.getAABB();
     const halfWidth = this.width / 2;
-    let stop = null;
+    let hit = null;
 
     for (const box of collisionBoxes) {
       const overlapsOtherAxes = axis === 'x'
@@ -427,17 +512,32 @@ export class PlayerPhysics {
         const crossedNearFace = previousAABB[maxKey] <= box[minKey] + FACE_TOLERANCE
           && currentAABB[maxKey] >= box[minKey];
         const candidate = box[minKey] - halfWidth;
-        if (crossedNearFace && (stop === null || candidate < stop)) stop = candidate;
+        if (crossedNearFace && (!hit || candidate < hit.stop)) hit = { stop: candidate, box };
       } else {
         const crossedNearFace = previousAABB[minKey] >= box[maxKey] - FACE_TOLERANCE
           && currentAABB[minKey] <= box[maxKey];
         const candidate = box[maxKey] + halfWidth;
-        if (crossedNearFace && (stop === null || candidate > stop)) stop = candidate;
+        if (crossedNearFace && (!hit || candidate > hit.stop)) hit = { stop: candidate, box };
       }
     }
 
-    if (stop === null) return false;
-    this.position[axis] = stop;
+    if (!hit) return false;
+    const direction = new THREE.Vector3();
+    direction[axis] = delta > 0 ? 1 : -1;
+    const contactPoint = new THREE.Vector3(
+      axis === 'x' ? (delta > 0 ? hit.box.minX : hit.box.maxX) : this.position.x,
+      Math.max(hit.box.minY, Math.min(hit.box.maxY, this.position.y + this.height * 0.5)),
+      axis === 'z' ? (delta > 0 ? hit.box.minZ : hit.box.maxZ) : this.position.z
+    );
+    const bodyVelocity = this.getContraptionBodyPointVelocity(
+      hit.box.contraption,
+      hit.box.bodyId || hit.box.entityId || 'root',
+      contactPoint
+    );
+    const relativeClosingSpeed = this.velocity.clone().sub(bodyVelocity).dot(direction);
+    this.applyPlayerContactImpulse(hit.box, direction, relativeClosingSpeed, contactPoint);
+
+    this.position[axis] = hit.stop;
     this.velocity[axis] = 0;
     return true;
   }
@@ -496,9 +596,43 @@ export class PlayerPhysics {
       correctionCandidates.sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount));
       const correction = correctionCandidates[0];
 
+      // If a moving dynamic body created the overlap, treat the correction
+      // direction as the contact normal from body to player and apply the
+      // opposite 50kg collision impulse back to the body.
+      const playerNormal = new THREE.Vector3();
+      playerNormal[correction.axis] = Math.sign(correction.amount) || 1;
+      const contactPoint = new THREE.Vector3(
+        this.position.x,
+        Math.max(aabb.minY, Math.min(aabb.maxY, this.position.y + this.height * 0.5)),
+        this.position.z
+      );
+      let impactBox = null;
+      let impactSpeed = 0;
+      for (const box of overlaps) {
+        const bodyVelocity = this.getContraptionBodyPointVelocity(
+          box.contraption,
+          box.bodyId || box.entityId || 'root',
+          contactPoint
+        );
+        const closingSpeed = bodyVelocity.clone().sub(this.velocity).dot(playerNormal);
+        if (closingSpeed > impactSpeed) {
+          impactSpeed = closingSpeed;
+          impactBox = box;
+        }
+      }
+      if (impactBox) {
+        this.applyPlayerContactImpulse(
+          impactBox,
+          playerNormal.clone().multiplyScalar(-1),
+          impactSpeed,
+          contactPoint
+        );
+      }
+
       this.position[correction.axis] += correction.amount;
       this.velocity[correction.axis] = 0;
       this.ridingContraption = null;
+      this.ridingBodyId = null;
       moved = true;
     }
 

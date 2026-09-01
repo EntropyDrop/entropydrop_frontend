@@ -22,6 +22,61 @@ class MockStorage {
   }
 }
 
+test('streaming preserves runtime BodyConfig overrides without replacing PB defaults', () => {
+  const slot = {
+    rootId: 'root',
+    mode: ContraptionMode.PROGRAMMABLE,
+    blocks: [{
+      localX: 0,
+      localY: 0,
+      localZ: 0,
+      size: 1,
+      color: 0xff0000,
+      block: BlockTypes.COLOR_BLOCK,
+      entityId: 'root'
+    }],
+    childEntities: [],
+    scripts: [],
+    enabled: [],
+    constraints: [],
+    bodyType: 'dynamic',
+    restitution: 0.2,
+    friction: 0.4,
+    useGravity: true,
+    collisionEnabled: true
+  };
+  const managerA = new ContraptionManager(new THREE.Scene(), null, null, null);
+  const source = managerA.buildFromSlot(slot, new THREE.Vector3(1, 2, 3), null, false);
+  source.scriptApi.body.setType('kinematic');
+  source.scriptApi.body.setMass(70);
+  source.scriptApi.body.setMaterial({ restitution: 0.8, friction: 0.1 });
+  source.scriptApi.body.setGravityEnabled(false);
+  source.scriptApi.body.setCollisionEnabled(false);
+
+  const record = managerA.captureContraptionForStreaming(source, { id: '0,0' });
+  const managerB = new ContraptionManager(new THREE.Scene(), null, null, null);
+  const restored = managerB.buildFromSlot(
+    record.slot,
+    new THREE.Vector3().fromArray(record.constructorOrigin),
+    record,
+    false
+  );
+
+  assert.equal(restored.getNodeBodyType('root'), 'kinematic');
+  assert.equal(restored.getNodeBodyMass('root'), 70);
+  assert.deepEqual(restored.getNodeBodyMaterial('root'), { restitution: 0.8, friction: 0.1 });
+  assert.equal(restored.getNodeGravityEnabled('root'), false);
+  assert.equal(restored.getNodeCollisionEnabled('root'), false);
+  assert.equal(restored.serializeSubtree('root').bodyType, 'dynamic');
+
+  restored.stopAllNodeScripts();
+  assert.equal(restored.getNodeBodyType('root'), 'dynamic');
+  assert.equal(restored.getNodeBodyMass('root'), 10);
+  assert.deepEqual(restored.getNodeBodyMaterial('root'), { restitution: 0.2, friction: 0.4 });
+  assert.equal(restored.getNodeGravityEnabled('root'), true);
+  assert.equal(restored.getNodeCollisionEnabled('root'), true);
+});
+
 test('contraption manager saves assembled entity and restores it after simulated reload', () => {
   const storage = new MockStorage();
   const worldId = 'test-world-persist-1';

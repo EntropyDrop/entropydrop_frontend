@@ -16,6 +16,7 @@ import {
   EntityScriptRuntimeClient,
   validateEntityScriptSyntax
 } from '../scripting/EntityScriptRuntime.ts';
+import { PLAYER_MASS_KG } from '../physics/PlayerPhysics.ts';
 
 // Must match createVoxelMesh(): the GPU bends these exact face vertices before
 // rasterization, so bent-space picking intersects the same two triangles shown
@@ -121,8 +122,9 @@ function boundedBodyVector(value: any): THREE.Vector3 | null {
 const SCRIPT_COMPONENT_COMMANDS = new Set([
   'applyThrust', 'setLocalPosition', 'setLocalRotation', 'setLocalEuler', 'setLocalSpin', 'setPivot',
   'applyForce', 'applyLocalForce', 'applyForceAt', 'applyTorque', 'setSeats',
-  'body.setType', 'body.setMass', 'body.setMaterial', 'body.applyForce', 'body.applyLocalForce',
-  'body.applyTorque', 'constraints.create', 'constraints.remove', 'voxels.set', 'voxels.clear',
+  'body.setType', 'body.setMass', 'body.setMaterial', 'body.setGravityEnabled',
+  'body.setCollisionEnabled', 'body.applyForce', 'body.applyLocalForce', 'body.applyTorque',
+  'constraints.create', 'constraints.remove', 'voxels.set', 'voxels.clear',
   'voxels.paint', 'voxels.clearCell', 'voxels.subdivide', 'microVoxels.set', 'microVoxels.clear',
   'microVoxels.paint'
 ]);
@@ -342,6 +344,9 @@ export class Contraption {
   angularDamping: number;
   bodyType: string;
   useGravity: boolean;
+  collisionEnabled: boolean;
+  /** Original PB BodyConfig values captured before the first script-only mutation. */
+  runtimeBodyConfigDefaults: Map<string, any>;
   isOnGround: boolean;
   groundDistance: number;
   maxForce: number;
@@ -470,6 +475,8 @@ export class Contraption {
     this.useGravity = options.useGravity !== undefined
       ? !!options.useGravity
       : this.bodyType === BodyType.DYNAMIC;
+    this.collisionEnabled = options.collisionEnabled !== false;
+    this.runtimeBodyConfigDefaults = new Map();
     this.isOnGround = false;
     this.groundDistance = 0;
 
@@ -992,7 +999,8 @@ export class Contraption {
           domain: ActionDomain.PHYSICS,
           action: 'set-body-type',
           nodeId: id,
-          bodyType: type
+          bodyType: type,
+          runtimeOnly: true
         });
         return Object.freeze({ ok: result.ok, type: result.bodyType || this.getNodeBodyType(id), reason: result.reason });
       },
@@ -1002,7 +1010,8 @@ export class Contraption {
           domain: ActionDomain.PHYSICS,
           action: 'set-body-mass',
           nodeId: id,
-          mass
+          mass,
+          runtimeOnly: true
         });
         return Object.freeze({ ok: result.ok, mass: result.mass ?? this.getNodeBodyMass(id), reason: result.reason });
       },
@@ -1012,9 +1021,40 @@ export class Contraption {
           domain: ActionDomain.PHYSICS,
           action: 'set-body-material',
           nodeId: id,
-          material
+          material,
+          runtimeOnly: true
         });
         return Object.freeze({ ok: result.ok, material: result.material || this.getNodeBodyMaterial(id), reason: result.reason });
+      },
+      getGravityEnabled: () => this.getNodeGravityEnabled(id),
+      setGravityEnabled: enabled => {
+        const result = this.performBasicAction({
+          domain: ActionDomain.PHYSICS,
+          action: 'set-body-gravity-enabled',
+          nodeId: id,
+          enabled,
+          runtimeOnly: true
+        });
+        return Object.freeze({
+          ok: result.ok,
+          enabled: result.enabled ?? this.getNodeGravityEnabled(id),
+          reason: result.reason
+        });
+      },
+      getCollisionEnabled: () => this.getNodeCollisionEnabled(id),
+      setCollisionEnabled: enabled => {
+        const result = this.performBasicAction({
+          domain: ActionDomain.PHYSICS,
+          action: 'set-body-collision-enabled',
+          nodeId: id,
+          enabled,
+          runtimeOnly: true
+        });
+        return Object.freeze({
+          ok: result.ok,
+          enabled: result.enabled ?? this.getNodeCollisionEnabled(id),
+          reason: result.reason
+        });
       },
       getVelocity: () => Object.freeze(this.getRigidBody(id)?.velocity.toArray() || [0, 0, 0]),
       getAngularVelocity: () => Object.freeze(this.getRigidBody(id)?.angularVelocity.toArray() || [0, 0, 0]),
@@ -1361,9 +1401,10 @@ export class Contraption {
   /** The single implementation used by both the UI Stop button and root self.stop(). */
   stopAllNodeScripts() {
     this.disableAllNodeScripts();
+    this.restoreRuntimeBodyConfigDefaults();
     this.resetAllComponentState();
     this.scriptStatus = 'stopped';
-    this.log('[STOP] All component scripts stopped');
+    this.log('[STOP] All component scripts stopped; runtime BodyConfig restored');
     return true;
   }
 
@@ -1386,9 +1427,8 @@ export class Contraption {
     const sourceRootId = String(rootNodeId || 'root');
     const nodeIds = this.collectSubtreeNodeIds(sourceRootId);
     const mapId = id => id === sourceRootId ? 'root' : id;
-    const massOverride = sourceRootId === 'root'
-      ? this.massOverride
-      : normalizeBodyMass(this.childDefinitions.get(sourceRootId)?.mass);
+    const rootBodyDefaults = this.getNodeDefaultBodyConfig(sourceRootId);
+    const massOverride = normalizeBodyMass(rootBodyDefaults?.mass);
 
     const blocks = this.blocks
       .filter(b => nodeIds.has(b.entityId || 'root'))
@@ -1404,11 +1444,23 @@ export class Contraption {
 
     const childEntities = [...this.childDefinitions.values()]
       .filter(d => nodeIds.has(d.id) && d.id !== sourceRootId)
-      .map(d => ({
-        ...d,
-        id: mapId(d.id),
-        parentId: mapId(d.parentId)
-      }));
+      .map(d => {
+        const defaults = this.getNodeDefaultBodyConfig(d.id);
+        const serialized = {
+          ...d,
+          id: mapId(d.id),
+          parentId: mapId(d.parentId),
+          bodyType: defaults?.bodyType || d.bodyType,
+          restitution: defaults?.restitution ?? d.restitution,
+          friction: defaults?.friction ?? d.friction,
+          useGravity: defaults?.useGravity ?? (d.useGravity !== false),
+          collisionEnabled: defaults?.collisionEnabled ?? (d.collisionEnabled !== false)
+        };
+        const configuredMass = normalizeBodyMass(defaults?.mass);
+        if (configuredMass === null) delete serialized.mass;
+        else serialized.mass = configuredMass;
+        return serialized;
+      });
 
     const scripts = [...this.nodeScripts.entries()]
       .filter(([id]) => nodeIds.has(id))
@@ -1436,13 +1488,12 @@ export class Contraption {
       scripts,
       enabled,
       constraints,
-      bodyType: sourceRootId === 'root' ? this.bodyType : this.getNodeBodyType(sourceRootId),
+      bodyType: rootBodyDefaults?.bodyType || this.getNodeBodyType(sourceRootId),
       ...(massOverride !== null ? { mass: massOverride } : {}),
-      restitution: sourceRootId === 'root' ? this.restitution : this.getRigidBody(sourceRootId)?.restitution,
-      friction: sourceRootId === 'root' ? this.friction : this.getRigidBody(sourceRootId)?.friction,
-      useGravity: sourceRootId === 'root'
-        ? this.useGravity
-        : this.childDefinitions.get(sourceRootId)?.useGravity !== false,
+      restitution: rootBodyDefaults?.restitution,
+      friction: rootBodyDefaults?.friction,
+      useGravity: rootBodyDefaults?.useGravity,
+      collisionEnabled: rootBodyDefaults?.collisionEnabled,
       seats: this.getComponentSeats(sourceRootId)
     };
   }
@@ -1486,10 +1537,22 @@ export class Contraption {
 
     const childEntities = [...this.childDefinitions.values()]
       .filter(d => nodeIds.has(d.id))
-      .map(d => ({
-        ...d,
-        parentId: roots.includes(d.id) || !nodeIds.has(d.parentId) ? 'root' : d.parentId
-      }));
+      .map(d => {
+        const defaults = this.getNodeDefaultBodyConfig(d.id);
+        const serialized = {
+          ...d,
+          parentId: roots.includes(d.id) || !nodeIds.has(d.parentId) ? 'root' : d.parentId,
+          bodyType: defaults?.bodyType || d.bodyType,
+          restitution: defaults?.restitution ?? d.restitution,
+          friction: defaults?.friction ?? d.friction,
+          useGravity: defaults?.useGravity ?? (d.useGravity !== false),
+          collisionEnabled: defaults?.collisionEnabled ?? (d.collisionEnabled !== false)
+        };
+        const configuredMass = normalizeBodyMass(defaults?.mass);
+        if (configuredMass === null) delete serialized.mass;
+        else serialized.mass = configuredMass;
+        return serialized;
+      });
 
     const scripts = [...this.nodeScripts.entries()]
       .filter(([id]) => nodeIds.has(id))
@@ -1512,10 +1575,11 @@ export class Contraption {
       scripts,
       enabled,
       constraints,
-      bodyType: this.bodyType,
-      restitution: this.restitution,
-      friction: this.friction,
-      useGravity: this.useGravity,
+      bodyType: this.getNodeDefaultBodyConfig('root')?.bodyType || this.bodyType,
+      restitution: this.getNodeDefaultBodyConfig('root')?.restitution ?? this.restitution,
+      friction: this.getNodeDefaultBodyConfig('root')?.friction ?? this.friction,
+      useGravity: this.getNodeDefaultBodyConfig('root')?.useGravity ?? this.useGravity,
+      collisionEnabled: this.getNodeDefaultBodyConfig('root')?.collisionEnabled ?? this.collisionEnabled,
       seats: []
     };
   }
@@ -1564,6 +1628,7 @@ export class Contraption {
       this.nodeScriptEnabled.delete(id);
       this.componentVariables.delete(id);
       this.childScriptApis.delete(id);
+      this.runtimeBodyConfigDefaults.delete(id);
     }
     for (const [id, constraint] of this.constraintDefinitions) {
       if (nodeIds.has(constraint.bodyA) || nodeIds.has(constraint.bodyB)) {
@@ -1588,15 +1653,20 @@ export class Contraption {
     const blocks = this.blocks.filter(b => (b.entityId || 'root') === id);
     const volume = blocks.reduce((sum, b) => sum + Math.pow(b.size || 1, 3), 0);
     const euler = new THREE.Euler().setFromQuaternion(node.localQuaternion, 'YXZ');
+    const defaults = this.getNodeDefaultBodyConfig(id);
+    const runtimeBody = this.getCurrentNodeBodyConfig(id);
 
     return {
       id: node.id,
       parentId: node.parentId,
       kind: node.kind || (node.id === 'root' ? 'root' : 'child'),
-      bodyType: this.getNodeBodyType(id),
-      mass: this.getNodeBodyMass(id),
-      restitution: this.getRigidBody(id)?.restitution ?? this.restitution,
-      friction: this.getRigidBody(id)?.friction ?? this.friction,
+      bodyType: defaults?.bodyType || this.getNodeBodyType(id),
+      mass: normalizeBodyMass(defaults?.mass) ?? defaultBodyMass(blocks),
+      restitution: defaults?.restitution ?? this.restitution,
+      friction: defaults?.friction ?? this.friction,
+      useGravity: defaults?.useGravity ?? true,
+      collisionEnabled: defaults?.collisionEnabled ?? true,
+      runtimeBody,
       constraintCount: this.getConstraints(id).length,
       blockCount: blocks.length,
       volume: Number(volume.toFixed(2)),
@@ -1659,6 +1729,11 @@ export class Contraption {
       const state = this.componentVariables.get(oldId);
       this.componentVariables.delete(oldId);
       this.componentVariables.set(cleanNewId, state);
+    }
+    if (this.runtimeBodyConfigDefaults.has(oldId)) {
+      const defaults = this.runtimeBodyConfigDefaults.get(oldId);
+      this.runtimeBodyConfigDefaults.delete(oldId);
+      this.runtimeBodyConfigDefaults.set(cleanNewId, defaults);
     }
 
     // Update children's parentId
@@ -2156,15 +2231,56 @@ export class Contraption {
     return [...this.rigidBodies.values()];
   }
 
+  /** Current authored/runtime BodyConfig. A snapshot of this value becomes the
+   * PB default the first time a script mutates one of its fields. */
+  getCurrentNodeBodyConfig(nodeId = 'root') {
+    const id = String(nodeId || 'root');
+    const body = this.getRigidBody(id);
+    if (!body) return null;
+    const definition = id === 'root' ? null : this.childDefinitions.get(id);
+    return {
+      bodyType: body.type,
+      mass: id === 'root' ? this.massOverride : normalizeBodyMass(definition?.mass),
+      restitution: body.restitution,
+      friction: body.friction,
+      useGravity: id === 'root' ? this.useGravity : definition?.useGravity !== false,
+      collisionEnabled: id === 'root' ? this.collisionEnabled : definition?.collisionEnabled !== false
+    };
+  }
+
+  getNodeDefaultBodyConfig(nodeId = 'root') {
+    const id = String(nodeId || 'root');
+    const source = this.runtimeBodyConfigDefaults.get(id) || this.getCurrentNodeBodyConfig(id);
+    return source ? { ...source } : null;
+  }
+
+  captureRuntimeBodyConfigDefault(nodeId = 'root') {
+    const id = String(nodeId || 'root');
+    if (!this.runtimeBodyConfigDefaults.has(id)) {
+      const current = this.getCurrentNodeBodyConfig(id);
+      if (current) this.runtimeBodyConfigDefaults.set(id, current);
+    }
+  }
+
+  updateCapturedBodyConfigDefault(nodeId, patch) {
+    const saved = this.runtimeBodyConfigDefaults.get(String(nodeId || 'root'));
+    if (saved) Object.assign(saved, patch);
+  }
+
   getNodeBodyType(nodeId = 'root') {
     return this.getRigidBody(nodeId)?.type || null;
   }
 
-  setNodeBodyType(nodeId, value) {
+  setNodeBodyType(nodeId, value, options: any = {}) {
     const id = String(nodeId || 'root');
     const body = this.getRigidBody(id);
     const type = normalizeBodyType(value, null);
     if (!body || !type) return false;
+    if (options.runtimeOnly) {
+      if (options.captureDefault !== false) this.captureRuntimeBodyConfigDefault(id);
+    } else {
+      this.updateCapturedBodyConfigDefault(id, { bodyType: type });
+    }
     if (body.type === type) return true;
 
     if (body.id !== 'root' && body.type === BodyType.KINEMATIC && type === BodyType.DYNAMIC) {
@@ -2186,7 +2302,6 @@ export class Contraption {
     if (node) node.bodyType = type;
     if (id === 'root') {
       this.bodyType = type;
-      this.useGravity = type === BodyType.DYNAMIC;
     } else {
       const definition = this.childDefinitions.get(id);
       if (definition) definition.bodyType = type;
@@ -2202,11 +2317,16 @@ export class Contraption {
     return this.getRigidBody(nodeId)?.mass ?? null;
   }
 
-  setNodeBodyMass(nodeId, value) {
+  setNodeBodyMass(nodeId, value, options: any = {}) {
     const id = String(nodeId || 'root');
     const body = this.getRigidBody(id);
     const mass = normalizeBodyMass(value);
     if (!body || mass === null) return null;
+    if (options.runtimeOnly) {
+      if (options.captureDefault !== false) this.captureRuntimeBodyConfigDefault(id);
+    } else {
+      this.updateCapturedBodyConfigDefault(id, { mass });
+    }
 
     const previousMass = body.mass;
     body.mass = mass;
@@ -2232,10 +2352,18 @@ export class Contraption {
     return body ? Object.freeze({ restitution: body.restitution, friction: body.friction }) : null;
   }
 
-  setNodeBodyMaterial(nodeId, material: any = {}) {
+  setNodeBodyMaterial(nodeId, material: any = {}, options: any = {}) {
     const id = String(nodeId || 'root');
     const body = this.getRigidBody(id);
     if (!body) return null;
+    if (options.runtimeOnly) {
+      if (options.captureDefault !== false) this.captureRuntimeBodyConfigDefault(id);
+    } else {
+      const defaults: any = {};
+      if (material.restitution !== undefined) defaults.restitution = clampUnit(material.restitution, body.restitution);
+      if (material.friction !== undefined) defaults.friction = clampUnit(material.friction, body.friction);
+      this.updateCapturedBodyConfigDefault(id, defaults);
+    }
     if (material.restitution !== undefined) body.restitution = clampUnit(material.restitution, body.restitution);
     if (material.friction !== undefined) body.friction = clampUnit(material.friction, body.friction);
     if (id === 'root') {
@@ -2249,6 +2377,83 @@ export class Contraption {
       }
     }
     return this.getNodeBodyMaterial(id);
+  }
+
+  getNodeGravityEnabled(nodeId = 'root') {
+    const id = String(nodeId || 'root');
+    if (!this.getRigidBody(id)) return null;
+    return id === 'root'
+      ? this.useGravity
+      : this.childDefinitions.get(id)?.useGravity !== false;
+  }
+
+  setNodeGravityEnabled(nodeId, enabled, options: any = {}) {
+    const id = String(nodeId || 'root');
+    if (!this.getRigidBody(id) || typeof enabled !== 'boolean') return null;
+    if (options.runtimeOnly) {
+      if (options.captureDefault !== false) this.captureRuntimeBodyConfigDefault(id);
+    } else {
+      this.updateCapturedBodyConfigDefault(id, { useGravity: enabled });
+    }
+    if (id === 'root') this.useGravity = enabled;
+    else {
+      const definition = this.childDefinitions.get(id);
+      if (!definition) return null;
+      definition.useGravity = enabled;
+    }
+    return enabled;
+  }
+
+  getNodeCollisionEnabled(nodeId = 'root') {
+    const id = String(nodeId || 'root');
+    if (!this.getRigidBody(id)) return null;
+    return id === 'root'
+      ? this.collisionEnabled
+      : this.childDefinitions.get(id)?.collisionEnabled !== false;
+  }
+
+  setNodeCollisionEnabled(nodeId, enabled, options: any = {}) {
+    const id = String(nodeId || 'root');
+    if (!this.getRigidBody(id) || typeof enabled !== 'boolean') return null;
+    if (options.runtimeOnly) {
+      if (options.captureDefault !== false) this.captureRuntimeBodyConfigDefault(id);
+    } else {
+      this.updateCapturedBodyConfigDefault(id, { collisionEnabled: enabled });
+    }
+    const previous = this.getNodeCollisionEnabled(id);
+    if (id === 'root') this.collisionEnabled = enabled;
+    else {
+      const definition = this.childDefinitions.get(id);
+      if (!definition) return null;
+      definition.collisionEnabled = enabled;
+    }
+    if (previous !== enabled) this.invalidateCollisionPoseCache();
+    return enabled;
+  }
+
+  restoreRuntimeBodyConfigDefaults() {
+    for (const [id, defaults] of this.runtimeBodyConfigDefaults) {
+      if (!this.getRigidBody(id)) continue;
+      this.setNodeBodyType(id, defaults.bodyType, { runtimeOnly: true, captureDefault: false });
+
+      const ownedBlocks = this.blocks.filter(block => (block.entityId || 'root') === id);
+      const configuredMass = normalizeBodyMass(defaults.mass);
+      const mass = configuredMass ?? defaultBodyMass(ownedBlocks);
+      this.setNodeBodyMass(id, mass, { runtimeOnly: true, captureDefault: false });
+      if (id === 'root') this.massOverride = configuredMass;
+      else {
+        const definition = this.childDefinitions.get(id);
+        if (definition) {
+          if (configuredMass === null) delete definition.mass;
+          else definition.mass = configuredMass;
+        }
+      }
+
+      this.setNodeBodyMaterial(id, defaults, { runtimeOnly: true, captureDefault: false });
+      this.setNodeGravityEnabled(id, defaults.useGravity, { runtimeOnly: true, captureDefault: false });
+      this.setNodeCollisionEnabled(id, defaults.collisionEnabled, { runtimeOnly: true, captureDefault: false });
+    }
+    this.runtimeBodyConfigDefaults.clear();
   }
 
   applyNodeBodyForce(nodeId, force) {
@@ -2880,7 +3085,7 @@ export class Contraption {
         id: node.id,
         parentId: node.parentId,
         kind: node.kind || (id === 'root' ? 'root' : 'child'),
-        bodyType: this.getNodeBodyType(id),
+        bodyType: this.getNodeDefaultBodyConfig(id)?.bodyType || this.getNodeBodyType(id),
         blockCount: blocks.length,
         volume: Number(voxelVolume.toFixed(2)),
         pivot: [node.pivotLocal.x, node.pivotLocal.y, node.pivotLocal.z],
@@ -3220,14 +3425,20 @@ export class Contraption {
   buildScriptRuntimeSnapshot(dt, inputState, runtimeContext, time, tick) {
     const euler = new THREE.Euler().setFromQuaternion(this.quaternion, 'YXZ');
     const rawPlayers = Array.isArray(runtimeContext?.players) ? runtimeContext.players : [];
-    const players = rawPlayers.map(player => ({
-      id: String(player?.id || 'player'),
-      position: [
-        Number(player?.position?.[0]) || 0,
-        Number(player?.position?.[1]) || 0,
-        Number(player?.position?.[2]) || 0
-      ]
-    }));
+    const players = rawPlayers.map(player => {
+      const requestedMass = Number(player?.mass);
+      return {
+        id: String(player?.id || 'player'),
+        position: [
+          Number(player?.position?.[0]) || 0,
+          Number(player?.position?.[1]) || 0,
+          Number(player?.position?.[2]) || 0
+        ],
+        mass: Number.isFinite(requestedMass) && requestedMass > 0
+          ? requestedMass
+          : PLAYER_MASS_KG
+      };
+    });
     const components = [...this.entityNodes.values()].map(node => {
       const body = this.getRigidBody(node.id);
       return {
@@ -3246,6 +3457,8 @@ export class Contraption {
           type: this.getNodeBodyType(node.id),
           mass: this.getNodeBodyMass(node.id),
           material: this.getNodeBodyMaterial(node.id),
+          useGravity: this.getNodeGravityEnabled(node.id),
+          collisionEnabled: this.getNodeCollisionEnabled(node.id),
           velocity: body?.velocity.toArray() || [0, 0, 0],
           angularVelocity: body?.angularVelocity.toArray() || [0, 0, 0]
         }
@@ -3532,12 +3745,10 @@ export class Contraption {
     return attached;
   }
 
-  /** Visual-only components (for example raycast-suspension wheels)
-   * remain editable/rendered but do not become terrain, player, or entity
-   * collision shapes. Root collision is always enabled. */
+  /** Collision-disabled components remain editable and rendered but do not
+   * become terrain, player, entity, or raycast collision shapes. */
   isNodeCollisionEnabled(nodeId) {
-    const id = String(nodeId || 'root');
-    return id === 'root' || this.childDefinitions.get(id)?.collisionEnabled !== false;
+    return this.getNodeCollisionEnabled(nodeId) !== false;
   }
 
   getCollisionSamplePoints(bodyId = null, includeAttached = false) {

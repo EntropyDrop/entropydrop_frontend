@@ -1082,12 +1082,16 @@ function executePhysicsAction(context: any, command: any) {
         mass: body.mass,
         restitution: body.restitution,
         friction: body.friction,
+        useGravity: contraption.getNodeGravityEnabled?.(nodeId) ?? true,
+        collisionEnabled: contraption.getNodeCollisionEnabled?.(nodeId) ?? true,
         velocity: Object.freeze(body.velocity.toArray()),
         angularVelocity: Object.freeze(body.angularVelocity.toArray())
       });
     }
     case 'set-body-type': {
-      const changed = contraption.setNodeBodyType?.(nodeId, command.bodyType) ? 1 : 0;
+      const changed = contraption.setNodeBodyType?.(nodeId, command.bodyType, {
+        runtimeOnly: command.runtimeOnly === true
+      }) ? 1 : 0;
       return actionResult(command.action, changed, changed ? 'updated' : 'invalid_body_type', {
         bodyType: contraption.getNodeBodyType?.(nodeId) || null
       });
@@ -1099,14 +1103,42 @@ function executePhysicsAction(context: any, command: any) {
           mass: contraption.getNodeBodyMass?.(nodeId) ?? null
         });
       }
-      const mass = contraption.setNodeBodyMass?.(nodeId, requestedMass);
+      const mass = contraption.setNodeBodyMass?.(nodeId, requestedMass, {
+        runtimeOnly: command.runtimeOnly === true
+      });
       return actionResult(command.action, mass !== null && mass !== undefined ? 1 : 0, mass !== null && mass !== undefined ? 'updated' : 'body_unavailable', {
         mass: mass ?? contraption.getNodeBodyMass?.(nodeId) ?? null
       });
     }
     case 'set-body-material': {
-      const material = contraption.setNodeBodyMaterial?.(nodeId, command.material || {});
+      const material = contraption.setNodeBodyMaterial?.(nodeId, command.material || {}, {
+        runtimeOnly: command.runtimeOnly === true
+      });
       return actionResult(command.action, material ? 1 : 0, material ? 'updated' : 'body_unavailable', { material });
+    }
+    case 'set-body-gravity-enabled': {
+      if (typeof command.enabled !== 'boolean') {
+        return actionResult(command.action, 0, 'invalid_enabled', {
+          enabled: contraption.getNodeGravityEnabled?.(nodeId) ?? null
+        });
+      }
+      const enabled = contraption.setNodeGravityEnabled?.(nodeId, command.enabled, {
+        runtimeOnly: command.runtimeOnly === true
+      });
+      return actionResult(command.action, enabled !== null && enabled !== undefined ? 1 : 0,
+        enabled !== null && enabled !== undefined ? 'updated' : 'body_unavailable', { enabled });
+    }
+    case 'set-body-collision-enabled': {
+      if (typeof command.enabled !== 'boolean') {
+        return actionResult(command.action, 0, 'invalid_enabled', {
+          enabled: contraption.getNodeCollisionEnabled?.(nodeId) ?? null
+        });
+      }
+      const enabled = contraption.setNodeCollisionEnabled?.(nodeId, command.enabled, {
+        runtimeOnly: command.runtimeOnly === true
+      });
+      return actionResult(command.action, enabled !== null && enabled !== undefined ? 1 : 0,
+        enabled !== null && enabled !== undefined ? 'updated' : 'body_unavailable', { enabled });
     }
     case 'apply-body-force': {
       const applied = contraption.applyNodeBodyForce?.(nodeId, command.force) ? 1 : 0;
