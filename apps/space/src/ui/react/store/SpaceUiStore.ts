@@ -7,7 +7,7 @@ import {
   type PlayerPerspective
 } from '../../../engine/controls/PlayerController.ts';
 import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../../../engine/torus/TorusWorld.ts';
-import { triggerJsonDownload } from '../browser/downloadJson.ts';
+import { triggerProtobufDownload } from '../browser/downloadProtobuf.ts';
 import { colorToHex, normalizeColor, PRESET_COLORS } from '../../../engine/voxel/BlockTypes.ts';
 import { SpaceMarketClient } from '../../../bootstrap/SpaceMarketClient.ts';
 
@@ -688,15 +688,15 @@ export class SpaceUiStore {
     return true;
   }
 
-  inventoryJsonFilename(name: unknown, fallback = 'backpack-item'): string {
+  inventoryProtobufFilename(name: unknown, fallback = 'backpack-item'): string {
     const safe = String(name || fallback).trim()
       .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
       .replace(/[. ]+$/g, '').slice(0, 120) || fallback;
-    return `${safe.replace(/\.json$/i, '')}.json`;
+    return `${safe.replace(/\.(?:edpb|pb)$/i, '')}.edpb`;
   }
 
-  downloadJson(filename: string, data: unknown): void {
-    triggerJsonDownload(filename, data);
+  downloadProtobuf(filename: string, data: Uint8Array | null | undefined): void {
+    triggerProtobufDownload(filename, data);
   }
 
   importInventoryFile(category: 'blockset' | 'entity' | 'colorset', file: File | null): void {
@@ -708,14 +708,19 @@ export class SpaceUiStore {
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const parsed = controller.parseInventoryImport(String(reader.result || ''), category);
+      if (!(reader.result instanceof ArrayBuffer)) {
+        this.showToast('Failed to read the Protobuf file');
+        return;
+      }
+      const parsed = controller.parseInventoryImport(new Uint8Array(reader.result), category);
       if (!parsed.ok) {
         this.showToast(`Import failed: ${parsed.error}`);
         return;
       }
       const index = controller.addInventoryItem(category, parsed.item);
       if (index === null) {
-        this.showToast(`${category} inventory is full (9) - delete one first`);
+        const capacity = category === 'colorset' ? 9 : 99;
+        this.showToast(`${category} inventory is full (${capacity}) - delete one first`);
         return;
       }
       controller.setActiveInventoryCategory(category);
@@ -723,7 +728,7 @@ export class SpaceUiStore {
       this.syncInventoryState();
     };
     reader.onerror = () => this.showToast('Failed to read the file');
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
   renameInventoryItem(category: string, index: number, name: string): void {

@@ -16,6 +16,16 @@ import {
 import { calculatePreviewDragForce } from '../render/SceneRenderer.ts';
 import { InventoryThumbnailRenderer } from '../render/InventoryThumbnailRenderer.ts';
 import type { SpaceStorage } from '../storage/BrowserStorage.ts';
+import {
+  decodeBackpack,
+  decodeInventoryResource,
+  encodeBackpack,
+  encodeInventoryResource,
+  protobufFromBase64,
+  protobufToBase64,
+  type InventoryKind,
+  type PortableBackpack,
+} from '../storage/InventoryProtobuf.ts';
 
 // Global editor/game commands stay engine-owned and are not exposed to entity
 // programs, avoiding collisions between scripts and C/V/tool shortcuts.
@@ -37,8 +47,7 @@ export type PlayerPerspective = 'first_person' | 'third_person' | 'third_person_
 const HEX_COLOR = /^#?[0-9a-f]{6}$/i;
 const MAX_INVENTORY_NAME_LENGTH = 80;
 const MICRO_DIVISIONS = 5;
-const INVENTORY_STORAGE_KEY = 'space.backpack.v2';
-const INVENTORY_STORAGE_VERSION = 2;
+const INVENTORY_STORAGE_KEY = 'space.backpack.v3.pb';
 const INVENTORY_CATEGORIES = ['blockset', 'entity', 'colorset'];
 const DEFAULT_COLOR_SET_NAME = 'Default palette';
 export const MAX_INVENTORY_IMPORT_BYTES = 8 * 1024 * 1024;
@@ -2287,7 +2296,7 @@ export class PlayerController {
     const slot = { kind: 'blockset', name, blocks, blockCount: blocks.length };
     const index = this.addInventoryItem('blockset', slot);
     if (index === null) {
-      if (this.ui) this.ui.showToast(`Block set inventory is full (9) - cannot import ${name}`);
+      if (this.ui) this.ui.showToast(`Block set inventory is full (99) - cannot import ${name}`);
       return null;
     }
     this.setActiveInventoryCategory('blockset');
@@ -3362,7 +3371,7 @@ export class PlayerController {
 
   /** Put an item into the first matching-category slot that is empty (or the selected
    *  slot when it is empty and the bar is showing that category). Returns the index,
-   *  or null when the category is full (9 items max). */
+   *  or null when the category is full (99 items max). */
   addInventoryItem(category, item) {
     if (!this.inventories) this.inventoryCategory();
     const group = this.inventories?.[category];
@@ -3503,7 +3512,7 @@ export class PlayerController {
   /** Persist all three backpack categories in the same canonical format used by export. */
   saveInventoriesToLocalStorage(storage = this.inventoryStorage()) {
     if (!storage || !this.inventories) return false;
-    const categories = {};
+    const categories = {} as PortableBackpack['categories'];
     for (const category of INVENTORY_CATEGORIES) {
       const group = this.inventories[category];
       categories[category] = {
@@ -3512,12 +3521,12 @@ export class PlayerController {
       };
     }
     try {
-      storage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify({
-        type: 'space-backpack',
-        version: INVENTORY_STORAGE_VERSION,
-        activeCategory: this.activeInventoryCategory,
+      const encoded = encodeBackpack({
+        activeCategory: this.activeInventoryCategory as InventoryKind,
         categories
-      }));
+      });
+      if (typeof storage.setBytes === 'function') storage.setBytes(INVENTORY_STORAGE_KEY, encoded);
+      else storage.setItem(INVENTORY_STORAGE_KEY, protobufToBase64(encoded));
       return true;
     } catch (err) {
       console.warn('Could not save backpack to browser storage:', err);
@@ -3533,26 +3542,28 @@ export class PlayerController {
     let changed = false;
 
     try {
-      const raw = storage?.getItem(INVENTORY_STORAGE_KEY);
+      const storedBytes = storage?.getBytes?.(INVENTORY_STORAGE_KEY);
+      const raw = storedBytes || storage?.getItem(INVENTORY_STORAGE_KEY);
       if (raw) {
-        const data = JSON.parse(raw);
-        if (data?.type === 'space-backpack' && data?.version === INVENTORY_STORAGE_VERSION) {
-          for (const category of INVENTORY_CATEGORIES) {
-            const storedGroup = data.categories?.[category];
-            const maxLen = inventories[category].items.length;
-            const storedItems = Array.isArray(storedGroup?.items) ? storedGroup.items.slice(0, maxLen) : [];
-            for (let index = 0; index < storedItems.length; index++) {
-              if (!storedItems[index]) continue;
-              const parsed = this.parseInventoryImport(JSON.stringify(storedItems[index]), category);
-              if (parsed.ok) inventories[category].items[index] = (parsed as any).item;
-              else changed = true;
-            }
-            const selected = Number(storedGroup?.selected);
-            inventories[category].selected = Number.isInteger(selected) && selected >= 0 && selected < maxLen ? selected : 0;
+        const data = decodeBackpack(typeof raw === 'string' ? protobufFromBase64(raw) : raw);
+        for (const category of INVENTORY_CATEGORIES) {
+          const storedGroup = data.categories?.[category];
+          const maxLen = inventories[category].items.length;
+          const storedItems = Array.isArray(storedGroup?.items) ? storedGroup.items.slice(0, maxLen) : [];
+          for (let index = 0; index < storedItems.length; index++) {
+            if (!storedItems[index]) continue;
+            const parsed = this.parseInventoryImport(
+              encodeInventoryResource(category as any, storedItems[index]),
+              category
+            );
+            if (parsed.ok) inventories[category].items[index] = (parsed as any).item;
+            else changed = true;
           }
-          if (INVENTORY_CATEGORIES.includes(data.activeCategory)) activeCategory = data.activeCategory;
-          loaded = true;
+          const selected = Number(storedGroup?.selected);
+          inventories[category].selected = Number.isInteger(selected) && selected >= 0 && selected < maxLen ? selected : 0;
         }
+        if (INVENTORY_CATEGORIES.includes(data.activeCategory)) activeCategory = data.activeCategory;
+        loaded = true;
       }
     } catch (err) {
       changed = true;
@@ -3567,13 +3578,13 @@ export class PlayerController {
 
   // --- File import / export (pure, DOM-free) ----------------------------------------
 
-  /** Serialize one backpack item for a JSON download. */
+  /** Build the portable object that is encoded into Protobuf storage or transfer. */
   serializeInventoryItem(category, item) {
     if (!item) return null;
     if (category === 'blockset') {
       return {
         type: 'space-blockset',
-        version: 2,
+        version: 3,
         name: this.inventoryItemName('blockset', item),
         blockCount: item.blockCount || item.blocks?.length || 0,
         blocks: (item.blocks || []).map(b => {
@@ -3649,7 +3660,7 @@ export class PlayerController {
       }));
       return {
         type: 'space-entity',
-        version: 2,
+        version: 3,
         name: this.inventoryItemName('entity', item),
         rootId: 'root',
         nodeCount: 1 + childEntities.length,
@@ -3710,7 +3721,7 @@ export class PlayerController {
     if (category === 'colorset') {
       return {
         type: 'space-colorset',
-        version: 2,
+        version: 3,
         name: item.name || 'color set',
         colors: item.colors
       };
@@ -3718,19 +3729,30 @@ export class PlayerController {
     return null;
   }
 
-  /** Parse a JSON file into a backpack item. Returns { ok, item, error }. */
-  parseInventoryImport(text, category) {
+  encodeInventoryItem(category, item) {
+    const portable = this.serializeInventoryItem(category, item);
+    if (!portable) return null;
+    return encodeInventoryResource(category, portable);
+  }
+
+  /** Parse one Protobuf resource into a backpack item. Returns { ok, item, error }. */
+  parseInventoryImport(input, category) {
     const fail = error => ({ ok: false, error });
-    if (typeof text !== 'string') return fail('Import data must be text');
-    if (new TextEncoder().encode(text).byteLength > MAX_INVENTORY_IMPORT_BYTES) {
+    const encoded = input instanceof Uint8Array
+      ? input
+      : input instanceof ArrayBuffer
+        ? new Uint8Array(input)
+        : null;
+    if (!encoded) return fail('Import data must be a Protobuf binary file');
+    if (encoded.byteLength > MAX_INVENTORY_IMPORT_BYTES) {
       return fail(`File exceeds ${MAX_INVENTORY_IMPORT_BYTES / (1024 * 1024)} MiB`);
     }
 
     let data;
     try {
-      data = JSON.parse(text);
+      data = decodeInventoryResource(encoded, category).portable;
     } catch (err) {
-      return fail('Not valid JSON');
+      return fail(err instanceof Error ? err.message : 'Not valid inventory Protobuf');
     }
 
     const validBaseCoordinates = (values) => values.every(value => (
@@ -3779,7 +3801,7 @@ export class PlayerController {
     };
 
     if (category === 'blockset') {
-      if (data?.type !== 'space-blockset' || data?.version !== 2) return fail('Expected a space-blockset v2 file');
+      if (data?.type !== 'space-blockset' || data?.version !== 3) return fail('Expected a space-blockset v3 Protobuf file');
       if (typeof data.name !== 'string' || !data.name.trim()) return fail('A block set must have a name');
       const rawBlocks = data.blocks;
       if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) return fail('No block set found (expected a "blocks" array)');
@@ -3787,11 +3809,11 @@ export class PlayerController {
       const blocks = [];
       for (const b of rawBlocks) {
         if (!isPortableBlockId(b?.block)) {
-          return fail('Block-set v2 supports only color block id 1');
+          return fail('Block-set v3 supports only color block id 1');
         }
         const baseCoordinates = [b?.dx, b?.dy, b?.dz].map(Number);
         if (!baseCoordinates.every(Number.isFinite)) return fail('A block has non-numeric coordinates');
-        if (!validBaseCoordinates(baseCoordinates)) return fail('Block-set v2 coordinates must be bounded safe integers');
+        if (!validBaseCoordinates(baseCoordinates)) return fail('Block-set v3 coordinates must be bounded safe integers');
 
         const microValues = [b?.mx, b?.my, b?.mz];
         const hasMicroCoordinates = microValues.some(value => value !== undefined);
@@ -3833,11 +3855,11 @@ export class PlayerController {
     }
 
     if (category === 'entity') {
-      if (data?.type !== 'space-entity' || data?.version !== 2) return fail('Expected a space-entity v2 file');
+      if (data?.type !== 'space-entity' || data?.version !== 3) return fail('Expected a space-entity v3 Protobuf file');
       if (typeof data.name !== 'string' || !data.name.trim()) return fail('An entity must have a name');
       if (!data || !Array.isArray(data.blocks) || data.blocks.length === 0) return fail('No entity found (expected a "blocks" array)');
       if (data.blocks.length > MAX_INVENTORY_BLOCKS) return fail(`An entity may contain at most ${MAX_INVENTORY_BLOCKS} voxels`);
-      if (data.rootIds !== undefined) return fail('Entity v2 supports exactly one root');
+      if (data.rootIds !== undefined) return fail('Entity v3 supports exactly one root');
       if (data.rootId !== undefined && data.rootId !== 'root') return fail('Entity rootId must be "root"');
 
       const rawChildEntities = Array.isArray(data.childEntities) ? data.childEntities : [];
@@ -3913,11 +3935,11 @@ export class PlayerController {
       const blocks = [];
       for (const b of data.blocks) {
         if (!isPortableBlockId(b?.block)) {
-          return fail('Entity v2 supports only color block id 1');
+          return fail('Entity v3 supports only color block id 1');
         }
         const baseCoordinates = [b?.dx, b?.dy, b?.dz].map(Number);
         if (!baseCoordinates.every(Number.isFinite)) return fail('An entity block has non-numeric coordinates');
-        if (!validBaseCoordinates(baseCoordinates)) return fail('Entity v2 coordinates must be bounded safe integers');
+        if (!validBaseCoordinates(baseCoordinates)) return fail('Entity v3 coordinates must be bounded safe integers');
 
         const microValues = [b?.mx, b?.my, b?.mz];
         const hasMicroCoordinates = microValues.some(value => value !== undefined);
@@ -4084,7 +4106,7 @@ export class PlayerController {
     }
 
     if (category === 'colorset') {
-      if (data?.type !== 'space-colorset' || data?.version !== 2) return fail('Expected a space-colorset v2 file');
+      if (data?.type !== 'space-colorset' || data?.version !== 3) return fail('Expected a space-colorset v3 Protobuf file');
       if (typeof data.name !== 'string' || !data.name.trim()) return fail('A color set must have a name');
       const rawColors = data.colors;
       if (!Array.isArray(rawColors) || rawColors.length !== 9) return fail('A color set must contain exactly 9 hex colors');

@@ -5,6 +5,8 @@ const OBJECT_STORE_NAME = 'persistent-values';
 export interface SpaceStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  getBytes?(key: string): Uint8Array | null;
+  setBytes?(key: string, value: Uint8Array): void;
   removeItem(key: string): void;
   /** Resolves after queued IndexedDB writes commit; rejects if any write failed. */
   whenIdle?(): Promise<void>;
@@ -16,13 +18,15 @@ export interface EnumerableSpaceStorage extends SpaceStorage {
 }
 
 export interface AsyncKeyValueBackend {
-  entries(): Promise<Array<[string, string]>>;
-  set(key: string, value: string): Promise<void>;
+  entries(): Promise<Array<[string, SpaceStoredValue]>>;
+  set(key: string, value: SpaceStoredValue): Promise<void>;
   remove(key: string): Promise<void>;
 }
 
+type SpaceStoredValue = string | Uint8Array;
+
 export function isLargeSpaceStorageKey(key: string) {
-  return key === 'space.backpack.v2'
+  return key === 'space.backpack.v3.pb'
     || key.startsWith('space.world-edits.v1.')
     || key.startsWith('space.world-edits.v2.')
     || key.startsWith('entropydrop_space_entities.');
@@ -45,12 +49,12 @@ function enumerableKeys(storage: EnumerableSpaceStorage | null) {
  * reads without blocking the main thread on disk I/O.
  */
 export class BufferedIndexedDbStorage implements SpaceStorage {
-  private readonly values: Map<string, string>;
+  private readonly values: Map<string, SpaceStoredValue>;
   private readonly backend: AsyncKeyValueBackend;
   private pendingWrites: Promise<void> = Promise.resolve();
   private writeErrors: unknown[] = [];
 
-  private constructor(backend: AsyncKeyValueBackend, values: Map<string, string>) {
+  private constructor(backend: AsyncKeyValueBackend, values: Map<string, SpaceStoredValue>) {
     this.backend = backend;
     this.values = values;
   }
@@ -84,12 +88,25 @@ export class BufferedIndexedDbStorage implements SpaceStorage {
   }
 
   getItem(key: string) {
-    return this.values.get(String(key)) ?? null;
+    const value = this.values.get(String(key));
+    return typeof value === 'string' ? value : null;
   }
 
   setItem(key: string, value: string) {
     const normalizedKey = String(key);
     const normalizedValue = String(value);
+    this.values.set(normalizedKey, normalizedValue);
+    this.enqueueWrite(() => this.backend.set(normalizedKey, normalizedValue));
+  }
+
+  getBytes(key: string) {
+    const value = this.values.get(String(key));
+    return value instanceof Uint8Array ? value.slice() : null;
+  }
+
+  setBytes(key: string, value: Uint8Array) {
+    const normalizedKey = String(key);
+    const normalizedValue = value.slice();
     this.values.set(normalizedKey, normalizedValue);
     this.enqueueWrite(() => this.backend.set(normalizedKey, normalizedValue));
   }
@@ -144,15 +161,25 @@ class IndexedDbKeyValueBackend implements AsyncKeyValueBackend {
   }
 
   entries() {
-    return new Promise<Array<[string, string]>>((resolve, reject) => {
+    return new Promise<Array<[string, SpaceStoredValue]>>((resolve, reject) => {
       const transaction = this.database.transaction(OBJECT_STORE_NAME, 'readonly');
       const request = transaction.objectStore(OBJECT_STORE_NAME).openCursor();
-      const entries: Array<[string, string]> = [];
+      const entries: Array<[string, SpaceStoredValue]> = [];
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor) return;
-        if (typeof cursor.key === 'string' && typeof cursor.value === 'string') {
-          entries.push([cursor.key, cursor.value]);
+        if (typeof cursor.key === 'string') {
+          if (typeof cursor.value === 'string') {
+            entries.push([cursor.key, cursor.value]);
+          } else if (cursor.value instanceof Uint8Array) {
+            entries.push([cursor.key, cursor.value.slice()]);
+          } else if (cursor.value instanceof ArrayBuffer) {
+            entries.push([cursor.key, new Uint8Array(cursor.value)]);
+          } else if (ArrayBuffer.isView(cursor.value)) {
+            const bytes = new Uint8Array(cursor.value.byteLength);
+            bytes.set(new Uint8Array(cursor.value.buffer, cursor.value.byteOffset, cursor.value.byteLength));
+            entries.push([cursor.key, bytes]);
+          }
         }
         cursor.continue();
       };
@@ -162,7 +189,7 @@ class IndexedDbKeyValueBackend implements AsyncKeyValueBackend {
     });
   }
 
-  set(key: string, value: string) {
+  set(key: string, value: SpaceStoredValue) {
     return this.runWrite(store => store.put(value, key));
   }
 

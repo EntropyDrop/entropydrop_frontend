@@ -265,13 +265,15 @@ test('importBlockSetToInventory fills empty block-set slots and rejects when the
   assert.equal(controller.selectedInventoryIndex, 0);
   controller.importBlockSetToInventory(blocks, 'cube2');
   assert.equal(controller.selectedInventoryIndex, 1, 'the second import should use slot 1');
-  // Fill every slot.
-  controller.inventorySlots = controller.inventorySlots.map(() => ({ kind: 'blockset', blocks, blockCount: 1, name: 'full' }));
+  // Fill every slot in the 99-item category, not only the 9-item hotbar view.
+  controller.inventories.blockset.items = controller.inventories.blockset.items.map(() => ({
+    kind: 'blockset', blocks, blockCount: 1, name: 'full'
+  }));
   controller.selectedInventoryIndex = 3;
   const rejected = controller.importBlockSetToInventory(blocks, 'overwrite');
   assert.equal(rejected, null, 'a full block-set category must reject the import');
   assert.equal(controller.inventorySlots[3].name, 'full', 'the selected slot must not be overwritten');
-  assert.ok(controller.__toasts.some(m => m.includes('full (9)')));
+  assert.ok(controller.__toasts.some(m => m.includes('full (99)')));
 });
 
 test('successful T block-set copy resets world cornerA and cornerB', () => {

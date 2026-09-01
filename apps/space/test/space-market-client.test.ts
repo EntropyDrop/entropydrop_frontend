@@ -7,14 +7,14 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
   const fetchImpl = async (url: string | URL | Request, options: RequestInit = {}) => {
     calls.push({ url: String(url), options });
     const value = String(url);
-    if (value === 'https://cdn.example.test/space-market/resources/r1/content.json') {
-      return new Response(JSON.stringify({ type: 'space-colorset' }), { status: 200 });
+    if (value === 'https://cdn.example.test/space-market/resources/r1/content.pb') {
+      return new Response(Uint8Array.from([8, 3, 26, 0]), { status: 200 });
     }
     if (value.endsWith('/download')) {
       return new Response(JSON.stringify({
         id: 'r1',
         kind: 'colorset',
-        download_url: 'https://cdn.example.test/space-market/resources/r1/content.json'
+        download_url: 'https://cdn.example.test/space-market/resources/r1/content.pb'
       }), { status: 200 });
     }
     if (value.endsWith('/like')) {
@@ -31,7 +31,8 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
   const client = new SpaceMarketClient('https://api.entropydrop.com/', 'token-1', fetchImpl as typeof fetch);
 
   await client.listResources('entity', 'downloads');
-  await client.publishResource('colorset', { type: 'space-colorset', version: 2 });
+  const protobuf = Uint8Array.from([8, 3, 26, 0]);
+  await client.publishResource('colorset', protobuf);
   const downloaded = await client.downloadResource('r1');
   await client.toggleLike('r1');
   await client.deleteResource('r1');
@@ -40,14 +41,12 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
   assert.match(calls[0].url, /kind=entity/);
   assert.match(calls[0].url, /sort=downloads/);
   assert.equal((calls[0].options.headers as any).Authorization, 'Bearer token-1');
-  assert.deepEqual(JSON.parse(String(calls[1].options.body)), {
-    kind: 'colorset',
-    payload: { type: 'space-colorset', version: 2 }
-  });
+  assert.deepEqual(new Uint8Array(calls[1].options.body as ArrayBuffer), protobuf);
+  assert.equal((calls[1].options.headers as any)['Content-Type'], 'application/x-protobuf');
   assert.equal(calls[2].options.method, undefined);
-  assert.equal(calls[3].url, 'https://cdn.example.test/space-market/resources/r1/content.json');
+  assert.equal(calls[3].url, 'https://cdn.example.test/space-market/resources/r1/content.pb');
   assert.equal((calls[3].options.headers as any).Authorization, undefined);
-  assert.deepEqual(downloaded.payload, { type: 'space-colorset' });
+  assert.deepEqual(downloaded.payload, protobuf);
   assert.equal(calls[4].options.method, 'POST');
   assert.equal(calls[5].options.method, 'DELETE');
 });
@@ -76,6 +75,24 @@ test('SpaceMarketClient reports invalid CDN responses separately from API errors
   );
 });
 
+test('SpaceMarketClient loads previews directly from the CDN without calling the counted download endpoint', async () => {
+  const calls: Array<{ url: string; options: RequestInit }> = [];
+  const protobuf = Uint8Array.from([8, 3, 26, 0]);
+  const contentUrl = 'https://cdn.example.test/space-market/resources/r1/content.pb';
+  const fetchImpl = async (url: string | URL | Request, options: RequestInit = {}) => {
+    calls.push({ url: String(url), options });
+    return new Response(protobuf, { status: 200 });
+  };
+  const client = new SpaceMarketClient('https://api.example.test', 'token', fetchImpl as typeof fetch);
+
+  const preview = await client.loadResourceContent(contentUrl);
+
+  assert.deepEqual(preview, protobuf);
+  assert.deepEqual(calls.map(call => call.url), [contentUrl]);
+  assert.equal((calls[0].options.headers as any).Authorization, undefined);
+  assert.equal(calls.some(call => call.url.endsWith('/download')), false);
+});
+
 test('SpaceMarketClient exposes structured backend errors', async () => {
   const fetchImpl = async () => new Response(JSON.stringify({
     detail: { code: 'RESOURCE_ALREADY_PUBLISHED', message: 'Duplicate resource', resource_id: 'existing' }
@@ -83,7 +100,7 @@ test('SpaceMarketClient exposes structured backend errors', async () => {
   const client = new SpaceMarketClient('http://localhost:8000', 'token', fetchImpl as typeof fetch);
 
   await assert.rejects(
-    () => client.publishResource('blockset', {}),
+    () => client.publishResource('blockset', Uint8Array.from([8, 3, 18, 0])),
     (error: any) => {
       assert.ok(error instanceof SpaceMarketError);
       assert.equal(error.status, 409);

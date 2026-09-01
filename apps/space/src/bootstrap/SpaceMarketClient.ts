@@ -10,7 +10,7 @@ export interface SpaceMarketQuota {
 export interface SpaceMarketResource {
   id: string;
   kind: SpaceMarketCategory;
-  schema_version: 2;
+  schema_version: 3;
   name: string;
   license: 'AGPL-3.0-only';
   digest: string;
@@ -22,7 +22,7 @@ export interface SpaceMarketResource {
   downloads_count: number;
   likes_count: number;
   is_liked: boolean;
-  preview: { colors?: string[]; blocks?: Array<{ x: number; y: number; z: number; size: number; color: number }> };
+  content_url: string;
   created_at: string;
 }
 
@@ -42,7 +42,7 @@ export interface SpaceMarketDownload {
   digest: string;
   downloads_count: number;
   download_url: string;
-  payload: Record<string, unknown>;
+  payload: Uint8Array;
 }
 
 type SpaceMarketDownloadDescriptor = Omit<SpaceMarketDownload, 'payload'>;
@@ -114,21 +114,22 @@ export class SpaceMarketClient {
     return this.request<SpaceMarketListResponse>(`/resources?${query}`);
   }
 
-  publishResource(kind: SpaceMarketCategory, payload: Record<string, unknown>) {
+  publishResource(_kind: SpaceMarketCategory, payload: Uint8Array) {
+    const body = new Uint8Array(payload.byteLength);
+    body.set(payload);
     return this.request<{ resource: SpaceMarketResource; quota: SpaceMarketQuota }>('/resources', {
       method: 'POST',
-      body: JSON.stringify({ kind, payload })
+      headers: { 'Content-Type': 'application/x-protobuf' },
+      body: body.buffer
     });
   }
 
-  async downloadResource(resourceId: string): Promise<SpaceMarketDownload> {
-    const descriptor = await this.request<SpaceMarketDownloadDescriptor>(
-      `/resources/${encodeURIComponent(resourceId)}/download`
-    );
+  async loadResourceContent(contentUrl: string, signal?: AbortSignal): Promise<Uint8Array> {
     let response: Response;
     try {
-      response = await this.fetchImpl(descriptor.download_url, {
-        headers: { Accept: 'application/json' }
+      response = await this.fetchImpl(contentUrl, {
+        headers: { Accept: 'application/x-protobuf' },
+        signal
       });
     } catch (error) {
       throw new SpaceMarketError(
@@ -138,8 +139,8 @@ export class SpaceMarketClient {
         error
       );
     }
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    const payload = response.ok ? new Uint8Array(await response.arrayBuffer()) : null;
+    if (!response.ok || !payload || payload.byteLength === 0) {
       throw new SpaceMarketError(
         response.status,
         'MARKET_CDN_DOWNLOAD_FAILED',
@@ -147,7 +148,15 @@ export class SpaceMarketClient {
         payload
       );
     }
-    return { ...descriptor, payload: payload as Record<string, unknown> };
+    return payload;
+  }
+
+  async downloadResource(resourceId: string): Promise<SpaceMarketDownload> {
+    const descriptor = await this.request<SpaceMarketDownloadDescriptor>(
+      `/resources/${encodeURIComponent(resourceId)}/download`
+    );
+    const payload = await this.loadResourceContent(descriptor.download_url);
+    return { ...descriptor, payload };
   }
 
   toggleLike(resourceId: string) {

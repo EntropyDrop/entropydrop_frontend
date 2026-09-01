@@ -18,6 +18,10 @@ import {
 import { InventoryThumbnailRenderer } from '../../../engine/render/InventoryThumbnailRenderer.ts';
 import { MAX_STL_FILE_BYTES } from '../../../engine/voxel/STLVoxelizer.ts';
 import { colorToHex, normalizeColor } from '../../../engine/voxel/BlockTypes.ts';
+import {
+  decodeInventoryResource,
+  inventoryResourcePreviewItem,
+} from '../../../engine/storage/InventoryProtobuf.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
 import {
@@ -53,14 +57,14 @@ export function PixelHeartIcon() {
   return <LiaHeartSolid size={14} style={{ display: 'block' }} />;
 }
 
-function ImportJsonButton({ category }: { category: InventoryCategory }) {
+function ImportProtobufButton({ category }: { category: InventoryCategory }) {
   const input = useRef<HTMLInputElement>(null);
   return (
     <>
       <input
         ref={input}
         type="file"
-        accept=".json,application/json"
+        accept=".edpb,.pb,application/x-protobuf"
         hidden
         onChange={event => {
           spaceUiStore.importInventoryFile(category, event.target.files?.[0] || null);
@@ -74,7 +78,7 @@ function ImportJsonButton({ category }: { category: InventoryCategory }) {
         onClick={() => input.current?.click()}
       >
         <LiaFileImportSolid size={15} style={{ marginRight: 4, display: 'inline', verticalAlign: 'text-bottom' }} />
-        Import JSON
+        Import Protobuf
       </button>
     </>
   );
@@ -441,11 +445,11 @@ function InventoryItemCard({
             <button
               type="button"
               className="backpack-pixel-btn"
-              title="Export JSON"
-              aria-label="Export JSON"
-              onClick={() => spaceUiStore.downloadJson(
-                spaceUiStore.inventoryJsonFilename(item.name || fallback, fallback),
-                controller?.serializeInventoryItem?.(category, item) || item
+              title="Export Protobuf"
+              aria-label="Export Protobuf"
+              onClick={() => spaceUiStore.downloadProtobuf(
+                spaceUiStore.inventoryProtobufFilename(item.name || fallback, fallback),
+                controller?.encodeInventoryItem?.(category, item)
               )}
             >
               <PixelExportIcon />
@@ -721,13 +725,13 @@ function ColorSetCard({
             type="button"
             tabIndex={-1}
             className="backpack-pixel-btn"
-            title="Export JSON"
-            aria-label="Export JSON"
+            title="Export Protobuf"
+            aria-label="Export Protobuf"
             onClick={event => {
               event.stopPropagation();
-              spaceUiStore.downloadJson(
-                spaceUiStore.inventoryJsonFilename(item.name, `Color set ${index + 1}`),
-                controller?.serializeInventoryItem?.('colorset', item) || item
+              spaceUiStore.downloadProtobuf(
+                spaceUiStore.inventoryProtobufFilename(item.name, `Color set ${index + 1}`),
+                controller?.encodeInventoryItem?.('colorset', item)
               );
             }}
           >
@@ -768,46 +772,55 @@ function MarketResourceCard({
   onLike: (resource: SpaceMarketResource) => void;
   onDelete: (resource: SpaceMarketResource) => void;
 }) {
-  const previewBlocks = (resource.preview?.blocks || []).map(block => resource.kind === 'entity'
-    ? {
-        localX: block.x,
-        localY: block.y,
-        localZ: block.z,
-        size: block.size,
-        color: block.color,
-        entityId: 'root'
-      }
-    : {
-        dx: block.x,
-        dy: block.y,
-        dz: block.z,
-        size: block.size,
-        color: block.color
+  const marketClient = spaceUiStore.getMarketClient();
+  const [previewItem, setPreviewItem] = useState<any | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+    setPreviewItem(null);
+    setPreviewFailed(false);
+    if (!marketClient) {
+      setPreviewFailed(true);
+      return () => abortController.abort();
+    }
+    void marketClient.loadResourceContent(resource.content_url, abortController.signal)
+      .then(payload => decodeInventoryResource(payload, resource.kind).portable)
+      .then(portable => {
+        if (!abortController.signal.aborted) {
+          setPreviewItem(inventoryResourcePreviewItem(resource.kind, portable));
+        }
+      })
+      .catch(() => {
+        if (!abortController.signal.aborted) setPreviewFailed(true);
       });
+    return () => abortController.abort();
+  }, [marketClient, resource.content_url, resource.digest, resource.kind]);
+
   const thumbnail = resource.kind === 'colorset'
     ? null
-    : InventoryThumbnailRenderer.getInstance().getThumbnail({
-        kind: resource.kind,
-        name: resource.digest,
-        blockCount: resource.block_count,
-        blocks: previewBlocks
-      }, 96);
+    : InventoryThumbnailRenderer.getInstance().getThumbnail(previewItem, 96);
   const publishedAt = new Date(resource.created_at);
   const publisher = resource.publisher.username || resource.publisher.id || 'Former player';
 
   return (
     <article className="inventory-card market-resource-card">
       <div className={`market-resource-preview ${resource.kind}`}>
-        {resource.kind === 'colorset' ? (
+        {resource.kind === 'colorset' && previewItem ? (
           <div className="market-colorset-preview">
-            {(resource.preview.colors || []).map((color, index) => (
+            {(previewItem?.colors || []).map((color: string, index: number) => (
               <span key={`${color}:${index}`} style={{ background: color }} />
             ))}
           </div>
         ) : thumbnail ? (
           <img className="inv-slot-thumb" src={thumbnail} alt="" draggable={false} />
         ) : (
-          <span className="market-resource-glyph">{resource.kind === 'entity' ? 'E' : 'B'}</span>
+          <span
+            className="market-resource-glyph"
+            title={previewFailed ? 'Preview unavailable' : 'Loading preview'}
+          >
+            {resource.kind === 'entity' ? 'E' : resource.kind === 'colorset' ? 'C' : 'B'}
+          </span>
         )}
         <span className="market-license-badge">AGPL-3.0</span>
       </div>
@@ -1076,17 +1089,17 @@ export function InventoryModal() {
 
   const publishItem = async (category: InventoryCategory, item: any) => {
     if (!marketClient || !state.controller) return;
-    const serialized = state.controller.serializeInventoryItem?.(category, item);
-    if (!serialized) {
+    const encoded = state.controller.encodeInventoryItem?.(category, item);
+    if (!encoded) {
       spaceUiStore.showToast('Could not serialize this backpack item.');
       return;
     }
-    const validated = state.controller.parseInventoryImport?.(JSON.stringify(serialized), category);
+    const validated = state.controller.parseInventoryImport?.(encoded, category);
     if (!validated?.ok) {
       spaceUiStore.showToast(validated?.error || 'This backpack item is not portable.');
       return;
     }
-    const payload = state.controller.serializeInventoryItem?.(category, validated.item);
+    const payload = state.controller.encodeInventoryItem?.(category, validated.item);
     if (!payload) {
       spaceUiStore.showToast('Could not canonicalize this backpack item.');
       return;
@@ -1115,7 +1128,7 @@ export function InventoryModal() {
     try {
       const downloaded = await marketClient.downloadResource(resource.id);
       const parsed = state.controller.parseInventoryImport?.(
-        JSON.stringify(downloaded.payload),
+        downloaded.payload,
         downloaded.kind
       );
       if (!parsed?.ok) throw new Error(parsed?.error || 'Downloaded resource failed local validation.');
@@ -1205,7 +1218,7 @@ export function InventoryModal() {
                 <div className="backpack-panel-footer">
                   <div className="backpack-panel-actions">
                     <Import3DModelPopover />
-                    <ImportJsonButton category="blockset" />
+                    <ImportProtobufButton category="blockset" />
                   </div>
                 </div>
               </div>
@@ -1238,7 +1251,7 @@ export function InventoryModal() {
                 </div>
                 <div className="backpack-panel-footer">
                   <div className="backpack-panel-actions">
-                    <ImportJsonButton category="entity" />
+                    <ImportProtobufButton category="entity" />
                   </div>
                 </div>
               </div>
@@ -1271,7 +1284,7 @@ export function InventoryModal() {
                 </div>
                 <div className="backpack-panel-footer">
                   <div className="backpack-panel-actions">
-                    <ImportJsonButton category="colorset" />
+                    <ImportProtobufButton category="colorset" />
                   </div>
                 </div>
               </div>
