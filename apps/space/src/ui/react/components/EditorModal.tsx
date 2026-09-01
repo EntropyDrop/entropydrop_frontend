@@ -33,32 +33,85 @@ function HierarchyNode({ node, depth, selected }: { node: any; depth: number; se
   );
 }
 
+type InspectorTab = 'defaults' | 'runtime';
+
+/** True when the live BodyConfig values deviate from the persisted PB defaults. */
+function bodyConfigDiffers(defaults: any, runtime: any): boolean {
+  if (!runtime) return false;
+  return runtime.bodyType !== defaults.bodyType
+    || Math.abs(runtime.mass - defaults.mass) > 1e-9
+    || Math.abs(runtime.restitution - defaults.restitution) > 1e-9
+    || Math.abs(runtime.friction - defaults.friction) > 1e-9
+    || runtime.useGravity !== defaults.useGravity
+    || runtime.collisionEnabled !== defaults.collisionEnabled;
+}
+
 function ComponentInspector() {
   const { editingContraption, selectedComponentNodeId } = useSpaceUi(state => state);
   const properties = editingContraption?.getNodeProperties?.(selectedComponentNodeId);
   const [name, setName] = useState(selectedComponentNodeId);
+  const [tab, setTab] = useState<InspectorTab>('defaults');
   useEffect(() => setName(properties?.id || selectedComponentNodeId), [properties?.id, selectedComponentNodeId]);
   if (!properties) return <div id="component-inspector-panel" className="component-inspector-panel"><div className="text-muted">No component selected</div></div>;
+  const runtime = properties.runtimeBody;
+  const runtimeDiffers = bodyConfigDiffers(properties, runtime);
+  const runtimeNumber = (value: any, digits = 2) => Number(value ?? 0).toFixed(digits);
+  const spinRpm = runtime ? Math.round(Math.hypot(...runtime.angularVelocity) * 60 / (2 * Math.PI)) : 0;
   return (
     <div id="component-inspector-panel" className="component-inspector-panel">
       <div className="inspector-field"><label className="inspector-label">ID</label><div className="inspector-input-row"><input id="prop-node-name" className="inspector-input" value={name} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') spaceUiStore.renameSelectedComponent(name); }} /><button id="prop-rename-btn" tabIndex={-1} className="small-action-btn" title="Rename component id (unique across the whole entity)" onClick={() => spaceUiStore.renameSelectedComponent(name)}>Rename</button></div></div>
-      <div className="inspector-field has-tooltip"><label className="inspector-label" title="Component role in the hierarchy: root body is the main rigid body, child is an attached sub-assembly">Type ⓘ</label><span id="prop-node-kind" className="inspector-val">{properties.kind === 'root' ? 'root body' : properties.kind}</span><div className="tooltip-text">Role in hierarchy:<br /><b>root body</b> is the entity&apos;s main rigid body;<br /><b>child</b> is an attached sub-assembly.</div></div>
-      <div className="inspector-field"><label className="inspector-label">Parent</label><span id="prop-node-parent" className="inspector-val">{properties.parentId || 'None'}</span></div>
-      <div className="inspector-grid inspector-grid-three">
-        <div className="inspector-field has-tooltip"><label className="inspector-sublabel" htmlFor="prop-body-type" title="Rigid body mode">Rigid Body ⓘ</label><select id="prop-body-type" className="inspector-input" value={properties.bodyType} onChange={event => spaceUiStore.setSelectedBodyType(event.target.value)}><option value="kinematic">kinematic</option><option value="dynamic">dynamic</option></select><div className="tooltip-text"><b>kinematic</b>: Moves strictly via script, immune to gravity and forces.<br /><b>dynamic</b>: Full physics simulation.</div></div>
-        <div className="inspector-field has-tooltip"><label className="inspector-sublabel" htmlFor="prop-restitution">Restitution ⓘ</label><input id="prop-restitution" className="inspector-input" type="number" min="0" max="1" step="0.01" value={Number(properties.restitution).toFixed(2)} onChange={event => spaceUiStore.setSelectedRestitution(Number(event.target.value))} /><div className="tooltip-text">Collision bounciness (0.0 to 1.0).</div></div>
-        <div className="inspector-field has-tooltip"><label className="inspector-sublabel" htmlFor="prop-mass">Mass (kg) ⓘ</label><input id="prop-mass" className="inspector-input" type="number" min="0.1" step="1" value={Number(properties.mass).toFixed(1)} onChange={event => spaceUiStore.setSelectedMass(Number(event.target.value))} /><div className="tooltip-text">Mass in kg, determining inertia and acceleration.</div></div>
+      <div className="inspector-grid">
+        <div className="inspector-field has-tooltip"><label className="inspector-sublabel" title="Component role in the hierarchy: root body is the main rigid body, child is an attached sub-assembly">Type ⓘ</label><span id="prop-node-kind" className="inspector-val">{properties.kind === 'root' ? 'root body' : properties.kind}</span><div className="tooltip-text">Role in hierarchy:<br /><b>root body</b> is the entity&apos;s main rigid body;<br /><b>child</b> is an attached sub-assembly.</div></div>
+        <div className="inspector-field"><label className="inspector-sublabel">Parent</label><span id="prop-node-parent" className="inspector-val">{properties.parentId || 'None'}</span></div>
       </div>
-      <div className="inspector-grid inspector-grid-three">
-        <div className="inspector-field has-tooltip"><label className="inspector-sublabel" htmlFor="prop-friction">Friction ⓘ</label><input id="prop-friction" className="inspector-input" type="number" min="0" max="1" step="0.01" value={Number(properties.friction).toFixed(2)} onChange={event => spaceUiStore.setSelectedFriction(Number(event.target.value))} /><div className="tooltip-text">Surface friction (0.0 to 1.0).</div></div>
-        <label className="inspector-field"><span className="inspector-sublabel">Use Gravity</span><input id="prop-use-gravity" type="checkbox" checked={properties.useGravity} onChange={event => spaceUiStore.setSelectedGravityEnabled(event.target.checked)} /></label>
-        <label className="inspector-field"><span className="inspector-sublabel">Collision</span><input id="prop-collision-enabled" type="checkbox" checked={properties.collisionEnabled} onChange={event => spaceUiStore.setSelectedCollisionEnabled(event.target.checked)} /></label>
+      <div className="inspector-tabbar">
+        <button type="button" tabIndex={-1} id="inspector-tab-defaults" className={`inspector-tab ${tab === 'defaults' ? 'active' : ''}`} title="Persisted PB defaults — editable here; global Stop restores these values" onClick={() => setTab('defaults')}>PB Defaults</button>
+        <button type="button" tabIndex={-1} id="inspector-tab-runtime" className={`inspector-tab ${tab === 'runtime' ? 'active' : ''}`} title="Live values — read-only; changed by component scripts" onClick={() => setTab('runtime')}>Runtime{runtimeDiffers ? <span className="inspector-tab-badge" title="Runtime values deviate from the PB defaults">Δ</span> : null}</button>
       </div>
+      {tab === 'defaults' ? (
+        <div className="inspector-tab-panel">
+          <div className="inspector-grid inspector-grid-three">
+            <div className="inspector-field has-tooltip"><label className="inspector-sublabel" htmlFor="prop-body-type" title="Rigid body mode">Rigid Body ⓘ</label><select id="prop-body-type" className="inspector-input" value={properties.bodyType} onChange={event => spaceUiStore.setSelectedBodyType(event.target.value)}><option value="kinematic">kinematic</option><option value="dynamic">dynamic</option></select><div className="tooltip-text"><b>kinematic</b>: Moves strictly via script, immune to gravity and forces.<br /><b>dynamic</b>: Full physics simulation.</div></div>
+            <div className="inspector-field has-tooltip"><label className="inspector-sublabel" htmlFor="prop-restitution">Restitution ⓘ</label><input id="prop-restitution" className="inspector-input" type="number" min="0" max="1" step="0.01" value={Number(properties.restitution).toFixed(2)} onChange={event => spaceUiStore.setSelectedRestitution(Number(event.target.value))} /><div className="tooltip-text">Collision bounciness (0.0 to 1.0).</div></div>
+            <div className="inspector-field has-tooltip"><label className="inspector-sublabel" htmlFor="prop-mass">Mass (kg) ⓘ</label><input id="prop-mass" className="inspector-input" type="number" min="0.1" step="1" value={Number(properties.mass).toFixed(1)} onChange={event => spaceUiStore.setSelectedMass(Number(event.target.value))} /><div className="tooltip-text">Mass in kg, determining inertia and acceleration.</div></div>
+          </div>
+          <div className="inspector-grid inspector-grid-three">
+            <div className="inspector-field has-tooltip"><label className="inspector-sublabel" htmlFor="prop-friction">Friction ⓘ</label><input id="prop-friction" className="inspector-input" type="number" min="0" max="1" step="0.01" value={Number(properties.friction).toFixed(2)} onChange={event => spaceUiStore.setSelectedFriction(Number(event.target.value))} /><div className="tooltip-text">Surface friction (0.0 to 1.0).</div></div>
+            <label className="inspector-field"><span className="inspector-sublabel">Use Gravity</span><input id="prop-use-gravity" type="checkbox" checked={properties.useGravity} onChange={event => spaceUiStore.setSelectedGravityEnabled(event.target.checked)} /></label>
+            <label className="inspector-field"><span className="inspector-sublabel">Collision</span><input id="prop-collision-enabled" type="checkbox" checked={properties.collisionEnabled} onChange={event => spaceUiStore.setSelectedCollisionEnabled(event.target.checked)} /></label>
+          </div>
+          <div className="inspector-note">Persisted PB defaults — edits apply immediately and are written into inventory copies. Script <code>self.body.*</code> overrides are runtime-only; <b>Stop</b> restores these values.</div>
+        </div>
+      ) : (
+        <div className="inspector-tab-panel">
+          {runtime ? (
+            <>
+              <div className="inspector-grid inspector-grid-three">
+                <div className="inspector-field"><label className="inspector-sublabel">Rigid Body</label><span id="runtime-body-type" className="inspector-val mono">{runtime.bodyType}</span></div>
+                <div className="inspector-field"><label className="inspector-sublabel">Mass (kg)</label><span id="runtime-mass" className="inspector-val mono">{runtimeNumber(runtime.mass, 1)}</span></div>
+                <div className="inspector-field"><label className="inspector-sublabel">Restitution</label><span id="runtime-restitution" className="inspector-val mono">{runtimeNumber(runtime.restitution)}</span></div>
+              </div>
+              <div className="inspector-grid inspector-grid-three">
+                <div className="inspector-field"><label className="inspector-sublabel">Friction</label><span id="runtime-friction" className="inspector-val mono">{runtimeNumber(runtime.friction)}</span></div>
+                <div className="inspector-field"><label className="inspector-sublabel">Use Gravity</label><span id="runtime-use-gravity" className="inspector-val mono">{runtime.useGravity ? 'on' : 'off'}</span></div>
+                <div className="inspector-field"><label className="inspector-sublabel">Collision</label><span id="runtime-collision-enabled" className="inspector-val mono">{runtime.collisionEnabled ? 'on' : 'off'}</span></div>
+              </div>
+              <div className="inspector-grid inspector-grid-three">
+                <div className="inspector-field has-tooltip"><label className="inspector-sublabel">Pivot ⓘ</label><span id="prop-node-pivot" className="inspector-val mono">[{properties.pivot.join(', ')}]</span><div className="tooltip-text">Local rotation and force anchor.</div></div>
+                <div className="inspector-field has-tooltip"><label className="inspector-sublabel">Local Pos ⓘ</label><span id="prop-node-pos" className="inspector-val mono">[{properties.localPosition.join(', ')}]</span><div className="tooltip-text">Position relative to the parent component.</div></div>
+                <div className="inspector-field has-tooltip"><label className="inspector-sublabel">Local Rot ⓘ</label><span id="prop-node-rot" className="inspector-val mono">[{properties.localEuler.map((value: number) => `${value}°`).join(', ')}]</span><div className="tooltip-text">Euler rotation relative to the parent component.</div></div>
+              </div>
+              <div className="inspector-grid">
+                <div className="inspector-item"><span className="inspector-sublabel">Velocity</span><span id="runtime-velocity" className="inspector-num">[{runtime.velocity.join(', ')}] m/s</span></div>
+                <div className="inspector-item"><span className="inspector-sublabel">Spin</span><span id="runtime-spin" className="inspector-num">{spinRpm} rpm</span></div>
+              </div>
+              <div className="inspector-note">Live values — <b>read-only</b>. Change them from component code (<code>self.body.*</code> setters, kinematic pose commands). <b>Pause</b> freezes them; <b>Stop</b> resets child poses and restores the PB Defaults.</div>
+            </>
+          ) : <div className="text-muted">No live body data</div>}
+        </div>
+      )}
       <div className="inspector-grid"><div className="inspector-item"><span className="inspector-sublabel">Blocks</span><span id="prop-node-blocks" className="inspector-num">{properties.blockCount} blocks</span></div><div className="inspector-item"><span className="inspector-sublabel">Volume</span><span id="prop-node-volume" className="inspector-num">{properties.volume} m³</span></div></div>
       <div className="inspector-field has-tooltip"><label className="inspector-label">Constraints ⓘ</label><span id="prop-node-constraints" className="inspector-val">{properties.constraintCount}</span><div className="tooltip-text">Physical joints and constraints connected to this component.</div></div>
-      <div className="inspector-field has-tooltip"><label className="inspector-label">Pivot ⓘ</label><span id="prop-node-pivot" className="inspector-val mono">[{properties.pivot.join(', ')}]</span><div className="tooltip-text">Local rotation and force anchor.</div></div>
-      <div className="inspector-field has-tooltip"><label className="inspector-label">Local Pos ⓘ</label><span id="prop-node-pos" className="inspector-val mono">[{properties.localPosition.join(', ')}]</span><div className="tooltip-text">Position relative to the parent component.</div></div>
-      <div className="inspector-field has-tooltip"><label className="inspector-label">Local Rot ⓘ</label><span id="prop-node-rot" className="inspector-val mono">[{properties.localEuler.map((value: number) => `${value}°`).join(', ')}]</span><div className="tooltip-text">Euler rotation relative to the parent component.</div></div>
     </div>
   );
 }

@@ -1646,6 +1646,12 @@ export class Contraption {
     });
   }
 
+  /**
+   * Inspector view of one component. The flat fields (bodyType/mass/restitution/
+   * friction/useGravity/collisionEnabled) are the persisted PB defaults — what the
+   * Entity Editor's "PB Defaults" tab edits and Stop restores. `runtimeBody` is the
+   * live rigid-body snapshot for the read-only "Runtime" tab.
+   */
   getNodeProperties(nodeId = 'root') {
     const id = String(nodeId || 'root');
     const node = this.entityNodes.get(id);
@@ -1654,7 +1660,19 @@ export class Contraption {
     const volume = blocks.reduce((sum, b) => sum + Math.pow(b.size || 1, 3), 0);
     const euler = new THREE.Euler().setFromQuaternion(node.localQuaternion, 'YXZ');
     const defaults = this.getNodeDefaultBodyConfig(id);
-    const runtimeBody = this.getCurrentNodeBodyConfig(id);
+    const liveBody = this.getRigidBody(id);
+    const runtimeBody = liveBody
+      ? {
+        bodyType: liveBody.type,
+        mass: liveBody.mass,
+        restitution: liveBody.restitution,
+        friction: liveBody.friction,
+        useGravity: this.getNodeGravityEnabled(id),
+        collisionEnabled: this.getNodeCollisionEnabled(id),
+        velocity: liveBody.velocity.toArray().map(part => Number(part.toFixed(2))),
+        angularVelocity: liveBody.angularVelocity.toArray().map(part => Number(part.toFixed(2)))
+      }
+      : null;
 
     return {
       id: node.id,

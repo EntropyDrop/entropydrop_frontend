@@ -3857,6 +3857,86 @@ button.palette-title:hover {
   font-size: 11px;
 }
 
+/* Inspector tabs: persisted PB defaults (editable) vs live runtime values (read-only) */
+.inspector-tabbar {
+  display: flex;
+  gap: 3px;
+}
+
+.inspector-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.inspector-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.inspector-tab.active {
+  background: var(--accent-base);
+  border-color: #000;
+  color: #fff;
+  box-shadow: var(--btn-shadow);
+}
+
+.inspector-tab-badge {
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-active);
+  color: #000;
+  font-size: 8px;
+  font-weight: 700;
+  border-radius: 2px;
+}
+
+.inspector-tab.active .inspector-tab-badge {
+  background: #fff;
+}
+
+.inspector-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.inspector-note {
+  font-size: 9px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 2px solid var(--border-subtle);
+  padding: 3px 6px;
+}
+
+.inspector-note b {
+  color: var(--accent-light);
+  font-weight: 700;
+}
+
+.inspector-note code {
+  color: #f5f6fa;
+}
+
 .inspector-field {
   display: flex;
   flex-direction: column;

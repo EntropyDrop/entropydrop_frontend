@@ -20,6 +20,7 @@ const REQUIRED_UI_IDS = [
   'hud-entities-list', 'global-settings-btn', 'color-palette-bar', 'inventory-bar',
   'selector-panel-wrapper', 'hotbar', 'toast', 'code-editor-modal',
   'global-playback-group', 'component-tree-list', 'component-inspector-panel',
+  'inspector-tab-defaults', 'inspector-tab-runtime',
   'code-tab-bar', 'script-textarea', 'entity-preview-canvas', 'tele-console-logs',
   'agent-chat-box', 'inventory-modal',
   'inventory-grid', 'api-docs-modal', 'api-docs-body', 'global-settings-modal',

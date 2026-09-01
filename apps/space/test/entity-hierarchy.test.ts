@@ -276,6 +276,48 @@ test('per-node scripting, renaming and property inspection work as expected', ()
   assert.equal(contraption.getNodeScript('robot_arm'), `self.setLocalPosition([0, 1, 0]);`);
 });
 
+test('getNodeProperties splits persisted PB defaults from live runtime values', () => {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    90,
+    [standardBlock(0), standardBlock(1)],
+    new THREE.Vector3(),
+    scene,
+    { mode: ContraptionMode.PROGRAMMABLE, restitution: 0.25, friction: 0.35 }
+  ) as any;
+
+  // Script-side (runtimeOnly) overrides move the live body without touching the PB defaults.
+  contraption.setNodeBodyMass('root', 77, { runtimeOnly: true });
+  contraption.setNodeBodyType('root', 'kinematic', { runtimeOnly: true });
+  contraption.setNodeBodyMaterial('root', { restitution: 0.9 }, { runtimeOnly: true });
+
+  const props = contraption.getNodeProperties('root');
+  assert.equal(props.bodyType, 'dynamic', 'default body type is untouched');
+  assert.equal(props.mass, 20, 'default mass stays block-derived (2 × 10 kg)');
+  assert.equal(props.restitution, 0.25, 'default restitution is untouched');
+  assert.equal(props.friction, 0.35, 'default friction is untouched');
+  assert.equal(props.runtimeBody.bodyType, 'kinematic', 'runtime view shows the live type');
+  assert.equal(props.runtimeBody.mass, 77, 'runtime view shows the live mass');
+  assert.equal(props.runtimeBody.restitution, 0.9, 'runtime view shows the live material');
+  assert.deepEqual(props.runtimeBody.velocity, [0, 0, 0]);
+
+  // Panel-side (persistent) edits update the defaults themselves.
+  contraption.setNodeBodyMass('root', 30);
+  const edited = contraption.getNodeProperties('root');
+  assert.equal(edited.mass, 30, 'editor edits change the PB default');
+  assert.equal(edited.runtimeBody.mass, 30, 'editor edits also apply to the live body');
+
+  // Global Stop restores the defaults, including the editor edit.
+  contraption.stopAllNodeScripts();
+  const restored = contraption.getNodeProperties('root');
+  assert.equal(restored.bodyType, 'dynamic');
+  assert.equal(restored.mass, 30);
+  assert.equal(restored.restitution, 0.25);
+  assert.equal(restored.runtimeBody.bodyType, 'dynamic');
+  assert.equal(restored.runtimeBody.mass, 30);
+  assert.equal(restored.runtimeBody.restitution, 0.25);
+});
+
 test('shovel and spoon can directly modify running entities and append blocks to child components', () => {
   const scene = new THREE.Scene();
   const contraption = new Contraption(
