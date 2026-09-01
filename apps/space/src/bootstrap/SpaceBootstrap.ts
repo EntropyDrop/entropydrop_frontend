@@ -299,24 +299,24 @@ function entryErrorFromResponse(status: number, body: any) {
   if (status === 401 || status === 403) {
     return new SpaceEntryError(
       'LOGIN_REQUIRED',
-      '请先登录 EntropyDrop，再进入 Space。',
+      'Please log in to EntropyDrop before entering Space.',
       '/skin/',
-      '返回主站登录'
+      'Log In'
     );
   }
   if (status === 409 && detail?.code === 'SKIN_REQUIRED') {
     return new SpaceEntryError(
       'SKIN_REQUIRED',
-      detail.message || '进入 Space 前需要先设置角色皮肤。',
+      detail.message || 'You must set a character skin before entering Space.',
       detail.action_url || '/skin/edit',
-      '去设置角色皮肤'
+      'Configure Character Skin'
     );
   }
   return new SpaceEntryError(
     'BOOTSTRAP_FAILED',
-    typeof detail === 'string' ? detail : '无法读取 Space 玩家资料，请稍后重试。',
+    typeof detail === 'string' ? detail : 'Could not load Space player profile. Please try again later.',
     window.location.href,
-    '重试'
+    'Retry'
   );
 }
 
@@ -327,18 +327,18 @@ async function downloadSkinPng(url: string) {
   } catch {
     throw new SpaceEntryError(
       'SKIN_DOWNLOAD_FAILED',
-      '角色皮肤 PNG 下载失败，请重新设置皮肤后再试。',
+      'Failed to download character skin PNG. Please reconfigure your skin.',
       '/skin/edit',
-      '去设置角色皮肤'
+      'Configure Character Skin'
     );
   }
 
   if (!response.ok) {
     throw new SpaceEntryError(
       'SKIN_DOWNLOAD_FAILED',
-      `角色皮肤 PNG 下载失败（${response.status}）。`,
+      `Failed to download character skin PNG (${response.status}).`,
       '/skin/edit',
-      '去设置角色皮肤'
+      'Configure Character Skin'
     );
   }
 
@@ -346,9 +346,9 @@ async function downloadSkinPng(url: string) {
   if (!hasPngSignature(bytes)) {
     throw new SpaceEntryError(
       'SKIN_DOWNLOAD_FAILED',
-      '角色皮肤不是有效的 PNG 文件，请重新设置。',
+      'Character skin is not a valid PNG file. Please reconfigure your skin.',
       '/skin/edit',
-      '去设置角色皮肤'
+      'Configure Character Skin'
     );
   }
 
@@ -361,9 +361,9 @@ async function downloadSkinPng(url: string) {
   } catch {
     throw new SpaceEntryError(
       'SKIN_DOWNLOAD_FAILED',
-      '角色皮肤必须是可解码的 64×64 PNG，请重新设置。',
+      'Character skin must be a decodable 64×64 PNG. Please reconfigure your skin.',
       '/skin/edit',
-      '去设置角色皮肤'
+      'Configure Character Skin'
     );
   }
   return URL.createObjectURL(blob);
@@ -414,17 +414,17 @@ export async function loadTerrainEditRemote(
       if (!response.ok) {
         throw new SpaceEntryError(
           response.status === 401 || response.status === 403 ? 'LOGIN_REQUIRED' : 'BOOTSTRAP_FAILED',
-          '无法加载 Space 世界修改，请检查后端版本和网络连接。',
+          'Could not load Space world edits. Please check your network connection.',
           response.status === 401 || response.status === 403 ? '/skin/' : retryUrl,
-          response.status === 401 || response.status === 403 ? '返回主站登录' : '重试'
+          response.status === 401 || response.status === 403 ? 'Log In' : 'Retry'
         );
       }
       if (!Array.isArray(body?.chunks)) {
         throw new SpaceEntryError(
           'BOOTSTRAP_FAILED',
-          'Space 世界修改响应格式无效。',
+          'Invalid Space world edits response format.',
           retryUrl,
-          '重试'
+          'Retry'
         );
       }
       const pageChunks = body.chunks as TerrainEditChunk[];
@@ -434,9 +434,9 @@ export async function loadTerrainEditRemote(
       if (nextCursor && seenCursors.has(nextCursor)) {
         throw new SpaceEntryError(
           'BOOTSTRAP_FAILED',
-          'Space 世界修改分页游标重复。',
+          'Duplicate cursor in Space world edits pagination.',
           retryUrl,
-          '重试'
+          'Retry'
         );
       }
       if (nextCursor) seenCursors.add(nextCursor);
@@ -553,9 +553,9 @@ async function prepareOnlineSpace(): Promise<PreparedOnlineSpace> {
   if (!token) {
     throw new SpaceEntryError(
       'LOGIN_REQUIRED',
-      '请先登录 EntropyDrop，再进入 Space。',
+      'Please log in to EntropyDrop before entering Space.',
       '/skin/',
-      '返回主站登录'
+      'Log In'
     );
   }
 
@@ -575,9 +575,9 @@ async function prepareOnlineSpace(): Promise<PreparedOnlineSpace> {
   if (!payload?.player?.skin_url) {
     throw new SpaceEntryError(
       'SKIN_REQUIRED',
-      '进入 Space 前需要先设置角色皮肤。',
+      'You must set a character skin before entering Space.',
       '/skin/edit',
-      '去设置角色皮肤'
+      'Configure Character Skin'
     );
   }
 
@@ -608,9 +608,9 @@ export async function requestSpaceAdmission(
   if (!body || !['admitted', 'queued'].includes(body.state)) {
     throw new SpaceEntryError(
       'BOOTSTRAP_FAILED',
-      'Space 排队状态无效，请稍后重试。',
+      'Invalid Space queue status. Please try again later.',
       window.location.href,
-      '重试'
+      'Retry'
     );
   }
   return {
@@ -761,9 +761,9 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
   if (admission.state !== 'admitted') {
     throw new SpaceEntryError(
       'BOOTSTRAP_FAILED',
-      `Space 排队 #${admission.position}`,
+      `Space Queue #${admission.position}`,
       `${window.location.pathname}?mode=offline`,
-      '进入离线模式'
+      'Enter Offline Mode'
     );
   }
   return completeOnlineSpace(prepared);
@@ -774,9 +774,9 @@ function renderEntryError(error: unknown) {
     ? error
     : new SpaceEntryError(
         'BOOTSTRAP_FAILED',
-        'Space 初始化失败，请检查网络后重试。',
+        'Space initialization failed. Please check your network and try again.',
         window.location.href,
-        '重试'
+        'Retry'
       );
   const gate = document.getElementById('space-entry-gate');
   const status = document.getElementById('space-entry-status');
@@ -798,7 +798,7 @@ export async function enterSpace(
   const status = document.getElementById('space-entry-status');
   const action = document.getElementById('space-entry-action') as HTMLAnchorElement | null;
   if (gate) gate.hidden = false;
-  if (status) status.textContent = '正在验证 EntropyDrop 账号并下载角色皮肤…';
+  if (status) status.textContent = 'Verifying EntropyDrop account and downloading character skin…';
   if (action) action.hidden = true;
 
   try {
@@ -812,7 +812,7 @@ export async function enterSpace(
         cancelQueue: null,
         enterOnline: null
       });
-      if (status) status.textContent = '正在加载离线世界…';
+      if (status) status.textContent = 'Loading offline world…';
       await startGame(session);
       if (gate) gate.hidden = true;
       return;
@@ -833,7 +833,7 @@ export async function enterSpace(
         cancelQueue: null,
         enterOnline: null
       });
-      if (status) status.textContent = '正在加载共享远景缓存…';
+      if (status) status.textContent = 'Loading shared distant terrain cache…';
       await startGame(session);
       if (gate) gate.hidden = true;
       return;
@@ -886,7 +886,7 @@ export async function enterSpace(
       cancelQueue,
       enterOnline: null
     });
-    if (status) status.textContent = `Space 排队 #${admission.position}，正在进入离线世界…`;
+    if (status) status.textContent = `Space Queue #${admission.position}, entering offline world…`;
     await startGame(createOfflineSpaceSession(prepared));
     if (gate) gate.hidden = true;
 

@@ -326,7 +326,7 @@ export class SpaceUiStore {
     try {
       await cancel();
     } catch {
-      this.showToast('取消排队失败，请稍后重试。');
+      this.showToast('Failed to cancel queue. Please try again later.');
     }
   }
 

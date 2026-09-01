@@ -3,7 +3,7 @@ import * as THREE from 'three';
 /**
  * Distant torus terrain: baked-albedo LOD shell.
  *
- * Performance model (远处低像素 / 极远处贴图):
+ * Performance model (Distant low-res mesh / ultra-distant texture baking):
  *  - The whole-ring shell is one pre-bent mesh; its surface detail is baked ONCE
  *    as a seamless 1024×256 sRGB albedo texture (exactly 1 MiB RGBA) instead of
  *    being re-derived per pixel, per frame. A shared immutable build artifact

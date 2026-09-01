@@ -69,23 +69,23 @@ export function SpacePage({ current }: SpacePageProps) {
                     {/* Stat Badges Grid: The 5 Elements */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 py-1.5">
                         <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">高自由度建造</span>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">{data.pillars[0]?.tag || 'HIGH FREEDOM'}</span>
                             <span className={`text-[11px] font-bold text-white ${current.fontClass}`}>{data.stats.scale}</span>
                         </div>
                         <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">体素物理引擎</span>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">{data.pillars[1]?.tag || 'VOXEL PHYSICS'}</span>
                             <span className={`text-[11px] font-bold text-white ${current.fontClass}`}>{data.stats.physics}</span>
                         </div>
                         <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">可编程</span>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">{data.pillars[2]?.tag || 'PROGRAMMABLE'}</span>
                             <span className={`text-[11px] font-bold text-blue-300 ${current.fontClass}`}>{data.stats.programmable}</span>
                         </div>
                         <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">实时多人建造</span>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">{data.pillars[3]?.tag || 'MULTIPLAYER'}</span>
                             <span className={`text-[11px] font-bold text-white ${current.fontClass}`}>{data.stats.multiplayer}</span>
                         </div>
                         <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">无边世界</span>
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">{data.pillars[4]?.tag || 'SEAMLESS TORUS'}</span>
                             <span className={`text-[11px] font-bold text-yellow-300 ${current.fontClass}`}>{data.stats.torus}</span>
                         </div>
                     </div>

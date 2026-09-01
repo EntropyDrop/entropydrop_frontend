@@ -13,7 +13,7 @@ import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
  * collision cells. A kinematic child's cells move with the root body (scene
  * graph parent), so a split that took the root's ground-contact layer left
  * the root falling straight through the child and into the terrain
- * ("创建子组件时主体往下沉、穿模").
+ * ("root sinking and clipping terrain when creating child component").
  *
  * The fix exercised here: terrain contact of a dynamic body now includes
  * every kinematic part rigidly attached to it
