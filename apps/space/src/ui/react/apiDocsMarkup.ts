@@ -232,9 +232,8 @@ if (self.state.anchorId && ctx.input.pressed('KeyQ')) {
           <table class="api-table">
             <thead><tr><th>Method</th><th>Description</th></tr></thead>
             <tbody>
-              <tr><td><code>self.setCockpitPosition([x,y,z])</code></td><td>Set the driver-seat position, relative to the root pivot (default <code>[0,0,0]</code>). While mounted (V), the player sits at this point and rotates with the entity</td></tr>
-              <tr><td><code>self.setVehicle(true/false)</code></td><td>Set whether the entity can be mounted with <b>V</b> (default <code>true</code>); <code>false</code> excludes it from vehicle pickup</td></tr>
-              <tr><td><code>self.getCockpitPosition()</code> / <code>self.getVehicle()</code></td><td>Read back the cockpit position and vehicle flag</td></tr>
+              <tr><td><code>self.setSeats([[x,y,z], ...])</code></td><td>Replace this component's driver-seat positions relative to its pivot. An entity is mountable only when at least one component has a seat</td></tr>
+              <tr><td><code>self.getSeats()</code></td><td>Read this component's seat positions. Pressing <b>V</b> selects the seat nearest the aimed entity block</td></tr>
               <tr><td><code>self.stop()</code></td><td>Exactly the global Stop action: disable every component script and reset every <code>self.state</code>, script time/tick, child transforms/spins, and pending forces/torques. Root-only; child calls are no-ops, so child code should use <code>ctx.root.stop()</code>. It immediately ends the current script invocation</td></tr>
             </tbody>
           </table>
@@ -314,7 +313,7 @@ if (ctx.blocks.pressed()) {
               <tr><td><code>ctx.selection.entity(entityId,nodeId?)</code></td><td>Select a component subtree and return <code>{ok,selected,reason}</code>. <code>nodeId</code> defaults to <code>root</code>; child selection requires stopped, whole-root works in every state</td></tr>
               <tr><td><code>ctx.selection.entityBox(entityId,nodeId,a,b,space?)</code></td><td>Returns <code>{ok,selected,components,reason}</code> for direct owned voxels intersecting a box; default space is <code>node-local</code>, or pass <code>world</code>. Requires stopped. Pass <code>{micro:true}</code> to keep only 0.2 m blocks</td></tr>
               <tr><td><code>ctx.selection.delete()</code></td><td>Delete the shared selection: root subtree removes its entity in any state; child subtree/entity-block selections require a stopped entity; world selections remove voxels. Returns <code>{ok,removed,standard,micro,entities,components,entityId,nodeId,reason}</code>; <code>entities</code> and <code>components</code> are removal counts. Returns <code>entity_not_stopped</code> when an internal selection is no longer editable</td></tr>
-              <tr><td><code>ctx.selection.assemble(mode='programmable',options={})</code></td><td>Modes: <code>auto</code>, <code>free_physics</code>, <code>bearing</code>, <code>piston</code>, <code>drivable</code>, <code>projectile</code>, <code>programmable</code>; <code>auto</code> aliases <code>programmable</code>. Options: <code>bodyType</code>, <code>restitution</code>, <code>friction</code>, <code>useGravity</code>, <code>mass</code>. Returns <code>{ok,assembled,entityId,runtimeId,reason}</code></td></tr>
+              <tr><td><code>ctx.selection.assemble(mode='programmable',options={})</code></td><td>Modes: <code>auto</code>, <code>free_physics</code>, <code>projectile</code>, <code>programmable</code>; <code>auto</code> aliases <code>programmable</code>. Bearing and piston motion is implemented with component scripts or constraints. Options: <code>bodyType</code>, <code>restitution</code>, <code>friction</code>, <code>useGravity</code>, <code>mass</code>. Returns <code>{ok,assembled,entityId,runtimeId,reason}</code></td></tr>
               <tr><td><code>ctx.selection.createChild(id?)</code></td><td>Create a child from the current entity-block selection; returns <code>{ok,childId,reason}</code>, with null <code>childId</code> on failure. The entity must be stopped</td></tr>
             </tbody>
           </table>

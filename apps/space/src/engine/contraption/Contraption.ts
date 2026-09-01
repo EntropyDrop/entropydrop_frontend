@@ -120,7 +120,7 @@ function boundedBodyVector(value: any): THREE.Vector3 | null {
 
 const SCRIPT_COMPONENT_COMMANDS = new Set([
   'applyThrust', 'setLocalPosition', 'setLocalRotation', 'setLocalEuler', 'setLocalSpin', 'setPivot',
-  'applyForce', 'applyLocalForce', 'applyForceAt', 'applyTorque', 'setCockpitPosition', 'setVehicle',
+  'applyForce', 'applyLocalForce', 'applyForceAt', 'applyTorque', 'setSeats',
   'body.setType', 'body.setMass', 'body.setMaterial', 'body.applyForce', 'body.applyLocalForce',
   'body.applyTorque', 'constraints.create', 'constraints.remove', 'voxels.set', 'voxels.clear',
   'voxels.paint', 'voxels.clearCell', 'voxels.subdivide', 'microVoxels.set', 'microVoxels.clear',
@@ -193,9 +193,6 @@ export function createEntityPublicId(): string {
 
 export const ContraptionMode = {
   FREE_PHYSICS: 'free_physics', // Free rigid-body physics
-  BEARING: 'bearing',           // Bearing rotation
-  PISTON: 'piston',             // Piston push/pull
-  DRIVABLE: 'drivable',         // Drivable vehicle
   PROJECTILE: 'projectile',      // Ballistic projectile
   PROGRAMMABLE: 'programmable'  // Programmable force entity
 };
@@ -393,10 +390,8 @@ export class Contraption {
   lastBlocksChangedEvent: any;
   /** Rotation-center override for a kinematic root, set by setPivot; null uses center of mass. */
   rootPivotOverride: THREE.Vector3 | null;
-  /** Cockpit position relative to the root pivot; the driver is seated here. */
-  cockpitPosition: [number, number, number];
-  /** Whether V can drive this entity; defaults to true. */
-  isVehicle: boolean;
+  /** Driver-seat positions relative to the root component pivot. */
+  seats: Array<{ position: [number, number, number] }>;
   scriptLogs: string[];
   lastExecutionTimeMs: number;
   tickCount: number;
@@ -414,25 +409,14 @@ export class Contraption {
   particleSystem: any;
   actionContext: any;
 
-  // --- Bearing / piston mode parameters ---
-  bearingAxis: THREE.Vector3;
-  bearingRpm: number;
-  bearingAngle: number;
-  pistonAxis: THREE.Vector3;
-  pistonDistance: number;
-  pistonSpeed: number;
-  pistonProgress: number;
-  pistonDirection: number;
-  pistonBasePos: THREE.Vector3;
-
   constructor(id: any, blocks: any[], originWorldPos: any, scene: any, options: any = {}) {
     this.id = id;
     this.publicId = typeof options.publicId === 'string' && options.publicId.trim()
       ? options.publicId.trim()
       : createEntityPublicId();
-    this.blocks = blocks; // [{ localX, localY, localZ, size, color, block, part }]
+    this.blocks = blocks; // [{ localX, localY, localZ, size, color, block, entityId }]
     for (const block of this.blocks) {
-      block.entityId = block.entityId || block.part?.id || 'root';
+      block.entityId = block.entityId || 'root';
     }
     this.scene = scene;
     this.originWorldPos = originWorldPos.clone();
@@ -520,8 +504,7 @@ export class Contraption {
     this.rootPivotOverride = isFiniteVector3Array(options.rootPivotOverride)
       ? new THREE.Vector3().fromArray(options.rootPivotOverride)
       : null;
-    this.cockpitPosition = [0, 0, 0];
-    this.isVehicle = true;
+    this.seats = this.normalizeSeats(options.seats);
     this.scriptLogs = [];
     this.lastExecutionTimeMs = 0;
     this.tickCount = 0;
@@ -536,20 +519,6 @@ export class Contraption {
     this.scriptRuntimeClient.onCompileResult = result => this.handleWorkerCompileResult(result);
     this.behaviorPrompt = options.behaviorPrompt || '';
     this.agentInterpretation = options.agentInterpretation || '';
-
-    // Mode-specific parameters
-    // Bearing (Rotation)
-    this.bearingAxis = asVector3(options.bearingAxis, new THREE.Vector3(0, 1, 0)).normalize();
-    this.bearingRpm = options.bearingRpm !== undefined ? options.bearingRpm : 16.0;
-    this.bearingAngle = 0;
-
-    // Piston (Translation)
-    this.pistonAxis = asVector3(options.pistonAxis, new THREE.Vector3(0, 1, 0)).normalize();
-    this.pistonDistance = options.pistonDistance !== undefined ? options.pistonDistance : 4.0;
-    this.pistonSpeed = options.pistonSpeed !== undefined ? options.pistonSpeed : 2.0;
-    this.pistonProgress = 0;
-    this.pistonDirection = 1;
-    this.pistonBasePos = this.position.clone();
 
     // Optional particle system reference
     this.particleSystem = options.particleSystem || null;
@@ -732,15 +701,66 @@ export class Contraption {
     return scriptEditResult('removed', result.removed || 0, result.reason);
   }
 
-  /** Cockpit world position after transforming the pivot-relative offset through the entity rotation. */
-  getCockpitWorldPosition() {
-    const rootNode = this.entityNodes.get('root');
-    const pivot = rootNode ? rootNode.pivotLocal : this.localCenter;
-    return this.entityLocalToWorld('root', new THREE.Vector3(
-      this.cockpitPosition[0] + pivot.x,
-      this.cockpitPosition[1] + pivot.y,
-      this.cockpitPosition[2] + pivot.z
+  normalizeSeats(value) {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap(seat => {
+      const position = Array.isArray(seat) ? seat : seat?.position;
+      if (!Array.isArray(position) || position.length < 3) return [];
+      const normalized = position.slice(0, 3).map(Number);
+      return normalized.every(Number.isFinite)
+        ? [{ position: normalized as [number, number, number] }]
+        : [];
+    });
+  }
+
+  getComponentSeats(nodeId = 'root') {
+    const id = String(nodeId || 'root');
+    const source = id === 'root' ? this.seats : this.childDefinitions.get(id)?.seats;
+    return this.normalizeSeats(source);
+  }
+
+  setComponentSeats(nodeId, seats) {
+    const id = String(nodeId || 'root');
+    const normalized = this.normalizeSeats(seats);
+    if (id === 'root') this.seats = normalized;
+    else {
+      const definition = this.childDefinitions.get(id);
+      if (!definition) return false;
+      definition.seats = normalized;
+    }
+    return true;
+  }
+
+  /** Resolve one component-relative seat through the current articulated pose. */
+  getSeatWorldPosition(componentId = 'root', seatIndex = 0) {
+    const id = String(componentId || 'root');
+    const node = this.entityNodes.get(id);
+    const seat = this.getComponentSeats(id)[Number(seatIndex)];
+    if (!node || !seat) return null;
+    const position = seat.position;
+    return this.entityLocalToWorld(id, new THREE.Vector3(
+      position[0] + node.pivotLocal.x,
+      position[1] + node.pivotLocal.y,
+      position[2] + node.pivotLocal.z
     ));
+  }
+
+  /** Find the seat whose current world position is closest to the aimed block. */
+  getNearestSeat(worldFocus) {
+    if (!worldFocus?.isVector3) return null;
+    let nearest = null;
+    for (const node of this.entityNodes.values()) {
+      const seats = this.getComponentSeats(node.id);
+      for (let index = 0; index < seats.length; index++) {
+        const worldPosition = this.getSeatWorldPosition(node.id, index);
+        if (!worldPosition) continue;
+        const distanceSq = worldPosition.distanceToSquared(worldFocus);
+        if (!nearest || distanceSq < nearest.distanceSq) {
+          nearest = { componentId: node.id, seatIndex: index, worldPosition, distanceSq };
+        }
+      }
+    }
+    return nearest;
   }
 
   /**
@@ -937,31 +957,15 @@ export class Contraption {
         // World-space torque is identical for every component.
         this.applyTorque(torque);
       },
-      /**
-       * Set the cockpit relative to the root pivot. The driver sits here and rotates
-       * with the entity. Available only on the root component.
-       */
-      setCockpitPosition: isRoot ? value => {
-        if (!Array.isArray(value) || value.length < 3) return;
-        const x = Number(value[0]);
-        const y = Number(value[1]);
-        const z = Number(value[2]);
-        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
-        this.cockpitPosition = [x, y, z];
-      } : noop,
-      /** Enable or disable driving with V. Root-only; defaults to true. */
-      setVehicle: isRoot ? vehicle => {
-        this.isVehicle = !!vehicle;
-      } : noop,
+      /** Replace this component's driver-seat positions, relative to its pivot. */
+      setSeats: values => this.setComponentSeats(id, values),
       /** Stop every script and reset runtime state. Root-only; children are a no-op. */
       stop: isRoot ? () => {
         this.performBasicAction({ action: 'stop-scripts' });
         return true;
       } : noop,
-      /** Read cockpit position relative to the root pivot. */
-      getCockpitPosition: isRoot ? () => Object.freeze([...this.cockpitPosition]) : noop,
-      /** Read whether the entity is driveable. */
-      getVehicle: isRoot ? () => this.isVehicle : noop,
+      /** Read this component's seat positions relative to its pivot. */
+      getSeats: () => Object.freeze(this.getComponentSeats(id).map(seat => Object.freeze([...seat.position]))),
       /**
        * Find a direct child from any component, with chaining such as
        * root.child('arm').child('hand'). child('root') returns the root component.
@@ -1395,7 +1399,6 @@ export class Contraption {
         size: b.size || 1,
         color: b.color,
         block: b.block,
-        part: b.part,
         entityId: mapId(b.entityId || 'root')
       }));
 
@@ -1433,19 +1436,14 @@ export class Contraption {
       scripts,
       enabled,
       constraints,
-      mode: this.mode,
       bodyType: sourceRootId === 'root' ? this.bodyType : this.getNodeBodyType(sourceRootId),
       ...(massOverride !== null ? { mass: massOverride } : {}),
       restitution: sourceRootId === 'root' ? this.restitution : this.getRigidBody(sourceRootId)?.restitution,
       friction: sourceRootId === 'root' ? this.friction : this.getRigidBody(sourceRootId)?.friction,
-      useGravity: this.useGravity,
-      bearingAxis: this.bearingAxis.toArray(),
-      bearingRpm: this.bearingRpm,
-      pistonAxis: this.pistonAxis.toArray(),
-      pistonDistance: this.pistonDistance,
-      pistonSpeed: this.pistonSpeed,
-      cockpitPosition: [...this.cockpitPosition],
-      isVehicle: this.isVehicle
+      useGravity: sourceRootId === 'root'
+        ? this.useGravity
+        : this.childDefinitions.get(sourceRootId)?.useGravity !== false,
+      seats: this.getComponentSeats(sourceRootId)
     };
   }
 
@@ -1483,7 +1481,6 @@ export class Contraption {
         size: b.size || 1,
         color: b.color,
         block: b.block,
-        part: b.part,
         entityId: b.entityId || 'root'
       }));
 
@@ -1515,18 +1512,11 @@ export class Contraption {
       scripts,
       enabled,
       constraints,
-      mode: this.mode,
       bodyType: this.bodyType,
       restitution: this.restitution,
       friction: this.friction,
       useGravity: this.useGravity,
-      bearingAxis: this.bearingAxis.toArray(),
-      bearingRpm: this.bearingRpm,
-      pistonAxis: this.pistonAxis.toArray(),
-      pistonDistance: this.pistonDistance,
-      pistonSpeed: this.pistonSpeed,
-      cockpitPosition: [...this.cockpitPosition],
-      isVehicle: this.isVehicle
+      seats: []
     };
   }
 
@@ -1887,8 +1877,10 @@ export class Contraption {
         id,
         parentId,
         bodyType: normalizeBodyType(definition.bodyType, BodyType.KINEMATIC),
+        useGravity: definition.useGravity !== false,
         restitution: clampUnit(definition.restitution, this.restitution),
-        friction: clampUnit(definition.friction, this.friction)
+        friction: clampUnit(definition.friction, this.friction),
+        seats: this.normalizeSeats(definition.seats)
       });
     }
 
@@ -3133,19 +3125,6 @@ export class Contraption {
       case ContraptionMode.PROGRAMMABLE:
         break;
 
-      case ContraptionMode.BEARING:
-        this.updateBearing(dt);
-        break;
-
-      case ContraptionMode.PISTON:
-        this.updatePiston(dt);
-        break;
-
-      case ContraptionMode.DRIVABLE:
-        // Legacy mode name retained for saved worlds. Motion is no longer
-        // hardcoded here: entity code applies every force and torque.
-        break;
-
       case ContraptionMode.FREE_PHYSICS:
       case ContraptionMode.PROJECTILE:
       default:
@@ -3260,6 +3239,7 @@ export class Contraption {
         localPosition: node.id === 'root' ? [0, 0, 0] : node.localPosition.toArray(),
         localRotation: node.id === 'root' ? this.quaternion.toArray() : node.localQuaternion.toArray(),
         pivot: node.pivotLocal.toArray(),
+        seats: this.getComponentSeats(node.id).map(seat => [...seat.position]),
         bounds: this.getNodeBlocksBounds(node.id),
         constraints: this.getConstraints(node.id),
         body: {
@@ -3297,8 +3277,6 @@ export class Contraption {
       bodyType: this.bodyType,
       gravity: runtimeContext?.gravity || [0, -18, 0],
       limits: { maxForce: this.maxForce, maxTorque: this.maxTorque },
-      cockpitPosition: [...this.cockpitPosition],
-      isVehicle: this.isVehicle,
       input: {
         down: scriptInputCodes(inputState, 'down'),
         pressed: scriptInputCodes(inputState, 'pressed'),
@@ -3526,31 +3504,6 @@ export class Contraption {
     this.scriptStatus = 'error';
     this.log(`[ERR] [${id}] ${message}`);
     return true;
-  }
-
-  updateBearing(dt) {
-    const radPerSec = (this.bearingRpm * Math.PI * 2) / 60;
-    const deltaAngle = radPerSec * dt;
-    this.bearingAngle += deltaAngle;
-
-    const rotQuat = new THREE.Quaternion().setFromAxisAngle(this.bearingAxis, deltaAngle);
-    this.quaternion.multiply(rotQuat);
-    this.quaternion.normalize();
-  }
-
-  updatePiston(dt) {
-    const speed = this.pistonSpeed * this.pistonDirection;
-    this.pistonProgress += speed * dt;
-
-    if (this.pistonProgress >= this.pistonDistance) {
-      this.pistonProgress = this.pistonDistance;
-      this.pistonDirection = -1;
-    } else if (this.pistonProgress <= 0) {
-      this.pistonProgress = 0;
-      this.pistonDirection = 1;
-    }
-
-    this.position.copy(this.pistonBasePos).addScaledVector(this.pistonAxis, this.pistonProgress);
   }
 
   getCenterOfMassWorld() {

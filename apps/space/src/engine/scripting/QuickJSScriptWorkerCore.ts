@@ -170,10 +170,8 @@ const QUICKJS_BOOTSTRAP = String.raw`
       applyLocalForce: force => { emit('component', id, 'applyLocalForce', [force]); },
       applyForceAt: (force, point) => { emit('component', id, 'applyForceAt', [force, point]); },
       applyTorque: torque => { emit('component', id, 'applyTorque', [torque]); },
-      setCockpitPosition: value => { if (isRoot) emit('component', id, 'setCockpitPosition', [value]); },
-      setVehicle: value => { if (isRoot) emit('component', id, 'setVehicle', [!!value]); },
-      getCockpitPosition: () => isRoot ? frozenClone(frame.cockpitPosition || [0, 0, 0]) : undefined,
-      getVehicle: () => isRoot ? !!frame.isVehicle : undefined,
+      setSeats: values => { emit('component', id, 'setSeats', [values]); },
+      getSeats: () => frozenClone(node.seats || []),
       stop: () => {
         if (!isRoot) return undefined;
         emit('control', id, 'stop', []);

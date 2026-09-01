@@ -26,11 +26,11 @@ test('unified self API: every component exposes the same surface (root/child)', 
   assert.deepEqual(keys, [
     'apiVersion',
     'applyForce', 'applyForceAt', 'applyLocalForce', 'applyThrust', 'applyTorque',
-    'body', 'child', 'children', 'constraints', 'getBounds', 'getCockpitPosition', 'getLocalPosition', 'getLocalRotation',
-    'getPivot', 'getVehicle', 'getWorldPosition', 'getWorldRotation', 'id', 'localToWorldDirection',
+    'body', 'child', 'children', 'constraints', 'getBounds', 'getLocalPosition', 'getLocalRotation',
+    'getPivot', 'getSeats', 'getWorldPosition', 'getWorldRotation', 'id', 'localToWorldDirection',
     'microVoxels', 'parentId',
-    'setCockpitPosition', 'setLocalEuler', 'setLocalPosition', 'setLocalRotation',
-    'setLocalSpin', 'setPivot', 'setVehicle', 'state', 'stop', 'voxels'
+    'setLocalEuler', 'setLocalPosition', 'setLocalRotation',
+    'setLocalSpin', 'setPivot', 'setSeats', 'state', 'stop', 'voxels'
   ].sort());
 
   // Root rigid-body methods work; kinematic methods are no-ops while physics-driven.

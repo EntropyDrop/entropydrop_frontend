@@ -1701,7 +1701,6 @@ export class ContraptionManager {
       size: b.size || 1,
       color: b.color,
       block: b.block,
-      part: b.part,
       entityId: b.entityId || 'root'
     }));
 
@@ -1735,21 +1734,15 @@ export class ContraptionManager {
         restitution: slot.restitution,
         friction: slot.friction,
         useGravity: restoreState?.useGravity ?? slot.useGravity,
+        seats: slot.seats,
         behaviorPrompt: restoreState?.behaviorPrompt,
         agentInterpretation: restoreState?.agentInterpretation,
-        bearingAxis: slot.bearingAxis,
-        bearingRpm: slot.bearingRpm,
-        pistonAxis: slot.pistonAxis,
-        pistonDistance: slot.pistonDistance,
-        pistonSpeed: slot.pistonSpeed,
         localCenter: restoreState?.localCenter,
         rootPivotOverride: restoreState?.rootPivotOverride,
         childEntities,
         constraints
       }
     );
-    if (Array.isArray(slot.cockpitPosition) && slot.cockpitPosition.length >= 3) contraption.cockpitPosition = [Number(slot.cockpitPosition[0]), Number(slot.cockpitPosition[1]), Number(slot.cockpitPosition[2])];
-    if (slot.isVehicle !== undefined) contraption.isVehicle = !!slot.isVehicle;
 
     for (const entry of slot.scripts || []) {
       contraption.setNodeScript(entry.id, entry.code);

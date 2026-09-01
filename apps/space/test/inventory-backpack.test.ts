@@ -198,7 +198,7 @@ test('serialize/parse round-trips block sets', () => {
     blockCount: 3,
     blocks: [
       { dx: 0, dy: 0, dz: 0, size: 1, block: 1, color: 0xff0000 },
-      { dx: 1.2, dy: 0.4, dz: 2.8, size: 0.2, block: 1, color: 0x00ff00, part: 'tip' },
+      { dx: 1.2, dy: 0.4, dz: 2.8, size: 0.2, block: 1, color: 0x00ff00 },
       { dx: -0.2, dy: -1.4, dz: -2, size: 0.2, block: 1, color: 0x0000ff }
     ]
   };
@@ -229,7 +229,7 @@ test('serialize/parse round-trips block sets', () => {
   assert.equal(parsed.item.blocks[1].dz, 2.8);
   assert.equal(parsed.item.blocks[0].size, 1);
   assert.equal(parsed.item.blocks[1].size, 0.2);
-  assert.equal(parsed.item.blocks[1].part, 'tip');
+  assert.equal('part' in parsed.item.blocks[1], false);
   assert.equal(parsed.item.blocks[2].dx, -0.2);
   assert.equal(parsed.item.blocks[2].dy, -1.4);
   assert.equal(parsed.item.name, 'my set');
@@ -257,8 +257,7 @@ test('serialize/parse round-trips block sets', () => {
   assert.equal(controller.parseInventoryImport('not json', 'blockset').ok, false);
   assert.equal(controller.parseInventoryImport('{"colors": ["#123456"]}', 'blockset').ok, false);
 });
-
-test('serialize/parse round-trips entities with scripts and hierarchy', () => {
+test('serialize/parse round-trips recursive entities with component-local data', () => {
   const controller = makeController();
   const slot = {
     name: 'robot',
@@ -267,20 +266,22 @@ test('serialize/parse round-trips entities with scripts and hierarchy', () => {
     blocks: [
       { localX: 0, localY: 0, localZ: 0, size: 1, block: 1, color: 0xff0000, entityId: 'root' },
       { localX: 1, localY: 0, localZ: 0, size: 1, block: 1, color: 0x00ff00, entityId: 'arm' },
-      { localX: 1.2, localY: 0.4, localZ: 2.8, size: 0.2, block: 1, color: 0x123456, entityId: 'arm', part: 'tip' },
+      { localX: 1.2, localY: 0.4, localZ: 2.8, size: 0.2, block: 1, color: 0x123456, entityId: 'arm' },
       { localX: -0.2, localY: -1.4, localZ: -2, size: 0.2, block: 1, color: 0x654321, entityId: 'root' }
     ],
     childEntities: [{
       id: 'arm',
       parentId: 'root',
       collisionEnabled: false,
+      useGravity: false,
       pivot: [1.5, 0.5, 0.5],
       bodyType: 'dynamic',
       mass: 2,
+      seats: [{ position: [0, 1, 0] }, { position: [1, 1, 0] }],
       runtimeOnly: 'must not be exported'
     }],
     scripts: [{ id: 'arm', code: 'self.applyForce([0,1,0]);' }],
-    enabled: [{ id: 'root', enabled: true }],
+    enabled: [{ id: 'arm', enabled: false }],
     constraints: [{
       id: 'arm_hinge',
       type: 'hinge',
@@ -295,97 +296,86 @@ test('serialize/parse round-trips entities with scripts and hierarchy', () => {
       collideConnected: false,
       runtimeOnly: 'must not be exported'
     }],
-    mode: 'programmable',
     bodyType: 'dynamic',
     useGravity: false,
-    bearingAxis: [0, 1, 0],
-    bearingRpm: 42,
-    pistonAxis: [1, 0, 0],
-    pistonDistance: 3,
-    pistonSpeed: 1.5,
-    cockpitPosition: [0.5, 1, 0.5],
-    isVehicle: true
+    seats: [{ position: [0.5, 1, 0.5] }]
   };
+
   const serialized = controller.serializeInventoryItem('entity', slot);
   assert.equal(serialized.version, 3);
-  assert.deepEqual(
-    serialized.blocks.map(({ dx, dy, dz, mx, my, mz }) => ({ dx, dy, dz, mx, my, mz })),
-    [
-      { dx: 0, dy: 0, dz: 0, mx: undefined, my: undefined, mz: undefined },
-      { dx: 1, dy: 0, dz: 0, mx: undefined, my: undefined, mz: undefined },
-      { dx: 1, dy: 0, dz: 2, mx: 1, my: 2, mz: 4 },
-      { dx: -1, dy: -2, dz: -2, mx: 4, my: 3, mz: 0 }
-    ]
-  );
-  for (const block of serialized.blocks) {
-    assert.equal('localX' in block || 'localY' in block || 'localZ' in block, false);
+  assert.equal(serialized.root.id, 'root');
+  assert.equal(serialized.root.body.type, 'dynamic');
+  assert.equal(serialized.root.body.useGravity, false);
+  assert.deepEqual(serialized.root.seats, [{ position: [0.5, 1, 0.5] }]);
+  assert.equal(serialized.root.children.length, 1);
+  const arm = serialized.root.children[0];
+  assert.equal(arm.id, 'arm');
+  assert.equal(arm.body.collisionEnabled, false);
+  assert.equal(arm.body.useGravity, false);
+  assert.equal(arm.script, 'self.applyForce([0,1,0]);');
+  assert.equal(arm.scriptDisabled, true);
+  assert.deepEqual(arm.seats, [
+    { position: [0, 1, 0] },
+    { position: [1, 1, 0] }
+  ]);
+  assert.equal('runtimeOnly' in arm, false);
+  assert.equal('runtimeOnly' in serialized.constraints[0], false);
+  assert.equal('blocks' in serialized, false);
+  assert.equal('childEntities' in serialized, false);
+  assert.equal('isVehicle' in serialized, false);
+  assert.equal('cockpitPosition' in serialized, false);
+  assert.equal('bearingAxis' in serialized, false);
+  assert.equal('pistonAxis' in serialized, false);
+
+  const wireBlocks = [serialized.root.blocks, arm.blocks].flat();
+  for (const block of wireBlocks) {
+    assert.equal('entityId' in block, false, 'component ownership comes from recursive nesting');
+    assert.equal('part' in block, false);
     assert.equal('size' in block, false, 'v3 infers standard/micro from mx/my/mz');
     for (const key of ['dx', 'dy', 'dz', 'mx', 'my', 'mz']) {
       if (block[key] !== undefined) assert.equal(Number.isInteger(block[key]), true, `${key} must be an integer`);
     }
   }
-  assert.equal('runtimeOnly' in serialized.childEntities[0], false);
-  assert.equal('runtimeOnly' in serialized.constraints[0], false);
-  assert.equal(serialized.rootId, 'root');
-  assert.equal('rootIds' in serialized, false);
-  assert.equal(serialized.childEntities[0].collisionEnabled, false);
 
   const encoded = controller.encodeInventoryItem('entity', slot);
   const parsed = controller.parseInventoryImport(encoded, 'entity');
   assert.equal(parsed.ok, true, parsed.error);
   assert.equal(parsed.item.blocks.length, 4);
-  assert.deepEqual(
-    [parsed.item.blocks[2].localX, parsed.item.blocks[2].localY, parsed.item.blocks[2].localZ],
-    [1.2, 0.4, 2.8]
-  );
-  assert.deepEqual(
-    [parsed.item.blocks[3].localX, parsed.item.blocks[3].localY, parsed.item.blocks[3].localZ],
-    [-0.2, -1.4, -2]
-  );
-  assert.equal(parsed.item.blocks[0].size, 1);
-  assert.equal(parsed.item.blocks[2].size, 0.2);
-  assert.equal(parsed.item.blocks[2].part, 'tip');
+  const armMicro = parsed.item.blocks.find(block => block.entityId === 'arm' && block.size === 0.2);
+  const rootMicro = parsed.item.blocks.find(block => block.entityId === 'root' && block.size === 0.2);
+  assert.deepEqual([armMicro.localX, armMicro.localY, armMicro.localZ], [1.2, 0.4, 2.8]);
+  assert.deepEqual([rootMicro.localX, rootMicro.localY, rootMicro.localZ], [-0.2, -1.4, -2]);
   assert.deepEqual(parsed.item.scripts, [{ id: 'arm', code: 'self.applyForce([0,1,0]);' }]);
-  assert.equal(parsed.item.childEntities.length, 1);
+  assert.deepEqual(parsed.item.enabled, [{ id: 'arm', enabled: false }]);
   assert.equal(parsed.item.childEntities[0].collisionEnabled, false);
-  assert.equal(parsed.item.constraints.length, 1);
+  assert.equal(parsed.item.childEntities[0].useGravity, false);
+  assert.deepEqual(parsed.item.childEntities[0].seats, [
+    { position: [0, 1, 0] },
+    { position: [1, 1, 0] }
+  ]);
+  assert.deepEqual(parsed.item.seats, [{ position: [0.5, 1, 0.5] }]);
   assert.deepEqual(parsed.item.constraints[0].limits, { min: -1, max: 1 });
-  assert.equal(parsed.item.mode, 'programmable');
-  assert.equal(parsed.item.useGravity, false);
-  assert.deepEqual(parsed.item.bearingAxis, [0, 1, 0]);
-  assert.equal(parsed.item.bearingRpm, 42);
-  assert.deepEqual(parsed.item.pistonAxis, [1, 0, 0]);
-  assert.equal(parsed.item.pistonDistance, 3);
-  assert.equal(parsed.item.pistonSpeed, 1.5);
-  assert.deepEqual(parsed.item.cockpitPosition, [0.5, 1, 0.5]);
-  assert.equal(parsed.item.isVehicle, true);
   assert.equal(parsed.item.name, 'robot');
 
-  // The parsed entity can actually build through buildFromSlot.
   const { manager } = makeEntity();
   const built = manager.buildFromSlot(parsed.item, new THREE.Vector3(20, 0, 20));
   assert.ok(built, 'the imported entity should build');
   assert.equal(built.blocks.length, 4);
   assert.ok(built.entityNodes.has('arm'));
+  assert.equal(built.getComponentSeats('arm').length, 2);
 
-  // Legacy entity files are intentionally unsupported.
-  const legacy = JSON.stringify({
-    type: 'space-entity',
-    version: 1,
-    rootId: 'root',
-    blocks: [{ localX: 0.2, localY: 1.4, localZ: 0, size: 0.2, entityId: 'root' }]
-  });
-  const legacyParsed = controller.parseInventoryImport(legacy, 'entity');
-  assert.equal(legacyParsed.ok, false);
-
-  assert.equal(controller.parseInventoryImport('{"rootId":"root"}', 'entity').ok, false);
-  assert.equal(controller.parseInventoryImport('{"blocks":[{"localX":"x","localY":0,"localZ":0}]}', 'entity').ok, false);
-  assert.equal(controller.parseInventoryImport('{"type":"space-entity","version":2,"name":"bad","blocks":[{"dx":0.2,"dy":0,"dz":0}]}', 'entity').ok, false);
-  assert.equal(controller.parseInventoryImport('{"type":"space-entity","version":2,"name":"bad","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0,"mz":5}]}', 'entity').ok, false);
-  assert.equal(controller.parseInventoryImport('{"type":"space-entity","version":2,"name":"bad","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0}]}', 'entity').ok, false);
   const inferredMicro = controller.parseInventoryImport(encodeInventoryResource('entity', {
-    type: 'space-entity', version: 3, name: 'micro', rootId: 'root',
-    blocks: [{ dx: 0, dy: 0, dz: 0, mx: 1, my: 0, mz: 0, color: 0, entityId: 'root' }]
+    type: 'space-entity',
+    version: 3,
+    name: 'micro',
+    root: {
+      id: 'root',
+      body: { type: 'dynamic' },
+      blocks: [{ dx: 0, dy: 0, dz: 0, mx: 1, my: 0, mz: 0, color: 0 }],
+      seats: [],
+      children: []
+    },
+    constraints: []
   }), 'entity');
   assert.equal(inferredMicro.ok, true);
   assert.equal(inferredMicro.item.blocks[0].size, 0.2);
@@ -426,36 +416,74 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
     type: 'space-entity',
     version: 3,
     name: 'bounded',
-    rootId: 'root',
-    blocks: [{ dx: 0, dy: 0, dz: 0, entityId: 'root', block: 1, color: 0 }]
+    root: {
+      id: 'root',
+      body: { type: 'dynamic' },
+      blocks: [{ dx: 0, dy: 0, dz: 0, block: 1, color: 0 }],
+      seats: [],
+      children: []
+    },
+    constraints: []
   };
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
     ...baseEntity,
-    childEntities: Array.from({ length: 64 }, (_, index) => ({ id: `node_${index}`, parentId: 'root' }))
+    root: {
+      ...baseEntity.root,
+      children: Array.from({ length: 64 }, (_, index) => ({
+        id: `node_${index}`, body: { type: 'kinematic' }, blocks: [], seats: [], children: []
+      }))
+    }
   }), 'entity').ok, false, 'one root leaves room for at most 63 children');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
     ...baseEntity,
-    childEntities: [{ id: 'arm', parentId: 'root', pivot: [129, 0, 0] }]
+    root: {
+      ...baseEntity.root,
+      children: [{
+        id: 'arm', pivot: [129, 0, 0], body: { type: 'kinematic' }, blocks: [], seats: [], children: []
+      }]
+    }
   }), 'entity').ok, false, 'component pivots use the portable coordinate bound');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
     ...baseEntity,
-    mass: 1e12 + 1
+    root: { ...baseEntity.root, body: { type: 'dynamic', mass: 1e12 + 1 } }
   }), 'entity').ok, false, 'entity mass uses the backend safety bound');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
     ...baseEntity,
-    blocks: [
-      { dx: 0, dy: 0, dz: 0, color: 0, entityId: 'root' },
-      { dx: 64, dy: 0, dz: 0, color: 0, entityId: 'root' }
-    ]
+    root: { ...baseEntity.root, blocks: [
+      { dx: 0, dy: 0, dz: 0, color: 0 },
+      { dx: 64, dy: 0, dz: 0, color: 0 }
+    ] }
   }), 'entity').ok, false, 'a 65-cell AABB must be rejected');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
     ...baseEntity,
-    childEntities: [{ id: '<img_onerror>', parentId: 'root' }]
+    root: { ...baseEntity.root, children: [{
+      id: '<img_onerror>', body: { type: 'kinematic' }, blocks: [], seats: [], children: []
+    }] }
   }), 'entity').ok, false, 'component ids are restricted to portable characters');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
     ...baseEntity,
-    scripts: [{ id: 'root', code: 'x'.repeat(MAX_INVENTORY_SCRIPT_BYTES + 1) }]
+    root: { ...baseEntity.root, script: 'x'.repeat(MAX_INVENTORY_SCRIPT_BYTES + 1) }
   }), 'entity').ok, false, 'oversized scripts must be rejected');
+  assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
+    ...baseEntity,
+    root: { ...baseEntity.root, seats: [{}] }
+  }), 'entity').ok, false, 'every seat must have an explicit position');
+
+  const independentlyBoundedComponents = controller.parseInventoryImport(encodeInventoryResource('entity', {
+    ...baseEntity,
+    root: {
+      ...baseEntity.root,
+      children: [{
+        id: 'arm',
+        body: { type: 'kinematic' },
+        blocks: [{ dx: 100, dy: 0, dz: 0, color: 0 }],
+        seats: [],
+        children: []
+      }]
+    }
+  }), 'entity');
+  assert.equal(independentlyBoundedComponents.ok, true,
+    'component-local voxel bounds must not be combined across the hierarchy');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('blockset', {
     type: 'space-blockset',
     version: 3,

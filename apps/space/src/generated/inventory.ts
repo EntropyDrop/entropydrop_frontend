@@ -19,28 +19,6 @@ export namespace BodyType {
   export type UNRECOGNIZED = typeof BodyType.UNRECOGNIZED;
 }
 
-export const EntityMode = {
-  ENTITY_MODE_FREE_PHYSICS: 0,
-  ENTITY_MODE_BEARING: 1,
-  ENTITY_MODE_PISTON: 2,
-  ENTITY_MODE_DRIVABLE: 3,
-  ENTITY_MODE_PROJECTILE: 4,
-  ENTITY_MODE_PROGRAMMABLE: 5,
-  UNRECOGNIZED: -1,
-} as const;
-
-export type EntityMode = typeof EntityMode[keyof typeof EntityMode];
-
-export namespace EntityMode {
-  export type ENTITY_MODE_FREE_PHYSICS = typeof EntityMode.ENTITY_MODE_FREE_PHYSICS;
-  export type ENTITY_MODE_BEARING = typeof EntityMode.ENTITY_MODE_BEARING;
-  export type ENTITY_MODE_PISTON = typeof EntityMode.ENTITY_MODE_PISTON;
-  export type ENTITY_MODE_DRIVABLE = typeof EntityMode.ENTITY_MODE_DRIVABLE;
-  export type ENTITY_MODE_PROJECTILE = typeof EntityMode.ENTITY_MODE_PROJECTILE;
-  export type ENTITY_MODE_PROGRAMMABLE = typeof EntityMode.ENTITY_MODE_PROGRAMMABLE;
-  export type UNRECOGNIZED = typeof EntityMode.UNRECOGNIZED;
-}
-
 export const ConstraintType = {
   CONSTRAINT_TYPE_POINT: 0,
   CONSTRAINT_TYPE_HINGE: 1,
@@ -94,11 +72,6 @@ export interface Voxel {
   /** Present only for micro voxels. Value = 1 + mx + 5*my + 25*mz. */
   microIndex?: number | undefined;
   color?: number | undefined;
-  part?:
-    | string
-    | undefined;
-  /** Entity root is 0; children use their one-based position in Entity.components. */
-  componentIndex?: number | undefined;
 }
 
 export interface BlockSet {
@@ -117,25 +90,32 @@ export interface Vector3 {
   z?: number | undefined;
 }
 
-export interface Component {
-  id?: string | undefined;
-  parentIndex?: number | undefined;
-  collisionEnabled?: boolean | undefined;
-  pivot?: Vector3 | undefined;
-  bodyType?: BodyType | undefined;
+export interface BodyConfig {
+  type?: BodyType | undefined;
   mass?: number | undefined;
   restitution?: number | undefined;
   friction?: number | undefined;
+  useGravity?: boolean | undefined;
+  collisionEnabled?: boolean | undefined;
 }
 
-export interface EntityScript {
-  componentIndex?: number | undefined;
-  code?: string | undefined;
+export interface Seat {
+  position?: Vector3 | undefined;
 }
 
-export interface EntityEnabled {
-  componentIndex?: number | undefined;
-  enabled?: boolean | undefined;
+/**
+ * The entity owns exactly one root Component. Children recursively own their
+ * voxels and configuration, so per-voxel component indexes are unnecessary.
+ */
+export interface Component {
+  id?: string | undefined;
+  pivot?: Vector3 | undefined;
+  body?: BodyConfig | undefined;
+  blocks?: Voxel[] | undefined;
+  script?: string | undefined;
+  scriptDisabled?: boolean | undefined;
+  seats?: Seat[] | undefined;
+  children?: Component[] | undefined;
 }
 
 export interface ConstraintLimits {
@@ -147,8 +127,8 @@ export interface EntityConstraint {
   id?: string | undefined;
   type?: ConstraintType | undefined;
   bodyAIsWorld?: boolean | undefined;
-  bodyAComponentIndex?: number | undefined;
-  bodyBComponentIndex?: number | undefined;
+  bodyA?: string | undefined;
+  bodyB?: string | undefined;
   anchorA?: Vector3 | undefined;
   anchorB?: Vector3 | undefined;
   axisA?: Vector3 | undefined;
@@ -162,24 +142,8 @@ export interface EntityConstraint {
 
 export interface Entity {
   name?: string | undefined;
-  components?: Component[] | undefined;
-  blocks?: Voxel[] | undefined;
-  scripts?: EntityScript[] | undefined;
-  enabled?: EntityEnabled[] | undefined;
+  root?: Component | undefined;
   constraints?: EntityConstraint[] | undefined;
-  mode?: EntityMode | undefined;
-  bodyType?: BodyType | undefined;
-  mass?: number | undefined;
-  restitution?: number | undefined;
-  friction?: number | undefined;
-  useGravity?: boolean | undefined;
-  bearingAxis?: Vector3 | undefined;
-  bearingRpm?: number | undefined;
-  pistonAxis?: Vector3 | undefined;
-  pistonDistance?: number | undefined;
-  pistonSpeed?: number | undefined;
-  cockpitPosition?: Vector3 | undefined;
-  isVehicle?: boolean | undefined;
 }
 
 export interface InventorySlot {
@@ -298,7 +262,7 @@ export const InventoryResource: MessageFns<InventoryResource> = {
 };
 
 function createBaseVoxel(): Voxel {
-  return { dx: 0, dy: 0, dz: 0, microIndex: undefined, color: 0, part: undefined, componentIndex: 0 };
+  return { dx: 0, dy: 0, dz: 0, microIndex: undefined, color: 0 };
 }
 
 export const Voxel: MessageFns<Voxel> = {
@@ -317,12 +281,6 @@ export const Voxel: MessageFns<Voxel> = {
     }
     if (message.color !== undefined && message.color !== 0) {
       writer.uint32(45).fixed32(message.color);
-    }
-    if (message.part !== undefined) {
-      writer.uint32(50).string(message.part);
-    }
-    if (message.componentIndex !== undefined && message.componentIndex !== 0) {
-      writer.uint32(56).uint32(message.componentIndex);
     }
     return writer;
   },
@@ -380,22 +338,6 @@ export const Voxel: MessageFns<Voxel> = {
             message.color = reader.fixed32();
             continue;
           }
-          case 6: {
-            if (tag !== 50) {
-              break;
-            }
-
-            message.part = reader.string();
-            continue;
-          }
-          case 7: {
-            if (tag !== 56) {
-              break;
-            }
-
-            message.componentIndex = reader.uint32();
-            continue;
-          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -418,8 +360,6 @@ export const Voxel: MessageFns<Voxel> = {
     message.dz = object.dz ?? 0;
     message.microIndex = object.microIndex ?? undefined;
     message.color = object.color ?? 0;
-    message.part = object.part ?? undefined;
-    message.componentIndex = object.componentIndex ?? 0;
     return message;
   },
 };
@@ -656,16 +596,195 @@ export const Vector3: MessageFns<Vector3> = {
   },
 };
 
-function createBaseComponent(): Component {
+function createBaseBodyConfig(): BodyConfig {
   return {
-    id: "",
-    parentIndex: 0,
-    collisionEnabled: undefined,
-    pivot: undefined,
-    bodyType: undefined,
+    type: 0,
     mass: undefined,
     restitution: undefined,
     friction: undefined,
+    useGravity: undefined,
+    collisionEnabled: undefined,
+  };
+}
+
+export const BodyConfig: MessageFns<BodyConfig> = {
+  encode(message: BodyConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.type !== undefined && message.type !== 0) {
+      writer.uint32(8).int32(message.type);
+    }
+    if (message.mass !== undefined) {
+      writer.uint32(17).double(message.mass);
+    }
+    if (message.restitution !== undefined) {
+      writer.uint32(25).double(message.restitution);
+    }
+    if (message.friction !== undefined) {
+      writer.uint32(33).double(message.friction);
+    }
+    if (message.useGravity !== undefined) {
+      writer.uint32(40).bool(message.useGravity);
+    }
+    if (message.collisionEnabled !== undefined) {
+      writer.uint32(48).bool(message.collisionEnabled);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): BodyConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseBodyConfig();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.type = reader.int32() as any;
+            continue;
+          }
+          case 2: {
+            if (tag !== 17) {
+              break;
+            }
+
+            message.mass = reader.double();
+            continue;
+          }
+          case 3: {
+            if (tag !== 25) {
+              break;
+            }
+
+            message.restitution = reader.double();
+            continue;
+          }
+          case 4: {
+            if (tag !== 33) {
+              break;
+            }
+
+            message.friction = reader.double();
+            continue;
+          }
+          case 5: {
+            if (tag !== 40) {
+              break;
+            }
+
+            message.useGravity = reader.bool();
+            continue;
+          }
+          case 6: {
+            if (tag !== 48) {
+              break;
+            }
+
+            message.collisionEnabled = reader.bool();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create<I extends Exact<DeepPartial<BodyConfig>, I>>(base?: I): BodyConfig {
+    return BodyConfig.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<BodyConfig>, I>>(object: I): BodyConfig {
+    const message = createBaseBodyConfig();
+    message.type = object.type ?? 0;
+    message.mass = object.mass ?? undefined;
+    message.restitution = object.restitution ?? undefined;
+    message.friction = object.friction ?? undefined;
+    message.useGravity = object.useGravity ?? undefined;
+    message.collisionEnabled = object.collisionEnabled ?? undefined;
+    return message;
+  },
+};
+
+function createBaseSeat(): Seat {
+  return { position: undefined };
+}
+
+export const Seat: MessageFns<Seat> = {
+  encode(message: Seat, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.position !== undefined) {
+      Vector3.encode(message.position, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Seat {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseSeat();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.position = Vector3.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create<I extends Exact<DeepPartial<Seat>, I>>(base?: I): Seat {
+    return Seat.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Seat>, I>>(object: I): Seat {
+    const message = createBaseSeat();
+    message.position = (object.position !== undefined && object.position !== null)
+      ? Vector3.fromPartial(object.position)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseComponent(): Component {
+  return {
+    id: "",
+    pivot: undefined,
+    body: undefined,
+    blocks: [],
+    script: undefined,
+    scriptDisabled: false,
+    seats: [],
+    children: [],
   };
 }
 
@@ -674,26 +793,32 @@ export const Component: MessageFns<Component> = {
     if (message.id !== undefined && message.id !== "") {
       writer.uint32(10).string(message.id);
     }
-    if (message.parentIndex !== undefined && message.parentIndex !== 0) {
-      writer.uint32(16).uint32(message.parentIndex);
-    }
-    if (message.collisionEnabled !== undefined) {
-      writer.uint32(24).bool(message.collisionEnabled);
-    }
     if (message.pivot !== undefined) {
-      Vector3.encode(message.pivot, writer.uint32(34).fork()).join();
+      Vector3.encode(message.pivot, writer.uint32(18).fork()).join();
     }
-    if (message.bodyType !== undefined) {
-      writer.uint32(40).int32(message.bodyType);
+    if (message.body !== undefined) {
+      BodyConfig.encode(message.body, writer.uint32(26).fork()).join();
     }
-    if (message.mass !== undefined) {
-      writer.uint32(49).double(message.mass);
+    if (message.blocks !== undefined && message.blocks.length !== 0) {
+      for (const v of message.blocks) {
+        Voxel.encode(v!, writer.uint32(34).fork()).join();
+      }
     }
-    if (message.restitution !== undefined) {
-      writer.uint32(57).double(message.restitution);
+    if (message.script !== undefined) {
+      writer.uint32(42).string(message.script);
     }
-    if (message.friction !== undefined) {
-      writer.uint32(65).double(message.friction);
+    if (message.scriptDisabled !== undefined && message.scriptDisabled !== false) {
+      writer.uint32(48).bool(message.scriptDisabled);
+    }
+    if (message.seats !== undefined && message.seats.length !== 0) {
+      for (const v of message.seats) {
+        Seat.encode(v!, writer.uint32(58).fork()).join();
+      }
+    }
+    if (message.children !== undefined && message.children.length !== 0) {
+      for (const v of message.children) {
+        Component.encode(v!, writer.uint32(66).fork()).join();
+      }
     }
     return writer;
   },
@@ -720,19 +845,19 @@ export const Component: MessageFns<Component> = {
             continue;
           }
           case 2: {
-            if (tag !== 16) {
+            if (tag !== 18) {
               break;
             }
 
-            message.parentIndex = reader.uint32();
+            message.pivot = Vector3.decode(reader, reader.uint32());
             continue;
           }
           case 3: {
-            if (tag !== 24) {
+            if (tag !== 26) {
               break;
             }
 
-            message.collisionEnabled = reader.bool();
+            message.body = BodyConfig.decode(reader, reader.uint32());
             continue;
           }
           case 4: {
@@ -740,39 +865,48 @@ export const Component: MessageFns<Component> = {
               break;
             }
 
-            message.pivot = Vector3.decode(reader, reader.uint32());
+            const el = Voxel.decode(reader, reader.uint32());
+            if (el !== undefined) {
+              message.blocks!.push(el);
+            }
             continue;
           }
           case 5: {
-            if (tag !== 40) {
+            if (tag !== 42) {
               break;
             }
 
-            message.bodyType = reader.int32() as any;
+            message.script = reader.string();
             continue;
           }
           case 6: {
-            if (tag !== 49) {
+            if (tag !== 48) {
               break;
             }
 
-            message.mass = reader.double();
+            message.scriptDisabled = reader.bool();
             continue;
           }
           case 7: {
-            if (tag !== 57) {
+            if (tag !== 58) {
               break;
             }
 
-            message.restitution = reader.double();
+            const el = Seat.decode(reader, reader.uint32());
+            if (el !== undefined) {
+              message.seats!.push(el);
+            }
             continue;
           }
           case 8: {
-            if (tag !== 65) {
+            if (tag !== 66) {
               break;
             }
 
-            message.friction = reader.double();
+            const el = Component.decode(reader, reader.uint32());
+            if (el !== undefined) {
+              message.children!.push(el);
+            }
             continue;
           }
         }
@@ -793,149 +927,17 @@ export const Component: MessageFns<Component> = {
   fromPartial<I extends Exact<DeepPartial<Component>, I>>(object: I): Component {
     const message = createBaseComponent();
     message.id = object.id ?? "";
-    message.parentIndex = object.parentIndex ?? 0;
-    message.collisionEnabled = object.collisionEnabled ?? undefined;
     message.pivot = (object.pivot !== undefined && object.pivot !== null)
       ? Vector3.fromPartial(object.pivot)
       : undefined;
-    message.bodyType = object.bodyType ?? undefined;
-    message.mass = object.mass ?? undefined;
-    message.restitution = object.restitution ?? undefined;
-    message.friction = object.friction ?? undefined;
-    return message;
-  },
-};
-
-function createBaseEntityScript(): EntityScript {
-  return { componentIndex: 0, code: "" };
-}
-
-export const EntityScript: MessageFns<EntityScript> = {
-  encode(message: EntityScript, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.componentIndex !== undefined && message.componentIndex !== 0) {
-      writer.uint32(8).uint32(message.componentIndex);
-    }
-    if (message.code !== undefined && message.code !== "") {
-      writer.uint32(18).string(message.code);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): EntityScript {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseEntityScript();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 8) {
-              break;
-            }
-
-            message.componentIndex = reader.uint32();
-            continue;
-          }
-          case 2: {
-            if (tag !== 18) {
-              break;
-            }
-
-            message.code = reader.string();
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  create<I extends Exact<DeepPartial<EntityScript>, I>>(base?: I): EntityScript {
-    return EntityScript.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<EntityScript>, I>>(object: I): EntityScript {
-    const message = createBaseEntityScript();
-    message.componentIndex = object.componentIndex ?? 0;
-    message.code = object.code ?? "";
-    return message;
-  },
-};
-
-function createBaseEntityEnabled(): EntityEnabled {
-  return { componentIndex: 0, enabled: false };
-}
-
-export const EntityEnabled: MessageFns<EntityEnabled> = {
-  encode(message: EntityEnabled, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.componentIndex !== undefined && message.componentIndex !== 0) {
-      writer.uint32(8).uint32(message.componentIndex);
-    }
-    if (message.enabled !== undefined && message.enabled !== false) {
-      writer.uint32(16).bool(message.enabled);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): EntityEnabled {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseEntityEnabled();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 8) {
-              break;
-            }
-
-            message.componentIndex = reader.uint32();
-            continue;
-          }
-          case 2: {
-            if (tag !== 16) {
-              break;
-            }
-
-            message.enabled = reader.bool();
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  create<I extends Exact<DeepPartial<EntityEnabled>, I>>(base?: I): EntityEnabled {
-    return EntityEnabled.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<EntityEnabled>, I>>(object: I): EntityEnabled {
-    const message = createBaseEntityEnabled();
-    message.componentIndex = object.componentIndex ?? 0;
-    message.enabled = object.enabled ?? false;
+    message.body = (object.body !== undefined && object.body !== null)
+      ? BodyConfig.fromPartial(object.body)
+      : undefined;
+    message.blocks = object.blocks?.map((e) => Voxel.fromPartial(e)) || [];
+    message.script = object.script ?? undefined;
+    message.scriptDisabled = object.scriptDisabled ?? false;
+    message.seats = object.seats?.map((e) => Seat.fromPartial(e)) || [];
+    message.children = object.children?.map((e) => Component.fromPartial(e)) || [];
     return message;
   },
 };
@@ -1012,8 +1014,8 @@ function createBaseEntityConstraint(): EntityConstraint {
     id: "",
     type: 0,
     bodyAIsWorld: false,
-    bodyAComponentIndex: 0,
-    bodyBComponentIndex: 0,
+    bodyA: "",
+    bodyB: "",
     anchorA: undefined,
     anchorB: undefined,
     axisA: undefined,
@@ -1037,11 +1039,11 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
     if (message.bodyAIsWorld !== undefined && message.bodyAIsWorld !== false) {
       writer.uint32(24).bool(message.bodyAIsWorld);
     }
-    if (message.bodyAComponentIndex !== undefined && message.bodyAComponentIndex !== 0) {
-      writer.uint32(32).uint32(message.bodyAComponentIndex);
+    if (message.bodyA !== undefined && message.bodyA !== "") {
+      writer.uint32(34).string(message.bodyA);
     }
-    if (message.bodyBComponentIndex !== undefined && message.bodyBComponentIndex !== 0) {
-      writer.uint32(40).uint32(message.bodyBComponentIndex);
+    if (message.bodyB !== undefined && message.bodyB !== "") {
+      writer.uint32(42).string(message.bodyB);
     }
     if (message.anchorA !== undefined) {
       Vector3.encode(message.anchorA, writer.uint32(50).fork()).join();
@@ -1111,19 +1113,19 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
             continue;
           }
           case 4: {
-            if (tag !== 32) {
+            if (tag !== 34) {
               break;
             }
 
-            message.bodyAComponentIndex = reader.uint32();
+            message.bodyA = reader.string();
             continue;
           }
           case 5: {
-            if (tag !== 40) {
+            if (tag !== 42) {
               break;
             }
 
-            message.bodyBComponentIndex = reader.uint32();
+            message.bodyB = reader.string();
             continue;
           }
           case 6: {
@@ -1218,8 +1220,8 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
     message.id = object.id ?? "";
     message.type = object.type ?? 0;
     message.bodyAIsWorld = object.bodyAIsWorld ?? false;
-    message.bodyAComponentIndex = object.bodyAComponentIndex ?? 0;
-    message.bodyBComponentIndex = object.bodyBComponentIndex ?? 0;
+    message.bodyA = object.bodyA ?? "";
+    message.bodyB = object.bodyB ?? "";
     message.anchorA = (object.anchorA !== undefined && object.anchorA !== null)
       ? Vector3.fromPartial(object.anchorA)
       : undefined;
@@ -1248,27 +1250,7 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
 };
 
 function createBaseEntity(): Entity {
-  return {
-    name: "",
-    components: [],
-    blocks: [],
-    scripts: [],
-    enabled: [],
-    constraints: [],
-    mode: 0,
-    bodyType: 0,
-    mass: undefined,
-    restitution: undefined,
-    friction: undefined,
-    useGravity: undefined,
-    bearingAxis: undefined,
-    bearingRpm: undefined,
-    pistonAxis: undefined,
-    pistonDistance: undefined,
-    pistonSpeed: undefined,
-    cockpitPosition: undefined,
-    isVehicle: undefined,
-  };
+  return { name: "", root: undefined, constraints: [] };
 }
 
 export const Entity: MessageFns<Entity> = {
@@ -1276,69 +1258,13 @@ export const Entity: MessageFns<Entity> = {
     if (message.name !== undefined && message.name !== "") {
       writer.uint32(10).string(message.name);
     }
-    if (message.components !== undefined && message.components.length !== 0) {
-      for (const v of message.components) {
-        Component.encode(v!, writer.uint32(18).fork()).join();
-      }
-    }
-    if (message.blocks !== undefined && message.blocks.length !== 0) {
-      for (const v of message.blocks) {
-        Voxel.encode(v!, writer.uint32(26).fork()).join();
-      }
-    }
-    if (message.scripts !== undefined && message.scripts.length !== 0) {
-      for (const v of message.scripts) {
-        EntityScript.encode(v!, writer.uint32(34).fork()).join();
-      }
-    }
-    if (message.enabled !== undefined && message.enabled.length !== 0) {
-      for (const v of message.enabled) {
-        EntityEnabled.encode(v!, writer.uint32(42).fork()).join();
-      }
+    if (message.root !== undefined) {
+      Component.encode(message.root, writer.uint32(18).fork()).join();
     }
     if (message.constraints !== undefined && message.constraints.length !== 0) {
       for (const v of message.constraints) {
-        EntityConstraint.encode(v!, writer.uint32(50).fork()).join();
+        EntityConstraint.encode(v!, writer.uint32(26).fork()).join();
       }
-    }
-    if (message.mode !== undefined && message.mode !== 0) {
-      writer.uint32(56).int32(message.mode);
-    }
-    if (message.bodyType !== undefined && message.bodyType !== 0) {
-      writer.uint32(64).int32(message.bodyType);
-    }
-    if (message.mass !== undefined) {
-      writer.uint32(73).double(message.mass);
-    }
-    if (message.restitution !== undefined) {
-      writer.uint32(81).double(message.restitution);
-    }
-    if (message.friction !== undefined) {
-      writer.uint32(89).double(message.friction);
-    }
-    if (message.useGravity !== undefined) {
-      writer.uint32(96).bool(message.useGravity);
-    }
-    if (message.bearingAxis !== undefined) {
-      Vector3.encode(message.bearingAxis, writer.uint32(106).fork()).join();
-    }
-    if (message.bearingRpm !== undefined) {
-      writer.uint32(113).double(message.bearingRpm);
-    }
-    if (message.pistonAxis !== undefined) {
-      Vector3.encode(message.pistonAxis, writer.uint32(122).fork()).join();
-    }
-    if (message.pistonDistance !== undefined) {
-      writer.uint32(129).double(message.pistonDistance);
-    }
-    if (message.pistonSpeed !== undefined) {
-      writer.uint32(137).double(message.pistonSpeed);
-    }
-    if (message.cockpitPosition !== undefined) {
-      Vector3.encode(message.cockpitPosition, writer.uint32(146).fork()).join();
-    }
-    if (message.isVehicle !== undefined) {
-      writer.uint32(152).bool(message.isVehicle);
     }
     return writer;
   },
@@ -1369,10 +1295,7 @@ export const Entity: MessageFns<Entity> = {
               break;
             }
 
-            const el = Component.decode(reader, reader.uint32());
-            if (el !== undefined) {
-              message.components!.push(el);
-            }
+            message.root = Component.decode(reader, reader.uint32());
             continue;
           }
           case 3: {
@@ -1380,147 +1303,10 @@ export const Entity: MessageFns<Entity> = {
               break;
             }
 
-            const el = Voxel.decode(reader, reader.uint32());
-            if (el !== undefined) {
-              message.blocks!.push(el);
-            }
-            continue;
-          }
-          case 4: {
-            if (tag !== 34) {
-              break;
-            }
-
-            const el = EntityScript.decode(reader, reader.uint32());
-            if (el !== undefined) {
-              message.scripts!.push(el);
-            }
-            continue;
-          }
-          case 5: {
-            if (tag !== 42) {
-              break;
-            }
-
-            const el = EntityEnabled.decode(reader, reader.uint32());
-            if (el !== undefined) {
-              message.enabled!.push(el);
-            }
-            continue;
-          }
-          case 6: {
-            if (tag !== 50) {
-              break;
-            }
-
             const el = EntityConstraint.decode(reader, reader.uint32());
             if (el !== undefined) {
               message.constraints!.push(el);
             }
-            continue;
-          }
-          case 7: {
-            if (tag !== 56) {
-              break;
-            }
-
-            message.mode = reader.int32() as any;
-            continue;
-          }
-          case 8: {
-            if (tag !== 64) {
-              break;
-            }
-
-            message.bodyType = reader.int32() as any;
-            continue;
-          }
-          case 9: {
-            if (tag !== 73) {
-              break;
-            }
-
-            message.mass = reader.double();
-            continue;
-          }
-          case 10: {
-            if (tag !== 81) {
-              break;
-            }
-
-            message.restitution = reader.double();
-            continue;
-          }
-          case 11: {
-            if (tag !== 89) {
-              break;
-            }
-
-            message.friction = reader.double();
-            continue;
-          }
-          case 12: {
-            if (tag !== 96) {
-              break;
-            }
-
-            message.useGravity = reader.bool();
-            continue;
-          }
-          case 13: {
-            if (tag !== 106) {
-              break;
-            }
-
-            message.bearingAxis = Vector3.decode(reader, reader.uint32());
-            continue;
-          }
-          case 14: {
-            if (tag !== 113) {
-              break;
-            }
-
-            message.bearingRpm = reader.double();
-            continue;
-          }
-          case 15: {
-            if (tag !== 122) {
-              break;
-            }
-
-            message.pistonAxis = Vector3.decode(reader, reader.uint32());
-            continue;
-          }
-          case 16: {
-            if (tag !== 129) {
-              break;
-            }
-
-            message.pistonDistance = reader.double();
-            continue;
-          }
-          case 17: {
-            if (tag !== 137) {
-              break;
-            }
-
-            message.pistonSpeed = reader.double();
-            continue;
-          }
-          case 18: {
-            if (tag !== 146) {
-              break;
-            }
-
-            message.cockpitPosition = Vector3.decode(reader, reader.uint32());
-            continue;
-          }
-          case 19: {
-            if (tag !== 152) {
-              break;
-            }
-
-            message.isVehicle = reader.bool();
             continue;
           }
         }
@@ -1541,30 +1327,8 @@ export const Entity: MessageFns<Entity> = {
   fromPartial<I extends Exact<DeepPartial<Entity>, I>>(object: I): Entity {
     const message = createBaseEntity();
     message.name = object.name ?? "";
-    message.components = object.components?.map((e) => Component.fromPartial(e)) || [];
-    message.blocks = object.blocks?.map((e) => Voxel.fromPartial(e)) || [];
-    message.scripts = object.scripts?.map((e) => EntityScript.fromPartial(e)) || [];
-    message.enabled = object.enabled?.map((e) => EntityEnabled.fromPartial(e)) || [];
+    message.root = (object.root !== undefined && object.root !== null) ? Component.fromPartial(object.root) : undefined;
     message.constraints = object.constraints?.map((e) => EntityConstraint.fromPartial(e)) || [];
-    message.mode = object.mode ?? 0;
-    message.bodyType = object.bodyType ?? 0;
-    message.mass = object.mass ?? undefined;
-    message.restitution = object.restitution ?? undefined;
-    message.friction = object.friction ?? undefined;
-    message.useGravity = object.useGravity ?? undefined;
-    message.bearingAxis = (object.bearingAxis !== undefined && object.bearingAxis !== null)
-      ? Vector3.fromPartial(object.bearingAxis)
-      : undefined;
-    message.bearingRpm = object.bearingRpm ?? undefined;
-    message.pistonAxis = (object.pistonAxis !== undefined && object.pistonAxis !== null)
-      ? Vector3.fromPartial(object.pistonAxis)
-      : undefined;
-    message.pistonDistance = object.pistonDistance ?? undefined;
-    message.pistonSpeed = object.pistonSpeed ?? undefined;
-    message.cockpitPosition = (object.cockpitPosition !== undefined && object.cockpitPosition !== null)
-      ? Vector3.fromPartial(object.cockpitPosition)
-      : undefined;
-    message.isVehicle = object.isVehicle ?? undefined;
     return message;
   },
 };

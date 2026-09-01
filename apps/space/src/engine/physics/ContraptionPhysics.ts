@@ -161,7 +161,9 @@ export class ContraptionPhysics {
   }
 
   integrateBody(contraption, body, dt, frameForce, frameTorque) {
-    const useGravity = body.id === 'root' ? contraption.useGravity !== false : true;
+    const useGravity = body.id === 'root'
+      ? contraption.useGravity !== false
+      : contraption.childDefinitions.get(body.id)?.useGravity !== false;
     if (useGravity) body.velocity.addScaledVector(this.gravity, dt);
     if (frameForce?.lengthSq() > 0.0001) {
       body.velocity.addScaledVector(frameForce, dt / body.mass);

@@ -135,7 +135,7 @@ test('ctx.selection rejects invalid assembly modes before consuming world voxels
   assert.equal(manager.hasValidSelection(), true);
   assert.equal(manager.contraptions.length, 0);
 
-  for (const mode of ['free_physics', 'bearing', 'piston', 'drivable', 'projectile', 'programmable']) {
+  for (const mode of ['free_physics', 'projectile', 'programmable']) {
     assert.equal(manager.normalizeAssemblyMode(mode), mode);
   }
   const assembled = api.assemble('auto');

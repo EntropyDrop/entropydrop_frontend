@@ -21,8 +21,10 @@ import {
   decodeInventoryResource,
   encodeBackpack,
   encodeInventoryResource,
+  portableEntityToRuntime,
   protobufFromBase64,
   protobufToBase64,
+  runtimeEntityToPortable,
   type InventoryKind,
   type PortableBackpack,
 } from '../storage/InventoryProtobuf.ts';
@@ -182,6 +184,7 @@ export class PlayerController {
   // --- Driving state ---
   isDriving: boolean;
   drivenContraption: any;
+  drivenSeat: { componentId: string; seatIndex: number } | null;
 
   constructor(
     camera,
@@ -272,6 +275,7 @@ export class PlayerController {
     // Driving State
     this.isDriving = false;
     this.drivenContraption = null;
+    this.drivenSeat = null;
 
     this.setupPointerLock();
     this.setupEventListeners();
@@ -3586,12 +3590,10 @@ export class PlayerController {
         type: 'space-blockset',
         version: 3,
         name: this.inventoryItemName('blockset', item),
-        blockCount: item.blockCount || item.blocks?.length || 0,
         blocks: (item.blocks || []).map(b => {
           const shared = {
             block: BlockTypes.COLOR_BLOCK,
-            color: normalizeColor(b.color ?? 0xf2a93b),
-            ...(b.part ? { part: String(b.part).slice(0, 64) } : {})
+            color: normalizeColor(b.color ?? 0xf2a93b)
           };
           if ((b.size ?? 1) < 1) {
             // Block-set files keep every coordinate integral. dx/dy/dz select
@@ -3634,11 +3636,16 @@ export class PlayerController {
         parentId: String(definition.parentId || definition.parent || 'root'),
         ...(definition.kind === 'child' ? { kind: 'child' } : {}),
         ...(definition.collisionEnabled === false ? { collisionEnabled: false } : {}),
+        ...(typeof definition.useGravity === 'boolean' ? { useGravity: definition.useGravity } : {}),
         ...(vector3(definition.pivot) ? { pivot: vector3(definition.pivot) } : {}),
         ...(['dynamic', 'kinematic'].includes(definition.bodyType) ? { bodyType: definition.bodyType } : {}),
         ...(optionalNumber(definition.mass) !== undefined ? { mass: optionalNumber(definition.mass) } : {}),
         ...(optionalNumber(definition.restitution) !== undefined ? { restitution: optionalNumber(definition.restitution) } : {}),
-        ...(optionalNumber(definition.friction) !== undefined ? { friction: optionalNumber(definition.friction) } : {})
+        ...(optionalNumber(definition.friction) !== undefined ? { friction: optionalNumber(definition.friction) } : {}),
+        seats: (definition.seats || []).flatMap(seat => {
+          const position = vector3(Array.isArray(seat) ? seat : seat?.position);
+          return position ? [{ position }] : [];
+        })
       }));
       const constraints = (item.constraints || []).map(constraint => ({
         id: String(constraint.id || ''),
@@ -3658,19 +3665,13 @@ export class PlayerController {
         stiffness: Number.isFinite(Number(constraint.stiffness)) ? Number(constraint.stiffness) : 0.9,
         collideConnected: constraint.collideConnected === true
       }));
-      return {
-        type: 'space-entity',
-        version: 3,
+      return runtimeEntityToPortable({
         name: this.inventoryItemName('entity', item),
-        rootId: 'root',
-        nodeCount: 1 + childEntities.length,
-        blockCount: item.blockCount || item.blocks?.length || 0,
         blocks: (item.blocks || []).map(b => {
           const shared = {
             block: BlockTypes.COLOR_BLOCK,
             color: normalizeColor(b.color ?? 0xf2a93b),
-            entityId: String(b.entityId || 'root'),
-            ...(b.part ? { part: String(b.part).slice(0, 64) } : {})
+            entityId: String(b.entityId || 'root')
           };
           const x = Number(b.localX ?? b.dx);
           const y = Number(b.localY ?? b.dy);
@@ -3703,20 +3704,17 @@ export class PlayerController {
         scripts: (item.scripts || []).map(script => ({ id: String(script.id || ''), code: String(script.code || '') })),
         enabled: (item.enabled || []).map(entry => ({ id: String(entry.id || ''), enabled: entry.enabled === true })),
         constraints,
-        mode: item.mode,
         bodyType: item.bodyType,
         mass: item.mass,
         restitution: item.restitution,
         friction: item.friction,
         useGravity: item.useGravity,
-        bearingAxis: vector3(item.bearingAxis),
-        bearingRpm: optionalNumber(item.bearingRpm),
-        pistonAxis: vector3(item.pistonAxis),
-        pistonDistance: optionalNumber(item.pistonDistance),
-        pistonSpeed: optionalNumber(item.pistonSpeed),
-        cockpitPosition: vector3(item.cockpitPosition),
-        isVehicle: item.isVehicle
-      };
+        collisionEnabled: item.collisionEnabled,
+        seats: (item.seats || []).flatMap(seat => {
+          const position = vector3(Array.isArray(seat) ? seat : seat?.position);
+          return position ? [{ position }] : [];
+        })
+      });
     }
     if (category === 'colorset') {
       return {
@@ -3755,27 +3753,38 @@ export class PlayerController {
       return fail(err instanceof Error ? err.message : 'Not valid inventory Protobuf');
     }
 
-    const validBaseCoordinates = (values) => values.every(value => (
+    const validBaseCoordinates = values => values.every(value => (
       Number.isSafeInteger(value) && Math.abs(value) <= MAX_IMPORT_COORDINATE
     ));
-    const withinEntityBounds = (blocks, keys) => {
-      for (let axis = 0; axis < 3; axis++) {
-        let min = Number.POSITIVE_INFINITY;
-        let max = Number.NEGATIVE_INFINITY;
-        for (const block of blocks) {
-          const value = Math.floor(Number(block[keys[axis]]) + 1e-6);
-          min = Math.min(min, value);
-          max = Math.max(max, value);
+    const portableVector = (value, maxAbs = MAX_PORTABLE_VECTOR_COMPONENT) => {
+      if (value === undefined) return undefined;
+      if (!Array.isArray(value) || value.length !== 3) return null;
+      const vector = value.map(Number);
+      return vector.every(component => Number.isFinite(component) && Math.abs(component) <= maxAbs)
+        ? vector
+        : null;
+    };
+    const withinEntityBounds = (blocks, keys, ownerKey = null) => {
+      const groups = new Map();
+      for (const block of blocks) {
+        const owner = ownerKey ? String(block[ownerKey] || 'root') : 'resource';
+        if (!groups.has(owner)) groups.set(owner, []);
+        groups.get(owner).push(block);
+      }
+      for (const group of groups.values()) {
+        for (let axis = 0; axis < 3; axis++) {
+          let min = Number.POSITIVE_INFINITY;
+          let max = Number.NEGATIVE_INFINITY;
+          for (const block of group) {
+            const value = Math.floor(Number(block[keys[axis]]) + 1e-6);
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+          }
+          if (max - min + 1 > MAX_ENTITY_BOUNDS) return false;
         }
-        if (max - min + 1 > MAX_ENTITY_BOUNDS) return false;
       }
       return true;
     };
-    const safePart = value => typeof value === 'string' && value.length > 0
-      ? value.slice(0, 64)
-      : undefined;
-    const isPortableBlockId = value => value === undefined
-      || (typeof value === 'number' && Number.isInteger(value) && value === BlockTypes.COLOR_BLOCK);
     const validateVoxelOccupancy = (blocks, coordinateKeys, ownerKey = null) => {
       const standardCells = new Set();
       const microCells = new Set();
@@ -3799,50 +3808,55 @@ export class PlayerController {
       }
       return true;
     };
+    const runtimeVoxel = (block, ownerId = null) => {
+      if (block?.block !== undefined && block.block !== BlockTypes.COLOR_BLOCK) {
+        throw new Error('Inventory v3 supports only color block id 1');
+      }
+      const base = [block?.dx, block?.dy, block?.dz].map(Number);
+      if (!validBaseCoordinates(base)) throw new Error('Voxel coordinates must be bounded safe integers');
+      const microValues = [block?.mx, block?.my, block?.mz];
+      const hasMicro = microValues.some(value => value !== undefined);
+      let coordinates = base;
+      if (hasMicro) {
+        const micro = microValues.map(Number);
+        if (!micro.every(value => Number.isInteger(value) && value >= 0 && value < MICRO_DIVISIONS)) {
+          throw new Error('Micro coordinates mx/my/mz must all be integers between 0 and 4');
+        }
+        coordinates = base.map((value, index) => (
+          (value * MICRO_DIVISIONS + micro[index]) / MICRO_DIVISIONS
+        ));
+      }
+      const result = {
+        size: hasMicro ? 1 / MICRO_DIVISIONS : 1,
+        block: BlockTypes.COLOR_BLOCK,
+        color: normalizeColor(block?.color ?? 0xf2a93b)
+      };
+      if (ownerId !== null) {
+        return {
+          ...result,
+          localX: coordinates[0],
+          localY: coordinates[1],
+          localZ: coordinates[2],
+          entityId: ownerId
+        };
+      }
+      return { ...result, dx: coordinates[0], dy: coordinates[1], dz: coordinates[2] };
+    };
 
     if (category === 'blockset') {
-      if (data?.type !== 'space-blockset' || data?.version !== 3) return fail('Expected a space-blockset v3 Protobuf file');
+      if (data?.type !== 'space-blockset' || data?.version !== 3) {
+        return fail('Expected a space-blockset v3 Protobuf file');
+      }
       if (typeof data.name !== 'string' || !data.name.trim()) return fail('A block set must have a name');
-      const rawBlocks = data.blocks;
-      if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) return fail('No block set found (expected a "blocks" array)');
-      if (rawBlocks.length > MAX_INVENTORY_BLOCKS) return fail(`A block set may contain at most ${MAX_INVENTORY_BLOCKS} voxels`);
-      const blocks = [];
-      for (const b of rawBlocks) {
-        if (!isPortableBlockId(b?.block)) {
-          return fail('Block-set v3 supports only color block id 1');
-        }
-        const baseCoordinates = [b?.dx, b?.dy, b?.dz].map(Number);
-        if (!baseCoordinates.every(Number.isFinite)) return fail('A block has non-numeric coordinates');
-        if (!validBaseCoordinates(baseCoordinates)) return fail('Block-set v3 coordinates must be bounded safe integers');
-
-        const microValues = [b?.mx, b?.my, b?.mz];
-        const hasMicroCoordinates = microValues.some(value => value !== undefined);
-        let [dx, dy, dz] = baseCoordinates;
-        const size = hasMicroCoordinates ? 1 / MICRO_DIVISIONS : 1;
-
-        if (hasMicroCoordinates) {
-          const microCoordinates = microValues.map(Number);
-          if (!microCoordinates.every(Number.isInteger)) {
-            return fail('Micro block dx/dy/dz and mx/my/mz must be integers');
-          }
-          if (!microCoordinates.every(value => value >= 0 && value < MICRO_DIVISIONS)) {
-            return fail('Micro block mx/my/mz must be between 0 and 4');
-          }
-          [dx, dy, dz] = baseCoordinates.map(
-            (value, index) => (value * MICRO_DIVISIONS + microCoordinates[index]) / MICRO_DIVISIONS
-          );
-        }
-
-        const part = safePart(b?.part);
-        blocks.push({
-          dx,
-          dy,
-          dz,
-          size,
-          block: BlockTypes.COLOR_BLOCK,
-          color: normalizeColor(b?.color ?? 0xf2a93b),
-          ...(part ? { part } : {})
-        });
+      if (!Array.isArray(data.blocks) || data.blocks.length === 0) return fail('A block set must contain voxels');
+      if (data.blocks.length > MAX_INVENTORY_BLOCKS) {
+        return fail(`A block set may contain at most ${MAX_INVENTORY_BLOCKS} voxels`);
+      }
+      let blocks;
+      try {
+        blocks = data.blocks.map(block => runtimeVoxel(block));
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : 'Invalid block set');
       }
       if (!withinEntityBounds(blocks, ['dx', 'dy', 'dz'])) {
         return fail(`Block-set bounds may not exceed ${MAX_ENTITY_BOUNDS} cells per axis`);
@@ -3850,186 +3864,141 @@ export class PlayerController {
       if (!validateVoxelOccupancy(blocks, ['dx', 'dy', 'dz'])) {
         return fail('Block set contains duplicate voxels or standard/micro overlap');
       }
-      const name = data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH);
-      return { ok: true, item: { kind: 'blockset', name, blocks, blockCount: blocks.length } };
+      return {
+        ok: true,
+        item: {
+          kind: 'blockset',
+          name: data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH),
+          blocks,
+          blockCount: blocks.length
+        }
+      };
     }
 
     if (category === 'entity') {
-      if (data?.type !== 'space-entity' || data?.version !== 3) return fail('Expected a space-entity v3 Protobuf file');
+      if (data?.type !== 'space-entity' || data?.version !== 3 || !data.root) {
+        return fail('Expected a recursive space-entity v3 Protobuf file');
+      }
       if (typeof data.name !== 'string' || !data.name.trim()) return fail('An entity must have a name');
-      if (!data || !Array.isArray(data.blocks) || data.blocks.length === 0) return fail('No entity found (expected a "blocks" array)');
-      if (data.blocks.length > MAX_INVENTORY_BLOCKS) return fail(`An entity may contain at most ${MAX_INVENTORY_BLOCKS} voxels`);
-      if (data.rootIds !== undefined) return fail('Entity v3 supports exactly one root');
-      if (data.rootId !== undefined && data.rootId !== 'root') return fail('Entity rootId must be "root"');
 
-      const rawChildEntities = Array.isArray(data.childEntities) ? data.childEntities : [];
-      if (rawChildEntities.length > MAX_ENTITY_COMPONENTS - 1) {
-        return fail(`An entity may contain at most ${MAX_ENTITY_COMPONENTS} components`);
-      }
-      const portableVector = (value, maxAbs = MAX_PORTABLE_VECTOR_COMPONENT) => {
-        if (value === undefined) return undefined;
-        if (!Array.isArray(value) || value.length < 3) return null;
-        const vector = value.slice(0, 3).map(Number);
-        return vector.every(component => Number.isFinite(component) && Math.abs(component) <= maxAbs)
-          ? vector
-          : null;
-      };
-      const portableMass = value => {
-        if (value === undefined || value === null) return undefined;
-        const mass = Number(value);
-        if (!Number.isFinite(mass) || mass <= 0 || mass > MAX_PORTABLE_BODY_MASS) return null;
-        return Math.max(0.1, mass);
-      };
-
-      const childEntities = [];
-      const childIdSet = new Set();
-      for (const definition of rawChildEntities) {
-        const id = definition?.id;
-        if (!isValidComponentId(id, false) || childIdSet.has(id)) return fail('Child component ids must be unique portable identifiers');
-        childIdSet.add(id);
-        const parentId = String(definition.parentId || definition.parent || 'root');
-        if (!isValidComponentId(parentId)) return fail(`Invalid parent id for component ${id}`);
-        const pivot = portableVector(definition.pivot, MAX_IMPORT_COORDINATE);
-        if (pivot === null) {
-          return fail(`Invalid pivot for component ${id}`);
+      const ids = new Set();
+      let componentCount = 0;
+      let blockCount = 0;
+      let seatCount = 0;
+      let totalScriptBytes = 0;
+      const validateBody = (body, id) => {
+        if (!body || (body.type !== 'dynamic' && body.type !== 'kinematic')) {
+          throw new Error(`Component ${id} must have a valid body config`);
         }
-        const bodyType = definition.bodyType === 'dynamic' || definition.bodyType === 'kinematic'
-          ? definition.bodyType
-          : undefined;
-        const mass = portableMass(definition.mass);
-        if (mass === null) return fail(`Invalid mass for component ${id}`);
-        const restitution = definition.restitution === undefined || definition.restitution === null
-          ? Number.NaN
-          : Number(definition.restitution);
-        const friction = definition.friction === undefined || definition.friction === null
-          ? Number.NaN
-          : Number(definition.friction);
-        childEntities.push({
-          id,
-          parentId,
-          ...(definition.kind === 'child' ? { kind: 'child' } : {}),
-          ...(definition.collisionEnabled === false ? { collisionEnabled: false } : {}),
-          ...(pivot ? { pivot } : {}),
-          ...(bodyType ? { bodyType } : {}),
-          ...(mass !== undefined ? { mass } : {}),
-          ...(Number.isFinite(restitution) ? { restitution: Math.max(0, Math.min(1, restitution)) } : {}),
-          ...(Number.isFinite(friction) ? { friction: Math.max(0, Math.min(1, friction)) } : {})
-        });
-      }
-      const knownNodeIds = new Set(['root', ...childIdSet]);
-      for (const definition of childEntities) {
-        if (!knownNodeIds.has(definition.parentId)) {
-          return fail(`Unknown parent ${definition.parentId} for component ${definition.id}`);
-        }
-      }
-      for (const definition of childEntities) {
-        const visited = new Set([definition.id]);
-        let parentId = definition.parentId;
-        while (childIdSet.has(parentId)) {
-          if (visited.has(parentId)) return fail('Component hierarchy contains a cycle');
-          visited.add(parentId);
-          parentId = childEntities.find(candidate => candidate.id === parentId)?.parentId || 'root';
-        }
-      }
-
-      const blocks = [];
-      for (const b of data.blocks) {
-        if (!isPortableBlockId(b?.block)) {
-          return fail('Entity v3 supports only color block id 1');
-        }
-        const baseCoordinates = [b?.dx, b?.dy, b?.dz].map(Number);
-        if (!baseCoordinates.every(Number.isFinite)) return fail('An entity block has non-numeric coordinates');
-        if (!validBaseCoordinates(baseCoordinates)) return fail('Entity v3 coordinates must be bounded safe integers');
-
-        const microValues = [b?.mx, b?.my, b?.mz];
-        const hasMicroCoordinates = microValues.some(value => value !== undefined);
-        let [localX, localY, localZ] = baseCoordinates;
-        const size = hasMicroCoordinates ? 1 / MICRO_DIVISIONS : 1;
-
-        if (hasMicroCoordinates) {
-          const microCoordinates = microValues.map(Number);
-          if (!microCoordinates.every(Number.isInteger)) {
-            return fail('Entity micro block dx/dy/dz and mx/my/mz must be integers');
+        if (body.mass !== undefined) {
+          const mass = Number(body.mass);
+          if (!Number.isFinite(mass) || mass < 0.1 || mass > MAX_PORTABLE_BODY_MASS) {
+            throw new Error(`Component ${id} has invalid mass`);
           }
-          if (!microCoordinates.every(value => value >= 0 && value < MICRO_DIVISIONS)) {
-            return fail('Entity micro block mx/my/mz must be between 0 and 4');
-          }
-          [localX, localY, localZ] = baseCoordinates.map(
-            (value, index) => (value * MICRO_DIVISIONS + microCoordinates[index]) / MICRO_DIVISIONS
-          );
         }
-
-        const entityId = typeof b?.entityId === 'string' ? b.entityId : 'root';
-        if (!knownNodeIds.has(entityId)) return fail(`A block references unknown component ${entityId}`);
-        const part = safePart(b?.part);
-        blocks.push({
-          localX,
-          localY,
-          localZ,
-          size,
-          block: BlockTypes.COLOR_BLOCK,
-          color: normalizeColor(b?.color ?? 0xf2a93b),
-          entityId,
-          ...(part ? { part } : {})
-        });
+        for (const field of ['restitution', 'friction']) {
+          if (body[field] === undefined) continue;
+          const value = Number(body[field]);
+          if (!Number.isFinite(value) || value < 0 || value > 1) {
+            throw new Error(`Component ${id} has invalid ${field}`);
+          }
+        }
+        for (const field of ['useGravity', 'collisionEnabled']) {
+          if (body[field] !== undefined && typeof body[field] !== 'boolean') {
+            throw new Error(`Component ${id} has invalid ${field}`);
+          }
+        }
+      };
+      const validateComponent = (component, parentId, depth) => {
+        if (!component || typeof component !== 'object' || depth > 16) {
+          throw new Error('Component hierarchy is malformed or exceeds depth 16');
+        }
+        const id = component.id;
+        if (!isValidComponentId(id, parentId === null) || ids.has(id)) {
+          throw new Error('Component ids must be unique portable identifiers');
+        }
+        if (parentId === null && id !== 'root') throw new Error('The only entity root must use id root');
+        if (parentId !== null && id === 'root') throw new Error('A child component cannot use id root');
+        ids.add(id);
+        componentCount += 1;
+        if (componentCount > MAX_ENTITY_COMPONENTS) {
+          throw new Error(`An entity may contain at most ${MAX_ENTITY_COMPONENTS} components`);
+        }
+        const pivot = portableVector(component.pivot, MAX_IMPORT_COORDINATE);
+        if (pivot === null) throw new Error(`Component ${id} has an invalid pivot`);
+        validateBody(component.body, id);
+        if (!Array.isArray(component.blocks) || !Array.isArray(component.children) || !Array.isArray(component.seats)) {
+          throw new Error(`Component ${id} has malformed repeated fields`);
+        }
+        blockCount += component.blocks.length;
+        if (blockCount > MAX_INVENTORY_BLOCKS) {
+          throw new Error(`An entity may contain at most ${MAX_INVENTORY_BLOCKS} voxels`);
+        }
+        if (component.script !== undefined) {
+          if (typeof component.script !== 'string') throw new Error(`Component ${id} has an invalid script`);
+          const bytes = new TextEncoder().encode(component.script).byteLength;
+          if (bytes > MAX_INVENTORY_SCRIPT_BYTES) {
+            throw new Error(`One component script may not exceed ${MAX_INVENTORY_SCRIPT_BYTES / 1024} KiB`);
+          }
+          totalScriptBytes += bytes;
+          if (totalScriptBytes > MAX_INVENTORY_TOTAL_SCRIPT_BYTES) {
+            throw new Error(`Entity scripts may not exceed ${MAX_INVENTORY_TOTAL_SCRIPT_BYTES / 1024} KiB in total`);
+          }
+        }
+        for (const seat of component.seats) {
+          seatCount += 1;
+          const position = portableVector(seat?.position, MAX_IMPORT_COORDINATE);
+          if (seatCount > 256 || position === null || position === undefined) {
+            throw new Error('Entity seats must be bounded 3D positions and may not exceed 256');
+          }
+        }
+        for (const child of component.children) validateComponent(child, id, depth + 1);
+      };
+      try {
+        validateComponent(data.root, null, 0);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : 'Invalid component hierarchy');
       }
-      if (!withinEntityBounds(blocks, ['localX', 'localY', 'localZ'])) {
+      if (blockCount === 0) return fail('An entity must contain at least one voxel');
+
+      let runtime;
+      try {
+        runtime = portableEntityToRuntime(data);
+        runtime.blocks = runtime.blocks.map(block => runtimeVoxel(block, block.entityId));
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : 'Invalid recursive entity');
+      }
+      if (!withinEntityBounds(runtime.blocks, ['localX', 'localY', 'localZ'], 'entityId')) {
         return fail(`Entity bounds may not exceed ${MAX_ENTITY_BOUNDS} cells per axis`);
       }
-      if (!validateVoxelOccupancy(blocks, ['localX', 'localY', 'localZ'], 'entityId')) {
+      if (!validateVoxelOccupancy(runtime.blocks, ['localX', 'localY', 'localZ'], 'entityId')) {
         return fail('Entity contains duplicate voxels or standard/micro overlap');
       }
 
-      const scripts = [];
-      const scriptIds = new Set();
-      let totalScriptBytes = 0;
-      for (const script of Array.isArray(data.scripts) ? data.scripts : []) {
-        if (!script || typeof script.id !== 'string' || typeof script.code !== 'string'
-          || !knownNodeIds.has(script.id) || scriptIds.has(script.id)) {
-          return fail('Scripts must reference unique known components');
-        }
-        const scriptBytes = new TextEncoder().encode(script.code).byteLength;
-        if (scriptBytes > MAX_INVENTORY_SCRIPT_BYTES) return fail(`One component script may not exceed ${MAX_INVENTORY_SCRIPT_BYTES / 1024} KiB`);
-        totalScriptBytes += scriptBytes;
-        if (totalScriptBytes > MAX_INVENTORY_TOTAL_SCRIPT_BYTES) return fail(`Entity scripts may not exceed ${MAX_INVENTORY_TOTAL_SCRIPT_BYTES / 1024} KiB in total`);
-        scriptIds.add(script.id);
-        scripts.push({ id: script.id, code: script.code });
+      if (!Array.isArray(data.constraints) || data.constraints.length > MAX_INVENTORY_CONSTRAINTS) {
+        return fail(`An entity may contain at most ${MAX_INVENTORY_CONSTRAINTS} constraints`);
       }
-      const enabled = [];
-      const enabledIds = new Set();
-      for (const entry of Array.isArray(data.enabled) ? data.enabled : []) {
-        if (!entry || typeof entry.id !== 'string' || typeof entry.enabled !== 'boolean'
-          || !knownNodeIds.has(entry.id) || enabledIds.has(entry.id)) {
-          return fail('Enabled flags must reference unique known components');
-        }
-        enabledIds.add(entry.id);
-        enabled.push({ id: entry.id, enabled: entry.enabled });
-      }
-
-      const rawConstraints = Array.isArray(data.constraints) ? data.constraints : [];
-      if (rawConstraints.length > MAX_INVENTORY_CONSTRAINTS) return fail(`An entity may contain at most ${MAX_INVENTORY_CONSTRAINTS} constraints`);
-      const constraints = [];
       const constraintIds = new Set();
-      for (const constraint of rawConstraints) {
+      const constraints = [];
+      for (const constraint of data.constraints) {
         const id = constraint?.id;
-        const bodyA = String(constraint?.bodyA || constraint?.other || 'world');
-        const bodyB = String(constraint?.bodyB || constraint?.nodeId || '');
-        if (!isValidComponentId(id, false) || constraintIds.has(id)) return fail('Constraint ids must be unique portable identifiers');
-        if ((bodyA !== 'world' && !knownNodeIds.has(bodyA)) || !knownNodeIds.has(bodyB) || bodyA === bodyB) {
+        const bodyA = String(constraint?.bodyA || (constraint?.bodyA === '' ? '' : 'world'));
+        const bodyB = String(constraint?.bodyB || '');
+        if (!isValidComponentId(id, false) || constraintIds.has(id)) {
+          return fail('Constraint ids must be unique portable identifiers');
+        }
+        if ((bodyA !== 'world' && !ids.has(bodyA)) || !ids.has(bodyB) || bodyA === bodyB) {
           return fail(`Constraint ${id} references an invalid component`);
         }
-        const vectorFields = ['anchorA', 'anchorB', 'axisA', 'axisB', 'referenceA', 'referenceB'];
-        const vectors: Record<string, number[]> = {};
-        for (const field of vectorFields) {
+        const vectors = {};
+        for (const field of ['anchorA', 'anchorB', 'axisA', 'axisB', 'referenceA', 'referenceB']) {
           if (constraint[field] === undefined) continue;
           const vector = portableVector(constraint[field]);
-          if (vector === null) {
-            return fail(`Constraint ${id} has an invalid ${field}`);
-          }
+          if (vector === null) return fail(`Constraint ${id} has an invalid ${field}`);
           vectors[field] = vector;
         }
         let limits;
-        if (constraint.limits !== undefined && constraint.limits !== null) {
+        if (constraint.limits !== undefined) {
           const min = Number(constraint.limits?.min);
           const max = Number(constraint.limits?.max);
           if (!Number.isFinite(min) || !Number.isFinite(max)
@@ -4053,74 +4022,34 @@ export class PlayerController {
           collideConnected: constraint.collideConnected === true
         });
       }
-
-      const validModes = new Set(Object.values(ContraptionMode));
-      const bearingAxis = portableVector(data.bearingAxis);
-      const pistonAxis = portableVector(data.pistonAxis);
-      const cockpitPosition = portableVector(data.cockpitPosition, MAX_IMPORT_COORDINATE);
-      if (bearingAxis === null || pistonAxis === null || cockpitPosition === null) {
-        return fail('Entity axes and cockpit position must be bounded finite 3D vectors');
-      }
-      const optionalBoundedNumber = (value, min, max) => {
-        if (value === undefined || value === null) return undefined;
-        const number = Number(value);
-        return Number.isFinite(number) && number >= min && number <= max ? number : null;
-      };
-      const bearingRpm = optionalBoundedNumber(data.bearingRpm, -10_000, 10_000);
-      const pistonDistance = optionalBoundedNumber(data.pistonDistance, 0, MAX_IMPORT_COORDINATE);
-      const pistonSpeed = optionalBoundedNumber(data.pistonSpeed, 0, 10_000);
-      if (bearingRpm === null || pistonDistance === null || pistonSpeed === null) {
-        return fail('Entity bearing and piston parameters are outside portable bounds');
-      }
-      const mass = portableMass(data.mass);
-      if (mass === null) return fail('Entity mass is outside portable bounds');
-      const item = {
-        name: data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH),
-        rootId: 'root',
-        nodeCount: knownNodeIds.size,
-        blockCount: blocks.length,
-        blocks,
-        childEntities,
-        scripts,
-        enabled,
-        constraints,
-        mode: validModes.has(data.mode) ? data.mode : ContraptionMode.FREE_PHYSICS,
-        bodyType: data.bodyType === 'kinematic' ? 'kinematic' : 'dynamic',
-        mass,
-        restitution: data.restitution !== undefined && data.restitution !== null && Number.isFinite(Number(data.restitution))
-          ? Math.max(0, Math.min(1, Number(data.restitution)))
-          : undefined,
-        friction: data.friction !== undefined && data.friction !== null && Number.isFinite(Number(data.friction))
-          ? Math.max(0, Math.min(1, Number(data.friction)))
-          : undefined,
-        useGravity: typeof data.useGravity === 'boolean' ? data.useGravity : undefined,
-        bearingAxis,
-        bearingRpm,
-        pistonAxis,
-        pistonDistance,
-        pistonSpeed,
-        cockpitPosition,
-        isVehicle: data.isVehicle === true
-      };
-      return { ok: true, item };
+      runtime.name = data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH);
+      runtime.kind = 'entity';
+      runtime.constraints = constraints;
+      runtime.blockCount = runtime.blocks.length;
+      runtime.nodeCount = componentCount;
+      return { ok: true, item: runtime };
     }
 
     if (category === 'colorset') {
-      if (data?.type !== 'space-colorset' || data?.version !== 3) return fail('Expected a space-colorset v3 Protobuf file');
+      if (data?.type !== 'space-colorset' || data?.version !== 3) {
+        return fail('Expected a space-colorset v3 Protobuf file');
+      }
       if (typeof data.name !== 'string' || !data.name.trim()) return fail('A color set must have a name');
-      const rawColors = data.colors;
-      if (!Array.isArray(rawColors) || rawColors.length !== 9) return fail('A color set must contain exactly 9 hex colors');
-      const colors = rawColors.map(c => `#${String(c ?? '').replace(/^#/, '').toLowerCase()}`);
-      if (!colors.every(c => HEX_COLOR.test(c))) return fail('Every color must be a 6-digit hex value like #48dbfb');
-      const name = data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH);
-      return { ok: true, item: { name, colors } };
+      if (!Array.isArray(data.colors) || data.colors.length !== 9) {
+        return fail('A color set must contain exactly 9 hex colors');
+      }
+      const colors = data.colors.map(color => `#${String(color ?? '').replace(/^#/, '').toLowerCase()}`);
+      if (!colors.every(color => HEX_COLOR.test(color))) {
+        return fail('Every color must be a 6-digit hex value like #48dbfb');
+      }
+      return {
+        ok: true,
+        item: { name: data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH), colors }
+      };
     }
 
     return fail('Unknown inventory category');
   }
-
-  // --- Hammer build ------------------------------------------------------------------
-
   private finishEntitySlotBuild(slot, position, preparedBlocks = null) {
     const created = this.contraptions.buildFromSlot(slot, position, null, true, preparedBlocks);
     if (created) {
@@ -4459,6 +4388,7 @@ export class PlayerController {
       this.isDriving = false;
       this.contraptions.activeDrivable = null;
       this.drivenContraption = null;
+      this.drivenSeat = null;
       this.resetEntityInputState();
 
       if (vehicle) {
@@ -4480,30 +4410,27 @@ export class PlayerController {
       return;
     }
 
-    const eye = this.physics.getEyePosition();
-    let closest = null;
-    let closestDist = 5.5;
+    const target = this.hoveredContraptionHit?.contraption || this.hoveredContraption;
+    const hit = this.hoveredContraptionHit;
+    const hitPoint = hit?.point;
+    const focusPoint = hit?.block && target?.getBlockWorldCenter
+      ? target.getBlockWorldCenter(hit.block)
+      : hitPoint?.isVector3
+        ? hitPoint
+        : hitPoint
+          ? new THREE.Vector3(Number(hitPoint.x), Number(hitPoint.y), Number(hitPoint.z))
+          : null;
+    const seat = target && focusPoint ? target.getNearestSeat?.(focusPoint) : null;
 
-    for (const c of this.contraptions.contraptions) {
-      // Entities with isVehicle=false cannot be driven with V; the default is true.
-      if (c.isVehicle === false) continue;
-      if (c.mode === ContraptionMode.DRIVABLE || c.mode === ContraptionMode.PROGRAMMABLE) {
-        const d = eye.distanceTo(c.position);
-        if (d < closestDist) {
-          closestDist = d;
-          closest = c;
-        }
-      }
-    }
-
-    if (closest) {
+    if (target && seat) {
       this.resetEntityInputState();
       this.isDriving = true;
-      this.drivenContraption = closest;
-      this.contraptions.activeDrivable = closest;
+      this.drivenContraption = target;
+      this.drivenSeat = { componentId: seat.componentId, seatIndex: seat.seatIndex };
+      this.contraptions.activeDrivable = target;
       if (this.ui) this.ui.showToast(`Mounted! Key behavior is defined by the ctx.input script · [C] program [V] leave`);
     } else {
-      if (this.ui) this.ui.showToast(`No drivable entity nearby (press B to spawn a drone or rover)`);
+      if (this.ui) this.ui.showToast(`Aim at an entity block with a configured seat, then press V`);
     }
   }
 
@@ -4584,10 +4511,19 @@ export class PlayerController {
    */
   syncDrivenVehiclePose() {
     if (!this.isDriving || !this.drivenContraption) return false;
-    const cockpitWorld = this.drivenContraption.getCockpitWorldPosition
-      ? this.drivenContraption.getCockpitWorldPosition()
-      : this.drivenContraption.position.clone();
-    this.physics.position.copy(cockpitWorld);
+    const seat = this.drivenSeat;
+    const seatWorld = seat
+      ? this.drivenContraption.getSeatWorldPosition?.(seat.componentId, seat.seatIndex)
+      : null;
+    if (!seatWorld) {
+      this.isDriving = false;
+      this.contraptions.activeDrivable = null;
+      this.drivenContraption = null;
+      this.drivenSeat = null;
+      this.physics.ridingContraption = null;
+      return false;
+    }
+    this.physics.position.copy(seatWorld);
     this.physics.velocity.set(0, 0, 0);
     return true;
   }

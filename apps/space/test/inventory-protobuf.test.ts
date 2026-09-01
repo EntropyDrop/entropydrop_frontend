@@ -9,20 +9,20 @@ import {
 } from '../src/engine/storage/InventoryProtobuf.ts';
 
 
-const CROSS_LANGUAGE_BLOCKSET_HEX = '080352190a0543726f737312100801100420462d34ab12003203746970';
+const CROSS_LANGUAGE_BLOCKSET_HEX = '080352140a0543726f7373120b0801100420462d34ab1200';
 
 test('inventory Protobuf has the same deterministic wire bytes as the backend codec', () => {
   const encoded = encodeInventoryResource('blockset', {
     type: 'space-blockset',
     version: 3,
     name: 'Cross',
-    blocks: [{ dx: -1, dy: 2, dz: 0, mx: 4, my: 3, mz: 2, color: 0x12ab34, part: 'tip' }],
+    blocks: [{ dx: -1, dy: 2, dz: 0, mx: 4, my: 3, mz: 2, color: 0x12ab34 }],
   });
   assert.equal(Buffer.from(encoded).toString('hex'), CROSS_LANGUAGE_BLOCKSET_HEX);
   const decoded = decodeInventoryResource(Buffer.from(CROSS_LANGUAGE_BLOCKSET_HEX, 'hex'));
   assert.equal(decoded.category, 'blockset');
   assert.deepEqual(decoded.portable.blocks[0], {
-    dx: -1, dy: 2, dz: 0, mx: 4, my: 3, mz: 2, block: 1, color: 0x12ab34, part: 'tip',
+    dx: -1, dy: 2, dz: 0, mx: 4, my: 3, mz: 2, block: 1, color: 0x12ab34,
   });
 });
 
@@ -54,13 +54,21 @@ test('market preview conversion preserves full resources and expands micro voxel
   });
 
   const entity = inventoryResourcePreviewItem('entity', {
-    blocks: [{ dx: 1, dy: 2, dz: 3, entityId: 'arm', color: 0xabcdef }],
-    childEntities: [{ id: 'arm', parentId: 'root', pivot: [1, 2, 3] }],
+    name: 'Arm',
+    root: {
+      id: 'root', body: { type: 'dynamic' }, blocks: [], seats: [], children: [{
+        id: 'arm', pivot: [1, 2, 3], body: { type: 'kinematic' },
+        blocks: [{ dx: 1, dy: 2, dz: 3, color: 0xabcdef }], seats: [], children: [],
+      }],
+    },
+    constraints: [],
   });
   assert.equal(entity.kind, 'entity');
   assert.deepEqual(
     { x: entity.blocks[0].localX, y: entity.blocks[0].localY, z: entity.blocks[0].localZ, size: entity.blocks[0].size },
     { x: 1, y: 2, z: 3, size: 1 },
   );
-  assert.deepEqual(entity.childEntities, [{ id: 'arm', parentId: 'root', pivot: [1, 2, 3] }]);
+  assert.equal(entity.childEntities[0].id, 'arm');
+  assert.equal(entity.childEntities[0].parentId, 'root');
+  assert.deepEqual(entity.childEntities[0].pivot, [1, 2, 3]);
 });

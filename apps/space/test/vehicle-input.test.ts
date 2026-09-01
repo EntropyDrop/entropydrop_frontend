@@ -122,9 +122,15 @@ test('mounted camera re-seats from the vehicle pose solved later in the frame', 
   const controller = Object.create(PlayerController.prototype) as any;
   const seat = new THREE.Vector3(1, 2, 3);
   controller.isDriving = true;
+  controller.drivenSeat = { componentId: 'arm', seatIndex: 1 };
   controller.drivenContraption = {
-    getCockpitWorldPosition: () => seat.clone()
+    getSeatWorldPosition: (componentId, seatIndex) => {
+      assert.equal(componentId, 'arm');
+      assert.equal(seatIndex, 1);
+      return seat.clone();
+    }
   };
+  controller.contraptions = { activeDrivable: controller.drivenContraption };
   controller.physics = {
     position: new THREE.Vector3(),
     velocity: new THREE.Vector3(4, 5, 6)
@@ -139,6 +145,41 @@ test('mounted camera re-seats from the vehicle pose solved later in the frame', 
   seat.set(2.5, 3.25, -4);
   controller.syncDrivenVehiclePose();
   assert.deepEqual(controller.physics.position.toArray(), [2.5, 3.25, -4]);
+});
+
+test('V mounts the seat nearest the aimed entity block', () => {
+  const controller = Object.create(PlayerController.prototype) as any;
+  const focus = new THREE.Vector3(4, 5, 6);
+  const focusedBlock = { id: 'focused-block' };
+  const target = {
+    getBlockWorldCenter(block) {
+      assert.equal(block, focusedBlock);
+      return focus;
+    },
+    getNearestSeat(point) {
+      assert.equal(point, focus);
+      return { componentId: 'cab', seatIndex: 2, worldPosition: new THREE.Vector3(), distanceSq: 0.25 };
+    }
+  };
+  controller.isDriving = false;
+  controller.drivenContraption = null;
+  controller.drivenSeat = null;
+  controller.hoveredContraption = target;
+  controller.hoveredContraptionHit = {
+    contraption: target,
+    point: new THREE.Vector3(4.4, 5.4, 6.4),
+    block: focusedBlock
+  };
+  controller.contraptions = { activeDrivable: null };
+  controller.resetEntityInputState = () => {};
+  controller.ui = { showToast() {} };
+
+  controller.toggleDriveVehicle();
+
+  assert.equal(controller.isDriving, true);
+  assert.equal(controller.drivenContraption, target);
+  assert.deepEqual(controller.drivenSeat, { componentId: 'cab', seatIndex: 2 });
+  assert.equal(controller.contraptions.activeDrivable, target);
 });
 
 test('entity program queries down, pressed and released by KeyboardEvent.code', () => {
@@ -184,37 +225,6 @@ if (ctx.input.down('KeyW')) self.applyLocalForce([0, 0, -25]);
 
   contraption.setScript('');
   assert.equal(contraption.scriptStatus, 'stopped');
-});
-
-test('legacy drivable mode has no hardcoded movement and still uses rigid-body physics', () => {
-  const world = {
-    getBlock: () => BlockTypes.AIR,
-    raycast: () => ({ hit: false })
-  };
-  const manager = new ContraptionManager(new THREE.Scene(), world, null, null) as any;
-  const contraption = new Contraption(
-    2,
-    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
-    new THREE.Vector3(0, 3, 0),
-    new THREE.Scene(),
-    { mode: ContraptionMode.DRIVABLE }
-  ) as any;
-  const start = contraption.position.clone();
-  const physicsCalls = [];
-  manager.setPhysics({
-    gravity: new THREE.Vector3(0, -18, 0),
-    update(entity, dt) {
-      physicsCalls.push({ entity, dt });
-    }
-  });
-  manager.contraptions.push(contraption);
-  manager.activeDrivable = contraption;
-
-  manager.update(1 / 60, { down: ['KeyW'], pressed: ['KeyW'], released: [] });
-  assert.ok(contraption.position.equals(start));
-  assert.equal(contraption.velocity.lengthSq(), 0);
-  assert.equal(physicsCalls.length, 1);
-  assert.equal(physicsCalls[0].entity, contraption);
 });
 
 test('Space keydown and keyup prevent default to avoid triggering focused 2D buttons and jumps cleanly', () => {

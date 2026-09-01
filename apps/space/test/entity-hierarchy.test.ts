@@ -774,43 +774,46 @@ test('V2 component voxel namespaces separate standard/micro edits and return str
   });
 });
 
-test('cockpit position is pivot-relative and the vehicle flag controls V driving', () => {
+test('component seats are pivot-relative and nearest-seat lookup follows articulated transforms', () => {
   const contraption = new Contraption(
     98,
-    [standardBlock(0), standardBlock(1)],
+    [standardBlock(0), { ...standardBlock(1), entityId: 'arm' }],
     new THREE.Vector3(10, 20, 30),
-    new THREE.Scene()
+    new THREE.Scene(),
+    {
+      seats: [{ position: [1, 0, 0] }],
+      childEntities: [{
+        id: 'arm',
+        parentId: 'root',
+        pivot: [1.5, 0.5, 0.5],
+        seats: [{ position: [0, 1, 0] }, { position: [2, 0, 0] }]
+      }]
+    }
   ) as any;
 
-  // Defaults: cockpit [0,0,0] and driveable.
-  assert.deepEqual(contraption.cockpitPosition, [0, 0, 0], 'default cockpit should be at the pivot');
-  assert.equal(contraption.isVehicle, true, 'entities should be driveable by default');
+  assert.equal(contraption.getComponentSeats('root').length, 1);
+  assert.equal(contraption.getComponentSeats('arm').length, 2);
+  const rootSeat = contraption.getSeatWorldPosition('root', 0);
+  assert.ok(rootSeat?.isVector3);
 
-  // A cockpit at pivot shares the entity world position.
-  const defaultCockpit = contraption.getCockpitWorldPosition();
-  assert.ok(Math.abs(defaultCockpit.x - 11) < 1e-6, 'default cockpit should equal entity position (11,20.5,30.5)');
+  const armSeat = contraption.getSeatWorldPosition('arm', 1);
+  const nearest = contraption.getNearestSeat(armSeat.clone().add(new THREE.Vector3(0.05, 0, 0)));
+  assert.equal(nearest.componentId, 'arm');
+  assert.equal(nearest.seatIndex, 1);
 
-  // Set a pivot-relative cockpit offset.
-  contraption.scriptApi.setCockpitPosition([1, 0, 0]);
-  assert.deepEqual(contraption.cockpitPosition, [1, 0, 0], 'cockpit offset should be set');
-  const cockpit = contraption.getCockpitWorldPosition();
-  assert.ok(Math.abs(cockpit.x - 12) < 1e-6, 'cockpit world X should be entity X plus one');
-
-  // Rotating 90 degrees around Y maps cockpit offset (1,0,0) to (0,0,-1).
-  contraption.quaternion.setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
+  contraption.getEntityNode('arm').localQuaternion.setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
+  contraption.getEntityNode('arm').group.quaternion.copy(contraption.getEntityNode('arm').localQuaternion);
   contraption.updateTransform();
-  const rotatedCockpit = contraption.getCockpitWorldPosition();
-  assert.ok(Math.abs(rotatedCockpit.x - 11) < 1e-6 && Math.abs(rotatedCockpit.z - 29.5) < 1e-6,
-    `cockpit should rotate with the entity: got (${rotatedCockpit.x.toFixed(1)},${rotatedCockpit.z.toFixed(1)})`);
+  const rotatedSeat = contraption.getSeatWorldPosition('arm', 1);
+  assert.ok(rotatedSeat.distanceTo(armSeat) > 0.5, 'child seats must follow the component transform');
 
-  // Disable driving and preserve the flag through serialization.
-  contraption.scriptApi.setVehicle(false);
-  assert.equal(contraption.isVehicle, false, 'driving should be disabled');
   const slot = contraption.serializeSubtree('root');
-  assert.deepEqual(slot.cockpitPosition, [1, 0, 0], 'serialization should preserve cockpit position');
-  assert.equal(slot.isVehicle, false, 'serialization should preserve the vehicle flag');
+  assert.deepEqual(slot.seats, [{ position: [1, 0, 0] }]);
+  assert.deepEqual(slot.childEntities[0].seats, [
+    { position: [0, 1, 0] },
+    { position: [2, 0, 0] }
+  ]);
 });
-
 test('ctx.players provides multiplayer-ready frozen id and position snapshots', () => {
   const contraption = new Contraption(
     99,

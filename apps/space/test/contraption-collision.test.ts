@@ -163,7 +163,7 @@ test('a kinematic body pushes a dynamic body without being displaced', () => {
     [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
     new THREE.Vector3(0.8, 10, 0),
     new THREE.Scene(),
-    { mode: ContraptionMode.BEARING, bodyType: BodyType.KINEMATIC }
+    { mode: ContraptionMode.PROGRAMMABLE, bodyType: BodyType.KINEMATIC }
   );
   const mover = makeEntity(41, { x: 0, y: 10, z: 0 });
   const start = mover.position.clone();

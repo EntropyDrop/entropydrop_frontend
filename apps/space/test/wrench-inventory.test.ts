@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { Contraption, ContraptionMode } from '../src/engine/contraption/Contraption.ts';
+import { Contraption } from '../src/engine/contraption/Contraption.ts';
 import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
 import {
   PlayerController,
@@ -55,7 +55,6 @@ test('serializing the root subtree rebuilds identical structure, scripts, and to
   assert.equal(slot.nodeCount, 3);
   assert.equal(slot.scripts.length, 2);
   assert.equal(slot.enabled.length, 3);
-  assert.equal(slot.mode, ContraptionMode.FREE_PHYSICS);
 
   const copy = manager.buildFromSlot(slot, new THREE.Vector3(30, 40, 30));
   assert.ok(copy);

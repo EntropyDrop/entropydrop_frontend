@@ -1,8 +1,8 @@
 import {
   Backpack,
   BodyType,
+  type Component,
   ConstraintType,
-  EntityMode,
   InventoryCategory,
   InventoryResource,
   type InventoryResource as InventoryResourceMessage,
@@ -28,22 +28,6 @@ const BODY_TYPE_TO_PROTO: Record<string, BodyType> = {
   kinematic: BodyType.BODY_TYPE_KINEMATIC,
 };
 const BODY_TYPE_FROM_PROTO = ['dynamic', 'kinematic'] as const;
-const MODE_TO_PROTO: Record<string, EntityMode> = {
-  free_physics: EntityMode.ENTITY_MODE_FREE_PHYSICS,
-  bearing: EntityMode.ENTITY_MODE_BEARING,
-  piston: EntityMode.ENTITY_MODE_PISTON,
-  drivable: EntityMode.ENTITY_MODE_DRIVABLE,
-  projectile: EntityMode.ENTITY_MODE_PROJECTILE,
-  programmable: EntityMode.ENTITY_MODE_PROGRAMMABLE,
-};
-const MODE_FROM_PROTO = [
-  'free_physics',
-  'bearing',
-  'piston',
-  'drivable',
-  'projectile',
-  'programmable',
-] as const;
 const CONSTRAINT_TO_PROTO: Record<string, ConstraintType> = {
   point: ConstraintType.CONSTRAINT_TYPE_POINT,
   hinge: ConstraintType.CONSTRAINT_TYPE_HINGE,
@@ -60,7 +44,7 @@ function vectorArray(value: Vector3 | undefined): number[] | undefined {
   return value ? [Number(value.x), Number(value.y), Number(value.z)] : undefined;
 }
 
-function voxelMessage(block: any, componentIndex = 0): Voxel {
+function voxelMessage(block: any): Voxel {
   const micro = block.mx !== undefined && block.mx !== null;
   return {
     dx: Number(block.dx),
@@ -70,12 +54,10 @@ function voxelMessage(block: any, componentIndex = 0): Voxel {
       ? 1 + Number(block.mx) + 5 * Number(block.my) + 25 * Number(block.mz)
       : undefined,
     color: Number(block.color) >>> 0,
-    part: block.part === undefined || block.part === null ? undefined : String(block.part),
-    componentIndex,
   };
 }
 
-function portableVoxel(block: Voxel, entityId?: string): any {
+function portableVoxel(block: Voxel): any {
   const portable: any = {
     dx: Number(block.dx),
     dy: Number(block.dy),
@@ -92,28 +74,55 @@ function portableVoxel(block: Voxel, entityId?: string): any {
     portable.my = Math.floor(packed / 5) % 5;
     portable.mz = Math.floor(packed / 25);
   }
-  if (block.part !== undefined) portable.part = block.part;
-  if (entityId !== undefined) portable.entityId = entityId;
   return portable;
-}
-
-function requireIndex(indices: Map<string, number>, id: unknown): number {
-  const index = indices.get(String(id));
-  if (index === undefined) throw new Error(`Unknown component ${String(id)}.`);
-  return index;
-}
-
-function componentId(ids: string[], index: number): string {
-  if (!Number.isInteger(index) || index < 0 || index >= ids.length) {
-    throw new Error(`Component index ${index} is out of range.`);
-  }
-  return ids[index];
 }
 
 function enumName<T extends string>(values: readonly T[], value: number, label: string): T {
   const result = values[value];
   if (result === undefined) throw new Error(`Unknown ${label} enum value ${value}.`);
   return result;
+}
+
+function componentMessage(component: any): Component {
+  const body = component?.body || {};
+  return {
+    id: String(component?.id || ''),
+    pivot: vector3(component?.pivot),
+    body: {
+      type: BODY_TYPE_TO_PROTO[body.type || 'dynamic'],
+      mass: body.mass === undefined ? undefined : Number(body.mass),
+      restitution: body.restitution === undefined ? undefined : Number(body.restitution),
+      friction: body.friction === undefined ? undefined : Number(body.friction),
+      useGravity: body.useGravity === undefined ? undefined : body.useGravity === true,
+      collisionEnabled: body.collisionEnabled === undefined ? undefined : body.collisionEnabled === true,
+    },
+    blocks: (component?.blocks || []).map((block: any) => voxelMessage(block)),
+    script: component?.script === undefined ? undefined : String(component.script),
+    scriptDisabled: component?.scriptDisabled === true,
+    seats: (component?.seats || []).map((seat: any) => ({ position: vector3(seat.position) })),
+    children: (component?.children || []).map((child: any) => componentMessage(child)),
+  };
+}
+
+function portableComponent(component: Component): any {
+  if (!component.body) throw new Error(`Component ${String(component.id || '')} has no body config.`);
+  return {
+    id: String(component.id || ''),
+    ...(component.pivot === undefined ? {} : { pivot: vectorArray(component.pivot) }),
+    body: {
+      type: enumName(BODY_TYPE_FROM_PROTO, Number(component.body.type), 'body type'),
+      ...(component.body.mass === undefined ? {} : { mass: Number(component.body.mass) }),
+      ...(component.body.restitution === undefined ? {} : { restitution: Number(component.body.restitution) }),
+      ...(component.body.friction === undefined ? {} : { friction: Number(component.body.friction) }),
+      ...(component.body.useGravity === undefined ? {} : { useGravity: component.body.useGravity }),
+      ...(component.body.collisionEnabled === undefined ? {} : { collisionEnabled: component.body.collisionEnabled }),
+    },
+    blocks: (component.blocks || []).map(block => portableVoxel(block)),
+    ...(component.script === undefined ? {} : { script: String(component.script) }),
+    ...(component.scriptDisabled === true ? { scriptDisabled: true } : {}),
+    seats: (component.seats || []).map(seat => ({ position: vectorArray(seat.position) })),
+    children: (component.children || []).map(child => portableComponent(child)),
+  };
 }
 
 function resourceMessage(category: InventoryKind, portable: any): InventoryResourceMessage {
@@ -140,44 +149,15 @@ function resourceMessage(category: InventoryKind, portable: any): InventoryResou
     return base;
   }
 
-  const components = Array.isArray(portable.childEntities) ? portable.childEntities : [];
-  const indices = new Map<string, number>([['root', 0]]);
-  components.forEach((component: any, index: number) => {
-    const id = String(component.id || '');
-    if (indices.has(id)) throw new Error(`Duplicate component ${id}.`);
-    indices.set(id, index + 1);
-  });
   base.entity = {
     name: String(portable.name || ''),
-    components: components.map((component: any) => ({
-      id: String(component.id || ''),
-      parentIndex: requireIndex(indices, component.parentId || 'root'),
-      collisionEnabled: component.collisionEnabled === undefined
-        ? undefined
-        : component.collisionEnabled === true,
-      pivot: vector3(component.pivot),
-      bodyType: component.bodyType === undefined ? undefined : BODY_TYPE_TO_PROTO[component.bodyType],
-      mass: component.mass === undefined ? undefined : Number(component.mass),
-      restitution: component.restitution === undefined ? undefined : Number(component.restitution),
-      friction: component.friction === undefined ? undefined : Number(component.friction),
-    })),
-    blocks: (portable.blocks || []).map((block: any) => (
-      voxelMessage(block, requireIndex(indices, block.entityId || 'root'))
-    )),
-    scripts: (portable.scripts || []).map((script: any) => ({
-      componentIndex: requireIndex(indices, script.id),
-      code: String(script.code || ''),
-    })),
-    enabled: (portable.enabled || []).map((entry: any) => ({
-      componentIndex: requireIndex(indices, entry.id),
-      enabled: entry.enabled === true,
-    })),
+    root: componentMessage(portable.root),
     constraints: (portable.constraints || []).map((constraint: any) => ({
       id: String(constraint.id || ''),
       type: CONSTRAINT_TO_PROTO[constraint.type || 'point'],
       bodyAIsWorld: constraint.bodyA === 'world',
-      bodyAComponentIndex: constraint.bodyA === 'world' ? 0 : requireIndex(indices, constraint.bodyA),
-      bodyBComponentIndex: requireIndex(indices, constraint.bodyB),
+      bodyA: constraint.bodyA === 'world' ? '' : String(constraint.bodyA || ''),
+      bodyB: String(constraint.bodyB || ''),
       anchorA: vector3(constraint.anchorA),
       anchorB: vector3(constraint.anchorB),
       axisA: vector3(constraint.axisA),
@@ -191,19 +171,6 @@ function resourceMessage(category: InventoryKind, portable: any): InventoryResou
       stiffness: Number(constraint.stiffness ?? 0.9),
       collideConnected: constraint.collideConnected === true,
     })),
-    mode: MODE_TO_PROTO[portable.mode || 'free_physics'],
-    bodyType: BODY_TYPE_TO_PROTO[portable.bodyType || 'dynamic'],
-    mass: portable.mass === undefined ? undefined : Number(portable.mass),
-    restitution: portable.restitution === undefined ? undefined : Number(portable.restitution),
-    friction: portable.friction === undefined ? undefined : Number(portable.friction),
-    useGravity: portable.useGravity === undefined ? undefined : portable.useGravity === true,
-    bearingAxis: vector3(portable.bearingAxis),
-    bearingRpm: portable.bearingRpm === undefined ? undefined : Number(portable.bearingRpm),
-    pistonAxis: vector3(portable.pistonAxis),
-    pistonDistance: portable.pistonDistance === undefined ? undefined : Number(portable.pistonDistance),
-    pistonSpeed: portable.pistonSpeed === undefined ? undefined : Number(portable.pistonSpeed),
-    cockpitPosition: vector3(portable.cockpitPosition),
-    isVehicle: portable.isVehicle === undefined ? undefined : portable.isVehicle === true,
   };
   return base;
 }
@@ -220,7 +187,6 @@ function portableResource(message: InventoryResourceMessage): { category: Invent
         type: 'space-blockset',
         version: INVENTORY_PROTOBUF_SCHEMA_VERSION,
         name: message.blockSet.name,
-        blockCount: blocks.length,
         blocks,
       },
     };
@@ -239,46 +205,19 @@ function portableResource(message: InventoryResourceMessage): { category: Invent
   if (!message.entity) throw new Error('Inventory Protobuf does not contain a resource.');
 
   const entity = message.entity;
-  const ids = ['root', ...(entity.components || []).map(component => String(component.id || ''))];
-  const blocks = (entity.blocks || []).map(block => (
-    portableVoxel(block, componentId(ids, Number(block.componentIndex)))
-  ));
+  if (!entity.root) throw new Error('Entity Protobuf does not contain a root component.');
   const portable: any = {
     type: 'space-entity',
     version: INVENTORY_PROTOBUF_SCHEMA_VERSION,
     name: entity.name,
-    rootId: 'root',
-    nodeCount: ids.length,
-    blockCount: blocks.length,
-    blocks,
-    childEntities: (entity.components || []).map(component => ({
-      id: String(component.id || ''),
-      parentId: componentId(ids, Number(component.parentIndex)),
-      kind: 'child',
-      ...(component.collisionEnabled === undefined ? {} : { collisionEnabled: component.collisionEnabled }),
-      ...(component.pivot === undefined ? {} : { pivot: vectorArray(component.pivot) }),
-      ...(component.bodyType === undefined ? {} : {
-        bodyType: enumName(BODY_TYPE_FROM_PROTO, Number(component.bodyType), 'body type'),
-      }),
-      ...(component.mass === undefined ? {} : { mass: Number(component.mass) }),
-      ...(component.restitution === undefined ? {} : { restitution: Number(component.restitution) }),
-      ...(component.friction === undefined ? {} : { friction: Number(component.friction) }),
-    })),
-    scripts: (entity.scripts || []).map(script => ({
-      id: componentId(ids, Number(script.componentIndex)),
-      code: String(script.code || ''),
-    })),
-    enabled: (entity.enabled || []).map(entry => ({
-      id: componentId(ids, Number(entry.componentIndex)),
-      enabled: entry.enabled === true,
-    })),
+    root: portableComponent(entity.root),
     constraints: (entity.constraints || []).map(constraint => ({
       id: String(constraint.id || ''),
       type: enumName(CONSTRAINT_FROM_PROTO, Number(constraint.type), 'constraint type'),
       bodyA: constraint.bodyAIsWorld
         ? 'world'
-        : componentId(ids, Number(constraint.bodyAComponentIndex)),
-      bodyB: componentId(ids, Number(constraint.bodyBComponentIndex)),
+        : String(constraint.bodyA || ''),
+      bodyB: String(constraint.bodyB || ''),
       ...(constraint.anchorA === undefined ? {} : { anchorA: vectorArray(constraint.anchorA) }),
       ...(constraint.anchorB === undefined ? {} : { anchorB: vectorArray(constraint.anchorB) }),
       ...(constraint.axisA === undefined ? {} : { axisA: vectorArray(constraint.axisA) }),
@@ -291,21 +230,160 @@ function portableResource(message: InventoryResourceMessage): { category: Invent
       stiffness: Number(constraint.stiffness),
       collideConnected: constraint.collideConnected === true,
     })),
-    mode: enumName(MODE_FROM_PROTO, Number(entity.mode), 'entity mode'),
-    bodyType: enumName(BODY_TYPE_FROM_PROTO, Number(entity.bodyType), 'body type'),
-    ...(entity.mass === undefined ? {} : { mass: Number(entity.mass) }),
-    ...(entity.restitution === undefined ? {} : { restitution: Number(entity.restitution) }),
-    ...(entity.friction === undefined ? {} : { friction: Number(entity.friction) }),
-    ...(entity.useGravity === undefined ? {} : { useGravity: entity.useGravity }),
-    ...(entity.bearingAxis === undefined ? {} : { bearingAxis: vectorArray(entity.bearingAxis) }),
-    ...(entity.bearingRpm === undefined ? {} : { bearingRpm: Number(entity.bearingRpm) }),
-    ...(entity.pistonAxis === undefined ? {} : { pistonAxis: vectorArray(entity.pistonAxis) }),
-    ...(entity.pistonDistance === undefined ? {} : { pistonDistance: Number(entity.pistonDistance) }),
-    ...(entity.pistonSpeed === undefined ? {} : { pistonSpeed: Number(entity.pistonSpeed) }),
-    ...(entity.cockpitPosition === undefined ? {} : { cockpitPosition: vectorArray(entity.cockpitPosition) }),
-    ...(entity.isVehicle === undefined ? {} : { isVehicle: entity.isVehicle }),
   };
   return { category: 'entity', portable };
+}
+
+function bodyFromRuntime(source: any, fallbackType: 'dynamic' | 'kinematic'): any {
+  return {
+    type: source?.bodyType || fallbackType,
+    ...(source?.mass === undefined ? {} : { mass: Number(source.mass) }),
+    ...(source?.restitution === undefined ? {} : { restitution: Number(source.restitution) }),
+    ...(source?.friction === undefined ? {} : { friction: Number(source.friction) }),
+    ...(source?.useGravity === undefined ? {} : { useGravity: source.useGravity === true }),
+    ...(source?.collisionEnabled === undefined ? {} : { collisionEnabled: source.collisionEnabled === true }),
+  };
+}
+
+/** Convert the engine's indexed runtime representation into the recursive wire shape. */
+export function runtimeEntityToPortable(runtime: any): any {
+  const definitions = Array.isArray(runtime?.childEntities) ? runtime.childEntities : [];
+  const scripts = new Map((runtime?.scripts || []).map((entry: any) => [String(entry.id), String(entry.code || '')]));
+  const enabled = new Map((runtime?.enabled || []).map((entry: any) => [String(entry.id), entry.enabled === true]));
+  const nodes = new Map<string, any>();
+  const makeNode = (source: any, id: string, fallbackType: 'dynamic' | 'kinematic') => ({
+    id,
+    ...(source?.pivot === undefined ? {} : { pivot: source.pivot.map(Number) }),
+    body: bodyFromRuntime(source, fallbackType),
+    blocks: [],
+    ...(scripts.has(id) ? { script: scripts.get(id) } : {}),
+    ...(scripts.has(id) && enabled.get(id) === false ? { scriptDisabled: true } : {}),
+    seats: (source?.seats || []).map((seat: any) => ({
+      position: (Array.isArray(seat) ? seat : seat.position).map(Number),
+    })),
+    children: [],
+  });
+  const root = makeNode(runtime, 'root', 'dynamic');
+  nodes.set('root', root);
+  for (const definition of definitions) {
+    const id = String(definition.id || '');
+    if (!id || nodes.has(id)) throw new Error(`Duplicate or empty component ${id}.`);
+    nodes.set(id, makeNode(definition, id, 'kinematic'));
+  }
+  for (const definition of definitions) {
+    const parent = nodes.get(String(definition.parentId || 'root'));
+    if (!parent) throw new Error(`Unknown parent ${String(definition.parentId)}.`);
+    parent.children.push(nodes.get(String(definition.id)));
+  }
+  for (const block of runtime?.blocks || []) {
+    const owner = nodes.get(String(block.entityId || 'root'));
+    if (!owner) throw new Error(`Unknown component ${String(block.entityId)}.`);
+    const { entityId: _entityId, part: _part, ...voxel } = block;
+    owner.blocks.push(voxel);
+  }
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const sortTree = (component: any) => {
+    if (visiting.has(component.id)) throw new Error('Component hierarchy contains a cycle.');
+    if (visited.has(component.id)) return;
+    visiting.add(component.id);
+    component.blocks.sort((a: any, b: any) => (
+      Number(a.dx) - Number(b.dx)
+      || Number(a.dy) - Number(b.dy)
+      || Number(a.dz) - Number(b.dz)
+      || Number(a.mx ?? -1) - Number(b.mx ?? -1)
+      || Number(a.my ?? -1) - Number(b.my ?? -1)
+      || Number(a.mz ?? -1) - Number(b.mz ?? -1)
+      || Number(a.color) - Number(b.color)
+    ));
+    component.children.sort((a: any, b: any) => a.id.localeCompare(b.id));
+    component.children.forEach(sortTree);
+    visiting.delete(component.id);
+    visited.add(component.id);
+  };
+  sortTree(root);
+  if (visited.size !== nodes.size) throw new Error('Every component must descend from root.');
+  return {
+    type: 'space-entity',
+    version: INVENTORY_PROTOBUF_SCHEMA_VERSION,
+    name: String(runtime?.name || ''),
+    root,
+    constraints: (runtime?.constraints || []).map((constraint: any) => ({
+      id: String(constraint.id || ''),
+      type: constraint.type || 'point',
+      bodyA: String(constraint.bodyA || ''),
+      bodyB: String(constraint.bodyB || ''),
+      ...(constraint.anchorA === undefined ? {} : { anchorA: constraint.anchorA.map(Number) }),
+      ...(constraint.anchorB === undefined ? {} : { anchorB: constraint.anchorB.map(Number) }),
+      ...(constraint.axisA === undefined ? {} : { axisA: constraint.axisA.map(Number) }),
+      ...(constraint.axisB === undefined ? {} : { axisB: constraint.axisB.map(Number) }),
+      ...(constraint.referenceA === undefined ? {} : { referenceA: constraint.referenceA.map(Number) }),
+      ...(constraint.referenceB === undefined ? {} : { referenceB: constraint.referenceB.map(Number) }),
+      ...(constraint.limits === undefined ? {} : {
+        limits: { min: Number(constraint.limits.min), max: Number(constraint.limits.max) },
+      }),
+      stiffness: Number(constraint.stiffness ?? 0.9),
+      collideConnected: constraint.collideConnected === true,
+    })),
+  };
+}
+
+/** Flatten a recursive portable entity only for the current in-memory engine. */
+export function portableEntityToRuntime(portable: any): any {
+  const blocks: any[] = [];
+  const childEntities: any[] = [];
+  const scripts: any[] = [];
+  const enabled: any[] = [];
+  let nodeCount = 0;
+  const visit = (component: any, parentId: string | null) => {
+    nodeCount += 1;
+    const id = String(component.id || '');
+    for (const block of component.blocks || []) blocks.push({ ...block, entityId: id });
+    if (component.script !== undefined) {
+      scripts.push({ id, code: String(component.script) });
+      enabled.push({ id, enabled: component.scriptDisabled !== true });
+    }
+    if (parentId !== null) {
+      const body = component.body || {};
+      childEntities.push({
+        id,
+        parentId,
+        kind: 'child',
+        ...(component.pivot === undefined ? {} : { pivot: component.pivot.map(Number) }),
+        bodyType: body.type || 'kinematic',
+        ...(body.mass === undefined ? {} : { mass: Number(body.mass) }),
+        ...(body.restitution === undefined ? {} : { restitution: Number(body.restitution) }),
+        ...(body.friction === undefined ? {} : { friction: Number(body.friction) }),
+        ...(body.useGravity === undefined ? {} : { useGravity: body.useGravity === true }),
+        ...(body.collisionEnabled === undefined ? {} : { collisionEnabled: body.collisionEnabled === true }),
+        seats: (component.seats || []).map((seat: any) => ({ position: seat.position.map(Number) })),
+      });
+    }
+    for (const child of component.children || []) visit(child, id);
+  };
+  visit(portable.root, null);
+  const rootBody = portable.root?.body || {};
+  return {
+    type: 'space-entity',
+    version: INVENTORY_PROTOBUF_SCHEMA_VERSION,
+    name: portable.name,
+    rootId: 'root',
+    nodeCount,
+    blockCount: blocks.length,
+    blocks,
+    childEntities,
+    scripts,
+    enabled,
+    constraints: portable.constraints || [],
+    mode: 'free_physics',
+    bodyType: rootBody.type || 'dynamic',
+    ...(rootBody.mass === undefined ? {} : { mass: Number(rootBody.mass) }),
+    ...(rootBody.restitution === undefined ? {} : { restitution: Number(rootBody.restitution) }),
+    ...(rootBody.friction === undefined ? {} : { friction: Number(rootBody.friction) }),
+    ...(rootBody.useGravity === undefined ? {} : { useGravity: rootBody.useGravity === true }),
+    ...(rootBody.collisionEnabled === undefined ? {} : { collisionEnabled: rootBody.collisionEnabled === true }),
+    seats: (portable.root?.seats || []).map((seat: any) => ({ position: seat.position.map(Number) })),
+  };
 }
 
 export function encodeInventoryResource(category: InventoryKind, portable: any): Uint8Array {
@@ -326,7 +404,8 @@ export function decodeInventoryResource(
 /** Convert portable v3 coordinates into the runtime shape used by thumbnail rendering. */
 export function inventoryResourcePreviewItem(category: InventoryKind, portable: any): any {
   if (category === 'colorset') return { ...portable, kind: category };
-  const blocks = (portable?.blocks || []).map((block: any) => {
+  const source = category === 'entity' ? portableEntityToRuntime(portable) : portable;
+  const blocks = (source?.blocks || []).map((block: any) => {
     const isMicro = block.mx !== undefined && block.my !== undefined && block.mz !== undefined;
     const x = Number(block.dx) + (isMicro ? Number(block.mx) / 5 : 0);
     const y = Number(block.dy) + (isMicro ? Number(block.my) / 5 : 0);
@@ -337,7 +416,7 @@ export function inventoryResourcePreviewItem(category: InventoryKind, portable: 
       : { ...block, dx: x, dy: y, dz: z, size };
   });
   return {
-    ...portable,
+    ...source,
     kind: category,
     blockCount: blocks.length,
     blocks,
