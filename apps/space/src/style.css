@@ -3857,7 +3857,7 @@ button.palette-title:hover {
   font-size: 11px;
 }
 
-/* Inspector tabs: persisted PB defaults (editable) vs live runtime values (read-only) */
+/* Inspector tabs: persisted defaults (editable) vs live runtime values (read-only) */
 .inspector-tabbar {
   display: flex;
   gap: 3px;

@@ -300,8 +300,15 @@ export class PlayerPhysics {
     if (!this.contraptionManager || !this.contraptionManager.contraptions) return [];
     const nearby = [];
     for (const c of this.contraptionManager.contraptions) {
-      const dist = this.position.distanceTo(c.position);
-      if (dist < c.boundingRadius + 2.5) {
+      const center = typeof c.getWorldCenter === 'function'
+        ? c.getWorldCenter()
+        : (c.localCenter ? c.localToWorld(c.localCenter.clone()) : c.position);
+      const radius = Math.max(1.0, Number(c.boundingRadius) || 1.0);
+      const dist = Math.min(
+        this.position.distanceTo(center),
+        this.position.distanceTo(c.position)
+      );
+      if (dist < radius + 4.0) {
         nearby.push(c);
       }
     }

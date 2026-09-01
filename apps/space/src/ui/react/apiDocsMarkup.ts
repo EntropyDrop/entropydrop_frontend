@@ -68,15 +68,15 @@ export const apiDocsBodyMarkup = `
                   editor tab. The state persists when you exit the editor. Global <b>Pause</b>
                   disables every script without clearing state; global <b>Stop</b> additionally
                   resets state, script time/tick, child transforms/spins, pending forces, and
-                  restores every PB BodyConfig default (see <em>BodyConfig: defaults vs runtime</em>).
+                  restores every BodyConfig default (see <em>BodyConfig: defaults vs runtime</em>).
                 </td>
               </tr>
               <tr>
                 <td><b>BodyConfig: defaults vs runtime</b></td>
-                <td>Persisted PB values: type, mass, restitution, friction, gravity, collision</td>
+                <td>Persisted defaults: type, mass, restitution, friction, gravity, collision</td>
                 <td>
                   The protobuf definition stores <b>defaults</b>, never live values. The Entity Editor
-                  splits them into two tabs: <b>PB Defaults</b> (editable in the panel; edits apply
+                  splits them into two tabs: <b>Defaults</b> (editable in the panel; edits apply
                   immediately and are written into inventory copies) and <b>Runtime</b> (live values,
                   read-only). Scripts change runtime values through the <code>self.body.*</code> setters
                   without touching the defaults — the value in effect when the first setter runs is
@@ -243,7 +243,7 @@ const dy = playerPos[1] - ctx.position[1]; // no wrap on Y</code></pre>
               <tr><td><code>self.constraints.remove(id)</code></td><td>Remove one constraint; returns boolean</td></tr>
             </tbody>
           </table>
-          <p class="api-sub">Body setters change <b>runtime values only</b> — visible in the Entity Editor's <b>Runtime</b> tab (read-only, a Δ badge appears while they deviate from the defaults). The <b>PB Defaults</b> tab of the same panel edits the persisted defaults, and global <b>Stop</b> restores type, mass, material, gravity, and collision from those defaults. Pause preserves runtime values.</p>
+          <p class="api-sub">Body setters change <b>runtime values only</b> — visible in the Entity Editor's <b>Runtime</b> tab (read-only, a Δ badge appears while they deviate from the defaults). The <b>Defaults</b> tab of the same panel edits the persisted defaults, and global <b>Stop</b> restores type, mass, material, gravity, and collision from those defaults. Pause preserves runtime values.</p>
           <pre class="api-code"><code>// Create a world-anchored hinge once, retain its generated id, then remove it.
 if (!self.state.anchorId) {
   const created = self.constraints.create({
@@ -263,7 +263,7 @@ if (self.state.anchorId && ctx.input.pressed('KeyQ')) {
           <table class="api-table">
             <thead><tr><th>Method</th><th>Description</th></tr></thead>
             <tbody>
-              <tr><td><code>self.stop()</code></td><td>Exactly the global Stop action: disable every component script, reset every <code>self.state</code>, script time/tick, child transforms/spins, and pending forces/torques, and restore the PB BodyConfig defaults (type, mass, material, gravity, collision — the values the Entity Editor's <b>PB Defaults</b> tab shows and edits). Root-only; child calls are no-ops, so child code should use <code>ctx.root.stop()</code>. It immediately ends the current script invocation</td></tr>
+              <tr><td><code>self.stop()</code></td><td>Exactly the global Stop action: disable every component script, reset every <code>self.state</code>, script time/tick, child transforms/spins, and pending forces/torques, and restore the BodyConfig defaults (type, mass, material, gravity, collision — the values the Entity Editor's <b>Defaults</b> tab shows and edits). Root-only; child calls are no-ops, so child code should use <code>ctx.root.stop()</code>. It immediately ends the current script invocation</td></tr>
             </tbody>
           </table>
 

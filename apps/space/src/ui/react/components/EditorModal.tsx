@@ -35,7 +35,7 @@ function HierarchyNode({ node, depth, selected }: { node: any; depth: number; se
 
 type InspectorTab = 'defaults' | 'runtime';
 
-/** True when the live BodyConfig values deviate from the persisted PB defaults. */
+/** True when the live BodyConfig values deviate from the persisted defaults. */
 function bodyConfigDiffers(defaults: any, runtime: any): boolean {
   if (!runtime) return false;
   return runtime.bodyType !== defaults.bodyType
@@ -65,8 +65,8 @@ function ComponentInspector() {
         <div className="inspector-field"><label className="inspector-sublabel">Parent</label><span id="prop-node-parent" className="inspector-val">{properties.parentId || 'None'}</span></div>
       </div>
       <div className="inspector-tabbar">
-        <button type="button" tabIndex={-1} id="inspector-tab-defaults" className={`inspector-tab ${tab === 'defaults' ? 'active' : ''}`} title="Persisted PB defaults — editable here; global Stop restores these values" onClick={() => setTab('defaults')}>PB Defaults</button>
-        <button type="button" tabIndex={-1} id="inspector-tab-runtime" className={`inspector-tab ${tab === 'runtime' ? 'active' : ''}`} title="Live values — read-only; changed by component scripts" onClick={() => setTab('runtime')}>Runtime{runtimeDiffers ? <span className="inspector-tab-badge" title="Runtime values deviate from the PB defaults">Δ</span> : null}</button>
+        <button type="button" tabIndex={-1} id="inspector-tab-defaults" className={`inspector-tab ${tab === 'defaults' ? 'active' : ''}`} title="Persisted defaults — editable here; global Stop restores these values" onClick={() => setTab('defaults')}>Defaults</button>
+        <button type="button" tabIndex={-1} id="inspector-tab-runtime" className={`inspector-tab ${tab === 'runtime' ? 'active' : ''}`} title="Live values — read-only; changed by component scripts" onClick={() => setTab('runtime')}>Runtime{runtimeDiffers ? <span className="inspector-tab-badge" title="Runtime values deviate from the defaults">Δ</span> : null}</button>
       </div>
       {tab === 'defaults' ? (
         <div className="inspector-tab-panel">
@@ -80,7 +80,7 @@ function ComponentInspector() {
             <label className="inspector-field"><span className="inspector-sublabel">Use Gravity</span><input id="prop-use-gravity" type="checkbox" checked={properties.useGravity} onChange={event => spaceUiStore.setSelectedGravityEnabled(event.target.checked)} /></label>
             <label className="inspector-field"><span className="inspector-sublabel">Collision</span><input id="prop-collision-enabled" type="checkbox" checked={properties.collisionEnabled} onChange={event => spaceUiStore.setSelectedCollisionEnabled(event.target.checked)} /></label>
           </div>
-          <div className="inspector-note">Persisted PB defaults — edits apply immediately and are written into inventory copies. Script <code>self.body.*</code> overrides are runtime-only; <b>Stop</b> restores these values.</div>
+          <div className="inspector-note">Persisted defaults — edits apply immediately and are written into inventory copies. Script <code>self.body.*</code> overrides are runtime-only; <b>Stop</b> restores these values.</div>
         </div>
       ) : (
         <div className="inspector-tab-panel">
@@ -105,7 +105,7 @@ function ComponentInspector() {
                 <div className="inspector-item"><span className="inspector-sublabel">Velocity</span><span id="runtime-velocity" className="inspector-num">[{runtime.velocity.join(', ')}] m/s</span></div>
                 <div className="inspector-item"><span className="inspector-sublabel">Spin</span><span id="runtime-spin" className="inspector-num">{spinRpm} rpm</span></div>
               </div>
-              <div className="inspector-note">Live values — <b>read-only</b>. Change them from component code (<code>self.body.*</code> setters, kinematic pose commands). <b>Pause</b> freezes them; <b>Stop</b> resets child poses and restores the PB Defaults.</div>
+              <div className="inspector-note">Live values — <b>read-only</b>. Change them from component code (<code>self.body.*</code> setters, kinematic pose commands). <b>Pause</b> freezes them; <b>Stop</b> resets child poses and restores the Defaults.</div>
             </>
           ) : <div className="text-muted">No live body data</div>}
         </div>

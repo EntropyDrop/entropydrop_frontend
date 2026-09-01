@@ -276,7 +276,7 @@ test('per-node scripting, renaming and property inspection work as expected', ()
   assert.equal(contraption.getNodeScript('robot_arm'), `self.setLocalPosition([0, 1, 0]);`);
 });
 
-test('getNodeProperties splits persisted PB defaults from live runtime values', () => {
+test('getNodeProperties splits persisted defaults from live runtime values', () => {
   const scene = new THREE.Scene();
   const contraption = new Contraption(
     90,
@@ -286,7 +286,7 @@ test('getNodeProperties splits persisted PB defaults from live runtime values', 
     { mode: ContraptionMode.PROGRAMMABLE, restitution: 0.25, friction: 0.35 }
   ) as any;
 
-  // Script-side (runtimeOnly) overrides move the live body without touching the PB defaults.
+  // Script-side (runtimeOnly) overrides move the live body without touching the defaults.
   contraption.setNodeBodyMass('root', 77, { runtimeOnly: true });
   contraption.setNodeBodyType('root', 'kinematic', { runtimeOnly: true });
   contraption.setNodeBodyMaterial('root', { restitution: 0.9 }, { runtimeOnly: true });

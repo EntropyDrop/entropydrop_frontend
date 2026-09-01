@@ -1648,8 +1648,8 @@ export class Contraption {
 
   /**
    * Inspector view of one component. The flat fields (bodyType/mass/restitution/
-   * friction/useGravity/collisionEnabled) are the persisted PB defaults — what the
-   * Entity Editor's "PB Defaults" tab edits and Stop restores. `runtimeBody` is the
+   * friction/useGravity/collisionEnabled) are the persisted defaults — what the
+   * Entity Editor's "Defaults" tab edits and Stop restores. `runtimeBody` is the
    * live rigid-body snapshot for the read-only "Runtime" tab.
    */
   getNodeProperties(nodeId = 'root') {
@@ -1952,6 +1952,13 @@ export class Contraption {
     }
 
     this.boundingRadius = this.size.length() / 2;
+  }
+
+  getWorldCenter(): THREE.Vector3 {
+    if (this.localCenter) {
+      return this.localToWorld(this.localCenter.clone());
+    }
+    return this.position.clone();
   }
 
   initializeEntityHierarchy(childEntities = []) {
