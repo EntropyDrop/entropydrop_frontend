@@ -7,6 +7,7 @@ import {
   LiaHammerSolid,
   LiaWrenchSolid,
   LiaCogSolid,
+  LiaHomeSolid,
   LiaAngleLeftSolid,
   LiaAngleRightSolid,
   LiaAngleDownSolid,
@@ -336,7 +337,28 @@ export function Hud() {
             <div id="pos-val">{state.positionText}</div>
             <NearbyEntities />
           </div>
-          <div className="hud-actions"><button id="global-settings-btn" tabIndex={-1} className="icon-btn" title="Global Settings (O)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(true)}><LiaCogSolid size={18} /></button></div>
+          <div className="hud-actions">
+            <button
+              id="home-btn"
+              type="button"
+              tabIndex={-1}
+              className="icon-btn"
+              title="Home (H)"
+              onClick={() => { window.location.href = '/'; }}
+            >
+              <LiaHomeSolid size={18} />
+            </button>
+            <button
+              id="global-settings-btn"
+              type="button"
+              tabIndex={-1}
+              className="icon-btn"
+              title="Global Settings (O)"
+              onClick={() => spaceUiStore.toggleGlobalSettingsModal(true)}
+            >
+              <LiaCogSolid size={18} />
+            </button>
+          </div>
         </div>
         <div className="hud-bottom">
           <div className="hud-bottom-stack">
