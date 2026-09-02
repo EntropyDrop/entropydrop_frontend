@@ -1471,6 +1471,48 @@ export class ContraptionPhysics {
     return { distance: near, normal };
   }
 
+  /**
+   * Sweep a world-space point against an entity cell's actual oriented box.
+   * Entity collision boxes also expose a conservative world AABB for broad
+   * phase queries. Using that AABB as the wrench's narrow phase makes empty
+   * corners of a rotated box solid, and can therefore reject the only velocity
+   * that would pull two resting bodies apart. Transforming the ray into the
+   * cell's orthonormal frame keeps the inexpensive slab test while matching
+   * the shape used by the entity contact solver.
+   */
+  sweepPointEntityBox(start, direction, maxDistance, box) {
+    const obb = this.entityCollisionObb(box);
+    if (!obb) return this.sweepPointAabb(start, direction, maxDistance, box);
+
+    const relativeStart = start.clone().sub(obb.center);
+    const localStart = new THREE.Vector3(
+      relativeStart.dot(obb.axes[0]),
+      relativeStart.dot(obb.axes[1]),
+      relativeStart.dot(obb.axes[2])
+    );
+    const localDirection = new THREE.Vector3(
+      direction.dot(obb.axes[0]),
+      direction.dot(obb.axes[1]),
+      direction.dot(obb.axes[2])
+    );
+    const contact = this.sweepPointAabb(localStart, localDirection, maxDistance, {
+      minX: -obb.halfExtents[0],
+      maxX: obb.halfExtents[0],
+      minY: -obb.halfExtents[1],
+      maxY: obb.halfExtents[1],
+      minZ: -obb.halfExtents[2],
+      maxZ: obb.halfExtents[2]
+    });
+    if (!contact) return null;
+
+    const normal = new THREE.Vector3()
+      .addScaledVector(obb.axes[0], contact.normal.x)
+      .addScaledVector(obb.axes[1], contact.normal.y)
+      .addScaledVector(obb.axes[2], contact.normal.z)
+      .normalize();
+    return { distance: contact.distance, normal };
+  }
+
   constrainWrenchVelocity(contraption, body, desiredVelocity, dt, contraptions = []) {
     const velocity = desiredVelocity?.clone?.() || new THREE.Vector3();
     const safeDt = Math.max(1 / 240, Math.min(0.08, Number(dt) || 0));
@@ -1516,7 +1558,7 @@ export class ContraptionPhysics {
       const boxes = other.getCollisionWorldAABBs?.() || [];
       for (const start of samples) {
         for (const box of boxes) {
-          const contact = this.sweepPointAabb(start, direction, probeDistance, box);
+          const contact = this.sweepPointEntityBox(start, direction, probeDistance, box);
           if (!contact || velocity.dot(contact.normal) >= -1e-8) continue;
           const allowedDistance = Math.max(0, contact.distance - 0.004);
           allowedFraction = Math.min(allowedFraction, allowedDistance / frameDistance);

@@ -138,7 +138,10 @@ export default {
         quotaExceeded: 'Insufficient credits',
         proTag: 'Pro',
         loadingModels: 'Loading...',
-        btnLoadingModel: 'Loading model...'
+        btnLoadingModel: 'Loading model...',
+        btnSubscribePro: 'Subscribe for PRO Model',
+        proModelTitle: 'PRO Exclusive Model',
+        proModelDesc: 'The selected model is exclusive to PRO members. Please subscribe to use it.'
     },
     collection: {
         title: 'My Collections',
@@ -897,7 +900,7 @@ Email: support@entropydrop.com`
         creatorCommercialDescription: 'You generated this work and hold a perpetual, worldwide, non-exclusive commercial-use license.',
         publicNonCommercialDescription: 'Anyone may use, share, and adapt this work for non-commercial purposes with attribution under CC BY-NC 4.0.',
         privateLicenseDescription: 'This work is currently private and is not offered for new public access.',
-        publicDoesNotGrantCommercial: 'Your commercial license belongs only to the generating account. Public display does not grant commercial rights to other users.',
+        publicDoesNotGrantCommercial: 'Your commercial license belongs only to the creator account. Public display does not grant commercial rights to other users.',
         otherUserNoCommercial: 'You receive only the CC BY-NC 4.0 non-commercial license. Public visibility or download access does not grant commercial rights.',
         previousPublicLicense: 'This work was previously public. CC BY-NC 4.0 licenses already validly received are not withdrawn when it becomes private.',
         viewLicenseTerms: 'View the full CC BY-NC 4.0 terms',

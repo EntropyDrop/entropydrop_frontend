@@ -89,7 +89,7 @@ orbit, launch, spin, attitude-stabilization, and stop intents.
 Its result contract is intentionally small so it can later be replaced by a
 remote LLM without changing the controller runtime.
 
-Detailed component script and controller API documentation is available directly in-game via the Code Editor terminal (press `C` -> API Reference). AI agents interface through their dedicated skill and prompt specifications.
+Detailed component script and controller API documentation is available directly in-game via the Code Editor terminal (press `C` → API Reference) and in the generated [Script API V2 reference](docs/generated/api-v2.md). The [Agent API reference](docs/generated/agent-api-v2.md), in-game reference, and runtime Agent prompt are all rendered from `src/engine/contraption/ScriptApiContract.ts`; edit that contract instead of these generated views.
 
 ## Multiplayer backend
 

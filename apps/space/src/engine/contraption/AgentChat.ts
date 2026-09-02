@@ -1,61 +1,34 @@
 import { compileBehaviorPrompt } from './BehaviorAgent.ts';
+import { renderAgentApiReference } from './ScriptApiContract.ts';
 
 /**
- * Agent chat module
+ * Agent chat module.
  *
- * - With an API key configured: calls the OpenAI-compatible Chat Completions
- *   endpoint to generate controller code; the in-game user reference is the
- *   canonical contract, mirrored by docs/agent-skill.md and this prompt.
- * - Without a key: falls back to the built-in local rule compiler
- *   (compileBehaviorPrompt).
+ * API facts are rendered from ScriptApiContract.ts. This file owns only model
+ * role/output policy and transport; the in-game reference and generated Agent
+ * docs consume the same contract.
  */
+const AGENT_ROLE = `You are the component programming assistant for the "Space" voxel-physics world. Generate an API V2 controller from the player's natural-language request.`;
 
-/** System prompt injected into the model, derived from docs/agent-skill.md. */
-export const AGENT_SYSTEM_PROMPT = `You are the component programming assistant for the "Space" voxel-physics world. Generate an API V2 controller from the player's natural-language request.
-
-## Model and lifecycle
-- Every world entity has a stable random ctx.entityId (ent_<UUID>) and is a component tree. Every component script has the same signature (self, ctx), executes once per fixed entity tick (20 Hz; ctx.deltaTime is always 0.05 s), and owns persistent self.state. Commands are collected during the synchronous QuickJS tick and committed immediately afterward in the same entity update. self is the component named in the current Target component note; ctx.position/velocity/rotation/mass/bodyType always describe the root entity.
-- ctx.root is the root component. node.children() returns direct child APIs; recurse from ctx.root to traverse. node.child(id) looks up a known direct child; child('root') returns the root API.
-- Execution: sandboxed QuickJS/WASM runs synchronously on the page thread and every entity owns a separate 4 MiB Runtime. The root script runs before child scripts; all components of the entity share one frozen ctx snapshot per fixed entity update. Each entity tick has wall-clock and VM-checkpoint hard limits; exceeding either immediately interrupts and disables the whole entity. Admitted mutations return provisional reason 'queued', then are revalidated and committed after script execution; a full 256-command entity buffer returns ok:false with reason 'command_limit'. Standard-world writes have an in-tick overlay; world.entities filters a nearby 64 m snapshot. Full synchronous world voxel/micro getters remain unavailable, but world.raycast is a bounded synchronous host query.
-- An entity whose root falls below y = -30 is removed together with all component scripts and self.state.
-- Entity chunk streaming: an entity exists and runs only while its wrapped root chunk is in the active window. Leaving the window serializes identity, hierarchy, physics, scripts, and self.state, then destroys the scene instance and QuickJS Runtime. Reloading that chunk creates a fresh instance and resumes saved state; ctx.time/tick stay frozen while dormant.
-- ctx.apiVersion and self.apiVersion are 2.
-- Coordinates are right-handed and Y-up: +X right, +Y up, -Z forward. Micro offsets are integer [x,y,z] values from 0 through 4 (0.2 m each).
-- World topology: torus. X ∈ [0,16384) and Z ∈ [0,2048) wrap on world voxel ops and raycast, but ctx.position does NOT wrap — for follow/orbit compute X/Z deltas as the shortest wrapped distance ((to-from)%size+size+size/2)%size-size/2, size = 16384 (X) or 2048 (Z). Y is not wrapped; world voxel edits require y in [0,128).
-
-## Component API (self)
-- Identity/tree/state: self.id, self.parentId, self.state, self.child(id), self.children(). An entity holds at most 64 components including the root; beyond the cap ctx.selection.createChild fails and portable import rejects the definition. Root and child BodyConfig values in inventory/market PB data are defaults; script body setters change runtime values, Pause preserves them, and global Stop restores the defaults.
-- Queries: getWorldPosition(), getWorldRotation(), getLocalPosition(), getLocalRotation(), localToWorldDirection(dir), getPivot(), getBounds(). Pivot/bounds/setPivot use entity-local coordinates. Kinematic child transforms are parent-relative; a kinematic root's setters use world position/orientation.
-- Voxels: self.voxels.set/clear/paint/clearCell/subdivide and self.microVoxels.set/clear/paint enqueue commands. Immediate Worker results preserve the shapes set {ok,placed,reason}, clear/clearCell {ok,removed,reason}, paint {ok,painted,reason}, subdivide {ok,subdivided,removed,reason}, but use reason 'queued' and only confirm command-buffer admission. Voxel cells are relative to the component pivot (root pivot = AABB centroid), not the entity corner, and fractional coordinates floor after applying the pivot; omitting color inherits the component's first block color. Removing the final voxel deletes the entity and all scripts/state.
-- Kinematics: setLocalPosition, setLocalRotation, setLocalEuler, setLocalSpin(axis,rpm), setPivot. Only kinematic component bodies accept direct pose commands; dynamic bodies are solver-driven.
-- Bodies: self.body.getType/setType ('kinematic'|'dynamic'), getMass/setMass(kg), getMaterial/setMaterial({restitution?,friction?}), getGravityEnabled/setGravityEnabled(bool), getCollisionEnabled/setCollisionEnabled(bool), getVelocity/getAngularVelocity, applyForce/applyLocalForce/applyTorque. Body setters return structured {ok,...,reason} results and only change runtime values; global Stop restores the defaults. Collision can be disabled on root or child components, removing their terrain/player/entity/raycast shapes while keeping them rendered and editable. Gravity is stored on all bodies but only affects dynamic bodies. Apply methods target the calling component body's independent accumulator, return boolean, and are false/no-op for kinematic bodies, invalid vectors, or a full command buffer. self.body.apply* is not clamped by ctx.limits or included in the HUD Power Budget, even when self is the root, but all force/torque APIs reject non-finite components and components above the independent 1e12 safety ceiling. Default mass is owned block count * 10 kg; minimum mass is 0.1 kg (smaller positive values clamp, non-positive/non-finite values return invalid_mass), and a runtime mass survives hierarchy rebuilds until Stop. Restitution defaults to 0.1 and friction to 0.7. World voxels are the static collision layer; entity bodies have no static type.
-- Constraints: self.constraints.all/create/remove. create({id?,type:'point'|'hinge'|'weld',other,anchorA?,anchorB?,axisA?,axisB?,limits?,stiffness?,collideConnected?}) enqueues creation and returns provisional {ok:true,id:null,reason:'queued'}; supply an explicit id when later script logic needs a stable name. other is a component id or 'world' for a static world anchor. Without id, the main-thread name is type + '_' + other + '_' + self.id; stiffness defaults to 0.9 and clamps to [0,1], collideConnected defaults false, and omitted anchors use the target component pivot. Hinge limits are radians. all() returns the frame snapshot; remove(id) enqueues removal.
-- Legacy root-body forces: applyForce(worldForce), applyLocalForce(localForce), applyThrust(rootLocalForceAtThisComponent), applyForceAt(worldForce, componentLocalPoint), applyTorque(worldTorque). They have no effect on a kinematic root. Commands are per-update and clamped by ctx.limits (maxForce = max(80, mass*65); maxTorque = max(40, maxForce*max(0.75, boundingRadius))). The ctx.limits clamp and HUD Power Budget cover only this legacy root-body force surface; self.body.apply* is not clamped or included in that meter.
-- Every component can use setSeats([[x,y,z], ...]) and getSeats(); seat positions are relative to that component's pivot. An entity is mountable only when it owns at least one explicit seat. self.stop() remains root-only and resets every component script; a child must call ctx.root.stop().
-
-## Frame context (read-only)
-ctx.entityId, ctx.root, time, deltaTime, tick, position, velocity, rotation[pitch,yaw,roll], angularVelocity, groundDistance, mass, bodyType, gravity, limits{maxForce,maxTorque} for the legacy root-body force surface, input, blocks, players, world, selection, log(msg). Entity code runs at the engine-owned fixed 20 Hz cadence, so deltaTime is always 0.05 seconds and the rate cannot be changed by code.
-- input.down(code), pressed(code), released(code); codes include KeyW/A/S/D, Space and ShiftLeft; Shift/Control/Alt match either side. Only the mounted entity receives player input. Reserved keys never reach scripts: Escape, Backspace, Delete, F3, F5, KeyC, KeyE, KeyF, KeyG, KeyR, KeyV, Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9.
-- blocks.pressed(type?) and blocks.event(); types: place, remove, color, subdivide.
-- players[i].position is the eye position (feet + 1.62 m standing or +1.3 m crouched), not the feet; players[i].mass is the player mass in kg (fixed at 50).
-- World voxels: ctx.world.apiVersion is 2. world.voxels.set/world.voxels.clear/world.voxels.paint/world.voxels.clearCell/world.voxels.subdivide and world.microVoxels.set/world.microVoxels.clear/world.microVoxels.paint enqueue actions and immediately return provisional {ok:true,...,reason:'queued'} results. The host revalidates bounds, occupancy, bounds_exceeded, and action permissions before commit. world.voxels.get sees only the current frame's standard-write overlay and otherwise returns air; world.microVoxels.get returns air. world.entities(origin, radius=16), get, list, and inChunk use the nearby-entity frame snapshot. world.raycast(origin, direction, maxDistance=24) synchronously queries standard world voxels through a bounded host callback and returns {block,color,normal,position,distance} or null; at most 64 host raycasts are served per entity tick.
-- Selection: ctx.selection.get() returns the frozen frame snapshot. Mutations update an optimistic in-tick copy, enqueue the real main-thread action, and immediately return provisional {ok:true,...,reason:'queued'} shapes: clear {cleared}; cornerA/cornerB/box/cells/toggle/entity {selected}; ctx.selection.entityBox {selected,components}; delete {removed,standard,micro,entities,components,entityId,nodeId}; createChild {childId}; assemble {assembled,entityId,runtimeId}. The main thread can still reject child/entityBox/internal delete/createChild with entity_not_stopped. Selections are capped at a 64×64×64 AABB and may fail with bounds_exceeded. Assembly modes are auto, free_physics, projectile, programmable; bearing and piston behavior should be written as component scripts or constraints. Options are bodyType, restitution, friction, useGravity, mass; invalid modes fail with invalid_mode. Script and mouse adapters share the engine action layer but keep separate active selection hosts. Corner and box commands accept optional {micro:true}. Gate destructive calls so they run once.
-
-## Generation rules
+const AGENT_GENERATION_RULES = `## Generation rules
 1. Output exactly one JavaScript code block wrapped in \`\`\`js and no prose outside it.
-2. Use only the APIs above. Use self.state for cross-tick values. Use ctx.deltaTime only when explicitly integrating a rate; forces and torques are already per-update commands and must not be multiplied by deltaTime.
-3. Never use unbounded loops: every component invocation has a 5 ms QuickJS interrupt deadline and every entity frame has a 64-checkpoint VM budget. Exceeding either immediately interrupts and disables the whole entity to protect the page thread. Avoid expensive full-tree traversal and cache known ids when appropriate.
+2. Use only the canonical APIs above. Use self.state for cross-tick values. Use ctx.deltaTime only when explicitly integrating a rate; forces and torques are already per-update commands and must not be multiplied by deltaTime.
+3. Never use unbounded loops. Avoid expensive full-tree traversal and cache known component ids when appropriate.
 4. Hover: lift = mass*abs(gravityY) + heightError*Kp - verticalVelocity*Kd, plus attitude torque.
 5. Stabilize with torque from attitude error and angular-velocity damping.
 6. Quadcopter children use setLocalSpin for visuals and applyThrust([0,thrust,0]) for differential lift; yaw uses root torque.
 7. Check ctx.players.length before following a player.
 8. Throttle logs, e.g. if (ctx.tick % 60 === 0) ctx.log(...).
-9. For queued mutations, result.ok confirms command-buffer admission rather than final main-thread commit. On command_limit, do not update optimistic script state as if the mutation succeeded.
-10. Follow/orbit/seek across the torus seam must use the wrapped shortest-distance delta for X/Z from the topology note above, never raw position differences; Y is not wrapped.
-11. Vertical offsets relative to the player start from the eye position (+1.62 m standing or +1.3 m crouched).
-12. Gate destructive selection commands with self.state or an input edge; never call delete/assemble/createChild unconditionally every tick.
+9. Respect the provisional queued-mutation semantics and command-limit behavior stated in the canonical contract.
+10. Follow/orbit/seek across a torus seam with the wrapped shortest-distance formula from the canonical contract, never raw X/Z differences.
+11. Player-relative vertical offsets start from the documented eye position, not feet.
+12. Gate destructive selection commands with self.state or an input edge; never call delete/assemble/createChild unconditionally every tick.`;
 
-`;
+export const AGENT_SYSTEM_PROMPT = [
+  AGENT_ROLE,
+  renderAgentApiReference(),
+  AGENT_GENERATION_RULES
+].join('\n\n');
 
 /**
  * Approximate token count for text. Roughly ~3.5 chars per token for code/English text.

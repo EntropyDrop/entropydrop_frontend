@@ -138,7 +138,10 @@ export default {
         quotaExceeded: 'Credit 额度不足',
         proTag: '加速',
         loadingModels: '加载中...',
-        btnLoadingModel: '正在加载模型...'
+        btnLoadingModel: '正在加载模型...',
+        btnSubscribePro: '订阅 PRO 解锁该模型',
+        proModelTitle: 'PRO 专属模型',
+        proModelDesc: '当前选择的模型仅限 PRO 会员使用，请订阅后使用。'
     },
     collection: {
         title: '我的收藏',
@@ -897,7 +900,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         creatorCommercialDescription: '您是该作品的生成者，并拥有永久、全球、非独占的商业使用许可。',
         publicNonCommercialDescription: '任何人均可按照 CC BY-NC 4.0，在署名条件下用于非商业目的、分享和修改。',
         privateLicenseDescription: '该作品当前为私有内容，未向其他用户提供新的公共访问。',
-        publicDoesNotGrantCommercial: '您的商用许可仅属于生成账户；公开展示不会向其他用户授予商用权。',
+        publicDoesNotGrantCommercial: '您的商用许可仅属于生成者账户；公开展示不会向其他用户授予商用权。',
         otherUserNoCommercial: '您仅获得 CC BY-NC 4.0 非商业许可；公开可见或可下载不代表获得商用权。',
         previousPublicLicense: '该作品曾经公开；此前已合法取得的 CC BY-NC 4.0 许可不因转为私有而撤销。',
         viewLicenseTerms: '查看 CC BY-NC 4.0 完整条款',

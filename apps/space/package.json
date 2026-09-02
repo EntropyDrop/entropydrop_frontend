@@ -11,9 +11,11 @@
   "scripts": {
     "generate:protobuf": "protoc --plugin=protoc-gen-ts_proto=../../node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=src/generated --ts_proto_opt=esModuleInterop=true,forceLong=number,useOptionals=all,outputJsonMethods=false,outputClientImpl=false,enumsAsLiterals=true -I proto proto/inventory.proto",
     "generate:lod": "node tools/generate-distant-lod-cache.mjs",
+    "docs:generate": "node tools/generate-api-docs.ts",
+    "docs:check": "node tools/generate-api-docs.ts --check",
     "build": "npm run generate:lod && vite build",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm test && npm run build",
+    "check": "npm run docs:check && npm run typecheck && npm test && npm run build",
     "audit:deps": "npm audit --audit-level=high",
     "preview": "vite preview",
     "test": "npm run generate:lod && node --import ./test/setup.ts --test --test-concurrency=1 \"test/*.test.ts\""

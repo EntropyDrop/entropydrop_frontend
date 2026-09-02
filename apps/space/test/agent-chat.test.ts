@@ -11,6 +11,7 @@ import {
   AGENT_CONFIG_STORAGE_KEY,
   AGENT_SYSTEM_PROMPT
 } from '../src/engine/contraption/AgentChat.ts';
+import { renderAgentApiReference } from '../src/engine/contraption/ScriptApiContract.ts';
 
 test('extractCodeBlock extracts a fenced JavaScript block', () => {
   const content = 'Here is the controller:\n```js\nself.applyForce([0, 100, 0]);\n```\nDone.';
@@ -201,6 +202,8 @@ test('saveAgentConfig and loadAgentConfig round-trip', () => {
 });
 
 test('AGENT_SYSTEM_PROMPT contains the core API and generation rules', () => {
+  assert.ok(AGENT_SYSTEM_PROMPT.includes(renderAgentApiReference()), 'prompt must embed the generated canonical API reference');
+  assert.ok(AGENT_SYSTEM_PROMPT.includes('Canonical Space Script API V2 contract'));
   assert.ok(AGENT_SYSTEM_PROMPT.includes('applyForce'));
   assert.ok(AGENT_SYSTEM_PROMPT.includes('setLocalSpin'));
   assert.ok(AGENT_SYSTEM_PROMPT.includes('groundDistance'));

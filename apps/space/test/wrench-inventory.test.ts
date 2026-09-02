@@ -631,6 +631,54 @@ test('Wrench cannot drive a grabbed entity through another entity', () => {
   assert.equal(obstacle.position.x, 3.5, 'a kinematic obstacle must remain fixed');
 });
 
+test('Wrench can pull apart rotated entity boxes whose broadphase bounds overlap', () => {
+  const world = {
+    getBlock: () => BlockTypes.AIR,
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false }),
+    microVoxels: { get: () => null }
+  };
+  const physics = new ContraptionPhysics(world as any);
+  const scene = new THREE.Scene();
+  const grabbed = new Contraption(
+    7,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { bodyType: 'dynamic', friction: 0, restitution: 0 }
+  );
+  const obstacle = new Contraption(
+    8,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(-0.6, 9.4, -0.3),
+    scene,
+    { bodyType: 'kinematic', friction: 0, restitution: 0 }
+  );
+  obstacle.quaternion.setFromEuler(new THREE.Euler(0, 0, 0.9));
+  obstacle.updateTransform();
+
+  // Settle the initial overlap to the normal one-millimetre contact slop. The
+  // rotated obstacle's world AABB still contains empty corners around that
+  // contact, which used to make the wrench preflight return zero velocity.
+  physics.resolveContraptionPairs([grabbed, obstacle]);
+  const outwardVelocity = grabbed.position.clone()
+    .sub(obstacle.position)
+    .normalize()
+    .multiplyScalar(10);
+  const constrained = physics.constrainWrenchVelocity(
+    grabbed,
+    grabbed.getRigidBody('root'),
+    outwardVelocity,
+    1 / 60,
+    [grabbed, obstacle]
+  );
+
+  assert.ok(
+    constrained.velocity.dot(outwardVelocity) > outwardVelocity.lengthSq() * 0.99,
+    `a separating wrench drive must survive rotated-box preflight, velocity=${constrained.velocity.toArray()}`
+  );
+});
+
 test('Wrench resolves a grabbed kinematic child to its nearest dynamic body', () => {
   const entity = makeContraptionWithChildren();
   const controller = Object.create(PlayerController.prototype);

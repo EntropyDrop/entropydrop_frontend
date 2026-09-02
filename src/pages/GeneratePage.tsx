@@ -470,10 +470,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
         if (isModelPro && !isPro) {
             setInfoModal({
                 isOpen: true,
-                title: current.lang === 'zh-hans' ? 'PRO 专属模型' : 'PRO Exclusive Model',
-                message: current.lang === 'zh-hans' 
-                    ? '当前选择的模型仅限 PRO 会员使用，请订阅后使用。' 
-                    : 'The selected model is exclusive to PRO members. Please subscribe to use it.',
+                title: current.generate.proModelTitle,
+                message: current.generate.proModelDesc,
                 type: 'info'
             })
             return
@@ -1274,23 +1272,13 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
                                 <button
                                       disabled={
-                                          (!modelVersion || modelProStates[modelVersion] === undefined || !isPro) ? (
-                                              isGenerating ||
-                                              modelVersion === 'unknown' ||
-                                              !modelVersion ||
-                                              generationCreditCost === null ||
-                                              (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
-                                              (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
-                                              (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
-                                          ) : (
-                                              isGenerating ||
-                                              modelVersion === 'unknown' ||
-                                              !modelVersion ||
-                                              generationCreditCost === null ||
-                                              (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
-                                              (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
-                                              (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
-                                          )
+                                          isGenerating ||
+                                          modelVersion === 'unknown' ||
+                                          !modelVersion ||
+                                          generationCreditCost === null ||
+                                          (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
+                                          (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
+                                          (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
                                       }
                                       onClick={(() => {
                                           const isMaintenance = (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled);
@@ -1324,8 +1312,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                           </span>
                                       ) : (modelVersion && modelProStates[modelVersion] && !isPro) ? (
                                           <span key="subscribe" className="flex items-center justify-center gap-1.5">
-                                              <Icon icon="pixelarticons:gift" className="text-black" />
-                                              <span>{current.lang === 'zh-hans' ? '订阅 PRO 专属模型' : 'Subscribe for PRO Model'}</span>
+                                              <Icon icon="pixelarticons:zap" className="text-black" />
+                                              <span>{current.generate.btnSubscribePro}</span>
                                           </span>
                                       ) : (
                                           <span key="start" className="flex items-center justify-center gap-1.5">

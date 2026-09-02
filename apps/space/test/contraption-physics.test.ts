@@ -5,6 +5,7 @@ import { BodyType, Contraption, ContraptionMode } from '../src/engine/contraptio
 import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 import { compileBehaviorPrompt } from '../src/engine/contraption/BehaviorAgent.ts';
+import { SPACE_SCRIPT_API_V2 } from '../src/engine/contraption/ScriptApiContract.ts';
 
 function makeContraption() {
   return new Contraption(
@@ -23,15 +24,14 @@ test('unified self API: every component exposes the same surface (root/child)', 
   const contraption = makeContraption();
   // Unified self surface exposes common, kinematic, and rigid-body methods on one object.
   const keys = Object.keys(contraption.scriptApi).sort();
-  assert.deepEqual(keys, [
-    'apiVersion',
-    'applyForce', 'applyForceAt', 'applyLocalForce', 'applyThrust', 'applyTorque',
-    'body', 'child', 'children', 'constraints', 'getBounds', 'getLocalPosition', 'getLocalRotation',
-    'getPivot', 'getSeats', 'getWorldPosition', 'getWorldRotation', 'id', 'localToWorldDirection',
-    'microVoxels', 'parentId',
-    'setLocalEuler', 'setLocalPosition', 'setLocalRotation',
-    'setLocalSpin', 'setPivot', 'setSeats', 'state', 'stop', 'voxels'
-  ].sort());
+  assert.deepEqual(keys, [...SPACE_SCRIPT_API_V2.runtimeSurfaces.self].sort());
+  for (const namespace of ['body', 'constraints', 'voxels', 'microVoxels']) {
+    assert.deepEqual(
+      Object.keys(contraption.scriptApi[namespace]).sort(),
+      [...SPACE_SCRIPT_API_V2.runtimeSurfaces[`self.${namespace}`]].sort(),
+      `${namespace} runtime surface must match the canonical API contract`
+    );
+  }
 
   // Root rigid-body methods work; kinematic methods are no-ops while physics-driven.
   contraption.scriptApi.applyForce([0, 100, 0]);
