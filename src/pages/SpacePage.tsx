@@ -1,6 +1,4 @@
-import { useState } from 'react'
 import { Icon } from '@iconify/react'
-import { Link } from 'react-router-dom'
 
 import { PageContainer } from '../components/PageContainer'
 import { SEO } from '../components/SEO'
@@ -10,655 +8,275 @@ interface SpacePageProps {
     current: LangData
 }
 
+interface SpaceImageSlotProps {
+    src?: string
+    alt: string
+    title: string
+    recommendSize: string
+    aspectRatio?: string
+    className?: string
+    slotId?: string
+    icon?: string
+}
+
+/**
+ * Reusable visual placeholder slot for Space assets/screenshots.
+ * When `src` is provided in the future, it seamlessly displays the image.
+ * Otherwise, it displays a sleek cyberpunk HUD placeholder frame with size and slot recommendations.
+ */
+function SpaceImageSlot({
+    src,
+    alt,
+    title,
+    recommendSize,
+    aspectRatio = 'aspect-video',
+    className = '',
+    slotId,
+    icon = 'pixelarticons:image'
+}: SpaceImageSlotProps) {
+    if (src) {
+        return (
+            <div className={`relative overflow-hidden border border-white/10 bg-black/50 ${aspectRatio} ${className}`}>
+                <img
+                    src={src}
+                    alt={alt}
+                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                    loading="lazy"
+                />
+            </div>
+        )
+    }
+
+    return (
+        <div
+            className={`group relative flex flex-col items-center justify-center overflow-hidden border border-dashed border-white/20 bg-gradient-to-b from-white/[0.04] to-black/70 p-4 transition-all duration-300 hover:border-green-500/50 hover:bg-white/[0.06] ${aspectRatio} ${className}`}
+        >
+            {/* Subtle background radar grid */}
+            <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#3c8527_1px,transparent_1px)] bg-[size:14px_14px] pointer-events-none" />
+
+            {/* Slot Identifier Badge */}
+            {slotId && (
+                <div className="absolute top-2.5 left-2.5 font-mono text-[9px] uppercase tracking-wider text-green-400/80 border border-green-500/30 bg-black/80 px-2 py-0.5 z-10">
+                    SLOT // {slotId}
+                </div>
+            )}
+
+            {/* Corner crosshairs */}
+            <div className="absolute top-2 right-2 text-white/20 font-mono text-xs select-none pointer-events-none">+</div>
+            <div className="absolute bottom-2 left-2 text-white/20 font-mono text-xs select-none pointer-events-none">+</div>
+            <div className="absolute bottom-2 right-2 text-white/20 font-mono text-xs select-none pointer-events-none">+</div>
+
+            <div className="relative z-10 flex flex-col items-center gap-2 text-center max-w-[90%]">
+                <div className="flex h-10 w-10 items-center justify-center border border-green-500/30 bg-green-500/10 text-green-300 shadow-[0_0_15px_rgba(74,222,128,0.15)] transition-transform group-hover:scale-110">
+                    <Icon icon={icon} className="text-xl" />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                    <span className="font-mono text-xs font-bold text-white/90 group-hover:text-green-300 transition-colors">
+                        {title}
+                    </span>
+                    <span className="font-mono text-[10px] text-white/40">
+                        待替换图片 · 建议尺寸 {recommendSize}
+                    </span>
+                </div>
+            </div>
+        </div>
+    )
+}
+
 export function SpacePage({ current }: SpacePageProps) {
     const data = current.space_page
     const spaceAppUrl = import.meta.env.VITE_SPACE_URL || '/space/app/'
     const offlineSpaceAppUrl = `${spaceAppUrl}${spaceAppUrl.includes('?') ? '&' : '?'}mode=offline`
 
-    const [activeTab, setActiveTab] = useState<'compiler' | 'voxel' | 'workflow' | 'torus'>('compiler')
-    const [selectedPresetId, setSelectedPresetId] = useState<string>('hover')
-    const [voxelMode, setVoxelMode] = useState<'standard' | 'micro'>('micro')
-    const [copiedCode, setCopiedCode] = useState(false)
-
-    const activePreset = data.compilerDemo.presets.find(p => p.id === selectedPresetId) || data.compilerDemo.presets[0]
-
-    const handleCopy = (text: string) => {
-        navigator.clipboard.writeText(text)
-        setCopiedCode(true)
-        setTimeout(() => setCopiedCode(false), 2000)
+    // Pre-allocated image slots:
+    const IMAGE_SLOTS = {
+        FEATURE_VOXEL: '/images/space_feature_drone.png',
+        FEATURE_PHYSICS: '/images/space_feature_vehicle.png',
+        FEATURE_AI: '/images/space_feature_entity_editor.png',
+        FEATURE_TORUS: '/images/space_feature_torus.png',
     }
+
+    const featureIcons = [
+        'pixelarticons:box',
+        'pixelarticons:zap',
+        'pixelarticons:code',
+        'pixelarticons:globe'
+    ]
+
+    const featureSlotKeys: (keyof typeof IMAGE_SLOTS)[] = [
+        'FEATURE_VOXEL',
+        'FEATURE_PHYSICS',
+        'FEATURE_AI',
+        'FEATURE_TORUS'
+    ]
+
+    const featureSizes = [
+        '1200×675 (16:9)',
+        '1200×675 (16:9)',
+        '1200×675 (16:9)',
+        '1200×675 (16:9)'
+    ]
 
     return (
         <PageContainer
             alignItems="items-start"
             height="h-full"
-            gap="gap-8 sm:gap-12"
+            gap="gap-10 sm:gap-14"
             className="relative"
         >
             <SEO title={data.title} description={data.description} />
 
             {/* ===================== HERO SECTION ===================== */}
-            <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 border-b border-white/10 pb-10 sm:pb-12 shrink-0 w-full">
-                {/* Left Col: Hero Information */}
-                <div className="lg:col-span-7 flex flex-col justify-center gap-5 py-2">
-                    {/* Badge row */}
-                    <div className="flex flex-wrap items-center gap-2.5">
-                        <span className="inline-flex items-center gap-2 border border-green-500/40 bg-green-500/10 px-2.5 py-1 text-[11px] sm:text-xs font-mono uppercase tracking-wider text-green-400">
-                            <span className="h-2 w-2 rounded-none bg-green-400 animate-pulse" />
-                            {data.eyebrow}
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] sm:text-xs font-mono uppercase tracking-wider text-white/70">
-                            <Icon icon="pixelarticons:zap" className="text-green-400" />
-                            {data.platform}
-                        </span>
-                        <span className="inline-flex items-center gap-1 border border-green-400/40 bg-green-400/10 px-2 py-1 text-[11px] sm:text-xs font-mono uppercase tracking-wider text-green-400 font-bold">
+            <section className="flex flex-col gap-6 border-b border-white/10 pb-10 sm:pb-14 shrink-0 w-full">
+                {/* Eyebrow */}
+                <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="inline-flex items-center gap-2 border border-green-500/40 bg-green-500/10 px-2.5 py-1 text-[11px] font-mono uppercase tracking-wider text-green-400">
+                        <span className="h-2 w-2 bg-green-400 animate-pulse" />
+                        {data.eyebrow}
+                    </span>
+                </div>
+
+                {/* Title & Tagline */}
+                <div className="flex flex-col gap-2.5">
+                    <div className="flex items-start gap-3 flex-wrap">
+                        <h1 className={`m-0 text-3xl sm:text-5xl lg:text-6xl font-bold leading-[1.08] text-white ${current.fontClass}`}>
+                            {data.title}
+                        </h1>
+                        <span className="inline-block border border-green-400/40 bg-green-400/15 text-green-400 text-xs sm:text-sm font-mono px-2 py-0.5 uppercase tracking-widest font-bold self-start mt-1">
                             BETA
                         </span>
                     </div>
+                    <p className={`m-0 text-lg sm:text-2xl font-semibold text-green-400 leading-snug ${current.fontClass}`}>
+                        {data.tagline}
+                    </p>
+                    <p className={`m-0 max-w-3xl text-sm sm:text-base leading-relaxed text-white/70 ${current.fontClass}`}>
+                        {data.description}
+                    </p>
+                </div>
 
-                    {/* Main Title & Tagline */}
-                    <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className={`m-0 text-3xl sm:text-5xl lg:text-6xl font-bold leading-[1.08] bg-gradient-to-r from-white via-white/95 to-green-300/70 bg-clip-text text-transparent ${current.fontClass}`}>
-                                {data.title}
-                            </h1>
-                            <span className="inline-block border border-green-400/40 bg-green-400/15 text-green-400 text-xs sm:text-sm font-mono px-2 py-0.5 uppercase tracking-widest font-bold">
-                                BETA
-                            </span>
-                        </div>
-                        <p className={`m-0 text-lg sm:text-2xl font-semibold text-green-400/90 leading-snug ${current.fontClass}`}>
-                            {data.tagline}
-                        </p>
-                        <p className={`m-0 max-w-2xl text-sm sm:text-base leading-relaxed text-white/70 ${current.fontClass}`}>
-                            {data.description}
-                        </p>
+                {/* Quick Specs Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 py-1 max-w-4xl">
+                    <div className="border border-white/10 bg-black/40 p-3 flex flex-col gap-1">
+                        <span className="text-[10px] font-mono text-green-400 font-bold uppercase tracking-wider">SCALE</span>
+                        <span className={`text-xs font-bold text-white ${current.fontClass}`}>{data.stats.scale}</span>
                     </div>
-
-                    {/* Stat Badges Grid: The 5 Elements */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 py-1.5">
-                        <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">{data.pillars[0]?.tag || 'HIGH FREEDOM'}</span>
-                            <span className={`text-[11px] font-bold text-white ${current.fontClass}`}>{data.stats.scale}</span>
-                        </div>
-                        <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">{data.pillars[1]?.tag || 'VOXEL PHYSICS'}</span>
-                            <span className={`text-[11px] font-bold text-white ${current.fontClass}`}>{data.stats.physics}</span>
-                        </div>
-                        <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">{data.pillars[2]?.tag || 'PROGRAMMABLE'}</span>
-                            <span className={`text-[11px] font-bold text-blue-300 ${current.fontClass}`}>{data.stats.programmable}</span>
-                        </div>
-                        <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">{data.pillars[3]?.tag || 'MULTIPLAYER'}</span>
-                            <span className={`text-[11px] font-bold text-white ${current.fontClass}`}>{data.stats.multiplayer}</span>
-                        </div>
-                        <div className="border border-white/10 bg-black/30 p-2.5 flex flex-col gap-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-green-400 font-bold">{data.pillars[4]?.tag || 'SEAMLESS TORUS'}</span>
-                            <span className={`text-[11px] font-bold text-yellow-300 ${current.fontClass}`}>{data.stats.torus}</span>
-                        </div>
+                    <div className="border border-white/10 bg-black/40 p-3 flex flex-col gap-1">
+                        <span className="text-[10px] font-mono text-green-400 font-bold uppercase tracking-wider">PHYSICS</span>
+                        <span className={`text-xs font-bold text-white ${current.fontClass}`}>{data.stats.physics}</span>
                     </div>
-
-                    {/* CTA Buttons */}
-                    <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                        <a
-                            href={spaceAppUrl}
-                            className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:play" className="text-xl" />
-                            <span>{data.primaryCta}</span>
-                            <Icon icon="pixelarticons:arrow-right" className="text-lg transition-transform group-hover:translate-x-1.5" />
-                        </a>
-                        <a
-                            href={offlineSpaceAppUrl}
-                            className={`inline-flex min-h-12 items-center justify-center gap-2 border border-green-500/35 bg-green-500/10 px-6 py-3 text-sm font-bold text-green-200 transition-all hover:border-green-400/60 hover:bg-green-500/20 hover:text-white no-underline ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:cloud-off" className="text-lg" />
-                            <span>{data.offlineCta}</span>
-                        </a>
-                        <a
-                            href="#space-sandbox"
-                            className={`inline-flex min-h-12 items-center justify-center gap-2 border border-white/20 bg-white/5 px-6 py-3 text-sm text-white/80 transition-all hover:border-white/40 hover:bg-white/10 hover:text-white no-underline ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:sliders" className="text-lg text-green-400" />
-                            <span>{data.secondaryCta}</span>
-                        </a>
+                    <div className="border border-white/10 bg-black/40 p-3 flex flex-col gap-1">
+                        <span className="text-[10px] font-mono text-blue-400 font-bold uppercase tracking-wider">AI AGENT</span>
+                        <span className={`text-xs font-bold text-blue-300 ${current.fontClass}`}>{data.stats.programmable}</span>
                     </div>
-
-                    {/* Skin Prerequisite Alert */}
-                    <div className="flex items-center justify-between gap-3 border border-yellow-500/25 bg-yellow-500/5 p-3 sm:p-3.5 mt-1">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                            <Icon icon="pixelarticons:avatar" className="text-lg text-yellow-400 shrink-0" />
-                            <div className="flex flex-col min-w-0">
-                                <span className={`text-xs font-bold text-yellow-200 ${current.fontClass}`}>
-                                    {data.skinNotice.title}
-                                </span>
-                                <span className={`text-[11px] text-white/60 truncate ${current.fontClass}`}>
-                                    {data.skinNotice.description}
-                                </span>
-                            </div>
-                        </div>
-                        <Link
-                            to="/skin/edit"
-                            className={`shrink-0 border border-yellow-500/30 bg-yellow-500/10 hover:bg-yellow-500/20 px-3 py-1.5 text-xs font-bold text-yellow-300 hover:text-yellow-200 transition-all no-underline ${current.fontClass}`}
-                        >
-                            {data.skinNotice.action}
-                        </Link>
+                    <div className="border border-white/10 bg-black/40 p-3 flex flex-col gap-1">
+                        <span className="text-[10px] font-mono text-yellow-400 font-bold uppercase tracking-wider">TORUS</span>
+                        <span className={`text-xs font-bold text-yellow-300 ${current.fontClass}`}>{data.stats.torus}</span>
                     </div>
                 </div>
 
-                {/* Right Col: Interactive 3D Voxel Telemetry HUD */}
-                <div className="lg:col-span-5 flex flex-col">
-                    <div className="relative h-full min-h-[380px] overflow-hidden border border-green-500/30 bg-black/50 p-5 shadow-2xl flex flex-col justify-between group">
-                        {/* Background Grid & Scanline */}
-                        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,rgba(74,222,128,0.8)_1px,transparent_1.5px)] bg-[size:24px_24px] pointer-events-none" />
-                        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-green-400 to-transparent opacity-50" />
-
-                        {/* Top HUD Header */}
-                        <div className="relative z-10 flex items-center justify-between border-b border-white/10 pb-3">
-                            <div className="flex items-center gap-2">
-                                <div className="h-2 w-2 bg-green-400 animate-ping" />
-                                <span className="font-mono text-xs font-bold text-green-400 tracking-widest">
-                                    LIVE ENTITY // #0x7F2B
-                                </span>
-                            </div>
-                            <span className="font-mono text-[10px] text-white/40 uppercase tracking-widest">
-                                TORUS WORLD (DONUT)
-                            </span>
-                        </div>
-
-                        {/* Middle: 3D Hologram Wireframe Representation */}
-                        <div className="relative z-10 my-auto py-6 flex flex-col items-center justify-center">
-                            {/* Animated Isometric Voxel Cube Mockup */}
-                            <div className="relative w-36 h-36 flex items-center justify-center">
-                                {/* Outer radar rings */}
-                                <div className="absolute inset-0 border border-green-500/20 rounded-full animate-spin [animation-duration:15s]" />
-                                <div className="absolute inset-3 border border-dashed border-green-400/30 rounded-full animate-spin [animation-duration:25s] [animation-direction:reverse]" />
-
-                                {/* 3D Voxel Cluster Graphic */}
-                                <div className="relative z-20 flex flex-col items-center">
-                                    <div className="grid grid-cols-3 gap-1 p-2 border border-green-400/40 bg-green-500/10 shadow-[0_0_30px_rgba(74,222,128,0.2)]">
-                                        <div className="w-5 h-5 bg-[#3c8527] border border-green-300/40 shadow-sm" />
-                                        <div className="w-5 h-5 bg-[#4ea632] border border-green-300/40 shadow-sm animate-pulse" />
-                                        <div className="w-5 h-5 bg-[#a6df7a] border border-green-300/40 shadow-sm" />
-                                        <div className="w-5 h-5 bg-[#255418] border border-green-300/40 shadow-sm" />
-                                        <div className="w-5 h-5 bg-[#3c8527] border border-green-300/40 shadow-sm" />
-                                        <div className="w-5 h-5 bg-[#4ea632] border border-green-300/40 shadow-sm" />
-                                        <div className="w-5 h-5 bg-[#17380f] border border-green-300/40 shadow-sm" />
-                                        <div className="w-5 h-5 bg-[#255418] border border-green-300/40 shadow-sm" />
-                                        <div className="w-5 h-5 bg-[#3c8527] border border-green-300/40 shadow-sm" />
-                                    </div>
-                                    <div className="mt-2 font-mono text-[10px] text-green-300 font-bold tracking-wider">
-                                        RIGIDBODY · KINEMATICS ACTIVE
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Center Tag */}
-                            <div className="mt-3 inline-flex items-center gap-2 border border-green-500/30 bg-green-500/10 px-3 py-1 font-mono text-xs text-green-300">
-                                <Icon icon="pixelarticons:code" className="text-sm" />
-                                <span>AI CONTROLLER: PD_HOVER_AUTOPILOT</span>
-                            </div>
-                        </div>
-
-                        {/* Bottom HUD Telemetry Data */}
-                        <div className="relative z-10 border-t border-white/10 pt-3 grid grid-cols-3 gap-2 font-mono text-[10px]">
-                            <div className="flex flex-col">
-                                <span className="text-white/40">ALTITUDE</span>
-                                <span className="text-green-300 font-bold">2.50 m (±0.01)</span>
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-white/40">LIFT THRUST</span>
-                                <span className="text-white font-bold">476.2 N</span>
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-white/40">MASS</span>
-                                <span className="text-white font-bold">48.0 kg</span>
-                            </div>
-                        </div>
-
-                        {/* Corner Accents */}
-                        <div className="absolute top-2 left-2 font-mono text-[9px] text-green-400/40">SYS // 0x24</div>
-                        <div className="absolute bottom-2 right-2 font-mono text-[9px] text-white/20">60 FPS // WebGL 2</div>
-                    </div>
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <a
+                        href={spaceAppUrl}
+                        className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${current.fontClass}`}
+                    >
+                        <Icon icon="pixelarticons:play" className="text-xl" />
+                        <span>{data.primaryCta}</span>
+                        <Icon icon="pixelarticons:arrow-right" className="text-lg transition-transform group-hover:translate-x-1.5" />
+                    </a>
+                    <a
+                        href={offlineSpaceAppUrl}
+                        className={`inline-flex min-h-12 items-center justify-center gap-2 border border-green-500/35 bg-green-500/10 px-6 py-3 text-sm font-bold text-green-200 transition-all hover:border-green-400/60 hover:bg-green-500/20 hover:text-white no-underline ${current.fontClass}`}
+                    >
+                        <Icon icon="pixelarticons:cloud-off" className="text-lg" />
+                        <span>{data.offlineCta}</span>
+                    </a>
+                    <a
+                        href="#space-features"
+                        className={`inline-flex min-h-12 items-center justify-center gap-2 border border-white/20 bg-white/5 px-5 py-3 text-sm text-white/80 transition-all hover:border-white/40 hover:bg-white/10 hover:text-white no-underline ${current.fontClass}`}
+                    >
+                        <Icon icon="pixelarticons:sliders" className="text-lg text-green-400" />
+                        <span>{data.secondaryCta}</span>
+                    </a>
                 </div>
             </section>
 
 
-            {/* ===================== FIVE CORE ELEMENTS MATRIX ===================== */}
-            <section className="flex flex-col gap-6 shrink-0 w-full">
+            {/* ===================== CORE MECHANICS & SYSTEMS ===================== */}
+            <section id="space-features" className="scroll-mt-8 flex flex-col gap-6 shrink-0 w-full">
                 <div className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-2 text-green-400">
                         <Icon icon="pixelarticons:sparkles" className="text-xl" />
                         <span className="font-mono text-xs uppercase tracking-widest text-green-400 font-bold">
-                            FIVE CORE PILLARS
+                            GAMEPLAY & SYSTEMS
                         </span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
                         <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${current.fontClass}`}>
-                            {data.pillarsTitle}
+                            {data.featuresTitle}
                         </h2>
                         <span className={`text-xs text-white/50 ${current.fontClass}`}>
-                            {data.pillarsSubtitle}
+                            {data.featuresSubtitle}
                         </span>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                    {data.pillars.map((pillar, index) => {
-                        const pillarIcons = [
-                            'pixelarticons:buildings',
-                            'pixelarticons:box',
-                            'pixelarticons:code',
-                            'pixelarticons:users',
-                            'pixelarticons:globe',
-                        ]
+                {/* 2x2 Visual Feature Cards with Image Placeholders */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {data.features.map((feature, index) => {
+                        const slotKey = featureSlotKeys[index]
+                        const imgSrc = slotKey ? IMAGE_SLOTS[slotKey] : undefined
 
                         return (
                             <article
-                                key={pillar.title}
-                                className="group relative flex flex-col justify-between gap-5 border border-white/10 bg-white/5 p-5 transition-all duration-300 hover:border-green-500/40 hover:bg-white/[0.08] hover:-translate-y-1"
+                                key={feature.title}
+                                className="group flex flex-col border border-white/10 bg-black/40 transition-all duration-300 hover:border-green-500/40 hover:bg-white/[0.04] overflow-hidden"
                             >
-                                <div className="flex flex-col gap-3">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex h-10 w-10 items-center justify-center border border-green-500/30 bg-green-500/10 text-green-300 transition-transform group-hover:scale-110">
-                                            <Icon icon={pillarIcons[index] || 'pixelarticons:zap'} className="text-xl" />
+                                {/* Feature Image Placeholder */}
+                                <SpaceImageSlot
+                                    src={imgSrc}
+                                    alt={feature.title}
+                                    title={feature.placeholderTitle || feature.title}
+                                    recommendSize={featureSizes[index] || '1200×675 (16:9)'}
+                                    aspectRatio="aspect-[16/9]"
+                                    slotId={slotKey}
+                                    icon={featureIcons[index]}
+                                />
+
+                                {/* Feature Content */}
+                                <div className="flex flex-col gap-3 p-5 sm:p-6 flex-1 justify-between">
+                                    <div className="flex flex-col gap-2.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex h-8 w-8 items-center justify-center border border-green-500/30 bg-green-500/10 text-green-300">
+                                                    <Icon icon={featureIcons[index] || 'pixelarticons:zap'} className="text-lg" />
+                                                </div>
+                                                <span className="font-mono text-xs uppercase text-green-400/80 font-bold tracking-wider">
+                                                    {feature.tag}
+                                                </span>
+                                            </div>
+                                            <span className="font-mono text-[10px] uppercase tracking-wider text-green-400 border border-green-500/20 bg-green-500/5 px-2 py-0.5">
+                                                {feature.badge}
+                                            </span>
                                         </div>
-                                        <span className="font-mono text-[10px] uppercase tracking-wider text-green-400/80 border border-green-500/20 bg-green-500/5 px-2 py-0.5">
-                                            {pillar.badge}
-                                        </span>
+
+                                        <h3 className={`m-0 text-lg font-bold text-white group-hover:text-green-300 transition-colors ${current.fontClass}`}>
+                                            {feature.title}
+                                        </h3>
+                                        <p className={`m-0 text-xs sm:text-sm leading-relaxed text-white/65 ${current.fontClass}`}>
+                                            {feature.description}
+                                        </p>
                                     </div>
-                                    <span className="font-mono text-[10px] uppercase text-green-400/70 font-bold tracking-wider">
-                                        {pillar.tag}
-                                    </span>
-                                    <h3 className={`m-0 text-base font-bold text-white group-hover:text-green-300 transition-colors ${current.fontClass}`}>
-                                        {pillar.title}
-                                    </h3>
-                                    <p className={`m-0 text-xs sm:text-sm leading-relaxed text-white/60 ${current.fontClass}`}>
-                                        {pillar.description}
-                                    </p>
-                                </div>
-                                <div className="flex items-center justify-between border-t border-white/5 pt-3 font-mono text-[10px] text-white/30">
-                                    <span>PILLAR // 0{index + 1}</span>
-                                    <span className="text-green-400/50 group-hover:text-green-400 transition-colors">READY</span>
+
+                                    <div className="flex items-center justify-between border-t border-white/5 pt-3 font-mono text-[10px] text-white/30">
+                                        <span>FEATURE // 0{index + 1}</span>
+                                        <span className="text-green-400/50 group-hover:text-green-400 transition-colors">ACTIVE</span>
+                                    </div>
                                 </div>
                             </article>
                         )
                     })}
                 </div>
-            </section>
-
-
-            {/* ===================== INTERACTIVE ENGINE SANDBOX HUB ===================== */}
-            <section id="space-sandbox" className="scroll-mt-6 flex flex-col gap-6 shrink-0 w-full border-y border-white/10 py-10">
-                {/* Header & Tabs */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                    <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center gap-2 text-blue-400">
-                            <Icon icon="pixelarticons:sliders" className="text-xl" />
-                            <span className="font-mono text-xs uppercase tracking-widest text-blue-400 font-bold">
-                                INTERACTIVE DEMO
-                            </span>
-                        </div>
-                        <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${current.fontClass}`}>
-                            {data.interactiveTitle}
-                        </h2>
-                        <p className={`m-0 text-xs sm:text-sm text-white/60 ${current.fontClass}`}>
-                            {data.interactiveSubtitle}
-                        </p>
-                    </div>
-
-                    {/* Tab Navigation Buttons */}
-                    <div className="flex flex-wrap border border-white/15 bg-black/40 p-1 gap-1">
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('compiler')}
-                            className={`flex items-center gap-2 px-3 py-2 text-xs font-bold transition-all cursor-pointer border-none ${activeTab === 'compiler'
-                                ? 'bg-[#3c8527] text-white shadow-sm'
-                                : 'bg-transparent text-white/60 hover:text-white hover:bg-white/5'
-                                } ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:code" className="text-base" />
-                            <span>{data.tabs.agentCompiler}</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('voxel')}
-                            className={`flex items-center gap-2 px-3 py-2 text-xs font-bold transition-all cursor-pointer border-none ${activeTab === 'voxel'
-                                ? 'bg-[#3c8527] text-white shadow-sm'
-                                : 'bg-transparent text-white/60 hover:text-white hover:bg-white/5'
-                                } ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:box" className="text-base" />
-                            <span>{data.tabs.voxelScale}</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('workflow')}
-                            className={`flex items-center gap-2 px-3 py-2 text-xs font-bold transition-all cursor-pointer border-none ${activeTab === 'workflow'
-                                ? 'bg-[#3c8527] text-white shadow-sm'
-                                : 'bg-transparent text-white/60 hover:text-white hover:bg-white/5'
-                                } ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:zap" className="text-base" />
-                            <span>{data.tabs.entityWorkflow}</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('torus')}
-                            className={`flex items-center gap-2 px-3 py-2 text-xs font-bold transition-all cursor-pointer border-none ${activeTab === 'torus'
-                                ? 'bg-[#3c8527] text-white shadow-sm'
-                                : 'bg-transparent text-white/60 hover:text-white hover:bg-white/5'
-                                } ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:globe" className="text-base" />
-                            <span>{data.tabs.torusWorld}</span>
-                        </button>
-                    </div>
-                </div>
-
-                {/* TAB 1: AI BEHAVIOR COMPILER DEMO */}
-                {activeTab === 'compiler' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-black/30 border border-white/10 p-4 sm:p-6 animate-in fade-in duration-300">
-                        {/* Left: Preset Selector & Prompt */}
-                        <div className="lg:col-span-5 flex flex-col gap-4">
-                            <span className="font-mono text-xs text-green-400 font-bold uppercase tracking-wider flex items-center gap-2">
-                                <Icon icon="pixelarticons:human-handsup" className="text-base" />
-                                {data.compilerDemo.promptLabel}
-                            </span>
-
-                            {/* Preset Buttons */}
-                            <div className="flex flex-col gap-2">
-                                {data.compilerDemo.presets.map((preset) => {
-                                    const isSelected = preset.id === selectedPresetId
-                                    return (
-                                        <button
-                                            key={preset.id}
-                                            type="button"
-                                            onClick={() => setSelectedPresetId(preset.id)}
-                                            className={`text-left p-3 border transition-all cursor-pointer flex flex-col gap-1 ${isSelected
-                                                ? 'border-green-500 bg-green-500/10 shadow-[0_0_15px_rgba(74,222,128,0.15)]'
-                                                : 'border-white/10 bg-white/5 hover:border-white/30 hover:bg-white/10'
-                                                }`}
-                                        >
-                                            <div className="flex items-center justify-between">
-                                                <span className={`text-sm font-bold ${isSelected ? 'text-green-300' : 'text-white'} ${current.fontClass}`}>
-                                                    {preset.name}
-                                                </span>
-                                                {isSelected && (
-                                                    <span className="h-1.5 w-1.5 bg-green-400 animate-pulse" />
-                                                )}
-                                            </div>
-                                            <span className={`text-xs text-white/50 leading-relaxed ${current.fontClass}`}>
-                                                {preset.desc}
-                                            </span>
-                                        </button>
-                                    )
-                                })}
-                            </div>
-
-                            {/* Active Prompt Box */}
-                            <div className="border border-white/15 bg-black/60 p-3.5 flex flex-col gap-2 mt-auto">
-                                <div className="flex items-center justify-between text-[11px] font-mono text-white/40">
-                                    <span>NATURAL LANGUAGE INTENT</span>
-                                    <span className="text-green-400">READY TO COMPILE</span>
-                                </div>
-                                <p className={`m-0 text-sm text-green-200/90 italic font-mono bg-white/5 p-2.5 border-l-2 border-green-500`}>
-                                    "{activePreset.prompt}"
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Right: Code Viewer & Console Log Output */}
-                        <div className="lg:col-span-7 flex flex-col gap-4 min-w-0">
-                            {/* Controller Script Terminal */}
-                            <div className="flex flex-col border border-white/15 bg-[#0d1117] overflow-hidden">
-                                <div className="flex items-center justify-between bg-black/60 px-4 py-2.5 border-b border-white/10">
-                                    <div className="flex items-center gap-2">
-                                        <div className="flex gap-1.5">
-                                            <div className="w-2.5 h-2.5 bg-red-500/80" />
-                                            <div className="w-2.5 h-2.5 bg-yellow-500/80" />
-                                            <div className="w-2.5 h-2.5 bg-green-500/80" />
-                                        </div>
-                                        <span className="font-mono text-xs text-white/60 ml-2">
-                                            controller.generated.ts
-                                        </span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleCopy(activePreset.code)}
-                                        className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white bg-white/10 hover:bg-white/20 px-2 py-1 transition-colors cursor-pointer border-none font-mono"
-                                    >
-                                        <Icon icon={copiedCode ? "pixelarticons:check" : "pixelarticons:copy"} />
-                                        <span>{copiedCode ? "Copied" : "Copy"}</span>
-                                    </button>
-                                </div>
-
-                                <pre className="p-4 m-0 font-mono text-xs leading-relaxed text-green-300/90 overflow-x-auto custom-scrollbar max-h-64 select-text">
-                                    <code>{activePreset.code}</code>
-                                </pre>
-                            </div>
-
-                            {/* Simulated Live Console Log */}
-                            <div className="flex flex-col border border-white/10 bg-black/70 p-3 font-mono text-xs">
-                                <div className="flex items-center justify-between text-white/40 pb-2 border-b border-white/10 text-[10px]">
-                                    <span className="flex items-center gap-1.5 text-green-400">
-                                        <span className="w-1.5 h-1.5 bg-green-400 animate-ping" />
-                                        ENGINE TELEMETRY / AGENT RUNTIME
-                                    </span>
-                                    <span>60 HZ SIMULATION</span>
-                                </div>
-                                <div className="pt-2 text-white/70 space-y-1 text-[11px] leading-relaxed select-text">
-                                    {activePreset.log.split('\n').map((line, idx) => (
-                                        <div key={idx} className={line.includes('Error') ? 'text-red-400' : line.includes('Agent Log') ? 'text-green-300' : 'text-white/60'}>
-                                            {line}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* TAB 2: DUAL-SCALE VOXEL INSPECTOR */}
-                {activeTab === 'voxel' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-black/30 border border-white/10 p-4 sm:p-6 animate-in fade-in duration-300">
-                        {/* Left: Mode Switcher & Explanation */}
-                        <div className="lg:col-span-5 flex flex-col gap-4">
-                            <span className="font-mono text-xs text-blue-400 font-bold uppercase tracking-wider flex items-center gap-2">
-                                <Icon icon="pixelarticons:box" className="text-base" />
-                                {data.voxelDemo.title}
-                            </span>
-                            <p className={`text-sm text-white/70 leading-relaxed m-0 ${current.fontClass}`}>
-                                {data.voxelDemo.desc}
-                            </p>
-
-                            {/* Mode Toggle Buttons */}
-                            <div className="grid grid-cols-2 gap-2 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setVoxelMode('standard')}
-                                    className={`p-3.5 border text-left cursor-pointer transition-all flex flex-col gap-1 ${voxelMode === 'standard'
-                                        ? 'border-green-500 bg-green-500/10'
-                                        : 'border-white/10 bg-white/5 hover:border-white/30'
-                                        }`}
-                                >
-                                    <span className={`text-sm font-bold ${voxelMode === 'standard' ? 'text-green-300' : 'text-white'} ${current.fontClass}`}>
-                                        {data.voxelDemo.standardLabel}
-                                    </span>
-                                    <span className="text-[11px] text-white/50">Shovel Tool (Key 1)</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setVoxelMode('micro')}
-                                    className={`p-3.5 border text-left cursor-pointer transition-all flex flex-col gap-1 ${voxelMode === 'micro'
-                                        ? 'border-green-500 bg-green-500/10'
-                                        : 'border-white/10 bg-white/5 hover:border-white/30'
-                                        }`}
-                                >
-                                    <span className={`text-sm font-bold ${voxelMode === 'micro' ? 'text-green-300' : 'text-white'} ${current.fontClass}`}>
-                                        {data.voxelDemo.microLabel}
-                                    </span>
-                                    <span className="text-[11px] text-white/50">Spoon Tool (Key 2)</span>
-                                </button>
-                            </div>
-
-                            {/* Description Box */}
-                            <div className="border border-white/15 bg-black/50 p-4 flex flex-col gap-2">
-                                <span className={`text-sm font-bold text-green-300 ${current.fontClass}`}>
-                                    {voxelMode === 'standard' ? data.voxelDemo.standardLabel : data.voxelDemo.microLabel}
-                                </span>
-                                <p className={`m-0 text-xs sm:text-sm text-white/60 leading-relaxed ${current.fontClass}`}>
-                                    {voxelMode === 'standard' ? data.voxelDemo.standardDesc : data.voxelDemo.microDesc}
-                                </p>
-                            </div>
-
-                            {/* Palette Highlight */}
-                            <div className="border border-white/10 bg-white/5 p-3 flex items-center gap-3">
-                                <Icon icon="pixelarticons:paint-bucket" className="text-2xl text-yellow-400 shrink-0" />
-                                <div className="flex flex-col">
-                                    <span className={`text-xs font-bold text-white ${current.fontClass}`}>
-                                        {data.voxelDemo.paletteTitle}
-                                    </span>
-                                    <span className={`text-[11px] text-white/50 ${current.fontClass}`}>
-                                        {data.voxelDemo.paletteDesc}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Right: Visual Voxel Grid Breakdown */}
-                        <div className="lg:col-span-7 flex flex-col items-center justify-center border border-white/10 bg-black/60 p-6 min-h-[320px] relative overflow-hidden">
-                            <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#3c8527_1px,transparent_1px)] bg-[size:16px_16px]" />
-
-                            {voxelMode === 'standard' ? (
-                                <div className="relative z-10 flex flex-col items-center gap-4">
-                                    <div className="w-28 h-28 border-2 border-green-400 bg-green-500/20 flex items-center justify-center shadow-[0_0_35px_rgba(74,222,128,0.25)]">
-                                        <span className="font-mono text-xs font-bold text-green-300 text-center">
-                                            1.0m³<br />STANDARD BLOCK
-                                        </span>
-                                    </div>
-                                    <div className="font-mono text-xs text-white/60">
-                                        1 Block = 1 Instance · Volume: 1.0 m³
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="relative z-10 flex flex-col items-center gap-4">
-                                    <div className="grid grid-cols-5 gap-1 p-2 border-2 border-green-400 bg-green-500/10 shadow-[0_0_40px_rgba(74,222,128,0.3)]">
-                                        {Array.from({ length: 25 }).map((_, i) => (
-                                            <div
-                                                key={i}
-                                                className={`w-5 h-5 border border-green-300/30 transition-all ${i % 3 === 0 ? 'bg-[#3c8527]' : i % 2 === 0 ? 'bg-[#4ea632]' : 'bg-[#255418]'
-                                                    }`}
-                                            />
-                                        ))}
-                                    </div>
-                                    <div className="font-mono text-xs text-green-300 font-bold text-center">
-                                        5 × 5 × 5 = 125 Micro Voxels · 0.2m Resolution
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* TAB 3: ENTITYIZATION PIPELINE */}
-                {activeTab === 'workflow' && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-black/30 border border-white/10 p-4 sm:p-6 animate-in fade-in duration-300">
-                        <div className="border border-white/10 bg-white/5 p-5 flex flex-col gap-3">
-                            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                                <span className="font-mono text-xs text-green-400 font-bold">STEP 01</span>
-                                <Icon icon="pixelarticons:frame-check" className="text-xl text-green-400" />
-                            </div>
-                            <h4 className={`text-base font-bold text-white m-0 ${current.fontClass}`}>
-                                {data.entityDemo.step1Title}
-                            </h4>
-                            <p className={`text-xs sm:text-sm leading-relaxed text-white/60 m-0 ${current.fontClass}`}>
-                                {data.entityDemo.step1Desc}
-                            </p>
-                        </div>
-
-                        <div className="border border-green-500/30 bg-green-500/10 p-5 flex flex-col gap-3">
-                            <div className="flex items-center justify-between border-b border-green-500/20 pb-2">
-                                <span className="font-mono text-xs text-green-300 font-bold">STEP 02 // KEY 'G'</span>
-                                <Icon icon="pixelarticons:box" className="text-xl text-green-300" />
-                            </div>
-                            <h4 className={`text-base font-bold text-white m-0 ${current.fontClass}`}>
-                                {data.entityDemo.step2Title}
-                            </h4>
-                            <p className={`text-xs sm:text-sm leading-relaxed text-white/70 m-0 ${current.fontClass}`}>
-                                {data.entityDemo.step2Desc}
-                            </p>
-                        </div>
-
-                        <div className="border border-white/10 bg-white/5 p-5 flex flex-col gap-3">
-                            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                                <span className="font-mono text-xs text-blue-400 font-bold">STEP 03 // KEY 'C'</span>
-                                <Icon icon="pixelarticons:code" className="text-xl text-blue-400" />
-                            </div>
-                            <h4 className={`text-base font-bold text-white m-0 ${current.fontClass}`}>
-                                {data.entityDemo.step3Title}
-                            </h4>
-                            <p className={`text-xs sm:text-sm leading-relaxed text-white/60 m-0 ${current.fontClass}`}>
-                                {data.entityDemo.step3Desc}
-                            </p>
-                        </div>
-                    </div>
-                )}
-
-                {/* TAB 4: SEAMLESS TORUS DONUT WORLD */}
-                {activeTab === 'torus' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-black/30 border border-white/10 p-4 sm:p-6 animate-in fade-in duration-300">
-                        <div className="lg:col-span-6 flex flex-col gap-4">
-                            <span className="font-mono text-xs text-yellow-400 font-bold uppercase tracking-wider flex items-center gap-2">
-                                <Icon icon="pixelarticons:globe" className="text-base" />
-                                {data.torusDemo.title}
-                            </span>
-                            <p className={`text-sm text-white/70 leading-relaxed m-0 ${current.fontClass}`}>
-                                {data.torusDemo.desc}
-                            </p>
-                            <div className="flex flex-col gap-3 pt-2">
-                                <div className="border border-white/10 bg-white/5 p-3 flex flex-col gap-1">
-                                    <span className={`text-xs font-bold text-green-300 ${current.fontClass}`}>{data.torusDemo.feature1Title}</span>
-                                    <span className={`text-[11px] text-white/60 ${current.fontClass}`}>{data.torusDemo.feature1Desc}</span>
-                                </div>
-                                <div className="border border-white/10 bg-white/5 p-3 flex flex-col gap-1">
-                                    <span className={`text-xs font-bold text-blue-300 ${current.fontClass}`}>{data.torusDemo.feature2Title}</span>
-                                    <span className={`text-[11px] text-white/60 ${current.fontClass}`}>{data.torusDemo.feature2Desc}</span>
-                                </div>
-                                <div className="border border-white/10 bg-white/5 p-3 flex flex-col gap-1">
-                                    <span className={`text-xs font-bold text-yellow-300 ${current.fontClass}`}>{data.torusDemo.feature3Title}</span>
-                                    <span className={`text-[11px] text-white/60 ${current.fontClass}`}>{data.torusDemo.feature3Desc}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Right: Torus Donut Visualizer Diagram */}
-                        <div className="lg:col-span-6 flex flex-col items-center justify-center border border-white/10 bg-black/60 p-6 min-h-[320px] relative overflow-hidden">
-                            <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#3c8527_1px,transparent_1px)] bg-[size:20px_20px]" />
-                            <div className="relative z-10 flex flex-col items-center gap-4 text-center">
-                                {/* Stylized Torus Graphic */}
-                                <div className="relative w-44 h-44 flex items-center justify-center">
-                                    <div className="absolute inset-2 border-4 border-dashed border-green-400/40 rounded-full animate-spin [animation-duration:20s]" />
-                                    <div className="absolute inset-8 border-2 border-yellow-400/50 rounded-full" />
-                                    <div className="w-20 h-20 bg-green-500/10 border border-green-400/60 rounded-full flex flex-col items-center justify-center shadow-[0_0_40px_rgba(74,222,128,0.25)]">
-                                        <Icon icon="pixelarticons:globe" className="text-3xl text-green-300 animate-pulse" />
-                                    </div>
-                                    {/* Orbiting player marker */}
-                                    <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/80 border border-green-400 px-2 py-0.5 text-[10px] font-mono text-green-300">
-                                        <span className="w-1.5 h-1.5 bg-green-400 animate-ping" />
-                                        <span>WRAP: (X mod L, Z mod W)</span>
-                                    </div>
-                                </div>
-                                <div className="font-mono text-xs text-green-300 font-bold">
-                                    TOPOLOGICAL TORUS · ZERO SEAMLESS BOUNDARIES
-                                </div>
-                                <span className="font-mono text-[11px] text-white/50 max-w-sm">
-                                    No invisible walls. Walk straight ahead forever to circumnavigate the continuous torus world.
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                )}
             </section>
 
 

@@ -905,239 +905,80 @@ Email: support@entropydrop.com`
     },
     space_page: {
         title: 'EntropyDrop Space',
-        eyebrow: 'Playable prototype',
-        platform: 'WebGL 2 · Realtime Multiplayer · Torus Topology',
-        tagline: 'High-freedom voxel building · Voxel physics engine · Programmable AI · Realtime multiplayer · Seamless Torus world (Donut)',
-        description: 'An in-browser programmable voxel world. Sculpt freely across a seamless toroidal donut universe, entityize structures into rigid bodies with physics and collision, compile natural language into intelligent behaviors with AI agents, and build cooperatively in real time with players worldwide.',
+        eyebrow: 'PLAYABLE PROTOTYPE',
+        platform: 'WebGL 2 · Voxel Physics · Torus Topology',
+        tagline: 'AI-Assisted Building & Autonomous Control Voxel Universe',
+        description: 'Sculpt voxels across a seamless toroidal universe and turn structures into dynamic rigid bodies with one click. Leverage AI-assisted building to construct complex machinery and mount intelligent AI for autonomous control, cruising, and physical interaction directly in your browser.',
         primaryCta: 'Enter Space',
         offlineCta: 'Play Offline',
-        secondaryCta: 'Gameplay Guide',
-        skinNotice: {
-            title: 'Minecraft Skin Required',
-            description: 'Space uses your EntropyDrop Minecraft skin as your shared-world avatar. Please configure a skin before entering.',
-            action: 'Configure Skin'
-        },
+        secondaryCta: 'Core Features',
         stats: {
-            scale: '0.2m / 1.0m Dual-Scale',
-            physics: 'RigidBody // Dynamics & Collision',
-            programmable: 'NL Compiler · Open API',
-            multiplayer: 'Shared Persistent World',
-            torus: 'Torus Donut · Seamless Loop'
+            scale: '0.2m Micro Sculpting',
+            physics: 'Voxel Physics Engine',
+            programmable: 'AI Building & Auto Control',
+            torus: 'Seamless Torus'
         },
-        pillarsTitle: 'Five Core Elements & Gameplay Matrix',
-        pillarsSubtitle: 'High-freedom building, voxel physics, programmable AI, realtime multiplayer, and seamless toroidal donut geometry.',
-        pillars: [
+        heroPreview: {
+            title: 'Space Realtime Viewport',
+            badge: 'LIVE VIEWPORT',
+            status: 'STANDBY // 60 FPS'
+        },
+        featuresTitle: 'Core Mechanics & Systems',
+        featuresSubtitle: 'From 0.2m micro-sculpting to rigid-body physics, AI-assisted building, and autonomous control.',
+        features: [
             {
-                tag: 'HIGH FREEDOM',
+                tag: '0.2m DUAL-SCALE',
                 title: 'Dual-Scale Voxel Sculpting',
-                description: 'Build terrain and architecture with 1x1x1 standard blocks, or switch to 0.2x0.2x0.2 micro voxels (5x5x5 resolution) with full RGB custom palette.',
-                badge: '1x1 & 0.2m // TrueColor'
+                description: 'Build terrain with 1.0m standard blocks, switch seamlessly to 0.2m micro voxels (1/125 volume) with full 24-bit TrueColor palette for intricate mechanical and sculpting details.',
+                badge: '1.0m / 0.2m // TrueColor',
+                placeholderTitle: 'Dual-Scale Sculpting & Color Palette Screenshot'
             },
             {
                 tag: 'VOXEL PHYSICS',
-                title: 'Voxel Physics Engine & RigidBody',
-                description: 'Box-select connected structures and press G to turn them into dynamic or kinematic rigid bodies with mass, inertia, and joint constraints.',
-                badge: 'RigidBody // G Key'
+                title: 'Entityization & Voxel Physics',
+                description: 'Box-select connected structures and press G to turn them into rigid bodies with automatic center of mass, inertia tensors, and high-frequency collision dynamics.',
+                badge: 'RigidBody // G Key',
+                placeholderTitle: 'Box Selection Entityization & Physics Collision Screenshot'
             },
             {
-                tag: 'PROGRAMMABLE',
-                title: 'Natural Language Programmable',
-                description: 'Press C to invoke the behavior compiler. Describe movement, hover, tracking, or patrolling intents in plain text, compiling directly into inspectable controller code.',
-                badge: 'NL -> Controller // C Key'
-            },
-            {
-                tag: 'MULTIPLAYER',
-                title: 'Real-time Multiplayer Building',
-                description: 'A persistent shared world where players collaboratively construct, modify terrain in real time, and interact with synchronized 3D Minecraft skin avatars.',
-                badge: 'Realtime Co-build // Shared World'
+                tag: 'AI BUILDING & AUTO CONTROL',
+                title: 'AI-Assisted Building & Autonomous Control',
+                description: 'Leverage AI to assist in constructing intricate voxel machinery. Point at any entity and press C to direct autonomous hovering, waypoint cruising, and attitude stabilization with natural language prompts.',
+                badge: 'AI Building & Auto-Pilot // C Key',
+                placeholderTitle: 'AI Building & Autonomous Control Terminal Screenshot'
             },
             {
                 tag: 'SEAMLESS TORUS',
-                title: 'Seamless Torus World (Donut)',
+                title: 'Seamless Torus Donut Topology',
                 description: 'A boundary-free toroidal universe without invisible walls. Moving in any direction wraps smoothly around the donut surface for endless exploration.',
-                badge: 'Torus Topology // Donut'
+                badge: 'Torus Topology // Donut',
+                placeholderTitle: 'Seamless Torus Universe & Curved Horizon Screenshot'
             }
         ],
-        interactiveTitle: 'Interactive Engine Sandbox',
-        interactiveSubtitle: 'Explore voxel micro-sculpting, physics entityization, AI Agent behavior compilation, and toroidal geometry.',
-        tabs: {
-            agentCompiler: 'Programmable: AI Compiler',
-            voxelScale: 'High Freedom: Dual-Scale',
-            entityWorkflow: 'Physics Engine: RigidBody',
-            torusWorld: 'Seamless World: Torus Donut'
-        },
-        compilerDemo: {
-            badge: 'AI AGENT BEHAVIOR COMPILER',
-            promptLabel: 'Natural Language Intent Prompt',
-            codeLabel: 'Generated Controller Script (TypeScript/JS)',
-            consoleLabel: 'Simulated Engine Telemetry & Log Output',
-            presets: [
-                {
-                    id: 'hover',
-                    name: 'PD Anti-Gravity Hover',
-                    desc: 'Maintain stable levitation 2.5m above ground with PD force & torque compensation',
-                    prompt: 'Keep this entity stably hovering 2.5 meters above ground, compensating for tilt attitude.',
-                    code: `/**
- * Agent Generated Controller: PD Hover
- * Intent: Keep entity stably hovering 2.5m above ground
- */
-const targetHeight = 2.50;
-const heightError = targetHeight - ctx.groundDistance;
-const lift = ctx.mass * Math.abs(ctx.gravity[1])
-  + heightError * 34.0
-  - ctx.velocity[1] * 13.0;
-
-self.applyForce([0, Math.max(0, lift), 0]);
-self.applyTorque([
-  -ctx.rotation[0] * 32.0 - ctx.angularVelocity[0] * 10.0,
-  -ctx.angularVelocity[1] * 3.0,
-  -ctx.rotation[2] * 32.0 - ctx.angularVelocity[2] * 10.0
-]);
-
-if (ctx.tick % 60 === 0) {
-  ctx.log(\`Agent · Hover altitude: \${ctx.groundDistance.toFixed(2)}m (err: \${heightError.toFixed(2)}m)\`);
-}`,
-                    log: `[Agent Runtime] Initialized PD hover controller for Entity #0x7F2B
-[Physics 60Hz] Mass: 48.0 kg | Gravity: [0, -9.81, 0] m/s²
-[Agent Log] Ground sensor: 2.48 m | Applying lift: 476.2 N
-[Attitude PID] Angular damping active, pitch/roll locked to 0.00 rad
-[Agent Log] Status: Stable hover maintained at 2.50 m`
-                },
-                {
-                    id: 'follow',
-                    name: 'Player Companion & Escort',
-                    desc: 'Track nearest player, maintain 3.5m escort distance with obstacle avoidance',
-                    prompt: 'Detect the nearest player, fly 3.5m behind their shoulder, and smoothly follow them.',
-                    code: `/**
- * Agent Generated Controller: Companion Escort
- * Intent: Follow player at 3.5m offset
- */
-if (!ctx.players || ctx.players.length === 0) {
-  self.applyForce([0, ctx.mass * 9.81, 0]);
-} else {
-  const leader = ctx.players[0];
-  const target = [leader.position[0], leader.position[1] + 1.8, leader.position[2] + 3.5];
-  const delta = [
-    target[0] - ctx.position[0],
-    target[1] - ctx.position[1],
-    target[2] - ctx.position[2]
-  ];
-  const force = delta.map((d, i) => d * 22.0 - ctx.velocity[i] * 9.0);
-  self.applyForce(force);
-  if (ctx.tick % 90 === 0) ctx.log(\`Agent · Escorting player \${leader.name || 'User'} (dist: \${Math.hypot(...delta).toFixed(1)}m)\`);
-}`,
-                    log: `[Agent Runtime] Radar lock: Player "EntropyVoyager" detected at [42.1, 16.0, 88.3]
-[Pathfinder] Computing vector delta: dx=+1.2m, dy=+0.8m, dz=+3.4m
-[Thruster Array] Force vector: [26.4N, 492.1N, 74.8N]
-[Agent Log] Escorting player EntropyVoyager (dist: 3.5m, velocity: 2.1 m/s)
-[Safety Sensor] Collision cone clear, escort route locked`
-                },
-                {
-                    id: 'spin',
-                    name: 'Attitude Stabilization & Spin',
-                    desc: 'Constant 2.0 rad/s yaw spin with horizontal gyro stabilization',
-                    prompt: 'Spin around the Y-axis at 2.0 rad/s while keeping horizontal axes gyro-locked.',
-                    code: `/**
- * Agent Generated Controller: Gyro Spin
- * Intent: 2.0 rad/s yaw spin with horizontal attitude lock
- */
-const targetSpin = 2.0;
-const yawTorque = (targetSpin - ctx.angularVelocity[1]) * 15.0;
-const pitchTorque = -ctx.rotation[0] * 40.0 - ctx.angularVelocity[0] * 12.0;
-const rollTorque = -ctx.rotation[2] * 40.0 - ctx.angularVelocity[2] * 12.0;
-
-self.applyTorque([pitchTorque, yawTorque, rollTorque]);
-self.applyForce([0, ctx.mass * 9.81, 0]);`,
-                    log: `[Agent Runtime] Gyro stabilizer activated. Target yaw rate: 2.00 rad/s
-[IMU Telemetry] Current yaw velocity: 1.98 rad/s (Torque output: 0.30 N·m)
-[Gyroscope] Pitch deviation: 0.001 rad | Roll deviation: 0.002 rad
-[Agent Log] Continuous angular momentum stabilized`
-                },
-                {
-                    id: 'patrol',
-                    name: 'Orbital Patrol Drone',
-                    desc: 'Autonomous circular waypoint patrol and perimeter radar beacon',
-                    prompt: 'Patrol in a 12-meter circular orbit around point [0, 20, 0] at 4 m/s.',
-                    code: `/**
- * Agent Generated Controller: Orbital Patrol
- * Intent: 12m radius orbital patrol at height 20m
- */
-const angle = (ctx.tick * 0.02) % (Math.PI * 2);
-const targetX = Math.cos(angle) * 12.0;
-const targetZ = Math.sin(angle) * 12.0;
-const targetY = 20.0;
-
-const errX = targetX - ctx.position[0];
-const errY = targetY - ctx.position[1];
-const errZ = targetZ - ctx.position[2];
-
-self.applyForce([
-  errX * 16.0 - ctx.velocity[0] * 7.0,
-  errY * 20.0 - ctx.velocity[1] * 8.0 + ctx.mass * 9.81,
-  errZ * 16.0 - ctx.velocity[2] * 7.0
-]);`,
-                    log: `[Agent Runtime] Waypoint sequence online. Perimeter radius: 12.0m
-[Orbit Vector] θ = 1.42 rad | Target pos: [1.8m, 20.0m, 11.9m]
-[Navigation] Trajectory error: 0.04m | Ground clearance: 18.2m
-[Agent Log] Waypoint check-in OK. Perimeter radar scan clear.`
-                }
-            ]
-        },
-        voxelDemo: {
-            title: 'Dual-Scale Geometric Architecture',
-            desc: 'Seamlessly transition between macro structural building and intricate mechanical micro-detailing.',
-            standardLabel: 'Standard Voxel (1.0m³)',
-            standardDesc: 'Ideal for terrain contours, towering walls, massive frames, and architectural structures.',
-            microLabel: 'Micro Voxel (0.2m³ = 1/125th)',
-            microDesc: 'Ideal for cockpits, control panels, thrusters, hinges, weapons, and intricate sculptures.',
-            paletteTitle: '24-bit TrueColor Palette',
-            paletteDesc: 'Every single voxel stores full RGB color data without restrictive palette constraints.'
-        },
-        entityDemo: {
-            title: 'From Static Blocks to Living Entities',
-            desc: 'Transform any connected cluster of voxels into an interactive dynamic physics entity in three simple steps.',
-            step1Title: '1. Select Structure',
-            step1Desc: 'Use Selector tool corners A and B or click to flood-select any connected block cluster.',
-            step2Title: '2. Entityize (G Key)',
-            step2Desc: 'Convert voxel cluster into a rigid body with computed mass, center of gravity, and collision hull.',
-            step3Title: '3. Program Behavior (C Key)',
-            step3Desc: 'Attach AI behavior controllers or hook up external Agent automation via open APIs.'
-        },
-        torusDemo: {
-            title: 'Toroidal Topology (Donut) World Principles',
-            desc: 'Space is not a flat box or limited cube; it is a topologically connected 3-manifold torus (donut shape). Coordinates continuously loop in X and Z axes without artificial barriers.',
-            feature1Title: 'Seamless Boundary Loop',
-            feature1Desc: 'Traveling in any direction smoothly wraps around the world, eliminating invisible walls.',
-            feature2Title: 'Bent-Space Shaders & Distant LOD',
-            feature2Desc: 'The rendering engine applies coordinate transformations in shaders to project panoramic torus horizons.',
-            feature3Title: 'Continuous Physics & Raycasts',
-            feature3Desc: 'Rigid-body kinematics, gravity fields, and raycast algorithms are tuned for toroidal topology.'
-        },
-        agentDevTitle: 'AI Agent & Developer Protocol',
-        agentDevSubtitle: 'First-class support for AI Agents, MCP Tools, and automated programmatic construction.',
+        agentDevTitle: 'Core Engine & Creator Ecosystem',
+        agentDevSubtitle: 'Combining secure script sandboxes, real-time voxel physics, and a built-in marketplace for endless programmable creativity.',
         agentDevCards: [
             {
                 icon: 'pixelarticons:code',
-                title: 'MCP Server & Agent Tools',
-                desc: 'Integrate external LLMs (Claude, OpenAI, DeepSeek) using Model Context Protocol tools for reading world state, querying entities, and dispatching construction jobs.'
+                title: 'AI Agent Control & QuickJS Realtime Sandbox',
+                desc: 'Instantly transforms building instructions and motion intents into precise dynamical control logic, safely driving thrusters, pivots, and sensor loops inside isolated QuickJS WebAssembly sandboxes.'
             },
             {
-                icon: 'pixelarticons:zap',
-                title: 'Realtime WebSocket & REST API',
-                desc: 'Low-latency streaming of world chunk deltas, player poses, entity telemetry, and idempotent mutation outbox synchronization via /space/api/v2.'
+                icon: 'pixelarticons:sliders',
+                title: 'Voxel Physics & Rigid Body Dynamics',
+                desc: 'Real-time solver for mass, center of mass, and inertia tensors of arbitrary voxel topologies with dynamics thrust, steering, gravity, and high-frequency collision solvers.'
             },
             {
-                icon: 'pixelarticons:bot',
-                title: 'Autonomous Construction Agents',
-                desc: 'Feed structural blueprints and schemas to AI bots that autonomously place, sculpt, recolor, and assemble kinetic machinery directly in the shared world.'
+                icon: 'pixelarticons:folder',
+                title: 'Space Marketplace & Blueprint Hub',
+                desc: 'Built-in resource marketplace supporting one-click publishing and downloading of programmable rigid bodies, micro-voxel assemblies, and palette presets for instant cross-world reuse.'
             }
         ],
-        closingTitle: 'The Shared Voxel Universe Awaits.',
-        closingSubtitle: 'Zero installation required. Jump straight into the persistent WebGL 2 world from any modern desktop browser.',
+        closingTitle: 'An infinite voxel universe is ready for you.',
+        closingSubtitle: 'No downloads or installations required. Launch into the WebGL 2 voxel universe directly inside your modern desktop browser.',
         communityLinks: {
-            github: 'GitHub Repo',
-            discord: 'Discord Community',
-            apiDocs: 'API Docs'
+            github: 'GitHub Repository',
+            discord: 'Discord Community'
         }
     },
     public_page: {

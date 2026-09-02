@@ -167,6 +167,7 @@ export class PlayerController {
   selectorLevel: any;
   selectorRange: any;
   selectorMicroMode: boolean;
+  brushMicroMode: boolean;
   inventories: any;
   activeInventoryCategory: string;
   hammerRotationTurns: number;
@@ -263,6 +264,7 @@ export class PlayerController {
     // 0.2 m micro cells (single toggles + boxes materialize to existing micro
     // voxels).
     this.selectorMicroMode = false;
+    this.brushMicroMode = false;
     // The backpack holds three categories of at most 9 items each:
     // - blockset: plain voxel stamps (T copy, STL import), built with the Hammer
     // - entity: full component trees with scripts (R copy), built with the Hammer
@@ -504,13 +506,16 @@ export class PlayerController {
           break;
 
         case 'Tab': // Tab: switch the hammer bar between block sets and entities,
-          // or toggle the selector between standard (1 m) and micro (0.2 m) blocks.
+          // or toggle the selector / brush between standard (1 m) and micro (0.2 m) blocks.
           if (this.activeTool === SpecialTool.HAMMER) {
             e.preventDefault();
             this.toggleHammerCategory();
           } else if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
             e.preventDefault();
             this.toggleSelectorMicroMode();
+          } else if (this.activeTool === SpecialTool.BRUSH) {
+            e.preventDefault();
+            this.toggleBrushMicroMode();
           }
           break;
 
@@ -3098,54 +3103,152 @@ export class PlayerController {
       if (hit.block) {
         const nodeId = hit.entityId || 'root';
         const isMicro = (hit.block.size || 1) < 1;
-        const result = this.performBasicAction({
-          domain: ActionDomain.ENTITY,
-          action: isMicro ? 'paint-micro' : 'paint-standard',
-          target: { contraption: c },
-          nodeId,
-          ...(isMicro
-            ? { micro: [
+
+        if (this.brushMicroMode) {
+          if (isMicro) {
+            const result = this.performBasicAction({
+              domain: ActionDomain.ENTITY,
+              action: 'paint-micro',
+              target: { contraption: c },
+              nodeId,
+              micro: [
                 Math.round(hit.block.localX * 5),
                 Math.round(hit.block.localY * 5),
                 Math.round(hit.block.localZ * 5)
-              ] }
-            : { cell: hit.cell }),
-          color: this.selectedColor
-        });
-        if (!result.ok) return;
-        this.sound.playBlockPlace();
-        this.particles.emitBlockBreak(hit.point, this.selectedColor, 6);
-        if (this.ui) this.ui.showToast(`Painted block on [${hit.entityId || 'root'}]: ${colorToHex(this.selectedColor)}`);
-        return;
+              ],
+              color: this.selectedColor
+            });
+            if (!result.ok) return;
+            this.sound.playBlockPlace();
+            this.particles.emitBlockBreak(hit.point, this.selectedColor, 4);
+            if (this.ui) this.ui.showToast(`Painted micro voxel on [${nodeId}]: ${colorToHex(this.selectedColor)}`);
+            return;
+          } else {
+            const hitCell = hit.cell;
+            const targetMicro = [
+              Math.round((hit.placeMicroPos.localX - hit.normal.x * 0.2) * 5),
+              Math.round((hit.placeMicroPos.localY - hit.normal.y * 0.2) * 5),
+              Math.round((hit.placeMicroPos.localZ - hit.normal.z * 0.2) * 5)
+            ];
+            const subdivideRes = this.performBasicAction({
+              domain: ActionDomain.ENTITY,
+              action: 'subdivide-standard',
+              target: { contraption: c },
+              nodeId,
+              cell: hitCell
+            });
+            if (subdivideRes.ok) {
+              this.performBasicAction({
+                domain: ActionDomain.ENTITY,
+                action: 'paint-micro',
+                target: { contraption: c },
+                nodeId,
+                micro: targetMicro,
+                color: this.selectedColor
+              });
+              this.ui?.notifyContraptionStructureChanged(c);
+              this.sound.playBlockPlace();
+              this.particles.emitBlockBreak(hit.point, this.selectedColor, 4);
+              if (this.ui) this.ui.showToast(`Subdivided & painted micro voxel on [${nodeId}]: ${colorToHex(this.selectedColor)}`);
+              return;
+            }
+          }
+        } else {
+          const result = this.performBasicAction({
+            domain: ActionDomain.ENTITY,
+            action: isMicro ? 'paint-micro' : 'paint-standard',
+            target: { contraption: c },
+            nodeId,
+            ...(isMicro
+              ? { micro: [
+                  Math.round(hit.block.localX * 5),
+                  Math.round(hit.block.localY * 5),
+                  Math.round(hit.block.localZ * 5)
+                ] }
+              : { cell: hit.cell }),
+            color: this.selectedColor
+          });
+          if (!result.ok) return;
+          this.sound.playBlockPlace();
+          this.particles.emitBlockBreak(hit.point, this.selectedColor, 6);
+          if (this.ui) this.ui.showToast(`Painted block on [${nodeId}]: ${colorToHex(this.selectedColor)}`);
+          return;
+        }
       }
     }
 
     if (!this.currentRaycast || !this.currentRaycast.hit) return;
-    if (this.currentRaycast.kind === 'micro') {
-      const mp = this.currentRaycast.microPos;
-      const result = this.performBasicAction({
-        domain: ActionDomain.WORLD,
-        action: 'paint-micro',
-        micro: mp,
-        color: this.selectedColor
-      });
-      if (result.ok) {
-        this.sound.playBlockPlace();
-        this.particles.emitBlockBreak(this.currentRaycast.hitPos, this.selectedColor, 4);
-        if (this.ui) this.ui.showToast(`Painted micro voxel: ${colorToHex(this.selectedColor)}`);
+
+    if (this.brushMicroMode) {
+      if (this.currentRaycast.kind === 'micro') {
+        const mp = this.currentRaycast.microPos;
+        const result = this.performBasicAction({
+          domain: ActionDomain.WORLD,
+          action: 'paint-micro',
+          micro: mp,
+          color: this.selectedColor
+        });
+        if (result.ok) {
+          this.sound.playBlockPlace();
+          this.particles.emitBlockBreak(this.currentRaycast.hitPos, this.selectedColor, 4);
+          if (this.ui) this.ui.showToast(`Painted micro voxel: ${colorToHex(this.selectedColor)}`);
+        }
+      } else {
+        const hp = this.currentRaycast.hitPos;
+        const normal = this.currentRaycast.normal;
+        const entry = this.currentRaycast.entry
+          ? new THREE.Vector3(this.currentRaycast.entry.x, this.currentRaycast.entry.y, this.currentRaycast.entry.z)
+          : this.physics.getEyePosition();
+        const clamp = (value: number, base: number) => Math.max(base * 5, Math.min(base * 5 + 4, value));
+        const targetMicro = [
+          clamp(Math.floor((entry.x + normal.x * 0.02) * 5), hp.x),
+          clamp(Math.floor((entry.y + normal.y * 0.02) * 5), hp.y),
+          clamp(Math.floor((entry.z + normal.z * 0.02) * 5), hp.z)
+        ];
+        const subdivideResult = this.performBasicAction({
+          domain: ActionDomain.WORLD,
+          action: 'subdivide-standard',
+          cell: hp
+        });
+        if (subdivideResult.ok) {
+          this.performBasicAction({
+            domain: ActionDomain.WORLD,
+            action: 'paint-micro',
+            micro: targetMicro,
+            color: this.selectedColor
+          });
+          this.sound.playBlockPlace();
+          this.particles.emitBlockBreak(this.currentRaycast.hitPos, this.selectedColor, 4);
+          if (this.ui) this.ui.showToast(`Subdivided & painted micro voxel: ${colorToHex(this.selectedColor)}`);
+        }
       }
     } else {
-      const hp = this.currentRaycast.hitPos;
-      const result = this.performBasicAction({
-        domain: ActionDomain.WORLD,
-        action: 'paint-standard',
-        cell: hp,
-        color: this.selectedColor
-      });
-      if (result.ok) {
-        this.sound.playBlockPlace();
-        this.particles.emitBlockBreak(hp, this.selectedColor, 8);
-        if (this.ui) this.ui.showToast(`Painted block: ${colorToHex(this.selectedColor)}`);
+      if (this.currentRaycast.kind === 'micro') {
+        const mp = this.currentRaycast.microPos;
+        const result = this.performBasicAction({
+          domain: ActionDomain.WORLD,
+          action: 'paint-micro',
+          micro: mp,
+          color: this.selectedColor
+        });
+        if (result.ok) {
+          this.sound.playBlockPlace();
+          this.particles.emitBlockBreak(this.currentRaycast.hitPos, this.selectedColor, 4);
+          if (this.ui) this.ui.showToast(`Painted micro voxel: ${colorToHex(this.selectedColor)}`);
+        }
+      } else {
+        const hp = this.currentRaycast.hitPos;
+        const result = this.performBasicAction({
+          domain: ActionDomain.WORLD,
+          action: 'paint-standard',
+          cell: hp,
+          color: this.selectedColor
+        });
+        if (result.ok) {
+          this.sound.playBlockPlace();
+          this.particles.emitBlockBreak(hp, this.selectedColor, 8);
+          if (this.ui) this.ui.showToast(`Painted block: ${colorToHex(this.selectedColor)}`);
+        }
       }
     }
   }
@@ -3318,6 +3421,22 @@ export class PlayerController {
         : 'Selector: STANDARD mode · Tab switches to MICRO');
     }
     return this.selectorMicroMode;
+  }
+
+  /**
+   * Tab key (Brush tool): toggle between standard 1 m block painting (the default)
+   * and 0.2 m micro-block painting.
+   */
+  toggleBrushMicroMode() {
+    this.brushMicroMode = !this.brushMicroMode;
+    if (this.ui) {
+      this.ui.updateToolPanelMode?.();
+      this.ui.renderHotbar?.();
+      this.ui.showToast(this.brushMicroMode
+        ? 'Brush: MICRO mode (0.2 m) · Tab switches to STANDARD'
+        : 'Brush: STANDARD mode (1.0 m) · Tab switches to MICRO');
+    }
+    return this.brushMicroMode;
   }
 
   /**
@@ -4726,6 +4845,22 @@ export class PlayerController {
             size: 0.2
           };
         }
+      }
+    }
+    // Brush micro mode (Tab): highlight the exact 0.2 m cell under the crosshair
+    if (this.brushMicroMode && this.activeTool === SpecialTool.BRUSH && ray.kind && ray.hitPos) {
+      if (ray.kind === 'micro' && ray.microPos) {
+        return {
+          pos: { x: ray.microPos.x * 0.2, y: ray.microPos.y * 0.2, z: ray.microPos.z * 0.2 },
+          size: 0.2
+        };
+      }
+      const cell = this.selectorMicroCellFromRaycast(ray);
+      if (cell) {
+        return {
+          pos: { x: cell.x * 0.2, y: cell.y * 0.2, z: cell.z * 0.2 },
+          size: 0.2
+        };
       }
     }
     return { pos: ray.hitPos, size: ray.size || 1 };

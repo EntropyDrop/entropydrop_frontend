@@ -105,6 +105,7 @@ export interface SpaceUiSnapshot {
   positionText: string;
   nearbyEntities: NearbyEntityItem[];
   selector: SelectorView;
+  brushMicro: boolean;
   bulkEdit: BulkEditView | null;
   worldEditSync: WorldEditSyncView;
   telemetry: TelemetryView;
@@ -129,7 +130,7 @@ const HOTBAR_SLOTS = [
   { type: 'tool', value: SpecialTool.SELECTOR, name: 'Selector', icon: '', desc: 'Select and copy world/entity regions (max 64×64×64); no build action' },
   { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'LMB build · RMB rotate 90°' },
   { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Hold left-click to grab · right-click start/stop' },
-  { type: 'tool', value: SpecialTool.BRUSH, name: 'Brush', icon: '', desc: 'Left-click paint · right-click sample color' }
+  { type: 'tool', value: SpecialTool.BRUSH, name: 'Brush', icon: '', desc: 'LMB paint · RMB sample · Tab micro/std' }
 ];
 
 const EMPTY_SELECTOR: SelectorView = {
@@ -234,6 +235,7 @@ export class SpaceUiStore {
     positionText: 'X: -- | Y: -- | Z: --',
     nearbyEntities: [],
     selector: EMPTY_SELECTOR,
+    brushMicro: false,
     bulkEdit: null,
     worldEditSync: EMPTY_WORLD_EDIT_SYNC,
     telemetry: EMPTY_TELEMETRY,
@@ -1309,6 +1311,7 @@ export class SpaceUiStore {
       positionText: `X: ${playerPos.x.toFixed(1)} | Y: ${playerPos.y.toFixed(1)} | Z: ${playerPos.z.toFixed(1)}`,
       nearbyEntities: entities,
       selector: this.buildSelectorView(),
+      brushMicro: Boolean(controller?.brushMicroMode),
       telemetry,
       activeInventoryCategory: controller?.activeInventoryCategory || this.snapshot.activeInventoryCategory,
       selectedInventoryIndex: Number(controller?.selectedInventoryIndex ?? this.snapshot.selectedInventoryIndex)

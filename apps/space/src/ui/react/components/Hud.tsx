@@ -120,15 +120,44 @@ function NearbyEntities() {
   );
 }
 
-function PaletteBar() {
-  const { paletteColors, selectedColorIndex } = useSpaceUi(state => state);
+function PaletteBar({ isBrush = false }: { isBrush?: boolean }) {
+  const { paletteColors, selectedColorIndex, brushMicro, controller } = useSpaceUi(state => state);
   return (
     <div className="color-palette-bar-wrapper" id="color-palette-wrapper">
       <div className="palette-info-row">
-        <span className="palette-title flex items-center gap-1">
-          <LiaPaintBrushSolid size={14} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Palette
+        {isBrush ? (
+          <div className="selector-title-group">
+            <span className="palette-title flex items-center gap-1">
+              <LiaPaintBrushSolid size={14} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Brush
+            </span>
+            <button
+              id="brush-mode-toggle"
+              type="button"
+              tabIndex={-1}
+              className="selector-mode-btn"
+              title="Click or press Tab to switch mode"
+              onClick={() => controller?.toggleBrushMicroMode?.()}
+            >
+              <span id="brush-mode-badge" className={`mode-badge ${brushMicro ? 'micro' : 'std'}`}>
+                {brushMicro ? 'MICRO' : 'STANDARD'}
+              </span>
+              <span className="mode-tab-hint flex items-center gap-0.5">
+                Tab <LiaExchangeAltSolid style={{ display: 'inline' }} />
+              </span>
+            </button>
+          </div>
+        ) : (
+          <span className="palette-title flex items-center gap-1">
+            <LiaPaintBrushSolid size={14} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Palette
+          </span>
+        )}
+        <span className="palette-hotkey-hint">
+          {isBrush ? (
+            <><b>Tab</b> switch mode · <b>LMB</b> paint · <b>RMB</b> sample</>
+          ) : (
+            <><b>Shift+1~9</b> pick · <b>E</b> set colors</>
+          )}
         </span>
-        <span className="palette-hotkey-hint"><b>Shift+1~9</b> pick · <b>E</b> set colors</span>
       </div>
       <div id="color-palette-bar" className="color-palette-bar">
         {paletteColors.map((item, index) => (
@@ -243,7 +272,7 @@ function WrenchPanel() {
 }
 
 function Hotbar() {
-  const { hotbarSlots, selectedHotbarIndex, selector } = useSpaceUi(state => state);
+  const { hotbarSlots, selectedHotbarIndex, selector, brushMicro } = useSpaceUi(state => state);
   return (
     <div id="hotbar">
       {hotbarSlots.map((slot, index) => (
@@ -251,7 +280,11 @@ function Hotbar() {
           <span className="slot-num">{index + 1}</span>
           <span className="slot-icon">{getHotbarToolIcon(slot.value)}</span>
           <span className="slot-name">{slot.name}</span>
-          {slot.value === SpecialTool.SELECTOR ? <span className={`slot-mode-badge ${selector.micro ? 'micro' : 'std'}`}>{selector.micro ? 'MICRO' : 'STD'}</span> : null}
+          {slot.value === SpecialTool.SELECTOR ? (
+            <span className={`slot-mode-badge ${selector.micro ? 'micro' : 'std'}`}>{selector.micro ? 'MICRO' : 'STD'}</span>
+          ) : slot.value === SpecialTool.BRUSH ? (
+            <span className={`slot-mode-badge ${brushMicro ? 'micro' : 'std'}`}>{brushMicro ? 'MICRO' : 'STD'}</span>
+          ) : null}
         </button>
       ))}
     </div>
@@ -372,7 +405,7 @@ export function Hud() {
                 ) : activeTool === SpecialTool.WRENCH ? (
                   <WrenchPanel />
                 ) : (
-                  <PaletteBar />
+                  <PaletteBar isBrush={activeTool === SpecialTool.BRUSH} />
                 )}
                 <Hotbar />
               </div>
