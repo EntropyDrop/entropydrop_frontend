@@ -21,7 +21,10 @@ export function NavigationPanel() {
     const cancelOnInput = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
-      navigation.stopNavigation('cancelled');
+      const movementCodes = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+      if (movementCodes.includes(event.code)) {
+        navigation.stopNavigation('cancelled');
+      }
     };
     window.addEventListener('keydown', cancelOnInput, true);
     return () => window.removeEventListener('keydown', cancelOnInput, true);

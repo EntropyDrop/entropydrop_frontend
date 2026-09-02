@@ -186,6 +186,7 @@ export class PlayerController {
   isDriving: boolean;
   drivenContraption: any;
   drivenSeat: { componentId: string; seatIndex: number } | null;
+  navigationSystem: any;
 
   constructor(
     camera,
@@ -4540,7 +4541,11 @@ export class PlayerController {
   updateSimulation(dt) {
     if (this.isDriving) this.physics.capturePreviousPosition?.();
     if (!this.syncDrivenVehiclePose()) {
-      this.physics.update(dt, this.keys, this.yaw);
+      if (this.navigationSystem?.isNavigating) {
+        this.navigationSystem.update(dt);
+      } else {
+        this.physics.update(dt, this.keys, this.yaw);
+      }
     }
 
     if (this.wrenchGrab?.active && this.wrenchGrab.contraption) {

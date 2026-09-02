@@ -52,6 +52,9 @@ export class NavigationSystem {
   }
 
   startNavigation(targetX: number, targetY: number, targetZ: number): void {
+    if (this.controller?.isDriving) {
+      this.controller.toggleDriveVehicle?.();
+    }
     this.target = { x: wrapX(targetX), y: targetY, z: wrapZ(targetZ) };
     this.isNavigating = true;
     this.physics.isFlying = true;
@@ -74,6 +77,8 @@ export class NavigationSystem {
     if (!this.isNavigating || !this.target) return;
     const clampedDt = Math.min(dt, 0.1);
 
+    this.physics.capturePreviousPosition?.();
+
     let dx = wrapX(this.target.x) - wrapX(this.physics.position.x);
     if (dx > TORUS_SIZE_X / 2) dx -= TORUS_SIZE_X;
     else if (dx < -TORUS_SIZE_X / 2) dx += TORUS_SIZE_X;
@@ -88,6 +93,7 @@ export class NavigationSystem {
       this.physics.position.x = wrapX(this.target.x);
       this.physics.position.y = this.target.y;
       this.physics.position.z = wrapZ(this.target.z);
+      this.physics.velocity.set(0, 0, 0);
       this.stopNavigation('arrived');
       return;
     }
@@ -97,8 +103,18 @@ export class NavigationSystem {
       speed = Math.max(this.minSpeed, this.cruiseSpeed * Math.sqrt(distance / this.decelDistance));
     }
     const step = Math.min(distance, speed * clampedDt);
-    this.physics.position.x = wrapX(this.physics.position.x + (dx / distance) * step);
-    this.physics.position.y += (dy / distance) * step;
-    this.physics.position.z = wrapZ(this.physics.position.z + (dz / distance) * step);
+    const moveX = (dx / distance) * step;
+    const moveY = (dy / distance) * step;
+    const moveZ = (dz / distance) * step;
+
+    this.physics.position.x = wrapX(this.physics.position.x + moveX);
+    this.physics.position.y += moveY;
+    this.physics.position.z = wrapZ(this.physics.position.z + moveZ);
+
+    if (clampedDt > 0) {
+      this.physics.velocity.set(moveX / clampedDt, moveY / clampedDt, moveZ / clampedDt);
+    }
+    this.physics.isFlying = true;
+    this.physics.isOnGround = false;
   }
 }

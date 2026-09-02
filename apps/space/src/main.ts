@@ -168,6 +168,7 @@ class Game {
       this.controller,
       this.uiStore
     );
+    this.controller.navigationSystem = this.navigationSystem;
     this.uiStore.setNavigationSystem(this.navigationSystem);
 
     // 4. Clock & FPS tracking
@@ -472,8 +473,7 @@ class Game {
       this.controller.drivenContraption
     );
 
-    // 7c. Autopilot Navigation System (bottom-left)
-    this.navigationSystem.update(dt);
+    // 7c. Autopilot Navigation System is updated in controller.updateSimulation()
 
     // 8. Render 3D Scene
     this.sceneRenderer.render();

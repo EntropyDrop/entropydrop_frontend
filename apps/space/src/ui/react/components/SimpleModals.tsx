@@ -86,7 +86,7 @@ export function PauseScreen() {
     <div id="pause-screen" className={hasStarted ? 'hidden' : ''}>
       <div className="hero-box">
         <div className="hero-block-icon">■</div>
-        <h1 className="game-logo">EntropyDrop · Space</h1>
+        <h1 className="game-logo">EntropyDrop · Space <span className="game-logo-beta">BETA</span></h1>
         <div className="controls-guide">
           <span><kbd className="key-badge">W</kbd><kbd className="key-badge">A</kbd><kbd className="key-badge">S</kbd><kbd className="key-badge">D</kbd> Move / Drive</span>
           <span><kbd className="key-badge">Space</kbd> Jump / Ascend</span>

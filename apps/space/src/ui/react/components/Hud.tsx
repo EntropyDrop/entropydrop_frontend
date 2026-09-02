@@ -331,7 +331,7 @@ export function Hud() {
       <div id="hud-overlay">
         <div className="hud-top">
           <div className="hud-card">
-            <div className="hud-badge"><span className="hud-badge-dot" />EntropyDrop · Space</div>
+            <div className="hud-badge"><span className="hud-badge-dot" />EntropyDrop · Space <span className="hud-beta-badge">BETA</span></div>
             <div className="hud-metrics-row"><span id="fps-val">{state.fpsText}</span><span className="hud-metric-sep">·</span><span id="ping-val" className={state.pingClass}>{state.pingText}</span></div>
             <div id="pos-val">{state.positionText}</div>
             <NearbyEntities />

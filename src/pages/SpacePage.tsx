@@ -51,13 +51,21 @@ export function SpacePage({ current }: SpacePageProps) {
                             <Icon icon="pixelarticons:zap" className="text-green-400" />
                             {data.platform}
                         </span>
+                        <span className="inline-flex items-center gap-1 border border-green-400/40 bg-green-400/10 px-2 py-1 text-[11px] sm:text-xs font-mono uppercase tracking-wider text-green-400 font-bold">
+                            BETA
+                        </span>
                     </div>
 
                     {/* Main Title & Tagline */}
                     <div className="flex flex-col gap-3">
-                        <h1 className={`m-0 text-3xl sm:text-5xl lg:text-6xl font-bold leading-[1.08] bg-gradient-to-r from-white via-white/95 to-green-300/70 bg-clip-text text-transparent ${current.fontClass}`}>
-                            {data.title}
-                        </h1>
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <h1 className={`m-0 text-3xl sm:text-5xl lg:text-6xl font-bold leading-[1.08] bg-gradient-to-r from-white via-white/95 to-green-300/70 bg-clip-text text-transparent ${current.fontClass}`}>
+                                {data.title}
+                            </h1>
+                            <span className="inline-block border border-green-400/40 bg-green-400/15 text-green-400 text-xs sm:text-sm font-mono px-2 py-0.5 uppercase tracking-widest font-bold">
+                                BETA
+                            </span>
+                        </div>
                         <p className={`m-0 text-lg sm:text-2xl font-semibold text-green-400/90 leading-snug ${current.fontClass}`}>
                             {data.tagline}
                         </p>
