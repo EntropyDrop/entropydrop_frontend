@@ -6,6 +6,7 @@ import {
   createPlayerPositionRemote,
   encodePlayerPosition,
   hasPngSignature,
+  isNonPcDevice,
   loadTerrainEditRemote,
   OFFLINE_PLAYER_POSITION_KEY,
   OFFLINE_WORLD_ID,
@@ -331,4 +332,37 @@ test('SpaceEntryError for missing skin includes collection, upload, generate, an
   assert.equal(err.actions[1].url, '/skin/collection');
   assert.equal(err.actions[2].url, '/skin/generate');
   assert.equal(err.actions[3].url, '?mode=offline');
+});
+
+test('isNonPcDevice detects mobile phones and tablets while allowing desktop PCs', () => {
+  // Desktop browser
+  assert.equal(
+    isNonPcDevice('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36', 'MacIntel', 0, 1920, 1080),
+    false,
+    'desktop Mac Chrome must pass'
+  );
+  assert.equal(
+    isNonPcDevice('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36', 'Win32', 0, 1920, 1080),
+    false,
+    'desktop Windows Chrome must pass'
+  );
+
+  // iPhone / Android phone
+  assert.equal(
+    isNonPcDevice('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1', 'iPhone', 5, 390, 844),
+    true,
+    'iPhone must be detected as non-PC'
+  );
+  assert.equal(
+    isNonPcDevice('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36', 'Linux armv8l', 5, 412, 915),
+    true,
+    'Android phone must be detected as non-PC'
+  );
+
+  // iPad
+  assert.equal(
+    isNonPcDevice('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15', 'MacIntel', 5, 1024, 768),
+    true,
+    'iPad on iOS 13+ must be detected as non-PC'
+  );
 });

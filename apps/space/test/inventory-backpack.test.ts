@@ -984,6 +984,9 @@ test('InventoryModal has market toggle button and supports collapsing sidebar on
   assert.match(inventorySource, /backpack-market-toggle-btn/);
   assert.match(inventorySource, /market-close-btn/);
   assert.match(inventorySource, /market-collapsed/);
+  assert.match(inventorySource, />\s*My published\s*</);
+  assert.match(inventorySource, /resource\.can_delete/);
+  assert.doesNotMatch(inventorySource, /Admin delete market resource/);
   assert.match(inventorySource, /window\.innerWidth\s*<\s*1100/);
 
   const styleSource = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');

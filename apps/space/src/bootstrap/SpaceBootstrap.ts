@@ -178,6 +178,7 @@ export interface PreparedOnlineSpace {
 }
 
 export type SpaceEntryErrorCode =
+  | 'PC_ONLY_REQUIRED'
   | 'LOGIN_REQUIRED'
   | 'SKIN_REQUIRED'
   | 'SKIN_DOWNLOAD_FAILED'
@@ -221,6 +222,22 @@ export function isZhLang(): boolean {
     } catch {}
   }
   return typeof navigator !== 'undefined' && (navigator.language || '').toLowerCase().startsWith('zh');
+}
+
+export function isNonPcDevice(
+  userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  platform = typeof navigator !== 'undefined' ? navigator.platform : '',
+  maxTouchPoints = typeof navigator !== 'undefined' ? navigator.maxTouchPoints : 0,
+  screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1920,
+  screenHeight = typeof window !== 'undefined' ? window.innerHeight : 1080
+): boolean {
+  const ua = userAgent || '';
+  const isMobileUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS|Windows Phone/i.test(ua);
+  const isIPadOS = (platform === 'MacIntel' || ua.includes('Macintosh')) && maxTouchPoints > 1;
+  const isTouchScreen = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  const isSmallScreen = screenWidth < 1024 || screenHeight < 550;
+
+  return isMobileUa || isIPadOS || Boolean(isTouchScreen && isSmallScreen);
 }
 
 export function resolveApiOrigin(configuredBase: string | undefined, pageOrigin: string) {
@@ -945,7 +962,31 @@ export async function enterSpace(
   if (action) action.hidden = true;
 
   try {
-    const requestedMode = new URLSearchParams(window.location.search).get('mode');
+    const searchParams = new URLSearchParams(window.location.search);
+    const forcePc = searchParams.get('force_pc') === '1' || searchParams.get('force') === '1';
+    if (isNonPcDevice() && !forcePc) {
+      const zh = isZhLang();
+      const pcError = new SpaceEntryError(
+        'PC_ONLY_REQUIRED',
+        zh
+          ? 'Space 目前仅支持 PC 电脑端运行。游戏包含 3D 体素物理引擎、0.2m 微体素精细雕刻与键鼠自主控制系统，请使用电脑浏览器（推荐 Chrome / Edge）体验完整功能。'
+          : 'EntropyDrop Space is designed for desktop PC browsers only. It requires 3D GPU acceleration, voxel physics, and keyboard & mouse controls.',
+        '/space',
+        zh ? '返回主站' : 'Back to Main Site',
+        [
+          { label: zh ? '返回 Space 主页' : 'Back to Space Overview', url: '/space' },
+          {
+            label: zh ? '仍然尝试进入 (开发者)' : 'Try Anyway (Dev)',
+            url: window.location.search ? `${window.location.search}&force_pc=1` : '?force_pc=1',
+            secondary: true
+          }
+        ]
+      );
+      renderEntryError(pcError);
+      return;
+    }
+
+    const requestedMode = searchParams.get('mode');
     if (requestedMode === 'offline') {
       const session = createOfflineSpaceSession();
       hooks.onStateChange?.({

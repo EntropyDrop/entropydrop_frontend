@@ -24,8 +24,7 @@ const REQUIRED_UI_IDS = [
   'code-tab-bar', 'script-textarea', 'entity-preview-canvas', 'tele-console-logs',
   'agent-chat-box', 'inventory-modal',
   'inventory-grid', 'api-docs-modal', 'api-docs-body', 'global-settings-modal',
-  'pause-screen', 'start-btn', 'minimap-container', 'nav-system-container', 'nav-start-btn',
-  'quick-start-toggle', 'quick-start-title'
+  'pause-screen', 'start-btn', 'minimap-container', 'nav-system-container', 'nav-start-btn'
 ];
 
 test('React components own every stable game UI contract', () => {
@@ -33,12 +32,6 @@ test('React components own every stable game UI contract', () => {
     assert.match(componentSource, new RegExp(`id=[{]?['\"]${id}['\"]`), `missing React UI contract #${id}`);
   }
   assert.doesNotMatch(componentSource, /getElementById|querySelector|\.innerHTML\s*=|createElement\(/);
-});
-
-test('first-time players receive a direct path through the programmable-entity core loop', () => {
-  assert.match(componentSource, /FIRST MISSION/);
-  assert.match(componentSource, /Turn the selection into an entity/);
-  assert.match(componentSource, /ask the assistant to “hover 3m”/);
 });
 
 test('legacy UIManager is removed and the engine uses the DOM-free store', () => {

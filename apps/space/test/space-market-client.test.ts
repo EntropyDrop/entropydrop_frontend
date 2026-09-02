@@ -33,7 +33,7 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
   };
   const client = new SpaceMarketClient('https://api.entropydrop.com/', 'token-1', fetchImpl as typeof fetch);
 
-  await client.listResources('entity', 'downloads');
+  await client.listResources('entity', 'downloads', 24, 0, true);
   const protobuf = Uint8Array.from([8, 3, 26, 0]);
   await client.publishResource('colorset', protobuf);
   const downloaded = await client.downloadResource('r1');
@@ -43,6 +43,7 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
   assert.equal(calls.length, 6);
   assert.match(calls[0].url, /kind=entity/);
   assert.match(calls[0].url, /sort=downloads/);
+  assert.match(calls[0].url, /mine=true/);
   assert.equal((calls[0].options.headers as any).Authorization, 'Bearer token-1');
   assert.deepEqual(new Uint8Array(calls[1].options.body as ArrayBuffer), protobuf);
   assert.equal((calls[1].options.headers as any)['Content-Type'], 'application/x-protobuf');

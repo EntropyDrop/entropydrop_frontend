@@ -32,6 +32,7 @@ export interface SpaceMarketResource {
   downloads_count: number;
   likes_count: number;
   is_liked: boolean;
+  can_delete: boolean;
   content_url: string;
   created_at: string;
 }
@@ -123,7 +124,8 @@ export class SpaceMarketClient {
     kind: SpaceMarketCategory,
     sort: SpaceMarketSort = 'latest',
     limit = 24,
-    offset = 0
+    offset = 0,
+    mine = false
   ): Promise<SpaceMarketListResponse> {
     const query = new URLSearchParams({
       kind,
@@ -131,6 +133,7 @@ export class SpaceMarketClient {
       limit: String(Math.max(1, Math.min(100, Math.floor(Number(limit) || 24)))),
       offset: String(Math.max(0, Math.floor(Number(offset) || 0)))
     });
+    if (mine) query.set('mine', 'true');
     return this.request<SpaceMarketListResponse>(`/resources?${query}`);
   }
 

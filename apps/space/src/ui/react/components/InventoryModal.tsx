@@ -824,13 +824,11 @@ function ColorSetSlots({
 
 function MarketResourceCard({
   resource,
-  isAdmin,
   onDownload,
   onLike,
   onDelete,
 }: {
   resource: SpaceMarketResource;
-  isAdmin: boolean;
   onDownload: (resource: SpaceMarketResource) => void;
   onLike: (resource: SpaceMarketResource) => void;
   onDelete: (resource: SpaceMarketResource) => void;
@@ -923,12 +921,12 @@ function MarketResourceCard({
             )}
             {resource.is_liked ? 'Liked' : 'Like'}
           </button>
-          {isAdmin && (
+          {resource.can_delete && (
             <button
               type="button"
               className="backpack-pixel-btn danger"
-              title="Admin delete market resource"
-              aria-label="Admin delete market resource"
+              title="Delete market resource"
+              aria-label="Delete market resource"
               onClick={() => onDelete(resource)}
             >
               <LiaTrashAltSolid size={13} />
@@ -942,18 +940,17 @@ function MarketResourceCard({
 
 function MarketSection({
   category,
-  isAdmin,
   onDownload,
   refreshKey,
   onClose,
 }: {
   category: InventoryCategory;
-  isAdmin: boolean;
   onDownload: (resource: SpaceMarketResource) => void;
   refreshKey?: number;
   onClose?: () => void;
 }) {
   const [marketSort, setMarketSort] = useState<SpaceMarketSort>('latest');
+  const [marketMineOnly, setMarketMineOnly] = useState(false);
   const [marketPage, setMarketPage] = useState(1);
   const pageSize = 9;
   const [marketItems, setMarketItems] = useState<SpaceMarketResource[]>([]);
@@ -967,7 +964,8 @@ function MarketSection({
   const loadMarket = useCallback(async (
     targetCategory: InventoryCategory,
     sort: SpaceMarketSort,
-    page: number
+    page: number,
+    mineOnly: boolean
   ) => {
     if (!marketClient) return;
     const requestId = ++marketRequestIdRef.current;
@@ -975,7 +973,7 @@ function MarketSection({
     setMarketError('');
     try {
       const offset = (page - 1) * pageSize;
-      const response = await marketClient.listResources(targetCategory, sort, pageSize, offset);
+      const response = await marketClient.listResources(targetCategory, sort, pageSize, offset, mineOnly);
       if (requestId !== marketRequestIdRef.current) return;
       setMarketItems(response.items);
       setMarketTotal(response.total);
@@ -988,15 +986,15 @@ function MarketSection({
     }
   }, [marketClient]);
 
-  // When category, sort, or refreshKey changes, reload market
+  // When category, scope, sort, or refreshKey changes, reload market.
   useEffect(() => {
     setMarketPage(1);
-    void loadMarket(category, marketSort, 1);
-  }, [category, marketSort, refreshKey, loadMarket]);
+    void loadMarket(category, marketSort, 1, marketMineOnly);
+  }, [category, marketMineOnly, marketSort, refreshKey, loadMarket]);
 
   const handlePageChange = (newPage: number) => {
     setMarketPage(newPage);
-    void loadMarket(category, marketSort, newPage);
+    void loadMarket(category, marketSort, newPage, marketMineOnly);
   };
 
   const handleLike = async (resource: SpaceMarketResource) => {
@@ -1012,12 +1010,15 @@ function MarketSection({
   };
 
   const handleDelete = async (resource: SpaceMarketResource) => {
-    if (!marketClient || !isAdmin) return;
+    if (!marketClient || !resource.can_delete) return;
     if (!window.confirm(`Delete "${resource.name}" from the market?`)) return;
     try {
       await marketClient.deleteResource(resource.id);
+      const nextPage = marketItems.length === 1 && marketPage > 1 ? marketPage - 1 : marketPage;
       setMarketItems(items => items.filter(item => item.id !== resource.id));
       setMarketTotal(total => Math.max(0, total - 1));
+      setMarketPage(nextPage);
+      void loadMarket(category, marketSort, nextPage, marketMineOnly);
       spaceUiStore.showToast(`Deleted "${resource.name}" from the market.`);
     } catch (error: any) {
       spaceUiStore.showToast(error?.message || 'Failed to delete resource');
@@ -1057,21 +1058,39 @@ function MarketSection({
           </div>
         </div>
 
-        <div className="market-sort-buttons" role="group" aria-label="Market ranking">
-          {([
-            ['downloads', 'Most downloaded'],
-            ['likes', 'Most liked'],
-            ['latest', 'Newest'],
-          ] as Array<[SpaceMarketSort, string]>).map(([sort, label]) => (
+        <div className="market-filter-controls">
+          <div className="market-scope-buttons" role="group" aria-label="Market collection">
             <button
-              key={sort}
               type="button"
-              className={`backpack-section-btn ${marketSort === sort ? 'active' : ''}`}
-              onClick={() => setMarketSort(sort)}
+              className={`backpack-section-btn ${!marketMineOnly ? 'active' : ''}`}
+              onClick={() => setMarketMineOnly(false)}
             >
-              {label}
+              All resources
             </button>
-          ))}
+            <button
+              type="button"
+              className={`backpack-section-btn ${marketMineOnly ? 'active' : ''}`}
+              onClick={() => setMarketMineOnly(true)}
+            >
+              My published
+            </button>
+          </div>
+          <div className="market-sort-buttons" role="group" aria-label="Market ranking">
+            {([
+              ['downloads', 'Most downloaded'],
+              ['likes', 'Most liked'],
+              ['latest', 'Newest'],
+            ] as Array<[SpaceMarketSort, string]>).map(([sort, label]) => (
+              <button
+                key={sort}
+                type="button"
+                className={`backpack-section-btn ${marketSort === sort ? 'active' : ''}`}
+                onClick={() => setMarketSort(sort)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1080,18 +1099,21 @@ function MarketSection({
       {marketLoading && marketItems.length === 0 ? (
         <div className="market-state">Loading market resources…</div>
       ) : marketItems.length === 0 ? (
-        <div className="market-state">No {category} resources have been published yet. Be the first to publish one!</div>
+        <div className="market-state">
+          {marketMineOnly
+            ? `You have not published any ${category} resources yet.`
+            : `No ${category} resources have been published yet. Be the first to publish one!`}
+        </div>
       ) : (
         <>
           <div className="market-result-summary">
-            {marketTotal} resources available · Page {marketPage} of {totalPages}
+            {marketTotal} {marketMineOnly ? 'of your resources' : 'resources available'} · Page {marketPage} of {totalPages}
           </div>
           <div className="market-grid">
             {marketItems.map(resource => (
               <MarketResourceCard
                 key={resource.id}
                 resource={resource}
-                isAdmin={isAdmin}
                 onDownload={onDownload}
                 onLike={handleLike}
                 onDelete={handleDelete}
@@ -1350,7 +1372,6 @@ export function InventoryModal() {
               <aside className="backpack-market-sidebar">
                 <MarketSection
                   category="blockset"
-                  isAdmin={state.isAdmin}
                   onDownload={downloadResource}
                   refreshKey={marketRefreshKey}
                   onClose={() => setMarketOpen(false)}
@@ -1386,7 +1407,6 @@ export function InventoryModal() {
               <aside className="backpack-market-sidebar">
                 <MarketSection
                   category="entity"
-                  isAdmin={state.isAdmin}
                   onDownload={downloadResource}
                   refreshKey={marketRefreshKey}
                   onClose={() => setMarketOpen(false)}
@@ -1418,7 +1438,6 @@ export function InventoryModal() {
               <aside className="backpack-market-sidebar">
                 <MarketSection
                   category="colorset"
-                  isAdmin={state.isAdmin}
                   onDownload={downloadResource}
                   refreshKey={marketRefreshKey}
                   onClose={() => setMarketOpen(false)}

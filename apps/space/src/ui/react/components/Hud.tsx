@@ -24,53 +24,6 @@ import { useSpaceUi } from '../store/useSpaceUi.ts';
 
 import { LuShovel } from "react-icons/lu";
 
-const QUICK_START_DISMISSED_KEY = 'space.quick-start.dismissed.v1';
-
-function QuickStartGuide() {
-  const [open, setOpen] = useState(() => {
-    try {
-      return typeof localStorage === 'undefined'
-        || localStorage.getItem(QUICK_START_DISMISSED_KEY) !== 'true';
-    } catch {
-      return true;
-    }
-  });
-  const close = () => {
-    setOpen(false);
-    try { localStorage.setItem(QUICK_START_DISMISSED_KEY, 'true'); } catch { /* optional preference */ }
-  };
-
-  return (
-    <>
-      <button
-        id="quick-start-toggle"
-        type="button"
-        tabIndex={-1}
-        className="quick-start-toggle"
-        aria-expanded={open}
-        title="Show the first programmable entity guide"
-        onClick={() => setOpen(value => !value)}
-      >?</button>
-      {open ? (
-        <aside className="quick-start-guide" aria-labelledby="quick-start-title">
-          <div className="quick-start-heading">
-            <div><span className="quick-start-kicker">FIRST MISSION</span><h2 id="quick-start-title">Make one block come alive</h2></div>
-            <button type="button" tabIndex={-1} className="quick-start-close" aria-label="Dismiss quick start" onClick={close}>×</button>
-          </div>
-          <ol>
-            <li><kbd>1</kbd> Shovel: right-click to place a few blocks.</li>
-            <li><kbd>3</kbd> Selector: click two corners around the blocks.</li>
-            <li><kbd>G</kbd> Turn the selection into an entity.</li>
-            <li>Aim at it and press <kbd>C</kbd>; ask the assistant to “hover 3m”.</li>
-            <li>Apply the code, then press Play. Use <kbd>5</kbd> Wrench to grab or stop it.</li>
-          </ol>
-          <div className="quick-start-footer"><kbd>WASD</kbd> move · <kbd>F</kbd> fly · <kbd>E</kbd> backpack · <kbd>Esc</kbd> pause</div>
-        </aside>
-      ) : null}
-    </>
-  );
-}
-
 function getHotbarToolIcon(toolValue: string): React.ReactNode {
   switch (toolValue) {
     case SpecialTool.SHOVEL:
@@ -392,7 +345,6 @@ export function Hud() {
   return (
     <>
       <div id="crosshair" />
-      <QuickStartGuide />
       {state.sessionMode === 'offline' ? (
         <div className={`space-session-status ${state.onlineReady ? 'ready' : state.queuePosition !== null ? 'queued' : 'offline'}`} role="status" aria-live="polite">
           <span>{state.onlineReady ? 'Ready to Connect' : state.queuePosition !== null ? `Queue #${state.queuePosition}` : 'Offline Mode'}</span>
