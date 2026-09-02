@@ -2459,11 +2459,13 @@ export class Contraption {
 
         const pivotLocal = asVector3(definition.pivot, this.localCenter);
         const defaultPosition = pivotLocal.clone().sub(parent.pivotLocal);
+        const authoredLocalPosition = asVector3(definition.localPosition, defaultPosition);
+        const authoredLocalQuaternion = asQuaternion(definition.localRotation);
         const saved = previousState.get(definition.id);
         const localPosition = saved?.localPosition
-          || asVector3(definition.localPosition, defaultPosition);
+          || authoredLocalPosition.clone();
         const localQuaternion = saved?.localQuaternion
-          || asQuaternion(definition.localRotation);
+          || authoredLocalQuaternion.clone();
         const anchorQuaternion = asQuaternion(definition.anchorRotation);
         const group = new THREE.Group();
         group.name = `Entity_${definition.id}`;
@@ -2480,8 +2482,10 @@ export class Contraption {
           anchorQuaternion,
           localAngularVelocity: saved?.localAngularVelocity || new THREE.Vector3(),
           commandedThisFrame: false,
-          initialLocalPosition: localPosition.clone(),
-          initialLocalQuaternion: localQuaternion.clone(),
+          // Live rebuilds preserve the current animated pose, but Stop must
+          // always return to the authored, grid-aligned construction pose.
+          initialLocalPosition: authoredLocalPosition.clone(),
+          initialLocalQuaternion: authoredLocalQuaternion.clone(),
           previousLocalPosition: localPosition.clone(),
           previousLocalQuaternion: localQuaternion.clone(),
           group,
@@ -2515,6 +2519,8 @@ export class Contraption {
         localQuaternion: new THREE.Quaternion(),
         anchorQuaternion: asQuaternion(definition.anchorRotation),
         localAngularVelocity: new THREE.Vector3(),
+        initialLocalPosition: group.position.clone(),
+        initialLocalQuaternion: new THREE.Quaternion(),
         previousLocalPosition: group.position.clone(),
         previousLocalQuaternion: group.quaternion.clone(),
         group,

@@ -21,6 +21,29 @@ import { SpaceMarketClient } from '../../../bootstrap/SpaceMarketClient.ts';
 import { MAX_BACKPACK_SLOTS_PER_CATEGORY } from '../../../engine/storage/InventoryProtobuf.ts';
 
 export type SpaceModal = 'inventory' | 'code' | 'settings' | 'builder' | null;
+export type ResolutionScaleSetting = 'auto' | '1' | '0.8' | '0.67' | '0.5';
+
+const RESOLUTION_SCALE_PRESETS = [1, 0.8, 0.67, 0.5] as const;
+
+function normalizeResolutionScaleSetting(value: unknown): ResolutionScaleSetting {
+  if (value === 'auto' || value === null || value === undefined || value === '') return 'auto';
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 'auto';
+  const nearest = RESOLUTION_SCALE_PRESETS.reduce((best, candidate) => (
+    Math.abs(candidate - numeric) < Math.abs(best - numeric) ? candidate : best
+  ));
+  return String(nearest) as ResolutionScaleSetting;
+}
+
+function resolutionSnapshot(state: any) {
+  return {
+    resolutionScaleMode: state?.mode === 'fixed'
+      ? normalizeResolutionScaleSetting(state.fixedScale)
+      : 'auto' as ResolutionScaleSetting,
+    resolutionScale: Number(state?.scale) || 1,
+    resolutionPixelRatio: Number(state?.effectivePixelRatio) || 1
+  };
+}
 
 export interface NearbyEntityItem {
   id: string | number;
@@ -138,6 +161,9 @@ export interface SpaceUiSnapshot {
   cameraDistance: number;
   gravity: number;
   renderDistance: number;
+  resolutionScaleMode: ResolutionScaleSetting;
+  resolutionScale: number;
+  resolutionPixelRatio: number;
   toast: { id: number; message: string } | null;
   isAdmin: boolean;
   isMuted: boolean;
@@ -275,6 +301,9 @@ export class SpaceUiStore {
     cameraDistance: 4,
     gravity: -18,
     renderDistance: 12,
+    resolutionScaleMode: 'auto',
+    resolutionScale: 1,
+    resolutionPixelRatio: 1,
     toast: null,
     isAdmin: false,
     isMuted: false,
@@ -403,10 +432,20 @@ export class SpaceUiStore {
   }
 
   setSceneRenderer(sceneRenderer: any): void {
-    this.patch({ sceneRenderer });
     if (sceneRenderer) {
       sceneRenderer.onEntityPreviewNodeSelect = (nodeId: string) => this.selectComponentTreeNode(nodeId);
+      sceneRenderer.onResolutionScaleChange = (state: any) => {
+        this.patch(resolutionSnapshot(state));
+      };
     }
+    let setting: ResolutionScaleSetting = 'auto';
+    try {
+      setting = normalizeResolutionScaleSetting(localStorage.getItem('space_setting_resolution_scale'));
+    } catch { }
+    const state = sceneRenderer?.setResolutionScale?.(
+      setting === 'auto' ? 'auto' : Number(setting)
+    ) || sceneRenderer?.getResolutionScaleState?.();
+    this.patch({ sceneRenderer, ...resolutionSnapshot(state) });
   }
 
   setNavigationSystem(navigationSystem: any): void {
@@ -1327,14 +1366,16 @@ export class SpaceUiStore {
   }
 
   syncSettingsUI(): void {
-    const { controller, world } = this.snapshot;
+    const { controller, world, sceneRenderer } = this.snapshot;
     if (!controller) return;
     const isMuted = controller.sound?.getMuted?.() ?? this.snapshot.isMuted;
+    const resolution = resolutionSnapshot(sceneRenderer?.getResolutionScaleState?.());
     this.patch({
       fov: Number(controller.fov || 75),
       perspective: controller.perspective || 'first_person',
       cameraDistance: Number(controller.thirdPersonDistance || 4),
       renderDistance: Number(world?.renderDistance || this.snapshot.renderDistance),
+      ...resolution,
       isMuted
     });
   }
@@ -1390,6 +1431,23 @@ export class SpaceUiStore {
     this.snapshot.world?.setRenderDistance?.(value);
     this.patch({ renderDistance: value });
     if (persist) try { localStorage.setItem('space_setting_render_dist', String(value)); } catch { }
+  }
+
+  setResolutionScale(setting: ResolutionScaleSetting | number, persist = true): void {
+    const mode = normalizeResolutionScaleSetting(setting);
+    const state = this.snapshot.sceneRenderer?.setResolutionScale?.(
+      mode === 'auto' ? 'auto' : Number(mode)
+    );
+    this.patch(state
+      ? resolutionSnapshot(state)
+      : {
+          resolutionScaleMode: mode,
+          resolutionScale: mode === 'auto' ? this.snapshot.resolutionScale : Number(mode),
+          resolutionPixelRatio: this.snapshot.resolutionPixelRatio
+        });
+    if (persist) {
+      try { localStorage.setItem('space_setting_resolution_scale', mode); } catch { }
+    }
   }
 
   private buildSelectorView(): SelectorView {

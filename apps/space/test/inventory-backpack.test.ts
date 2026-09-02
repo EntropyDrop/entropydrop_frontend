@@ -299,7 +299,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
     childEntities: [{
       id: 'arm',
       parentId: 'root',
-      localPosition: [1, 2, 3],
+      localPosition: [0.6, 0.7, 0],
       localRotation: [0, 1, 0, 0],
       anchorRotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2],
       collisionEnabled: false,
@@ -348,7 +348,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.equal(arm.body.useGravity, false);
   assert.equal(arm.script, 'self.applyForce([0,1,0]);');
   assert.equal(arm.scriptDisabled, true);
-  assert.deepEqual(arm.localPosition, [1, 2, 3]);
+  assert.deepEqual(arm.localPosition, [0.6, 0.7, 0]);
   assert.deepEqual(arm.localRotation, [0, 1, 0, 0], '180° quaternions must preserve w = 0');
   assert.deepEqual(arm.anchorRotation, [Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
   assert.deepEqual(arm.seats, [
@@ -387,7 +387,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.equal(parsed.item.childEntities[0].collisionEnabled, false);
   assert.equal(parsed.item.childEntities[0].useGravity, false);
   assert.deepEqual(parsed.item.anchorRotation, [0, 0, Math.SQRT1_2, Math.SQRT1_2]);
-  assert.deepEqual(parsed.item.childEntities[0].localPosition, [1, 2, 3]);
+  assert.deepEqual(parsed.item.childEntities[0].localPosition, [0.6, 0.7, 0]);
   assert.deepEqual(parsed.item.childEntities[0].localRotation, [0, 1, 0, 0]);
   assert.deepEqual(parsed.item.childEntities[0].anchorRotation, [Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
   assert.equal(parsed.item.collisionEnabled, false);
@@ -404,7 +404,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.ok(built, 'the imported entity should build');
   assert.equal(built.blocks.length, 4);
   assert.ok(built.entityNodes.has('arm'));
-  assert.deepEqual(built.getEntityNode('arm').localPosition.toArray(), [1, 2, 3]);
+  assert.ok(built.getEntityNode('arm').localPosition.distanceTo(new THREE.Vector3(0.6, 0.7, 0)) < 1e-9);
   assert.deepEqual(built.getEntityNode('arm').localQuaternion.toArray(), [0, 1, 0, 0]);
   assert.equal(built.getNodeCollisionEnabled('root'), false);
   assert.equal(built.getComponentSeats('arm').length, 2);
@@ -513,6 +513,61 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
     ...baseEntity,
     root: { ...baseEntity.root, seats: [{}] }
   }), 'entity').ok, false, 'every seat must have an explicit position');
+  const fortyFiveDegrees = [0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)];
+  assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
+    ...baseEntity,
+    root: {
+      ...baseEntity.root,
+      anchorRotation: fortyFiveDegrees,
+      children: []
+    }
+  }), 'entity').ok, false, 'mounting frames must use one of the 24 grid orientations');
+  assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
+    ...baseEntity,
+    root: {
+      ...baseEntity.root,
+      children: [{
+        id: 'arm',
+        pivot: [1.5, 0.5, 0.5],
+        localPosition: [0.5, 0, 0],
+        localRotation: fortyFiveDegrees,
+        body: { type: 'kinematic' },
+        blocks: [{ dx: 1, dy: 0, dz: 0, color: 0 }],
+        seats: [],
+        children: []
+      }]
+    }
+  }), 'entity').ok, false, 'component rest rotations must use 90-degree grid steps');
+  assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
+    ...baseEntity,
+    root: {
+      ...baseEntity.root,
+      children: [{
+        id: 'arm',
+        pivot: [1.5, 0.5, 0.5],
+        localPosition: [0.6, 0, 0],
+        body: { type: 'kinematic' },
+        blocks: [{ dx: 1, dy: 0, dz: 0, color: 0 }],
+        seats: [],
+        children: []
+      }]
+    }
+  }), 'entity').ok, false, 'the stopped pose must stay on the 0.2-unit construction grid');
+  assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
+    ...baseEntity,
+    root: {
+      ...baseEntity.root,
+      children: [{
+        id: 'arm',
+        pivot: [0.5, 0.5, 0.5],
+        localPosition: [0, 0, 0],
+        body: { type: 'kinematic' },
+        blocks: [{ dx: 0, dy: 0, dz: 0, color: 0 }],
+        seats: [],
+        children: []
+      }]
+    }
+  }), 'entity').ok, false, 'different components may not overlap in the stopped pose');
 
   const independentlyBoundedComponents = controller.parseInventoryImport(encodeInventoryResource('entity', {
     ...baseEntity,

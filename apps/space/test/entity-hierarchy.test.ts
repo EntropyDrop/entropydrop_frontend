@@ -526,6 +526,34 @@ test('adding blocks on a stopped contraption does not trigger tick script or com
   assert.equal(fanNode.localQuaternion.y, 0);
 });
 
+test('a live block rebuild preserves runtime motion but Stop restores the borrowed voxel grid', () => {
+  const contraption = new Contraption(
+    13,
+    [standardBlock(0), standardBlock(1)],
+    new THREE.Vector3(),
+    new THREE.Scene(),
+    { mode: ContraptionMode.PROGRAMMABLE }
+  ) as any;
+  contraption.createChildEntity('root', new Set(['1,0,0']), 'arm');
+  const authoredPosition = contraption.getEntityNode('arm').initialLocalPosition.clone();
+  const arm = contraption.getChildScriptApi('arm');
+  arm.setLocalPosition([-0.5, 0, 0]);
+  arm.setLocalEuler([0, Math.PI / 4, 0]);
+  contraption.scriptStatus = 'running';
+
+  contraption.blocks.push({ ...standardBlock(2), entityId: 'root' });
+  contraption.rebuildAfterBlockChange();
+  assert.ok(contraption.getEntityNode('arm').localQuaternion.angleTo(new THREE.Quaternion()) > 0.1,
+    'a live structural rebuild should not visually jump the moving component');
+
+  contraption.stopAllNodeScripts();
+  const stoppedArm = contraption.getEntityNode('arm');
+  assert.ok(stoppedArm.localQuaternion.angleTo(new THREE.Quaternion()) < 1e-9);
+  assert.ok(stoppedArm.localPosition.distanceTo(authoredPosition) < 1e-9);
+  const centers = contraption.blocks.map(block => contraption.getBlockWorldCenter(block).x).sort((a, b) => a - b);
+  assert.deepEqual(centers, [0.5, 1.5, 2.5], 'borrowed blocks return to distinct construction cells');
+});
+
 test('V2 ctx.root plus children traverses the real hierarchy without flat ctx.children', () => {
   const contraption = new Contraption(
     88,

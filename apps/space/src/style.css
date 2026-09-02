@@ -6405,6 +6405,10 @@ button.palette-title:hover {
   gap: 4px;
 }
 
+.settings-resolution-control .segment-btn {
+  padding-inline: 7px;
+}
+
 .segment-btn {
   background: #27272a;
   border: 1px solid var(--border-subtle);
@@ -6426,6 +6430,19 @@ button.palette-title:hover {
   border-color: #000;
   color: #fff;
   box-shadow: var(--btn-shadow);
+}
+
+@media (max-width: 560px) {
+  .settings-resolution-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .settings-resolution-control .segment-btn {
+    flex: 1;
+    padding-inline: 4px;
+  }
 }
 
 /* =========================================================================

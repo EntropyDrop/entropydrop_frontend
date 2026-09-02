@@ -40,6 +40,31 @@ export function GlobalSettingsModal() {
             <div className="settings-label-group"><span className="settings-label">Third Person Distance</span><span className="settings-desc">Camera offset distance from player</span></div>
             <div className="settings-control-group"><input id="setting-cam-dist-slider" className="settings-slider" type="range" min="2" max="8" step="0.5" value={state.cameraDistance} onChange={event => spaceUiStore.setCameraDistance(Number(event.target.value))} /><span id="setting-cam-dist-val" className="settings-value-badge">{state.cameraDistance.toFixed(1)} m</span></div>
           </div>
+          <div className="settings-row settings-resolution-row">
+            <div className="settings-label-group">
+              <span className="settings-label">Render Resolution</span>
+              <span className="settings-desc">Auto targets a stable frame rate · currently {Math.round(state.resolutionScale * 100)}% ({state.resolutionPixelRatio.toFixed(2)}× pixel ratio)</span>
+            </div>
+            <div className="settings-segmented-control settings-resolution-control" id="setting-resolution-group">
+              {([
+                ['auto', 'Auto'],
+                ['1', '100%'],
+                ['0.8', '80%'],
+                ['0.67', '67%'],
+                ['0.5', '50%']
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  tabIndex={-1}
+                  className={`segment-btn ${state.resolutionScaleMode === value ? 'active' : ''}`}
+                  aria-pressed={state.resolutionScaleMode === value}
+                  onClick={() => spaceUiStore.setResolutionScale(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         <div className="settings-section">
           <div className="settings-section-title">PHYSICS &amp; ENVIRONMENT</div>

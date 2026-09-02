@@ -15,6 +15,7 @@ import {
   remoteMotionFreshness,
   wrappedAxisDelta,
 } from './RemotePlayerMotion.ts';
+import { AdaptiveResolutionController } from './AdaptiveResolution.ts';
 
 export const ENTITY_PREVIEW_LAYER = 1;
 export const ENTITY_PREVIEW_FORCE_LIMIT_RATIO = 0.72;
@@ -138,12 +139,14 @@ function previewVector3(value, fallback = new THREE.Vector3()) {
 function previewQuaternion(value) {
   if (value?.isQuaternion) return value.clone().normalize();
   if (Array.isArray(value) && value.length >= 4) {
-    return new THREE.Quaternion(
-      Number(value[0]) || 0,
-      Number(value[1]) || 0,
-      Number(value[2]) || 0,
-      Number(value[3]) || 1
-    ).normalize();
+    const components = value.slice(0, 4).map(Number);
+    if (components.every(Number.isFinite)) {
+      const quaternion = new THREE.Quaternion(
+        components[0], components[1], components[2], components[3]
+      );
+      if (quaternion.lengthSq() > 1e-12) return quaternion.normalize();
+    }
+    return new THREE.Quaternion();
   }
   if (Array.isArray(value) && value.length >= 3) {
     return new THREE.Quaternion().setFromEuler(new THREE.Euler(
@@ -191,11 +194,12 @@ export function getInventoryPreviewBlocks(slot) {
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (const block of blocks) {
-    const x = Math.floor(Number(block.localX) + 1e-6);
-    const y = Math.floor(Number(block.localY) + 1e-6);
-    const z = Math.floor(Number(block.localZ) + 1e-6);
+    const x = Number(block.localX);
+    const y = Number(block.localY);
+    const z = Number(block.localZ);
+    const size = Number(block.size) || 1;
     minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
-    maxX = Math.max(maxX, x + 1); maxY = Math.max(maxY, y + 1); maxZ = Math.max(maxZ, z + 1);
+    maxX = Math.max(maxX, x + size); maxY = Math.max(maxY, y + size); maxZ = Math.max(maxZ, z + size);
   }
   const rootPivot = new THREE.Vector3(
     (minX + maxX) / 2,
@@ -595,6 +599,9 @@ export class SceneRenderer {
   declare skyColorDay: THREE.Color;
   declare camera: THREE.PerspectiveCamera;
   declare renderer: THREE.WebGLRenderer;
+  declare adaptiveResolution: AdaptiveResolutionController;
+  declare resolutionScale: number;
+  declare onResolutionScaleChange: ((state: any) => void) | null;
   declare previewRenderer: any;
   declare previewCamera: any;
   declare previewCanvas: any;
@@ -669,6 +676,9 @@ export class SceneRenderer {
     this.bentLightTarget = new THREE.Vector3();
     this.bentLightDirection = new THREE.Vector3();
     this.materialScanCountdown = 0;
+    this.adaptiveResolution = new AdaptiveResolutionController();
+    this.resolutionScale = this.adaptiveResolution.currentScale;
+    this.onResolutionScaleChange = null;
 
     // 1. Scene
     this.scene = new THREE.Scene();
@@ -693,7 +703,7 @@ export class SceneRenderer {
       powerPreference: 'high-performance'
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(this.cappedDevicePixelRatio() * this.resolutionScale);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1945,7 +1955,49 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     const height = window.innerHeight;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.applyResolutionScale(this.adaptiveResolution.currentScale, true);
     this.renderer.setSize(width, height);
+  }
+
+  private cappedDevicePixelRatio() {
+    return Math.max(0.5, Math.min(window.devicePixelRatio || 1, 2));
+  }
+
+  private notifyResolutionScaleChange() {
+    this.onResolutionScaleChange?.(this.getResolutionScaleState());
+  }
+
+  private applyResolutionScale(scale: number, notify = false) {
+    const nextScale = Math.max(0.5, Math.min(1, Number(scale) || 1));
+    const effectivePixelRatio = this.cappedDevicePixelRatio() * nextScale;
+    const changed = Math.abs(this.renderer.getPixelRatio() - effectivePixelRatio) > 0.001;
+    this.resolutionScale = nextScale;
+    if (changed) this.renderer.setPixelRatio(effectivePixelRatio);
+    if (notify && changed) this.notifyResolutionScaleChange();
+  }
+
+  setResolutionScale(setting: 'auto' | number) {
+    const scale = this.adaptiveResolution.setSetting(setting);
+    this.applyResolutionScale(scale);
+    this.notifyResolutionScaleChange();
+    return this.getResolutionScaleState();
+  }
+
+  getResolutionScaleState() {
+    const state = this.adaptiveResolution.getState();
+    return {
+      ...state,
+      nativePixelRatio: this.cappedDevicePixelRatio(),
+      effectivePixelRatio: this.renderer.getPixelRatio()
+    };
+  }
+
+  private updateAdaptiveResolution() {
+    const visible = typeof document === 'undefined' || document.visibilityState !== 'hidden';
+    const scale = this.adaptiveResolution.sampleFrame(performance.now(), visible);
+    if (Math.abs(scale - this.resolutionScale) > 0.001) {
+      this.applyResolutionScale(scale, true);
+    }
   }
 
   setupPlayerAvatar() {
@@ -2334,6 +2386,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   }
 
   render() {
+    this.updateAdaptiveResolution();
     if (!this.world) {
       this.renderer.render(this.scene, this.camera);
       return;

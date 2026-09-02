@@ -72,6 +72,7 @@ const ENTITY_PLACEMENT_SUPPORT_SAMPLE_LIMIT = 256;
 const ENTITY_PLACEMENT_EPSILON = 1e-5;
 const ENTITY_TARGET_PLACEMENT_MAX_OUTWARD_STEPS = MAX_ENTITY_BOUNDS * MICRO_DIVISIONS;
 const ENTITY_TARGET_PLACEMENT_BUCKET_SIZE = 2;
+const STOPPED_GRID_EPSILON = 1e-6;
 // Wrench grabbing is a mass-independent editor servo. Its previous 36/s
 // position gain could request nearly 30 m/s in one 20 Hz tick, overshoot the
 // target, then reverse just as hard on the next tick. A bounded critically
@@ -89,6 +90,88 @@ type EntityPlacementObb = {
   min: THREE.Vector3;
   max: THREE.Vector3;
 };
+
+function isStoppedGridQuaternion(value): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value) || value.length !== 4) return false;
+  const components = value.map(Number);
+  if (!components.every(Number.isFinite)) return false;
+  const quaternion = new THREE.Quaternion(
+    components[0], components[1], components[2], components[3]
+  );
+  if (quaternion.lengthSq() <= 1e-12) return false;
+  quaternion.normalize();
+  return [
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 1)
+  ].every(axis => axis.applyQuaternion(quaternion).toArray().every(component => (
+    Math.abs(component - Math.round(component)) <= STOPPED_GRID_EPSILON
+    && Math.abs(Math.round(component)) <= 1
+  )));
+}
+
+function validateStoppedEntityGrid(slot): string | null {
+  if (!isStoppedGridQuaternion(slot?.anchorRotation)) {
+    return 'Root anchor rotation must be one of the 24 axis-aligned 90-degree rotations';
+  }
+  for (const definition of slot?.childEntities || []) {
+    if (!isStoppedGridQuaternion(definition?.localRotation)) {
+      return `Component ${String(definition?.id || '')} local rotation must use 90-degree grid steps`;
+    }
+    if (!isStoppedGridQuaternion(definition?.anchorRotation)) {
+      return `Component ${String(definition?.id || '')} anchor rotation must use 90-degree grid steps`;
+    }
+  }
+
+  const entries = getInventoryPreviewBlocks({ ...slot, kind: 'entity' });
+  if (entries.length !== (slot?.blocks || []).length) {
+    return 'Stopped entity hierarchy does not resolve every voxel';
+  }
+  type GridBox = [number, number, number, number, number, number];
+  const buckets = new Map<string, GridBox[]>();
+  for (const entry of entries) {
+    const size = Number(entry?.size) || 1;
+    const bounds = [
+      (Number(entry?.center?.x) - size / 2) * MICRO_DIVISIONS,
+      (Number(entry?.center?.y) - size / 2) * MICRO_DIVISIONS,
+      (Number(entry?.center?.z) - size / 2) * MICRO_DIVISIONS,
+      (Number(entry?.center?.x) + size / 2) * MICRO_DIVISIONS,
+      (Number(entry?.center?.y) + size / 2) * MICRO_DIVISIONS,
+      (Number(entry?.center?.z) + size / 2) * MICRO_DIVISIONS
+    ];
+    const box = bounds.map(Math.round) as GridBox;
+    if (bounds.some((value, index) => (
+      !Number.isFinite(value) || Math.abs(value - box[index]) > STOPPED_GRID_EPSILON
+    ))) {
+      return 'Stopped entity voxels must align to the 0.2-unit construction grid';
+    }
+    const [minX, minY, minZ, maxX, maxY, maxZ] = box;
+    const keys: string[] = [];
+    for (let x = Math.floor(minX / MICRO_DIVISIONS); x <= Math.floor((maxX - 1) / MICRO_DIVISIONS); x++) {
+      for (let y = Math.floor(minY / MICRO_DIVISIONS); y <= Math.floor((maxY - 1) / MICRO_DIVISIONS); y++) {
+        for (let z = Math.floor(minZ / MICRO_DIVISIONS); z <= Math.floor((maxZ - 1) / MICRO_DIVISIONS); z++) {
+          keys.push(`${x},${y},${z}`);
+        }
+      }
+    }
+    for (const key of keys) {
+      for (const other of buckets.get(key) || []) {
+        if (minX < other[3] && maxX > other[0]
+          && minY < other[4] && maxY > other[1]
+          && minZ < other[5] && maxZ > other[2]) {
+          return 'Stopped entity components contain overlapping voxels';
+        }
+      }
+    }
+    for (const key of keys) {
+      const bucket = buckets.get(key);
+      if (bucket) bucket.push(box);
+      else buckets.set(key, [box]);
+    }
+  }
+  return null;
+}
 
 type EntityPlacementShape = {
   blocksRef: any[];
@@ -4867,9 +4950,10 @@ export class PlayerController {
       const components = value.map(Number);
       const lengthSq = components.reduce((sum, component) => sum + component * component, 0);
       if (!components.every(Number.isFinite) || lengthSq <= 1e-12) return null;
-      return new THREE.Quaternion(
+      const normalized = new THREE.Quaternion(
         components[0], components[1], components[2], components[3]
       ).normalize().toArray();
+      return isStoppedGridQuaternion(normalized) ? normalized : null;
     };
     const withinEntityBounds = (blocks, keys, ownerKey = null) => {
       const groups = new Map();
@@ -5039,7 +5123,9 @@ export class PlayerController {
           ['local rotation', component.localRotation],
           ['anchor rotation', component.anchorRotation]
         ]) {
-          if (portableQuaternion(value) === null) throw new Error(`Component ${id} has an invalid ${label}`);
+          if (portableQuaternion(value) === null) {
+            throw new Error(`Component ${id} ${label} must use an axis-aligned 90-degree grid rotation`);
+          }
         }
         validateBody(component.body, id);
         if (!Array.isArray(component.blocks) || !Array.isArray(component.children) || !Array.isArray(component.seats)) {
@@ -5089,6 +5175,8 @@ export class PlayerController {
       if (!validateVoxelOccupancy(runtime.blocks, ['localX', 'localY', 'localZ'], 'entityId')) {
         return fail('Entity contains duplicate voxels or standard/micro overlap');
       }
+      const stoppedGridError = validateStoppedEntityGrid(runtime);
+      if (stoppedGridError) return fail(stoppedGridError);
 
       if (!Array.isArray(data.constraints) || data.constraints.length > MAX_INVENTORY_CONSTRAINTS) {
         return fail(`An entity may contain at most ${MAX_INVENTORY_CONSTRAINTS} constraints`);

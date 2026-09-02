@@ -1,0 +1,62 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { AdaptiveResolutionController } from '../src/engine/render/AdaptiveResolution.ts';
+
+function sampleFrames(
+  controller: AdaptiveResolutionController,
+  startAt: number,
+  count: number,
+  frameMs: number,
+  visible = true,
+) {
+  let now = startAt;
+  controller.sampleFrame(now, visible);
+  for (let index = 0; index < count; index++) {
+    now += frameMs;
+    controller.sampleFrame(now, visible);
+  }
+  return now;
+}
+
+test('auto resolution quickly reduces drawing-buffer scale under sustained slow frames', () => {
+  const controller = new AdaptiveResolutionController();
+  sampleFrames(controller, 0, 8, 125);
+
+  assert.equal(controller.currentScale, 0.5);
+  assert.equal(controller.getState().mode, 'auto');
+});
+
+test('auto resolution ignores isolated long frames and time spent in a hidden tab', () => {
+  const controller = new AdaptiveResolutionController();
+  let now = sampleFrames(controller, 0, 30, 16.5);
+  now = sampleFrames(controller, now, 1, 250);
+  now = sampleFrames(controller, now, 60, 16.5);
+  controller.sampleFrame(now + 5_000, false);
+  sampleFrames(controller, now + 5_000, 60, 16.5);
+
+  assert.equal(controller.currentScale, 1);
+});
+
+test('fixed resolution never changes in response to frame cadence', () => {
+  const controller = new AdaptiveResolutionController();
+  controller.setSetting(0.67);
+  sampleFrames(controller, 0, 60, 100);
+
+  assert.deepEqual(controller.getState(), {
+    mode: 'fixed',
+    scale: 0.67,
+    fixedScale: 0.67,
+    averageFrameMs: 1000 / 60,
+  });
+});
+
+test('auto resolution cautiously probes one step upward after a long healthy interval', () => {
+  const controller = new AdaptiveResolutionController();
+  let now = sampleFrames(controller, 0, 30, 33);
+  const reducedScale = controller.currentScale;
+  now = sampleFrames(controller, now, 730, 16.5);
+
+  assert.equal(reducedScale, 0.7);
+  assert.ok(controller.currentScale > reducedScale);
+  assert.equal(controller.currentScale, 0.8);
+});
