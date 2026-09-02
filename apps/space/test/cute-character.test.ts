@@ -15,7 +15,7 @@ function createTestCharacter(model: 'strong' | 'slim' = 'strong') {
 }
 
 test('the renderer skin fixture is a 64x64 strong model skin', () => {
-  const skin = decodePng(fileURLToPath(new URL('../skin_7JM3SJAW.png', import.meta.url)));
+  const skin = decodePng(fileURLToPath(new URL('../skin_D2A9EB7A.png', import.meta.url)));
   assert.equal(skin.width, 64);
   assert.equal(skin.height, 64);
   assert.equal(skin.channels, 4);

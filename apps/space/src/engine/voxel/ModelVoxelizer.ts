@@ -23,6 +23,8 @@ export interface VoxelTriangle {
   vertexColors?: [[number, number, number], [number, number, number], [number, number, number]] | null;
   /** Per-vertex UV coordinates [[u0, v0], [u1, v1], [u2, v2]] */
   uvs?: [[number, number], [number, number], [number, number]] | null;
+  /** Whether texture Y should be flipped */
+  flipY?: boolean;
   /** Texture sampler with RGBA image buffer */
   texture?: {
     data: Uint8Array | Uint8ClampedArray;
@@ -66,8 +68,9 @@ function wrapCoord(coord: number, size: number): number {
 }
 
 function extractTextureData(texture: THREE.Texture | null | undefined): { data: Uint8Array | Uint8ClampedArray; width: number; height: number } | null {
-  if (!texture || !texture.image) return null;
-  const img: any = texture.image;
+  if (!texture) return null;
+  const img: any = texture.image || (texture.source && (texture.source as any).data);
+  if (!img) return null;
 
   if (img.data && img.width && img.height) {
     return { data: img.data, width: img.width, height: img.height };
@@ -80,27 +83,31 @@ function extractTextureData(texture: THREE.Texture | null | undefined): { data: 
   if (typeof OffscreenCanvas !== 'undefined') {
     try {
       const canvas = new OffscreenCanvas(w, h);
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true }) || canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(img, 0, 0, w, h);
         const imgData = ctx.getImageData(0, 0, w, h);
         return { data: imgData.data, width: w, height: h };
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[ModelVoxelizer] OffscreenCanvas texture extraction failed:', e);
+    }
   }
 
-  if (typeof document !== 'undefined') {
+  if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
     try {
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true }) || canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(img, 0, 0, w, h);
         const imgData = ctx.getImageData(0, 0, w, h);
         return { data: imgData.data, width: w, height: h };
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[ModelVoxelizer] Canvas texture extraction failed:', e);
+    }
   }
 
   return null;
@@ -118,15 +125,15 @@ export function sampleTriangleColor(
     const rawU = u * t.uvs[0][0] + v * t.uvs[1][0] + w * t.uvs[2][0];
     const rawV = u * t.uvs[0][1] + v * t.uvs[1][1] + w * t.uvs[2][1];
     const tx = wrapCoord(rawU, t.texture.width);
-    // In Three.js UV space, V=0 is bottom and V=1 is top, while 2D image data row 0 is top.
-    const ty = wrapCoord(1.0 - rawV, t.texture.height);
+    const vCoord = t.flipY === false ? rawV : (1.0 - rawV);
+    const ty = wrapCoord(vCoord, t.texture.height);
     const pIdx = (ty * t.texture.width + tx) * 4;
     const alpha = t.texture.data[pIdx + 3];
     if (alpha > 10) {
       let r = t.texture.data[pIdx];
       let g = t.texture.data[pIdx + 1];
       let b = t.texture.data[pIdx + 2];
-      if (t.color != null && t.color !== 0xffffff) {
+      if (t.color != null && t.color !== 0xffffff && t.color !== 0x000000) {
         const tr = (t.color >> 16) & 0xff;
         const tg = (t.color >> 8) & 0xff;
         const tb = t.color & 0xff;
@@ -149,7 +156,7 @@ export function sampleTriangleColor(
     r = Math.min(255, Math.max(0, r));
     g = Math.min(255, Math.max(0, g));
     b = Math.min(255, Math.max(0, b));
-    if (t.color != null && t.color !== 0xffffff) {
+    if (t.color != null && t.color !== 0xffffff && t.color !== 0x000000) {
       const tr = (t.color >> 16) & 0xff;
       const tg = (t.color >> 8) & 0xff;
       const tb = t.color & 0xff;
@@ -238,30 +245,38 @@ export function extractTrianglesFromObject3D(root: THREE.Object3D): VoxelTriangl
       const mat: any = getMaterialForTriangle(t);
       let matColor: number | null = null;
       let textureData: any = null;
+      let texMap: THREE.Texture | null = null;
       if (mat) {
         if (mat.color && typeof mat.color.getHex === 'function') {
           matColor = mat.color.getHex();
+          if (matColor === 0 && mat.emissive && typeof mat.emissive.getHex === 'function' && mat.emissive.getHex() > 0) {
+            matColor = mat.emissive.getHex();
+          }
+        } else if (mat.emissive && typeof mat.emissive.getHex === 'function') {
+          matColor = mat.emissive.getHex();
         }
-        if (mat.map) {
-          if (!textureCache.has(mat.map)) {
-            textureCache.set(mat.map, extractTextureData(mat.map));
+
+        texMap = mat.map || mat.emissiveMap || null;
+        if (texMap) {
+          if (!textureCache.has(texMap)) {
+            textureCache.set(texMap, extractTextureData(texMap));
           }
-          textureData = textureCache.get(mat.map);
-          if (!textureData) {
-            const materialName = mat.name ? ` for material "${mat.name}"` : '';
-            throw new Error(`Could not read the GLB base-color texture${materialName}; use an embedded PNG/JPEG texture supported by the browser`);
-          }
+          textureData = textureCache.get(texMap);
         }
       }
 
       let uvs: [[number, number], [number, number], [number, number]] | null = null;
-      const textureChannel = Number.isInteger(mat?.map?.channel) ? Math.max(0, mat.map.channel) : 0;
-      const uvAttr = geom.getAttribute(textureChannel === 0 ? 'uv' : `uv${textureChannel}`);
+      const textureChannel = Number.isInteger(texMap?.channel) ? Math.max(0, texMap!.channel) : 0;
+      const uvAttr = geom.getAttribute(textureChannel === 0 ? 'uv' : `uv${textureChannel}`)
+        || geom.getAttribute('uv')
+        || geom.getAttribute('uv1')
+        || geom.getAttribute('uv_0')
+        || geom.getAttribute('TEXCOORD_0');
       if (uvAttr) {
-        if (mat?.map?.matrixAutoUpdate) mat.map.updateMatrix();
+        if (texMap?.matrixAutoUpdate) texMap.updateMatrix();
         const readUv = (index: number): [number, number] => {
           transformedUv.set(uvAttr.getX(index), uvAttr.getY(index));
-          if (mat?.map?.transformUv) mat.map.transformUv(transformedUv);
+          if (texMap?.transformUv) texMap.transformUv(transformedUv);
           return [transformedUv.x, transformedUv.y];
         };
         uvs = [
@@ -274,15 +289,21 @@ export function extractTrianglesFromObject3D(root: THREE.Object3D): VoxelTriangl
       let vertexColors: [[number, number, number], [number, number, number], [number, number, number]] | null = null;
       if (colorAttr) {
         const parseCol = (idx: number): [number, number, number] => {
-          let r = colorAttr.getX(idx);
-          let g = colorAttr.getY(idx);
-          let b = colorAttr.getZ(idx);
-          if (r <= 1.0 && g <= 1.0 && b <= 1.0 && (r > 0 || g > 0 || b > 0)) {
-            r = Math.round(r * 255);
-            g = Math.round(g * 255);
-            b = Math.round(b * 255);
+          const rVal = colorAttr.getX(idx);
+          const gVal = colorAttr.getY(idx);
+          const bVal = colorAttr.getZ(idx);
+          if (rVal > 1.0 || gVal > 1.0 || bVal > 1.0) {
+            return [
+              Math.min(255, Math.max(0, Math.round(rVal))),
+              Math.min(255, Math.max(0, Math.round(gVal))),
+              Math.min(255, Math.max(0, Math.round(bVal)))
+            ];
           }
-          return [Math.min(255, Math.max(0, r)), Math.min(255, Math.max(0, g)), Math.min(255, Math.max(0, b))];
+          return [
+            Math.min(255, Math.max(0, Math.round(rVal * 255))),
+            Math.min(255, Math.max(0, Math.round(gVal * 255))),
+            Math.min(255, Math.max(0, Math.round(bVal * 255)))
+          ];
         };
         vertexColors = [parseCol(i0), parseCol(i1), parseCol(i2)];
       }
@@ -295,6 +316,7 @@ export function extractTrianglesFromObject3D(root: THREE.Object3D): VoxelTriangl
         color: matColor,
         vertexColors,
         uvs,
+        flipY: Boolean(texMap?.flipY),
         texture: textureData
       });
     }
@@ -648,7 +670,13 @@ export function voxelizeModel(
       if (v[1] > maxY) maxY = v[1];
       if (v[2] > maxZ) maxZ = v[2];
     }
-    if (firstColor === null && t.color != null) firstColor = t.color;
+    if (firstColor === null) {
+      if (t.color != null) firstColor = t.color;
+      else if (t.vertexColors) {
+        const [r, g, b] = t.vertexColors[0];
+        firstColor = (r << 16) | (g << 8) | b;
+      }
+    }
   }
   if (!Number.isFinite(minX) || !Number.isFinite(maxX)) throw new Error('Model contains no valid vertices');
 

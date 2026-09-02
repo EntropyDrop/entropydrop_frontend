@@ -935,3 +935,18 @@ test('backpack bar title in HUD has transparent background and clean button styl
   assert.match(styleSource, /#backpack-bar-title[^}]*border:\s*none/);
   assert.match(styleSource, /#backpack-bar-title[^}]*cursor:\s*pointer/);
 });
+
+test('InventoryModal has market toggle button and supports collapsing sidebar on small screens', () => {
+  const inventorySource = readFileSync(new URL('../src/ui/react/components/InventoryModal.tsx', import.meta.url), 'utf8');
+  assert.match(inventorySource, /id="toggle-market-sidebar-btn"/);
+  assert.match(inventorySource, /backpack-market-toggle-btn/);
+  assert.match(inventorySource, /market-close-btn/);
+  assert.match(inventorySource, /market-collapsed/);
+  assert.match(inventorySource, /window\.innerWidth\s*<\s*1100/);
+
+  const styleSource = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(styleSource, /\.backpack-market-toggle-btn/);
+  assert.match(styleSource, /\.backpack-split-layout\.market-collapsed/);
+  assert.match(styleSource, /\.market-close-btn/);
+});
+

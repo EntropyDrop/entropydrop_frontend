@@ -153,7 +153,7 @@ function PaletteBar({ isBrush = false }: { isBrush?: boolean }) {
         )}
         <span className="palette-hotkey-hint">
           {isBrush ? (
-            <><b>Tab</b> switch mode · <b>LMB</b> paint · <b>RMB</b> sample</>
+            <><b>LMB</b> paint · <b>RMB</b> sample</>
           ) : (
             <><b>Shift+1~9</b> pick · <b>E</b> set colors</>
           )}

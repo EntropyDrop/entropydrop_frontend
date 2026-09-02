@@ -353,3 +353,70 @@ test('PlayerController imports full-color 3D model into block set inventory', as
   assert.equal(controller.inventories.blockset.items[0].blocks[1].color, 0x00ff00);
   assert.equal(controller.inventories.blockset.items[0].blocks[2].color, 0x0000ff);
 });
+
+test('parseGLTFData parses GLB model with material baseColorFactor', async () => {
+  const json = {
+    asset: { version: '2.0' },
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    materials: [
+      { pbrMetallicRoughness: { baseColorFactor: [0.8, 0.2, 0.1, 1.0] } }
+    ],
+    meshes: [{
+      primitives: [{
+        attributes: { POSITION: 0 },
+        indices: 1,
+        material: 0
+      }]
+    }],
+    accessors: [
+      { bufferView: 0, byteOffset: 0, componentType: 5126, count: 3, type: 'VEC3', max: [1, 1, 0], min: [0, 0, 0] },
+      { bufferView: 1, byteOffset: 0, componentType: 5123, count: 3, type: 'SCALAR' }
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 36 },
+      { buffer: 0, byteOffset: 36, byteLength: 6 }
+    ],
+    buffers: [{ byteLength: 42 }]
+  };
+
+  const bin = Buffer.concat([
+    Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer),
+    Buffer.from(new Uint16Array([0, 1, 2]).buffer)
+  ]);
+
+  const glbBuffer = createGlb(json, bin);
+  const triangles = await parseGLTFData(glbBuffer);
+
+  assert.equal(triangles.length, 1);
+  assert.ok(triangles[0].color != null);
+  // Three.js extracts baseColorFactor as sRGB material color
+  const r = (triangles[0].color >> 16) & 0xff;
+  const g = (triangles[0].color >> 8) & 0xff;
+  const b = triangles[0].color & 0xff;
+  assert.ok(r >= 220 && g >= 110 && g <= 140 && b >= 75 && b <= 100);
+});
+
+test('sampleTriangleColor handles glTF flipY = false texture sampling', () => {
+  const textureData = new Uint8Array([
+    255, 0, 0, 255,   // top-left (row 0): Red
+    0, 255, 0, 255,   // top-right (row 0): Green
+    0, 0, 255, 255,   // bottom-left (row 1): Blue
+    255, 255, 0, 255  // bottom-right (row 1): Yellow
+  ]);
+  const gltfTri: VoxelTriangle = {
+    a: [0, 0, 0],
+    b: [1, 0, 0],
+    c: [0, 1, 0],
+    uvs: [[0, 0], [1, 0], [0, 1]], // top-left (0,0), top-right (1,0), bottom-left (0,1) in glTF UVs
+    flipY: false,
+    texture: { data: textureData, width: 2, height: 2 }
+  };
+  // Sample vertex A (top-left 0,0) -> Red
+  assert.equal(sampleTriangleColor(gltfTri, 1, 0, 0), 0xff0000);
+  // Sample vertex B (top-right 1,0) -> Green
+  assert.equal(sampleTriangleColor(gltfTri, 0, 1, 0), 0x00ff00);
+  // Sample vertex C (bottom-left 0,1) -> Blue
+  assert.equal(sampleTriangleColor(gltfTri, 0, 0, 1), 0x0000ff);
+});
+

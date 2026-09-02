@@ -878,11 +878,13 @@ function MarketSection({
   isAdmin,
   onDownload,
   refreshKey,
+  onClose,
 }: {
   category: InventoryCategory;
   isAdmin: boolean;
   onDownload: (resource: SpaceMarketResource) => void;
   refreshKey?: number;
+  onClose?: () => void;
 }) {
   const [marketSort, setMarketSort] = useState<SpaceMarketSort>('latest');
   const [marketPage, setMarketPage] = useState(1);
@@ -961,9 +963,22 @@ function MarketSection({
     <div className="market-section-container" id={`market-section-${category}`}>
       <div className="market-toolbar">
         <div className="market-section-title-group">
-          <div className="backpack-section-title">
-            <LiaStoreAltSolid size={18} style={{ color: 'var(--accent-light)' }} />
-            <span>Community Market ({category === 'blockset' ? 'Block Sets' : category === 'entity' ? 'Entities' : 'Color Sets'})</span>
+          <div className="market-title-header-row">
+            <div className="backpack-section-title">
+              <LiaStoreAltSolid size={18} style={{ color: 'var(--accent-light)' }} />
+              <span>Community Market ({category === 'blockset' ? 'Block Sets' : category === 'entity' ? 'Entities' : 'Color Sets'})</span>
+            </div>
+            {onClose && (
+              <button
+                type="button"
+                className="market-close-btn"
+                title="Collapse market sidebar"
+                aria-label="Collapse market sidebar"
+                onClick={onClose}
+              >
+                ✕
+              </button>
+            )}
           </div>
           <div className="market-license-note">
             Published under <strong>AGPL-3.0-only</strong>
@@ -1080,6 +1095,25 @@ export function InventoryModal() {
   const [marketRefreshKey, setMarketRefreshKey] = useState(0);
   const marketClient = spaceUiStore.getMarketClient();
 
+  // Small screen auto-collapse detection
+  const isSmallScreen = useCallback(() => {
+    return typeof window !== 'undefined' && window.innerWidth < 1100;
+  }, []);
+
+  const [marketOpen, setMarketOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return window.innerWidth >= 1100;
+  });
+
+  // Re-check screen size when modal opens
+  useEffect(() => {
+    if (state.activeModal === 'inventory') {
+      if (isSmallScreen()) {
+        setMarketOpen(false);
+      }
+    }
+  }, [state.activeModal, isSmallScreen]);
+
   if (state.activeModal !== 'inventory') return null;
 
   const inventories = state.controller?.inventories || {};
@@ -1194,21 +1228,36 @@ export function InventoryModal() {
               </button>
             </div>
           </div>
-          <button
-            type="button"
-            id="close-inv-btn"
-            tabIndex={-1}
-            className="icon-btn"
-            style={{ width: 32, height: 32, fontSize: 16 }}
-            title="Close backpack (ESC)"
-            onClick={() => spaceUiStore.toggleInventoryModal(false)}
-          >
-            ✕
-          </button>
+          <div className="inventory-header-actions">
+            <button
+              type="button"
+              id="toggle-market-sidebar-btn"
+              tabIndex={-1}
+              className={`backpack-market-toggle-btn ${marketOpen ? 'active' : ''}`}
+              title={marketOpen ? 'Collapse market sidebar' : 'Expand market sidebar'}
+              aria-expanded={marketOpen}
+              onClick={() => setMarketOpen(open => !open)}
+            >
+              <LiaStoreAltSolid size={15} />
+              <span>Market</span>
+              {marketOpen ? <LiaAngleRightSolid size={12} /> : <LiaAngleLeftSolid size={12} />}
+            </button>
+            <button
+              type="button"
+              id="close-inv-btn"
+              tabIndex={-1}
+              className="icon-btn"
+              style={{ width: 32, height: 32, fontSize: 16 }}
+              title="Close backpack (ESC)"
+              onClick={() => spaceUiStore.toggleInventoryModal(false)}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {activeCategory === 'blockset' && (
-          <div className="backpack-tab-panel backpack-split-layout" id="backpack-panel-blockset">
+          <div className={`backpack-tab-panel backpack-split-layout ${marketOpen ? '' : 'market-collapsed'}`} id="backpack-panel-blockset">
             <div className="backpack-main-col">
               <div className="backpack-section-header">
                 <div className="backpack-section-title">
@@ -1230,19 +1279,22 @@ export function InventoryModal() {
               />
             </div>
 
-            <aside className="backpack-market-sidebar">
-              <MarketSection
-                category="blockset"
-                isAdmin={state.isAdmin}
-                onDownload={downloadResource}
-                refreshKey={marketRefreshKey}
-              />
-            </aside>
+            {marketOpen && (
+              <aside className="backpack-market-sidebar">
+                <MarketSection
+                  category="blockset"
+                  isAdmin={state.isAdmin}
+                  onDownload={downloadResource}
+                  refreshKey={marketRefreshKey}
+                  onClose={() => setMarketOpen(false)}
+                />
+              </aside>
+            )}
           </div>
         )}
 
         {activeCategory === 'entity' && (
-          <div className="backpack-tab-panel backpack-split-layout" id="backpack-panel-entity">
+          <div className={`backpack-tab-panel backpack-split-layout ${marketOpen ? '' : 'market-collapsed'}`} id="backpack-panel-entity">
             <div className="backpack-main-col">
               <div className="backpack-section-header">
                 <div className="backpack-section-title">
@@ -1263,19 +1315,22 @@ export function InventoryModal() {
               />
             </div>
 
-            <aside className="backpack-market-sidebar">
-              <MarketSection
-                category="entity"
-                isAdmin={state.isAdmin}
-                onDownload={downloadResource}
-                refreshKey={marketRefreshKey}
-              />
-            </aside>
+            {marketOpen && (
+              <aside className="backpack-market-sidebar">
+                <MarketSection
+                  category="entity"
+                  isAdmin={state.isAdmin}
+                  onDownload={downloadResource}
+                  refreshKey={marketRefreshKey}
+                  onClose={() => setMarketOpen(false)}
+                />
+              </aside>
+            )}
           </div>
         )}
 
         {activeCategory === 'colorset' && (
-          <div className="backpack-tab-panel backpack-split-layout" id="backpack-panel-colorset">
+          <div className={`backpack-tab-panel backpack-split-layout ${marketOpen ? '' : 'market-collapsed'}`} id="backpack-panel-colorset">
             <div className="backpack-main-col">
               <div className="backpack-section-header">
                 <div className="backpack-section-title">
@@ -1304,14 +1359,17 @@ export function InventoryModal() {
               </div>
             </div>
 
-            <aside className="backpack-market-sidebar">
-              <MarketSection
-                category="colorset"
-                isAdmin={state.isAdmin}
-                onDownload={downloadResource}
-                refreshKey={marketRefreshKey}
-              />
-            </aside>
+            {marketOpen && (
+              <aside className="backpack-market-sidebar">
+                <MarketSection
+                  category="colorset"
+                  isAdmin={state.isAdmin}
+                  onDownload={downloadResource}
+                  refreshKey={marketRefreshKey}
+                  onClose={() => setMarketOpen(false)}
+                />
+              </aside>
+            )}
           </div>
         )}
       </div>

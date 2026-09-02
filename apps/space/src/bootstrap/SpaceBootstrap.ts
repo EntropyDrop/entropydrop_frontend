@@ -44,7 +44,7 @@ export type SpaceSessionMode = 'online' | 'offline';
 export const OFFLINE_WORLD_ID = 'offline-sandbox-v1';
 export const OFFLINE_PLAYER_POSITION_KEY = 'space.offline.player-position.v1';
 const OFFLINE_WORLD_SEED = 20260827;
-const OFFLINE_SKIN_URL = new URL('../../skin_7JM3SJAW.png', import.meta.url).href;
+const OFFLINE_SKIN_URL = new URL('../../skin_D2A9EB7A.png', import.meta.url).href;
 
 export interface SpaceBootstrapPayload {
   protocol_version: 2;
@@ -127,23 +127,44 @@ export type SpaceEntryErrorCode =
   | 'SKIN_DOWNLOAD_FAILED'
   | 'BOOTSTRAP_FAILED';
 
+export interface SpaceEntryAction {
+  label: string;
+  url: string;
+  secondary?: boolean;
+}
+
 export class SpaceEntryError extends Error {
   readonly code: SpaceEntryErrorCode;
   readonly actionUrl: string;
   readonly actionLabel: string;
+  readonly actions: SpaceEntryAction[];
 
   constructor(
     code: SpaceEntryErrorCode,
     message: string,
     actionUrl: string,
-    actionLabel: string
+    actionLabel: string,
+    actions?: SpaceEntryAction[]
   ) {
     super(message);
     this.name = 'SpaceEntryError';
     this.code = code;
     this.actionUrl = actionUrl;
     this.actionLabel = actionLabel;
+    this.actions = actions && actions.length > 0
+      ? actions
+      : [{ label: actionLabel, url: actionUrl }];
   }
+}
+
+export function isZhLang(): boolean {
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = window.localStorage?.getItem('lang');
+      if (stored) return stored.startsWith('zh');
+    } catch {}
+  }
+  return typeof navigator !== 'undefined' && (navigator.language || '').toLowerCase().startsWith('zh');
 }
 
 export function resolveApiOrigin(configuredBase: string | undefined, pageOrigin: string) {
@@ -294,51 +315,77 @@ export function encodePlayerPosition(
   };
 }
 
+function createSkinRequiredActions(zh: boolean): SpaceEntryAction[] {
+  return [
+    { label: zh ? '选择已创建的皮肤' : 'Choose Created Skin', url: '/skin/collection' },
+    { label: zh ? '上传自己的皮肤' : 'Upload Skin', url: '/skin/collection' },
+    { label: zh ? '生成皮肤' : 'Generate Skin', url: '/skin/generate' },
+    { label: zh ? '进入离线模式' : 'Enter Offline Mode', url: '?mode=offline', secondary: true }
+  ];
+}
+
 function entryErrorFromResponse(status: number, body: any) {
   const detail = body?.detail;
+  const zh = isZhLang();
   if (status === 401 || status === 403) {
     return new SpaceEntryError(
       'LOGIN_REQUIRED',
-      'Please log in to EntropyDrop before entering Space.',
+      zh ? '进入 Space 前请先登录 EntropyDrop 账号。' : 'Please log in to EntropyDrop before entering Space.',
       '/skin/',
-      'Log In'
+      zh ? '前往登录' : 'Log In',
+      [
+        { label: zh ? '前往登录' : 'Log In', url: '/skin/' },
+        { label: zh ? '进入离线模式' : 'Enter Offline Mode', url: '?mode=offline', secondary: true }
+      ]
     );
   }
   if (status === 409 && detail?.code === 'SKIN_REQUIRED') {
     return new SpaceEntryError(
       'SKIN_REQUIRED',
-      detail.message || 'You must set a character skin before entering Space.',
-      detail.action_url || '/skin/edit',
-      'Configure Character Skin'
+      detail.message || (zh
+        ? '进入 Space 前需要先设置角色皮肤。您可以选择已创建的皮肤、上传自己的皮肤，或直接生成新皮肤：'
+        : 'You must set a character skin before entering Space. You can choose from your created skins, upload your own skin, or generate a new skin:'),
+      detail.action_url || '/skin/collection',
+      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
+      createSkinRequiredActions(zh)
     );
   }
   return new SpaceEntryError(
     'BOOTSTRAP_FAILED',
-    typeof detail === 'string' ? detail : 'Could not load Space player profile. Please try again later.',
+    typeof detail === 'string'
+      ? detail
+      : (zh ? '无法加载 Space 玩家资料，请稍后重试。' : 'Could not load Space player profile. Please try again later.'),
     window.location.href,
-    'Retry'
+    zh ? '重试' : 'Retry',
+    [
+      { label: zh ? '重试' : 'Retry', url: window.location.href },
+      { label: zh ? '进入离线模式' : 'Enter Offline Mode', url: '?mode=offline', secondary: true }
+    ]
   );
 }
 
 async function downloadSkinPng(url: string) {
+  const zh = isZhLang();
   let response: Response;
   try {
     response = await fetch(url, { mode: 'cors', cache: 'force-cache' });
   } catch {
     throw new SpaceEntryError(
       'SKIN_DOWNLOAD_FAILED',
-      'Failed to download character skin PNG. Please reconfigure your skin.',
-      '/skin/edit',
-      'Configure Character Skin'
+      zh ? '下载角色皮肤失败，请重新配置您的皮肤。' : 'Failed to download character skin PNG. Please reconfigure your skin.',
+      '/skin/collection',
+      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
+      createSkinRequiredActions(zh)
     );
   }
 
   if (!response.ok) {
     throw new SpaceEntryError(
       'SKIN_DOWNLOAD_FAILED',
-      `Failed to download character skin PNG (${response.status}).`,
-      '/skin/edit',
-      'Configure Character Skin'
+      zh ? `下载角色皮肤失败 (${response.status})，请重新配置您的皮肤。` : `Failed to download character skin PNG (${response.status}).`,
+      '/skin/collection',
+      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
+      createSkinRequiredActions(zh)
     );
   }
 
@@ -346,9 +393,10 @@ async function downloadSkinPng(url: string) {
   if (!hasPngSignature(bytes)) {
     throw new SpaceEntryError(
       'SKIN_DOWNLOAD_FAILED',
-      'Character skin is not a valid PNG file. Please reconfigure your skin.',
-      '/skin/edit',
-      'Configure Character Skin'
+      zh ? '角色皮肤不是有效的 PNG 格式图片，请重新配置。' : 'Character skin is not a valid PNG file. Please reconfigure your skin.',
+      '/skin/collection',
+      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
+      createSkinRequiredActions(zh)
     );
   }
 
@@ -361,9 +409,10 @@ async function downloadSkinPng(url: string) {
   } catch {
     throw new SpaceEntryError(
       'SKIN_DOWNLOAD_FAILED',
-      'Character skin must be a decodable 64×64 PNG. Please reconfigure your skin.',
-      '/skin/edit',
-      'Configure Character Skin'
+      zh ? '角色皮肤必须是可解析的 64×64 PNG 图片，请重新配置。' : 'Character skin must be a decodable 64×64 PNG. Please reconfigure your skin.',
+      '/skin/collection',
+      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
+      createSkinRequiredActions(zh)
     );
   }
   return URL.createObjectURL(blob);
@@ -573,11 +622,15 @@ async function prepareOnlineSpace(): Promise<PreparedOnlineSpace> {
 
   const payload = body as SpaceBootstrapPayload;
   if (!payload?.player?.skin_url) {
+    const zh = isZhLang();
     throw new SpaceEntryError(
       'SKIN_REQUIRED',
-      'You must set a character skin before entering Space.',
-      '/skin/edit',
-      'Configure Character Skin'
+      zh
+        ? '进入 Space 前需要先设置角色皮肤。您可以选择已创建的皮肤、上传自己的皮肤，或直接生成新皮肤：'
+        : 'You must set a character skin before entering Space. You can choose from your created skins, upload your own skin, or generate a new skin:',
+      '/skin/collection',
+      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
+      createSkinRequiredActions(zh)
     );
   }
 
@@ -770,20 +823,35 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
 }
 
 function renderEntryError(error: unknown) {
+  const zh = isZhLang();
   const entryError = error instanceof SpaceEntryError
     ? error
     : new SpaceEntryError(
         'BOOTSTRAP_FAILED',
-        'Space initialization failed. Please check your network and try again.',
+        zh ? 'Space 初始化失败，请检查网络后重试。' : 'Space initialization failed. Please check your network and try again.',
         window.location.href,
-        'Retry'
+        zh ? '重试' : 'Retry',
+        [
+          { label: zh ? '重试' : 'Retry', url: window.location.href },
+          { label: zh ? '进入离线模式' : 'Enter Offline Mode', url: '?mode=offline', secondary: true }
+        ]
       );
   const gate = document.getElementById('space-entry-gate');
   const status = document.getElementById('space-entry-status');
+  const actionContainer = document.getElementById('space-entry-actions');
   const action = document.getElementById('space-entry-action') as HTMLAnchorElement | null;
   if (gate) gate.hidden = false;
   if (status) status.textContent = entryError.message;
-  if (action) {
+  if (actionContainer) {
+    actionContainer.innerHTML = '';
+    for (const act of entryError.actions) {
+      const a = document.createElement('a');
+      a.className = `space-entry-action ${act.secondary ? 'secondary' : ''}`.trim();
+      a.href = act.url;
+      a.textContent = act.label;
+      actionContainer.appendChild(a);
+    }
+  } else if (action) {
     action.href = entryError.actionUrl;
     action.textContent = entryError.actionLabel;
     action.hidden = false;

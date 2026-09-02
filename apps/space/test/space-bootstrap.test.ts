@@ -12,6 +12,7 @@ import {
   requestSpaceAdmission,
   resolveApiOrigin,
   resolveInitialPlayerPose,
+  SpaceEntryError,
   terrainStreamAreaForPosition,
   terrainStreamAreaForPositionWithHysteresis,
 } from '../src/bootstrap/SpaceBootstrap.ts';
@@ -274,3 +275,25 @@ test('offline Space isolates world, entity, and player state while retaining sha
     }
   }
 });
+
+test('SpaceEntryError for missing skin includes collection, upload, generate, and offline actions', () => {
+  const err = new SpaceEntryError(
+    'SKIN_REQUIRED',
+    '进入 Space 前需要先设置角色皮肤。您可以选择已创建的皮肤、上传自己的皮肤，或直接生成新皮肤：',
+    '/skin/collection',
+    '选择已创建皮肤',
+    [
+      { label: '选择已创建皮肤', url: '/skin/collection' },
+      { label: '上传自己的皮肤', url: '/skin/collection' },
+      { label: '生成皮肤', url: '/skin/generate' },
+      { label: '进入离线模式', url: '?mode=offline', secondary: true }
+    ]
+  );
+  assert.equal(err.code, 'SKIN_REQUIRED');
+  assert.equal(err.actions.length, 4);
+  assert.equal(err.actions[0].url, '/skin/collection');
+  assert.equal(err.actions[1].url, '/skin/collection');
+  assert.equal(err.actions[2].url, '/skin/generate');
+  assert.equal(err.actions[3].url, '?mode=offline');
+});
+
