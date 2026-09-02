@@ -85,6 +85,7 @@ test('Selector child selection uses single-click and Shift multi-select, with gr
     scene
   ) as any;
   contraption.createChildEntity('root', new Set(['3,0,0', '4,0,0']), 'arm');
+  contraption.stopAllNodeScripts();
   const manager = new ContraptionManager(scene, {}, null, null) as any;
   manager.contraptions.push(contraption);
   const hit = (x, entityId = 'root') => ({

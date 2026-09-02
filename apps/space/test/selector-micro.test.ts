@@ -385,6 +385,7 @@ test('entity 2-point box in micro mode keeps only 0.2 m blocks', () => {
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.registerContraption(contraption);
+  contraption.stopAllNodeScripts();
   const ctx = { manager, world: {}, selectionHost: null };
   // A wide box covering the whole entity in node-local space.
   const a = { x: -3, y: -1, z: -1 };
@@ -417,6 +418,7 @@ test('copying an entity micro selection removes empty layers below its lowest vo
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.registerContraption(contraption);
+  contraption.stopAllNodeScripts();
   const controller = makeMicroController({ manager });
   controller.selectorMicroMode = true;
   controller.selectedBlockSelection = {
@@ -537,6 +539,7 @@ function makeEntityWithTopMicroLayer(scene) {
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.registerContraption(contraption);
+  contraption.stopAllNodeScripts();
   return { contraption, manager };
 }
 
@@ -694,6 +697,7 @@ test('create-child from microblock selection isolates selected microblocks and c
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.registerContraption(contraption);
+  contraption.stopAllNodeScripts();
   const controller = makeMicroController({ manager, world: {} });
   controller.selectorMicroMode = true;
 

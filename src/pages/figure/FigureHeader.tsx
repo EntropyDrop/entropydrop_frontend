@@ -11,7 +11,7 @@ interface FigureHeaderProps {
     setSearchQuery: (val: string) => void
     sortBy: 'latest' | 'popular'
     setSortBy: (val: 'latest' | 'popular') => void
-    setIsCreateFormOpen: (open: boolean) => void
+    onCreatePost: () => void
     setIsAddVideoFormOpen: (open: boolean) => void
     current: LangData
 }
@@ -26,7 +26,7 @@ export function FigureHeader({
     setSearchQuery,
     sortBy,
     setSortBy,
-    setIsCreateFormOpen,
+    onCreatePost,
     setIsAddVideoFormOpen,
     current
 }: FigureHeaderProps) {
@@ -109,13 +109,7 @@ export function FigureHeader({
                 {/* Publish Post button */}
                 {activeCategory !== 'videos' && (
                     <button
-                        onClick={() => {
-                            setIsCreateFormOpen(true);
-                            if (activeCategory === 'showcase' || activeCategory === 'discussions') {
-                                // Default new post category to active category
-                                // We'll trigger category select callback if needed
-                            }
-                        }}
+                        onClick={onCreatePost}
                         className={`px-3 py-1.5 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-white/20 transition-all font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:scale-105 active:scale-95 text-xs ${current.fontClass}`}
                     >
                         <Icon icon="pixelarticons:plus" className="text-sm" />

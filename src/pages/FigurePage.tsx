@@ -539,7 +539,12 @@ export function FigurePage({ current }: FigurePageProps) {
                 setSearchQuery={setSearchQuery}
                 sortBy={sortBy}
                 setSortBy={setSortBy}
-                setIsCreateFormOpen={setIsCreateFormOpen}
+                onCreatePost={() => {
+                    if (activeCategory === 'discussions' || activeCategory === 'showcase') {
+                        setNewCategory(activeCategory)
+                    }
+                    setIsCreateFormOpen(true)
+                }}
                 setIsAddVideoFormOpen={setIsAddVideoFormOpen}
                 current={current}
             />

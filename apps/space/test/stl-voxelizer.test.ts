@@ -304,6 +304,7 @@ test('successful T block-set copy resets entity block selection and highlights',
     new THREE.Vector3(0, 10, 0),
     scene
   );
+  contraption.stopAllNodeScripts();
   const controller = makeController();
   controller.selectedBlockSelection = { contraption, nodeId: 'root', blocks: contraption.blocks };
   controller.selectorLevel = { contraption, nodeId: 'root' };

@@ -344,7 +344,7 @@ export class PlayerPhysics {
     const body = typeof physics.contactBodyFor === 'function'
       ? physics.contactBodyFor(contraption, owner)
       : owner;
-    if (body.type !== 'dynamic') return false;
+    if (body.type !== 'dynamic' || body.simulationEnabled === false) return false;
     physics.applyImpulse(contraption, impulse, worldPoint, body.id);
     return true;
   }

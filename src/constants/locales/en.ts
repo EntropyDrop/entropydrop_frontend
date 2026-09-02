@@ -915,15 +915,6 @@ Email: support@entropydrop.com`
         primaryCta: 'Enter Space',
         offlineCta: 'Play Offline',
         secondaryCta: 'Core Features',
-        desktopOnlyBadge: 'Desktop PC Only',
-        pcOnly: {
-            title: 'Desktop PC Required',
-            description: 'EntropyDrop Space is designed for desktop PC browsers only. It requires 3D GPU acceleration, voxel physics, and keyboard & mouse controls. Please open this on a desktop PC browser (Chrome / Edge recommended).',
-            copyLink: 'Copy Link',
-            copied: 'Copied!',
-            tryAnyway: 'Try Anyway (Dev)',
-            close: 'Dismiss'
-        },
         stats: {
             scale: '0.2m Micro Sculpting',
             physics: 'Voxel Physics Engine',
@@ -1108,7 +1099,7 @@ Email: support@entropydrop.com`
                 },
                 stats: {
                     net: 'Net Flow',
-                    paypal: 'PayPal Bills',
+                    paypal: 'PayPal Revenue',
                     aws: 'AWS Bills',
                     sync: 'Sync Mode'
                 },

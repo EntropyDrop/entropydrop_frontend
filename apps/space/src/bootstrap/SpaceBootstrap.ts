@@ -8,8 +8,6 @@ import {
   TORUS_GREF,
   TORUS_SIZE_X,
   TORUS_SIZE_Z,
-  TORUS_SPAWN_X,
-  TORUS_SPAWN_Z,
   wrapX,
   wrapZ,
 } from '../engine/torus/TorusWorld.ts';
@@ -100,10 +98,9 @@ export function parseSpaceBootstrapPayload(value: unknown): SpaceBootstrapPayloa
     player?.start_z_cm,
     player?.start_yaw_q15,
   ];
-  const nullablePositionsValid = positions.every(position => (
-    position === null || isBoundedInteger(position, -10_000_000, 10_000_000)
+  const startPositionValid = positions.every(position => (
+    isBoundedInteger(position, -10_000_000, 10_000_000)
   ));
-  const resumePositionComplete = player?.resumed !== true || positions.every(position => typeof position === 'number');
 
   if (
     payload?.protocol_version !== 2
@@ -121,8 +118,7 @@ export function parseSpaceBootstrapPayload(value: unknown): SpaceBootstrapPayloa
     || !isBoundedString(player?.skin_url, 4096)
     || !['strong', 'slim'].includes(player?.skin_type)
     || typeof player?.resumed !== 'boolean'
-    || !nullablePositionsValid
-    || !resumePositionComplete
+    || !startPositionValid
   ) {
     throw new Error('Invalid Space bootstrap API V2 response.');
   }
@@ -255,31 +251,33 @@ export function resolveInitialPlayerPose(
   player: SpaceBootstrapPayload['player'],
   randomFn: () => number = Math.random
 ) {
-  if (
-    player.resumed &&
+  const hasBackendStart = (
     typeof player.start_x_cm === 'number' &&
     typeof player.start_y_cm === 'number' &&
     typeof player.start_z_cm === 'number' &&
     typeof player.start_yaw_q15 === 'number'
-  ) {
+  );
+  if (hasBackendStart) {
     return {
       x: player.start_x_cm / 100,
       y: player.start_y_cm / 100,
       z: player.start_z_cm / 100,
       yaw: (player.start_yaw_q15 / 32767) * Math.PI,
-      resumed: true,
+      resumed: player.resumed,
     };
   }
 
-  // Sample a random spawn point on the safe inner-ring spawn plain
-  const offsetX = (randomFn() * 20 - 10);
-  const offsetZ = (randomFn() * 20 - 10);
+  // Offline mode falls back to the same full-world policy.
+  // Start above the procedural terrain ceiling and let physics settle the
+  // player onto the local surface.
+  const randomX = randomFn() * TORUS_SIZE_X;
+  const randomZ = randomFn() * TORUS_SIZE_Z;
   const randomYaw = (randomFn() * 2 - 1) * Math.PI;
 
   return {
-    x: wrapX(TORUS_SPAWN_X + offsetX),
-    y: TORUS_GREF + 2,
-    z: wrapZ(TORUS_SPAWN_Z + offsetZ),
+    x: wrapX(randomX),
+    y: TORUS_GREF + 16,
+    z: wrapZ(randomZ),
     yaw: randomYaw,
     resumed: false,
   };
@@ -356,12 +354,11 @@ export function terrainStreamAreaForPositionWithHysteresis(
 }
 
 export function initialTerrainStreamArea(player: SpaceBootstrapPayload['player']) {
-  const resumed = player.resumed
-    && typeof player.start_x_cm === 'number'
+  const hasBackendStart = typeof player.start_x_cm === 'number'
     && typeof player.start_z_cm === 'number';
   return terrainStreamAreaForPosition(
-    resumed ? player.start_x_cm! / 100 : TORUS_SPAWN_X,
-    resumed ? player.start_z_cm! / 100 : TORUS_SPAWN_Z
+    hasBackendStart ? player.start_x_cm! / 100 : 0,
+    hasBackendStart ? player.start_z_cm! / 100 : 0
   );
 }
 

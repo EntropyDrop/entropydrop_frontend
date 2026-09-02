@@ -162,6 +162,7 @@ test('T copies an entity block selection using selected block-local coordinates'
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.contraptions.push(contraption);
+  contraption.stopAllNodeScripts();
   const controller = makeController({ manager });
 
   controller.selectedBlockSelection = {
@@ -199,6 +200,7 @@ test('T copies every block in a selected entity subtree as a block set', () => {
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.contraptions.push(contraption);
+  contraption.stopAllNodeScripts();
   const controller = makeController({ manager });
 
   controller.selectedSubtree = {

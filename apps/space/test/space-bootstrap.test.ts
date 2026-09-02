@@ -6,7 +6,7 @@ import {
   createPlayerPositionRemote,
   encodePlayerPosition,
   hasPngSignature,
-  isNonPcDevice,
+  initialTerrainStreamArea,
   loadTerrainEditRemote,
   OFFLINE_PLAYER_POSITION_KEY,
   OFFLINE_WORLD_ID,
@@ -50,10 +50,10 @@ test('Space validates the bootstrap V2 contract before constructing the game', (
       player_entity_id: 'entity-1',
       skin_url: 'https://cdn.example.test/alice.png',
       skin_type: 'strong',
-      start_x_cm: null,
-      start_y_cm: null,
-      start_z_cm: null,
-      start_yaw_q15: null,
+      start_x_cm: 0,
+      start_y_cm: 3200,
+      start_z_cm: 204799,
+      start_yaw_q15: -32767,
       resumed: false,
     },
   };
@@ -62,7 +62,7 @@ test('Space validates the bootstrap V2 contract before constructing the game', (
   assert.throws(() => parseSpaceBootstrapPayload({ ...payload, protocol_version: 3 }), /API V2/);
   assert.throws(() => parseSpaceBootstrapPayload({
     ...payload,
-    player: { ...payload.player, resumed: true, start_x_cm: 1 },
+    player: { ...payload.player, start_z_cm: null },
   }), /API V2/);
 });
 
@@ -164,7 +164,7 @@ test('terrain AOI hysteresis suppresses repeated loads around tile boundaries', 
   );
 });
 
-test('Space consumes one unified backend start pose for resume or samples random spawn when not resumed', () => {
+test('Space consumes backend resume/random starts and samples the whole world only as an offline fallback', () => {
   const player = {
     user_id: 'user-001',
     username: 'alice',
@@ -186,7 +186,23 @@ test('Space consumes one unified backend start pose for resume or samples random
     resumed: true,
   });
 
-  const mockRandom = () => 0.5;
+  assert.deepEqual(resolveInitialPlayerPose({
+    ...player,
+    start_x_cm: 409600,
+    start_y_cm: 3200,
+    start_z_cm: 153600,
+    start_yaw_q15: 0,
+    resumed: false,
+  }), {
+    x: 4096,
+    y: 32,
+    z: 1536,
+    yaw: 0,
+    resumed: false,
+  });
+
+  const randomValues = [0.25, 0.75, 0.5];
+  const mockRandom = () => randomValues.shift()!;
   assert.deepEqual(resolveInitialPlayerPose({
     ...player,
     start_x_cm: null,
@@ -195,12 +211,24 @@ test('Space consumes one unified backend start pose for resume or samples random
     start_yaw_q15: null,
     resumed: false,
   }, mockRandom), {
-    x: 8192,
-    y: 18,
-    z: 1024,
+    x: 4096,
+    y: 32,
+    z: 1536,
     yaw: 0,
     resumed: false,
   });
+
+  assert.equal(
+    initialTerrainStreamArea({
+      ...player,
+      start_x_cm: 409600,
+      start_y_cm: 3200,
+      start_z_cm: 153600,
+      start_yaw_q15: 0,
+      resumed: false,
+    }).key,
+    terrainStreamAreaForPosition(4096, 1536).key,
+  );
 });
 
 test('Space wraps and saves a small authenticated position checkpoint with keepalive', async () => {
@@ -332,37 +360,4 @@ test('SpaceEntryError for missing skin includes collection, upload, generate, an
   assert.equal(err.actions[1].url, '/skin/collection');
   assert.equal(err.actions[2].url, '/skin/generate');
   assert.equal(err.actions[3].url, '?mode=offline');
-});
-
-test('isNonPcDevice detects mobile phones and tablets while allowing desktop PCs', () => {
-  // Desktop browser
-  assert.equal(
-    isNonPcDevice('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36', 'MacIntel', 0, 1920, 1080),
-    false,
-    'desktop Mac Chrome must pass'
-  );
-  assert.equal(
-    isNonPcDevice('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36', 'Win32', 0, 1920, 1080),
-    false,
-    'desktop Windows Chrome must pass'
-  );
-
-  // iPhone / Android phone
-  assert.equal(
-    isNonPcDevice('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1', 'iPhone', 5, 390, 844),
-    true,
-    'iPhone must be detected as non-PC'
-  );
-  assert.equal(
-    isNonPcDevice('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36', 'Linux armv8l', 5, 412, 915),
-    true,
-    'Android phone must be detected as non-PC'
-  );
-
-  // iPad
-  assert.equal(
-    isNonPcDevice('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15', 'MacIntel', 5, 1024, 768),
-    true,
-    'iPad on iOS 13+ must be detected as non-PC'
-  );
 });

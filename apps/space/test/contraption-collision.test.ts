@@ -83,6 +83,45 @@ test('a dynamic entity bounces off a kinematic entity while the kinematic entity
   assert.ok(kinematicEntity.position.distanceTo(kinematicStart) < 1e-6, 'the kinematic position should not change');
 });
 
+test('a stopped entity remains an immovable collider while its physics is disabled', () => {
+  const physics = makePhysics();
+  const stopped = makeEntity('stopped', { x: 0.8, y: 10, z: 0 });
+  const mover = makeEntity('mover', { x: 0, y: 10, z: 0 });
+  const stoppedPosition = stopped.position.clone();
+  stopped.stopAllNodeScripts();
+  mover.velocity.set(3, 0, 0);
+
+  physics.update(stopped, 1 / 60);
+  physics.resolveContraptionPairs([mover, stopped]);
+
+  assert.ok(stopped.position.distanceTo(stoppedPosition) < 1e-9);
+  assert.deepEqual(stopped.velocity.toArray(), [0, 0, 0]);
+  assert.ok(mover.position.x < stopped.position.x, 'the active body must be separated from the stopped collider');
+  assert.ok(mover.velocity.x <= 1e-9, 'the stopped collider must absorb the active body contact');
+});
+
+test('Stop freezes gravity and Play resumes it from the same pose', () => {
+  const physics = makePhysics();
+  const entity = makeEntity('freeze', { x: 0, y: 10, z: 0 });
+  entity.velocity.set(1, -2, 3);
+  entity.angularVelocity.set(0.5, 0.25, -0.5);
+  entity.stopAllNodeScripts();
+  const stoppedPosition = entity.position.clone();
+  const stoppedQuaternion = entity.quaternion.clone();
+
+  physics.update(entity, 1);
+  assert.ok(entity.position.distanceTo(stoppedPosition) < 1e-9);
+  assert.ok(entity.quaternion.angleTo(stoppedQuaternion) < 1e-9);
+  assert.deepEqual(entity.velocity.toArray(), [0, 0, 0]);
+
+  entity.velocity.set(50, 50, 50); // A stale external write while dormant must not become a launch.
+  entity.enableAllNodeScripts();
+  assert.deepEqual(entity.velocity.toArray(), [0, 0, 0]);
+  physics.update(entity, 1 / 60);
+  assert.ok(entity.position.y < stoppedPosition.y, 'gravity must resume after Play');
+  assert.ok(entity.velocity.y < 0);
+});
+
 test('restitution controls the rebound speed of a dynamic body', () => {
   const physics = makePhysics();
   const collideAt = (restitution) => {

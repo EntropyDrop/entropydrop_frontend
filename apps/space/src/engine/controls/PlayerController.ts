@@ -4043,6 +4043,10 @@ export class PlayerController {
       this.ui?.showToast?.('Wrench: hold left-click on a dynamic entity to grab it');
       return false;
     }
+    if (contraption.isPhysicsSimulationEnabled?.() === false) {
+      this.ui?.showToast?.('Wrench: start the stopped entity before grabbing it');
+      return false;
+    }
     const bodyId = this.getWrenchGrabBodyId(
       contraption,
       this.hoveredContraptionHit?.entityId || 'root'
@@ -4123,10 +4127,7 @@ export class PlayerController {
       this.ui?.showToast?.('Wrench: point at an entity to start or stop it');
       return false;
     }
-    const nodeIds = [...(contraption.entityNodes?.keys?.() || ['root'])];
-    const hasEnabledCode = nodeIds.some(id => contraption.isNodeScriptEnabled?.(id));
-    const isRunning = contraption.scriptStatus === 'running' && hasEnabledCode;
-    const shouldStart = !isRunning;
+    const shouldStart = contraption.isPhysicsSimulationEnabled?.() === false;
     const result = this.performBasicAction({
       domain: ActionDomain.ENTITY,
       action: shouldStart ? 'start-scripts' : 'stop-scripts',
@@ -5873,7 +5874,7 @@ export class PlayerController {
       } else {
         const { localPoint, targetDistance, bodyId } = grab;
         const body = contraption.getRigidBody?.(bodyId);
-        if (!body || body.type !== BodyType.DYNAMIC) {
+        if (!body || body.type !== BodyType.DYNAMIC || body.simulationEnabled === false) {
           this.releaseWrenchGrab();
         } else {
           const eyePos = this.physics?.getEyePosition ? this.physics.getEyePosition() : this.camera.position.clone();

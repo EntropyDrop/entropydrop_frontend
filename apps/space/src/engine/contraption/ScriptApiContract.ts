@@ -115,7 +115,7 @@ const bodyEntries: ApiEntry[] = [
   { signature: 'self.constraints.all()', description: 'Return a frozen snapshot of constraints connected to this component.' },
   { signature: 'self.constraints.create({id?,type,other,anchorA?,anchorB?,axisA?,axisB?,limits?,stiffness?,collideConnected?})', description: "Queue a `point`, `hinge`, or `weld` to a component or `'world'`; immediate Worker success is provisional `{ok:true,id:null,reason:'queued'}`. Supply an explicit ID for later lookup. Stiffness defaults to 0.9, `collideConnected` to false, omitted anchors use pivots, and hinge limits are radians." },
   { signature: 'self.constraints.remove(id)', description: 'Queue removal of one constraint; returns boolean.' },
-  { signature: 'self.stop()', description: 'Root-only global Stop: disable scripts, clear state/time/tick/motion, reset child poses, and restore persisted BodyConfig defaults. Child code must call `ctx.root.stop()`.' }
+  { signature: 'self.stop()', description: 'Root-only global Stop: disable entity physics and scripts, clear state/time/tick/motion, reset child poses, and restore persisted BodyConfig defaults. Collision and selection shapes remain active. Child code must call `ctx.root.stop()`.' }
 ];
 
 const worldEntries: ApiEntry[] = [
@@ -130,7 +130,7 @@ const worldEntries: ApiEntry[] = [
   { signature: 'ctx.world.microVoxels.set(cell, offset, options?)', description: 'Queue one 0.2 m world voxel placement.' },
   { signature: 'ctx.world.microVoxels.clear(cell, offset)', description: 'Queue removal of one exact 0.2 m world voxel.' },
   { signature: 'ctx.world.microVoxels.paint(cell, offset, options?)', description: 'Queue repainting one existing micro world voxel.' },
-  { signature: 'ctx.world.entities(origin, radius=16)', description: "Filter the prefetched 64 m nearby-entity snapshot using shortest wrapped X/Z distance. Descriptors include pose, velocities, mass, bounds, collision/ground state, script status, and component count." },
+  { signature: 'ctx.world.entities(origin, radius=16)', description: "Filter the prefetched 64 m nearby-entity snapshot using shortest wrapped X/Z distance. Descriptors include pose, velocities, mass, bounds, collision/ground state, physics enabled state, script status, and component count." },
   { signature: 'ctx.world.entities.get(id, chunkId?)', description: 'Look up an entity in the frozen nearby snapshot.' },
   { signature: 'ctx.world.entities.list(chunkId) / inChunk(chunkId)', description: 'Filter nearby entities by wrapped chunk ID `"cx,cz"`.' },
   { signature: 'ctx.world.raycast(origin, direction, maxDistance=24)', description: 'Compatibility form: bounded synchronous standard-world-voxel raycast.' },
@@ -162,7 +162,7 @@ export const SPACE_SCRIPT_API_V2: ScriptApiContract = {
         'Coordinates are right-handed and Y-up: +X right, +Y up, -Z forward. Euler angles use YXZ order; quaternions are `[x,y,z,w]`.',
         "A component pivot starts at its own block AABB centroid and never moves automatically after block edits. Use `getBounds()` then `setPivot(bounds.center)` to recenter a kinematic body without moving its blocks.",
         "Component IDs are unique across the entire entity; `root` is reserved. A child's local position is its pivot offset in the parent pivot frame.",
-        'All scripts start enabled. Pause preserves state and runtime BodyConfig values; Stop clears state/time/tick/motion, resets child transforms, and restores persisted BodyConfig defaults.',
+        'All scripts start enabled. Pause preserves active physics, state, and runtime BodyConfig values; Stop disables entity physics, clears state/time/tick/motion, resets child transforms, and restores persisted BodyConfig defaults. Play re-enables physics from the stopped construction pose.',
         'BodyConfig defaults are type, mass, restitution, friction, gravity, and collision. Script setters are runtime-only; serialization always writes defaults.',
         'Collision defaults to enabled. A disabled component remains rendered/editable but has no terrain, player, entity, or raycast shapes.'
       ]
@@ -219,7 +219,7 @@ const dz = wrappedDelta(ctx.position[2], target[2], 2048);`
           title: 'Rigid body, constraints, and Stop',
           entries: bodyEntries,
           notes: [
-            '`self.body` setters alter runtime values only. Pause preserves them; global Stop restores persisted defaults.',
+            '`self.body` setters alter runtime values only. Pause preserves them and keeps physics active; global Stop disables dynamics while retaining static collision/query shapes and restores persisted defaults.',
             '`self.body.apply*` targets the current component body and bypasses the legacy `ctx.limits`/HUD budget, but rejects non-finite values and components above `1e12`.',
             'Constraint creation is queued. Supply an explicit ID when later script logic requires a stable name; hinge limits are radians.'
           ]

@@ -915,15 +915,6 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         primaryCta: '进入 Space 世界',
         offlineCta: '离线模式',
         secondaryCta: '核心特性',
-        desktopOnlyBadge: '仅限 PC 电脑端',
-        pcOnly: {
-            title: 'Space 仅支持 PC 桌面端运行',
-            description: 'Space 包含完整的 3D 体素物理引擎、0.2m 微体素精细雕刻与键鼠自主飞行控制系统，需要电脑桌面级 GPU 渲染与键盘鼠标操作，请使用 PC 电脑浏览器（推荐 Chrome / Edge）体验完整功能。',
-            copyLink: '复制链接',
-            copied: '已复制链接',
-            tryAnyway: '仍然进入 (开发者)',
-            close: '我知道了'
-        },
         stats: {
             scale: '0.2m 精细微雕',
             physics: '体素物理引擎',
@@ -1108,7 +1099,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                 },
                 stats: {
                     net: '净流入',
-                    paypal: 'PayPal 账单',
+                    paypal: 'PayPal 收入',
                     aws: 'AWS 账单',
                     sync: '同步机制'
                 },

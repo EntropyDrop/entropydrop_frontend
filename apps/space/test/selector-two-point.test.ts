@@ -30,6 +30,7 @@ function makeEntityWithChildren() {
       ]
     }
   );
+  contraption.stopAllNodeScripts();
   return { contraption, scene };
 }
 
@@ -503,6 +504,7 @@ test('a rotated child microblock uses its true 0.2 world AABB for selection', ()
     scene,
     { childEntities: [{ id: 'tip', parentId: 'root', pivot: [0.1, 2.1, 0.1] }] }
   );
+  contraption.stopAllNodeScripts();
   contraption.getChildScriptApi('tip').setLocalEuler([0, Math.PI / 4, 0]);
   contraption.rootGroup.updateMatrixWorld(true);
 
@@ -636,6 +638,7 @@ test('re-boxing anchors range points in node-local space while the component rot
       ]
     }
   );
+  contraption.stopAllNodeScripts();
   const toasts: string[] = [];
   const controller = makeSelectorController({ manager: { contraptions: [contraption] } });
   controller.ui = { showToast: m => toasts.push(m), renderInventoryBar() {} };

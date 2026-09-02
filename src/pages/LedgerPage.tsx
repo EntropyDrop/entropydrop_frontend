@@ -168,7 +168,7 @@ export function LedgerPage({ current }: LedgerPageProps) {
     const stats = [
         {
             label: pageData.stats.paypal,
-            value: ledger.summaries.paypal.total,
+            value: ledger.summaries.paypal.revenue || ledger.summaries.paypal.total,
             sub: `${pageData.sync.records}: ${ledger.summaries.paypal.count}`,
             icon: 'pixelarticons:dollar',
             color: 'text-green-500',

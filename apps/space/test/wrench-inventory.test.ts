@@ -296,6 +296,30 @@ test('Wrench hold grabs the exact dynamic-body point and releases cleanly', () =
   assert.equal(controller.wrenchGrab, null);
 });
 
+test('Wrench cannot inject motion into an entity while Stop has disabled physics', () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null);
+  const entity = makeContraptionWithChildren();
+  manager.registerContraption(entity);
+  entity.stopAllNodeScripts();
+
+  const controller = Object.create(PlayerController.prototype) as any;
+  controller.activeTool = SpecialTool.WRENCH;
+  controller.contraptions = manager;
+  controller.hoveredContraption = entity;
+  controller.hoveredContraptionHit = {
+    contraption: entity,
+    entityId: 'root',
+    point: entity.position.clone()
+  };
+  controller.physics = { getEyePosition: () => new THREE.Vector3() };
+  controller.ui = { showToast() {} };
+
+  assert.equal(controller.startWrenchGrab(), false);
+  assert.equal(controller.wrenchGrab, undefined);
+  assert.deepEqual(entity.velocity.toArray(), [0, 0, 0]);
+});
+
 test('Wrench pivot editing preserves rotated component and descendant voxel positions', () => {
   const entity = makeContraptionWithChildren();
   entity.stopAllNodeScripts();

@@ -575,11 +575,22 @@ function executeEntityAction(context: any, command: any) {
     case 'start-scripts': {
       const hasRunnableCode = !!contraption.compiledScript || (contraption.compiledNodeScripts?.size || 0) > 0;
       if (!hasRunnableCode) {
+        if (contraption.isPhysicsSimulationEnabled?.() === false) {
+          contraption.enableAllNodeScripts?.();
+          invalidateInternalEntitySelections(context, contraption);
+          return actionResult(command.action, 1, 'started', {
+            status: contraption.scriptStatus || 'stopped',
+            physicsEnabled: true
+          });
+        }
         return actionResult(command.action, 0, 'no_scripts', { status: contraption.scriptStatus || 'stopped' });
       }
       contraption.enableAllNodeScripts?.();
       invalidateInternalEntitySelections(context, contraption);
-      return actionResult(command.action, 1, 'started', { status: contraption.scriptStatus || 'running' });
+      return actionResult(command.action, 1, 'started', {
+        status: contraption.scriptStatus || 'running',
+        physicsEnabled: contraption.isPhysicsSimulationEnabled?.() !== false
+      });
     }
     case 'pause-scripts': {
       if (contraption.scriptStatus !== 'running') {
@@ -590,14 +601,19 @@ function executeEntityAction(context: any, command: any) {
       return actionResult(command.action, 1, 'paused', { status: contraption.scriptStatus || 'running' });
     }
     case 'stop-scripts': {
-      if (contraption.scriptStatus === 'stopped') {
-        return actionResult(command.action, 0, 'already_stopped', { status: 'stopped' });
+      if (contraption.scriptStatus === 'stopped' && contraption.isPhysicsSimulationEnabled?.() === false) {
+        return actionResult(command.action, 0, 'already_stopped', { status: 'stopped', physicsEnabled: false });
       }
       contraption.stopAllNodeScripts?.();
-      return actionResult(command.action, 1, 'stopped', { status: contraption.scriptStatus || 'stopped' });
+      return actionResult(command.action, 1, 'stopped', {
+        status: contraption.scriptStatus || 'stopped',
+        physicsEnabled: contraption.isPhysicsSimulationEnabled?.() !== false
+      });
     }
     case 'toggle-scripts': {
-      const nextAction = contraption.scriptStatus === 'running' ? 'stop-scripts' : 'start-scripts';
+      const nextAction = contraption.isPhysicsSimulationEnabled?.() === false
+        ? 'start-scripts'
+        : 'stop-scripts';
       const result = executeEntityAction(context, { ...command, action: nextAction });
       return { ...result, action: command.action };
     }

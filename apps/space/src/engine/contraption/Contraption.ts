@@ -318,6 +318,9 @@ export interface EntityRigidBody {
   previousKinematicPosition: THREE.Vector3;
   previousKinematicQuaternion: THREE.Quaternion;
   isOnGround: boolean;
+  /** False while the entity is stopped. The authored body type is preserved,
+   * but the solver treats this body as an immovable static collider. */
+  simulationEnabled: boolean;
 }
 
 export class Contraption {
@@ -379,6 +382,9 @@ export class Contraption {
   bodyType: string;
   useGravity: boolean;
   collisionEnabled: boolean;
+  /** Entity-level dynamics switch. Stopped entities keep collision/query
+   * shapes but do not integrate, solve constraints, or receive impulses. */
+  physicsSimulationEnabled: boolean;
   /** Original PB BodyConfig values captured before the first script-only mutation. */
   runtimeBodyConfigDefaults: Map<string, any>;
   isOnGround: boolean;
@@ -512,6 +518,7 @@ export class Contraption {
       ? !!options.useGravity
       : this.bodyType === BodyType.DYNAMIC;
     this.collisionEnabled = options.collisionEnabled !== false;
+    this.physicsSimulationEnabled = options.physicsSimulationEnabled !== false;
     this.runtimeBodyConfigDefaults = new Map();
     this.isOnGround = false;
     this.groundDistance = 0;
@@ -1277,6 +1284,7 @@ export class Contraption {
       }
       this.scriptStatus = [...this.compiledNodeScripts.keys()]
         .some(nodeId => this.isNodeScriptEnabled(nodeId)) ? 'running' : 'stopped';
+      if (this.scriptStatus === 'running') this.setPhysicsSimulationEnabled(true);
       this.latchedScriptCommands = [];
       this.scriptError = null;
       this.log(`[OK] [${id}] Script compiled and loaded successfully!`);
@@ -1349,6 +1357,7 @@ export class Contraption {
 
     if (state && this.scriptStatus === 'stopped' && (this.compiledScript || this.compiledNodeScripts.size > 0)) {
       this.scriptStatus = 'running';
+      this.setPhysicsSimulationEnabled(true);
     }
 
     this.log(`[SW] [${id}] Code switch: ${state ? 'ON (RUN)' : 'OFF (PAUSE)'}`);
@@ -1361,6 +1370,7 @@ export class Contraption {
       this.nodeScriptEnabled.set(id, true);
     }
     this.latchedScriptCommands = [];
+    this.setPhysicsSimulationEnabled(true);
     if (this.compiledScript || this.compiledNodeScripts.size > 0) {
       this.scriptStatus = 'running';
     }
@@ -1441,12 +1451,84 @@ export class Contraption {
 
   /** The single implementation used by both the UI Stop button and root self.stop(). */
   stopAllNodeScripts() {
+    // Freeze this entity before restoring its construction pose. The manager
+    // may already have prepared other entities for the current physics frame;
+    // body-level flags ensure this entity cannot receive a late impulse from
+    // that frame while its transforms are being reset.
+    this.setPhysicsSimulationEnabled(false);
     this.disableAllNodeScripts();
     this.restoreRuntimeBodyConfigDefaults();
     this.resetAllComponentState();
     this.scriptStatus = 'stopped';
-    this.log('[STOP] All component scripts stopped; runtime BodyConfig restored');
+    this.setPhysicsSimulationEnabled(false);
+    this.log('[STOP] Entity physics disabled; component scripts stopped and runtime BodyConfig restored');
     return true;
+  }
+
+  isPhysicsSimulationEnabled() {
+    return this.physicsSimulationEnabled !== false;
+  }
+
+  /**
+   * Enable or disable dynamic simulation without changing authored BodyConfig.
+   * Disabled bodies remain in collision/raycast queries as immovable colliders.
+   * Re-enabling starts from a clean, current pose so no stopped-time movement
+   * becomes a swept collision or an artificial kinematic velocity.
+   */
+  setPhysicsSimulationEnabled(enabled = true, options: any = {}) {
+    const next = !!enabled;
+    const resetHistory = options.resetHistory !== false;
+    const wakingFromStop = next && this.physicsSimulationEnabled === false && resetHistory;
+    this.physicsSimulationEnabled = next;
+    this.rootGroup.updateMatrixWorld(true);
+
+    if (!next || wakingFromStop) {
+      this.velocity.set(0, 0, 0);
+      this.angularVelocity.set(0, 0, 0);
+      this.appliedForces.set(0, 0, 0);
+      this.appliedTorques.set(0, 0, 0);
+      this.lastAppliedForce.set(0, 0, 0);
+      this.lastAppliedTorque.set(0, 0, 0);
+    }
+    if (!next) this.isOnGround = false;
+
+    if (resetHistory) {
+      this.previousPosition.copy(this.position);
+      this.previousQuaternion.copy(this.quaternion);
+      this.renderSimulationPosition.copy(this.position);
+      this.renderSimulationQuaternion.copy(this.quaternion);
+      this.renderInterpolated = false;
+    }
+
+    for (const node of this.entityNodes.values()) {
+      node.commandedThisFrame = false;
+      if (!next) node.localAngularVelocity.set(0, 0, 0);
+      if (resetHistory) {
+        node.previousLocalPosition?.copy(node.localPosition);
+        node.previousLocalQuaternion?.copy(node.localQuaternion);
+        node.group.updateWorldMatrix(true, false);
+        node.previousWorldMatrix = node.group.matrixWorld.clone();
+      }
+    }
+
+    for (const body of this.rigidBodies.values()) {
+      body.simulationEnabled = next;
+      if (resetHistory) {
+        body.previousKinematicPosition.copy(body.position);
+        body.previousKinematicQuaternion.copy(body.quaternion);
+      }
+      if (!next || wakingFromStop) {
+        body.velocity.set(0, 0, 0);
+        body.angularVelocity.set(0, 0, 0);
+        body.appliedForces.set(0, 0, 0);
+        body.appliedTorques.set(0, 0, 0);
+      }
+      if (!next) {
+        body.isOnGround = false;
+      }
+    }
+    this.invalidateCollisionPoseCache();
+    return next;
   }
 
   /**
@@ -1456,7 +1538,7 @@ export class Contraption {
    * selection.
    */
   canEditInternalSelection() {
-    return this.scriptStatus === 'stopped';
+    return this.scriptStatus === 'stopped' && !this.isPhysicsSimulationEnabled();
   }
 
   /**
@@ -1952,7 +2034,8 @@ export class Contraption {
       nodeScriptEnabled: new Map(this.nodeScriptEnabled),
       componentVariables: new Map(this.componentVariables),
       scriptStatus: this.scriptStatus,
-      scriptError: this.scriptError
+      scriptError: this.scriptError,
+      physicsSimulationEnabled: this.physicsSimulationEnabled
     };
 
     try {
@@ -1997,6 +2080,7 @@ export class Contraption {
       this.scriptStatus = previous.scriptStatus;
       this.scriptError = previous.scriptError;
       this.rebuildAfterBlockChange('change', parentId);
+      this.setPhysicsSimulationEnabled(previous.physicsSimulationEnabled);
       for (const [id, code] of this.nodeScripts) this.scriptRuntimeClient.setScript(id, code || '');
       return fail(error instanceof Error ? error.message : 'install_failed');
     }
@@ -2636,7 +2720,8 @@ export class Contraption {
         centerOfMassLocal,
         previousKinematicPosition: previous?.previousKinematicPosition?.clone() || authoredPosition.clone(),
         previousKinematicQuaternion: previous?.previousKinematicQuaternion?.clone() || authoredQuaternion.clone(),
-        isOnGround: previous?.isOnGround || false
+        isOnGround: previous?.isOnGround || false,
+        simulationEnabled: this.physicsSimulationEnabled !== false
       };
       nextBodies.set(node.id, body);
     }
@@ -4042,6 +4127,7 @@ export class Contraption {
 
   /** Record one bounded physics observation for the next script snapshot. */
   recordScriptContact(contact) {
+    if (!this.isPhysicsSimulationEnabled()) return false;
     const normalized = cloneScriptData(contact, null, 16 * 1024);
     if (!normalized || typeof normalized !== 'object') return false;
     const position = Array.isArray(normalized.position) ? normalized.position : [0, 0, 0];

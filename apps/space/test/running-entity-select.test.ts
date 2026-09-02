@@ -122,7 +122,7 @@ test('whole selection replaces an in-progress box on a running entity', () => {
 test('a stopped entity still allows arm-subtree selection and box mode', () => {
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
-  // scriptStatus defaults to stopped.
+  contraption.stopAllNodeScripts();
   clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5));
   assert.equal(controller.selectedSubtree.rootId, 'arm', 'level selection should work normally');
   assert.ok(controller.selectorRange, 'box mode should activate');
@@ -152,7 +152,7 @@ test('shared selection API rejects entity internals until stopped but keeps whol
   assert.equal(rootResult.ok, true, 'whole-root selection must remain available while running');
   assert.equal(manager.entitySelection.rootId, 'root');
 
-  contraption.scriptStatus = 'stopped';
+  contraption.stopAllNodeScripts();
   const stoppedBox = manager.scriptSelectionApi.entityBox(
     contraption.publicId,
     'arm',

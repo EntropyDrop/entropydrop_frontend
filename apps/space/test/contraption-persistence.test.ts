@@ -75,6 +75,19 @@ test('streaming preserves runtime BodyConfig overrides without replacing PB defa
   assert.deepEqual(restored.getNodeBodyMaterial('root'), { restitution: 0.2, friction: 0.4 });
   assert.equal(restored.getNodeGravityEnabled('root'), true);
   assert.equal(restored.getNodeCollisionEnabled('root'), true);
+
+  const stoppedRecord = managerB.captureContraptionForStreaming(restored, { id: '0,0' });
+  assert.equal(stoppedRecord.physicsSimulationEnabled, false);
+  const managerC = new ContraptionManager(new THREE.Scene(), null, null, null);
+  const stoppedRestored = managerC.buildFromSlot(
+    stoppedRecord.slot,
+    new THREE.Vector3().fromArray(stoppedRecord.constructorOrigin),
+    stoppedRecord,
+    false
+  );
+  assert.equal(stoppedRestored.isPhysicsSimulationEnabled(), false);
+  assert.equal(stoppedRestored.getRigidBody('root').simulationEnabled, false);
+  assert.equal(stoppedRestored.canEditInternalSelection(), true);
 });
 
 test('contraption manager saves assembled entity and restores it after simulated reload', () => {

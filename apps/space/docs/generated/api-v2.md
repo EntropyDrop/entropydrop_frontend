@@ -8,7 +8,7 @@ Canonical contract for component scripts running with `(self, ctx)` in the Space
 - Coordinates are right-handed and Y-up: +X right, +Y up, -Z forward. Euler angles use YXZ order; quaternions are `[x,y,z,w]`.
 - A component pivot starts at its own block AABB centroid and never moves automatically after block edits. Use `getBounds()` then `setPivot(bounds.center)` to recenter a kinematic body without moving its blocks.
 - Component IDs are unique across the entire entity; `root` is reserved. A child's local position is its pivot offset in the parent pivot frame.
-- All scripts start enabled. Pause preserves state and runtime BodyConfig values; Stop clears state/time/tick/motion, resets child transforms, and restores persisted BodyConfig defaults.
+- All scripts start enabled. Pause preserves active physics, state, and runtime BodyConfig values; Stop disables entity physics, clears state/time/tick/motion, resets child transforms, and restores persisted BodyConfig defaults. Play re-enables physics from the stopped construction pose.
 - BodyConfig defaults are type, mass, restitution, friction, gravity, and collision. Script setters are runtime-only; serialization always writes defaults.
 - Collision defaults to enabled. A disabled component remains rendered/editable but has no terrain, player, entity, or raycast shapes.
 
@@ -137,9 +137,9 @@ Only kinematic bodies accept direct pose commands; dynamic bodies are solver-dri
 | `self.constraints.all()` | Return a frozen snapshot of constraints connected to this component. |
 | `self.constraints.create({id?,type,other,anchorA?,anchorB?,axisA?,axisB?,limits?,stiffness?,collideConnected?})` | Queue a `point`, `hinge`, or `weld` to a component or `'world'`; immediate Worker success is provisional `{ok:true,id:null,reason:'queued'}`. Supply an explicit ID for later lookup. Stiffness defaults to 0.9, `collideConnected` to false, omitted anchors use pivots, and hinge limits are radians. |
 | `self.constraints.remove(id)` | Queue removal of one constraint; returns boolean. |
-| `self.stop()` | Root-only global Stop: disable scripts, clear state/time/tick/motion, reset child poses, and restore persisted BodyConfig defaults. Child code must call `ctx.root.stop()`. |
+| `self.stop()` | Root-only global Stop: disable entity physics and scripts, clear state/time/tick/motion, reset child poses, and restore persisted BodyConfig defaults. Collision and selection shapes remain active. Child code must call `ctx.root.stop()`. |
 
-> `self.body` setters alter runtime values only. Pause preserves them; global Stop restores persisted defaults.
+> `self.body` setters alter runtime values only. Pause preserves them and keeps physics active; global Stop disables dynamics while retaining static collision/query shapes and restores persisted defaults.
 
 > `self.body.apply*` targets the current component body and bypasses the legacy `ctx.limits`/HUD budget, but rejects non-finite values and components above `1e12`.
 
@@ -160,7 +160,7 @@ Only kinematic bodies accept direct pose commands; dynamic bodies are solver-dri
 | `ctx.world.microVoxels.set(cell, offset, options?)` | Queue one 0.2 m world voxel placement. |
 | `ctx.world.microVoxels.clear(cell, offset)` | Queue removal of one exact 0.2 m world voxel. |
 | `ctx.world.microVoxels.paint(cell, offset, options?)` | Queue repainting one existing micro world voxel. |
-| `ctx.world.entities(origin, radius=16)` | Filter the prefetched 64 m nearby-entity snapshot using shortest wrapped X/Z distance. Descriptors include pose, velocities, mass, bounds, collision/ground state, script status, and component count. |
+| `ctx.world.entities(origin, radius=16)` | Filter the prefetched 64 m nearby-entity snapshot using shortest wrapped X/Z distance. Descriptors include pose, velocities, mass, bounds, collision/ground state, physics enabled state, script status, and component count. |
 | `ctx.world.entities.get(id, chunkId?)` | Look up an entity in the frozen nearby snapshot. |
 | `ctx.world.entities.list(chunkId) / inChunk(chunkId)` | Filter nearby entities by wrapped chunk ID `"cx,cz"`. |
 | `ctx.world.raycast(origin, direction, maxDistance=24)` | Compatibility form: bounded synchronous standard-world-voxel raycast. |

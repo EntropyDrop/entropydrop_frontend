@@ -7,11 +7,11 @@ the main site's `localStorage` login token. It does not own an account system.
 
 Before constructing the Three.js scene it calls `POST /space/api/v2/bootstrap`,
 loads the existing EntropyDrop user's latest backend state, or receives an
-ephemeral random position when no snapshot exists, and downloads that user's
-immutable `skin_url` PNG. The first random position is checkpointed
-immediately; later wrapped position/yaw updates are saved every two seconds and
-before page suspension. A user without a configured skin is blocked
-and sent to `/skin/edit`. Backpack data remains browser-local under
+ephemeral world-wide random position when no snapshot exists, and downloads
+that user's immutable `skin_url` PNG. The first random position is checkpointed
+immediately; later wrapped position/yaw updates are saved every five seconds,
+on realtime disconnect, and before page suspension. A user without a configured
+skin is blocked and sent to `/skin/edit`. Backpack data remains browser-local under
 `space.backpack.v2` and is never uploaded by this app. Player-authored standard
 and micro-voxel terrain overlays are loaded from the authenticated Space API and
 sent back in idempotent batches of at most 256 mutations. A durable browser
@@ -34,6 +34,25 @@ overlay model.
 An AI-native programmable voxel physics prototype:
 
 > Build anything. Tell it what to do.
+
+## Player spawn and reconnect
+
+- A valid backend `player_snapshots` record always wins: its latest X/Y/Z and
+  yaw become the player's initial pose.
+- Without a valid snapshot, the backend samples X uniformly across
+  `[0, 16384)` and Z uniformly across `[0, 2048)`, covering the complete
+  wrapped torus rather than a central spawn area. It starts the player at
+  `y = 32` above the procedural terrain ceiling and gives them a random yaw.
+- Bootstrap always returns a complete start pose. `resumed=true` means the
+  pose came from a durable snapshot; `resumed=false` means it is the new
+  ephemeral random candidate. The client uses either pose to load the correct
+  initial terrain AOI before constructing the world.
+- The random pose is ephemeral until the admitted client starts successfully
+  and checkpoints it. It is not stored as a permanent birth point in the
+  player profile; another bootstrap may receive another random pose if no
+  checkpoint was committed.
+- Offline mode restores `space.offline.player-position.v1` when present and
+  otherwise applies the same full-world random fallback locally.
 
 Players build with one freely colorable voxel material at two geometric scales,
 select a region, and entityize it into a programmable component tree. Components

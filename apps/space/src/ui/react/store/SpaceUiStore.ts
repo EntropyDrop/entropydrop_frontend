@@ -969,10 +969,10 @@ export class SpaceUiStore {
     this.patch({ globalPlaybackState: value });
     this.snapshot.sceneRenderer?.renderEntityPreview?.(contraption);
     const message = value === 'play'
-      ? '> PLAY: all component scripts running'
+      ? '> PLAY: entity physics active; component scripts running'
       : value === 'pause'
-        ? 'PAUSED: all component scripts stopped'
-        : 'STOPPED: PB body defaults restored; state/clock/transforms/forces reset';
+        ? 'PAUSED: scripts paused; entity physics remains active'
+        : 'STOPPED: physics disabled; PB defaults and construction pose restored';
     this.showToast(message);
   }
 
@@ -982,8 +982,9 @@ export class SpaceUiStore {
     const nodeIds = [...(contraption.entityNodes?.keys?.() || [])];
     const allEnabled = nodeIds.length > 0 && nodeIds.every(id => contraption.isNodeScriptEnabled(id));
     const allDisabled = nodeIds.length > 0 && nodeIds.every(id => !contraption.isNodeScriptEnabled(id));
+    if (contraption.isPhysicsSimulationEnabled?.() === false) return 'stop';
     if (allEnabled) return 'play';
-    if (allDisabled) return contraption.scriptStatus === 'stopped' ? 'stop' : this.snapshot.globalPlaybackState;
+    if (allDisabled) return this.snapshot.globalPlaybackState === 'stop' ? 'pause' : this.snapshot.globalPlaybackState;
     return null;
   }
 

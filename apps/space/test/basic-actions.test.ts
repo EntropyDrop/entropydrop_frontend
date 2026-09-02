@@ -56,6 +56,8 @@ test('entity start and stop use the canonical entity action dispatcher', () => {
   ) as any;
   contraption.setScript('self.state.runs = (self.state.runs || 0) + 1;');
   assert.equal(contraption.scriptStatus, 'running');
+  contraption.velocity.set(3, 4, 5);
+  contraption.angularVelocity.set(1, 2, 3);
 
   const stopped = executeBasicAction({ contraption }, {
     domain: ActionDomain.ENTITY,
@@ -65,7 +67,12 @@ test('entity start and stop use the canonical entity action dispatcher', () => {
   });
   assert.equal(stopped.ok, true);
   assert.equal(stopped.status, 'stopped');
+  assert.equal(stopped.physicsEnabled, false);
   assert.equal(contraption.scriptStatus, 'stopped');
+  assert.equal(contraption.isPhysicsSimulationEnabled(), false);
+  assert.equal(contraption.getRigidBody('root').simulationEnabled, false);
+  assert.deepEqual(contraption.velocity.toArray(), [0, 0, 0]);
+  assert.deepEqual(contraption.angularVelocity.toArray(), [0, 0, 0]);
 
   const started = executeBasicAction({ contraption }, {
     domain: ActionDomain.ENTITY,
@@ -75,7 +82,40 @@ test('entity start and stop use the canonical entity action dispatcher', () => {
   });
   assert.equal(started.ok, true);
   assert.equal(started.status, 'running');
+  assert.equal(started.physicsEnabled, true);
   assert.equal(contraption.scriptStatus, 'running');
+  assert.equal(contraption.isPhysicsSimulationEnabled(), true);
+  assert.equal(contraption.getRigidBody('root').simulationEnabled, true);
+});
+
+test('an entity without scripts can still stop and restart its physics', () => {
+  const contraption = new Contraption(
+    100,
+    [block(0)],
+    new THREE.Vector3(),
+    new THREE.Scene()
+  ) as any;
+  assert.equal(contraption.scriptStatus, 'stopped');
+  assert.equal(contraption.isPhysicsSimulationEnabled(), true);
+
+  const stopped = executeBasicAction({ contraption }, {
+    domain: ActionDomain.ENTITY,
+    action: 'stop-scripts',
+    target: { contraption }
+  });
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.physicsEnabled, false);
+  assert.equal(contraption.canEditInternalSelection(), true);
+
+  const started = executeBasicAction({ contraption }, {
+    domain: ActionDomain.ENTITY,
+    action: 'start-scripts',
+    target: { contraption }
+  });
+  assert.equal(started.ok, true);
+  assert.equal(started.physicsEnabled, true);
+  assert.equal(contraption.scriptStatus, 'stopped', 'no synthetic script status is needed');
+  assert.equal(contraption.canEditInternalSelection(), false);
 });
 
 test('ctx.selection exposes world box, sparse cells, deletion and assembly commands', () => {
@@ -157,6 +197,7 @@ test('ctx.selection entity and entityBox share component selection state and cre
     new THREE.Vector3(0, 10, 0),
     scene
   )) as any;
+  entity.stopAllNodeScripts();
 
   const api = manager.scriptSelectionApi;
   assert.deepEqual(api.entity(7), { ok: true, selected: 3, reason: 'selected' });

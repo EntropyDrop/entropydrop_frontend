@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Icon } from '@iconify/react'
 
 import { PageContainer } from '../components/PageContainer'
@@ -7,17 +6,6 @@ import { type LangData } from '../constants/lang'
 
 interface SpacePageProps {
     current: LangData
-}
-
-function isMobileOrTabletDevice(): boolean {
-    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false
-    const ua = navigator.userAgent || ''
-    const isMobileUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS|Windows Phone/i.test(ua)
-    const isIPadOS = (navigator.platform === 'MacIntel' || ua.includes('Macintosh')) && navigator.maxTouchPoints > 1
-    const isTouchScreen = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
-    const isSmallScreen = window.innerWidth < 1024 || window.innerHeight < 550
-
-    return isMobileUa || isIPadOS || Boolean(isTouchScreen && isSmallScreen)
 }
 
 interface SpaceImageSlotProps {
@@ -100,29 +88,6 @@ export function SpacePage({ current }: SpacePageProps) {
     const spaceAppUrl = import.meta.env.VITE_SPACE_URL || '/space/app/'
     const offlineSpaceAppUrl = `${spaceAppUrl}${spaceAppUrl.includes('?') ? '&' : '?'}mode=offline`
 
-    const [showMobileModal, setShowMobileModal] = useState(false)
-    const [pendingUrl, setPendingUrl] = useState('')
-    const [copied, setCopied] = useState(false)
-
-    const handleLaunchClick = (e: React.MouseEvent, targetUrl: string) => {
-        if (isMobileOrTabletDevice()) {
-            e.preventDefault()
-            setPendingUrl(targetUrl)
-            setShowMobileModal(true)
-        }
-    }
-
-    const handleCopyLink = async () => {
-        const fullUrl = window.location.origin + spaceAppUrl
-        try {
-            await navigator.clipboard.writeText(fullUrl)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 2500)
-        } catch {
-            setCopied(true)
-        }
-    }
-
     // Pre-allocated image slots:
     const IMAGE_SLOTS = {
         FEATURE_VOXEL: '/images/space_feature_drone.png',
@@ -169,10 +134,6 @@ export function SpacePage({ current }: SpacePageProps) {
                         <span className="h-2 w-2 bg-green-400 animate-pulse" />
                         {data.eyebrow}
                     </span>
-                    <span className="inline-flex items-center gap-1.5 border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-mono text-white/70">
-                        <Icon icon="pixelarticons:device-laptop" className="text-sm text-green-400" />
-                        {data.desktopOnlyBadge || '仅限 PC 电脑端'}
-                    </span>
                 </div>
 
                 {/* Title & Tagline */}
@@ -217,7 +178,6 @@ export function SpacePage({ current }: SpacePageProps) {
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                     <a
                         href={spaceAppUrl}
-                        onClick={e => handleLaunchClick(e, spaceAppUrl)}
                         className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${current.fontClass}`}
                     >
                         <Icon icon="pixelarticons:play" className="text-xl" />
@@ -226,7 +186,6 @@ export function SpacePage({ current }: SpacePageProps) {
                     </a>
                     <a
                         href={offlineSpaceAppUrl}
-                        onClick={e => handleLaunchClick(e, offlineSpaceAppUrl)}
                         className={`inline-flex min-h-12 items-center justify-center gap-2 border border-green-500/35 bg-green-500/10 px-6 py-3 text-sm font-bold text-green-200 transition-all hover:border-green-400/60 hover:bg-green-500/20 hover:text-white no-underline ${current.fontClass}`}
                     >
                         <Icon icon="pixelarticons:cloud-off" className="text-lg" />
@@ -383,7 +342,6 @@ export function SpacePage({ current }: SpacePageProps) {
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
                         <a
                             href={spaceAppUrl}
-                            onClick={e => handleLaunchClick(e, spaceAppUrl)}
                             className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${current.fontClass}`}
                         >
                             <Icon icon="pixelarticons:play" className="text-xl" />
@@ -416,67 +374,6 @@ export function SpacePage({ current }: SpacePageProps) {
                     </a>
                 </div>
             </section>
-
-            {/* ===================== PC ONLY WARNING MODAL ===================== */}
-            {showMobileModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-fade-in">
-                    <div className="relative w-full max-w-md border-2 border-green-500/60 bg-[#0d140e] p-6 shadow-[0_0_50px_rgba(0,0,0,0.9)] text-white">
-                        {/* Corner Accents */}
-                        <div className="absolute top-1 left-1 h-2 w-2 border-t-2 border-l-2 border-green-400" />
-                        <div className="absolute top-1 right-1 h-2 w-2 border-t-2 border-r-2 border-green-400" />
-                        <div className="absolute bottom-1 left-1 h-2 w-2 border-b-2 border-l-2 border-green-400" />
-                        <div className="absolute bottom-1 right-1 h-2 w-2 border-b-2 border-r-2 border-green-400" />
-
-                        {/* Modal Header */}
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="flex h-10 w-10 items-center justify-center border border-yellow-500/40 bg-yellow-500/10 text-yellow-400">
-                                <Icon icon="pixelarticons:device-laptop" className="text-2xl" />
-                            </div>
-                            <div>
-                                <h3 className={`m-0 text-base font-bold text-white ${current.fontClass}`}>
-                                    {data.pcOnly?.title || 'Space 仅支持 PC 桌面端运行'}
-                                </h3>
-                                <span className="font-mono text-[10px] text-yellow-400 font-bold uppercase tracking-wider">
-                                    DESKTOP PC REQUIRED
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Modal Description */}
-                        <p className={`text-xs leading-relaxed text-white/80 mb-6 ${current.fontClass}`}>
-                            {data.pcOnly?.description || 'Space 包含完整的 3D 体素物理引擎、0.2m 微体素精细雕刻与键鼠自主飞行控制系统，需要电脑桌面级 GPU 渲染与键盘鼠标操作，请使用 PC 电脑浏览器体验。'}
-                        </p>
-
-                        {/* Modal Action Buttons */}
-                        <div className="flex flex-col gap-2.5">
-                            <button
-                                type="button"
-                                onClick={handleCopyLink}
-                                className={`flex items-center justify-center gap-2 border-2 border-black bg-[#3c8527] py-2.5 px-4 text-sm font-bold text-white shadow-[3px_3px_0_rgba(0,0,0,0.5)] transition-all hover:bg-[#4ea632] active:translate-y-0.5 active:shadow-none cursor-pointer ${current.fontClass}`}
-                            >
-                                <Icon icon={copied ? "pixelarticons:check" : "pixelarticons:copy"} className="text-base" />
-                                <span>{copied ? (data.pcOnly?.copied || '已复制链接') : (data.pcOnly?.copyLink || '复制链接')}</span>
-                            </button>
-
-                            <div className="flex gap-2">
-                                <a
-                                    href={`${pendingUrl || spaceAppUrl}${pendingUrl?.includes('?') ? '&' : '?'}force_pc=1`}
-                                    className={`flex-1 flex items-center justify-center gap-1.5 border border-white/20 bg-white/5 py-2 px-3 text-xs text-white/70 hover:bg-white/10 hover:text-white no-underline cursor-pointer ${current.fontClass}`}
-                                >
-                                    <span>{data.pcOnly?.tryAnyway || '仍然进入 (开发者)'}</span>
-                                </a>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowMobileModal(false)}
-                                    className={`flex-1 border border-white/20 bg-white/10 py-2 px-3 text-xs text-white/90 hover:bg-white/20 cursor-pointer ${current.fontClass}`}
-                                >
-                                    {data.pcOnly?.close || '我知道了'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </PageContainer>
     )
 }

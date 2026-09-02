@@ -542,6 +542,7 @@ export class ContraptionManager {
       bodies,
       states,
       scriptStatus: contraption.scriptStatus,
+      physicsSimulationEnabled: contraption.isPhysicsSimulationEnabled?.() !== false,
       scriptError: contraption.scriptError,
       nodeScriptErrors: [...contraption.nodeScriptErrors.entries()],
       scriptRuntime: contraption.scriptRuntime,
@@ -699,6 +700,10 @@ export class ContraptionManager {
     }
     contraption.scriptRuntimeClient.reset(contraption.getSerializableComponentStates());
     contraption.scriptStatus = record.scriptStatus || 'stopped';
+    contraption.setPhysicsSimulationEnabled?.(
+      record.physicsSimulationEnabled !== false,
+      { resetHistory: false }
+    );
     contraption.scriptError = record.scriptError || null;
     contraption.nodeScriptErrors = new Map(record.nodeScriptErrors || []);
     contraption.scriptRuntime = Number(record.scriptRuntime) || 0;
@@ -775,6 +780,7 @@ export class ContraptionManager {
       boundingRadius: contraption.boundingRadius,
       bodyType: contraption.bodyType,
       collisionEnabled: contraption.collisionEnabled !== false,
+      physicsEnabled: contraption.isPhysicsSimulationEnabled?.() !== false,
       isOnGround: contraption.isOnGround === true,
       groundDistance: contraption.groundDistance,
       scriptStatus: contraption.scriptStatus,

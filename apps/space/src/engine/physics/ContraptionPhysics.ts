@@ -66,10 +66,11 @@ export class ContraptionPhysics {
    */
   prepareContraptionFrame(contraption, dt) {
     if (!contraption || !(dt > 0)) return null;
+    if (contraption.isPhysicsSimulationEnabled?.() === false) return null;
     contraption.groundDistance = this.getGroundDistance(contraption.position);
     contraption.syncKinematicBodies?.(dt);
     const bodies = contraption.getRigidBodies?.() || [];
-    const dynamicBodies = bodies.filter(body => body.type === BodyType.DYNAMIC);
+    const dynamicBodies = bodies.filter(body => this.isSimulatedDynamicBody(body));
     if (dynamicBodies.length === 0) return null;
 
     const frameInputs = new Map();
@@ -139,7 +140,11 @@ export class ContraptionPhysics {
   }
 
   inverseMass(body) {
-    return body?.type === BodyType.DYNAMIC && body.mass > 0 ? 1 / body.mass : 0;
+    return this.isSimulatedDynamicBody(body) && body.mass > 0 ? 1 / body.mass : 0;
+  }
+
+  isSimulatedDynamicBody(body) {
+    return body?.type === BodyType.DYNAMIC && body.simulationEnabled !== false;
   }
 
   angularVelocityBetween(previous, current, dt) {
@@ -153,7 +158,7 @@ export class ContraptionPhysics {
   }
 
   rotateBody(body, worldRotation) {
-    if (body?.type !== BodyType.DYNAMIC) return;
+    if (!this.isSimulatedDynamicBody(body)) return;
     const angle = worldRotation.length();
     if (angle < 1e-10) return;
     const rotation = new THREE.Quaternion().setFromAxisAngle(worldRotation.clone().divideScalar(angle), angle);
@@ -190,8 +195,8 @@ export class ContraptionPhysics {
   }
 
   applyAngularPairCorrection(bodyA, bodyB, rotation) {
-    const invA = bodyA?.type === BodyType.DYNAMIC ? bodyA.inverseInertia : 0;
-    const invB = bodyB?.type === BodyType.DYNAMIC ? bodyB.inverseInertia : 0;
+    const invA = this.isSimulatedDynamicBody(bodyA) ? bodyA.inverseInertia : 0;
+    const invB = this.isSimulatedDynamicBody(bodyB) ? bodyB.inverseInertia : 0;
     const total = invA + invB;
     if (total <= 0 || rotation.lengthSq() < 1e-14) return;
     if (invA > 0) this.rotateBody(bodyA, rotation.clone().multiplyScalar(-invA / total));
@@ -209,10 +214,10 @@ export class ContraptionPhysics {
     const leverB = anchorB.clone().sub(bodyB.position);
     const invA = this.inverseMass(bodyA);
     const invB = this.inverseMass(bodyB);
-    const angularA = bodyA?.type === BodyType.DYNAMIC
+    const angularA = this.isSimulatedDynamicBody(bodyA)
       ? leverA.clone().cross(normal).lengthSq() * bodyA.inverseInertia
       : 0;
-    const angularB = bodyB?.type === BodyType.DYNAMIC
+    const angularB = this.isSimulatedDynamicBody(bodyB)
       ? leverB.clone().cross(normal).lengthSq() * bodyB.inverseInertia
       : 0;
     const denominator = invA + invB + angularA + angularB;
@@ -437,7 +442,7 @@ export class ContraptionPhysics {
   }
 
   isDynamicCollider(contraption) {
-    return !!contraption?.getRigidBodies?.().some(body => body.type === BodyType.DYNAMIC);
+    return !!contraption?.getRigidBodies?.().some(body => this.isSimulatedDynamicBody(body));
   }
 
   sweptAabbContact(a, b) {
@@ -683,17 +688,19 @@ export class ContraptionPhysics {
   }
 
   /** Position-correction weights for one contact. Dynamic bodies use their
-   * physical inverse mass. If both response bodies are kinematic, neither can
-   * accept an impulse, but collisionEnabled still means their commanded poses
-   * must not pass through each other. In that case clip the moving pose(s),
-   * weighted by how much each collision box advanced into the contact. */
+   * physical inverse mass. Stopped bodies have no inverse mass and remain fixed.
+   * Active kinematic bodies cannot accept an impulse, but collisionEnabled still
+   * means their commanded poses must not pass through another collider. In that
+   * case clip only the active moving pose(s), weighted by contact advance. */
   entityContactCorrectionWeights(bodyA, bodyB, normal, boxA, boxB) {
     const inverseA = this.entityContactInverseMass(bodyA, normal.clone().multiplyScalar(-1));
     const inverseB = this.entityContactInverseMass(bodyB, normal);
     if (inverseA + inverseB > 0) {
       return { correctionA: inverseA, correctionB: inverseB, impulseA: inverseA, impulseB: inverseB };
     }
-    if (bodyA.type !== BodyType.KINEMATIC || bodyB.type !== BodyType.KINEMATIC) {
+    const movableKinematicA = bodyA.type === BodyType.KINEMATIC && bodyA.simulationEnabled !== false;
+    const movableKinematicB = bodyB.type === BodyType.KINEMATIC && bodyB.simulationEnabled !== false;
+    if (!movableKinematicA && !movableKinematicB) {
       return { correctionA: 0, correctionB: 0, impulseA: inverseA, impulseB: inverseB };
     }
 
@@ -702,12 +709,12 @@ export class ContraptionPhysics {
       (box.currentMinY + box.currentMaxY - box.previousMinY - box.previousMaxY) * 0.5,
       (box.currentMinZ + box.currentMaxZ - box.previousMinZ - box.previousMaxZ) * 0.5
     );
-    const advanceA = Math.max(0, displacement(boxA).dot(normal));
-    const advanceB = Math.max(0, -displacement(boxB).dot(normal));
+    const advanceA = movableKinematicA ? Math.max(0, displacement(boxA).dot(normal)) : 0;
+    const advanceB = movableKinematicB ? Math.max(0, -displacement(boxB).dot(normal)) : 0;
     const movingTotal = advanceA + advanceB;
     return {
-      correctionA: movingTotal > 1e-8 ? advanceA / movingTotal : 1,
-      correctionB: movingTotal > 1e-8 ? advanceB / movingTotal : 1,
+      correctionA: movingTotal > 1e-8 ? advanceA / movingTotal : (movableKinematicA ? 1 : 0),
+      correctionB: movingTotal > 1e-8 ? advanceB / movingTotal : (movableKinematicB ? 1 : 0),
       impulseA: 0,
       impulseB: 0
     };
@@ -849,7 +856,7 @@ export class ContraptionPhysics {
     if (!contraption || !bodies || bodies.size === 0) return;
     contraption.syncAllBodyTransforms?.();
     for (const body of bodies) {
-      if (body.type !== BodyType.KINEMATIC) continue;
+      if (body.type !== BodyType.KINEMATIC || body.simulationEnabled === false) continue;
       if (body.id !== 'root') contraption.syncBodyToNode?.(body);
       body.previousKinematicPosition?.copy(body.position);
       body.previousKinematicQuaternion?.copy(body.quaternion);
@@ -858,7 +865,7 @@ export class ContraptionPhysics {
   }
 
   destabilizeOverhangingEntity(body, boxA, boxB, dt) {
-    if (!body || body.type !== BodyType.DYNAMIC) return;
+    if (!this.isSimulatedDynamicBody(body)) return;
     const overhang = this.entitySupportOffset(body, boxA, boxB);
     if (!overhang) return;
     const distance = overhang.length();
@@ -1104,11 +1111,11 @@ export class ContraptionPhysics {
   }
 
   markEntitySupport(a, b, bodyA, bodyB, normal) {
-    if (normal.y < -0.5 && bodyA.type === BodyType.DYNAMIC) {
+    if (normal.y < -0.5 && this.isSimulatedDynamicBody(bodyA)) {
       bodyA.isOnGround = true;
       if (bodyA.id === 'root') a.isOnGround = true;
     }
-    if (normal.y > 0.5 && bodyB.type === BodyType.DYNAMIC) {
+    if (normal.y > 0.5 && this.isSimulatedDynamicBody(bodyB)) {
       bodyB.isOnGround = true;
       if (bodyB.id === 'root') b.isOnGround = true;
     }
@@ -1655,7 +1662,7 @@ export class ContraptionPhysics {
    * check) and entity pairs (SAT feature check).
    */
   toppleNarrowSupport(body, normal, dt) {
-    if (!body || body.type !== BodyType.DYNAMIC) return;
+    if (!this.isSimulatedDynamicBody(body)) return;
     const bodyAxes = [
       new THREE.Vector3(1, 0, 0).applyQuaternion(body.quaternion),
       new THREE.Vector3(0, 1, 0).applyQuaternion(body.quaternion),
@@ -1868,7 +1875,7 @@ export class ContraptionPhysics {
 
   applyImpulse(contraption, impulse, worldPoint = null, nodeId = 'root') {
     const body = contraption.getRigidBody?.(nodeId);
-    if (!body || body.type !== BodyType.DYNAMIC) return;
+    if (!this.isSimulatedDynamicBody(body)) return;
     body.velocity.addScaledVector(impulse, 1 / body.mass);
 
     if (worldPoint) {

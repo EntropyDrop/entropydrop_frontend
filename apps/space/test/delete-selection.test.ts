@@ -126,6 +126,7 @@ test('Delete removes selected entity-component blocks and preserves the rest', (
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.contraptions.push(contraption);
+  contraption.stopAllNodeScripts();
   const controller = makeController({ manager });
 
   const target = contraption.blocks.find(b => b.localX === 1);
@@ -154,6 +155,7 @@ test('deleting every selected component block removes the empty component', () =
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.contraptions.push(contraption);
+  contraption.stopAllNodeScripts();
   const controller = makeController({ manager });
 
   controller.selectedBlockSelection = { contraption, nodeId: 'root', blocks: contraption.blocks };

@@ -75,6 +75,7 @@ function targetSlot() {
 test('Hammer entity installation merges a reusable subtree and keeps the target as one entity', () => {
   const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
   const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(10, 2, 4), null, false) as any;
+  target.stopAllNodeScripts();
   const placement = new THREE.Vector3(14, 3, 6);
 
   const result = manager.installSlotAsComponent(target, moduleSlot(), 'root', placement, false);
@@ -110,6 +111,7 @@ test('Hammer entity installation merges a reusable subtree and keeps the target 
 test('the same entity module can be installed repeatedly with stable remapped scripts', () => {
   const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
   const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(), null, false) as any;
+  target.stopAllNodeScripts();
 
   const first = manager.installSlotAsComponent(target, moduleSlot(), 'root', new THREE.Vector3(3, 0, 0), false);
   const second = manager.installSlotAsComponent(target, moduleSlot(), 'root', new THREE.Vector3(6, 0, 0), false);
@@ -126,6 +128,7 @@ test('the same entity module can be installed repeatedly with stable remapped sc
 test('installed modules keep the Hammer world pose on rotated targets and after persistence restore', () => {
   const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
   const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(10, 2, 4), null, false) as any;
+  target.stopAllNodeScripts();
   target.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
   target.updateTransform();
   const placement = new THREE.Vector3(15, 4, 9);
@@ -186,6 +189,7 @@ test('Hammer forwards Shift/crouch as an explicit install modifier', () => {
 test('plain Hammer placement on an entity installs under the hit component automatically', () => {
   const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
   const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(), null, false) as any;
+  target.stopAllNodeScripts();
   const sensorSlot = {
     name: 'Sensor',
     kind: 'entity',
@@ -233,6 +237,7 @@ test('plain Hammer placement on an entity installs under the hit component autom
 test('entity anchor frame and Hammer roll compose into the installed localRotation', () => {
   const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
   const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(), null, false) as any;
+  target.stopAllNodeScripts();
   const anchor = new THREE.Quaternion().setFromAxisAngle(
     new THREE.Vector3(0, 0, 1),
     -Math.PI / 2
