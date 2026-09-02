@@ -36,6 +36,10 @@ test('script voxel adapters and engine input use the same canonical action dispa
     scripted.blocks.map(item => [item.localX, item.localY, item.localZ]),
     inputDriven.blocks.map(item => [item.localX, item.localY, item.localZ])
   );
+  assert.equal(inputDriven.lastBlocksChangedEvent.type, 'subdivide');
+  assert.deepEqual(inputDriven.lastBlocksChangedEvent.cell, [0, 0, 0]);
+  assert.equal(inputDriven.lastBlocksChangedEvent.source, 'player');
+  assert.equal(inputDriven.lastBlocksChangedEvent.playerId, 'local');
 
   const controllerSource = readFileSync(new URL('../src/engine/controls/PlayerController.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(controllerSource, /(?:c|contraption)\.blocks\.(?:push|splice)/);

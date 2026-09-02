@@ -668,7 +668,7 @@ export class PlayerController {
     // Hammer owns inventory construction. Selection never places inventory
     // contents, so copying and building remain distinct tool modes.
     if (this.activeTool === SpecialTool.HAMMER) {
-      this.pasteInventorySlot();
+      this.pasteInventorySlot(!!(e?.shiftKey || this.keys?.crouch));
       return;
     }
 
@@ -2077,10 +2077,12 @@ export class PlayerController {
     if (entityHit?.point) {
       return {
         hitPos: entityHit.point,
-        normal: entityHit.normal || { x: 0, y: 1, z: 0 },
+        normal: entityHit.worldNormal || entityHit.normal || { x: 0, y: 1, z: 0 },
         microNormal: entityHit.worldNormal || entityHit.normal || { x: 0, y: 1, z: 0 },
         entry: entityHit.point,
-        kind: entityHit.kind
+        kind: entityHit.kind,
+        targetContraption: entityHit.contraption || this.hoveredContraption || null,
+        targetNodeId: entityHit.entityId || entityHit.entityNode?.id || 'root'
       };
     }
     return this.currentRaycast?.hit
@@ -2176,7 +2178,9 @@ export class PlayerController {
     return {
       slot,
       kind: slot.kind === 'blockset' ? 'blockset' : 'entity',
-      position
+      position,
+      targetContraption: placementHit.targetContraption || null,
+      targetNodeId: placementHit.targetNodeId || null
     };
   }
 
@@ -4181,6 +4185,55 @@ export class PlayerController {
     return created;
   }
 
+  private describeComponentInstallFailure(reason) {
+    const messages = {
+      target_entity_missing: 'The target entity is no longer available',
+      target_component_missing: 'The targeted component is no longer available',
+      target_not_stopped: 'Stop the target entity with the Wrench before installing components',
+      empty_entity: 'The selected entity slot is empty',
+      invalid_entity_slot: 'The selected entity module is malformed',
+      hierarchy_too_deep: 'Installing this module would exceed the 16-level component depth limit',
+      too_many_components: `Installing this module would exceed ${MAX_ENTITY_COMPONENTS} components`,
+      too_many_blocks: 'Installing this module would exceed the entity voxel limit',
+      too_many_constraints: 'Installing this module would exceed the entity constraint limit',
+      component_bounds_too_large: `One installed component exceeds ${MAX_ENTITY_BOUNDS} cells per axis`,
+      scripts_too_large: 'Installing this module would exceed the entity script size limit',
+      invalid_component_ids: 'The module contains invalid or duplicate component ids',
+      invalid_component_hierarchy: 'The module component hierarchy is invalid',
+      invalid_blocks: 'The module contains invalid voxel data',
+      invalid_constraints: 'The module contains invalid internal constraints',
+      invalid_scripts: 'The module contains an invalid component script'
+    };
+    return messages[reason] || `Component installation failed (${reason || 'unknown error'})`;
+  }
+
+  private finishEntitySlotInstall(slot, pose, preparedBlocks = null) {
+    const target = pose?.targetContraption;
+    const parentId = pose?.targetNodeId || 'root';
+    const result = this.contraptions.installSlotAsComponent?.(
+      target,
+      slot,
+      parentId,
+      pose.position,
+      true,
+      preparedBlocks
+    );
+    if (!result?.ok) {
+      this.ui?.showToast?.(this.describeComponentInstallFailure(result?.reason));
+      return null;
+    }
+    this.sound?.playAssemblyClack?.();
+    this.sound?.playBlockPlace?.();
+    this.ui?.notifyContraptionStructureChanged?.(target);
+    const skipped = result.skippedWorldConstraints > 0
+      ? ` · ignored ${result.skippedWorldConstraints} world constraint(s)`
+      : '';
+    this.ui?.showToast?.(
+      `Installed [${slot.name || 'entity'}] as [${result.rootId}] on [${parentId}]${skipped}`
+    );
+    return result;
+  }
+
   /** Map a large serialized entity slot incrementally; registration stays atomic. */
   private startLargeEntitySlotBuild(slot, position) {
     const source = [...slot.blocks];
@@ -4208,13 +4261,41 @@ export class PlayerController {
     });
   }
 
+  /** Prepare a large module incrementally, then merge it in one atomic hierarchy edit. */
+  private startLargeEntitySlotInstall(slot, pose) {
+    const source = [...slot.blocks];
+    const preparedBlocks: any[] = [];
+    return this.startBulkEditJob({
+      label: 'Installing component',
+      total: source.length,
+      mutatesWorld: false,
+      detail: 'Preparing component voxels',
+      step: index => {
+        const block = source[index];
+        preparedBlocks.push({
+          localX: block.localX,
+          localY: block.localY,
+          localZ: block.localZ,
+          size: block.size || 1,
+          color: block.color,
+          block: block.block,
+          part: block.part,
+          entityId: block.entityId || 'root'
+        });
+        return 1;
+      },
+      finish: () => this.finishEntitySlotInstall(slot, pose, preparedBlocks)
+    });
+  }
+
   /**
    * Hammer left-click: place the current inventory slot at the crosshair.
    * - **Block set** (T copy, STL import): stamps plain world blocks.
    * - **Entity** (R copy, imported): spawns an independent physics entity.
+   * - **Shift + entity**: installs the entity template on a stopped target component.
    * - **Color set**: applies its 9 colors to the keyboard palette.
    */
-  pasteInventorySlot() {
+  pasteInventorySlot(installAsComponent = false) {
     if (this.activeTool !== SpecialTool.HAMMER) return false;
     const category = this.activeInventoryCategory;
     const slot = this.getActiveHammerInventoryItem();
@@ -4245,6 +4326,21 @@ export class PlayerController {
         this.ui.showToast('No surface under the crosshair — aim at terrain or an entity to build');
       }
       return false;
+    }
+
+    if (installAsComponent) {
+      if (!pose.targetContraption) {
+        this.ui?.showToast?.('Shift+LMB installs modules — aim directly at a stopped entity component');
+        return false;
+      }
+      if (!pose.targetContraption.canEditInternalSelection?.()) {
+        this.ui?.showToast?.('Stop the target entity with the Wrench before installing components');
+        return false;
+      }
+      if (Array.isArray(slot.blocks) && slot.blocks.length > BULK_EDIT_THRESHOLD) {
+        return this.startLargeEntitySlotInstall(slot, pose);
+      }
+      return !!this.finishEntitySlotInstall(slot, pose);
     }
 
     const position = pose.position.clone?.() || new THREE.Vector3(pose.position.x, pose.position.y, pose.position.z);

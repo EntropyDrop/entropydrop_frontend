@@ -14,6 +14,7 @@ import {
 import { MICRO_DIVISIONS, MICRO_SIZE } from '../voxel/MicroVoxelLayer.ts';
 import {
   EntityScriptRuntimeClient,
+  remapEntityScriptChildIds,
   validateEntityScriptSyntax
 } from '../scripting/EntityScriptRuntime.ts';
 import { PLAYER_MASS_KG } from '../physics/PlayerPhysics.ts';
@@ -110,6 +111,31 @@ const MIN_BODY_MASS_KG = 0.1;
 const MAX_BODY_VECTOR_COMPONENT = 1e12;
 const COMPILED_SCRIPT_SENTINEL = function compiledEntityScript(_self, _ctx) {};
 const SCRIPT_STATE_LIMIT_BYTES = 64 * 1024;
+const MAX_ENTITY_HIERARCHY_DEPTH = 16;
+const MAX_ENTITY_BLOCKS = 65_536;
+const MAX_ENTITY_CONSTRAINTS = 256;
+const MAX_ENTITY_TOTAL_SCRIPT_BYTES = 512 * 1024;
+
+function installedComponentIdBase(value: unknown, fallback = 'component'): string {
+  const normalized = String(value || '')
+    .normalize('NFKD')
+    .replace(/[^A-Za-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const candidate = (normalized || fallback).slice(0, MAX_COMPONENT_ID_LENGTH);
+  return candidate === 'root' || !isValidComponentId(candidate, false) ? fallback : candidate;
+}
+
+function uniqueInstalledComponentId(preferred: string, reserved: Set<string>): string {
+  const cleanPreferred = installedComponentIdBase(preferred);
+  let candidate = cleanPreferred;
+  let suffix = 2;
+  while (reserved.has(candidate) || candidate === 'root') {
+    const tail = `_${suffix++}`;
+    candidate = `${cleanPreferred.slice(0, MAX_COMPONENT_ID_LENGTH - tail.length)}${tail}`;
+  }
+  reserved.add(candidate);
+  return candidate;
+}
 
 function boundedBodyVector(value: any): THREE.Vector3 | null {
   if (!Array.isArray(value) || value.length < 3) return null;
@@ -407,6 +433,8 @@ export class Contraption {
   pendingScriptInputPressed: Set<string>;
   pendingScriptInputReleased: Set<string>;
   pendingScriptBlocksEvent: any;
+  pendingScriptContacts: any[];
+  pendingScriptCommandResults: any[];
   scriptRuntimeClient: EntityScriptRuntimeClient;
   behaviorPrompt: string;
   agentInterpretation: string;
@@ -522,6 +550,8 @@ export class Contraption {
     this.pendingScriptInputPressed = new Set();
     this.pendingScriptInputReleased = new Set();
     this.pendingScriptBlocksEvent = null;
+    this.pendingScriptContacts = [];
+    this.pendingScriptCommandResults = [];
     this.scriptRuntimeClient = new EntityScriptRuntimeClient();
     this.scriptRuntimeClient.onCompileResult = result => this.handleWorkerCompileResult(result);
     this.behaviorPrompt = options.behaviorPrompt || '';
@@ -655,7 +685,7 @@ export class Contraption {
   performBasicAction(command) {
     return executeBasicAction(
       { contraption: this, ...(this.actionContext || {}) },
-      { domain: ActionDomain.ENTITY, target: { contraption: this }, ...command }
+      { domain: ActionDomain.ENTITY, target: { contraption: this }, actor: { source: 'script' }, ...command }
     );
   }
 
@@ -1391,6 +1421,8 @@ export class Contraption {
     this.pendingScriptInputPressed.clear();
     this.pendingScriptInputReleased.clear();
     this.pendingScriptBlocksEvent = null;
+    this.pendingScriptContacts = [];
+    this.pendingScriptCommandResults = [];
     this.lastExecutionTimeMs = 0;
     this.slowScriptFrames.clear();
     this.scriptRuntimeClient.reset(this.getSerializableComponentStates());
@@ -1596,6 +1628,295 @@ export class Contraption {
     };
     walk(rootNodeId);
     return ids;
+  }
+
+  /**
+   * Instantiate an inventory entity as one reusable component subtree inside
+   * this entity. The inventory root becomes a rigidly attached kinematic child;
+   * its descendants retain their authored bodies, scripts, seats, and internal
+   * constraints. The operation validates completely before mutating the tree.
+   */
+  installEntitySlot(slot, parentNodeId = 'root', placementOrigin = new THREE.Vector3(), preparedBlocks = null) {
+    const fail = (reason: string) => Object.freeze({ ok: false, reason });
+    const parentId = String(parentNodeId || 'root');
+    const parentNode = this.entityNodes.get(parentId);
+    if (!parentNode) return fail('target_component_missing');
+    if (!this.canEditInternalSelection()) return fail('target_not_stopped');
+    if (!slot || !Array.isArray(slot.blocks) || slot.blocks.length === 0) return fail('empty_entity');
+    if ((slot.childEntities !== undefined && !Array.isArray(slot.childEntities))
+      || (slot.scripts !== undefined && !Array.isArray(slot.scripts))
+      || (slot.enabled !== undefined && !Array.isArray(slot.enabled))
+      || (slot.constraints !== undefined && !Array.isArray(slot.constraints))) {
+      return fail('invalid_entity_slot');
+    }
+
+    const origin = placementOrigin?.isVector3
+      ? placementOrigin.clone()
+      : new THREE.Vector3(Number(placementOrigin?.x), Number(placementOrigin?.y), Number(placementOrigin?.z));
+    if (![origin.x, origin.y, origin.z].every(Number.isFinite)) return fail('invalid_placement');
+
+    const sourceDefinitions = Array.isArray(slot.childEntities) ? slot.childEntities : [];
+    const sourceIds = new Set<string>(['root']);
+    const sourceParents = new Map<string, string | null>([['root', null]]);
+    for (const definition of sourceDefinitions) {
+      const id = String(definition?.id || '');
+      const sourceParentId = String(definition?.parentId || definition?.parent || 'root');
+      if (!isValidComponentId(id, false) || sourceIds.has(id)) return fail('invalid_component_ids');
+      sourceIds.add(id);
+      sourceParents.set(id, sourceParentId);
+    }
+    for (const [id, sourceParentId] of sourceParents) {
+      if (id !== 'root' && (!sourceIds.has(String(sourceParentId)) || sourceParentId === id)) {
+        return fail('invalid_component_hierarchy');
+      }
+    }
+
+    const sourceDepths = new Map<string, number>([['root', 0]]);
+    const sourceDepth = (id: string, visiting = new Set<string>()): number => {
+      if (sourceDepths.has(id)) return sourceDepths.get(id)!;
+      if (visiting.has(id)) return Number.POSITIVE_INFINITY;
+      visiting.add(id);
+      const sourceParentId = sourceParents.get(id);
+      const depth = sourceParentId ? sourceDepth(sourceParentId, visiting) + 1 : 0;
+      visiting.delete(id);
+      sourceDepths.set(id, depth);
+      return depth;
+    };
+    const maxSourceDepth = Math.max(...[...sourceIds].map(id => sourceDepth(id)));
+    let targetDepth = 0;
+    let targetAncestor = parentNode;
+    const targetAncestors = new Set<string>();
+    while (targetAncestor?.parentId) {
+      if (targetAncestors.has(targetAncestor.id)) return fail('invalid_target_hierarchy');
+      targetAncestors.add(targetAncestor.id);
+      targetDepth += 1;
+      targetAncestor = this.entityNodes.get(targetAncestor.parentId);
+    }
+    if (!Number.isFinite(maxSourceDepth)
+      || targetDepth + 1 + maxSourceDepth > MAX_ENTITY_HIERARCHY_DEPTH) {
+      return fail('hierarchy_too_deep');
+    }
+    if (this.entityNodes.size + sourceIds.size > MAX_ENTITY_COMPONENTS) return fail('too_many_components');
+
+    const sourceBlocks = (Array.isArray(preparedBlocks) ? preparedBlocks : slot.blocks).map(block => ({
+      localX: Number(block?.localX),
+      localY: Number(block?.localY),
+      localZ: Number(block?.localZ),
+      size: Number(block?.size) || 1,
+      color: block?.color,
+      block: block?.block,
+      part: block?.part,
+      entityId: String(block?.entityId || 'root')
+    }));
+    if (this.blocks.length + sourceBlocks.length > MAX_ENTITY_BLOCKS) return fail('too_many_blocks');
+    if (sourceBlocks.some(block => (
+      !sourceIds.has(block.entityId)
+      || ![block.localX, block.localY, block.localZ, block.size].every(Number.isFinite)
+      || block.size <= 0
+    ))) return fail('invalid_blocks');
+
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    const sourceBounds = new Map<string, { min: THREE.Vector3; max: THREE.Vector3 }>();
+    for (const block of sourceBlocks) {
+      minX = Math.min(minX, block.localX); minY = Math.min(minY, block.localY); minZ = Math.min(minZ, block.localZ);
+      maxX = Math.max(maxX, block.localX + block.size);
+      maxY = Math.max(maxY, block.localY + block.size);
+      maxZ = Math.max(maxZ, block.localZ + block.size);
+      let bounds = sourceBounds.get(block.entityId);
+      if (!bounds) {
+        bounds = {
+          min: new THREE.Vector3(Infinity, Infinity, Infinity),
+          max: new THREE.Vector3(-Infinity, -Infinity, -Infinity)
+        };
+        sourceBounds.set(block.entityId, bounds);
+      }
+      bounds.min.set(
+        Math.min(bounds.min.x, block.localX),
+        Math.min(bounds.min.y, block.localY),
+        Math.min(bounds.min.z, block.localZ)
+      );
+      bounds.max.set(
+        Math.max(bounds.max.x, block.localX + block.size),
+        Math.max(bounds.max.y, block.localY + block.size),
+        Math.max(bounds.max.z, block.localZ + block.size)
+      );
+    }
+    if ([...sourceBounds.values()].some(bounds => (
+      bounds.max.x - bounds.min.x > MAX_ENTITY_BOUNDS
+      || bounds.max.y - bounds.min.y > MAX_ENTITY_BOUNDS
+      || bounds.max.z - bounds.min.z > MAX_ENTITY_BOUNDS
+    ))) return fail('component_bounds_too_large');
+
+    const sourceRootPivot = new THREE.Vector3(
+      (minX + maxX) / 2,
+      (minY + maxY) / 2,
+      (minZ + maxZ) / 2
+    );
+    const desiredRootWorldPosition = origin.clone().add(sourceRootPivot);
+    const installedRootPivot = this.worldToLocal(desiredRootWorldPosition);
+    const coordinateOffset = installedRootPivot.clone().sub(sourceRootPivot);
+
+    const reservedIds = new Set(this.entityNodes.keys());
+    const idMap = new Map<string, string>();
+    const installedRootId = uniqueInstalledComponentId(
+      installedComponentIdBase(slot.name || 'component'),
+      reservedIds
+    );
+    idMap.set('root', installedRootId);
+    for (const definition of sourceDefinitions) {
+      const sourceId = String(definition.id);
+      const preferred = reservedIds.has(sourceId) ? `${installedRootId}_${sourceId}` : sourceId;
+      idMap.set(sourceId, uniqueInstalledComponentId(preferred, reservedIds));
+    }
+
+    const remappedBlocks = sourceBlocks.map(block => ({
+      ...block,
+      localX: block.localX + coordinateOffset.x,
+      localY: block.localY + coordinateOffset.y,
+      localZ: block.localZ + coordinateOffset.z,
+      entityId: idMap.get(block.entityId)
+    }));
+    if (remappedBlocks.some(block => (
+      !block.entityId || ![block.localX, block.localY, block.localZ].every(Number.isFinite)
+    ))) return fail('invalid_transformed_blocks');
+
+    parentNode.group.updateWorldMatrix(true, false);
+    const installedLocalPosition = parentNode.group.worldToLocal(desiredRootWorldPosition.clone());
+    const installedLocalRotation = parentNode.group
+      .getWorldQuaternion(new THREE.Quaternion())
+      .invert();
+    const installedDefinitions = [{
+      id: installedRootId,
+      parentId,
+      kind: 'child',
+      pivot: installedRootPivot.toArray(),
+      localPosition: installedLocalPosition.toArray(),
+      localRotation: installedLocalRotation.toArray(),
+      bodyType: BodyType.KINEMATIC,
+      ...(slot.mass === undefined ? {} : { mass: Number(slot.mass) }),
+      restitution: slot.restitution,
+      friction: slot.friction,
+      useGravity: false,
+      collisionEnabled: slot.collisionEnabled !== false,
+      seats: cloneScriptData(slot.seats || [], [])
+    }];
+    for (const definition of sourceDefinitions) {
+      const pivot = isFiniteVector3Array(definition.pivot)
+        ? new THREE.Vector3().fromArray(definition.pivot).add(coordinateOffset).toArray()
+        : installedRootPivot.toArray();
+      installedDefinitions.push({
+        ...cloneScriptData(definition, {}),
+        id: idMap.get(String(definition.id)),
+        parentId: idMap.get(String(definition.parentId || definition.parent || 'root')),
+        pivot
+      });
+    }
+
+    const changedChildIds = new Map<string, string>();
+    for (const [sourceId, installedId] of idMap) {
+      if (sourceId !== 'root' && sourceId !== installedId) changedChildIds.set(sourceId, installedId);
+    }
+    const scriptIds = new Set<string>();
+    const installedScripts: Array<{ id: string; code: string; enabled: boolean }> = [];
+    const enabledById = new Map((slot.enabled || []).map(entry => [String(entry.id || ''), entry.enabled !== false]));
+    let addedScriptBytes = 0;
+    for (const entry of slot.scripts || []) {
+      const sourceId = String(entry?.id || '');
+      const installedId = idMap.get(sourceId);
+      if (!installedId || scriptIds.has(sourceId) || typeof entry?.code !== 'string') return fail('invalid_scripts');
+      const code = remapEntityScriptChildIds(entry.code, changedChildIds);
+      if (validateEntityScriptSyntax(code)) return fail('invalid_scripts');
+      scriptIds.add(sourceId);
+      addedScriptBytes += new TextEncoder().encode(code).byteLength;
+      installedScripts.push({ id: installedId, code, enabled: enabledById.get(sourceId) !== false });
+    }
+    const currentScriptBytes = [...this.nodeScripts.values()]
+      .reduce((total, code) => total + new TextEncoder().encode(String(code || '')).byteLength, 0);
+    if (currentScriptBytes + addedScriptBytes > MAX_ENTITY_TOTAL_SCRIPT_BYTES) return fail('scripts_too_large');
+
+    const installedConstraints = [];
+    let skippedWorldConstraints = 0;
+    const reservedConstraintIds = new Set(this.constraintDefinitions.keys());
+    for (const source of slot.constraints || []) {
+      const bodyA = String(source?.bodyA || 'world');
+      const bodyB = String(source?.bodyB || '');
+      if (bodyA === 'world') {
+        skippedWorldConstraints += 1;
+        continue;
+      }
+      if (!idMap.has(bodyA) || !idMap.has(bodyB) || bodyA === bodyB) return fail('invalid_constraints');
+      const preferredId = installedComponentIdBase(source?.id || `${source?.type || 'point'}_${bodyA}_${bodyB}`, 'constraint');
+      const id = uniqueInstalledComponentId(preferredId, reservedConstraintIds);
+      installedConstraints.push({
+        ...cloneScriptData(source, {}),
+        id,
+        bodyA: idMap.get(bodyA),
+        bodyB: idMap.get(bodyB)
+      });
+    }
+    if (this.constraintDefinitions.size + installedConstraints.length > MAX_ENTITY_CONSTRAINTS) {
+      return fail('too_many_constraints');
+    }
+
+    const previous = {
+      blocks: this.blocks,
+      childDefinitions: new Map(this.childDefinitions),
+      constraintDefinitions: new Map(this.constraintDefinitions),
+      nodeScripts: new Map(this.nodeScripts),
+      compiledNodeScripts: new Map(this.compiledNodeScripts),
+      nodeScriptErrors: new Map(this.nodeScriptErrors),
+      nodeScriptEnabled: new Map(this.nodeScriptEnabled),
+      componentVariables: new Map(this.componentVariables),
+      scriptStatus: this.scriptStatus,
+      scriptError: this.scriptError
+    };
+
+    try {
+      this.blocks = [...this.blocks, ...remappedBlocks];
+      for (const definition of installedDefinitions) {
+        this.childDefinitions.set(definition.id, definition);
+      }
+      this.rebuildAfterBlockChange('install', installedRootId, {
+        parentId,
+        installedRootId,
+        installedComponents: installedDefinitions.length,
+        installedBlocks: remappedBlocks.length
+      });
+      for (const constraint of installedConstraints) {
+        if (!this.createConstraint(constraint)) throw new Error('constraint_install_failed');
+      }
+      for (const script of installedScripts) {
+        if (!this.setNodeScript(script.id, script.code)) throw new Error('script_install_failed');
+        this.setNodeScriptEnabled(script.id, script.enabled);
+      }
+      // Structural edits are allowed only while stopped. Installing scripts
+      // must not implicitly start the target entity.
+      this.stopAllNodeScripts();
+      return Object.freeze({
+        ok: true,
+        rootId: installedRootId,
+        parentId,
+        componentCount: installedDefinitions.length,
+        blockCount: remappedBlocks.length,
+        skippedWorldConstraints
+      });
+    } catch (error) {
+      for (const id of idMap.values()) this.scriptRuntimeClient.setScript(id, '');
+      this.blocks = previous.blocks;
+      this.childDefinitions = previous.childDefinitions;
+      this.constraintDefinitions = previous.constraintDefinitions;
+      this.nodeScripts = previous.nodeScripts;
+      this.compiledNodeScripts = previous.compiledNodeScripts;
+      this.nodeScriptErrors = previous.nodeScriptErrors;
+      this.nodeScriptEnabled = previous.nodeScriptEnabled;
+      this.componentVariables = previous.componentVariables;
+      this.scriptStatus = previous.scriptStatus;
+      this.scriptError = previous.scriptError;
+      this.rebuildAfterBlockChange('change', parentId);
+      for (const [id, code] of this.nodeScripts) this.scriptRuntimeClient.setScript(id, code || '');
+      return fail(error instanceof Error ? error.message : 'install_failed');
+    }
   }
 
   /**
@@ -2642,7 +2963,7 @@ export class Contraption {
     return Object.freeze(constraints.map(constraint => Object.freeze(constraint)));
   }
 
-  rebuildAfterBlockChange(type = 'change', nodeId = null) {
+  rebuildAfterBlockChange(type = 'change', nodeId = null, event = null) {
     this.buildCollisionCells();
     this.calculateBoundsAndCenter();
     this.voxelVolume = this.blocks.reduce((sum, block) => sum + Math.pow(block.size || 1, 3), 0);
@@ -2661,7 +2982,7 @@ export class Contraption {
     // Block-change events fire even when bounds do not change, including color edits.
     // Scripts query them through ctx.blocks.pressed()/event(), mirroring ctx.input.
     // Pivots do not follow bounds automatically; use getBounds then setPivot when needed.
-    this.notifyBlocksChanged(type, nodeId);
+    this.notifyBlocksChanged(type, nodeId, event);
   }
 
   /**
@@ -2669,11 +2990,12 @@ export class Contraption {
    * subdivide. Scripts observe it through ctx.blocks.pressed(type?) on the next frame;
    * the event clears at frame end.
    */
-  notifyBlocksChanged(type, nodeId = null) {
+  notifyBlocksChanged(type, nodeId = null, event = null) {
     this.blocksChangedThisFrame = true;
     this.lastBlocksChangedEvent = Object.freeze({
       type,
       nodeId,
+      ...(event && typeof event === 'object' ? cloneScriptData(event, {}) : {}),
       blockCount: this.blocks.length
     });
   }
@@ -3450,15 +3772,31 @@ export class Contraption {
   buildScriptRuntimeSnapshot(dt, inputState, runtimeContext, time, tick) {
     const euler = new THREE.Euler().setFromQuaternion(this.quaternion, 'YXZ');
     const rawPlayers = Array.isArray(runtimeContext?.players) ? runtimeContext.players : [];
+    const optionalVector = value => Array.isArray(value) && value.length >= 3
+      ? value.slice(0, 3).map(part => Number(part) || 0)
+      : null;
+    const optionalNumber = value => Number.isFinite(Number(value)) ? Number(value) : null;
+    const optionalBoolean = value => typeof value === 'boolean' ? value : null;
     const players = rawPlayers.map(player => {
       const requestedMass = Number(player?.mass);
+      const eyePosition = optionalVector(player?.eyePosition || player?.position) || [0, 0, 0];
       return {
         id: String(player?.id || 'player'),
-        position: [
-          Number(player?.position?.[0]) || 0,
-          Number(player?.position?.[1]) || 0,
-          Number(player?.position?.[2]) || 0
-        ],
+        position: [...eyePosition],
+        eyePosition,
+        feetPosition: optionalVector(player?.feetPosition),
+        velocity: optionalVector(player?.velocity),
+        yaw: optionalNumber(player?.yaw),
+        pitch: optionalNumber(player?.pitch),
+        isLocal: player?.isLocal === true,
+        isOnGround: optionalBoolean(player?.isOnGround),
+        isFlying: optionalBoolean(player?.isFlying),
+        isCrouching: optionalBoolean(player?.isCrouching),
+        isSprinting: optionalBoolean(player?.isSprinting),
+        isInWater: optionalBoolean(player?.isInWater),
+        ridingEntityId: player?.ridingEntityId == null ? null : String(player.ridingEntityId),
+        ridingBodyId: player?.ridingBodyId == null ? null : String(player.ridingBodyId),
+        avatarEntityId: player?.avatarEntityId == null ? null : String(player.avatarEntityId),
         mass: Number.isFinite(requestedMass) && requestedMass > 0
           ? requestedMass
           : PLAYER_MASS_KG
@@ -3511,6 +3849,7 @@ export class Contraption {
       rotation: [euler.x, euler.y, euler.z],
       angularVelocity: this.angularVelocity.toArray(),
       groundDistance: this.groundDistance,
+      isOnGround: this.isOnGround === true,
       mass: this.mass,
       bodyType: this.bodyType,
       gravity: runtimeContext?.gravity || [0, -18, 0],
@@ -3525,6 +3864,18 @@ export class Contraption {
         event: this.pendingScriptBlocksEvent || this.lastBlocksChangedEvent
       },
       players,
+      driver: runtimeContext?.driver?.entityId === this.publicId
+        ? {
+            playerId: String(runtimeContext.driver.playerId || 'local'),
+            componentId: String(runtimeContext.driver.componentId || 'root'),
+            seatIndex: Math.max(0, Math.floor(Number(runtimeContext.driver.seatIndex) || 0))
+          }
+        : null,
+      contacts: this.pendingScriptContacts.map(contact => {
+        const { key: _key, ...visible } = contact;
+        return visible;
+      }),
+      commandResults: this.pendingScriptCommandResults,
       components,
       states: this.getSerializableComponentStates(),
       enabled: Object.fromEntries([...this.compiledNodeScripts.keys()].map(id => [id, this.isNodeScriptEnabled(id)])),
@@ -3566,6 +3917,49 @@ export class Contraption {
     return typeof method === 'function' ? { target, method } : null;
   }
 
+  /** Record one bounded physics observation for the next script snapshot. */
+  recordScriptContact(contact) {
+    const normalized = cloneScriptData(contact, null, 16 * 1024);
+    if (!normalized || typeof normalized !== 'object') return false;
+    const position = Array.isArray(normalized.position) ? normalized.position : [0, 0, 0];
+    const normal = Array.isArray(normalized.normal) ? normalized.normal : [0, 0, 0];
+    const key = [
+      normalized.kind,
+      normalized.selfNodeId,
+      normalized.otherEntityId,
+      normalized.otherNodeId,
+      normalized.playerId,
+      ...position.map(value => Number(value).toFixed(2)),
+      ...normal.map(value => Number(value).toFixed(2))
+    ].join('|');
+    normalized.key = key;
+    const existing = this.pendingScriptContacts.findIndex(entry => entry?.key === key);
+    if (existing >= 0) this.pendingScriptContacts.splice(existing, 1);
+    this.pendingScriptContacts.push(Object.freeze(normalized));
+    if (this.pendingScriptContacts.length > 32) this.pendingScriptContacts.shift();
+    return true;
+  }
+
+  recordScriptCommandResult(command, result = undefined, error = null) {
+    if (!command?.commandId) return;
+    const rejected = !!error || result === false || (result && typeof result === 'object' && result.ok === false);
+    const detail = cloneScriptData(result, null, 16 * 1024);
+    const receipt: any = {
+      commandId: String(command.commandId),
+      status: rejected ? 'rejected' : 'committed',
+      scope: String(command.scope || ''),
+      path: String(command.path || ''),
+      nodeId: String(command.nodeId || 'root')
+    };
+    if (detail && typeof detail === 'object') Object.assign(receipt, detail);
+    if (error) receipt.reason = String(error?.message || error).slice(0, 500);
+    else if (!receipt.reason) receipt.reason = rejected ? 'rejected' : 'committed';
+    receipt.status = rejected ? 'rejected' : 'committed';
+    receipt.commandId = String(command.commandId);
+    this.pendingScriptCommandResults.push(Object.freeze(receipt));
+    if (this.pendingScriptCommandResults.length > 256) this.pendingScriptCommandResults.shift();
+  }
+
   capturePendingScriptEvents(inputState) {
     this.pendingScriptInputDown = scriptInputCodes(inputState, 'down');
     for (const code of scriptInputCodes(inputState, 'pressed')) {
@@ -3583,6 +3977,8 @@ export class Contraption {
     this.pendingScriptInputPressed.clear();
     this.pendingScriptInputReleased.clear();
     this.pendingScriptBlocksEvent = null;
+    this.pendingScriptContacts = [];
+    this.pendingScriptCommandResults = [];
   }
 
   applyLatchedScriptCommands(runtimeContext) {
@@ -3639,6 +4035,18 @@ export class Contraption {
 
     for (const command of commands) {
       const args = Array.isArray(command?.args) ? command.args : [];
+      const executeResolved = resolved => {
+        if (!resolved) {
+          this.recordScriptCommandResult(command, false, 'unsupported_command');
+          return;
+        }
+        try {
+          const output = resolved.method.apply(resolved.target, args);
+          this.recordScriptCommandResult(command, output);
+        } catch (error) {
+          this.recordScriptCommandResult(command, false, error);
+        }
+      };
       if (command?.scope === 'log') {
         this.log(String(args[0] ?? '').slice(0, 1000));
         continue;
@@ -3650,18 +4058,20 @@ export class Contraption {
       if (command?.scope === 'component' && SCRIPT_COMPONENT_COMMANDS.has(command.path)) {
         const api = this.getChildScriptApi(String(command.nodeId || 'root'));
         const resolved = this.resolveScriptCommandTarget(api, command.path);
-        try { resolved?.method.apply(resolved.target, args); } catch (_) {}
+        executeResolved(resolved);
         continue;
       }
       if (command?.scope === 'world' && SCRIPT_WORLD_COMMANDS.has(command.path)) {
         const resolved = this.resolveScriptCommandTarget(runtimeContext?.world, command.path);
-        try { resolved?.method.apply(resolved.target, args); } catch (_) {}
+        executeResolved(resolved);
         continue;
       }
       if (command?.scope === 'selection' && SCRIPT_SELECTION_COMMANDS.has(command.path)) {
         const resolved = this.resolveScriptCommandTarget(runtimeContext?.selection, command.path);
-        try { resolved?.method.apply(resolved.target, args); } catch (_) {}
+        executeResolved(resolved);
+        continue;
       }
+      this.recordScriptCommandResult(command, false, 'unsupported_command');
     }
 
     // `stopped` is an out-of-band control result, so a full ordinary command
@@ -3706,7 +4116,9 @@ export class Contraption {
     const submission = this.scriptRuntimeClient.tick(snapshot, {
       // QuickJS runs on the page thread, but receives only this bounded host
       // callback rather than the mutable World/manager objects themselves.
-      worldRaycast: runtimeContext?.world?.raycast
+      worldRaycast: runtimeContext?.world?.raycast,
+      worldVoxelGet: runtimeContext?.world?.voxels?.get,
+      worldMicroVoxelGet: runtimeContext?.world?.microVoxels?.get
     });
     if (!submission.submitted) {
       this.applyLatchedScriptCommands(runtimeContext);

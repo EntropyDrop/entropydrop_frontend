@@ -112,15 +112,24 @@ function resolveContraption(context: any, target: any) {
   )) || null;
 }
 
-function finishEntityMutation(context: any, contraption: any, type: string, nodeId: string) {
+function finishEntityMutation(context: any, contraption: any, type: string, nodeId: string, event: any = null) {
   const empty = !contraption.blocks || contraption.blocks.length === 0;
   const manager = context?.manager || contraption?.actionContext?.manager;
   if (empty && manager?.contraptions?.includes(contraption)) {
     manager.removeContraption(contraption);
   } else {
-    contraption.rebuildAfterBlockChange?.(type, nodeId);
+    contraption.rebuildAfterBlockChange?.(type, nodeId, event);
   }
   return empty;
+}
+
+function entityMutationEvent(command: any, extra: any = {}) {
+  const source = String(command?.actor?.source || 'system');
+  return {
+    source,
+    playerId: command?.actor?.playerId ?? (source === 'player' ? 'local' : null),
+    ...extra
+  };
 }
 
 function executeWorldAction(context: any, command: any) {
@@ -262,7 +271,7 @@ function executeEntityAction(context: any, command: any) {
       if (!entityAABBAllows(contraption, cell.x, cell.y, cell.z)) {
         return actionResult(command.action, 0, 'bounds_exceeded', { placed: 0 });
       }
-      contraption.blocks.push({
+      const placedBlock = {
         localX: cell.x,
         localY: cell.y,
         localZ: cell.z,
@@ -270,8 +279,14 @@ function executeEntityAction(context: any, command: any) {
         color: entityNodeColor(contraption, nodeId, command.options ?? command.color),
         block: command.block || BlockTypes.COLOR_BLOCK,
         entityId: nodeId
-      });
-      finishEntityMutation(context, contraption, 'place', nodeId);
+      };
+      contraption.blocks.push(placedBlock);
+      finishEntityMutation(context, contraption, 'place', nodeId, entityMutationEvent(command, {
+        cell: [cell.x, cell.y, cell.z],
+        size: 1,
+        block: placedBlock.block,
+        color: placedBlock.color
+      }));
       return actionResult(command.action, 1, 'placed', { placed: 1, empty: false });
     }
     case 'remove-standard': {
@@ -282,8 +297,14 @@ function executeEntityAction(context: any, command: any) {
         && blockInCell(block, cell)
       ));
       if (index < 0) return actionResult(command.action, 0, 'not_found', { removed: 0 });
+      const removedBlock = contraption.blocks[index];
       contraption.blocks.splice(index, 1);
-      const empty = finishEntityMutation(context, contraption, 'remove', nodeId);
+      const empty = finishEntityMutation(context, contraption, 'remove', nodeId, entityMutationEvent(command, {
+        cell: [cell.x, cell.y, cell.z],
+        size: removedBlock.size || 1,
+        block: removedBlock.block,
+        color: removedBlock.color
+      }));
       return actionResult(command.action, 1, 'removed', { removed: 1, empty });
     }
     case 'paint-standard': {
@@ -295,7 +316,12 @@ function executeEntityAction(context: any, command: any) {
       ));
       if (!block) return actionResult(command.action, 0, 'not_found', { painted: 0 });
       block.color = resolveColor(command.options ?? command.color, block.color ?? DEFAULT_BLOCK_COLOR);
-      finishEntityMutation(context, contraption, 'color', nodeId);
+      finishEntityMutation(context, contraption, 'color', nodeId, entityMutationEvent(command, {
+        cell: [cell.x, cell.y, cell.z],
+        size: block.size || 1,
+        block: block.block,
+        color: block.color
+      }));
       return actionResult(command.action, 1, 'painted', { painted: 1, color: block.color });
     }
     case 'place-micro': {
@@ -318,7 +344,7 @@ function executeEntityAction(context: any, command: any) {
       if (!entityAABBAllows(contraption, parent.x, parent.y, parent.z)) {
         return actionResult(command.action, 0, 'bounds_exceeded', { placed: 0 });
       }
-      contraption.blocks.push({
+      const placedBlock = {
         localX,
         localY,
         localZ,
@@ -327,8 +353,19 @@ function executeEntityAction(context: any, command: any) {
         block: command.block || BlockTypes.COLOR_BLOCK,
         entityId: nodeId,
         ...(command.part ? { part: command.part } : {})
-      });
-      finishEntityMutation(context, contraption, 'place', nodeId);
+      };
+      contraption.blocks.push(placedBlock);
+      finishEntityMutation(context, contraption, 'place', nodeId, entityMutationEvent(command, {
+        cell: [parent.x, parent.y, parent.z],
+        microOffset: [
+          ((micro.x % 5) + 5) % 5,
+          ((micro.y % 5) + 5) % 5,
+          ((micro.z % 5) + 5) % 5
+        ],
+        size: 0.2,
+        block: placedBlock.block,
+        color: placedBlock.color
+      }));
       return actionResult(command.action, 1, 'placed', { placed: 1, empty: false });
     }
     case 'remove-micro':
@@ -354,15 +391,41 @@ function executeEntityAction(context: any, command: any) {
       if (command.action === 'paint-micro') {
         const block = contraption.blocks[index];
         block.color = resolveColor(command.options ?? command.color, block.color ?? DEFAULT_BLOCK_COLOR);
-        finishEntityMutation(context, contraption, 'color', nodeId);
+        finishEntityMutation(context, contraption, 'color', nodeId, entityMutationEvent(command, {
+          cell: [Math.floor(localX), Math.floor(localY), Math.floor(localZ)],
+          microOffset: [
+            ((micro.x % 5) + 5) % 5,
+            ((micro.y % 5) + 5) % 5,
+            ((micro.z % 5) + 5) % 5
+          ],
+          size: 0.2,
+          block: block.block,
+          color: block.color
+        }));
         return actionResult(command.action, 1, 'painted', { painted: 1, color: block.color });
       }
+      const removedBlock = contraption.blocks[index];
       contraption.blocks.splice(index, 1);
-      const empty = finishEntityMutation(context, contraption, 'remove', nodeId);
+      const empty = finishEntityMutation(context, contraption, 'remove', nodeId, entityMutationEvent(command, {
+        cell: [Math.floor(localX), Math.floor(localY), Math.floor(localZ)],
+        microOffset: [
+          ((micro.x % 5) + 5) % 5,
+          ((micro.y % 5) + 5) % 5,
+          ((micro.z % 5) + 5) % 5
+        ],
+        size: 0.2,
+        block: removedBlock.block,
+        color: removedBlock.color
+      }));
       return actionResult(command.action, 1, 'removed', { removed: 1, empty });
     }
     case 'clear-cell': {
       if (!cell) return actionResult(command.action, 0, 'invalid_position', { removed: 0 });
+      const removedBlocks = contraption.blocks.filter(block => (
+        (block.entityId || 'root') === nodeId
+        && blockInCell(block, cell)
+        && (!command.microOnly || (block.size || 1) < 1)
+      ));
       const before = contraption.blocks.length;
       contraption.blocks = contraption.blocks.filter(block => {
         if ((block.entityId || 'root') !== nodeId || !blockInCell(block, cell)) return true;
@@ -371,7 +434,11 @@ function executeEntityAction(context: any, command: any) {
       });
       const removed = before - contraption.blocks.length;
       if (!removed) return actionResult(command.action, 0, 'not_found', { removed: 0 });
-      const empty = finishEntityMutation(context, contraption, 'remove', nodeId);
+      const empty = finishEntityMutation(context, contraption, 'remove', nodeId, entityMutationEvent(command, {
+        cell: [cell.x, cell.y, cell.z],
+        cells: removedBlocks.slice(0, 64).map(block => [block.localX, block.localY, block.localZ]),
+        truncated: removedBlocks.length > 64
+      }));
       return actionResult(command.action, removed, 'removed', { removed, empty });
     }
     case 'subdivide-standard': {
@@ -417,17 +484,31 @@ function executeEntityAction(context: any, command: any) {
           removed = 1;
         }
       }
-      finishEntityMutation(context, contraption, 'subdivide', original.entityId || nodeId);
+      finishEntityMutation(context, contraption, 'subdivide', original.entityId || nodeId, entityMutationEvent(command, {
+        cell: [cell.x, cell.y, cell.z],
+        microOffset: micro ? [
+          ((micro.x % 5) + 5) % 5,
+          ((micro.y % 5) + 5) % 5,
+          ((micro.z % 5) + 5) % 5
+        ] : null,
+        size: 0.2,
+        block: original.block,
+        color: original.color
+      }));
       return actionResult(command.action, 125, 'subdivided', { subdivided: 125, removed, empty: false });
     }
     case 'remove-blocks': {
-      const selected = new Set(Array.isArray(command.blocks) ? command.blocks : []);
+      const selectedBlocks = Array.isArray(command.blocks) ? command.blocks : [];
+      const selected = new Set(selectedBlocks);
       if (selected.size === 0) return actionResult(command.action, 0, 'not_found', { removed: 0 });
       const before = contraption.blocks.length;
       contraption.blocks = contraption.blocks.filter(block => !selected.has(block));
       const removed = before - contraption.blocks.length;
       if (!removed) return actionResult(command.action, 0, 'not_found', { removed: 0 });
-      const empty = finishEntityMutation(context, contraption, 'remove', nodeId);
+      const empty = finishEntityMutation(context, contraption, 'remove', nodeId, entityMutationEvent(command, {
+        cells: selectedBlocks.slice(0, 64).map(block => [block.localX, block.localY, block.localZ]),
+        truncated: selectedBlocks.length > 64
+      }));
       return actionResult(command.action, removed, 'removed', { removed, empty });
     }
     case 'remove-subtree': {

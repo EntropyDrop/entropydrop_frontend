@@ -84,6 +84,10 @@ backend configured by `VITE_API_BASE_URL` (default: `http://localhost:8000`).
 4. Aim at the entity and press `C`.
 5. Describe the behavior, inspect the generated controller, and run it.
 
+Entity backpack items can also be reused as modules with the Hammer: left-click
+spawns an independent entity, while `Shift` + left-click on a stopped entity
+installs the item as a rigid child component of the component under the crosshair.
+
 The bundled local Agent prototype currently understands English hover, follow,
 orbit, launch, spin, attitude-stabilization, and stop intents.
 Its result contract is intentionally small so it can later be replaced by a

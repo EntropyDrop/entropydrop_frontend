@@ -280,24 +280,66 @@ export class ContraptionManager {
       voxels: worldVoxels,
       microVoxels: worldMicroVoxels,
       entities: worldEntities,
-      raycast: (origin, direction, maxDistance = 24) => {
+      raycast: (origin, direction, maxDistanceOrOptions: any = 24) => {
         if (!Array.isArray(origin) || !Array.isArray(direction)) return null;
+        const options = maxDistanceOrOptions && typeof maxDistanceOrOptions === 'object'
+          ? maxDistanceOrOptions
+          : null;
+        const maxDistance = options ? options.maxDistance : maxDistanceOrOptions;
+        const include = options?.include === 'all' || options?.include === 'entities'
+          ? options.include
+          : 'world';
+        const voxelKinds = Array.isArray(options?.voxelKinds)
+          ? options.voxelKinds.filter(kind => kind === 'standard' || kind === 'micro')
+          : ['standard'];
+        const space = options?.space === 'bent' ? 'bent' : 'world';
         const query = this.performBasicAction({
           domain: ActionDomain.QUERY,
           action: 'raycast',
           origin,
           direction,
           maxDistance,
-          space: 'world',
-          include: 'world',
-          voxelKinds: ['standard'],
+          space,
+          include,
+          voxelKinds: voxelKinds.length > 0 ? voxelKinds : ['standard'],
           actor: { source: 'script' }
         });
+        if (!query?.hit) return null;
+        if (query.kind === 'entity') {
+          const hit = query.entityHit;
+          const point = hit?.point;
+          const normal = hit?.worldNormal || hit?.normal;
+          return Object.freeze({
+            kind: 'entity',
+            voxelKind: hit?.kind || null,
+            entityId: hit?.contraption?.publicId ?? null,
+            runtimeId: hit?.contraption?.id ?? null,
+            nodeId: hit?.entityId ?? hit?.entityNode?.id ?? 'root',
+            block: hit?.block?.block ?? BlockTypes.COLOR_BLOCK,
+            color: Number(hit?.color) || 0,
+            normal: Object.freeze([
+              Number(normal?.x) || 0,
+              Number(normal?.y) || 0,
+              Number(normal?.z) || 0
+            ]),
+            position: Object.freeze([
+              Number(point?.x) || 0,
+              Number(point?.y) || 0,
+              Number(point?.z) || 0
+            ]),
+            distance: Number(hit?.distance) || 0
+          });
+        }
         const hit = query.worldHit;
         if (!hit?.hit) return null;
         return Object.freeze({
-          block: hit.block,
-          color: hit.color,
+          kind: 'world',
+          voxelKind: hit.kind || 'standard',
+          entityId: null,
+          runtimeId: null,
+          nodeId: null,
+          block: hit.block ?? BlockTypes.COLOR_BLOCK,
+          color: Number(hit.color) || 0,
           normal: Object.freeze([hit.normal.x, hit.normal.y, hit.normal.z]),
           position: Object.freeze([hit.hitPos.x, hit.hitPos.y, hit.hitPos.z]),
           distance: hit.distance
@@ -720,8 +762,23 @@ export class ContraptionManager {
         contraption.position.y,
         contraption.position.z
       ]),
+      rotation: Object.freeze(contraption.quaternion.toArray()),
+      velocity: Object.freeze(contraption.velocity.toArray()),
+      angularVelocity: Object.freeze(contraption.angularVelocity.toArray()),
+      mass: contraption.mass,
+      bounds: Object.freeze({
+        min: Object.freeze(contraption.minLocal.toArray()),
+        max: Object.freeze(contraption.maxLocal.toArray()),
+        size: Object.freeze(contraption.size.toArray()),
+        center: Object.freeze(contraption.localCenter.toArray())
+      }),
+      boundingRadius: contraption.boundingRadius,
       bodyType: contraption.bodyType,
-      scriptStatus: contraption.scriptStatus
+      collisionEnabled: contraption.collisionEnabled !== false,
+      isOnGround: contraption.isOnGround === true,
+      groundDistance: contraption.groundDistance,
+      scriptStatus: contraption.scriptStatus,
+      componentCount: contraption.entityNodes?.size || 0
     };
     if (distance !== null) descriptor.distance = distance;
     return Object.freeze(descriptor);
@@ -1789,6 +1846,28 @@ export class ContraptionManager {
       this.saveEntitiesToStorage();
     }
     return contraption;
+  }
+
+  /** Merge an inventory entity into an existing stopped entity as a component subtree. */
+  installSlotAsComponent(
+    contraption,
+    slot,
+    parentNodeId,
+    placementOrigin,
+    autoSave = true,
+    preparedBlocks = null
+  ) {
+    if (!contraption || !this.contraptions.includes(contraption)) {
+      return Object.freeze({ ok: false, reason: 'target_entity_missing' });
+    }
+    const result = contraption.installEntitySlot?.(
+      slot,
+      parentNodeId,
+      placementOrigin,
+      preparedBlocks
+    ) || Object.freeze({ ok: false, reason: 'install_unsupported' });
+    if (result.ok && autoSave) this.saveEntitiesToStorage();
+    return result;
   }
 
   // =========================================================================

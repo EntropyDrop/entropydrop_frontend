@@ -710,7 +710,14 @@ test('ctx.blocks reports block changes like ctx.input even when bounds do not ch
   ) as any;
 
   // A between-frame color edit must fire even though bounds do not change.
-  contraption.notifyBlocksChanged('color', 'root');
+  contraption.notifyBlocksChanged('color', 'root', {
+    cell: [1, 0, 0],
+    size: 1,
+    block: BlockTypes.COLOR_BLOCK,
+    color: 0xabcdef,
+    source: 'player',
+    playerId: 'local'
+  });
   contraption.setScript(`
 self.state.p = ctx.blocks.pressed();
 self.state.pColor = ctx.blocks.pressed('color');
@@ -725,6 +732,10 @@ self.state.ev = ctx.blocks.event();
   assert.equal(state.ev.type, 'color');
   assert.equal(state.ev.nodeId, 'root');
   assert.equal(state.ev.blockCount, 2);
+  assert.deepEqual(state.ev.cell, [1, 0, 0]);
+  assert.equal(state.ev.color, 0xabcdef);
+  assert.equal(state.ev.source, 'player');
+  assert.equal(state.ev.playerId, 'local');
 
   // The edge-trigger clears on the next frame.
   contraption.update(1 / 60, null, { gravity: [0, -18, 0], world: null });
@@ -879,7 +890,22 @@ self.state.playersLen = ctx.players.length;
     gravity: [0, -18, 0],
     world: null,
     players: [
-      { id: 'local', position: [1, 2, 3] },
+      {
+        id: 'local',
+        position: [1, 2, 3],
+        feetPosition: [1, 0.38, 3],
+        velocity: [4, 5, 6],
+        yaw: 0.5,
+        pitch: -0.25,
+        isLocal: true,
+        isOnGround: true,
+        isFlying: false,
+        isCrouching: true,
+        isSprinting: false,
+        isInWater: false,
+        ridingEntityId: 'ent-platform',
+        ridingBodyId: 'deck'
+      },
       { id: 'p2', position: [10, 20, 30], mass: 75 }
     ]
   });
@@ -887,12 +913,23 @@ self.state.playersLen = ctx.players.length;
   assert.equal(players.length, 2, 'two players should be present');
   assert.equal(players[0].id, 'local');
   assert.deepEqual(players[0].position, [1, 2, 3]);
+  assert.deepEqual(players[0].eyePosition, [1, 2, 3]);
+  assert.deepEqual(players[0].feetPosition, [1, 0.38, 3]);
+  assert.deepEqual(players[0].velocity, [4, 5, 6]);
+  assert.equal(players[0].yaw, 0.5);
+  assert.equal(players[0].pitch, -0.25);
+  assert.equal(players[0].isLocal, true);
+  assert.equal(players[0].isOnGround, true);
+  assert.equal(players[0].isCrouching, true);
+  assert.equal(players[0].ridingEntityId, 'ent-platform');
+  assert.equal(players[0].ridingBodyId, 'deck');
   assert.equal(players[0].mass, 50, 'missing mass should use the fixed player default');
   assert.equal(players[1].id, 'p2');
   assert.deepEqual(players[1].position, [10, 20, 30]);
   assert.equal(players[1].mass, 75, 'an explicit valid runtime mass should be preserved');
   assert.equal(Object.isFrozen(players[0]), true, 'player records should be frozen');
   assert.equal(Object.isFrozen(players[0].position), true, 'snapshot positions should be frozen');
+  assert.equal(Object.isFrozen(players[0].velocity), true, 'optional snapshot vectors should be frozen');
 
   // Tolerate missing id or position.
   contraption.update(1 / 60, null, { gravity: [0, -18, 0], world: null, players: [{ position: [5, 6, 7], mass: -1 }] });
@@ -944,6 +981,15 @@ test('world API supports color reads, raycast metadata, nearby entities, and bui
   assert.equal('size' in micro, false, 'result should contain no extra size field');
   assert.equal(api.microVoxels.get([9, 0, 0], [2, 1, 1]).block, 0, 'an empty microcell should report air');
 
+  const microHit = api.raycast([8.5, 0.3, 0.3], [1, 0, 0], {
+    maxDistance: 2,
+    include: 'world',
+    voxelKinds: ['micro']
+  });
+  assert.equal(microHit.kind, 'world');
+  assert.equal(microHit.voxelKind, 'micro');
+  assert.equal(microHit.color, 0xabcdef);
+
   // Raycast from the side and include color plus normal metadata.
   const hit = api.raycast([6.5, 1.5, 5.5], [-1, 0, 0], 3);
   assert.ok(hit, 'ray should hit');
@@ -963,10 +1009,28 @@ test('world API supports color reads, raycast metadata, nearby entities, and bui
   assert.equal(nearby[0].id, c1.publicId, 'public query id should be the random entity id');
   assert.equal(nearby[0].runtimeId, 1, 'internal runtime id remains available for diagnostics');
   assert.equal(nearby[0].chunkId, '0,0');
+  assert.deepEqual(nearby[0].rotation, c1.quaternion.toArray());
+  assert.deepEqual(nearby[0].velocity, c1.velocity.toArray());
+  assert.deepEqual(nearby[0].angularVelocity, c1.angularVelocity.toArray());
+  assert.equal(nearby[0].mass, c1.mass);
+  assert.equal(nearby[0].boundingRadius, c1.boundingRadius);
+  assert.equal(nearby[0].collisionEnabled, true);
+  assert.equal(nearby[0].componentCount, 1);
+  assert.deepEqual(nearby[0].bounds.size, c1.size.toArray());
   // Entity position includes localCenter; c2 is at (12.5,0.5,10.5).
   const expected = Math.sqrt(2.5 * 2.5 + 0.5 * 0.5 + 0.5 * 0.5);
   assert.ok(Math.abs(nearby[1].distance - expected) < 1e-6, 'distance should be correct');
   assert.equal(api.entities([10, 0, 10], 1).length, 1, 'radius filtering should work');
+
+  const entityHit = api.raycast([8, 0.5, 10.5], [1, 0, 0], {
+    maxDistance: 5,
+    include: 'entities',
+    voxelKinds: ['standard', 'micro']
+  });
+  assert.equal(entityHit.kind, 'entity');
+  assert.equal(entityHit.entityId, c1.publicId);
+  assert.equal(entityHit.nodeId, 'root');
+  assert.equal(entityHit.voxelKind, 'standard');
 
   const seamEntity = new Contraption(
     4,

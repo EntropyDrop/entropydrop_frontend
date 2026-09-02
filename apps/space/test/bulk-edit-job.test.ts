@@ -123,6 +123,55 @@ test('large entity Hammer placement prepares blocks in BulkEditJob before atomic
   assert.equal(controller.__progress.at(-1).phase, 'complete');
 });
 
+test('large Hammer component installation prepares blocks before one atomic tree merge', () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null) as any;
+  const target = manager.buildFromSlot({
+    name: 'Target',
+    rootId: 'root',
+    blockCount: 1,
+    blocks: entityBlocks(1),
+    childEntities: [],
+    scripts: [],
+    enabled: [],
+    constraints: []
+  }, new THREE.Vector3(), null, false);
+  const controller = makeController(manager);
+  const total = BULK_EDIT_THRESHOLD + 44;
+  const slot = {
+    name: 'Cargo',
+    kind: 'entity',
+    rootId: 'root',
+    blockCount: total,
+    blocks: entityBlocks(total),
+    childEntities: [],
+    scripts: [],
+    enabled: [],
+    constraints: []
+  };
+  controller.activeTool = SpecialTool.HAMMER;
+  controller.setActiveInventoryCategory('entity');
+  controller.inventories.entity.items[0] = slot;
+  controller.inventories.entity.selected = 0;
+  controller.getInventoryPlacementPose = () => ({
+    position: new THREE.Vector3(12, 0, 0),
+    targetContraption: target,
+    targetNodeId: 'root'
+  });
+
+  assert.equal(controller.pasteInventorySlot(true), true);
+  assert.equal(manager.contraptions.length, 1);
+  assert.equal(target.blocks.length, 1, 'the target is unchanged while preparation is incomplete');
+  controller.processBulkEditFrame(128, Infinity);
+  assert.equal(target.blocks.length, 1);
+  while (controller.bulkEditJob) controller.processBulkEditFrame(128, Infinity);
+
+  assert.equal(manager.contraptions.length, 1);
+  assert.equal(target.blocks.length, total + 1);
+  assert.ok(target.getEntityNode('Cargo'));
+  assert.equal(controller.__progress.at(-1).phase, 'complete');
+});
+
 test('large world assembly extracts through BulkEditJob and commits one complete entity', () => {
   const scene = new THREE.Scene();
   const world = new World(scene) as any;

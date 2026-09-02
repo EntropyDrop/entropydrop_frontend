@@ -11,6 +11,7 @@ const ENTITY_TICK_DEADLINE_MS = 25;
 // independent of timer resolution.
 const ENTITY_FRAME_INTERRUPT_LIMIT = 64;
 const MAX_HOST_RAYCASTS_PER_TICK = 64;
+const MAX_HOST_WORLD_READS_PER_TICK = 256;
 const MAX_SCRIPT_COMPONENTS = 64;
 const BOOTSTRAP_DEADLINE_MS = 100;
 
@@ -45,9 +46,11 @@ const QUICKJS_BOOTSTRAP = String.raw`
   let componentMap = new Map();
   let selfCache = new Map();
   let commands = [];
+  let nextCommandId = 1;
   let errors = [];
   let stopped = false;
   let worldVoxelOverlays = new Map();
+  let worldMicroVoxelOverlays = new Map();
   const STOP = Object.freeze({ kind: 'space-stop' });
   const MAX_COMMANDS = 256;
   const MAX_BODY_VECTOR_COMPONENT = 1e12;
@@ -79,19 +82,22 @@ const QUICKJS_BOOTSTRAP = String.raw`
       && Math.abs(component) <= MAX_BODY_VECTOR_COMPONENT) ? result : null;
   };
   const emit = (scope, nodeId, path, args) => {
-    if (commands.length >= MAX_COMMANDS) return false;
-    commands.push({ scope, nodeId: String(nodeId || 'root'), path, args: clone(args) || [] });
-    return true;
+    if (commands.length >= MAX_COMMANDS) return null;
+    const commandId = 'cmd-' + nextCommandId++;
+    commands.push({ commandId, scope, nodeId: String(nodeId || 'root'), path, args: clone(args) || [] });
+    return commandId;
   };
-  const queuedEdit = (field, accepted, amount = 1) => Object.freeze({
-    ok: accepted,
-    [field]: accepted ? amount : 0,
-    reason: accepted ? 'queued' : 'command_limit'
+  const queuedEdit = (field, commandId, amount = 1) => Object.freeze({
+    ok: !!commandId,
+    [field]: commandId ? amount : 0,
+    reason: commandId ? 'queued' : 'command_limit',
+    commandId: commandId || null
   });
-  const queuedResult = (accepted, values, rejectedValues = {}) => Object.freeze({
-    ok: accepted,
-    ...(accepted ? values : rejectedValues),
-    reason: accepted ? 'queued' : 'command_limit'
+  const queuedResult = (commandId, values, rejectedValues = {}) => Object.freeze({
+    ok: !!commandId,
+    ...(commandId ? values : rejectedValues),
+    reason: commandId ? 'queued' : 'command_limit',
+    commandId: commandId || null
   });
   const inputCode = value => {
     if (typeof value !== 'string') return '';
@@ -241,19 +247,19 @@ const QUICKJS_BOOTSTRAP = String.raw`
       applyForce: force => {
         const safeForce = boundedBodyVector(force);
         return bodyType === 'dynamic' && !!safeForce
-          ? emit('component', id, 'body.applyForce', [safeForce])
+          ? !!emit('component', id, 'body.applyForce', [safeForce])
           : false;
       },
       applyLocalForce: force => {
         const safeForce = boundedBodyVector(force);
         return bodyType === 'dynamic' && !!safeForce
-          ? emit('component', id, 'body.applyLocalForce', [safeForce])
+          ? !!emit('component', id, 'body.applyLocalForce', [safeForce])
           : false;
       },
       applyTorque: torque => {
         const safeTorque = boundedBodyVector(torque);
         return bodyType === 'dynamic' && !!safeTorque
-          ? emit('component', id, 'body.applyTorque', [safeTorque])
+          ? !!emit('component', id, 'body.applyTorque', [safeTorque])
           : false;
       }
     });
@@ -263,7 +269,7 @@ const QUICKJS_BOOTSTRAP = String.raw`
         const accepted = emit('component', id, 'constraints.create', [options]);
         return queuedResult(accepted, { id: null }, { id: null });
       },
-      remove: constraintId => emit('component', id, 'constraints.remove', [constraintId])
+      remove: constraintId => !!emit('component', id, 'constraints.remove', [constraintId])
     });
     api.voxels = makeVoxelApi(id, false);
     api.microVoxels = makeVoxelApi(id, true);
@@ -275,8 +281,26 @@ const QUICKJS_BOOTSTRAP = String.raw`
   function makeWorldApi() {
     const nearby = Array.isArray(frame.world?.entities) ? frame.world.entities : [];
     const positionKey = value => Array.isArray(value) ? value.slice(0, 3).map(v => Math.floor(finite(v))).join(',') : '';
+    const microPositionKey = (cell, offset) => positionKey(cell) + '|' + (Array.isArray(offset)
+      ? offset.slice(0, 3).map(v => Math.round(finite(v))).join(',')
+      : '');
+    const hostWorldRead = (kind, position, offset = null) => {
+      try {
+        const encoded = globalThis.__spaceHostWorldRead(kind, position, offset);
+        return typeof encoded === 'string'
+          ? frozenClone(JSON.parse(encoded))
+          : Object.freeze({ block: 0, color: 0 });
+      } catch (_) {
+        return Object.freeze({ block: 0, color: 0 });
+      }
+    };
     const voxels = Object.freeze({
-      get(position) { return frozenClone(worldVoxelOverlays.get(positionKey(position)) || { block: 0, color: 0 }); },
+      get(position) {
+        const key = positionKey(position);
+        return worldVoxelOverlays.has(key)
+          ? frozenClone(worldVoxelOverlays.get(key))
+          : hostWorldRead('standard', position);
+      },
       set(position, options) {
         const accepted = emit('world', 'root', 'voxels.set', [position, options]);
         if (accepted) worldVoxelOverlays.set(positionKey(position), { block: 1, color: finite(options?.color) });
@@ -284,13 +308,20 @@ const QUICKJS_BOOTSTRAP = String.raw`
       },
       clear(position) {
         const accepted = emit('world', 'root', 'voxels.clear', [position]);
-        if (accepted) worldVoxelOverlays.delete(positionKey(position));
+        if (accepted) worldVoxelOverlays.set(positionKey(position), { block: 0, color: 0 });
         return queuedEdit('removed', accepted);
       },
-      paint(position, options) { return queuedEdit('painted', emit('world', 'root', 'voxels.paint', [position, options])); },
+      paint(position, options) {
+        const accepted = emit('world', 'root', 'voxels.paint', [position, options]);
+        if (accepted) {
+          const current = voxels.get(position);
+          if (current?.block) worldVoxelOverlays.set(positionKey(position), { ...current, color: finite(options?.color) });
+        }
+        return queuedEdit('painted', accepted);
+      },
       clearCell(position) {
         const accepted = emit('world', 'root', 'voxels.clearCell', [position]);
-        if (accepted) worldVoxelOverlays.delete(positionKey(position));
+        if (accepted) worldVoxelOverlays.set(positionKey(position), { block: 0, color: 0 });
         return queuedEdit('removed', accepted);
       },
       subdivide(position, offset) {
@@ -299,10 +330,36 @@ const QUICKJS_BOOTSTRAP = String.raw`
       }
     });
     const microVoxels = Object.freeze({
-      get() { return Object.freeze({ block: 0, color: 0 }); },
-      set(...args) { return queuedEdit('placed', emit('world', 'root', 'microVoxels.set', args)); },
-      clear(...args) { return queuedEdit('removed', emit('world', 'root', 'microVoxels.clear', args)); },
-      paint(...args) { return queuedEdit('painted', emit('world', 'root', 'microVoxels.paint', args)); }
+      get(cell, offset) {
+        const key = microPositionKey(cell, offset);
+        return worldMicroVoxelOverlays.has(key)
+          ? frozenClone(worldMicroVoxelOverlays.get(key))
+          : hostWorldRead('micro', cell, offset);
+      },
+      set(cell, offset, options) {
+        const accepted = emit('world', 'root', 'microVoxels.set', [cell, offset, options]);
+        if (accepted) worldMicroVoxelOverlays.set(
+          microPositionKey(cell, offset),
+          { block: 1, color: finite(options?.color) }
+        );
+        return queuedEdit('placed', accepted);
+      },
+      clear(cell, offset) {
+        const accepted = emit('world', 'root', 'microVoxels.clear', [cell, offset]);
+        if (accepted) worldMicroVoxelOverlays.set(microPositionKey(cell, offset), { block: 0, color: 0 });
+        return queuedEdit('removed', accepted);
+      },
+      paint(cell, offset, options) {
+        const accepted = emit('world', 'root', 'microVoxels.paint', [cell, offset, options]);
+        if (accepted) {
+          const current = microVoxels.get(cell, offset);
+          if (current?.block) worldMicroVoxelOverlays.set(
+            microPositionKey(cell, offset),
+            { ...current, color: finite(options?.color) }
+          );
+        }
+        return queuedEdit('painted', accepted);
+      }
     });
     const worldSize = Array.isArray(frame.world?.size) ? frame.world.size : [0, 0];
     const wrappedDelta = (a, b, period) => {
@@ -339,9 +396,9 @@ const QUICKJS_BOOTSTRAP = String.raw`
       voxels,
       microVoxels,
       entities,
-      raycast: (origin, direction, maxDistance = 24) => {
+      raycast: (origin, direction, maxDistanceOrOptions = 24) => {
         try {
-          const encoded = globalThis.__spaceHostRaycast(origin, direction, maxDistance);
+          const encoded = globalThis.__spaceHostRaycast(origin, direction, maxDistanceOrOptions);
           return typeof encoded === 'string' ? frozenClone(JSON.parse(encoded)) : null;
         } catch (_) {
           return null;
@@ -396,6 +453,16 @@ const QUICKJS_BOOTSTRAP = String.raw`
     });
   }
 
+  function makeCommandResultsApi() {
+    const results = Array.isArray(frame.commandResults) ? frame.commandResults : [];
+    return Object.freeze({
+      get: commandId => frozenClone(
+        results.find(result => result?.commandId === String(commandId)) || null
+      ),
+      all: () => frozenClone(results)
+    });
+  }
+
   globalThis.__spaceSetScript = (nodeIdJson, codeJson) => {
     const nodeId = JSON.parse(nodeIdJson);
     const code = JSON.parse(codeJson);
@@ -419,6 +486,7 @@ const QUICKJS_BOOTSTRAP = String.raw`
     errors = [];
     stopped = false;
     worldVoxelOverlays = new Map();
+    worldMicroVoxelOverlays = new Map();
     return true;
   };
 
@@ -441,6 +509,7 @@ const QUICKJS_BOOTSTRAP = String.raw`
       rotation: frozenClone(frame.rotation || [0, 0, 0]),
       angularVelocity: frozenClone(frame.angularVelocity || [0, 0, 0]),
       groundDistance: finite(frame.groundDistance),
+      isOnGround: frame.isOnGround === true,
       mass: finite(frame.mass),
       bodyType: frame.bodyType || 'dynamic',
       gravity: frozenClone(frame.gravity || [0, -18, 0]),
@@ -456,8 +525,11 @@ const QUICKJS_BOOTSTRAP = String.raw`
         released: code => codeActive(input.released || [], code)
       }),
       players: frozenClone(frame.players || []),
+      driver: frozenClone(frame.driver || null),
+      contacts: frozenClone(frame.contacts || []),
       world: makeWorldApi(),
       selection: makeSelectionApi(),
+      commands: makeCommandResultsApi(),
       log: message => { emit('log', nodeId, 'log', [String(message).slice(0, 1000)]); }
     });
     try {
@@ -499,6 +571,7 @@ type EntityRuntime = {
   frameInterruptChecks: number;
   hostApi: any;
   hostRaycastCount: number;
+  hostWorldReadCount: number;
 };
 
 type WorkerPort = {
@@ -573,7 +646,8 @@ export function createQuickJSScriptRuntimeService() {
       frameBudgetActive: false,
       frameInterruptChecks: 0,
       hostApi: null,
-      hostRaycastCount: 0
+      hostRaycastCount: 0,
+      hostWorldReadCount: 0
     };
     runtime.setMemoryLimit(ENTITY_MEMORY_LIMIT_BYTES);
     runtime.setMaxStackSize(ENTITY_STACK_LIMIT_BYTES);
@@ -613,6 +687,26 @@ export function createQuickJSScriptRuntimeService() {
     });
     entity.context.setProp(entity.context.global, '__spaceHostRaycast', hostRaycast);
     hostRaycast.dispose();
+    const hostWorldRead = entity.context.newFunction('__spaceHostWorldRead', (...args: any[]) => {
+      let encoded = JSON.stringify({ block: 0, color: 0 });
+      try {
+        if (entity.hostWorldReadCount >= MAX_HOST_WORLD_READS_PER_TICK) {
+          return entity.context.newString(encoded);
+        }
+        entity.hostWorldReadCount++;
+        const kind = entity.context.dump(args[0]);
+        const position = entity.context.dump(args[1]);
+        const offset = entity.context.dump(args[2]);
+        const result = kind === 'micro'
+          ? entity.hostApi?.worldMicroVoxelGet?.(position, offset)
+          : entity.hostApi?.worldVoxelGet?.(position);
+        const json = JSON.stringify(result ?? { block: 0, color: 0 });
+        if (typeof json === 'string' && json.length <= 4 * 1024) encoded = json;
+      } catch (_) {}
+      return entity.context.newString(encoded);
+    });
+    entity.context.setProp(entity.context.global, '__spaceHostWorldRead', hostWorldRead);
+    hostWorldRead.dispose();
     const boot = evaluate(entity, QUICKJS_BOOTSTRAP, BOOTSTRAP_DEADLINE_MS);
     if (!boot.ok) {
       entity.context.dispose();
@@ -666,6 +760,7 @@ export function createQuickJSScriptRuntimeService() {
         entity.frameBudgetActive = true;
         entity.frameInterruptChecks = 0;
         entity.hostRaycastCount = 0;
+        entity.hostWorldReadCount = 0;
         entity.hostApi = message.hostApi || null;
         try {
           const begin = evaluate(entity, jsonExpression('__spaceBeginTick', snapshot));

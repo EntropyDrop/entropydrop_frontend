@@ -125,6 +125,16 @@ npm run build
 npm run preview
 ```
 
+Deploy the production artifact to the EntropyDrop S3/CloudFront site:
+```bash
+npm run deploy:aws
+```
+
+The deployment keeps HTML uncached, gives Vite's fingerprinted assets a one-year
+immutable cache, and gives stable public image URLs a revalidating seven-day cache.
+Set `ENTROPYDROP_FRONTEND_BUCKET` or
+`ENTROPYDROP_CLOUDFRONT_DISTRIBUTION_ID` to override the production defaults.
+
 ### 5. Linting & Formatting
 Enforce code quality with ESLint:
 ```bash

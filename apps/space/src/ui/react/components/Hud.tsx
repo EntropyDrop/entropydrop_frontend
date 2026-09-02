@@ -13,7 +13,8 @@ import {
   LiaAngleDownSolid,
   LiaExchangeAltSolid,
   LiaShapesSolid,
-  LiaBoxesSolid
+  LiaBoxesSolid,
+  LiaRobotSolid
 } from 'react-icons/lia';
 import { ContraptionMode } from '../../../engine/contraption/Contraption.ts';
 import { SpecialTool } from '../../../engine/controls/PlayerController.ts';
@@ -194,7 +195,7 @@ function InventoryBar() {
             ))}
           </div>
         </div>
-        <span className="palette-hotkey-hint"><b>E</b> Full Backpack · <b>Tab</b> BKS↔ENT</span>
+        <span className="palette-hotkey-hint"><b>E</b> Full Backpack · <b>Tab</b> BKS↔ENT{category === 'entity' ? <> · <b>Shift+LMB</b> Install</> : null}</span>
       </div>
       <div id="inventory-bar" className="inventory-bar">
         {Array.from({ length: 9 }, (_, index) => {
@@ -371,6 +372,18 @@ export function Hud() {
             <NearbyEntities />
           </div>
           <div className="hud-actions">
+            <button
+              id="ai-builder-btn"
+              type="button"
+              tabIndex={-1}
+              className="icon-btn ai-builder-hud-btn"
+              title="AI Builder (Natural Language Construction)"
+              onClick={() => spaceUiStore.toggleBuildAssistant(true)}
+            >
+              <span className="ai-builder-pulse-dot" />
+              <LiaRobotSolid size={16} className="ai-builder-icon" />
+              <span className="ai-builder-label">AI BUILD</span>
+            </button>
             <button
               id="home-btn"
               type="button"

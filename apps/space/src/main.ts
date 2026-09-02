@@ -6,6 +6,7 @@ import { ContraptionPhysics } from './engine/physics/ContraptionPhysics.ts';
 import { ContraptionManager } from './engine/contraption/ContraptionManager.ts';
 import { EntitySimulationClock } from './engine/simulation/EntitySimulationClock.ts';
 import { PlayerController } from './engine/controls/PlayerController.ts';
+import { SpaceBuilder } from './engine/building/SpaceBuilder.ts';
 import { SoundManager } from './engine/audio/SoundManager.ts';
 import { ParticleSystem } from './engine/render/ParticleSystem.ts';
 import { Minimap } from './ui/Minimap.ts';
@@ -50,6 +51,7 @@ class Game {
   minimap: Minimap;
   navigationSystem: NavigationSystem;
   controller: PlayerController;
+  spaceBuilder: SpaceBuilder;
   clock: THREE.Clock;
   entitySimulationClock: EntitySimulationClock;
   frameCount: number;
@@ -137,23 +139,64 @@ class Game {
       persistentStorage
     );
     this.controller.setSceneRenderer(this.sceneRenderer);
+    this.spaceBuilder = new SpaceBuilder({
+      world: this.world,
+      contraptions: this.contraptionManager,
+      controller: this.controller,
+      onStatus: status => this.uiStore.setBuilderJob(status)
+    });
     this.remotePlayers = [];
     this.contraptionManager.setRuntimeContextProvider(() => {
       const eye = this.playerPhysics.getEyePosition();
+      const feet = this.playerPhysics.position;
       const allPlayers = [
         {
           id: 'local',
           position: [eye.x, eye.y, eye.z],
+          eyePosition: [eye.x, eye.y, eye.z],
+          feetPosition: [feet.x, feet.y, feet.z],
+          velocity: this.playerPhysics.velocity.toArray(),
+          yaw: this.controller.yaw,
+          pitch: this.controller.pitch,
+          isLocal: true,
+          isOnGround: this.playerPhysics.isOnGround,
+          isFlying: this.playerPhysics.isFlying,
+          isCrouching: this.playerPhysics.isCrouching,
+          isSprinting: this.playerPhysics.isSprinting,
+          isInWater: this.playerPhysics.isInWater,
+          ridingEntityId: this.playerPhysics.ridingContraption?.publicId ?? null,
+          ridingBodyId: this.playerPhysics.ridingBodyId ?? null,
           mass: this.playerPhysics.mass
         },
         ...(this.remotePlayers || []).filter(p => !p.is_self).map(p => ({
           id: p.user_id,
           position: [p.x, p.y + 1.62, p.z],
+          eyePosition: [p.x, p.y + 1.62, p.z],
+          feetPosition: [p.x, p.y, p.z],
+          velocity: null,
+          yaw: p.yaw,
+          pitch: p.pitch,
+          isLocal: false,
+          isOnGround: null,
+          isFlying: null,
+          isCrouching: null,
+          isSprinting: null,
+          isInWater: null,
+          ridingEntityId: null,
+          ridingBodyId: null,
+          avatarEntityId: p.player_entity_id,
           mass: this.playerPhysics.mass
         }))
       ];
+      const driven = this.controller.isDriving ? this.controller.drivenContraption : null;
       return {
-        players: allPlayers
+        players: allPlayers,
+        driver: driven ? {
+          entityId: driven.publicId,
+          playerId: 'local',
+          componentId: this.controller.drivenSeat?.componentId || 'root',
+          seatIndex: this.controller.drivenSeat?.seatIndex || 0
+        } : null
       };
     });
 
@@ -161,6 +204,7 @@ class Game {
     this.uiStore.setController(this.controller);
     this.uiStore.setWorld(this.world);
     this.uiStore.setContraptions(this.contraptionManager);
+    this.uiStore.setBuilder(this.spaceBuilder);
     this.uiStore.setSceneRenderer(this.sceneRenderer);
     this.uiStore.setMinimap(this.minimap);
     this.navigationSystem = new NavigationSystem(
@@ -372,6 +416,7 @@ class Game {
     // movement, entity code, and entity physics advance only on the immutable
     // 20 Hz simulation clock below.
     this.controller.updateRender();
+    this.spaceBuilder.update();
     const simulation = this.entitySimulationClock.advance(dt, simulationDt => {
       this.controller.updateSimulation(simulationDt);
 
@@ -454,7 +499,9 @@ class Game {
     }
 
     // 6e. Hammer inventory hover ghost (entity slots and plain block sets).
-    this.sceneRenderer.setInventoryPlacementPreview(this.controller.inventoryPlacementPreview);
+    this.sceneRenderer.setInventoryPlacementPreview(
+      this.spaceBuilder.getRenderPreview() || this.controller.inventoryPlacementPreview
+    );
 
     // 7. Update UI HUD
     this.uiStore.updateHUD(

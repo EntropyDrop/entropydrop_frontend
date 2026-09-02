@@ -47,15 +47,19 @@ const ctxEntries: ApiEntry[] = [
   { signature: 'ctx.rotation', type: '[x,y,z]', description: 'Root Euler angles in radians using YXZ order.' },
   { signature: 'ctx.angularVelocity', type: '[x,y,z]', description: 'Root angular velocity in rad/s.' },
   { signature: 'ctx.groundDistance', type: 'number', description: 'Distance in metres to the ground below.' },
+  { signature: 'ctx.isOnGround', type: 'boolean', description: 'Whether the root dynamic body was supported during the latest completed physics frame.' },
   { signature: 'ctx.mass', type: 'number', description: 'Root entity mass in kg.' },
   { signature: 'ctx.bodyType', type: 'string', description: "Root body type: `'kinematic'` or `'dynamic'`." },
   { signature: 'ctx.gravity', type: '[x,y,z]', description: 'Current gravity vector; default `[0,-18,0]`.' },
   { signature: 'ctx.limits', type: 'object', description: '`{maxForce,maxTorque}` for the legacy root-body force surface only.' },
   { signature: 'ctx.input', type: 'object', description: 'Keyboard edge/held-state API described below.' },
   { signature: 'ctx.blocks', type: 'object', description: "Block-edit snapshot: `pressed(type?)` and `event()`; types are `'place'|'remove'|'color'|'subdivide'`." },
-  { signature: 'ctx.players', type: 'array', description: 'Frozen `[{id,position,mass}]` list. Position is the player eye (feet + 1.62 m standing or + 1.3 m crouched), not feet; mass is fixed at 50 kg.' },
+  { signature: 'ctx.players', type: 'array', description: 'Frozen player observations. `position` remains the eye-position compatibility alias; records also expose `eyePosition`, nullable `feetPosition`/`velocity`/pose and movement flags, riding IDs, `isLocal`, and fixed 50 kg mass.' },
+  { signature: 'ctx.driver', type: 'object|null', description: 'Current local driver for this entity as `{playerId,componentId,seatIndex}`, or `null` when it is not mounted.' },
+  { signature: 'ctx.contacts', type: 'array', description: 'Up to 32 frozen contacts observed since the previous submitted script frame. Kinds are `terrain|entity|player`; records include component IDs, point, normal, relative velocity, penetration, and impulse when available.' },
   { signature: 'ctx.world', type: 'object', description: 'World query and mutation API described below.' },
   { signature: 'ctx.selection', type: 'object', description: 'Shared engine selection command API described below.' },
+  { signature: 'ctx.commands', type: 'object', description: 'Final main-thread command results from the previous submitted frame: `get(commandId)` and `all()`.' },
   { signature: 'ctx.log(msg)', type: 'function', description: 'Append one line to the component console.' }
 ];
 
@@ -115,20 +119,21 @@ const bodyEntries: ApiEntry[] = [
 
 const worldEntries: ApiEntry[] = [
   { signature: 'ctx.world.apiVersion', description: 'Current world API version: `2`.' },
-  { signature: 'ctx.world.voxels.get(position)', description: "Read only the current tick's standard-write overlay; otherwise returns air." },
+  { signature: 'ctx.world.voxels.get(position)', description: "Read a real standard world voxel as `{block,color}` plus the current tick's admitted-write overlay; maximum 256 combined standard/micro host reads per entity tick." },
   { signature: 'ctx.world.voxels.set(position, options?)', description: "Queue a standard placement; admitted result is provisional `{ok:true,placed:1,reason:'queued'}`." },
   { signature: 'ctx.world.voxels.clear(position)', description: 'Queue removal of one standard voxel without deleting micro voxels in its cell.' },
   { signature: 'ctx.world.voxels.paint(position, options?)', description: 'Queue repainting one existing standard voxel.' },
   { signature: 'ctx.world.voxels.clearCell(position)', description: 'Queue removal of all standard and micro voxels in one world cell.' },
   { signature: 'ctx.world.voxels.subdivide(position, clearOffset?)', description: 'Queue conversion of one standard voxel to 125 micro voxels.' },
-  { signature: 'ctx.world.microVoxels.get(cell, offset)', description: 'Full synchronous micro-world reads are unavailable; currently returns air.' },
+  { signature: 'ctx.world.microVoxels.get(cell, offset)', description: 'Read one real 0.2 m world voxel as `{block,color}` plus the current tick overlay; offset coordinates are integers from 0 through 4.' },
   { signature: 'ctx.world.microVoxels.set(cell, offset, options?)', description: 'Queue one 0.2 m world voxel placement.' },
   { signature: 'ctx.world.microVoxels.clear(cell, offset)', description: 'Queue removal of one exact 0.2 m world voxel.' },
   { signature: 'ctx.world.microVoxels.paint(cell, offset, options?)', description: 'Queue repainting one existing micro world voxel.' },
-  { signature: 'ctx.world.entities(origin, radius=16)', description: "Filter the prefetched 64 m nearby-entity snapshot using shortest wrapped X/Z distance." },
+  { signature: 'ctx.world.entities(origin, radius=16)', description: "Filter the prefetched 64 m nearby-entity snapshot using shortest wrapped X/Z distance. Descriptors include pose, velocities, mass, bounds, collision/ground state, script status, and component count." },
   { signature: 'ctx.world.entities.get(id, chunkId?)', description: 'Look up an entity in the frozen nearby snapshot.' },
   { signature: 'ctx.world.entities.list(chunkId) / inChunk(chunkId)', description: 'Filter nearby entities by wrapped chunk ID `"cx,cz"`.' },
-  { signature: 'ctx.world.raycast(origin, direction, maxDistance=24)', description: 'Bounded synchronous standard-voxel raycast; returns `{block,color,normal,position,distance}` or `null`; maximum 64 calls per entity tick.' }
+  { signature: 'ctx.world.raycast(origin, direction, maxDistance=24)', description: 'Compatibility form: bounded synchronous standard-world-voxel raycast.' },
+  { signature: "ctx.world.raycast(origin, direction, {maxDistance=24,include='world',voxelKinds=['standard'],space='world'})", description: 'Full existing engine raycast over standard/micro world voxels and/or entities. Returns normalized kind, voxelKind, IDs, block/color, normal, position, and distance; maximum 64 calls per entity tick.' }
 ];
 
 const selectionEntries: ApiEntry[] = [
@@ -185,8 +190,8 @@ const dz = wrappedDelta(ctx.position[2], target[2], 2048);`
         'Every component script receives `(self, ctx)` once per fixed 20 Hz entity tick. `self` is the target component; root body fields in `ctx` always describe the root entity.',
         'The root script runs before child scripts. All components share one frozen frame-start `ctx` snapshot; admitted commands commit after the synchronous QuickJS tick.',
         'Each component owns `self.state`. Completed state survives chunk streaming; Pause freezes it and Stop clears it.',
-        "Queued mutation success means command-buffer admission (`reason:'queued'`), not final commit. The main thread revalidates bounds, occupancy, and permissions.",
-        'Limits: 4 MiB runtime memory, 512 KiB stack, 64 components per entity, 256 commands per tick, 5 ms per component invocation, 25 ms aggregate entity time, and 64 VM interrupt checkpoints.',
+        "Queued mutation success means command-buffer admission (`reason:'queued'`), not final commit. Successful admission includes `commandId`; the main thread revalidates bounds, occupancy, and permissions and publishes the final result through `ctx.commands` on the next submitted frame.",
+        'Limits: 4 MiB runtime memory, 512 KiB stack, 64 components per entity, 256 commands, 256 world voxel reads, and 64 raycasts per tick, 5 ms per component invocation, 25 ms aggregate entity time, and 64 VM interrupt checkpoints.',
         'A component exception disables that component. Aggregate time/checkpoint failure disables every component script and discards commands from the interrupted tick.',
         'Entities only exist and run while their wrapped root chunk is active; streaming serializes identity, hierarchy, physics, scripts, defaults, and completed state.'
       ]
@@ -244,7 +249,7 @@ const dz = wrappedDelta(ctx.position[2], target[2], 2048);`
         '`ctx.input.down(code)`, `pressed(code)`, and `released(code)` expose held, leading-edge, and trailing-edge keyboard state.',
         'Only the mounted entity receives player input. Generic `Shift`, `Control`, and `Alt` match either side.',
         'Reserved keys never reach scripts: Escape, Backspace, Delete, F3, F5, C, E, F, G, R, V, and digits 0–9.',
-        "`ctx.blocks.pressed(type?)` is a one-tick edit edge for `place|remove|color|subdivide`; `event()` returns `{type,nodeId,blockCount}` or `null`."
+        "`ctx.blocks.pressed(type?)` is a one-tick edit edge for `place|remove|color|subdivide`; `event()` returns type/node, source/player, affected cell(s), voxel metadata, truncation, and final blockCount when available."
       ]
     },
     {

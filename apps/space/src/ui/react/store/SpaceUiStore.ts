@@ -1,4 +1,9 @@
 import { ActionDomain } from '../../../engine/actions/BasicActions.ts';
+import { runSpaceBuildAgentTurn } from '../../../engine/building/BuildAgent.ts';
+import type {
+  SpaceBuildValidation,
+  SpaceBuilderJobStatus
+} from '../../../engine/building/SpaceBuilder.ts';
 import { loadAgentConfig, runAgentTurn, saveAgentConfig } from '../../../engine/contraption/AgentChat.ts';
 import { ContraptionMode } from '../../../engine/contraption/Contraption.ts';
 import {
@@ -11,7 +16,7 @@ import { triggerProtobufDownload } from '../browser/downloadProtobuf.ts';
 import { colorToHex, normalizeColor, PRESET_COLORS } from '../../../engine/voxel/BlockTypes.ts';
 import { SpaceMarketClient } from '../../../bootstrap/SpaceMarketClient.ts';
 
-export type SpaceModal = 'inventory' | 'code' | 'settings' | null;
+export type SpaceModal = 'inventory' | 'code' | 'settings' | 'builder' | null;
 
 export interface NearbyEntityItem {
   id: string | number;
@@ -27,6 +32,14 @@ export interface AgentMessage {
   reasoning?: string;
   code?: string | null;
   targetId?: string | null;
+  isStreaming?: boolean;
+}
+
+export interface BuildAgentMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  reasoning?: string;
+  transportContent?: string;
   isStreaming?: boolean;
 }
 
@@ -99,6 +112,13 @@ export interface SpaceUiSnapshot {
   agentMessages: AgentMessage[];
   agentBusy: boolean;
   agentConfig: any;
+  builder: any;
+  buildAgentMessages: BuildAgentMessage[];
+  buildAgentBusy: boolean;
+  buildAgentSetupOpen: boolean;
+  buildValidation: SpaceBuildValidation | null;
+  buildSourcePlan: any;
+  builderJob: SpaceBuilderJobStatus | null;
   fpsText: string;
   pingText: string;
   pingClass: string;
@@ -128,7 +148,7 @@ const HOTBAR_SLOTS = [
   { type: 'tool', value: SpecialTool.SHOVEL, name: 'Shovel', icon: '', desc: 'Remove / place 1x1x1 standard blocks' },
   { type: 'tool', value: SpecialTool.SPOON, name: 'Spoon', icon: '', desc: 'Carve 5x5x5 micro voxels cell by cell' },
   { type: 'tool', value: SpecialTool.SELECTOR, name: 'Selector', icon: '', desc: 'Select and copy world/entity regions (max 64×64×64); no build action' },
-  { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'LMB build · RMB rotate 90°' },
+  { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'LMB build · Shift+LMB install entity · RMB rotate 90°' },
   { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Hold left-click to grab · right-click start/stop' },
   { type: 'tool', value: SpecialTool.BRUSH, name: 'Brush', icon: '', desc: 'LMB paint · RMB sample · Tab micro/std' }
 ];
@@ -229,6 +249,13 @@ export class SpaceUiStore {
     agentMessages: [],
     agentBusy: false,
     agentConfig: loadAgentConfig(),
+    builder: null,
+    buildAgentMessages: [],
+    buildAgentBusy: false,
+    buildAgentSetupOpen: false,
+    buildValidation: null,
+    buildSourcePlan: null,
+    builderJob: null,
     fpsText: '60 FPS',
     pingText: '-- ms',
     pingClass: 'hud-ping ping-unknown',
@@ -354,6 +381,23 @@ export class SpaceUiStore {
     this.patch({ contraptions });
   }
 
+  setBuilder(builder: any): void {
+    this.patch({ builder });
+  }
+
+  setBuilderJob(builderJob: SpaceBuilderJobStatus | null): void {
+    this.patch({ builderJob });
+    if (!builderJob) return;
+    if (builderJob.phase === 'complete') {
+      const result = builderJob.entityId
+        ? `Entity created: ${builderJob.entityId}`
+        : `${builderJob.changed.toLocaleString()} voxels changed`;
+      this.showToast(`${builderJob.label} complete · ${result}`);
+    } else if (builderJob.phase === 'failed') {
+      this.showToast(`${builderJob.label} failed${builderJob.detail ? `: ${builderJob.detail}` : ''}`);
+    }
+  }
+
   setSceneRenderer(sceneRenderer: any): void {
     this.patch({ sceneRenderer });
     if (sceneRenderer) {
@@ -403,10 +447,18 @@ export class SpaceUiStore {
 
   closeAllModals(resumePointerLock = false): void {
     this.saveCurrentDraft();
-    const { editingContraption, sceneRenderer, controller } = this.snapshot;
+    const { editingContraption, sceneRenderer, controller, builder } = this.snapshot;
     sceneRenderer?.setEntityPreviewTarget?.(null);
     editingContraption?.setHighlightedNode?.(null);
-    this.patch({ activeModal: null, apiDocsOpen: false, agentSetupOpen: false });
+    builder?.clearPreview?.();
+    this.patch({
+      activeModal: null,
+      apiDocsOpen: false,
+      agentSetupOpen: false,
+      buildAgentSetupOpen: false,
+      buildValidation: null,
+      buildSourcePlan: null
+    });
     if (resumePointerLock) void controller?.requestLock?.();
     else controller?.unlock?.();
   }
@@ -437,7 +489,13 @@ export class SpaceUiStore {
       if (modal === 'inventory') this.syncInventoryState();
     } else {
       if (modal === 'code') this.saveCurrentDraft();
-      this.patch({ activeModal: null, agentSetupOpen: false });
+      if (modal === 'builder') this.snapshot.builder?.clearPreview?.();
+      this.patch({
+        activeModal: null,
+        agentSetupOpen: false,
+        buildAgentSetupOpen: false,
+        ...(modal === 'builder' ? { buildValidation: null, buildSourcePlan: null } : {})
+      });
       this.snapshot.sceneRenderer?.setEntityPreviewTarget?.(null);
       this.snapshot.editingContraption?.setHighlightedNode?.(null);
       void this.snapshot.controller?.requestLock?.();
@@ -460,6 +518,10 @@ export class SpaceUiStore {
 
   toggleCodeEditorModal(forceState: boolean | null = null): void {
     this.toggleModal('code', forceState);
+  }
+
+  toggleBuildAssistant(forceState: boolean | null = null): void {
+    this.toggleModal('builder', forceState);
   }
 
   toggleApiDocs(forceState: boolean | null = null): void {
@@ -1027,11 +1089,167 @@ export class SpaceUiStore {
       apiKey: config.apiKey?.trim() || '',
       model: config.model?.trim() || 'gpt-4o-mini',
       contextKTokens: Math.max(1, Math.min(2048, Number(config.contextKTokens) || 32)),
-      maxOutputKTokens: Math.max(0.1, Math.min(128, Number(config.maxOutputKTokens) || 4))
+      maxOutputKTokens: Math.max(0.1, Math.min(128, Number(config.maxOutputKTokens) || 4)),
+      timeoutSeconds: Math.max(5, Math.min(600, Number(config.timeoutSeconds) || 60))
     };
     saveAgentConfig(normalized);
-    this.patch({ agentConfig: normalized, agentSetupOpen: false });
+    this.patch({ agentConfig: normalized, agentSetupOpen: false, buildAgentSetupOpen: false });
     this.showToast(normalized.apiKey ? `Model config saved (${normalized.model})` : 'Saved (no key - local compiler will be used)');
+  }
+
+  toggleBuildAgentSetup(forceState: boolean | null = null): void {
+    const buildAgentSetupOpen = forceState === null
+      ? !this.snapshot.buildAgentSetupOpen
+      : forceState;
+    this.patch({ buildAgentSetupOpen });
+  }
+
+  clearBuildAgent(): void {
+    this.snapshot.builder?.clearPreview?.();
+    this.patch({
+      buildAgentMessages: [],
+      buildAgentBusy: false,
+      buildValidation: null,
+      buildSourcePlan: null
+    });
+  }
+
+  async sendBuildAgentMessage(promptValue: string): Promise<void> {
+    const prompt = String(promptValue || '').trim();
+    const state = this.snapshot;
+    if (!prompt || state.buildAgentBusy || !state.builder) return;
+
+    state.builder.clearPreview?.();
+    const messages: BuildAgentMessage[] = [
+      ...state.buildAgentMessages,
+      { role: 'user', content: prompt },
+      { role: 'assistant', content: 'Generating a validated BuildPlan…', isStreaming: true }
+    ];
+    const assistantIndex = messages.length - 1;
+    this.patch({
+      buildAgentMessages: messages,
+      buildAgentBusy: true,
+      buildValidation: null
+    });
+
+    const ray = state.controller?.currentRaycast;
+    const target = ray?.hitPos
+      ? [Number(ray.hitPos.x.toFixed(2)), Number(ray.hitPos.y.toFixed(2)), Number(ray.hitPos.z.toFixed(2))]
+      : null;
+    const player = state.controller?.physics?.position;
+    const context = {
+      crosshairTarget: target,
+      playerPosition: player ? [
+        Number(player.x.toFixed(2)),
+        Number(player.y.toFixed(2)),
+        Number(player.z.toFixed(2))
+      ] : null,
+      palette: state.paletteColors.map(color => color.hex),
+      previousPlan: state.buildSourcePlan || null
+    };
+    const history = state.buildAgentMessages.map(message => ({
+      role: message.role,
+      content: message.transportContent || message.content
+    }));
+    const updateStreaming = (chunk: any) => {
+      const current = [...this.snapshot.buildAgentMessages];
+      if (!current[assistantIndex]) return;
+      current[assistantIndex] = {
+        ...current[assistantIndex],
+        content: 'Generating a validated BuildPlan…',
+        reasoning: chunk.reasoning || ''
+      };
+      this.patch({ buildAgentMessages: current });
+    };
+
+    try {
+      const result: any = await runSpaceBuildAgentTurn(
+        prompt,
+        state.agentConfig,
+        history,
+        context,
+        null,
+        updateStreaming
+      );
+      const current = [...this.snapshot.buildAgentMessages];
+      if (!result.ok) {
+        current[assistantIndex] = {
+          role: 'assistant',
+          content: `[!] ${result.error}`,
+          reasoning: result.reasoning || '',
+          isStreaming: false
+        };
+        this.patch({ buildAgentMessages: current });
+        return;
+      }
+
+      const validation: SpaceBuildValidation = state.builder.preview(result.plan);
+      if (!validation.ok) {
+        current[assistantIndex] = {
+          role: 'assistant',
+          content: `BuildPlan rejected:\n${validation.errors.map(error => `• ${error}`).join('\n')}`,
+          reasoning: result.reasoning || '',
+          transportContent: result.content || '',
+          isStreaming: false
+        };
+        this.patch({ buildAgentMessages: current, buildValidation: validation, buildSourcePlan: result.plan });
+        return;
+      }
+
+      const summary = validation.summary;
+      const bounds = summary.bounds?.size.map(value => Number(value.toFixed(1))).join(' × ') || '0 × 0 × 0';
+      current[assistantIndex] = {
+        role: 'assistant',
+        content: [
+          `${summary.name} is ready to preview.`,
+          `${summary.kind === 'entity' ? 'Entity' : 'Structure'} · ${summary.voxelCount.toLocaleString()} voxels`,
+          `Bounds ${bounds} m${summary.componentCount > 1 ? ` · ${summary.componentCount} components` : ''}`
+            + `${summary.scriptCount ? ` · ${summary.scriptCount} scripts` : ''}`
+            + `${summary.constraintCount ? ` · ${summary.constraintCount} constraints` : ''}`,
+          'Review the hologram, then confirm construction.'
+        ].join('\n'),
+        reasoning: result.reasoning || '',
+        transportContent: result.content || '',
+        isStreaming: false
+      };
+      this.patch({ buildAgentMessages: current, buildValidation: validation, buildSourcePlan: result.plan });
+    } catch (error: any) {
+      const current = [...this.snapshot.buildAgentMessages];
+      current[assistantIndex] = {
+        role: 'assistant',
+        content: `Build assistant failed: ${error?.message || String(error)}`,
+        isStreaming: false
+      };
+      this.patch({ buildAgentMessages: current });
+    } finally {
+      this.patch({ buildAgentBusy: false });
+    }
+  }
+
+  confirmBuildPlan(): void {
+    const result = this.snapshot.builder?.commit?.();
+    if (!result?.ok) {
+      this.showToast(`Unable to start build: ${result?.reason || 'invalid plan'}`);
+      return;
+    }
+    this.patch({ buildValidation: null, buildSourcePlan: null });
+    this.showToast(`Build queued: ${result.jobId}`);
+  }
+
+  cancelBuildPreview(): void {
+    this.snapshot.builder?.clearPreview?.();
+    this.patch({ buildValidation: null, buildSourcePlan: null });
+  }
+
+  cancelBuilderJob(): void {
+    const result = this.snapshot.builder?.cancel?.(this.snapshot.builderJob?.id || null);
+    this.showToast(result?.ok ? 'Cancelling build and rolling back changes' : 'No active build to cancel');
+  }
+
+  undoLastBuild(): void {
+    const result = this.snapshot.builder?.undo?.();
+    this.showToast(result?.ok ? 'Undo queued' : 'Nothing is available to undo');
+    if (result?.ok && !result.jobId) this.patch({ builderJob: null });
   }
 
   async sendAgentMessage(promptValue: string): Promise<void> {

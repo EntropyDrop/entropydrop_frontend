@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { colorToHex } from '../../engine/voxel/BlockTypes.ts';
 import { ApiDocsModal, CodeEditorModal } from './components/EditorModal.tsx';
 import { Hud } from './components/Hud.tsx';
+import { BuildAssistantModal } from './components/BuildAssistantModal.tsx';
 import { InventoryModal } from './components/InventoryModal.tsx';
 import { GlobalSettingsModal, PauseScreen } from './components/SimpleModals.tsx';
 import { MinimapCanvas, NavigationPanel } from './components/WorldWidgets.tsx';
@@ -73,6 +74,7 @@ export function SpaceRoot() {
       <InventoryModal />
       <GlobalSettingsModal />
       <CodeEditorModal />
+      <BuildAssistantModal />
       <ApiDocsModal />
       <PauseScreen />
     </>

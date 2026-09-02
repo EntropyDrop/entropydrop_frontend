@@ -119,6 +119,12 @@ test('a downward face crossing still lands on top of an entity cell', () => {
   assert.equal(player.velocity.y, 0);
   assert.equal(player.isOnGround, true);
   assert.equal(player.ridingContraption, contraption);
+  const contact = contraption.pendingScriptContacts.find(item => item.kind === 'player');
+  assert.ok(contact, 'player collision should be available to the entity script snapshot');
+  assert.equal(contact.playerId, 'local');
+  assert.equal(contact.selfNodeId, 'root');
+  assert.deepEqual(contact.normal, [0, -1, 0]);
+  assert.ok(contact.impulse > 0);
 });
 
 // ===========================================================================

@@ -54,27 +54,29 @@ export function loadAgentConfig() {
         : (Number.isFinite(parsed.contextLength) ? Number(parsed.contextLength) : 32);
       const maxOutputK = Number.isFinite(parsed.maxOutputKTokens)
         ? Number(parsed.maxOutputKTokens)
-        : (Number.isFinite(parsed.maxTokens) ? Math.round(Number(parsed.maxTokens) / 1024) : 4);
+        : (Number.isFinite(parsed.maxTokens) ? Math.round(Number(parsed.maxTokens) / 1024) : 8);
 
       const config = {
         baseUrl: String(parsed.baseUrl || 'https://api.openai.com/v1'),
         apiKey: '',
         model: String(parsed.model || 'gpt-4o-mini'),
         contextKTokens: Math.max(1, Math.min(2048, contextK || 32)),
-        maxOutputKTokens: Math.max(0.1, Math.min(128, maxOutputK || 4))
+        maxOutputKTokens: Math.max(0.1, Math.min(128, maxOutputK || 8)),
+        timeoutSeconds: Math.max(5, Math.min(600, Number(parsed?.timeoutSeconds) || 60))
       };
       if (Object.prototype.hasOwnProperty.call(parsed, 'apiKey')) {
         localStorage.setItem(AGENT_CONFIG_STORAGE_KEY, JSON.stringify({
           baseUrl: config.baseUrl,
           model: config.model,
           contextKTokens: config.contextKTokens,
-          maxOutputKTokens: config.maxOutputKTokens
+          maxOutputKTokens: config.maxOutputKTokens,
+          timeoutSeconds: config.timeoutSeconds
         }));
       }
       return config;
     }
   } catch { /* ignore */ }
-  return { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', contextKTokens: 32, maxOutputKTokens: 4 };
+  return { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', contextKTokens: 32, maxOutputKTokens: 8, timeoutSeconds: 60 };
 }
 
 export function saveAgentConfig(config) {
@@ -83,12 +85,111 @@ export function saveAgentConfig(config) {
       baseUrl: String(config?.baseUrl || 'https://api.openai.com/v1'),
       model: String(config?.model || 'gpt-4o-mini'),
       contextKTokens: Math.max(1, Math.min(2048, Number(config?.contextKTokens) || 32)),
-      maxOutputKTokens: Math.max(0.1, Math.min(128, Number(config?.maxOutputKTokens) || 4))
+      maxOutputKTokens: Math.max(0.1, Math.min(128, Number(config?.maxOutputKTokens) || 8)),
+      timeoutSeconds: Math.max(5, Math.min(600, Number(config?.timeoutSeconds) || 60))
     };
     localStorage.setItem(AGENT_CONFIG_STORAGE_KEY, JSON.stringify(persisted));
     return true;
   } catch {
     return false;
+  }
+}
+
+export function isLocalDevelopmentHost(hostname: string): boolean {
+  if (['localhost', '127.0.0.1', '[::1]', '0.0.0.0'].includes(hostname)) return true;
+  if (hostname.endsWith('.local')) return true;
+  if (/^127\.\d+\.\d+\.\d+$/.test(hostname)) return true;
+  if (/^10\.\d+\.\d+\.\d+$/.test(hostname)) return true;
+  if (/^192\.168\.\d+\.\d+$/.test(hostname)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(hostname)) return true;
+  return false;
+}
+
+function resolveAgentEndpoint(baseUrl, path): any {
+  const endpoint = `${String(baseUrl || '').trim().replace(/\/+$/, '')}/${String(path || '').replace(/^\/+/, '')}`;
+  let endpointUrl;
+  try {
+    endpointUrl = new URL(endpoint);
+  } catch (_) {
+    return { ok: false, error: 'Agent API base URL is invalid.' };
+  }
+  const localDevelopmentHost = isLocalDevelopmentHost(endpointUrl.hostname);
+  if (endpointUrl.protocol !== 'https:' && !(endpointUrl.protocol === 'http:' && localDevelopmentHost)) {
+    return { ok: false, error: 'Agent API keys may only be sent to HTTPS endpoints (HTTP is allowed only on localhost and local network IPs).' };
+  }
+  return { ok: true, url: endpointUrl.toString() };
+}
+
+/**
+ * Fetch the model catalog exposed by an OpenAI-compatible API base URL.
+ * API keys remain session-only and are sent only to HTTPS or localhost.
+ *
+ * Besides the canonical `{ data: [{ id }] }` response, accept a raw array and
+ * `{ models: [...] }` for small local OpenAI-compatible servers.
+ */
+export async function fetchAgentModels(config, fetchImpl = null) {
+  const resolved = resolveAgentEndpoint(config?.baseUrl, 'models');
+  if (!resolved.ok) return resolved;
+
+  const fetcher = fetchImpl || ((url, opts) => fetch(url, opts));
+  const timeoutMs = Math.max(1000, Math.min(120000,
+    Number(config?.timeoutSeconds) > 0
+      ? Number(config?.timeoutSeconds) * 1000
+      : (Number(config?.timeoutMs) || 15000)
+  ));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const headers: any = { Accept: 'application/json' };
+  const apiKey = String(config?.apiKey || '').trim();
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  try {
+    const response = await fetcher(resolved.url, {
+      method: 'GET',
+      headers,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const detail = typeof response.text === 'function'
+        ? await response.text().catch(() => '')
+        : '';
+      return {
+        ok: false,
+        error: `Model list request failed (HTTP ${response.status}): ${detail.slice(0, 200)}`
+      };
+    }
+
+    const payload = await response.json();
+    const entries = Array.isArray(payload)
+      ? payload
+      : (Array.isArray(payload?.data) ? payload.data : payload?.models);
+    if (!Array.isArray(entries)) {
+      return { ok: false, error: 'Model list response is missing a data array.' };
+    }
+
+    const models = [];
+    const seen = new Set();
+    for (const entry of entries) {
+      const id = typeof entry === 'string'
+        ? entry.trim()
+        : String(entry?.id || entry?.name || entry?.model || '').trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      models.push(id);
+    }
+    if (models.length === 0) {
+      return { ok: false, error: 'The API returned no available models.' };
+    }
+    return { ok: true, models };
+  } catch (err) {
+    return {
+      ok: false,
+      error: controller.signal.aborted
+        ? `Model list request timed out after ${Math.round(timeoutMs / 1000)} seconds.`
+        : `Model list request failed: ${err?.message || String(err)}`
+    };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -138,28 +239,23 @@ export function parseThoughtAndContent(rawContent = '', explicitReasoning = '') 
  */
 export async function callChatAgent(messages, config, fetchImpl = null, onChunk = null) {
   const fetcher = fetchImpl || ((url, opts) => fetch(url, opts));
-  const endpoint = `${String(config.baseUrl || '').replace(/\/+$/, '')}/chat/completions`;
-  let endpointUrl: URL;
-  try {
-    endpointUrl = new URL(endpoint);
-  } catch (_) {
-    return { ok: false, error: 'Agent API base URL is invalid.' };
-  }
-  const localDevelopmentHost = ['localhost', '127.0.0.1', '[::1]'].includes(endpointUrl.hostname);
-  if (endpointUrl.protocol !== 'https:' && !(endpointUrl.protocol === 'http:' && localDevelopmentHost)) {
-    return { ok: false, error: 'Agent API keys may only be sent to HTTPS endpoints (HTTP is allowed only on localhost).' };
-  }
+  const resolved = resolveAgentEndpoint(config?.baseUrl, 'chat/completions');
+  if (!resolved.ok) return resolved;
   const stream = typeof onChunk === 'function';
   const maxTokensK = Number.isFinite(config?.maxOutputKTokens) && config.maxOutputKTokens > 0
     ? config.maxOutputKTokens
     : (Number.isFinite(config?.maxTokens) && config.maxTokens > 0 ? config.maxTokens / 1024 : 4);
   const maxTokens = Math.max(64, Math.round(maxTokensK * 1024));
-  const timeoutMs = Math.max(1000, Math.min(300000, Number(config?.timeoutMs) || 60000));
+  const timeoutMs = Math.max(1000, Math.min(600000,
+    Number(config?.timeoutSeconds) > 0
+      ? Number(config?.timeoutSeconds) * 1000
+      : (Number(config?.timeoutMs) || 60000)
+  ));
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetcher(endpoint, {
+    const response = await fetcher(resolved.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -230,10 +326,6 @@ export async function callChatAgent(messages, config, fetchImpl = null, onChunk 
         }
       }
 
-      if (finishReason === 'length') {
-        return { ok: false, error: 'The model response was truncated. Shorten the request or try again; no code was applied.' };
-      }
-
       const parsed = parseThoughtAndContent(rawContent, rawReasoning);
       return { ok: true, content: parsed.content, reasoning: parsed.reasoning };
     }
@@ -241,9 +333,6 @@ export async function callChatAgent(messages, config, fetchImpl = null, onChunk 
     // Fallback for non-streaming response or mocked responses
     const data = await response.json();
     const choice = data?.choices?.[0];
-    if (choice?.finish_reason === 'length') {
-      return { ok: false, error: 'The model response was truncated. Shorten the request or try again; no code was applied.' };
-    }
     const rawContent = choice?.message?.content;
     if (typeof rawContent !== 'string') {
       return { ok: false, error: 'API response is missing choices[0].message.content' };

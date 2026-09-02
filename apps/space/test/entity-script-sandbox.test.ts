@@ -121,6 +121,124 @@ self.state.frozen = Object.isFrozen(hit) && Object.isFrozen(hit.normal) && Objec
   assert.equal(contraption.getComponentState('root').frozen, true);
 });
 
+test('QuickJS exposes real standard/micro world reads and full raycast options', () => {
+  const contraption = entity(91);
+  contraption.setScript(`
+self.state.standard = ctx.world.voxels.get([4, 5, 6]);
+self.state.micro = ctx.world.microVoxels.get([7, 8, 9], [1, 2, 3]);
+self.state.hit = ctx.world.raycast([1, 2, 3], [0, 0, -1], {
+  maxDistance: 12,
+  include: 'all',
+  voxelKinds: ['standard', 'micro'],
+  space: 'world'
+});
+self.state.frozen = Object.isFrozen(self.state.standard)
+  && Object.isFrozen(self.state.micro)
+  && Object.isFrozen(self.state.hit);
+`);
+  const calls: any[] = [];
+  contraption.update(0.05, null, {
+    world: {
+      entities: () => [],
+      voxels: { get: position => ({ block: 1, color: position[0] }) },
+      microVoxels: { get: (cell, offset) => ({ block: 1, color: cell[0] * 10 + offset[0] }) },
+      raycast: (...args) => {
+        calls.push(args);
+        return { kind: 'entity', entityId: 'ent-target', nodeId: 'arm', position: [1, 2, 0], normal: [0, 0, 1], distance: 3 };
+      }
+    }
+  });
+
+  const state = contraption.getComponentState('root');
+  assert.deepEqual(state.standard, { block: 1, color: 4 });
+  assert.deepEqual(state.micro, { block: 1, color: 71 });
+  assert.equal(state.hit.entityId, 'ent-target');
+  assert.deepEqual(calls, [[
+    [1, 2, 3],
+    [0, 0, -1],
+    { maxDistance: 12, include: 'all', voxelKinds: ['standard', 'micro'], space: 'world' }
+  ]]);
+  assert.equal(state.frozen, true);
+});
+
+test('queued mutations publish final command receipts on the next script frame', () => {
+  const contraption = entity(92);
+  contraption.setScript(`
+if (!self.state.commandId) {
+  const queued = ctx.world.voxels.set([20, 20, 20], { color: 0x123456 });
+  self.state.commandId = queued.commandId;
+} else {
+  self.state.receipt = ctx.commands.get(self.state.commandId);
+  self.state.receiptsFrozen = Object.isFrozen(ctx.commands.all())
+    && Object.isFrozen(self.state.receipt);
+}
+`);
+  const runtimeContext = {
+    world: {
+      entities: () => [],
+      voxels: {
+        get: () => ({ block: 0, color: 0 }),
+        set: () => ({ ok: true, placed: 1, reason: 'placed' })
+      },
+      microVoxels: { get: () => ({ block: 0, color: 0 }) }
+    }
+  };
+
+  contraption.update(0.05, null, runtimeContext);
+  const commandId = contraption.getComponentState('root').commandId;
+  assert.match(commandId, /^cmd-\d+$/);
+  contraption.update(0.05, null, runtimeContext);
+
+  const state = contraption.getComponentState('root');
+  assert.deepEqual(state.receipt, {
+    commandId,
+    status: 'committed',
+    scope: 'world',
+    path: 'voxels.set',
+    nodeId: 'root',
+    ok: true,
+    placed: 1,
+    reason: 'placed'
+  });
+  assert.equal(state.receiptsFrozen, true);
+});
+
+test('ctx exposes grounded, driver and bounded contact observations', () => {
+  const contraption = entity(93);
+  contraption.recordScriptContact({
+    kind: 'player',
+    selfNodeId: 'root',
+    playerId: 'local',
+    position: [1, 2, 3],
+    normal: [0, 1, 0],
+    relativeVelocity: [0, -2, 0],
+    impulse: 100
+  });
+  contraption.isOnGround = true;
+  contraption.setScript(`
+self.state.isOnGround = ctx.isOnGround;
+self.state.driver = ctx.driver;
+self.state.contacts = ctx.contacts;
+self.state.frozen = Object.isFrozen(ctx.contacts) && Object.isFrozen(ctx.contacts[0]);
+`);
+  contraption.update(0.05, null, {
+    driver: {
+      entityId: contraption.publicId,
+      playerId: 'local',
+      componentId: 'root',
+      seatIndex: 0
+    },
+    world: { entities: () => [] }
+  });
+
+  const state = contraption.getComponentState('root');
+  assert.equal(state.isOnGround, true);
+  assert.deepEqual(state.driver, { playerId: 'local', componentId: 'root', seatIndex: 0 });
+  assert.equal(state.contacts[0].kind, 'player');
+  assert.equal(state.contacts[0].key, undefined, 'internal contact dedupe keys must not leak');
+  assert.equal(state.frozen, true);
+});
+
 test('entity code receives the engine-owned fixed simulation step', () => {
   const contraption = entity(10, [
     { id: 'arm', parentId: 'root', pivot: [1.5, 0.5, 0.5], blockKeys: [['1', '0', '0']] }
@@ -199,9 +317,9 @@ self.state.collision = self.body.setCollisionEnabled(false);
   assert.equal(contraption.getCollisionWorldAABBs().length, 0,
     'disabling root collision must remove its cached collision shapes');
   assert.deepEqual(contraption.getComponentState('root').gravity,
-    { ok: true, enabled: false, reason: 'queued' });
+    { ok: true, enabled: false, reason: 'queued', commandId: 'cmd-4' });
   assert.deepEqual(contraption.getComponentState('root').collision,
-    { ok: true, enabled: false, reason: 'queued' });
+    { ok: true, enabled: false, reason: 'queued', commandId: 'cmd-5' });
 
   const serializedWhileRunning = contraption.serializeSubtree('root');
   assert.equal(serializedWhileRunning.bodyType, 'dynamic');
@@ -263,7 +381,7 @@ self.state.entityX = ctx.world.entities.get('ent_other').position[0];
   const armState = contraption.getComponentState('arm');
   assert.equal(rootState.frozen, true);
   assert.deepEqual(rootState.massResult, { ok: false, mass: 10, reason: 'invalid_mass' });
-  assert.deepEqual(rootState.writeResult, { ok: true, placed: 1, reason: 'queued' });
+  assert.deepEqual(rootState.writeResult, { ok: true, placed: 1, reason: 'queued', commandId: 'cmd-1' });
   assert.deepEqual(armState.voxel, { block: 1, color: 0x123456 });
   assert.equal(armState.near, 1, 'query radius must be measured from the supplied origin');
   assert.equal(armState.entityX, 10, 'one component must not mutate another component\'s snapshot');
@@ -286,7 +404,8 @@ self.state.result = ctx.world.voxels.set([1, 2, 3], { color: 0xffffff });
   assert.deepEqual(limited.getComponentState('root').result, {
     ok: false,
     placed: 0,
-    reason: 'command_limit'
+    reason: 'command_limit',
+    commandId: null
   });
   assert.equal(writes, 0);
 

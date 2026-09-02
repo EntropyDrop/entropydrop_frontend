@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiDocsBodyMarkup } from '../apiDocsMarkup.ts';
 import { spaceUiStore, type AgentMessage } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
+import { AgentModelField } from './AgentModelField.tsx';
+import { ThoughtBox } from './ThoughtBox.tsx';
 
 function nodeIcon(node: any): string {
   if (node?.id === 'root') return '★';
@@ -121,8 +123,31 @@ function AgentChat() {
   const [prompt, setPrompt] = useState('');
   const [config, setConfig] = useState(state.agentConfig || {});
   const scrollRef = useRef<HTMLDivElement>(null);
+  const userScrolledUpRef = useRef(false);
+
   useEffect(() => setConfig(state.agentConfig || {}), [state.agentConfig]);
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [state.agentMessages]);
+
+  const handleChatScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    userScrolledUpRef.current = !isAtBottom;
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (!userScrolledUpRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [state.agentMessages]);
+
+  useEffect(() => {
+    if (state.agentBusy) {
+      userScrolledUpRef.current = false;
+    }
+  }, [state.agentBusy]);
+
   const send = async () => {
     const value = prompt.trim();
     if (!value) return;
@@ -132,7 +157,7 @@ function AgentChat() {
   const renderMessage = (message: AgentMessage, index: number) => (
     <React.Fragment key={index}>
       <div className={`agent-chat-msg ${message.role === 'user' ? 'agent-msg-user' : 'agent-msg-assistant'}`}>
-        {message.reasoning ? <details className="agent-thought-details" open><summary className="agent-thought-summary"><span className="thought-icon">💭</span> <span className="thought-title">{message.isStreaming ? 'Thinking...' : 'Thought'}</span></summary><div className="agent-thought-content">{message.reasoning}</div></details> : null}
+        <ThoughtBox reasoning={message.reasoning} isStreaming={message.isStreaming} title="Thought" />
         {message.content ? <div className="agent-msg-text">{message.content}</div> : message.isStreaming ? <div className="agent-msg-text text-muted">Generating... ▌</div> : null}
       </div>
       {message.role === 'assistant' && message.code && !message.isStreaming ? <button tabIndex={-1} className="agent-apply-btn" onClick={() => spaceUiStore.applyAgentCode(message.code!, message.targetId || 'root')}>Apply to {message.targetId || 'root'} component</button> : null}
@@ -144,13 +169,20 @@ function AgentChat() {
       <div id="agent-setup-accordion" className="agent-setup-accordion" style={{ display: state.agentSetupOpen ? 'flex' : 'none' }}>
         <div className="agent-config-field"><span className="config-label">API Base URL</span><input id="agent-api-base" className="config-input" value={config.baseUrl || ''} placeholder="https://api.openai.com/v1" onChange={event => setConfig({ ...config, baseUrl: event.target.value })} /></div>
         <div className="agent-config-field"><span className="config-label">API Key</span><input id="agent-api-key" className="config-input" type="password" value={config.apiKey || ''} placeholder="sk-..." onChange={event => setConfig({ ...config, apiKey: event.target.value })} /></div>
-        <div className="agent-config-field"><span className="config-label">Model</span><input id="agent-api-model" className="config-input" value={config.model || ''} placeholder="gpt-4o-mini" onChange={event => setConfig({ ...config, model: event.target.value })} /></div>
+        <AgentModelField
+          inputId="agent-api-model"
+          baseUrl={config.baseUrl || ''}
+          apiKey={config.apiKey || ''}
+          model={config.model || ''}
+          onModelChange={model => setConfig((current: any) => ({ ...current, model }))}
+        />
         <div className="agent-config-field"><span className="config-label">Context Window (K tokens)</span><input id="agent-context-length" className="config-input" type="number" min="1" max="2048" step="1" value={config.contextKTokens ?? 32} onChange={event => setConfig({ ...config, contextKTokens: event.target.value })} /></div>
         <div className="agent-config-field"><span className="config-label">Max Output (K tokens)</span><input id="agent-max-tokens" className="config-input" type="number" min="0.1" max="128" step="0.5" value={config.maxOutputKTokens ?? 4} onChange={event => setConfig({ ...config, maxOutputKTokens: event.target.value })} /></div>
+        <div className="agent-config-field"><span className="config-label">Timeout (Seconds)</span><input id="agent-timeout" className="config-input" type="number" min="5" max="600" step="5" value={config.timeoutSeconds ?? 60} onChange={event => setConfig({ ...config, timeoutSeconds: event.target.value })} /></div>
         <div className="agent-config-actions"><button id="agent-config-save-btn" tabIndex={-1} className="small-btn primary" onClick={() => spaceUiStore.saveAgentSettings(config)}>Save Config</button></div>
-        <div className="config-hint">Key is saved in browser localStorage. Without a key, uses local compiler.</div>
+        <div className="config-hint">Key remains in this browser session. Model choices load from API Base URL + /models. Without a key, uses local compiler.</div>
       </div>
-      <div id="agent-chat-box" className="agent-chat-box" ref={scrollRef}>
+      <div id="agent-chat-box" className="agent-chat-box" ref={scrollRef} onScroll={handleChatScroll}>
         {state.agentMessages.length ? state.agentMessages.map(renderMessage) : <div className="agent-chat-msg agent-msg-system">Describe a behavior in plain language (e.g. &quot;hover 5m&quot;, &quot;follow me&quot;).<br />Generated code remains inert until you click Apply.<br />· {state.agentConfig?.apiKey ? `Model connected: ${state.agentConfig.model}` : 'Using built-in local compiler'}</div>}
       </div>
       <div className="agent-chat-input-row"><input id="agent-chat-input" className="agent-chat-input" value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void send(); } }} placeholder="e.g. follow me 3m behind to the right..." /><button id="agent-chat-send-btn" tabIndex={-1} className="agent-send-btn" disabled={state.agentBusy} onClick={() => void send()}>{state.agentBusy ? '…' : 'Send'}</button></div>

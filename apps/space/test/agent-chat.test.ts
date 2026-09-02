@@ -6,6 +6,7 @@ import {
   estimateTokens,
   runAgentTurn,
   callChatAgent,
+  fetchAgentModels,
   loadAgentConfig,
   saveAgentConfig,
   AGENT_CONFIG_STORAGE_KEY,
@@ -113,11 +114,11 @@ test('remote Agent never auto-applies unfenced code-like prose', async () => {
   assert.match(result.content, /self\.applyForce/);
 });
 
-test('truncated remote Agent responses are rejected before code extraction', async () => {
+test('remote Agent responses with finish_reason length are accepted and parsed', async () => {
   const fakeFetch = async () => ({
     ok: true,
     json: async () => ({
-      choices: [{ finish_reason: 'length', message: { content: '```js\nself.applyForce(' } }]
+      choices: [{ finish_reason: 'length', message: { content: '```js\nself.applyForce(0, 10, 0);\n```' } }]
     })
   });
   const result = await runAgentTurn(
@@ -126,8 +127,8 @@ test('truncated remote Agent responses are rejected before code extraction', asy
     [],
     fakeFetch
   );
-  assert.equal(result.ok, false);
-  assert.match(result.error, /truncated/i);
+  assert.equal(result.ok, true);
+  assert.equal(result.code, 'self.applyForce(0, 10, 0);');
 });
 
 test('runAgentTurn includes conversation history', async () => {
@@ -167,6 +168,53 @@ test('callChatAgent refuses to send credentials over non-local HTTP', async () =
     [],
     { baseUrl: 'http://api.example.com/v1', apiKey: 'secret', model: 'm' },
     fakeFetch
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error, /HTTPS/);
+  assert.equal(called, false);
+});
+
+test('fetchAgentModels loads and deduplicates an OpenAI-compatible model list', async () => {
+  let request: any = null;
+  const fakeFetch = async (url, options) => {
+    request = { url, options };
+    return {
+      ok: true,
+      json: async () => ({ data: [{ id: 'model-b' }, { id: 'model-a' }, { id: 'model-b' }] })
+    };
+  };
+  const result: any = await fetchAgentModels(
+    { baseUrl: 'https://api.example.com/v1/', apiKey: 'sk-models' },
+    fakeFetch
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.models, ['model-b', 'model-a']);
+  assert.equal(request.url, 'https://api.example.com/v1/models');
+  assert.equal(request.options.method, 'GET');
+  assert.equal(request.options.headers.Authorization, 'Bearer sk-models');
+});
+
+test('fetchAgentModels accepts local model response variants without requiring a key', async () => {
+  const fakeFetch = async (_url, options) => {
+    assert.equal(options.headers.Authorization, undefined);
+    return {
+      ok: true,
+      json: async () => ({ models: ['qwen-local', { name: 'llama-local' }] })
+    };
+  };
+  const result: any = await fetchAgentModels(
+    { baseUrl: 'http://localhost:11434/v1', apiKey: '' },
+    fakeFetch
+  );
+  assert.deepEqual(result.models, ['qwen-local', 'llama-local']);
+});
+
+test('fetchAgentModels rejects non-local HTTP before sending credentials', async () => {
+  let called = false;
+  const result: any = await fetchAgentModels(
+    { baseUrl: 'http://api.example.com/v1', apiKey: 'secret' },
+    async () => { called = true; }
   );
   assert.equal(result.ok, false);
   assert.match(result.error, /HTTPS/);
@@ -325,12 +373,14 @@ test('config respects custom contextKTokens and maxOutputKTokens in K units', as
     apiKey: 'sk-custom',
     model: 'custom-model',
     contextKTokens: 16,
-    maxOutputKTokens: 8
+    maxOutputKTokens: 8,
+    timeoutSeconds: 120
   });
 
   const loaded = loadAgentConfig();
   assert.equal(loaded.contextKTokens, 16);
   assert.equal(loaded.maxOutputKTokens, 8);
+  assert.equal(loaded.timeoutSeconds, 120);
   assert.equal(loaded.apiKey, '');
 
   let capturedBody: any = null;

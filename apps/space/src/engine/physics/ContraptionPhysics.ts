@@ -716,6 +716,7 @@ export class ContraptionPhysics {
   /** Keep a kinematic collision shape's own scripted velocity and material,
    * while applying the resulting impulse to its dynamic carrier (if any). */
   applyEntityCollisionImpulse(bodyA, bodyB, ownerA, ownerB, normal, contactPoint, invA, invB) {
+    let appliedImpulseMagnitude = 0;
     const leverA = contactPoint.clone().sub(bodyA.position);
     const leverB = contactPoint.clone().sub(bodyB.position);
     const carrierVelocityA = this.bodyPointVelocity(bodyA, contactPoint);
@@ -743,6 +744,7 @@ export class ContraptionPhysics {
           ? 0
           : Math.max(ownerA.restitution, ownerB.restitution);
         const impulseMagnitude = -(1 + restitution) * normalVelocity / effectiveInverseMass;
+        appliedImpulseMagnitude = impulseMagnitude;
         const impulse = normal.clone().multiplyScalar(impulseMagnitude);
         const applyPairImpulse = vector => {
           bodyA.velocity.addScaledVector(vector, -invA);
@@ -812,6 +814,35 @@ export class ContraptionPhysics {
         bodyB.velocity.addScaledVector(normal, correction * invB);
       }
     }
+    return appliedImpulseMagnitude;
+  }
+
+  recordEntityPairContact(a, b, bodyA, bodyB, ownerA, ownerB, normal, contactPoint, penetration, impulse) {
+    const relativeVelocity = bodyB.velocity.clone().sub(bodyA.velocity);
+    a.recordScriptContact?.({
+      kind: 'entity',
+      selfNodeId: ownerA.id,
+      otherEntityId: b.publicId,
+      otherNodeId: ownerB.id,
+      playerId: null,
+      position: contactPoint.toArray(),
+      normal: normal.clone().multiplyScalar(-1).toArray(),
+      relativeVelocity: relativeVelocity.toArray(),
+      penetration: Number(penetration) || 0,
+      impulse: Number(impulse) || 0
+    });
+    b.recordScriptContact?.({
+      kind: 'entity',
+      selfNodeId: ownerB.id,
+      otherEntityId: a.publicId,
+      otherNodeId: ownerA.id,
+      playerId: null,
+      position: contactPoint.toArray(),
+      normal: normal.toArray(),
+      relativeVelocity: relativeVelocity.multiplyScalar(-1).toArray(),
+      penetration: Number(penetration) || 0,
+      impulse: Number(impulse) || 0
+    });
   }
 
   syncKinematicCollisionResponses(contraption, bodies) {
@@ -967,7 +998,7 @@ export class ContraptionPhysics {
       if (bodyA.type === BodyType.KINEMATIC && weights.correctionA > 0) movedKinematicA.add(bodyA);
       if (bodyB.type === BodyType.KINEMATIC && weights.correctionB > 0) movedKinematicB.add(bodyB);
       const contactPoint = this.stableStackContactPoint(ba, bb, bodyA, bodyB, normal, time);
-      this.applyEntityCollisionImpulse(
+      const impulse = this.applyEntityCollisionImpulse(
         bodyA,
         bodyB,
         ownerA,
@@ -976,6 +1007,9 @@ export class ContraptionPhysics {
         contactPoint,
         weights.impulseA,
         weights.impulseB
+      );
+      this.recordEntityPairContact(
+        a, b, bodyA, bodyB, ownerA, ownerB, normal, contactPoint, 0, impulse
       );
       this.markEntitySupport(a, b, bodyA, bodyB, normal);
       if (movedKinematicA.size > 0) this.syncKinematicCollisionResponses(a, movedKinematicA);
@@ -1024,7 +1058,7 @@ export class ContraptionPhysics {
         if (bodyB.type === BodyType.KINEMATIC && weights.correctionB > 0) movedKinematicB.add(bodyB);
         separated = true;
       }
-      this.applyEntityCollisionImpulse(
+      const impulse = this.applyEntityCollisionImpulse(
         bodyA,
         bodyB,
         ownerA,
@@ -1033,6 +1067,9 @@ export class ContraptionPhysics {
         contactPoint,
         weights.impulseA,
         weights.impulseB
+      );
+      this.recordEntityPairContact(
+        a, b, bodyA, bodyB, ownerA, ownerB, normal, contactPoint, group.penetration, impulse
       );
       this.markEntitySupport(a, b, bodyA, bodyB, normal);
       // A narrow upward support is a point or line balance that cannot hold:
@@ -1647,7 +1684,7 @@ export class ContraptionPhysics {
     const r = hitPosition.clone().sub(body.position);
     const contactVelocity = body.velocity.clone().add(body.angularVelocity.clone().cross(r));
     const normalVelocity = contactVelocity.dot(normal);
-    if (normalVelocity >= 0) return;
+    if (normalVelocity >= 0) return 0;
 
     const restitution = Math.abs(normalVelocity) < 0.5 ? 0 : body.restitution;
     const inverseMass = 1 / body.mass;
@@ -1700,6 +1737,7 @@ export class ContraptionPhysics {
       body.velocity.addScaledVector(normal, -residualNormalVelocity);
     }
     if (body.velocity.lengthSq() < 0.01) body.velocity.set(0, 0, 0);
+    return normalImpulseMagnitude;
   }
 
   resolveTerrainCollisionBody(contraption, body, dt, previousPose = null) {
@@ -1794,7 +1832,8 @@ export class ContraptionPhysics {
     const groups = [...contacts.values()].sort((a, b) => b.penetration - a.penetration);
     for (const group of groups) {
       group.hitPosition.divideScalar(group.count);
-      this.solveTerrainContact(
+      const relativeVelocity = body.velocity.clone();
+      const impulse = this.solveTerrainContact(
         body,
         group.normal,
         group.hitPosition,
@@ -1802,6 +1841,18 @@ export class ContraptionPhysics {
         group.points,
         dt
       );
+      contraption.recordScriptContact?.({
+        kind: 'terrain',
+        selfNodeId: body.id,
+        otherEntityId: null,
+        otherNodeId: null,
+        playerId: null,
+        position: group.hitPosition.toArray(),
+        normal: group.normal.toArray(),
+        relativeVelocity: relativeVelocity.toArray(),
+        penetration: Number(group.penetration) || 0,
+        impulse: Number(impulse) || 0
+      });
     }
     // Solving another face can reintroduce a small inward centre velocity on a
     // face that was handled earlier. Project all resolved normals once more so

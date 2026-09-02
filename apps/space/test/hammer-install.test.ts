@@ -1,0 +1,184 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { BodyType, ContraptionMode } from '../src/engine/contraption/Contraption.ts';
+import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
+import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+
+function block(x: number, entityId = 'root', color = 0xf2a93b) {
+  return {
+    localX: x,
+    localY: 0,
+    localZ: 0,
+    size: 1,
+    color,
+    block: BlockTypes.COLOR_BLOCK,
+    entityId
+  };
+}
+
+function moduleSlot() {
+  return {
+    name: 'Motor',
+    kind: 'entity',
+    rootId: 'root',
+    mode: ContraptionMode.PROGRAMMABLE,
+    bodyType: BodyType.DYNAMIC,
+    blockCount: 2,
+    blocks: [block(0), block(1, 'arm', 0x48dbfb)],
+    childEntities: [{
+      id: 'arm',
+      parentId: 'root',
+      pivot: [1.5, 0.5, 0.5],
+      bodyType: BodyType.DYNAMIC,
+      seats: [{ position: [0, 1, 0] }]
+    }],
+    scripts: [{
+      id: 'root',
+      code: "const motor = self.child('arm'); if (motor) motor.body.applyTorque([0, 1, 0]);"
+    }],
+    enabled: [{ id: 'root', enabled: true }],
+    constraints: [
+      { id: 'motor_hinge', type: 'hinge', bodyA: 'root', bodyB: 'arm', stiffness: 0.8 },
+      { id: 'display_anchor', type: 'weld', bodyA: 'world', bodyB: 'root', stiffness: 1 }
+    ],
+    restitution: 0.2,
+    friction: 0.6,
+    useGravity: true,
+    collisionEnabled: true,
+    seats: [{ position: [0, 0.5, 0] }]
+  };
+}
+
+function targetSlot() {
+  return {
+    name: 'Vehicle',
+    kind: 'entity',
+    rootId: 'root',
+    mode: ContraptionMode.PROGRAMMABLE,
+    bodyType: BodyType.DYNAMIC,
+    blockCount: 2,
+    blocks: [block(0), block(1, 'arm')],
+    childEntities: [{
+      id: 'arm',
+      parentId: 'root',
+      pivot: [1.5, 0.5, 0.5],
+      bodyType: BodyType.KINEMATIC
+    }],
+    scripts: [],
+    enabled: [],
+    constraints: []
+  };
+}
+
+test('Hammer entity installation merges a reusable subtree and keeps the target as one entity', () => {
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
+  const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(10, 2, 4), null, false) as any;
+  const placement = new THREE.Vector3(14, 3, 6);
+
+  const result = manager.installSlotAsComponent(target, moduleSlot(), 'root', placement, false);
+
+  assert.equal(result.ok, true);
+  assert.equal(manager.contraptions.length, 1, 'installation must not register a nested Contraption');
+  assert.equal(result.rootId, 'Motor');
+  assert.equal(result.skippedWorldConstraints, 1, 'world constraints do not leak into an installed module');
+  assert.equal(target.getEntityNode('Motor').parentId, 'root');
+  assert.equal(target.getNodeBodyType('Motor'), BodyType.KINEMATIC, 'the installed root is rigidly attached');
+  assert.equal(target.getEntityNode('Motor_arm').parentId, 'Motor', 'conflicting ids are namespaced');
+  assert.equal(target.getNodeBodyType('Motor_arm'), BodyType.DYNAMIC, 'internal body configuration is preserved');
+  assert.equal(target.getComponentSeats('Motor').length, 1);
+  assert.equal(target.getComponentSeats('Motor_arm').length, 1);
+  assert.match(target.getNodeScript('Motor'), /child\("Motor_arm"\)/, 'literal child lookups follow remapped ids');
+  assert.equal(target.scriptStatus, 'stopped', 'installing scripts cannot start a stopped target');
+  assert.equal(target.isNodeScriptEnabled('Motor'), false);
+
+  const installedRootBlock = target.blocks.find(item => item.entityId === 'Motor');
+  const installedArmBlock = target.blocks.find(item => item.entityId === 'Motor_arm');
+  assert.ok(installedRootBlock);
+  assert.ok(installedArmBlock);
+  assert.ok(target.getBlockWorldCenter(installedRootBlock).distanceTo(placement.clone().addScalar(0.5)) < 1e-9);
+  assert.ok(target.getBlockWorldCenter(installedArmBlock).distanceTo(
+    placement.clone().add(new THREE.Vector3(1.5, 0.5, 0.5))
+  ) < 1e-9);
+
+  const hinge = [...target.constraintDefinitions.values()].find(item => item.bodyB === 'Motor_arm');
+  assert.ok(hinge);
+  assert.equal(hinge.bodyA, 'Motor');
+});
+
+test('the same entity module can be installed repeatedly with stable remapped scripts', () => {
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
+  const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(), null, false) as any;
+
+  const first = manager.installSlotAsComponent(target, moduleSlot(), 'root', new THREE.Vector3(3, 0, 0), false);
+  const second = manager.installSlotAsComponent(target, moduleSlot(), 'root', new THREE.Vector3(6, 0, 0), false);
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.equal(second.rootId, 'Motor_2');
+  assert.ok(target.getEntityNode('Motor_2_arm'));
+  assert.match(target.getNodeScript('Motor_2'), /child\("Motor_2_arm"\)/);
+  assert.equal(target.entityNodes.size, 6);
+  assert.equal(target.blocks.length, 6);
+});
+
+test('installed modules keep the Hammer world pose on rotated targets and after persistence restore', () => {
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
+  const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(10, 2, 4), null, false) as any;
+  target.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  target.updateTransform();
+  const placement = new THREE.Vector3(15, 4, 9);
+
+  const result = manager.installSlotAsComponent(target, moduleSlot(), 'arm', placement, false);
+  assert.equal(result.ok, true);
+  const installedBlock = target.blocks.find(item => item.entityId === result.rootId);
+  const before = target.getBlockWorldCenter(installedBlock);
+  assert.ok(before.distanceTo(placement.clone().addScalar(0.5)) < 1e-9,
+    'the module follows its world-space Hammer ghost instead of inheriting target rotation');
+
+  const record = manager.captureContraptionForStreaming(target, { id: '0,0' });
+  const restoredManager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
+  const restored = restoredManager.buildFromSlot(
+    record.slot,
+    new THREE.Vector3().fromArray(record.constructorOrigin),
+    record,
+    false
+  ) as any;
+  const restoredBlock = restored.blocks.find(item => item.entityId === result.rootId);
+
+  assert.ok(restored.getEntityNode(result.rootId));
+  assert.equal(restored.getEntityNode(result.rootId).parentId, 'arm');
+  assert.ok(restored.getBlockWorldCenter(restoredBlock).distanceTo(before) < 1e-9);
+  assert.equal(restored.getNodeScript(result.rootId), target.getNodeScript(result.rootId));
+});
+
+test('component installation is rejected without mutation while the target is running', () => {
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
+  const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(), null, false) as any;
+  target.scriptStatus = 'running';
+  const blockCount = target.blocks.length;
+  const componentCount = target.entityNodes.size;
+
+  const result = manager.installSlotAsComponent(target, moduleSlot(), 'root', new THREE.Vector3(3, 0, 0), false);
+
+  assert.deepEqual(result, { ok: false, reason: 'target_not_stopped' });
+  assert.equal(target.blocks.length, blockCount);
+  assert.equal(target.entityNodes.size, componentCount);
+});
+
+test('Hammer Shift+LMB requests install mode while plain LMB keeps build mode', () => {
+  const controller = Object.create(PlayerController.prototype) as any;
+  controller.activeTool = SpecialTool.HAMMER;
+  controller.bulkEditJob = null;
+  controller.keys = { crouch: false };
+  const calls: boolean[] = [];
+  controller.pasteInventorySlot = value => calls.push(value);
+
+  controller.handleLeftClick({ shiftKey: false });
+  controller.handleLeftClick({ shiftKey: true });
+  controller.keys.crouch = true;
+  controller.handleLeftClick({ shiftKey: false });
+
+  assert.deepEqual(calls, [false, true, true]);
+});

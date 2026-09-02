@@ -355,8 +355,20 @@ export class PlayerPhysics {
    * relative closing velocity from the player, transfer that momentum to the body.
    */
   applyPlayerContactImpulse(box, direction, relativeClosingSpeed, worldPoint) {
-    if (!box || !(relativeClosingSpeed > 0)) return false;
+    if (!box) return false;
     const normal = direction.clone().normalize();
+    box.contraption?.recordScriptContact?.({
+      kind: 'player',
+      selfNodeId: box.entityId || box.bodyId || 'root',
+      otherEntityId: null,
+      otherNodeId: null,
+      playerId: 'local',
+      position: worldPoint?.toArray?.() || [0, 0, 0],
+      normal: normal.toArray(),
+      relativeVelocity: normal.clone().multiplyScalar(Number(relativeClosingSpeed) || 0).toArray(),
+      impulse: Math.max(0, Number(relativeClosingSpeed) || 0) * this.mass
+    });
+    if (!(relativeClosingSpeed > 0)) return false;
     return this.applyContraptionImpulse(
       box.contraption,
       box.bodyId || box.entityId || 'root',
