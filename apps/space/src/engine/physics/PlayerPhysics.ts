@@ -331,14 +331,21 @@ export class PlayerPhysics {
     return body.velocity.clone().add(body.angularVelocity.clone().cross(lever));
   }
 
-  /** Apply a world-space impulse to one dynamic entity body. */
+  /** Apply a world-space impulse to one dynamic entity body. A contact on a
+   * kinematic component is absorbed by its nearest dynamic ancestor, mirroring
+   * entity-entity resolution: the component is a scene-graph child, so the
+   * entity must still react when its arm is hit. */
   applyContraptionImpulse(contraption, bodyId, impulse, worldPoint) {
     if (!contraption || !impulse || impulse.lengthSq() <= 1e-12) return false;
-    const body = contraption.getRigidBody?.(bodyId || 'root');
-    if (!body || body.type !== 'dynamic') return false;
+    const owner = contraption.getRigidBody?.(bodyId || 'root');
+    if (!owner) return false;
     const physics = this.contraptionManager?.physics;
     if (typeof physics?.applyImpulse !== 'function') return false;
-    physics.applyImpulse(contraption, impulse, worldPoint, bodyId || 'root');
+    const body = typeof physics.contactBodyFor === 'function'
+      ? physics.contactBodyFor(contraption, owner)
+      : owner;
+    if (body.type !== 'dynamic') return false;
+    physics.applyImpulse(contraption, impulse, worldPoint, body.id);
     return true;
   }
 

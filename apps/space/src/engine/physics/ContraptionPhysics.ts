@@ -275,10 +275,35 @@ export class ContraptionPhysics {
   }
 
   /**
-   * Entity collision resolves body pairs. Kinematic bodies have zero inverse
-   * mass but contribute their scripted contact velocity; at least one body in a
-   * pair must be dynamic. The manager calls this once per physics substep so
-   * entity contacts are caught at the same cadence as terrain contacts.
+   * The body that absorbs a contact found on `body`'s cells. A dynamic body
+   * absorbs its own contacts. A kinematic body is rigidly attached to its
+   * nearest dynamic ancestor in the scene graph (its local pose is constant
+   * unless a script drives it), so the ancestor's body must react instead of
+   * the contact being attributed to a zero-inverse-mass body. Without this,
+   * two kinematic components of otherwise-dynamic entities pass through each
+   * other: the pair clears the entity-level candidate filter (each entity has
+   * a dynamic root) but every overlapping box pair is rejected because both
+   * box owners are kinematic. Kinematic bodies with no dynamic ancestor keep
+   * their scripted-contact behavior (zero inverse mass, own velocity).
+   */
+  contactBodyFor(contraption, body) {
+    if (!body || body.type === BodyType.DYNAMIC) return body;
+    let parentId = contraption.getEntityNode?.(body.nodeId || body.id)?.parentId;
+    while (parentId) {
+      const ancestor = contraption.getRigidBody?.(parentId);
+      if (ancestor?.type === BodyType.DYNAMIC) return ancestor;
+      parentId = contraption.getEntityNode?.(parentId)?.parentId || null;
+    }
+    return body;
+  }
+
+  /**
+   * Entity collision resolves every collision-enabled body pair. Kinematic
+   * bodies have zero impulse inverse mass but contribute their scripted
+   * contact velocity; kinematic/kinematic overlap clips the commanded pose
+   * instead of applying an impulse. A kinematic component carried by a dynamic
+   * ancestor routes response to that ancestor. The manager calls this once per
+   * physics substep so contacts are caught at terrain cadence.
    */
   resolveContraptionPairs(contraptions, dt = 1 / 60, broadphaseBounds = null) {
     return this.resolvePreparedContraptionPairs(
@@ -319,18 +344,20 @@ export class ContraptionPhysics {
         }
       }
     }
-    const dynamicCandidates = [...candidates.values()].filter(([a, b]) => (
-      this.isDynamicCollider(colliders[a]) || this.isDynamicCollider(colliders[b])
-    ));
-    return { colliders, dynamicCandidates };
+    // Collision participation is controlled by each component's
+    // collisionEnabled flag, which is already reflected by its collision-box
+    // list. Do not discard kinematic/kinematic pairs here: their commanded
+    // poses are clipped by the narrow phase even though neither body accepts
+    // an impulse.
+    return { colliders, collisionCandidates: [...candidates.values()] };
   }
 
   resolvePreparedContraptionPairs(pairFrame, dt = 1 / 60) {
     const colliders = pairFrame?.colliders || [];
-    const dynamicCandidates = pairFrame?.dynamicCandidates || [];
+    const collisionCandidates = pairFrame?.collisionCandidates || pairFrame?.dynamicCandidates || [];
     for (let iteration = 0; iteration < ENTITY_CONTACT_ITERATIONS; iteration++) {
       let resolvedContacts = 0;
-      for (const [a, b] of dynamicCandidates) {
+      for (const [a, b] of collisionCandidates) {
         // Every correction changes all world-space boxes on that body. Fresh
         // boxes let the solver propagate support through a stack instead of
         // leaving the next pair embedded until the following entity update.
@@ -650,11 +677,57 @@ export class ContraptionPhysics {
     return inverseMass;
   }
 
-  applyEntityCollisionImpulse(bodyA, bodyB, normal, contactPoint, invA, invB) {
+  bodyPointVelocity(body, contactPoint) {
+    const lever = contactPoint.clone().sub(body.position);
+    return body.velocity.clone().add(body.angularVelocity.clone().cross(lever));
+  }
+
+  /** Position-correction weights for one contact. Dynamic bodies use their
+   * physical inverse mass. If both response bodies are kinematic, neither can
+   * accept an impulse, but collisionEnabled still means their commanded poses
+   * must not pass through each other. In that case clip the moving pose(s),
+   * weighted by how much each collision box advanced into the contact. */
+  entityContactCorrectionWeights(bodyA, bodyB, normal, boxA, boxB) {
+    const inverseA = this.entityContactInverseMass(bodyA, normal.clone().multiplyScalar(-1));
+    const inverseB = this.entityContactInverseMass(bodyB, normal);
+    if (inverseA + inverseB > 0) {
+      return { correctionA: inverseA, correctionB: inverseB, impulseA: inverseA, impulseB: inverseB };
+    }
+    if (bodyA.type !== BodyType.KINEMATIC || bodyB.type !== BodyType.KINEMATIC) {
+      return { correctionA: 0, correctionB: 0, impulseA: inverseA, impulseB: inverseB };
+    }
+
+    const displacement = box => new THREE.Vector3(
+      (box.currentMinX + box.currentMaxX - box.previousMinX - box.previousMaxX) * 0.5,
+      (box.currentMinY + box.currentMaxY - box.previousMinY - box.previousMaxY) * 0.5,
+      (box.currentMinZ + box.currentMaxZ - box.previousMinZ - box.previousMaxZ) * 0.5
+    );
+    const advanceA = Math.max(0, displacement(boxA).dot(normal));
+    const advanceB = Math.max(0, -displacement(boxB).dot(normal));
+    const movingTotal = advanceA + advanceB;
+    return {
+      correctionA: movingTotal > 1e-8 ? advanceA / movingTotal : 1,
+      correctionB: movingTotal > 1e-8 ? advanceB / movingTotal : 1,
+      impulseA: 0,
+      impulseB: 0
+    };
+  }
+
+  /** Keep a kinematic collision shape's own scripted velocity and material,
+   * while applying the resulting impulse to its dynamic carrier (if any). */
+  applyEntityCollisionImpulse(bodyA, bodyB, ownerA, ownerB, normal, contactPoint, invA, invB) {
     const leverA = contactPoint.clone().sub(bodyA.position);
     const leverB = contactPoint.clone().sub(bodyB.position);
-    const velocityA = bodyA.velocity.clone().add(bodyA.angularVelocity.clone().cross(leverA));
-    const velocityB = bodyB.velocity.clone().add(bodyB.angularVelocity.clone().cross(leverB));
+    const carrierVelocityA = this.bodyPointVelocity(bodyA, contactPoint);
+    const carrierVelocityB = this.bodyPointVelocity(bodyB, contactPoint);
+    const ownerOffsetA = ownerA === bodyA
+      ? new THREE.Vector3()
+      : this.bodyPointVelocity(ownerA, contactPoint).sub(carrierVelocityA);
+    const ownerOffsetB = ownerB === bodyB
+      ? new THREE.Vector3()
+      : this.bodyPointVelocity(ownerB, contactPoint).sub(carrierVelocityB);
+    const velocityA = carrierVelocityA.add(ownerOffsetA);
+    const velocityB = carrierVelocityB.add(ownerOffsetB);
     const relativeVelocity = velocityB.sub(velocityA);
     const normalVelocity = relativeVelocity.dot(normal);
     if (normalVelocity < 0) {
@@ -668,7 +741,7 @@ export class ContraptionPhysics {
       if (effectiveInverseMass > 1e-10) {
         const restitution = Math.abs(normalVelocity) < 0.5
           ? 0
-          : Math.max(bodyA.restitution, bodyB.restitution);
+          : Math.max(ownerA.restitution, ownerB.restitution);
         const impulseMagnitude = -(1 + restitution) * normalVelocity / effectiveInverseMass;
         const impulse = normal.clone().multiplyScalar(impulseMagnitude);
         const applyPairImpulse = vector => {
@@ -692,8 +765,8 @@ export class ContraptionPhysics {
         // Match terrain contact friction: cancel relative tangential motion at
         // the contact point, limited by the Coulomb cone μN, including angular
         // mass.
-        const postVelocityA = bodyA.velocity.clone().add(bodyA.angularVelocity.clone().cross(leverA));
-        const postVelocityB = bodyB.velocity.clone().add(bodyB.angularVelocity.clone().cross(leverB));
+        const postVelocityA = this.bodyPointVelocity(bodyA, contactPoint).add(ownerOffsetA);
+        const postVelocityB = this.bodyPointVelocity(bodyB, contactPoint).add(ownerOffsetB);
         const tangentVelocity = postVelocityB.sub(postVelocityA);
         tangentVelocity.addScaledVector(normal, -tangentVelocity.dot(normal));
         const tangentSpeed = tangentVelocity.length();
@@ -707,7 +780,7 @@ export class ContraptionPhysics {
             : 0;
           const tangentInverseMass = invA + invB + tangentAngularA + tangentAngularB;
           if (tangentInverseMass > 1e-10) {
-            const friction = Math.sqrt(Math.max(0, bodyA.friction * bodyB.friction));
+            const friction = Math.sqrt(Math.max(0, ownerA.friction * ownerB.friction));
             const frictionMagnitude = Math.max(
               -impulseMagnitude * friction,
               -tangentSpeed / tangentInverseMass
@@ -725,13 +798,32 @@ export class ContraptionPhysics {
     // touched, so a body carried by a moving support keeps riding along.
     const totalInverseMass = invA + invB;
     if (totalInverseMass > 1e-10) {
-      const residualNormalVelocity = bodyB.velocity.clone().sub(bodyA.velocity).dot(normal);
+      // Preserve the established linear-only resting stabilization for normal
+      // rigid bodies. A mapped kinematic owner contributes only its relative
+      // scripted offset; angular contact velocity is already handled by the
+      // impulse calculation above and including it again destabilizes narrow
+      // corner rests.
+      const residualNormalVelocity = bodyB.velocity.clone().add(ownerOffsetB)
+        .sub(bodyA.velocity.clone().add(ownerOffsetA))
+        .dot(normal);
       if (Math.abs(residualNormalVelocity) < RESTING_CONTACT_VELOCITY) {
         const correction = -residualNormalVelocity / totalInverseMass;
         bodyA.velocity.addScaledVector(normal, -correction * invA);
         bodyB.velocity.addScaledVector(normal, correction * invB);
       }
     }
+  }
+
+  syncKinematicCollisionResponses(contraption, bodies) {
+    if (!contraption || !bodies || bodies.size === 0) return;
+    contraption.syncAllBodyTransforms?.();
+    for (const body of bodies) {
+      if (body.type !== BodyType.KINEMATIC) continue;
+      if (body.id !== 'root') contraption.syncBodyToNode?.(body);
+      body.previousKinematicPosition?.copy(body.position);
+      body.previousKinematicQuaternion?.copy(body.quaternion);
+    }
+    contraption.invalidateCollisionPoseCache?.();
   }
 
   destabilizeOverhangingEntity(body, boxA, boxB, dt) {
@@ -768,6 +860,8 @@ export class ContraptionPhysics {
     let shallowestContact = null;
     const contactGroups = new Map();
     const obbCache = new Map();
+    const movedKinematicA = new Set();
+    const movedKinematicB = new Set();
 
     for (const ba of boxesA) {
       for (const bb of boxesB) {
@@ -779,13 +873,18 @@ export class ContraptionPhysics {
           || ba.maxY < bb.minY || ba.minY > bb.maxY
           || ba.maxZ < bb.minZ || ba.minZ > bb.maxZ
         ) continue;
-        const bodyA = a.getRigidBody?.(ba.bodyId || ba.entityId || 'root');
-        const bodyB = b.getRigidBody?.(bb.bodyId || bb.entityId || 'root');
-        if (!bodyA || !bodyB || (bodyA.type !== BodyType.DYNAMIC && bodyB.type !== BodyType.DYNAMIC)) continue;
+        const ownerA = a.getRigidBody?.(ba.bodyId || ba.entityId || 'root');
+        const ownerB = b.getRigidBody?.(bb.bodyId || bb.entityId || 'root');
+        if (!ownerA || !ownerB) continue;
+        // Kinematic components resolve through their nearest dynamic
+        // ancestor: they are scene-graph children of it, so a hit on the
+        // component must move the whole entity instead of tunnelling.
+        const bodyA = this.contactBodyFor(a, ownerA);
+        const bodyB = this.contactBodyFor(b, ownerB);
 
         const sweep = allowSweep ? this.sweptAabbContact(ba, bb) : null;
         if (sweep && (!bestSweep || sweep.time < bestSweep.time)) {
-          bestSweep = { ...sweep, ba, bb, bodyA, bodyB };
+          bestSweep = { ...sweep, ba, bb, ownerA, ownerB, bodyA, bodyB };
         }
 
         const ox = Math.min(ba.currentMaxX, bb.currentMaxX) - Math.max(ba.currentMinX, bb.currentMinX);
@@ -812,7 +911,7 @@ export class ContraptionPhysics {
           // that shares a separating normal; entity pairs get the same
           // treatment instead of resolving one arbitrary cell pair at a time,
           // which let wide bodies rock on a single wandering contact point.
-          const key = `${bodyA.id}|${bodyB.id}|${contact.normal.x.toFixed(3)
+          const key = `${bodyA.id}|${ownerA.id}|${bodyB.id}|${ownerB.id}|${contact.normal.x.toFixed(3)
             },${contact.normal.y.toFixed(3)},${contact.normal.z.toFixed(3)}`;
           const group = contactGroups.get(key) || {
             normal: contact.normal,
@@ -822,6 +921,8 @@ export class ContraptionPhysics {
             faceSupport: false,
             ba,
             bb,
+            ownerA,
+            ownerB,
             bodyA,
             bodyB
           };
@@ -855,20 +956,32 @@ export class ContraptionPhysics {
     // both exist, choosing the broadphase sweep can recreate a vertical ghost
     // shelf around a rotating overhang.
     if (bestSweep && contactGroups.size === 0 && !sweepUpperOutsideSupport) {
-      const { ba, bb, bodyA, bodyB, normal, relativeDelta, time } = bestSweep;
-      const invA = this.entityContactInverseMass(bodyA, normal.clone().multiplyScalar(-1));
-      const invB = this.entityContactInverseMass(bodyB, normal);
-      const totalInv = invA + invB;
-      if (totalInv <= 0) return false;
+      const { ba, bb, ownerA, ownerB, bodyA, bodyB, normal, relativeDelta, time } = bestSweep;
+      const weights = this.entityContactCorrectionWeights(bodyA, bodyB, normal, ba, bb);
+      const totalCorrection = weights.correctionA + weights.correctionB;
+      if (totalCorrection <= 0) return false;
       const relativeDistance = Math.max(1e-9, relativeDelta.length());
       const rewindFraction = Math.min(1, Math.max(0, 1 - time + 0.001 / relativeDistance));
-      bodyA.position.addScaledVector(relativeDelta, -rewindFraction * invA / totalInv);
-      bodyB.position.addScaledVector(relativeDelta, rewindFraction * invB / totalInv);
+      bodyA.position.addScaledVector(relativeDelta, -rewindFraction * weights.correctionA / totalCorrection);
+      bodyB.position.addScaledVector(relativeDelta, rewindFraction * weights.correctionB / totalCorrection);
+      if (bodyA.type === BodyType.KINEMATIC && weights.correctionA > 0) movedKinematicA.add(bodyA);
+      if (bodyB.type === BodyType.KINEMATIC && weights.correctionB > 0) movedKinematicB.add(bodyB);
       const contactPoint = this.stableStackContactPoint(ba, bb, bodyA, bodyB, normal, time);
-      this.applyEntityCollisionImpulse(bodyA, bodyB, normal, contactPoint, invA, invB);
+      this.applyEntityCollisionImpulse(
+        bodyA,
+        bodyB,
+        ownerA,
+        ownerB,
+        normal,
+        contactPoint,
+        weights.impulseA,
+        weights.impulseB
+      );
       this.markEntitySupport(a, b, bodyA, bodyB, normal);
-      a.syncAllBodyTransforms?.();
-      b.syncAllBodyTransforms?.();
+      if (movedKinematicA.size > 0) this.syncKinematicCollisionResponses(a, movedKinematicA);
+      else a.syncAllBodyTransforms?.();
+      if (movedKinematicB.size > 0) this.syncKinematicCollisionResponses(b, movedKinematicB);
+      else b.syncAllBodyTransforms?.();
       return true;
     }
 
@@ -881,11 +994,10 @@ export class ContraptionPhysics {
     ));
     let separated = false;
     for (const group of groups) {
-      const { normal, bodyA, bodyB } = group;
-      const invA = this.entityContactInverseMass(bodyA, normal.clone().multiplyScalar(-1));
-      const invB = this.entityContactInverseMass(bodyB, normal);
-      const totalInv = invA + invB;
-      if (totalInv <= 0) continue;
+      const { normal, ownerA, ownerB, bodyA, bodyB } = group;
+      const weights = this.entityContactCorrectionWeights(bodyA, bodyB, normal, group.ba, group.bb);
+      const totalCorrection = weights.correctionA + weights.correctionB;
+      if (totalCorrection <= 0) continue;
       // A face-to-face rest keeps the stable-stack COM-clamped lever: the
       // shared face spans the whole footprint, so clamping the upper COM onto
       // it is the true balance point and keeps wide stacks from rocking on a
@@ -906,11 +1018,22 @@ export class ContraptionPhysics {
       // instead of sinking a full frame and popping back out past the surface.
       const push = Math.max(0, group.penetration - ENTITY_CONTACT_SLOP);
       if (push > 0) {
-        bodyA.position.addScaledVector(normal, -push * invA / totalInv);
-        bodyB.position.addScaledVector(normal, push * invB / totalInv);
+        bodyA.position.addScaledVector(normal, -push * weights.correctionA / totalCorrection);
+        bodyB.position.addScaledVector(normal, push * weights.correctionB / totalCorrection);
+        if (bodyA.type === BodyType.KINEMATIC && weights.correctionA > 0) movedKinematicA.add(bodyA);
+        if (bodyB.type === BodyType.KINEMATIC && weights.correctionB > 0) movedKinematicB.add(bodyB);
         separated = true;
       }
-      this.applyEntityCollisionImpulse(bodyA, bodyB, normal, contactPoint, invA, invB);
+      this.applyEntityCollisionImpulse(
+        bodyA,
+        bodyB,
+        ownerA,
+        ownerB,
+        normal,
+        contactPoint,
+        weights.impulseA,
+        weights.impulseB
+      );
       this.markEntitySupport(a, b, bodyA, bodyB, normal);
       // A narrow upward support is a point or line balance that cannot hold:
       // tip the supported body off it, exactly like terrain contacts do. Run
@@ -936,8 +1059,10 @@ export class ContraptionPhysics {
       );
     }
 
-    a.syncAllBodyTransforms?.();
-    b.syncAllBodyTransforms?.();
+    if (movedKinematicA.size > 0) this.syncKinematicCollisionResponses(a, movedKinematicA);
+    else a.syncAllBodyTransforms?.();
+    if (movedKinematicB.size > 0) this.syncKinematicCollisionResponses(b, movedKinematicB);
+    else b.syncAllBodyTransforms?.();
     return separated;
   }
 

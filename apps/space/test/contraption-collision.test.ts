@@ -5,6 +5,7 @@ import { BodyType, Contraption, ContraptionMode } from '../src/engine/contraptio
 import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
 import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { TORUS_SIZE_X, wrapChunkX, wrapChunkZ } from '../src/engine/torus/TorusWorld.ts';
 
 /**
  * Entity collision covers dynamic/dynamic bounce, dynamic/kinematic collision,
@@ -175,16 +176,42 @@ test('a kinematic body pushes a dynamic body without being displaced', () => {
   assert.deepEqual(kinematic.position.toArray(), [1.3, 10.5, 0.5], 'kinematic pose should not be corrected');
 });
 
-test('kinematic entities do not resolve against each other', () => {
+test('collision-enabled kinematic entities clip overlap without receiving impulses', () => {
   const physics = makePhysics();
   const s1 = makeEntity(50, { x: 0, y: 10, z: 0 }, { bodyType: BodyType.KINEMATIC });
-  const s2 = makeEntity(51, { x: 1.0, y: 10, z: 0 }, { bodyType: BodyType.KINEMATIC });
+  const s2 = makeEntity(51, { x: 0.8, y: 10, z: 0 }, { bodyType: BodyType.KINEMATIC });
   const p1 = s1.position.clone();
   const p2 = s2.position.clone();
 
   physics.resolveContraptionPairs([s1, s2]);
 
-  assert.ok(s1.position.distanceTo(p1) < 1e-6 && s2.position.distanceTo(p2) < 1e-6, 'kinematic/kinematic collision should not resolve');
+  assert.ok(
+    s2.position.x - s1.position.x > p2.x - p1.x,
+    'collision-enabled kinematic bodies should be position-clipped out of overlap'
+  );
+  assert.deepEqual(s1.velocity.toArray(), [0, 0, 0], 'kinematic clipping must not apply an impulse');
+  assert.deepEqual(s2.velocity.toArray(), [0, 0, 0], 'kinematic clipping must not apply an impulse');
+});
+
+test('collision-disabled kinematic entities remain non-blocking', () => {
+  const physics = makePhysics();
+  const s1 = makeEntity(52, { x: 0, y: 10, z: 0 }, {
+    bodyType: BodyType.KINEMATIC,
+    collisionEnabled: false
+  });
+  const s2 = makeEntity(53, { x: 0.8, y: 10, z: 0 }, {
+    bodyType: BodyType.KINEMATIC,
+    collisionEnabled: true
+  });
+  const before = [s1.position.x, s2.position.x];
+
+  physics.resolveContraptionPairs([s1, s2]);
+
+  assert.deepEqual(
+    [s1.position.x, s2.position.x],
+    before,
+    'collisionEnabled=false must keep the entity out of contact resolution'
+  );
 });
 
 test('entity broadphase skips narrow-phase work for spatially separated bodies', () => {
@@ -818,7 +845,247 @@ test('the manager resolves entity collisions at substep cadence end to end', () 
   );
 });
 
-test('a 10m x 1m assembled entity collides and blocks another entity at its tip', () => {
+/**
+ * A kinematic component is a scene-graph child of its entity, so a contact on
+ * its cells must be absorbed by the nearest dynamic ancestor body. Before the
+ * carrier fix, two dynamic entities whose only overlapping boxes belonged to
+ * kinematic components passed straight through each other: the pair cleared
+ * the entity-level candidate filter (each has a dynamic root) but every box
+ * pair was rejected because both box owners were kinematic.
+ */
+function makeReacher(id, rootX, childX, childId, scene) {
+  const contraption = new Contraption(
+    id,
+    [
+      { localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK },
+      { localX: childX - rootX, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, entityId: childId }
+    ],
+    new THREE.Vector3(rootX, 10, 0),
+    scene,
+    {
+      mode: ContraptionMode.FREE_PHYSICS,
+      bodyType: BodyType.DYNAMIC,
+      restitution: 0,
+      friction: 0,
+      collisionEnabled: true,
+      childEntities: [{ id: childId, parentId: 'root', bodyType: BodyType.KINEMATIC }]
+    }
+  );
+  contraption.useGravity = false;
+  return contraption;
+}
+
+test('kinematic components of two dynamic entities collide instead of passing through', () => {
+  const physics = makePhysics();
+  const scene = new THREE.Scene();
+  // A: root block world x[0,1], kinematic arm block world x[4,5].
+  // B: root block world x[12,13], kinematic arm block world x[8,9].
+  const a = makeReacher(700, 0, 4, 'armA', scene);
+  const b = makeReacher(701, 12, 8, 'armB', scene);
+  // Move B so its arm [4.5,5.5] overlaps A's arm [4,5] while the roots stay
+  // clear: the only overlapping box pair is kinematic vs kinematic.
+  b.position.x -= 3.5;
+  b.updateTransform();
+
+  const aStartX = a.position.x;
+  const bStartX = b.position.x;
+  physics.resolveContraptionPairs([a, b]);
+
+  const armA = a.getCollisionWorldAABBs().find(box => box.entityId === 'armA');
+  const armB = b.getCollisionWorldAABBs().find(box => box.entityId === 'armB');
+  const gap = armB.currentMinX - armA.currentMaxX;
+  assert.ok(
+    gap > -0.02,
+    `the kinematic arm boxes must not pass through each other, gap=${gap}`
+  );
+  assert.ok(
+    a.position.x < aStartX && b.position.x > bStartX,
+    `both dynamic roots must react to the component contact, a=${a.position.x} b=${b.position.x}`
+  );
+});
+
+test('a contact on a kinematic component moves its entity, not just the other body', () => {
+  const physics = makePhysics();
+  const scene = new THREE.Scene();
+  // Reacher: root block [0,1], kinematic arm [4,5]. Plain dynamic block whose
+  // world span overlaps the arm.
+  const reacher = makeReacher(702, 0, 4, 'arm', scene);
+  const plain = new Contraption(
+    703,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(4.2, 10, 0),
+    scene,
+    { mode: ContraptionMode.FREE_PHYSICS, restitution: 0, friction: 0 }
+  );
+  plain.useGravity = false;
+  const plainStartX = plain.position.x;
+  const reacherStartX = reacher.position.x;
+
+  physics.resolveContraptionPairs([reacher, plain]);
+
+  // The plain block must be pushed in +x AND the reacher's dynamic root must
+  // be pushed in -x: a hit on the kinematic arm acts through the entity.
+  assert.ok(
+    plain.position.x > plainStartX,
+    `the plain block must be pushed, moved=${plain.position.x - plainStartX}`
+  );
+  assert.ok(
+    reacher.position.x < reacherStartX,
+    `the reacher must react to a hit on its own kinematic arm, moved=${reacher.position.x - reacherStartX}`
+  );
+});
+
+test('kinematic child bodies without a dynamic ancestor are clipped and synced back to their node', () => {
+  const physics = makePhysics();
+  const scene = new THREE.Scene();
+  const reacher = makeReacher(708, 0, 4, 'arm', scene);
+  reacher.setBodyType(BodyType.KINEMATIC);
+  const obstacle = new Contraption(
+    709,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(4.2, 10, 0),
+    scene,
+    { mode: ContraptionMode.PROGRAMMABLE, bodyType: BodyType.KINEMATIC }
+  );
+  const rootStart = reacher.position.clone();
+  const childStart = reacher.getEntityNode('arm').localPosition.clone();
+
+  physics.resolveContraptionPairs([reacher, obstacle]);
+
+  const arm = reacher.getCollisionWorldAABBs().find(box => box.entityId === 'arm');
+  const obstacleBox = obstacle.getCollisionWorldAABBs()[0];
+  assert.ok(
+    obstacleBox.currentMinX - arm.currentMaxX > -0.02,
+    'the kinematic child and obstacle must no longer overlap'
+  );
+  assert.ok(
+    reacher.getEntityNode('arm').localPosition.distanceTo(childStart) > 1e-6,
+    'the clipped kinematic body pose must be written back to its scene node'
+  );
+  assert.ok(
+    reacher.position.distanceTo(rootStart) < 1e-6,
+    'clipping an independently kinematic child must not move its kinematic root'
+  );
+});
+
+test('a moving kinematic component keeps its scripted contact velocity when response routes to its dynamic root', () => {
+  const physics = makePhysics();
+  const scene = new THREE.Scene();
+  const reacher = makeReacher(704, 0, 4, 'arm', scene);
+  const plain = new Contraption(
+    705,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(4.2, 10, 0),
+    scene,
+    { mode: ContraptionMode.FREE_PHYSICS, restitution: 0, friction: 0 }
+  );
+  reacher.useGravity = false;
+  plain.useGravity = false;
+
+  // syncKinematicBodies normally calculates this from the scripted pose. Set
+  // it directly here to isolate the contact-owner/response-body boundary.
+  reacher.getRigidBody('arm').velocity.set(4, 0, 0);
+  reacher.getRigidBody('root').velocity.set(0, 0, 0);
+  plain.velocity.set(0, 0, 0);
+
+  physics.resolveContraptionPairs([reacher, plain]);
+
+  assert.ok(
+    plain.velocity.x > 0.1,
+    `the scripted arm velocity must push the other entity, vx=${plain.velocity.x}`
+  );
+  assert.ok(
+    reacher.velocity.x < -0.1,
+    `the arm's dynamic carrier must receive the opposite impulse, vx=${reacher.velocity.x}`
+  );
+});
+
+test('the manager blocks a script-driven kinematic component against another entity', () => {
+  const scene = new THREE.Scene();
+  const world = {
+    activeChunkKeys: new Set(['0,0']),
+    worldToChunkCoords: (x, z) => ({ cx: Math.floor(x / 16), cz: Math.floor(z / 16) }),
+    getBlock: () => BlockTypes.AIR,
+    microVoxels: { get: () => null },
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false })
+  } as any;
+  const manager = new ContraptionManager(scene, world, null, null) as any;
+  manager.setPhysics(new ContraptionPhysics(world));
+  const reacher = makeReacher(710, 0, 4, 'arm', scene);
+  const armNode = reacher.getEntityNode('arm');
+  reacher.setNodeScript(
+    'arm',
+    `self.setLocalPosition([${armNode.localPosition.x + 0.6}, ${armNode.localPosition.y}, ${armNode.localPosition.z}]);`
+  );
+
+  const armBefore = reacher.getCollisionWorldAABBs().find(box => box.entityId === 'arm');
+  const obstacle = new Contraption(
+    711,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { mode: ContraptionMode.FREE_PHYSICS, restitution: 0, friction: 0 }
+  );
+  obstacle.useGravity = false;
+  const obstacleBefore = obstacle.getCollisionWorldAABBs()[0];
+  obstacle.position.x += armBefore.currentMaxX + 0.2 - obstacleBefore.currentMinX;
+  obstacle.updateTransform();
+
+  manager.registerContraption(reacher);
+  manager.registerContraption(obstacle);
+  const rootStartX = reacher.position.x;
+  const obstacleStartX = obstacle.position.x;
+  manager.update(1 / 60, null);
+
+  const armAfter = reacher.getCollisionWorldAABBs().find(box => box.entityId === 'arm');
+  const obstacleAfter = obstacle.getCollisionWorldAABBs()[0];
+  assert.ok(
+    obstacleAfter.currentMinX - armAfter.currentMaxX > -0.002,
+    'the manager path must clip the scripted component at the other entity'
+  );
+  assert.ok(
+    reacher.position.x < rootStartX && obstacle.position.x > obstacleStartX,
+    'the component contact must move both dynamic response bodies'
+  );
+});
+
+test('a fast script-driven kinematic root cannot sweep through another kinematic entity', () => {
+  const scene = new THREE.Scene();
+  const world = {
+    activeChunkKeys: new Set(['0,0']),
+    worldToChunkCoords: (x, z) => ({ cx: Math.floor(x / 16), cz: Math.floor(z / 16) }),
+    getBlock: () => BlockTypes.AIR,
+    microVoxels: { get: () => null },
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false })
+  } as any;
+  const manager = new ContraptionManager(scene, world, null, null) as any;
+  manager.setPhysics(new ContraptionPhysics(world));
+  const mover = makeEntity(712, { x: 0, y: 10, z: 0 }, {
+    mode: ContraptionMode.PROGRAMMABLE,
+    bodyType: BodyType.KINEMATIC
+  });
+  const obstacle = makeEntity(713, { x: 5, y: 10, z: 0 }, {
+    mode: ContraptionMode.PROGRAMMABLE,
+    bodyType: BodyType.KINEMATIC
+  });
+  mover.setNodeScript('root', 'self.setLocalPosition([10.5, 10.5, 0.5]);');
+  manager.registerContraption(mover);
+  manager.registerContraption(obstacle);
+
+  manager.update(1 / 60, null);
+
+  const moverBox = mover.getCollisionWorldAABBs()[0];
+  const obstacleBox = obstacle.getCollisionWorldAABBs()[0];
+  assert.ok(
+    moverBox.currentMaxX <= obstacleBox.currentMinX + 0.002,
+    `the commanded pose must stop at the first contact, moverMax=${moverBox.currentMaxX}`
+  );
+  assert.deepEqual(obstacle.velocity.toArray(), [0, 0, 0], 'the kinematic obstacle must receive no impulse');
+});
+
+test('a 10m x 1m assembled entity still blocks another entity at its tip', () => {
   const scene = new THREE.Scene();
   const world = {
     activeChunkKeys: new Set(['0,0']),
@@ -836,34 +1103,108 @@ test('a 10m x 1m assembled entity collides and blocks another entity at its tip'
     blocks10m.push({ localX: x, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK });
   }
 
-  // 10m x 1m wall placed along X from x=0 to x=10 at y=1.
   const wall10m = new Contraption(
-    301,
+    706,
     blocks10m,
     new THREE.Vector3(0, 1, 0),
     scene,
     { mode: ContraptionMode.FREE_PHYSICS, bodyType: BodyType.KINEMATIC }
   ) as any;
-
-  // Small 1m entity flying towards the tip (x=9) of the 10m wall.
   const flyer = new Contraption(
-    302,
+    707,
     [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
     new THREE.Vector3(9.5, 3, 0.5),
     scene,
     { mode: ContraptionMode.FREE_PHYSICS, bodyType: BodyType.DYNAMIC }
   ) as any;
-  flyer.velocity.set(0, -5, 0); // Falling downward onto the 10m wall tip
+  flyer.velocity.set(0, -5, 0);
 
   manager.registerContraption(wall10m);
   manager.registerContraption(flyer);
-
-  for (let frame = 0; frame < 60; frame++) {
-    manager.update(1 / 60, null);
-  }
+  for (let frame = 0; frame < 60; frame++) manager.update(1 / 60, null);
 
   assert.ok(
     flyer.position.y > 1.5,
-    `flyer must land and stay on the 10m wall tip instead of falling through, posY=${flyer.position.y}`
+    `flyer must land on the wall tip instead of falling through, posY=${flyer.position.y}`
+  );
+});
+
+/**
+ * Entities live in flat (unwrapped) torus coordinates. When two entities sit on
+ * opposite sides of the X seam they are a whole period apart in flat space even
+ * though they are metres apart on the torus, so the flat-space broadphase never
+ * pairs them and they pass through each other. The manager must re-anchor every
+ * active entity into the local player's periodic window so the seam is invisible
+ * to collision. This is exactly "the block at point A hits the vehicle, the block
+ * at point B (across the seam) does not".
+ */
+test('an entity assembled across the torus seam still collides with the vehicle', () => {
+  const scene = new THREE.Scene();
+  // Active chunks on BOTH sides of the seam (car at flat 16380 -> chunk 1023,
+  // block at flat 2 -> chunk 0), z near 0.
+  const activeChunkKeys = new Set<string>();
+  for (const cx of [-2, -1, 0, 1, 2, 1022, 1023]) {
+    for (let cz = -1; cz <= 1; cz++) {
+      activeChunkKeys.add(`${wrapChunkX(cx)},${wrapChunkZ(cz)}`);
+    }
+  }
+  const world = {
+    activeChunkKeys,
+    worldToChunkCoords: (x, z) => ({ cx: wrapChunkX(Math.floor(x / 16)), cz: wrapChunkZ(Math.floor(z / 16)) }),
+    getBlock: () => BlockTypes.AIR,
+    microVoxels: { get: () => null },
+    getMicroBlocksInAABB: () => [],
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false })
+  } as any;
+  const manager = new ContraptionManager(scene, world, null, null) as any;
+  manager.setPhysics(new ContraptionPhysics(world));
+  // The player stands at the vehicle, just left of the seam.
+  manager.setRuntimeContextProvider(() => ({
+    players: [{ id: 'local', position: [TORUS_SIZE_X - 4, 11.6, 0], mass: 50 }]
+  }));
+
+  const vehicle = new Contraption(
+    720,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(TORUS_SIZE_X - 4, 10, 0),
+    scene,
+    { mode: ContraptionMode.FREE_PHYSICS, bodyType: BodyType.DYNAMIC, mass: 400, restitution: 0, friction: 0.5 }
+  );
+  vehicle.useGravity = false;
+  vehicle.getRigidBody('root').linearDamping = 1;
+  vehicle.getRigidBody('root').angularDamping = 1;
+
+  // The freshly assembled block is on the OTHER side of the seam (flat 2),
+  // torus-adjacent to the vehicle but a full period away in flat space.
+  const block = new Contraption(
+    721,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(2, 10, 0),
+    scene,
+    { mode: ContraptionMode.FREE_PHYSICS, bodyType: BodyType.DYNAMIC, restitution: 0, friction: 0.4 }
+  );
+  block.useGravity = false;
+  block.getRigidBody('root').linearDamping = 1;
+  block.getRigidBody('root').angularDamping = 1;
+  block.velocity.set(-4, 0, 0); // moving -x, i.e. toward the vehicle across the seam
+
+  manager.registerContraption(vehicle);
+  manager.registerContraption(block);
+
+  for (let frame = 0; frame < 120; frame++) manager.update(1 / 60, null);
+
+  // A real collision stops the block at ~1.0 m torus separation (two 1 m faces).
+  const torusGap = Math.abs(
+    (((vehicle.position.x - block.position.x) % TORUS_SIZE_X) + TORUS_SIZE_X) % TORUS_SIZE_X
+  );
+  const gap = Math.min(torusGap, TORUS_SIZE_X - torusGap);
+  assert.ok(
+    gap > 0.8 && gap < 1.3,
+    `the block must stop in contact with the vehicle across the seam, torusGap=${gap}`
+  );
+  assert.ok(
+    Math.abs(block.velocity.x) < 0.5,
+    `the block must be stopped by the collision, vx=${block.velocity.x}`
   );
 });

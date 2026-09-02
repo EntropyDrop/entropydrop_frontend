@@ -203,19 +203,38 @@ function SelectorPanel() {
             <span className="mode-tab-hint flex items-center gap-0.5">Tab <LiaExchangeAltSolid style={{ display: 'inline' }} /></span>
           </button>
         </div>
-        <span className="palette-hotkey-hint"><b>Tab</b> mode · <b>R</b> copy · <b>G</b> assemble</span>
+        <span className="palette-hotkey-hint"><b>Tab</b> switch mode</span>
       </div>
       <div className="selector-toolbox-content" id="selector-toolbox-content">
-        <div className="selector-status-col">
-          <div className="selector-status-main">
-            <span className="selector-icon"><LiaVectorSquareSolid size={16} /></span>
-            <span id="selector-panel-title" className="selector-status-title">{selector.title}</span>
-          </div>
-          <div id="selector-panel-details" className="selector-status-sub">{selector.details}</div>
-        </div>
         <div className="selector-action-buttons">
           <button id="assemble-btn" tabIndex={-1} className="banner-btn primary" disabled={!selector.canAssemble} onClick={() => controller?.assembleSelection?.(ContraptionMode.PROGRAMMABLE)}>{selector.assembleLabel}</button>
           <button id="copy-btn" tabIndex={-1} className="banner-btn secondary" title="Copy selection to backpack (R)" disabled={!selector.canCopy} onClick={() => controller?.copySelectionSmart?.()}>Copy (R)</button>
+          <button id="delete-btn" tabIndex={-1} className="banner-btn danger" title="Delete selection (Del)" disabled={!selector.canDelete} onClick={() => controller?.deleteSelectionBlocks?.()}>Delete (Del)</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WrenchPanel() {
+  const { controller } = useSpaceUi(state => state);
+  return (
+    <div className="selector-panel-wrapper wrench-panel-wrapper" id="wrench-panel-wrapper">
+      <div className="palette-info-row">
+        <div className="selector-title-group">
+          <span className="palette-title flex items-center gap-1">
+            <LiaWrenchSolid size={14} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Wrench
+          </span>
+          <span className="mode-badge std">PHYSICS & CONTROL</span>
+        </div>
+        <span className="palette-hotkey-hint"><b>Hold LMB</b> grab · <b>RMB</b> start/stop</span>
+      </div>
+      <div className="selector-toolbox-content" id="wrench-toolbox-content">
+        <div className="wrench-action-buttons">
+          <button type="button" tabIndex={-1} className="banner-btn secondary" title="Hold left-click on a dynamic entity to grab and move it" onClick={() => controller?.startWrenchGrab?.()}><b>Hold LMB</b> Grab</button>
+          <button type="button" tabIndex={-1} className="banner-btn secondary" title="Right-click on an entity to start or stop physics and scripts (RMB)" onClick={() => controller?.toggleHoveredEntityPlayback?.()}><b>RMB</b> Start/Stop</button>
+          <button type="button" tabIndex={-1} className="banner-btn secondary" title="Point at an entity and press C to open its code editor" onClick={() => controller?.openCodeEditorForTarget?.()}><b>C</b> Code</button>
+          <button type="button" tabIndex={-1} className="banner-btn secondary" title="Point at a seat block and press V to mount/drive" onClick={() => controller?.toggleDriveVehicle?.()}><b>V</b> Drive</button>
         </div>
       </div>
     </div>
@@ -324,7 +343,15 @@ export function Hud() {
             <BulkEditProgressPanel />
             <div className="builder-toolbar">
               <div className="toolbar-center-panel">
-                {activeTool === SpecialTool.HAMMER ? <InventoryBar /> : activeTool === SpecialTool.SELECTOR ? <SelectorPanel /> : <PaletteBar />}
+                {activeTool === SpecialTool.HAMMER ? (
+                  <InventoryBar />
+                ) : activeTool === SpecialTool.SELECTOR ? (
+                  <SelectorPanel />
+                ) : activeTool === SpecialTool.WRENCH ? (
+                  <WrenchPanel />
+                ) : (
+                  <PaletteBar />
+                )}
                 <Hotbar />
               </div>
             </div>

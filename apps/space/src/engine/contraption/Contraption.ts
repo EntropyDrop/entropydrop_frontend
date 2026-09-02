@@ -4238,6 +4238,52 @@ export class Contraption {
     this.collisionSamplePointCache?.clear();
   }
 
+  /**
+   * Pick a different periodic representative of this entity's flat
+   * coordinates: shift every absolute flat coordinate by (dx, dz), where each
+   * component is an integer multiple of the torus period. Bent rendering,
+   * wrapped chunk ids, wrapped terrain lookups, and torus-distance queries are
+   * all invariant to this shift, so it changes no physics. It exists so every
+   * entity can be kept inside one common periodic window (the local
+   * player's), where flat-space distance equals torus distance - without
+   * that, entities on opposite sides of a seam are a whole period apart in
+   * flat space and never collide.
+   */
+  shiftFlatCoordinates(dx, dz) {
+    if (dx === 0 && dz === 0) return;
+    if (this.position) {
+      this.position.x += dx;
+      this.position.z += dz;
+    }
+    if (this.previousPosition) {
+      this.previousPosition.x += dx;
+      this.previousPosition.z += dz;
+    }
+    if (this.renderSimulationPosition) {
+      this.renderSimulationPosition.x += dx;
+      this.renderSimulationPosition.z += dz;
+    }
+    for (const body of this.rigidBodies.values()) {
+      if (body.position !== this.position) {
+        body.position.x += dx;
+        body.position.z += dz;
+      }
+      if (body.previousKinematicPosition) {
+        body.previousKinematicPosition.x += dx;
+        body.previousKinematicPosition.z += dz;
+      }
+    }
+    for (const constraint of this.constraintDefinitions.values()) {
+      // A 'world' anchor is an absolute point; keep it in the same periodic
+      // window as the entity it holds so the constraint stays consistent.
+      if (constraint.bodyA === 'world' && Array.isArray(constraint.anchorA)) {
+        constraint.anchorA[0] += dx;
+        constraint.anchorA[2] += dz;
+      }
+    }
+    this.invalidateCollisionPoseCache();
+  }
+
   dispose() {
     this.scriptRuntimeClient.dispose();
     this.setHighlightedNode(null);

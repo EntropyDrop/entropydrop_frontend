@@ -601,6 +601,23 @@ canvas {
   box-shadow: 1px 1px 0px #000;
 }
 
+.banner-btn.danger {
+  background: #7f1d1d;
+  color: #fecaca;
+}
+
+.banner-btn.danger:hover:not(:disabled) {
+  background: #dc2626;
+  color: #ffffff;
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px #000;
+}
+
+.banner-btn.danger:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #000;
+}
+
 .banner-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -1141,7 +1158,6 @@ button.palette-title:hover {
 .selector-toolbox-content {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   background: rgba(0, 0, 0, 0.45);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1188,16 +1204,29 @@ button.palette-title:hover {
   text-overflow: ellipsis;
 }
 
-.selector-action-buttons {
+.selector-action-buttons,
+.wrench-action-buttons {
   display: flex;
   align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
+  gap: 6px;
+  width: 100%;
 }
 
-.selector-action-buttons .banner-btn {
-  padding: 4px 8px;
-  font-size: 10.5px;
+.selector-action-buttons .banner-btn,
+.wrench-action-buttons .banner-btn {
+  flex: 1;
+  padding: 5px 6px;
+  font-size: 10px;
+  text-align: center;
+  justify-content: center;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.wrench-action-buttons .banner-btn b {
+  color: var(--accent-light, #48dbfb);
+  margin-right: 3px;
 }
 
 .slot-mode-badge {

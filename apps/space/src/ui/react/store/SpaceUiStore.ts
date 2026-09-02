@@ -37,6 +37,7 @@ export interface SelectorView {
   canAssemble: boolean;
   assembleLabel: string;
   canCopy: boolean;
+  canDelete: boolean;
 }
 
 export interface BulkEditView {
@@ -137,7 +138,8 @@ const EMPTY_SELECTOR: SelectorView = {
   details: '',
   canAssemble: false,
   assembleLabel: 'Assemble (G)',
-  canCopy: false
+  canCopy: false,
+  canDelete: false
 };
 
 const EMPTY_TELEMETRY: TelemetryView = {
@@ -1184,7 +1186,32 @@ export class SpaceUiStore {
         details: `Entity #${child.contraption.id} [${child.parentId}] · ${child.count} cells · Shift multi-select · G create child · R copy${child.existingChildCount > 0 ? ` · ${child.existingChildCount} children attached` : ''}`,
         canAssemble: !!child.ready,
         assembleLabel: 'Create Child (G)',
-        canCopy: true
+        canCopy: true,
+        canDelete: true
+      };
+    }
+    if (controller?.selectedSubtree?.contraption) {
+      const { contraption, rootId } = controller.selectedSubtree;
+      return {
+        micro,
+        title: rootId === 'root' ? 'Entity Selected' : 'Component Selected',
+        details: `Entity #${contraption.id} [${rootId}] · Del delete · R copy`,
+        canAssemble: false,
+        assembleLabel: 'Assemble (G)',
+        canCopy: true,
+        canDelete: true
+      };
+    }
+    if (controller?.selectedBlockSelection?.blocks?.length > 0) {
+      const { nodeId, blocks } = controller.selectedBlockSelection;
+      return {
+        micro,
+        title: 'Component Blocks Selected',
+        details: `[${nodeId}] · ${blocks.length} blocks · Del delete`,
+        canAssemble: false,
+        assembleLabel: 'Assemble (G)',
+        canCopy: false,
+        canDelete: true
       };
     }
     if (worldActive) {
@@ -1206,7 +1233,8 @@ export class SpaceUiStore {
         details,
         canAssemble: !!worldSelection.ready,
         assembleLabel: 'Assemble (G)',
-        canCopy: !!worldSelection.ready
+        canCopy: !!worldSelection.ready,
+        canDelete: !!worldSelection.ready || (worldSelection.mode === 'single' && worldSelection.count > 0)
       };
     }
     if (contraptions.hasValidSelection?.()) {
@@ -1220,7 +1248,8 @@ export class SpaceUiStore {
           : `Selected structure (${count} blocks) · G assemble · R copy`,
         canAssemble: true,
         assembleLabel: 'Assemble (G)',
-        canCopy: true
+        canCopy: true,
+        canDelete: true
       };
     }
     return view;

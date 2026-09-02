@@ -1925,6 +1925,31 @@ export class ContraptionManager {
   // 5. UPDATE LOOP
   // =========================================================================
 
+  /**
+   * Physics, entity proximity, editor picks, and broadphase all run in flat
+   * (unwrapped) torus coordinates, but each entity keeps whichever periodic
+   * representative its motion drifted into. Two entities on opposite sides of
+   * a seam are a whole period apart in flat space and never become collision
+   * candidates - so "the same block collides at point A but not at point B"
+   * exactly where B straddles the seam relative to the other entity's frame.
+   * Re-anchor every active entity into the local player's periodic window:
+   * the shift is an integer multiple of the period and is invisible to bent
+   * rendering, wrapped chunk ids, and wrapped terrain queries.
+   */
+  reanchorEntitiesToPlayer(players = null) {
+    const local = Array.isArray(players)
+      ? (players.find(player => player && player.id === 'local') || players[0])
+      : null;
+    const anchor = local?.position;
+    if (!anchor || !Number.isFinite(anchor[0]) || !Number.isFinite(anchor[2])) return;
+    for (const contraption of this.contraptions) {
+      if (!contraption?.position) continue;
+      const dx = unwrapPeriodicNear(contraption.position.x, anchor[0], TORUS_SIZE_X) - contraption.position.x;
+      const dz = unwrapPeriodicNear(contraption.position.z, anchor[2], TORUS_SIZE_Z) - contraption.position.z;
+      contraption.shiftFlatCoordinates?.(dx, dz);
+    }
+  }
+
   update(dt, inputState) {
     this.syncContraptionsToLoadedChunks();
     const providedContext = this.runtimeContextProvider?.() || {};
@@ -1936,6 +1961,9 @@ export class ContraptionManager {
       world: this.scriptWorldApi,
       selection: this.scriptSelectionApi
     };
+    // 0. Before any entity captures its previous pose or integrates, keep every
+    // active entity in the local player's periodic window.
+    this.reanchorEntitiesToPlayer(providedContext.players);
 
     // 1. Update internal kinematics or programmable script evaluation for
     // every entity first, so every controller evaluates against the same
