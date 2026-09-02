@@ -10,7 +10,10 @@ import {
   loadAgentConfig,
   saveAgentConfig,
   AGENT_CONFIG_STORAGE_KEY,
-  AGENT_SYSTEM_PROMPT
+  AGENT_SESSION_KEY_STORAGE_KEY,
+  AGENT_SYSTEM_PROMPT,
+  DEFAULT_AGENT_CONTEXT_K_TOKENS,
+  DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS
 } from '../src/engine/contraption/AgentChat.ts';
 import { renderAgentApiReference } from '../src/engine/contraption/ScriptApiContract.ts';
 
@@ -66,7 +69,7 @@ test('runAgentTurn calls the remote model and extracts code when configured', as
   assert.equal(calls[0].options.headers.Authorization, 'Bearer sk-test');
   const body = JSON.parse(calls[0].options.body);
   assert.equal(body.model, 'test-model');
-  assert.equal(body.max_tokens, 4096);
+  assert.equal(body.max_tokens, DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS * 1024);
   assert.equal(body.messages[0].role, 'system');
   assert.ok(body.messages[0].content.includes('applyForce'), 'the system prompt should include the API reference');
   assert.equal(body.messages[body.messages.length - 1].content, 'hover');
@@ -228,25 +231,81 @@ test('loadAgentConfig returns defaults when nothing is saved', () => {
   assert.equal(config.baseUrl, 'https://api.openai.com/v1');
   assert.equal(config.apiKey, '');
   assert.equal(config.model, 'gpt-4o-mini');
+  assert.equal(config.contextKTokens, DEFAULT_AGENT_CONTEXT_K_TOKENS);
+  assert.equal(config.maxOutputKTokens, DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS);
+  assert.equal(config.rememberApiKey, false);
 });
 
-test('saveAgentConfig and loadAgentConfig round-trip', () => {
-  const store = new Map();
+test('saveAgentConfig keeps keys session-only unless persistent storage is explicitly enabled', t => {
+  const store = new Map<string, string>();
+  const sessionStore = new Map<string, string>();
   globalThis.localStorage = {
     getItem: key => store.get(key) ?? null,
-    setItem: (key, value) => store.set(key, String(value))
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: key => store.delete(key)
   } as any;
+  globalThis.sessionStorage = {
+    getItem: key => sessionStore.get(key) ?? null,
+    setItem: (key, value) => sessionStore.set(key, String(value)),
+    removeItem: key => sessionStore.delete(key)
+  } as any;
+  t.after(() => {
+    globalThis.localStorage = undefined;
+    globalThis.sessionStorage = undefined;
+  });
+
   const saved = saveAgentConfig({ baseUrl: 'https://a/v1', apiKey: 'sk-1', model: 'm1' });
   assert.equal(saved, true);
   const loaded = loadAgentConfig();
   assert.equal(loaded.baseUrl, 'https://a/v1');
-  assert.equal(loaded.apiKey, '', 'API keys must remain session-only');
+  assert.equal(loaded.apiKey, 'sk-1');
   assert.equal(loaded.model, 'm1');
-  assert.equal(JSON.parse(store.get(AGENT_CONFIG_STORAGE_KEY)).apiKey, undefined);
-  store.set(AGENT_CONFIG_STORAGE_KEY, JSON.stringify({ baseUrl: 'https://legacy/v1', apiKey: 'sk-old', model: 'old' }));
+  assert.equal(loaded.contextKTokens, DEFAULT_AGENT_CONTEXT_K_TOKENS);
+  assert.equal(loaded.maxOutputKTokens, DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS);
+  assert.equal(JSON.parse(store.get(AGENT_CONFIG_STORAGE_KEY)!).apiKey, undefined);
+  assert.equal(sessionStore.get(AGENT_SESSION_KEY_STORAGE_KEY), 'sk-1');
+
+  saveAgentConfig({ ...loaded, rememberApiKey: true });
+  assert.equal(JSON.parse(store.get(AGENT_CONFIG_STORAGE_KEY)!).apiKey, 'sk-1');
+  assert.equal(loadAgentConfig().rememberApiKey, true);
+
+  saveAgentConfig({ ...loaded, rememberApiKey: false });
+  assert.equal(JSON.parse(store.get(AGENT_CONFIG_STORAGE_KEY)!).apiKey, undefined);
+  assert.equal(sessionStore.get(AGENT_SESSION_KEY_STORAGE_KEY), 'sk-1');
+  assert.equal(loadAgentConfig().rememberApiKey, false);
+
+  saveAgentConfig({ ...loaded, apiKey: '', rememberApiKey: false });
+  assert.equal(JSON.parse(store.get(AGENT_CONFIG_STORAGE_KEY)!).apiKey, undefined);
+  assert.equal(sessionStore.has(AGENT_SESSION_KEY_STORAGE_KEY), false);
   assert.equal(loadAgentConfig().apiKey, '');
-  assert.equal(JSON.parse(store.get(AGENT_CONFIG_STORAGE_KEY)).apiKey, undefined, 'legacy persisted secrets are migrated away');
-  globalThis.localStorage = undefined;
+});
+
+test('loadAgentConfig migrates legacy unconfirmed localStorage keys into this tab only', t => {
+  const store = new Map<string, string>([[
+    AGENT_CONFIG_STORAGE_KEY,
+    JSON.stringify({ baseUrl: 'https://legacy.test/v1', apiKey: 'sk-legacy', model: 'legacy-model' })
+  ]]);
+  const sessionStore = new Map<string, string>();
+  globalThis.localStorage = {
+    getItem: key => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: key => store.delete(key)
+  } as any;
+  globalThis.sessionStorage = {
+    getItem: key => sessionStore.get(key) ?? null,
+    setItem: (key, value) => sessionStore.set(key, String(value)),
+    removeItem: key => sessionStore.delete(key)
+  } as any;
+  t.after(() => {
+    globalThis.localStorage = undefined;
+    globalThis.sessionStorage = undefined;
+  });
+
+  const loaded = loadAgentConfig();
+  assert.equal(loaded.apiKey, 'sk-legacy');
+  assert.equal(loaded.rememberApiKey, false);
+  assert.equal(sessionStore.get(AGENT_SESSION_KEY_STORAGE_KEY), 'sk-legacy');
+  assert.equal(JSON.parse(store.get(AGENT_CONFIG_STORAGE_KEY)!).apiKey, undefined);
 });
 
 test('AGENT_SYSTEM_PROMPT contains the core API and generation rules', () => {
@@ -365,7 +424,8 @@ test('config respects custom contextKTokens and maxOutputKTokens in K units', as
   const store = new Map();
   globalThis.localStorage = {
     getItem: key => store.get(key) ?? null,
-    setItem: (key, value) => store.set(key, String(value))
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: key => store.delete(key)
   } as any;
 
   saveAgentConfig({
@@ -381,7 +441,7 @@ test('config respects custom contextKTokens and maxOutputKTokens in K units', as
   assert.equal(loaded.contextKTokens, 16);
   assert.equal(loaded.maxOutputKTokens, 8);
   assert.equal(loaded.timeoutSeconds, 120);
-  assert.equal(loaded.apiKey, '');
+  assert.equal(loaded.apiKey, 'sk-custom');
 
   let capturedBody: any = null;
   const fakeFetch = async (_url, options) => {

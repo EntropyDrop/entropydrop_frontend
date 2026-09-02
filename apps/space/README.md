@@ -118,6 +118,9 @@ three-category backpack in browser IndexedDB with automatic localStorage migrati
 
 ## Verification
 
+The latest gameplay, API, security, performance, and maintainability review is
+recorded in [the 2026-09-02 audit and remediation report](docs/audit-remediation-2026-09-02.md).
+
 ```bash
 npm run check
 npm run audit:deps

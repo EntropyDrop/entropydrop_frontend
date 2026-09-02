@@ -620,6 +620,9 @@ export class SceneRenderer {
   declare boxSelectionFill: THREE.Mesh;
   declare boxSelectionEdges: THREE.LineSegments;
   declare wrenchTetherLine: THREE.Line;
+  declare wrenchPivotGizmo: THREE.Group;
+  declare wrenchPivotArrows: Map<string, THREE.ArrowHelper>;
+  declare wrenchPivotOrigin: THREE.Mesh;
   declare playerAvatar: THREE.Group;
   declare playerAvatarCharacter: CuteCharacter | null;
   declare playerFirstPersonHand: THREE.Group | null;
@@ -720,6 +723,7 @@ export class SceneRenderer {
     this.setupMicroCarvePreview();
     this.setupFocusBlockGuide();
     this.setupBoxSelectionPreview();
+    this.setupWrenchPivotGizmo();
     this.setupInventoryPlacementPreview();
     this.setupSelectionHologram();
     this.setupPlayerAvatar();
@@ -1041,6 +1045,11 @@ export class SceneRenderer {
       }
     }
     this.inventoryPlacementGroup.position.copy(preview.position);
+    if (preview.quaternion?.isQuaternion) {
+      this.inventoryPlacementGroup.quaternion.copy(preview.quaternion);
+    } else {
+      this.inventoryPlacementGroup.quaternion.identity();
+    }
     this.inventoryPlacementGroup.visible = true;
   }
 
@@ -1473,6 +1482,97 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
 
   clearFocusBlockGuide() {
     if (this.focusBlockGuide) this.focusBlockGuide.visible = false;
+  }
+
+  setupWrenchPivotGizmo() {
+    this.wrenchPivotGizmo = new THREE.Group();
+    this.wrenchPivotGizmo.name = 'WrenchPivotGizmo';
+    this.wrenchPivotGizmo.visible = false;
+    this.wrenchPivotGizmo.renderOrder = 95;
+    this.wrenchPivotArrows = new Map();
+
+    const definitions = [
+      ['x', new THREE.Vector3(1, 0, 0), 0xff3b30],
+      ['y', new THREE.Vector3(0, 1, 0), 0x34c759],
+      ['z', new THREE.Vector3(0, 0, 1), 0x248aff]
+    ] as const;
+    for (const [axis, direction, color] of definitions) {
+      const arrow = new THREE.ArrowHelper(direction, new THREE.Vector3(), 1, color, 0.24, 0.12);
+      arrow.name = `WrenchPivotAxis_${axis.toUpperCase()}`;
+      arrow.userData.axis = axis;
+      for (const object of [arrow.line, arrow.cone]) {
+        const material: any = object.material;
+        material.depthTest = false;
+        material.depthWrite = false;
+        material.transparent = true;
+        material.opacity = 0.96;
+        object.renderOrder = 96;
+        object.frustumCulled = false;
+      }
+      this.wrenchPivotArrows.set(axis, arrow);
+      this.wrenchPivotGizmo.add(arrow);
+    }
+
+    const center = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 12, 10),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.95
+      })
+    );
+    center.name = 'WrenchPivotOrigin';
+    center.userData.handle = 'origin';
+    center.renderOrder = 97;
+    center.frustumCulled = false;
+    this.wrenchPivotOrigin = center;
+    this.wrenchPivotGizmo.add(center);
+
+    hookSceneMaterials(this.wrenchPivotGizmo);
+    this.scene.add(this.wrenchPivotGizmo);
+  }
+
+  setWrenchPivotGizmo(
+    position: THREE.Vector3 | null,
+    quaternion: THREE.Quaternion | null = null,
+    axisLength = 1,
+    hoveredAxis: string | null = null,
+    activeAxis: string | null = null,
+    hoveredOrigin = false
+  ) {
+    if (!this.wrenchPivotGizmo) this.setupWrenchPivotGizmo();
+    if (!position) {
+      this.wrenchPivotGizmo.visible = false;
+      return;
+    }
+
+    this.wrenchPivotGizmo.position.copy(position);
+    this.wrenchPivotGizmo.quaternion.copy(
+      quaternion?.isQuaternion ? quaternion : new THREE.Quaternion()
+    );
+    this.wrenchPivotGizmo.scale.setScalar(Math.max(0.1, Number(axisLength) || 1));
+    const baseColors = { x: 0xff3b30, y: 0x34c759, z: 0x248aff };
+    for (const [axis, arrow] of this.wrenchPivotArrows) {
+      const color = activeAxis === axis
+        ? 0xffffff
+        : hoveredAxis === axis
+          ? 0xffd60a
+          : baseColors[axis];
+      arrow.setColor(new THREE.Color(color));
+    }
+    if (this.wrenchPivotOrigin) {
+      const material = this.wrenchPivotOrigin.material as THREE.MeshBasicMaterial;
+      material.color.setHex(hoveredOrigin ? 0xffd60a : 0xffffff);
+      this.wrenchPivotOrigin.scale.setScalar(hoveredOrigin ? 1.4 : 1);
+    }
+    this.wrenchPivotGizmo.visible = true;
+    this.wrenchPivotGizmo.updateMatrixWorld(true);
+  }
+
+  clearWrenchPivotGizmo() {
+    if (this.wrenchPivotGizmo) this.wrenchPivotGizmo.visible = false;
   }
 
   setWrenchTether(startPoint: THREE.Vector3 | null, endPoint: THREE.Vector3 | null) {

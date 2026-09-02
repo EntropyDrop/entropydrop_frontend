@@ -1,16 +1,27 @@
 import React, { useEffect } from 'react';
 import { colorToHex } from '../../engine/voxel/BlockTypes.ts';
-import { ApiDocsModal, CodeEditorModal } from './components/EditorModal.tsx';
 import { Hud } from './components/Hud.tsx';
-import { BuildAssistantModal } from './components/BuildAssistantModal.tsx';
-import { InventoryModal } from './components/InventoryModal.tsx';
 import { GlobalSettingsModal, PauseScreen } from './components/SimpleModals.tsx';
 import { MinimapCanvas, NavigationPanel } from './components/WorldWidgets.tsx';
 import { spaceUiStore } from './store/SpaceUiStore.ts';
 import { useSpaceUi } from './store/useSpaceUi.ts';
 
+const loadEditorModals = () => import('./components/EditorModal.tsx');
+const InventoryModal = React.lazy(() => import('./components/InventoryModal.tsx')
+  .then(module => ({ default: module.InventoryModal })));
+const BuildAssistantModal = React.lazy(() => import('./components/BuildAssistantModal.tsx')
+  .then(module => ({ default: module.BuildAssistantModal })));
+const CodeEditorModal = React.lazy(() => loadEditorModals()
+  .then(module => ({ default: module.CodeEditorModal })));
+const ApiDocsModal = React.lazy(() => loadEditorModals()
+  .then(module => ({ default: module.ApiDocsModal })));
+
+function ModalChunkFallback() {
+  return <div className="space-modal-loading" role="status">Loading interface…</div>;
+}
+
 export function SpaceRoot() {
-  const selectedColor = useSpaceUi(state => state.selectedColor);
+  const { selectedColor, activeModal, apiDocsOpen } = useSpaceUi(state => state);
 
   useEffect(() => {
     document.documentElement.style.setProperty('--build-color', colorToHex(selectedColor));
@@ -71,11 +82,19 @@ export function SpaceRoot() {
       <Hud />
       <NavigationPanel />
       <MinimapCanvas />
-      <InventoryModal />
       <GlobalSettingsModal />
-      <CodeEditorModal />
-      <BuildAssistantModal />
-      <ApiDocsModal />
+      {activeModal === 'inventory' ? (
+        <React.Suspense fallback={<ModalChunkFallback />}><InventoryModal /></React.Suspense>
+      ) : null}
+      {activeModal === 'code' || apiDocsOpen ? (
+        <React.Suspense fallback={<ModalChunkFallback />}>
+          <CodeEditorModal />
+          <ApiDocsModal />
+        </React.Suspense>
+      ) : null}
+      {activeModal === 'builder' ? (
+        <React.Suspense fallback={<ModalChunkFallback />}><BuildAssistantModal /></React.Suspense>
+      ) : null}
       <PauseScreen />
     </>
   );

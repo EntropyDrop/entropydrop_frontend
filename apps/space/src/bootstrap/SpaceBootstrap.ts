@@ -22,6 +22,11 @@ import {
   ensureSpaceAccessToken,
   installSpaceAuthFetchInterceptor,
 } from './SpaceAuthSession.ts';
+import {
+  readJsonResponse,
+  readResponseBytes,
+  resolveSafeHttpUrl,
+} from './NetworkSafety.ts';
 
 export { LatencyMonitor, type LatencyMonitorOptions };
 
@@ -30,6 +35,9 @@ export const TERRAIN_STREAM_TILE_CHUNKS = 8;
 export const TERRAIN_STREAM_PAGE_SIZE = 64;
 export const TERRAIN_STREAM_HYSTERESIS_CHUNKS = 1.5;
 export const TERRAIN_STREAM_SWITCH_DEBOUNCE_MS = 500;
+export const MAX_SKIN_PNG_BYTES = 256 * 1024;
+const MAX_SPACE_API_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_TERRAIN_PAGE_BYTES = 16 * 1024 * 1024;
 
 export interface TerrainStreamArea {
   centerChunkX: number;
@@ -71,6 +79,54 @@ export interface SpaceBootstrapPayload {
     start_yaw_q15: number | null;
     resumed: boolean;
   };
+}
+
+function isBoundedInteger(value: unknown, minimum: number, maximum: number): value is number {
+  return Number.isSafeInteger(value) && Number(value) >= minimum && Number(value) <= maximum;
+}
+
+function isBoundedString(value: unknown, maximumLength: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= maximumLength;
+}
+
+/** Runtime boundary for the versioned bootstrap contract; TypeScript types alone do not validate JSON. */
+export function parseSpaceBootstrapPayload(value: unknown): SpaceBootstrapPayload {
+  const payload = value as any;
+  const world = payload?.world;
+  const player = payload?.player;
+  const positions = [
+    player?.start_x_cm,
+    player?.start_y_cm,
+    player?.start_z_cm,
+    player?.start_yaw_q15,
+  ];
+  const nullablePositionsValid = positions.every(position => (
+    position === null || isBoundedInteger(position, -10_000_000, 10_000_000)
+  ));
+  const resumePositionComplete = player?.resumed !== true || positions.every(position => typeof position === 'number');
+
+  if (
+    payload?.protocol_version !== 2
+    || !isBoundedInteger(payload?.max_online_players, 1, 32)
+    || payload?.queue_enabled !== true
+    || !isBoundedString(payload?.websocket_url, 2048)
+    || !isBoundedString(world?.id, 128)
+    || !isBoundedString(world?.name, 128)
+    || !isBoundedInteger(world?.seed, -2_147_483_648, 2_147_483_647)
+    || !isBoundedInteger(world?.terrain_generator_version, 1, 1_000_000)
+    || !isBoundedInteger(world?.terrain_revision, 0, Number.MAX_SAFE_INTEGER)
+    || !isBoundedString(player?.user_id, 128)
+    || !(player?.username === null || typeof player?.username === 'string')
+    || !isBoundedString(player?.player_entity_id, 128)
+    || !isBoundedString(player?.skin_url, 4096)
+    || !['strong', 'slim'].includes(player?.skin_type)
+    || typeof player?.resumed !== 'boolean'
+    || !nullablePositionsValid
+    || !resumePositionComplete
+  ) {
+    throw new Error('Invalid Space bootstrap API V2 response.');
+  }
+  return payload as SpaceBootstrapPayload;
 }
 
 export interface PlayerPositionPayload {
@@ -368,7 +424,13 @@ async function downloadSkinPng(url: string) {
   const zh = isZhLang();
   let response: Response;
   try {
-    response = await fetch(url, { mode: 'cors', cache: 'force-cache' });
+    const safeUrl = resolveSafeHttpUrl(url, window.location.href);
+    response = await fetch(safeUrl.toString(), {
+      mode: 'cors',
+      cache: 'force-cache',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    });
   } catch {
     throw new SpaceEntryError(
       'SKIN_DOWNLOAD_FAILED',
@@ -389,7 +451,18 @@ async function downloadSkinPng(url: string) {
     );
   }
 
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  let bytes: Uint8Array;
+  try {
+    bytes = await readResponseBytes(response, MAX_SKIN_PNG_BYTES);
+  } catch {
+    throw new SpaceEntryError(
+      'SKIN_DOWNLOAD_FAILED',
+      zh ? '角色皮肤文件无效或超过 256 KiB，请重新配置。' : 'Character skin is invalid or exceeds the 256 KiB safety limit.',
+      '/skin/collection',
+      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
+      createSkinRequiredActions(zh)
+    );
+  }
   if (!hasPngSignature(bytes)) {
     throw new SpaceEntryError(
       'SKIN_DOWNLOAD_FAILED',
@@ -400,7 +473,9 @@ async function downloadSkinPng(url: string) {
     );
   }
 
-  const blob = new Blob([bytes], { type: 'image/png' });
+  const pngBuffer = new Uint8Array(bytes.byteLength);
+  pngBuffer.set(bytes);
+  const blob = new Blob([pngBuffer.buffer], { type: 'image/png' });
   try {
     const bitmap = await createImageBitmap(blob);
     const validSize = bitmap.width === 64 && bitmap.height === 64;
@@ -459,7 +534,7 @@ export async function loadTerrainEditRemote(
         },
         cache: 'no-store'
       });
-      const body = await response.json().catch(() => null);
+      const body = await readJsonResponse<any>(response, MAX_TERRAIN_PAGE_BYTES).catch(() => null);
       if (!response.ok) {
         throw new SpaceEntryError(
           response.status === 401 || response.status === 403 ? 'LOGIN_REQUIRED' : 'BOOTSTRAP_FAILED',
@@ -542,7 +617,7 @@ export async function loadTerrainEditRemote(
         body: JSON.stringify(requestBody)
       });
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
+        const body = await readJsonResponse<any>(response, MAX_SPACE_API_RESPONSE_BYTES).catch(() => null);
         const code = body?.detail?.code || `HTTP_${response.status}`;
         const error: Error & { retryAfterMs?: number; permanent?: boolean } = new Error(
           `Space terrain batch was not accepted: ${code}`
@@ -561,7 +636,7 @@ export async function loadTerrainEditRemote(
         }
         throw error;
       }
-      return response.json();
+      return readJsonResponse(response, MAX_SPACE_API_RESPONSE_BYTES);
     }
   };
 }
@@ -587,7 +662,7 @@ export function createPlayerPositionRemote(
         keepalive
       });
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
+        const body = await readJsonResponse<any>(response, MAX_SPACE_API_RESPONSE_BYTES).catch(() => null);
         const code = body?.detail?.code || `HTTP_${response.status}`;
         throw new Error(`Space player position was not saved: ${code}`);
       }
@@ -617,10 +692,10 @@ async function prepareOnlineSpace(): Promise<PreparedOnlineSpace> {
       Accept: 'application/json'
     }
   });
-  const body = await response.json().catch(() => null);
+  const body = await readJsonResponse<any>(response, MAX_SPACE_API_RESPONSE_BYTES).catch(() => null);
   if (!response.ok) throw entryErrorFromResponse(response.status, body);
 
-  const payload = body as SpaceBootstrapPayload;
+  const payload = parseSpaceBootstrapPayload(body);
   if (!payload?.player?.skin_url) {
     const zh = isZhLang();
     throw new SpaceEntryError(
@@ -656,7 +731,7 @@ export async function requestSpaceAdmission(
       signal
     }
   );
-  const body = await response.json().catch(() => null);
+  const body = await readJsonResponse<any>(response, MAX_SPACE_API_RESPONSE_BYTES).catch(() => null);
   if (!response.ok) throw entryErrorFromResponse(response.status, body);
   if (!body || !['admitted', 'queued'].includes(body.state)) {
     throw new SpaceEntryError(

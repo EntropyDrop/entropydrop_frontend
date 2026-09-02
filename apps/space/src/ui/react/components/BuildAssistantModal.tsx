@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  DEFAULT_AGENT_CONTEXT_K_TOKENS,
+  DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS
+} from '../../../engine/contraption/AgentConfig.ts';
+import {
   LiaRobotSolid,
   LiaUndoAltSolid,
   LiaTrashAltSolid,
@@ -21,6 +25,7 @@ import {
 import { spaceUiStore, type BuildAgentMessage } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
 import { AgentModelField } from './AgentModelField.tsx';
+import { AgentApiKeySecurityNotice } from './AgentApiKeySecurityNotice.tsx';
 import { ThoughtBox } from './ThoughtBox.tsx';
 
 const PROMPT_SUGGESTIONS = [
@@ -271,12 +276,23 @@ export function BuildAssistantModal() {
                   <input
                     className="config-input"
                     type="password"
-                    placeholder="sk-... (session only)"
+                    autoComplete="off"
+                    placeholder="sk-... (kept for this tab by default)"
                     value={config.apiKey || ''}
                     onChange={event => setConfig({ ...config, apiKey: event.target.value })}
                   />
+                  <label className="agent-key-persistence-option">
+                    <input
+                      type="checkbox"
+                      checked={config.rememberApiKey === true}
+                      aria-describedby="build-agent-api-key-security-notice"
+                      onChange={event => setConfig({ ...config, rememberApiKey: event.target.checked })}
+                    />
+                    Persist API key on this device (plaintext localStorage)
+                  </label>
                 </div>
               </div>
+              <AgentApiKeySecurityNotice id="build-agent-api-key-security-notice" rememberApiKey={config.rememberApiKey === true} />
 
               {/* Row 2: Model & Token Lengths */}
               <div className="build-setup-row-model">
@@ -305,7 +321,7 @@ export function BuildAssistantModal() {
                     type="number"
                     min="1"
                     max="2048"
-                    value={config.contextKTokens ?? 32}
+                    value={config.contextKTokens ?? DEFAULT_AGENT_CONTEXT_K_TOKENS}
                     onChange={event => setConfig({ ...config, contextKTokens: event.target.value })}
                   />
                 </div>
@@ -319,7 +335,7 @@ export function BuildAssistantModal() {
                     min="0.1"
                     max="128"
                     step="0.5"
-                    value={config.maxOutputKTokens ?? 4}
+                    value={config.maxOutputKTokens ?? DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS}
                     onChange={event => setConfig({ ...config, maxOutputKTokens: event.target.value })}
                   />
                 </div>
@@ -352,7 +368,7 @@ export function BuildAssistantModal() {
               </button>
               <div className="config-hint flex items-center gap-1.5">
                 <LiaInfoCircleSolid size={14} />
-                <span>Keys remain in your browser session. Blueprints never execute until you confirm.</span>
+                <span>Blueprints never execute until you confirm.</span>
               </div>
             </div>
           </div>

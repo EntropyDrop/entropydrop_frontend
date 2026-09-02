@@ -6,13 +6,14 @@ import {
   InventoryCategory,
   InventoryResource,
   type InventoryResource as InventoryResourceMessage,
+  type Quaternion,
   type Vector3,
   type Voxel,
 } from '../../generated/inventory.ts';
 
 export const INVENTORY_PROTOBUF_SCHEMA_VERSION = 3;
 export const INVENTORY_PROTOBUF_MIME = 'application/x-protobuf';
-const MAX_BACKPACK_SLOTS_PER_CATEGORY = 99;
+export const MAX_BACKPACK_SLOTS_PER_CATEGORY = 99;
 export type InventoryKind = 'blockset' | 'entity' | 'colorset';
 
 export interface PortableBackpack {
@@ -42,6 +43,22 @@ function vector3(value: unknown): Vector3 | undefined {
 
 function vectorArray(value: Vector3 | undefined): number[] | undefined {
   return value ? [Number(value.x), Number(value.y), Number(value.z)] : undefined;
+}
+
+function quaternion(value: unknown): Quaternion | undefined {
+  if (!Array.isArray(value) || value.length < 4) return undefined;
+  return {
+    x: Number(value[0]),
+    y: Number(value[1]),
+    z: Number(value[2]),
+    w: Number(value[3]),
+  };
+}
+
+function quaternionArray(value: Quaternion | undefined): number[] | undefined {
+  return value
+    ? [Number(value.x), Number(value.y), Number(value.z), Number(value.w)]
+    : undefined;
 }
 
 function voxelMessage(block: any): Voxel {
@@ -101,6 +118,9 @@ function componentMessage(component: any): Component {
     scriptDisabled: component?.scriptDisabled === true,
     seats: (component?.seats || []).map((seat: any) => ({ position: vector3(seat.position) })),
     children: (component?.children || []).map((child: any) => componentMessage(child)),
+    localPosition: vector3(component?.localPosition),
+    localRotation: quaternion(component?.localRotation),
+    anchorRotation: quaternion(component?.anchorRotation),
   };
 }
 
@@ -122,6 +142,9 @@ function portableComponent(component: Component): any {
     ...(component.scriptDisabled === true ? { scriptDisabled: true } : {}),
     seats: (component.seats || []).map(seat => ({ position: vectorArray(seat.position) })),
     children: (component.children || []).map(child => portableComponent(child)),
+    ...(component.localPosition === undefined ? {} : { localPosition: vectorArray(component.localPosition) }),
+    ...(component.localRotation === undefined ? {} : { localRotation: quaternionArray(component.localRotation) }),
+    ...(component.anchorRotation === undefined ? {} : { anchorRotation: quaternionArray(component.anchorRotation) }),
   };
 }
 
@@ -254,6 +277,9 @@ export function runtimeEntityToPortable(runtime: any): any {
   const makeNode = (source: any, id: string, fallbackType: 'dynamic' | 'kinematic') => ({
     id,
     ...(source?.pivot === undefined ? {} : { pivot: source.pivot.map(Number) }),
+    ...(source?.localPosition === undefined ? {} : { localPosition: source.localPosition.map(Number) }),
+    ...(source?.localRotation === undefined ? {} : { localRotation: source.localRotation.map(Number) }),
+    ...(source?.anchorRotation === undefined ? {} : { anchorRotation: source.anchorRotation.map(Number) }),
     body: bodyFromRuntime(source, fallbackType),
     blocks: [],
     ...(scripts.has(id) ? { script: scripts.get(id) } : {}),
@@ -350,6 +376,9 @@ export function portableEntityToRuntime(portable: any): any {
         parentId,
         kind: 'child',
         ...(component.pivot === undefined ? {} : { pivot: component.pivot.map(Number) }),
+        ...(component.localPosition === undefined ? {} : { localPosition: component.localPosition.map(Number) }),
+        ...(component.localRotation === undefined ? {} : { localRotation: component.localRotation.map(Number) }),
+        ...(component.anchorRotation === undefined ? {} : { anchorRotation: component.anchorRotation.map(Number) }),
         bodyType: body.type || 'kinematic',
         ...(body.mass === undefined ? {} : { mass: Number(body.mass) }),
         ...(body.restitution === undefined ? {} : { restitution: Number(body.restitution) }),
@@ -376,6 +405,9 @@ export function portableEntityToRuntime(portable: any): any {
     enabled,
     constraints: portable.constraints || [],
     mode: 'free_physics',
+    ...(portable.root?.anchorRotation === undefined
+      ? {}
+      : { anchorRotation: portable.root.anchorRotation.map(Number) }),
     bodyType: rootBody.type || 'dynamic',
     ...(rootBody.mass === undefined ? {} : { mass: Number(rootBody.mass) }),
     ...(rootBody.restitution === undefined ? {} : { restitution: Number(rootBody.restitution) }),

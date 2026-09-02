@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SpaceMarketClient, SpaceMarketError } from '../src/bootstrap/SpaceMarketClient.ts';
 
+const PROTOBUF_DIGEST = '754164027d40c7b9dafdccea89a044ddd7265be5cc6d497cb6976f0777e43b78';
+
 test('SpaceMarketClient sends authenticated market list, publish, download, like, and delete requests', async () => {
   const calls: Array<{ url: string; options: RequestInit }> = [];
   const fetchImpl = async (url: string | URL | Request, options: RequestInit = {}) => {
@@ -14,6 +16,7 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
       return new Response(JSON.stringify({
         id: 'r1',
         kind: 'colorset',
+        digest: PROTOBUF_DIGEST,
         download_url: 'https://cdn.example.test/space-market/resources/r1/content.pb'
       }), { status: 200 });
     }
@@ -85,12 +88,39 @@ test('SpaceMarketClient loads previews directly from the CDN without calling the
   };
   const client = new SpaceMarketClient('https://api.example.test', 'token', fetchImpl as typeof fetch);
 
-  const preview = await client.loadResourceContent(contentUrl);
+  const preview = await client.loadResourceContent(contentUrl, undefined, PROTOBUF_DIGEST);
 
   assert.deepEqual(preview, protobuf);
   assert.deepEqual(calls.map(call => call.url), [contentUrl]);
   assert.equal((calls[0].options.headers as any).Authorization, undefined);
   assert.equal(calls.some(call => call.url.endsWith('/download')), false);
+});
+
+test('SpaceMarketClient rejects unsafe, oversized, and digest-mismatched CDN content', async () => {
+  const fetchImpl = async () => new Response(Uint8Array.from([8, 3, 26, 0]), {
+    status: 200,
+    headers: { 'Content-Length': String(8 * 1024 * 1024 + 1) }
+  });
+  const client = new SpaceMarketClient('https://api.example.test', 'token', fetchImpl as typeof fetch);
+
+  await assert.rejects(
+    () => client.loadResourceContent('http://cdn.example.test/content.pb'),
+    (error: any) => error instanceof SpaceMarketError && error.code === 'MARKET_CDN_URL_REJECTED'
+  );
+  await assert.rejects(
+    () => client.loadResourceContent('https://cdn.example.test/content.pb'),
+    (error: any) => error instanceof SpaceMarketError && error.code === 'MARKET_CDN_RESPONSE_TOO_LARGE'
+  );
+
+  const digestClient = new SpaceMarketClient(
+    'https://api.example.test',
+    'token',
+    (async () => new Response(Uint8Array.from([8, 3, 26, 0]), { status: 200 })) as typeof fetch
+  );
+  await assert.rejects(
+    () => digestClient.loadResourceContent('https://cdn.example.test/content.pb', undefined, '0'.repeat(64)),
+    (error: any) => error instanceof SpaceMarketError && error.code === 'MARKET_DIGEST_MISMATCH'
+  );
 });
 
 test('SpaceMarketClient exposes structured backend errors', async () => {

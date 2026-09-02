@@ -16,11 +16,18 @@ import {
   LiaFileUploadSolid,
 } from 'react-icons/lia';
 import { InventoryThumbnailRenderer } from '../../../engine/render/InventoryThumbnailRenderer.ts';
-import { MAX_STL_FILE_BYTES } from '../../../engine/voxel/STLVoxelizer.ts';
+import {
+  MAX_STL_FILE_BYTES,
+  MODEL_TEXTURE_ERROR_CODE,
+  DEFAULT_MODEL_IMPORT_SIZE_BLOCKS,
+  isSupportedModelFilename,
+  parse3DModelData,
+} from '../../../engine/voxel/STLVoxelizer.ts';
 import { colorToHex, normalizeColor } from '../../../engine/voxel/BlockTypes.ts';
 import {
   decodeInventoryResource,
   inventoryResourcePreviewItem,
+  MAX_BACKPACK_SLOTS_PER_CATEGORY,
 } from '../../../engine/storage/InventoryProtobuf.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
@@ -88,7 +95,7 @@ function Import3DModelPopover() {
   const controller = useSpaceUi(state => state.controller);
   const [isOpen, setIsOpen] = useState(false);
   const [precision, setPrecision] = useState(1);
-  const [sizeBlocks, setSizeBlocks] = useState(32);
+  const [sizeBlocks, setSizeBlocks] = useState(DEFAULT_MODEL_IMPORT_SIZE_BLOCKS);
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState('No file selected');
   const workerRef = useRef<Worker | null>(null);
@@ -133,20 +140,42 @@ function Import3DModelPopover() {
       return;
     }
     if (!file) { setStatus('Choose a .glb, .gltf, or .stl file first'); return; }
+    if (!isSupportedModelFilename(file.name)) { setStatus('Error: Only .glb, .gltf, and .stl model files are supported'); return; }
     if (file.size > MAX_STL_FILE_BYTES) { setStatus(`Error: Model files are limited to ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB`); return; }
     if (!sizeBlocks || sizeBlocks < 1) { setStatus('Error: size in standard blocks must be at least 1'); return; }
     try {
+      setStatus(`Reading ${file.name}…`);
+      const buffer = await file.arrayBuffer();
       const worker = new Worker(new URL('../../../engine/voxel/STLImportWorker.ts', import.meta.url), { type: 'module' });
       workerRef.current = worker;
-      setStatus(`Reading ${file.name}…`);
       timeoutRef.current = window.setTimeout(() => {
         if (workerRef.current === worker) {
           stopWorker();
           setStatus('Error: 3D model import exceeded the 120 second processing limit');
         }
       }, 120000);
-      worker.onmessage = event => {
+      let retriedTextureDecodeOnMainThread = false;
+      worker.onmessage = async event => {
         if (workerRef.current !== worker) return;
+        if (!event.data?.ok
+          && event.data?.code === MODEL_TEXTURE_ERROR_CODE
+          && !retriedTextureDecodeOnMainThread
+          && /\.gl(?:b|tf)$/i.test(file.name)) {
+          retriedTextureDecodeOnMainThread = true;
+          setStatus(`Worker could not read ${file.name} textures; retrying browser image decode…`);
+          try {
+            // Safari and a few embedded browsers cannot decode images inside a
+            // module worker, but can decode the same glTF texture on the page.
+            // Keep voxelization in the worker after this compatibility parse.
+            const triangles = await parse3DModelData(buffer, file.name);
+            if (workerRef.current !== worker) return;
+            worker.postMessage({ triangles, sizeBlocks, precision, color: controller?.selectedColor ?? 0xf2a93b });
+          } catch (error: any) {
+            stopWorker();
+            setStatus(`Error: ${error?.message || String(error)}`);
+          }
+          return;
+        }
         try {
           if (!event.data?.ok) throw new Error(event.data?.error || 'Model worker failed');
           const result = event.data.result;
@@ -165,7 +194,6 @@ function Import3DModelPopover() {
         }
       };
       worker.onerror = event => { stopWorker(); setStatus(`Error: ${event.message || 'Model worker crashed'}`); };
-      const buffer = await file.arrayBuffer();
       if (workerRef.current !== worker) return;
       setStatus(`Voxelizing ${file.name} in background…`);
       worker.postMessage({
@@ -174,7 +202,7 @@ function Import3DModelPopover() {
         sizeBlocks,
         precision,
         color: controller?.selectedColor ?? 0xf2a93b
-      }, [buffer]);
+      });
     } catch (error: any) {
       stopWorker();
       setStatus(`Error: ${error?.message || String(error)}`);
@@ -214,6 +242,7 @@ function Import3DModelPopover() {
 
           <div className="stl-popover-sub">
             Convert full-color .glb, .gltf, or .stl meshes into a voxel block set.
+            External .bin files are not supported; .gltf resources must be embedded.
           </div>
 
           {/* Form Fields */}
@@ -273,23 +302,28 @@ function Import3DModelPopover() {
                   accept=".glb,.gltf,.stl"
                   hidden
                   onChange={event => {
-                    const next = event.target.files?.[0] || null;
+                    const selected = event.target.files?.[0] || null;
+                    const next = selected && isSupportedModelFilename(selected.name) ? selected : null;
                     setFile(next);
                     setStatus(
                       next && next.size > MAX_STL_FILE_BYTES
                         ? `Error: ${next.name} exceeds ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB limit`
                         : next
                           ? `Ready: ${next.name}`
-                          : 'No file selected'
+                          : selected
+                            ? 'Error: Select one .glb, .gltf, or .stl model file'
+                            : 'No file selected'
                     );
                   }}
                 />
                 <LiaFileUploadSolid size={20} className="stl-dropzone-icon" />
                 <div className="stl-dropzone-text">
                   {file ? (
-                    <span className="stl-selected-name">{file.name} ({(file.size / 1024).toFixed(1)} KB)</span>
+                    <span className="stl-selected-name">
+                      {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                    </span>
                   ) : (
-                    <span>Click to choose .glb, .gltf, or .stl</span>
+                    <span>Choose a .glb, .gltf, or .stl model</span>
                   )}
                 </div>
               </div>
@@ -352,7 +386,7 @@ function EmptyColorSetSlot() {
     <div className="inventory-card backpack-item colorset-card colorset-empty-card">
       <div className="colorset-empty-content">
         <span className="backpack-slot-empty-icon">+</span>
-        <span className="backpack-item-meta">Empty slot</span>
+        <span className="backpack-item-meta">Empty color set</span>
       </div>
     </div>
   );
@@ -665,7 +699,7 @@ function ColorSetCard({
               key={colorIndex}
               className="colorset-cell-swatch"
               style={{ background: safe }}
-              title={`Recolor slot ${colorIndex + 1} (${safe})`}
+              title={`Recolor color ${colorIndex + 1} (${safe})`}
               onClick={event => event.stopPropagation()}
             >
               <input
@@ -759,6 +793,35 @@ function ColorSetCard({
   );
 }
 
+function ColorSetSlots({
+  items,
+  onPublish,
+}: {
+  items: any[];
+  onPublish: (category: InventoryCategory, item: any) => void;
+}) {
+  const totalCount = items.filter(Boolean).length;
+
+  return (
+    <div className="inventory-grid colorset-grid" id="inventory-grid">
+      {Array.from({ length: MAX_BACKPACK_SLOTS_PER_CATEGORY }, (_, index) => {
+        const item = items[index];
+        return item ? (
+          <ColorSetCard
+            key={item.id || `c:${index}`}
+            index={index}
+            item={item}
+            totalCount={totalCount}
+            onPublish={onPublish}
+          />
+        ) : (
+          <EmptyColorSetSlot key={`empty-c:${index}`} />
+        );
+      })}
+    </div>
+  );
+}
+
 function MarketResourceCard({
   resource,
   isAdmin,
@@ -784,7 +847,11 @@ function MarketResourceCard({
       setPreviewFailed(true);
       return () => abortController.abort();
     }
-    void marketClient.loadResourceContent(resource.content_url, abortController.signal)
+    void marketClient.loadResourceContent(
+      resource.content_url,
+      abortController.signal,
+      resource.digest
+    )
       .then(payload => decodeInventoryResource(payload, resource.kind).portable)
       .then(portable => {
         if (!abortController.signal.aborted) {
@@ -1335,7 +1402,7 @@ export function InventoryModal() {
               <div className="backpack-section-header">
                 <div className="backpack-section-title">
                   <LiaBoxesSolid size={18} />
-                  <span>My Color Sets (9 slots)</span>
+                  <span>My Color Sets</span>
                 </div>
                 <div className="backpack-panel-footer">
                   <div className="backpack-panel-actions">
@@ -1344,19 +1411,7 @@ export function InventoryModal() {
                 </div>
               </div>
 
-              <div className="inventory-grid" id="inventory-grid">
-                {(() => {
-                  const totalCount = colorsets.filter(Boolean).length;
-                  return Array.from({ length: 9 }, (_, index) => {
-                    const item = colorsets[index];
-                    return item ? (
-                      <ColorSetCard key={item.id || `c:${index}`} index={index} item={item} totalCount={totalCount} onPublish={publishItem} />
-                    ) : (
-                      <EmptyColorSetSlot key={`empty-c:${index}`} />
-                    );
-                  });
-                })()}
-              </div>
+              <ColorSetSlots items={colorsets} onPublish={publishItem} />
             </div>
 
             {marketOpen && (

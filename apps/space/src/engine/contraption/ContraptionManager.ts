@@ -1821,6 +1821,7 @@ export class ContraptionManager {
         agentInterpretation: restoreState?.agentInterpretation,
         localCenter: restoreState?.localCenter,
         rootPivotOverride: restoreState?.rootPivotOverride,
+        anchorRotation: slot.anchorRotation,
         childEntities,
         constraints
       }
@@ -1855,7 +1856,8 @@ export class ContraptionManager {
     parentNodeId,
     placementOrigin,
     autoSave = true,
-    preparedBlocks = null
+    preparedBlocks = null,
+    placementRotation = null
   ) {
     if (!contraption || !this.contraptions.includes(contraption)) {
       return Object.freeze({ ok: false, reason: 'target_entity_missing' });
@@ -1864,7 +1866,8 @@ export class ContraptionManager {
       slot,
       parentNodeId,
       placementOrigin,
-      preparedBlocks
+      preparedBlocks,
+      placementRotation
     ) || Object.freeze({ ok: false, reason: 'install_unsupported' });
     if (result.ok && autoSave) this.saveEntitiesToStorage();
     return result;

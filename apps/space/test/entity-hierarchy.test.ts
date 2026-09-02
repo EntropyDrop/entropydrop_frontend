@@ -659,6 +659,33 @@ if (t) t.applyThrust([0, 0, 40]);
   assert.ok(Math.abs(contraption.appliedForces.z) < 1e-9, 'no unrotated component should remain');
 });
 
+test('applyLocalThrust follows an installed component localRotation', () => {
+  const sideRotation = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(0, 0, 1),
+    -Math.PI / 2
+  );
+  const contraption = new Contraption(
+    911,
+    [standardBlock(0), standardBlock(1)],
+    new THREE.Vector3(),
+    new THREE.Scene(),
+    {
+      childEntities: [{
+        id: 'thruster',
+        parentId: 'root',
+        pivot: [1.5, 0.5, 0.5],
+        localRotation: sideRotation.toArray(),
+        blockKeys: [['1', '0', '0']]
+      }]
+    }
+  ) as any;
+
+  contraption.getChildScriptApi('thruster').applyLocalThrust([0, 40, 0]);
+
+  assert.ok(contraption.appliedForces.x > 30, 'component +Y should follow the side-mounted +X axis');
+  assert.ok(Math.abs(contraption.appliedForces.y) < 1e-9);
+});
+
 test('getBounds and setPivot update rotation center while blocks stay in place', () => {
   const contraption = new Contraption(
     92,

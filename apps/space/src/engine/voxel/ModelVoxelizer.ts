@@ -30,7 +30,16 @@ export interface VoxelTriangle {
     data: Uint8Array | Uint8ClampedArray;
     width: number;
     height: number;
+    /** Pixel stride: gray, gray-alpha, RGB, or RGBA. Defaults from byte length. */
+    channels?: 1 | 2 | 3 | 4;
   } | null;
+}
+
+export interface ModelImportResource {
+  /** Original relative path or filename referenced by the glTF JSON. */
+  name: string;
+  buffer: ArrayBuffer;
+  mimeType?: string;
 }
 
 export type STLTriangle = VoxelTriangle;
@@ -50,6 +59,14 @@ export const MAX_MODEL_FILE_BYTES = 32 * 1024 * 1024;
 export const MAX_STL_FILE_BYTES = 32 * 1024 * 1024;
 export const MAX_MODEL_TRIANGLES = 300000;
 export const MAX_STL_TRIANGLES = 300000;
+export const MAX_MODEL_RESOURCE_FILES = 64;
+export const MAX_MODEL_RESOURCE_BYTES = 64 * 1024 * 1024;
+export const MODEL_TEXTURE_ERROR_CODE = 'MODEL_TEXTURE_UNAVAILABLE';
+export const DEFAULT_MODEL_IMPORT_SIZE_BLOCKS = 12;
+
+export function isSupportedModelFilename(filename: string): boolean {
+  return /\.(?:glb|gltf|stl)$/i.test(String(filename || '').trim());
+}
 
 const MAX_GRID_CELLS = 16 * 1024 * 1024; // 256^3 limit.
 const MAX_OUTPUT_BLOCKS = 200000;
@@ -67,14 +84,37 @@ function wrapCoord(coord: number, size: number): number {
   return Math.min(size - 1, Math.max(0, Math.floor(wrapped * size)));
 }
 
-function extractTextureData(texture: THREE.Texture | null | undefined): { data: Uint8Array | Uint8ClampedArray; width: number; height: number } | null {
+type TexturePixels = {
+  data: Uint8Array | Uint8ClampedArray;
+  width: number;
+  height: number;
+  channels: 1 | 2 | 3 | 4;
+};
+
+function directTexturePixels(candidate: any): TexturePixels | null {
+  const width = Number(candidate?.width);
+  const height = Number(candidate?.height);
+  const data = candidate?.data;
+  if (!(width > 0) || !(height > 0)
+    || !(data instanceof Uint8Array || data instanceof Uint8ClampedArray)) return null;
+  const pixelCount = width * height;
+  const channels = data.length / pixelCount;
+  if (![1, 2, 3, 4].includes(channels) || !Number.isInteger(channels)) return null;
+  return { data, width, height, channels: channels as 1 | 2 | 3 | 4 };
+}
+
+function extractTextureData(texture: THREE.Texture | null | undefined): TexturePixels | null {
   if (!texture) return null;
   const img: any = texture.image || (texture.source && (texture.source as any).data);
-  if (!img) return null;
 
-  if (img.data && img.width && img.height) {
-    return { data: img.data, width: img.width, height: img.height };
+  // DataTexture and loader extensions may expose RGB rather than RGBA data.
+  // Treating byte 4 as alpha made every RGB texel look transparent and caused
+  // the importer to silently fall back to a white material.
+  for (const candidate of [img, img?.image, (texture as any).mipmaps?.[0]]) {
+    const pixels = directTexturePixels(candidate);
+    if (pixels) return pixels;
   }
+  if (!img) return null;
 
   const w = img.naturalWidth || img.videoWidth || img.width;
   const h = img.naturalHeight || img.videoHeight || img.height;
@@ -87,7 +127,7 @@ function extractTextureData(texture: THREE.Texture | null | undefined): { data: 
       if (ctx) {
         ctx.drawImage(img, 0, 0, w, h);
         const imgData = ctx.getImageData(0, 0, w, h);
-        return { data: imgData.data, width: w, height: h };
+        return { data: imgData.data, width: w, height: h, channels: 4 };
       }
     } catch (e) {
       console.warn('[ModelVoxelizer] OffscreenCanvas texture extraction failed:', e);
@@ -103,7 +143,7 @@ function extractTextureData(texture: THREE.Texture | null | undefined): { data: 
       if (ctx) {
         ctx.drawImage(img, 0, 0, w, h);
         const imgData = ctx.getImageData(0, 0, w, h);
-        return { data: imgData.data, width: w, height: h };
+        return { data: imgData.data, width: w, height: h, channels: 4 };
       }
     } catch (e) {
       console.warn('[ModelVoxelizer] Canvas texture extraction failed:', e);
@@ -127,12 +167,23 @@ export function sampleTriangleColor(
     const tx = wrapCoord(rawU, t.texture.width);
     const vCoord = t.flipY === false ? rawV : (1.0 - rawV);
     const ty = wrapCoord(vCoord, t.texture.height);
-    const pIdx = (ty * t.texture.width + tx) * 4;
-    const alpha = t.texture.data[pIdx + 3];
+    const pixelCount = t.texture.width * t.texture.height;
+    const inferredChannels = t.texture.data.length / pixelCount;
+    const channels = t.texture.channels || (
+      Number.isInteger(inferredChannels) && inferredChannels >= 1 && inferredChannels <= 4
+        ? inferredChannels as 1 | 2 | 3 | 4
+        : 4
+    );
+    const pIdx = (ty * t.texture.width + tx) * channels;
+    const alpha = channels === 2
+      ? t.texture.data[pIdx + 1]
+      : channels === 4
+        ? t.texture.data[pIdx + 3]
+        : 255;
     if (alpha > 10) {
       let r = t.texture.data[pIdx];
-      let g = t.texture.data[pIdx + 1];
-      let b = t.texture.data[pIdx + 2];
+      let g = channels <= 2 ? r : t.texture.data[pIdx + 1];
+      let b = channels <= 2 ? r : t.texture.data[pIdx + 2];
       if (t.color != null && t.color !== 0xffffff && t.color !== 0x000000) {
         const tr = (t.color >> 16) & 0xff;
         const tg = (t.color >> 8) & 0xff;
@@ -180,10 +231,244 @@ export function sampleTriangleColor(
 // GLTF / GLB Parsing
 // ---------------------------------------------------------------------------
 
-export function extractTrianglesFromObject3D(root: THREE.Object3D): VoxelTriangle[] {
+function modelTextureError(message: string) {
+  const error: Error & { code?: string } = new Error(message);
+  error.code = MODEL_TEXTURE_ERROR_CODE;
+  return error;
+}
+
+function readGLTFJson(buffer: ArrayBuffer): any | null {
+  try {
+    if (isGlbBuffer(buffer)) {
+      const view = new DataView(buffer);
+      if (buffer.byteLength < 20 || view.getUint32(16, true) !== 0x4e4f534a) return null;
+      const length = view.getUint32(12, true);
+      if (length <= 0 || 20 + length > buffer.byteLength) return null;
+      const text = new TextDecoder().decode(new Uint8Array(buffer, 20, length)).replace(/\0+$/g, '').trim();
+      return JSON.parse(text);
+    }
+    const text = new TextDecoder().decode(new Uint8Array(buffer)).replace(/^\uFEFF/, '').trim();
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+const LEGACY_SPEC_GLOSS_EXTENSION = 'KHR_materials_pbrSpecularGlossiness';
+
+/**
+ * Three.js no longer translates the legacy specular-glossiness material
+ * extension used by older Sketchfab exports. Preserve its visible diffuse
+ * color and texture by converting that subset to core glTF metallic-roughness
+ * fields before GLTFLoader sees the document.
+ */
+function convertLegacySpecGlossMaterials(json: any): boolean {
+  let converted = false;
+  for (const material of json?.materials || []) {
+    const legacy = material?.extensions?.[LEGACY_SPEC_GLOSS_EXTENSION];
+    if (!legacy) continue;
+
+    const pbr = { ...(material.pbrMetallicRoughness || {}) };
+    if (pbr.baseColorFactor === undefined && Array.isArray(legacy.diffuseFactor)) {
+      pbr.baseColorFactor = legacy.diffuseFactor.slice(0, 4);
+    }
+    if (pbr.baseColorTexture === undefined && legacy.diffuseTexture) {
+      pbr.baseColorTexture = { ...legacy.diffuseTexture };
+    }
+    if (pbr.metallicFactor === undefined) pbr.metallicFactor = 0;
+    if (pbr.roughnessFactor === undefined && Number.isFinite(Number(legacy.glossinessFactor))) {
+      pbr.roughnessFactor = 1 - Math.min(1, Math.max(0, Number(legacy.glossinessFactor)));
+    }
+    material.pbrMetallicRoughness = pbr;
+
+    delete material.extensions[LEGACY_SPEC_GLOSS_EXTENSION];
+    if (Object.keys(material.extensions).length === 0) delete material.extensions;
+    converted = true;
+  }
+  if (!converted) return false;
+
+  for (const key of ['extensionsUsed', 'extensionsRequired']) {
+    if (!Array.isArray(json[key])) continue;
+    json[key] = json[key].filter((name: unknown) => name !== LEGACY_SPEC_GLOSS_EXTENSION);
+    if (json[key].length === 0) delete json[key];
+  }
+  return true;
+}
+
+function rewriteGLTFJsonBuffer(buffer: ArrayBuffer, json: any): ArrayBuffer {
+  const encodedJson = new TextEncoder().encode(JSON.stringify(json));
+  const paddedJsonLength = Math.ceil(encodedJson.byteLength / 4) * 4;
+
+  if (!isGlbBuffer(buffer)) {
+    return encodedJson.buffer.slice(
+      encodedJson.byteOffset,
+      encodedJson.byteOffset + encodedJson.byteLength
+    ) as ArrayBuffer;
+  }
+
+  const source = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  const declaredLength = view.getUint32(8, true);
+  const oldJsonLength = view.getUint32(12, true);
+  const oldJsonType = view.getUint32(16, true);
+  const remainingOffset = 20 + oldJsonLength;
+  if (oldJsonType !== 0x4e4f534a
+    || declaredLength > buffer.byteLength
+    || remainingOffset > declaredLength) {
+    throw new Error('GLB has an invalid JSON chunk');
+  }
+
+  const remainingLength = declaredLength - remainingOffset;
+  const outputLength = 12 + 8 + paddedJsonLength + remainingLength;
+  const output = new Uint8Array(outputLength);
+  const outputView = new DataView(output.buffer);
+  outputView.setUint32(0, 0x46546c67, true);
+  outputView.setUint32(4, view.getUint32(4, true), true);
+  outputView.setUint32(8, outputLength, true);
+  outputView.setUint32(12, paddedJsonLength, true);
+  outputView.setUint32(16, 0x4e4f534a, true);
+  output.fill(0x20, 20, 20 + paddedJsonLength);
+  output.set(encodedJson, 20);
+  output.set(source.subarray(remainingOffset, declaredLength), 20 + paddedJsonLength);
+  return output.buffer;
+}
+
+function prepareGLTFForLoader(buffer: ArrayBuffer) {
+  const json = readGLTFJson(buffer);
+  if (!json || !convertLegacySpecGlossMaterials(json)) return { buffer, json };
+  return { buffer: rewriteGLTFJsonBuffer(buffer, json), json };
+}
+
+function usedColorTextureMaterialIndices(json: any): Set<number> {
+  const textured = new Set<number>();
+  for (let index = 0; index < (json?.materials || []).length; index++) {
+    const material = json.materials[index];
+    if (material?.pbrMetallicRoughness?.baseColorTexture
+      || material?.emissiveTexture
+      || material?.extensions?.KHR_materials_pbrSpecularGlossiness?.diffuseTexture) {
+      textured.add(index);
+    }
+  }
+  if (textured.size === 0) return textured;
+
+  const used = new Set<number>();
+  const visitedNodes = new Set<number>();
+  const visitNode = (nodeIndex: number) => {
+    if (visitedNodes.has(nodeIndex)) return;
+    visitedNodes.add(nodeIndex);
+    const node = json?.nodes?.[nodeIndex];
+    if (!node) return;
+    if (Number.isInteger(node.mesh)) {
+      for (const primitive of json?.meshes?.[node.mesh]?.primitives || []) {
+        if (Number.isInteger(primitive.material) && textured.has(primitive.material)) {
+          used.add(primitive.material);
+        }
+      }
+    }
+    for (const child of node.children || []) visitNode(child);
+  };
+  const scene = json?.scenes?.[Number.isInteger(json?.scene) ? json.scene : 0];
+  for (const nodeIndex of scene?.nodes || []) visitNode(nodeIndex);
+  return used;
+}
+
+function assertGLTFColorTexturesLoaded(gltf: any, json: any) {
+  const missing = usedColorTextureMaterialIndices(json);
+  if (missing.size === 0) return;
+  let sawAssociatedMaterial = false;
+  gltf.scene?.traverse?.(child => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials) {
+      const association = gltf.parser?.associations?.get?.(material);
+      const materialIndex = association?.materials;
+      if (!Number.isInteger(materialIndex) || !missing.has(materialIndex)) continue;
+      sawAssociatedMaterial = true;
+      if ((material as any)?.map || (material as any)?.emissiveMap) missing.delete(materialIndex);
+    }
+  });
+  // GLTFLoader normally retains material associations. If a future loader
+  // omits them, only fail when no color texture survived anywhere in the scene.
+  if (!sawAssociatedMaterial) {
+    let anyColorMap = false;
+    gltf.scene?.traverse?.(child => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      anyColorMap ||= materials.some(material => !!((material as any)?.map || (material as any)?.emissiveMap));
+    });
+    if (anyColorMap) return;
+  }
+  if (missing.size > 0) {
+    throw modelTextureError(
+      'Could not load the glTF base-color texture. For .gltf files, select the referenced .bin and image files together with the model.'
+    );
+  }
+}
+
+function normalizeResourceName(value: string) {
+  let decoded = String(value || '');
+  try { decoded = decodeURIComponent(decoded); } catch { /* keep the original URL */ }
+  return decoded.replace(/[?#].*$/, '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '');
+}
+
+function resourceMimeType(resource: ModelImportResource) {
+  if (resource.mimeType) return resource.mimeType;
+  const name = resource.name.toLowerCase();
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  if (name.endsWith('.webp')) return 'image/webp';
+  if (name.endsWith('.avif')) return 'image/avif';
+  return 'application/octet-stream';
+}
+
+function createGLTFResourceManager(resources: ModelImportResource[]) {
+  if (resources.length > MAX_MODEL_RESOURCE_FILES) {
+    throw new Error(`Too many model resource files (maximum ${MAX_MODEL_RESOURCE_FILES})`);
+  }
+  const totalBytes = resources.reduce((total, resource) => total + (resource?.buffer?.byteLength || 0), 0);
+  if (totalBytes > MAX_MODEL_RESOURCE_BYTES) {
+    throw new Error(`Model resources exceed the ${MAX_MODEL_RESOURCE_BYTES / (1024 * 1024)} MiB import limit`);
+  }
+
+  const exact = new Map<string, ModelImportResource>();
+  const basename = new Map<string, ModelImportResource>();
+  for (const resource of resources) {
+    if (!resource?.name || !(resource.buffer instanceof ArrayBuffer)) continue;
+    const name = normalizeResourceName(resource.name);
+    exact.set(name, resource);
+    const leaf = name.split('/').pop() || name;
+    if (!basename.has(leaf)) basename.set(leaf, resource);
+  }
+  const objectUrls = new Map<ModelImportResource, string>();
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier(url => {
+    if (/^(?:data:|blob:)/i.test(url)) return url;
+    const normalized = normalizeResourceName(url);
+    const leaf = normalized.split('/').pop() || normalized;
+    const resource = exact.get(normalized) || basename.get(leaf);
+    if (!resource) return url;
+    let objectUrl = objectUrls.get(resource);
+    if (!objectUrl) {
+      objectUrl = URL.createObjectURL(new Blob([resource.buffer], { type: resourceMimeType(resource) }));
+      objectUrls.set(resource, objectUrl);
+    }
+    return objectUrl;
+  });
+  return {
+    manager,
+    dispose() {
+      for (const url of objectUrls.values()) URL.revokeObjectURL(url);
+    }
+  };
+}
+
+export function extractTrianglesFromObject3D(
+  root: THREE.Object3D,
+  options: { requireTexturePixels?: boolean } = {}
+): VoxelTriangle[] {
   root.updateMatrixWorld(true);
 
-  const textureCache = new Map<any, { data: Uint8Array | Uint8ClampedArray; width: number; height: number } | null>();
+  const textureCache = new Map<any, TexturePixels | null>();
   const triangles: VoxelTriangle[] = [];
 
   const vA = new THREE.Vector3();
@@ -262,6 +547,12 @@ export function extractTrianglesFromObject3D(root: THREE.Object3D): VoxelTriangl
             textureCache.set(texMap, extractTextureData(texMap));
           }
           textureData = textureCache.get(texMap);
+          if (!textureData && options.requireTexturePixels) {
+            const materialName = mat.name ? ` for material "${mat.name}"` : '';
+            throw modelTextureError(
+              `Could not read the glTF base-color texture${materialName}; use a browser-supported PNG, JPEG, WebP, or uncompressed RGB/RGBA texture`
+            );
+          }
         }
       }
 
@@ -329,25 +620,47 @@ export function extractTrianglesFromObject3D(root: THREE.Object3D): VoxelTriangl
   return triangles;
 }
 
-export async function parseGLTFData(buffer: ArrayBuffer): Promise<VoxelTriangle[]> {
+export async function parseGLTFData(
+  buffer: ArrayBuffer,
+  resources: ModelImportResource[] = []
+): Promise<VoxelTriangle[]> {
   if (typeof globalThis.ProgressEvent === 'undefined') {
     (globalThis as any).ProgressEvent = class ProgressEvent extends Event {};
   }
 
-  const loader = new GLTFLoader();
-  const gltf = await new Promise<any>((resolve, reject) => {
-    loader.parse(
-      buffer,
-      '',
-      res => resolve(res),
-      err => reject(err instanceof Error ? err : new Error(String(err)))
-    );
-  });
+  const prepared = prepareGLTFForLoader(buffer);
+  const json = prepared.json;
+  const usedColorTextures = usedColorTextureMaterialIndices(json);
+  const resourceManager = createGLTFResourceManager(resources);
+  try {
+    const loader = new GLTFLoader(resourceManager.manager);
+    let gltf: any;
+    try {
+      gltf = await new Promise<any>((resolve, reject) => {
+        loader.parse(
+          prepared.buffer,
+          '',
+          res => resolve(res),
+          err => reject(err instanceof Error ? err : new Error(String(err)))
+        );
+      });
+    } catch (error) {
+      if (usedColorTextures.size > 0) {
+        const detail = error instanceof Error ? ` (${error.message})` : '';
+        throw modelTextureError(
+          `Could not load the glTF base-color texture${detail}. For .gltf files, select the referenced .bin and image files together with the model.`
+        );
+      }
+      throw error;
+    }
 
-  const scene = gltf.scene || (gltf.scenes && gltf.scenes[0]);
-  if (!scene) throw new Error('GLTF/GLB has no valid scenes');
-
-  return extractTrianglesFromObject3D(scene);
+    const scene = gltf.scene || (gltf.scenes && gltf.scenes[0]);
+    if (!scene) throw new Error('GLTF/GLB has no valid scenes');
+    assertGLTFColorTexturesLoaded(gltf, json);
+    return extractTrianglesFromObject3D(scene, { requireTexturePixels: true });
+  } finally {
+    resourceManager.dispose();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -445,39 +758,27 @@ function isGlbBuffer(buffer: ArrayBuffer): boolean {
   return view.getUint32(0, true) === 0x46546C67; // 'glTF'
 }
 
-function isGltfJsonBuffer(buffer: ArrayBuffer): boolean {
-  if (!buffer || buffer.byteLength < 20) return false;
-  try {
-    const head = new TextDecoder().decode(new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 1024)));
-    return (head.includes('"asset"') || head.includes('"scenes"')) && head.includes('"version"');
-  } catch {
-    return false;
-  }
-}
-
-export async function parse3DModelData(buffer: ArrayBuffer, filename = ''): Promise<VoxelTriangle[]> {
+export async function parse3DModelData(
+  buffer: ArrayBuffer,
+  filename = '',
+  resources: ModelImportResource[] = []
+): Promise<VoxelTriangle[]> {
   if (!buffer || buffer.byteLength === 0) throw new Error('Model file is empty');
   if (buffer.byteLength > MAX_MODEL_FILE_BYTES) {
     throw new Error(`Model file exceeds the ${MAX_MODEL_FILE_BYTES / (1024 * 1024)} MiB import limit`);
   }
 
   const name = (filename || '').toLowerCase();
-  if (name.endsWith('.glb') || isGlbBuffer(buffer)) {
-    return parseGLTFData(buffer);
+  if (name.endsWith('.glb')) {
+    return parseGLTFData(buffer, resources);
   }
-  if (name.endsWith('.gltf') || isGltfJsonBuffer(buffer)) {
-    return parseGLTFData(buffer);
+  if (name.endsWith('.gltf')) {
+    return parseGLTFData(buffer, resources);
   }
   if (name.endsWith('.stl')) {
     return parseSTLData(buffer);
   }
-
-  // Fallback auto-detection: try GLTF first, then STL
-  try {
-    return await parseGLTFData(buffer);
-  } catch {
-    return parseSTLData(buffer);
-  }
+  throw new Error('Unsupported model file extension. Choose a .glb, .gltf, or .stl file; .bin files are not supported.');
 }
 
 // ---------------------------------------------------------------------------
@@ -653,6 +954,7 @@ export function voxelizeModel(
       color: t.color,
       vertexColors: t.vertexColors,
       uvs: t.uvs,
+      flipY: t.flipY,
       texture: t.texture
     }));
   }

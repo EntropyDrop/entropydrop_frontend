@@ -55,12 +55,17 @@ function asVector3(value: any, fallback: THREE.Vector3 = new THREE.Vector3()): T
 function asQuaternion(value: any, fallback: THREE.Quaternion = new THREE.Quaternion()): THREE.Quaternion {
   if (value?.isQuaternion) return value.clone().normalize();
   if (Array.isArray(value) && value.length >= 4) {
-    return new THREE.Quaternion(
-      Number(value[0]) || 0,
-      Number(value[1]) || 0,
-      Number(value[2]) || 0,
-      Number(value[3]) || 1
-    ).normalize();
+    const components = value.slice(0, 4).map(Number);
+    if (components.every(Number.isFinite)) {
+      const quaternion = new THREE.Quaternion(
+        components[0],
+        components[1],
+        components[2],
+        components[3]
+      );
+      if (quaternion.lengthSq() > 1e-12) return quaternion.normalize();
+    }
+    return fallback.clone().normalize();
   }
   if (Array.isArray(value) && value.length >= 3) {
     return new THREE.Quaternion().setFromEuler(new THREE.Euler(
@@ -146,7 +151,7 @@ function boundedBodyVector(value: any): THREE.Vector3 | null {
 }
 
 const SCRIPT_COMPONENT_COMMANDS = new Set([
-  'applyThrust', 'setLocalPosition', 'setLocalRotation', 'setLocalEuler', 'setLocalSpin', 'setPivot',
+  'applyThrust', 'applyLocalThrust', 'setLocalPosition', 'setLocalRotation', 'setLocalEuler', 'setLocalSpin', 'setPivot',
   'applyForce', 'applyLocalForce', 'applyForceAt', 'applyTorque', 'setSeats',
   'body.setType', 'body.setMass', 'body.setMaterial', 'body.setGravityEnabled',
   'body.setCollisionEnabled', 'body.applyForce', 'body.applyLocalForce', 'body.applyTorque',
@@ -158,7 +163,7 @@ const SCRIPT_COMPONENT_COMMANDS = new Set([
 // finishing an earlier request, its latest output remains held instead of
 // dropping a motor or force command for one fixed simulation update.
 const LATCHED_SCRIPT_COMPONENT_COMMANDS = new Set([
-  'applyThrust', 'setLocalPosition', 'setLocalRotation', 'setLocalEuler', 'setLocalSpin',
+  'applyThrust', 'applyLocalThrust', 'setLocalPosition', 'setLocalRotation', 'setLocalEuler', 'setLocalSpin',
   'applyForce', 'applyLocalForce', 'applyForceAt', 'applyTorque',
   'body.applyForce', 'body.applyLocalForce', 'body.applyTorque'
 ]);
@@ -278,6 +283,8 @@ export interface EntityNode {
   pivotLocal: THREE.Vector3;
   localPosition: THREE.Vector3;
   localQuaternion: THREE.Quaternion;
+  /** Authored mounting frame in this component's local coordinates. */
+  anchorQuaternion: THREE.Quaternion;
   localAngularVelocity: THREE.Vector3;
   commandedThisFrame?: boolean;
   initialLocalPosition?: THREE.Vector3;
@@ -324,6 +331,7 @@ export class Contraption {
   // --- Spatial / 3D hierarchy ---
   rootGroup: THREE.Group;
   meshGroup: THREE.Group;
+  rootAnchorQuaternion: THREE.Quaternion;
   entityNodes: Map<string, EntityNode>;
   childDefinitions: Map<string, any>;
   rigidBodies: Map<string, EntityRigidBody>;
@@ -539,6 +547,7 @@ export class Contraption {
     this.rootPivotOverride = isFiniteVector3Array(options.rootPivotOverride)
       ? new THREE.Vector3().fromArray(options.rootPivotOverride)
       : null;
+    this.rootAnchorQuaternion = asQuaternion(options.anchorRotation);
     this.seats = this.normalizeSeats(options.seats);
     this.scriptLogs = [];
     this.lastExecutionTimeMs = 0;
@@ -841,6 +850,25 @@ export class Contraption {
           [rootLocalPivot.x, rootLocalPivot.y, rootLocalPivot.z]
         );
       },
+      /**
+       * Apply thrust at this component using its full mounted local frame.
+       * Unlike the legacy applyThrust, a side-mounted module's +Y therefore
+       * follows the face normal stored in its installed localRotation.
+       */
+      applyLocalThrust: (force) => {
+        if (!Array.isArray(force) || force.length < 3) return;
+        const worldForce = new THREE.Vector3(
+          Number(force[0]) || 0,
+          Number(force[1]) || 0,
+          Number(force[2]) || 0
+        ).applyQuaternion(this.getEntityNodeWorldQuaternion(id));
+        const componentWorldPos = this.getEntityNodeWorldPosition(id);
+        const rootLocalPivot = this.worldToLocal(componentWorldPos);
+        this.applyForceAt(
+          [worldForce.x, worldForce.y, worldForce.z],
+          [rootLocalPivot.x, rootLocalPivot.y, rootLocalPivot.z]
+        );
+      },
       getWorldPosition: () => Object.freeze(this.getEntityNodeWorldPosition(id).toArray()),
       /** World-orientation quaternion [x,y,z,w], including all ancestor rotations. */
       getWorldRotation: () => Object.freeze(this.getEntityNodeWorldQuaternion(id).toArray()),
@@ -922,30 +950,11 @@ export class Contraption {
        * blocks keep their world positions. Kinematic bodies support this; dynamic
        * bodies use their physical center of mass.
        */
-      setPivot: isRoot ? (value) => {
-        if (this.bodyType !== BodyType.KINEMATIC) return;
-        const target = asVector3(value, this.rootPivotOverride || this.localCenter);
-        if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z)) return;
-        const oldPivot = (this.rootPivotOverride || this.localCenter).clone();
-        const delta = target.clone().sub(oldPivot);
-        if (delta.lengthSq() < 1e-12) return;
-        this.rootPivotOverride = target.clone();
-        // Shift entity position to cancel the pivot change and preserve block world positions.
-        this.position.add(delta);
-        this.rebuildEntityHierarchy();
-      } : (value) => {
-        if (node.bodyType !== BodyType.KINEMATIC) return;
-        const target = asVector3(value, node.pivotLocal);
-        if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z)) return;
-        const definition = this.childDefinitions.get(id);
-        if (!definition) return;
-        const delta = target.clone().sub(node.pivotLocal);
-        if (delta.lengthSq() < 1e-12) return;
-        definition.pivot = target.toArray();
-        // Shift node position to cancel the pivot change and preserve block positions.
-        node.localPosition.add(delta);
-        node.group.position.copy(node.localPosition);
-        this.rebuildEntityHierarchy();
+      setPivot: (value) => {
+        this.setComponentPivot(id, value, {
+          requireStopped: false,
+          allowDynamic: false
+        });
       },
 
       // ---------- C. Legacy root force surface. Component-local arguments are
@@ -1451,6 +1460,62 @@ export class Contraption {
   }
 
   /**
+   * Move one component's authored pivot without moving any voxel in its
+   * subtree. This is the structural/editor form of setPivot: stopped entities
+   * may also edit a dynamic body's pivot, while the script surface keeps its
+   * existing kinematic-only rule.
+   */
+  setComponentPivot(nodeId = 'root', value, options: any = {}) {
+    const id = String(nodeId || 'root');
+    const node = this.entityNodes.get(id);
+    if (!node) return { ok: false, reason: 'component_not_found' };
+    const definition = id === 'root' ? null : this.childDefinitions.get(id);
+    if (id !== 'root' && !definition) return { ok: false, reason: 'component_not_found' };
+    if (options.requireStopped !== false && !this.canEditInternalSelection()) {
+      return { ok: false, reason: 'target_not_stopped' };
+    }
+    if (options.allowDynamic !== true && node.bodyType !== BodyType.KINEMATIC) {
+      return { ok: false, reason: 'dynamic_body' };
+    }
+
+    const target = asVector3(value, node.pivotLocal);
+    if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z)) {
+      return { ok: false, reason: 'invalid_pivot' };
+    }
+    const previous = node.pivotLocal.clone();
+    const delta = target.clone().sub(previous);
+    if (delta.lengthSq() < 1e-12) {
+      return { ok: true, changed: false, nodeId: id, pivot: previous.toArray() };
+    }
+
+    // Moving a parent pivot changes the origin inherited by its direct
+    // children. Counter-shift them in the parent's local frame so every
+    // descendant remains fixed in world space.
+    for (const childId of node.children) {
+      const child = this.entityNodes.get(childId);
+      if (!child) continue;
+      child.localPosition.addScaledVector(delta, -1);
+      const childDefinition = this.childDefinitions.get(childId);
+      if (childDefinition) childDefinition.localPosition = child.localPosition.toArray();
+    }
+
+    if (id === 'root') {
+      this.rootPivotOverride = target.clone();
+      // Root position is world-space; rotate the node-local pivot delta first.
+      this.position.add(delta.clone().applyQuaternion(this.quaternion));
+    } else {
+      definition.pivot = target.toArray();
+      // A child origin lives in its parent's frame. Its own authored rotation
+      // maps the pivot delta into that parent frame.
+      node.localPosition.add(delta.clone().applyQuaternion(node.localQuaternion));
+      definition.localPosition = node.localPosition.toArray();
+    }
+
+    this.rebuildEntityHierarchy();
+    return { ok: true, changed: true, nodeId: id, pivot: target.toArray() };
+  }
+
+  /**
    * Serialize the component subtree rooted at rootNodeId, including block ownership,
    * microblocks, colors, child definitions, scripts, and enabled state. The result can
    * be passed directly to ContraptionManager.buildFromSlot to create an independent entity.
@@ -1480,6 +1545,8 @@ export class Contraption {
         const defaults = this.getNodeDefaultBodyConfig(d.id);
         const serialized = {
           ...d,
+          anchorRotation: this.entityNodes.get(d.id)?.anchorQuaternion.toArray()
+            || asQuaternion(d.anchorRotation).toArray(),
           id: mapId(d.id),
           parentId: mapId(d.parentId),
           bodyType: defaults?.bodyType || d.bodyType,
@@ -1520,6 +1587,8 @@ export class Contraption {
       scripts,
       enabled,
       constraints,
+      anchorRotation: this.entityNodes.get(sourceRootId)?.anchorQuaternion.toArray()
+        || new THREE.Quaternion().toArray(),
       bodyType: rootBodyDefaults?.bodyType || this.getNodeBodyType(sourceRootId),
       ...(massOverride !== null ? { mass: massOverride } : {}),
       restitution: rootBodyDefaults?.restitution,
@@ -1573,6 +1642,8 @@ export class Contraption {
         const defaults = this.getNodeDefaultBodyConfig(d.id);
         const serialized = {
           ...d,
+          anchorRotation: this.entityNodes.get(d.id)?.anchorQuaternion.toArray()
+            || asQuaternion(d.anchorRotation).toArray(),
           parentId: roots.includes(d.id) || !nodeIds.has(d.parentId) ? 'root' : d.parentId,
           bodyType: defaults?.bodyType || d.bodyType,
           restitution: defaults?.restitution ?? d.restitution,
@@ -1607,6 +1678,7 @@ export class Contraption {
       scripts,
       enabled,
       constraints,
+      anchorRotation: new THREE.Quaternion().toArray(),
       bodyType: this.getNodeDefaultBodyConfig('root')?.bodyType || this.bodyType,
       restitution: this.getNodeDefaultBodyConfig('root')?.restitution ?? this.restitution,
       friction: this.getNodeDefaultBodyConfig('root')?.friction ?? this.friction,
@@ -1636,7 +1708,13 @@ export class Contraption {
    * its descendants retain their authored bodies, scripts, seats, and internal
    * constraints. The operation validates completely before mutating the tree.
    */
-  installEntitySlot(slot, parentNodeId = 'root', placementOrigin = new THREE.Vector3(), preparedBlocks = null) {
+  installEntitySlot(
+    slot,
+    parentNodeId = 'root',
+    placementOrigin = new THREE.Vector3(),
+    preparedBlocks = null,
+    placementRotation = null
+  ) {
     const fail = (reason: string) => Object.freeze({ ok: false, reason });
     const parentId = String(parentNodeId || 'root');
     const parentNode = this.entityNodes.get(parentId);
@@ -1654,6 +1732,7 @@ export class Contraption {
       ? placementOrigin.clone()
       : new THREE.Vector3(Number(placementOrigin?.x), Number(placementOrigin?.y), Number(placementOrigin?.z));
     if (![origin.x, origin.y, origin.z].every(Number.isFinite)) return fail('invalid_placement');
+    const worldRotation = asQuaternion(placementRotation);
 
     const sourceDefinitions = Array.isArray(slot.childEntities) ? slot.childEntities : [];
     const sourceIds = new Set<string>(['root']);
@@ -1753,7 +1832,9 @@ export class Contraption {
       (minY + maxY) / 2,
       (minZ + maxZ) / 2
     );
-    const desiredRootWorldPosition = origin.clone().add(sourceRootPivot);
+    const desiredRootWorldPosition = origin.clone().add(
+      sourceRootPivot.clone().applyQuaternion(worldRotation)
+    );
     const installedRootPivot = this.worldToLocal(desiredRootWorldPosition);
     const coordinateOffset = installedRootPivot.clone().sub(sourceRootPivot);
 
@@ -1785,7 +1866,8 @@ export class Contraption {
     const installedLocalPosition = parentNode.group.worldToLocal(desiredRootWorldPosition.clone());
     const installedLocalRotation = parentNode.group
       .getWorldQuaternion(new THREE.Quaternion())
-      .invert();
+      .invert()
+      .multiply(worldRotation);
     const installedDefinitions = [{
       id: installedRootId,
       parentId,
@@ -1793,6 +1875,7 @@ export class Contraption {
       pivot: installedRootPivot.toArray(),
       localPosition: installedLocalPosition.toArray(),
       localRotation: installedLocalRotation.toArray(),
+      anchorRotation: asQuaternion(slot.anchorRotation).toArray(),
       bodyType: BodyType.KINEMATIC,
       ...(slot.mass === undefined ? {} : { mass: Number(slot.mass) }),
       restitution: slot.restitution,
@@ -2352,6 +2435,7 @@ export class Contraption {
       pivotLocal: (this.rootPivotOverride || this.localCenter).clone(),
       localPosition: new THREE.Vector3(),
       localQuaternion: new THREE.Quaternion(),
+      anchorQuaternion: this.rootAnchorQuaternion.clone(),
       localAngularVelocity: new THREE.Vector3(),
       commandedThisFrame: false,
       initialLocalPosition: new THREE.Vector3(),
@@ -2380,6 +2464,7 @@ export class Contraption {
           || asVector3(definition.localPosition, defaultPosition);
         const localQuaternion = saved?.localQuaternion
           || asQuaternion(definition.localRotation);
+        const anchorQuaternion = asQuaternion(definition.anchorRotation);
         const group = new THREE.Group();
         group.name = `Entity_${definition.id}`;
         group.position.copy(localPosition);
@@ -2392,6 +2477,7 @@ export class Contraption {
           pivotLocal,
           localPosition,
           localQuaternion,
+          anchorQuaternion,
           localAngularVelocity: saved?.localAngularVelocity || new THREE.Vector3(),
           commandedThisFrame: false,
           initialLocalPosition: localPosition.clone(),
@@ -2427,6 +2513,7 @@ export class Contraption {
         pivotLocal,
         localPosition: group.position.clone(),
         localQuaternion: new THREE.Quaternion(),
+        anchorQuaternion: asQuaternion(definition.anchorRotation),
         localAngularVelocity: new THREE.Vector3(),
         previousLocalPosition: group.position.clone(),
         previousLocalQuaternion: group.quaternion.clone(),
@@ -3018,6 +3105,36 @@ export class Contraption {
       size: Object.freeze([maxX - minX, maxY - minY, maxZ - minZ]),
       center: Object.freeze([(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2])
     });
+  }
+
+  /**
+   * Default editor pivot: the entity root returns to its authored entity
+   * center, while a child returns to the center of the voxels it directly
+   * owns. Empty components keep their current pivot.
+   */
+  getDefaultComponentPivot(nodeId = 'root') {
+    const id = String(nodeId || 'root');
+    const node = this.entityNodes.get(id);
+    if (!node) return null;
+    if (id === 'root') return this.localCenter.clone();
+    const bounds = this.getNodeBlocksBounds(id);
+    return bounds?.center
+      ? new THREE.Vector3().fromArray(bounds.center as [number, number, number])
+      : node.pivotLocal.clone();
+  }
+
+  /** Restore a component pivot to its default center without moving its subtree. */
+  resetComponentPivot(nodeId = 'root', options: any = {}) {
+    const id = String(nodeId || 'root');
+    const target = this.getDefaultComponentPivot(id);
+    if (!target) return { ok: false, reason: 'component_not_found' };
+    const hadRootOverride = id === 'root' && this.rootPivotOverride !== null;
+    const result: any = this.setComponentPivot(id, target, options);
+    if (!result.ok) return result;
+    if (id === 'root') this.rootPivotOverride = null;
+    return hadRootOverride && !result.changed
+      ? { ...result, changed: true, pivot: target.toArray() }
+      : result;
   }
 
   createChildEntity(parentId, cellKeysOrBlocks, requestedId = null) {

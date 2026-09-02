@@ -167,7 +167,7 @@ test('component installation is rejected without mutation while the target is ru
   assert.equal(target.entityNodes.size, componentCount);
 });
 
-test('Hammer Shift+LMB requests install mode while plain LMB keeps build mode', () => {
+test('Hammer forwards Shift/crouch as an explicit install modifier', () => {
   const controller = Object.create(PlayerController.prototype) as any;
   controller.activeTool = SpecialTool.HAMMER;
   controller.bulkEditJob = null;
@@ -182,3 +182,119 @@ test('Hammer Shift+LMB requests install mode while plain LMB keeps build mode', 
 
   assert.deepEqual(calls, [false, true, true]);
 });
+
+test('plain Hammer placement on an entity installs under the hit component automatically', () => {
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
+  const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(), null, false) as any;
+  const sensorSlot = {
+    name: 'Sensor',
+    kind: 'entity',
+    rootId: 'root',
+    blockCount: 1,
+    blocks: [block(0)],
+    childEntities: [],
+    scripts: [],
+    enabled: [],
+    constraints: []
+  };
+  const controller = Object.create(PlayerController.prototype) as any;
+  controller.activeTool = SpecialTool.HAMMER;
+  controller.bulkEditJob = null;
+  controller.hammerRotationTurns = 0;
+  controller.inventories = controller.createEmptyInventories();
+  controller.activeInventoryCategory = 'entity';
+  controller.inventories.entity.items[0] = sensorSlot;
+  controller.inventories.entity.selected = 0;
+  controller.contraptions = manager;
+  controller.currentRaycast = { hit: false };
+  controller.hoveredContraptionHit = {
+    point: new THREE.Vector3(1.5, 0.5, 1),
+    worldNormal: new THREE.Vector3(0, 0, 1),
+    normal: new THREE.Vector3(0, 0, 1),
+    contraption: target,
+    entityId: 'arm'
+  };
+  controller.physics = { getEyePosition: () => new THREE.Vector3() };
+  controller.sound = { playAssemblyClack() {}, playBlockPlace() {} };
+  controller.ui = { showToast() {}, notifyContraptionStructureChanged() {} };
+
+  const pose = controller.getInventoryPlacementPose(sensorSlot);
+  const expectedCenter = getExpectedPlacedCenter(sensorSlot.blocks[0], pose);
+  assert.equal(controller.pasteInventorySlot(false), true);
+
+  assert.equal(manager.contraptions.length, 1, 'entity-on-entity placement must not spawn a second Contraption');
+  assert.equal(target.getEntityNode('Sensor').parentId, 'arm');
+  const installedBlock = target.blocks.find(item => item.entityId === 'Sensor');
+  assert.ok(installedBlock);
+  assert.ok(target.getBlockWorldCenter(installedBlock).distanceTo(expectedCenter) < 1e-8,
+    'the installed child must use the exact preview position and outward rotation');
+});
+
+test('entity anchor frame and Hammer roll compose into the installed localRotation', () => {
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null) as any;
+  const target = manager.buildFromSlot(targetSlot(), new THREE.Vector3(), null, false) as any;
+  const anchor = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(0, 0, 1),
+    -Math.PI / 2
+  );
+  const rotorSlot = {
+    name: 'Rotor',
+    kind: 'entity',
+    rootId: 'root',
+    anchorRotation: anchor.toArray(),
+    blockCount: 1,
+    blocks: [block(0)],
+    childEntities: [],
+    scripts: [],
+    enabled: [],
+    constraints: []
+  };
+  const controller = Object.create(PlayerController.prototype) as any;
+  controller.activeTool = SpecialTool.HAMMER;
+  controller.bulkEditJob = null;
+  controller.inventories = controller.createEmptyInventories();
+  controller.activeInventoryCategory = 'entity';
+  controller.inventories.entity.items[0] = rotorSlot;
+  controller.inventories.entity.selected = 0;
+  controller.hammerRotationTurns = 1;
+  controller.contraptions = manager;
+  controller.currentRaycast = { hit: false };
+  controller.hoveredContraptionHit = {
+    point: new THREE.Vector3(1.5, 0.5, 1),
+    worldNormal: new THREE.Vector3(0, 0, 1),
+    normal: new THREE.Vector3(0, 0, 1),
+    contraption: target,
+    entityId: 'arm'
+  };
+  controller.physics = { getEyePosition: () => new THREE.Vector3() };
+  controller.sound = { playAssemblyClack() {}, playBlockPlace() {} };
+  controller.ui = { showToast() {}, notifyContraptionStructureChanged() {} };
+
+  const placedSlot = controller.getActiveHammerInventoryItem();
+  const pose = controller.getInventoryPlacementPose(placedSlot);
+  const authoredOutward = new THREE.Vector3(0, 1, 0).applyQuaternion(anchor);
+  const worldOutward = authoredOutward.clone().applyQuaternion(pose.quaternion).normalize();
+  assert.ok(worldOutward.distanceTo(new THREE.Vector3(0, 0, 1)) < 1e-8,
+    'Hammer roll must preserve the anchor outward direction');
+
+  assert.equal(controller.pasteInventorySlot(false), true);
+  const installed = target.getEntityNode('Rotor');
+  const placedAnchor = new THREE.Quaternion().fromArray(placedSlot.anchorRotation);
+  assert.ok(installed);
+  assert.ok(target.getEntityNodeWorldQuaternion('Rotor').angleTo(pose.quaternion) < 1e-8);
+  assert.ok(installed.anchorQuaternion.angleTo(placedAnchor) < 1e-8,
+    'the installed component retains the right-clicked anchor roll');
+
+  const copied = target.serializeSubtree('Rotor');
+  assert.ok(new THREE.Quaternion().fromArray(copied.anchorRotation).angleTo(placedAnchor) < 1e-8,
+    'copying the installed module must retain its authored anchor frame');
+});
+
+function getExpectedPlacedCenter(blockValue: any, pose: any) {
+  const size = Number(blockValue.size) || 1;
+  return new THREE.Vector3(
+    Number(blockValue.localX) + size / 2,
+    Number(blockValue.localY) + size / 2,
+    Number(blockValue.localZ) + size / 2
+  ).applyQuaternion(pose.quaternion).add(pose.position);
+}

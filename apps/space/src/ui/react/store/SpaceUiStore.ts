@@ -1,10 +1,13 @@
 import { ActionDomain } from '../../../engine/actions/BasicActions.ts';
-import { runSpaceBuildAgentTurn } from '../../../engine/building/BuildAgent.ts';
 import type {
   SpaceBuildValidation,
   SpaceBuilderJobStatus
 } from '../../../engine/building/SpaceBuilder.ts';
-import { loadAgentConfig, runAgentTurn, saveAgentConfig } from '../../../engine/contraption/AgentChat.ts';
+import {
+  loadAgentConfig,
+  normalizeAgentConfig,
+  saveAgentConfig
+} from '../../../engine/contraption/AgentConfig.ts';
 import { ContraptionMode } from '../../../engine/contraption/Contraption.ts';
 import {
   MAX_INVENTORY_IMPORT_BYTES,
@@ -15,6 +18,7 @@ import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../../../engine/torus/
 import { triggerProtobufDownload } from '../browser/downloadProtobuf.ts';
 import { colorToHex, normalizeColor, PRESET_COLORS } from '../../../engine/voxel/BlockTypes.ts';
 import { SpaceMarketClient } from '../../../bootstrap/SpaceMarketClient.ts';
+import { MAX_BACKPACK_SLOTS_PER_CATEGORY } from '../../../engine/storage/InventoryProtobuf.ts';
 
 export type SpaceModal = 'inventory' | 'code' | 'settings' | 'builder' | null;
 
@@ -148,8 +152,8 @@ const HOTBAR_SLOTS = [
   { type: 'tool', value: SpecialTool.SHOVEL, name: 'Shovel', icon: '', desc: 'Remove / place 1x1x1 standard blocks' },
   { type: 'tool', value: SpecialTool.SPOON, name: 'Spoon', icon: '', desc: 'Carve 5x5x5 micro voxels cell by cell' },
   { type: 'tool', value: SpecialTool.SELECTOR, name: 'Selector', icon: '', desc: 'Select and copy world/entity regions (max 64×64×64); no build action' },
-  { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'LMB build · Shift+LMB install entity · RMB rotate 90°' },
-  { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Hold left-click to grab · right-click start/stop' },
+  { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'LMB build / attach to entity · RMB rotate 90°' },
+  { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Drag pivot axes · click origin to reset · hold left-click to grab · right-click start/stop' },
   { type: 'tool', value: SpecialTool.BRUSH, name: 'Brush', icon: '', desc: 'LMB paint · RMB sample · Tab micro/std' }
 ];
 
@@ -649,7 +653,7 @@ export class SpaceUiStore {
     const name = `Palette ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     const index = this.snapshot.controller?.addInventoryItem?.('colorset', { name, colors: this.getPaletteColors() });
     if (index === null || index === undefined) {
-      this.showToast('Color set inventory is full (9) - delete one first');
+      this.showToast(`Color set inventory is full (${MAX_BACKPACK_SLOTS_PER_CATEGORY}) - delete one first`);
       return null;
     }
     this.showToast(`Added the current palette as color set ${index + 1}`);
@@ -785,8 +789,7 @@ export class SpaceUiStore {
       }
       const index = controller.addInventoryItem(category, parsed.item);
       if (index === null) {
-        const capacity = category === 'colorset' ? 9 : 99;
-        this.showToast(`${category} inventory is full (${capacity}) - delete one first`);
+        this.showToast(`${category} inventory is full (${MAX_BACKPACK_SLOTS_PER_CATEGORY}) - delete one first`);
         return;
       }
       controller.setActiveInventoryCategory(category);
@@ -827,7 +830,8 @@ export class SpaceUiStore {
       this.showToast(`Copied to slot ${newIndex + 1}`);
       this.syncInventoryState();
     } else {
-      this.showToast(`Cannot copy: ${category} inventory is full (9/9)`);
+      const capacity = Number(group?.items?.length) || MAX_BACKPACK_SLOTS_PER_CATEGORY;
+      this.showToast(`Cannot copy: ${category} inventory is full (${capacity}/${capacity})`);
     }
   }
 
@@ -1084,17 +1088,12 @@ export class SpaceUiStore {
   }
 
   saveAgentSettings(config: any): void {
-    const normalized = {
-      baseUrl: config.baseUrl?.trim() || 'https://api.openai.com/v1',
-      apiKey: config.apiKey?.trim() || '',
-      model: config.model?.trim() || 'gpt-4o-mini',
-      contextKTokens: Math.max(1, Math.min(2048, Number(config.contextKTokens) || 32)),
-      maxOutputKTokens: Math.max(0.1, Math.min(128, Number(config.maxOutputKTokens) || 4)),
-      timeoutSeconds: Math.max(5, Math.min(600, Number(config.timeoutSeconds) || 60))
-    };
+    const normalized = normalizeAgentConfig(config);
     saveAgentConfig(normalized);
     this.patch({ agentConfig: normalized, agentSetupOpen: false, buildAgentSetupOpen: false });
-    this.showToast(normalized.apiKey ? `Model config saved (${normalized.model})` : 'Saved (no key - local compiler will be used)');
+    this.showToast(normalized.apiKey
+      ? `Model config saved (${normalized.model}; key ${normalized.rememberApiKey ? 'remembered' : 'for this tab'})`
+      : 'Saved (no key - local compiler will be used)');
   }
 
   toggleBuildAgentSetup(forceState: boolean | null = null): void {
@@ -1163,6 +1162,7 @@ export class SpaceUiStore {
     };
 
     try {
+      const { runSpaceBuildAgentTurn } = await import('../../../engine/building/BuildAgent.ts');
       const result: any = await runSpaceBuildAgentTurn(
         prompt,
         state.agentConfig,
@@ -1285,6 +1285,7 @@ export class SpaceUiStore {
     };
 
     try {
+      const { runAgentTurn } = await import('../../../engine/contraption/AgentChat.ts');
       const result: any = await runAgentTurn(prompt, state.agentConfig, history, null, targetContext, updateStreaming);
       const current = [...this.snapshot.agentMessages];
       current[assistantIndex] = result.ok

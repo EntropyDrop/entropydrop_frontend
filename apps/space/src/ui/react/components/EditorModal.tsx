@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiDocsBodyMarkup } from '../apiDocsMarkup.ts';
+import {
+  DEFAULT_AGENT_CONTEXT_K_TOKENS,
+  DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS
+} from '../../../engine/contraption/AgentConfig.ts';
 import { spaceUiStore, type AgentMessage } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
+import { AgentApiKeySecurityNotice } from './AgentApiKeySecurityNotice.tsx';
 import { AgentModelField } from './AgentModelField.tsx';
 import { ThoughtBox } from './ThoughtBox.tsx';
 
@@ -168,7 +173,8 @@ function AgentChat() {
       <div className="telemetry-section-title agent-chat-title"><span>AI ASSISTANT</span><div className="agent-title-actions"><button id="agent-clear-btn" tabIndex={-1} className="mini-toggle-btn reset" title="Clear chat history" onClick={() => spaceUiStore.clearAgentChat()}>🗑 CLEAR</button><button id="agent-settings-btn" tabIndex={-1} className={`mini-toggle-btn reset ${state.agentSetupOpen ? 'active' : ''}`} title="Toggle model API settings" onClick={() => spaceUiStore.toggleAgentSetup()}>⚙ SETUP <span id="agent-setup-arrow" className="setup-arrow">{state.agentSetupOpen ? '▲' : '▼'}</span></button></div></div>
       <div id="agent-setup-accordion" className="agent-setup-accordion" style={{ display: state.agentSetupOpen ? 'flex' : 'none' }}>
         <div className="agent-config-field"><span className="config-label">API Base URL</span><input id="agent-api-base" className="config-input" value={config.baseUrl || ''} placeholder="https://api.openai.com/v1" onChange={event => setConfig({ ...config, baseUrl: event.target.value })} /></div>
-        <div className="agent-config-field"><span className="config-label">API Key</span><input id="agent-api-key" className="config-input" type="password" value={config.apiKey || ''} placeholder="sk-..." onChange={event => setConfig({ ...config, apiKey: event.target.value })} /></div>
+        <div className="agent-config-field"><span className="config-label">API Key</span><input id="agent-api-key" className="config-input" type="password" autoComplete="off" value={config.apiKey || ''} placeholder="sk-... (this tab only by default)" onChange={event => setConfig({ ...config, apiKey: event.target.value })} /><label className="agent-key-persistence-option"><input type="checkbox" checked={config.rememberApiKey === true} aria-describedby="agent-api-key-security-notice" onChange={event => setConfig({ ...config, rememberApiKey: event.target.checked })} />Persist API key on this device (plaintext localStorage)</label></div>
+        <AgentApiKeySecurityNotice id="agent-api-key-security-notice" rememberApiKey={config.rememberApiKey === true} />
         <AgentModelField
           inputId="agent-api-model"
           baseUrl={config.baseUrl || ''}
@@ -176,11 +182,11 @@ function AgentChat() {
           model={config.model || ''}
           onModelChange={model => setConfig((current: any) => ({ ...current, model }))}
         />
-        <div className="agent-config-field"><span className="config-label">Context Window (K tokens)</span><input id="agent-context-length" className="config-input" type="number" min="1" max="2048" step="1" value={config.contextKTokens ?? 32} onChange={event => setConfig({ ...config, contextKTokens: event.target.value })} /></div>
-        <div className="agent-config-field"><span className="config-label">Max Output (K tokens)</span><input id="agent-max-tokens" className="config-input" type="number" min="0.1" max="128" step="0.5" value={config.maxOutputKTokens ?? 4} onChange={event => setConfig({ ...config, maxOutputKTokens: event.target.value })} /></div>
+        <div className="agent-config-field"><span className="config-label">Context Window (K tokens)</span><input id="agent-context-length" className="config-input" type="number" min="1" max="2048" step="1" value={config.contextKTokens ?? DEFAULT_AGENT_CONTEXT_K_TOKENS} onChange={event => setConfig({ ...config, contextKTokens: event.target.value })} /></div>
+        <div className="agent-config-field"><span className="config-label">Max Output (K tokens)</span><input id="agent-max-tokens" className="config-input" type="number" min="0.1" max="128" step="0.5" value={config.maxOutputKTokens ?? DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS} onChange={event => setConfig({ ...config, maxOutputKTokens: event.target.value })} /></div>
         <div className="agent-config-field"><span className="config-label">Timeout (Seconds)</span><input id="agent-timeout" className="config-input" type="number" min="5" max="600" step="5" value={config.timeoutSeconds ?? 60} onChange={event => setConfig({ ...config, timeoutSeconds: event.target.value })} /></div>
         <div className="agent-config-actions"><button id="agent-config-save-btn" tabIndex={-1} className="small-btn primary" onClick={() => spaceUiStore.saveAgentSettings(config)}>Save Config</button></div>
-        <div className="config-hint">Key remains in this browser session. Model choices load from API Base URL + /models. Without a key, uses local compiler.</div>
+        <div className="config-hint">Model choices load from API Base URL + /models. Without a key, uses local compiler.</div>
       </div>
       <div id="agent-chat-box" className="agent-chat-box" ref={scrollRef} onScroll={handleChatScroll}>
         {state.agentMessages.length ? state.agentMessages.map(renderMessage) : <div className="agent-chat-msg agent-msg-system">Describe a behavior in plain language (e.g. &quot;hover 5m&quot;, &quot;follow me&quot;).<br />Generated code remains inert until you click Apply.<br />· {state.agentConfig?.apiKey ? `Model connected: ${state.agentConfig.model}` : 'Using built-in local compiler'}</div>}

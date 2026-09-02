@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import {
   parseGLTFData,
@@ -8,6 +9,9 @@ import {
   planModelSize,
   sampleTriangleColor,
   extractTrianglesFromObject3D,
+  MODEL_TEXTURE_ERROR_CODE,
+  DEFAULT_MODEL_IMPORT_SIZE_BLOCKS,
+  isSupportedModelFilename,
   type VoxelTriangle
 } from '../src/engine/voxel/ModelVoxelizer.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
@@ -63,6 +67,151 @@ function createGlb(json: any, bin: Buffer): ArrayBuffer {
   binBytes.copy(glb, offset); offset += binBytes.length;
 
   return glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength);
+}
+
+function toArrayBuffer(buffer: Buffer): ArrayBuffer {
+  return Uint8Array.from(buffer).buffer;
+}
+
+function createExternalTexturedGltf() {
+  const json = {
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    images: [{ uri: 'albedo.png' }],
+    textures: [{ source: 0 }],
+    materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+    meshes: [{
+      primitives: [{
+        attributes: { POSITION: 0, TEXCOORD_0: 1 },
+        indices: 2,
+        material: 0
+      }]
+    }],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', max: [1, 1, 0], min: [0, 0, 0] },
+      { bufferView: 1, componentType: 5126, count: 3, type: 'VEC2' },
+      { bufferView: 2, componentType: 5123, count: 3, type: 'SCALAR' }
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 36 },
+      { buffer: 0, byteOffset: 36, byteLength: 24 },
+      { buffer: 0, byteOffset: 60, byteLength: 6 }
+    ],
+    buffers: [{ uri: 'mesh.bin', byteLength: 66 }]
+  };
+  const bin = Buffer.concat([
+    Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer),
+    Buffer.from(new Float32Array([0, 0, 1, 0, 0, 1]).buffer),
+    Buffer.from(new Uint16Array([0, 1, 2]).buffer)
+  ]);
+  return {
+    jsonBuffer: new TextEncoder().encode(JSON.stringify(json)).buffer,
+    binBuffer: toArrayBuffer(bin)
+  };
+}
+
+function createLegacySpecGlossTexturedGlb() {
+  const json = {
+    asset: { version: '2.0', generator: 'Sketchfab legacy export' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    extensionsUsed: ['KHR_materials_pbrSpecularGlossiness'],
+    extensionsRequired: ['KHR_materials_pbrSpecularGlossiness'],
+    images: [{ bufferView: 3, mimeType: 'image/png' }],
+    textures: [{ source: 0 }],
+    materials: [{
+      name: 'Legacy diffuse material',
+      extensions: {
+        KHR_materials_pbrSpecularGlossiness: {
+          diffuseFactor: [1, 1, 1, 1],
+          diffuseTexture: { index: 0 },
+          glossinessFactor: 0.8
+        }
+      }
+    }],
+    meshes: [{
+      primitives: [{
+        attributes: { POSITION: 0, TEXCOORD_0: 1 },
+        indices: 2,
+        material: 0
+      }]
+    }],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', max: [1, 1, 0], min: [0, 0, 0] },
+      { bufferView: 1, componentType: 5126, count: 3, type: 'VEC2' },
+      { bufferView: 2, componentType: 5123, count: 3, type: 'SCALAR' }
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 36 },
+      { buffer: 0, byteOffset: 36, byteLength: 24 },
+      { buffer: 0, byteOffset: 60, byteLength: 6 },
+      { buffer: 0, byteOffset: 68, byteLength: 3 }
+    ],
+    buffers: [{ byteLength: 71 }]
+  };
+  const bin = Buffer.concat([
+    Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer),
+    Buffer.from(new Float32Array([0, 0, 1, 0, 0, 1]).buffer),
+    Buffer.from(new Uint16Array([0, 1, 2]).buffer),
+    Buffer.alloc(2),
+    Buffer.from([1, 2, 3])
+  ]);
+  return createGlb(json, bin);
+}
+
+async function withFakeImageBitmapDecoder<T>(run: () => Promise<T>): Promise<T> {
+  const createImageBitmapDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'createImageBitmap');
+  const offscreenCanvasDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'OffscreenCanvas');
+  const selfDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'self');
+  const pixels = new Uint8ClampedArray([
+    255, 0, 0, 255, 0, 255, 0, 255,
+    0, 0, 255, 255, 255, 255, 0, 255
+  ]);
+
+  class FakeOffscreenCanvas {
+    private image: any;
+    width: number;
+    height: number;
+    constructor(width: number, height: number) {
+      this.width = width;
+      this.height = height;
+    }
+    getContext() {
+      return {
+        drawImage: (image: any) => { this.image = image; },
+        getImageData: () => ({ data: this.image.pixels })
+      };
+    }
+  }
+
+  Object.defineProperty(globalThis, 'createImageBitmap', {
+    configurable: true,
+    writable: true,
+    value: async () => ({ width: 2, height: 2, pixels })
+  });
+  Object.defineProperty(globalThis, 'OffscreenCanvas', {
+    configurable: true,
+    writable: true,
+    value: FakeOffscreenCanvas
+  });
+  Object.defineProperty(globalThis, 'self', {
+    configurable: true,
+    writable: true,
+    value: globalThis
+  });
+  try {
+    return await run();
+  } finally {
+    if (createImageBitmapDescriptor) Object.defineProperty(globalThis, 'createImageBitmap', createImageBitmapDescriptor);
+    else delete (globalThis as any).createImageBitmap;
+    if (offscreenCanvasDescriptor) Object.defineProperty(globalThis, 'OffscreenCanvas', offscreenCanvasDescriptor);
+    else delete (globalThis as any).OffscreenCanvas;
+    if (selfDescriptor) Object.defineProperty(globalThis, 'self', selfDescriptor);
+    else delete (globalThis as any).self;
+  }
 }
 
 test('sampleTriangleColor correctly prioritizes textures, vertex colors, and material colors', () => {
@@ -189,6 +338,74 @@ test('extractTrianglesFromObject3D honors the base-color texture UV channel and 
   geom.dispose();
 });
 
+test('extractTrianglesFromObject3D preserves RGB texture colors without treating byte 4 as alpha', () => {
+  const scene = new THREE.Scene();
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute([
+    0, 0, 0,
+    1, 0, 0,
+    0, 1, 0
+  ], 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute([
+    0, 0,
+    1, 0,
+    0, 0
+  ], 2));
+  const texture = new THREE.Texture();
+  texture.image = {
+    data: new Uint8Array([255, 0, 0, 0, 255, 0]),
+    width: 2,
+    height: 1
+  };
+  texture.flipY = false;
+  const material = new THREE.MeshBasicMaterial({ color: 0xffffff, map: texture });
+  scene.add(new THREE.Mesh(geom, material));
+
+  const [triangle] = extractTrianglesFromObject3D(scene);
+  assert.equal(triangle.texture?.channels, 3);
+  assert.equal(sampleTriangleColor(triangle, 1, 0, 0), 0xff0000);
+  assert.equal(sampleTriangleColor(triangle, 0, 1, 0), 0x00ff00);
+
+  material.dispose();
+  texture.dispose();
+  geom.dispose();
+});
+
+test('parseGLTFData loads external .bin and base-color image resources with their colors', async () => {
+  const { jsonBuffer, binBuffer } = createExternalTexturedGltf();
+  const triangles = await withFakeImageBitmapDecoder(() => parseGLTFData(jsonBuffer, [
+    { name: 'mesh.bin', buffer: binBuffer },
+    { name: 'albedo.png', buffer: new Uint8Array([1, 2, 3]).buffer, mimeType: 'image/png' }
+  ]));
+
+  assert.equal(triangles.length, 1);
+  assert.ok(triangles[0].texture);
+  assert.equal(triangles[0].flipY, false);
+  assert.equal(sampleTriangleColor(triangles[0], 1, 0, 0), 0xff0000);
+  assert.equal(sampleTriangleColor(triangles[0], 0, 1, 0), 0x00ff00);
+  assert.equal(sampleTriangleColor(triangles[0], 0, 0, 1), 0x0000ff);
+});
+
+test('parseGLTFData converts legacy Sketchfab specular-glossiness diffuse textures', async () => {
+  const triangles = await withFakeImageBitmapDecoder(() => (
+    parseGLTFData(createLegacySpecGlossTexturedGlb())
+  ));
+
+  assert.equal(triangles.length, 1);
+  assert.ok(triangles[0].texture, 'legacy diffuseTexture should become a readable base-color map');
+  assert.equal(sampleTriangleColor(triangles[0], 1, 0, 0), 0xff0000);
+  assert.equal(sampleTriangleColor(triangles[0], 0, 1, 0), 0x00ff00);
+  assert.equal(sampleTriangleColor(triangles[0], 0, 0, 1), 0x0000ff);
+});
+
+test('parseGLTFData reports a texture-specific error instead of importing a white model', async () => {
+  const { jsonBuffer, binBuffer } = createExternalTexturedGltf();
+  await assert.rejects(
+    parseGLTFData(jsonBuffer, [{ name: 'mesh.bin', buffer: binBuffer }]),
+    (error: any) => error?.code === MODEL_TEXTURE_ERROR_CODE && /base-color texture/i.test(error.message)
+  );
+});
+
 test('parseGLTFData parses full-color GLB model with vertex colors', async () => {
   const json = {
     asset: { version: '2.0' },
@@ -291,7 +508,7 @@ test('voxelizeModel colors every shell block from large textured triangles', () 
   assert.deepEqual(new Set(result.blocks.map(block => block.color)), new Set([0xff0000]));
 });
 
-test('parse3DModelData auto-detects GLB, GLTF, and STL files', async () => {
+test('parse3DModelData accepts only GLB, GLTF, and STL filename extensions', async () => {
   // 1. GLB
   const glbJson = {
     asset: { version: '2.0' },
@@ -320,6 +537,10 @@ test('parse3DModelData auto-detects GLB, GLTF, and STL files', async () => {
   const glbBuffer = createGlb(glbJson, glbBin);
   const glbTris = await parse3DModelData(glbBuffer, 'test_model.glb');
   assert.equal(glbTris.length, 1);
+  await assert.rejects(
+    parse3DModelData(glbBuffer, 'test_model.bin'),
+    /\.bin files are not supported/i
+  );
 
   // 2. STL (ASCII)
   const stlText = `solid test
@@ -334,6 +555,22 @@ endsolid test`;
   const stlBuffer = new TextEncoder().encode(stlText).buffer;
   const stlTris = await parse3DModelData(stlBuffer, 'test_model.stl');
   assert.equal(stlTris.length, 1);
+
+  assert.equal(isSupportedModelFilename('MODEL.GLB'), true);
+  assert.equal(isSupportedModelFilename('model.gltf'), true);
+  assert.equal(isSupportedModelFilename('model.stl'), true);
+  assert.equal(isSupportedModelFilename('model.bin'), false);
+  assert.equal(isSupportedModelFilename('model.obj'), false);
+  assert.equal(DEFAULT_MODEL_IMPORT_SIZE_BLOCKS, 12);
+});
+
+test('3D model picker exposes only supported extensions and uses size 12 by default', () => {
+  const source = readFileSync(new URL('../src/ui/react/components/InventoryModal.tsx', import.meta.url), 'utf8');
+  assert.match(source, /accept="\.glb,\.gltf,\.stl"/);
+  assert.doesNotMatch(source, /accept="[^"]*\.bin/i);
+  assert.doesNotMatch(source, /accept="[^"]*image/i);
+  assert.match(source, /useState\(DEFAULT_MODEL_IMPORT_SIZE_BLOCKS\)/);
+  assert.match(source, /External \.bin files are not supported/);
 });
 
 test('PlayerController imports full-color 3D model into block set inventory', async () => {
@@ -420,3 +657,41 @@ test('sampleTriangleColor handles glTF flipY = false texture sampling', () => {
   assert.equal(sampleTriangleColor(gltfTri, 0, 0, 1), 0x0000ff);
 });
 
+test('scaled voxelization preserves glTF texture orientation', () => {
+  const texture = {
+    data: new Uint8Array([
+      255, 0, 0, 255, 0, 255, 0, 255,
+      0, 0, 255, 255, 255, 255, 0, 255
+    ]),
+    width: 2,
+    height: 2
+  };
+  const triangle = (
+    a: [number, number, number],
+    b: [number, number, number],
+    c: [number, number, number],
+    uvs: [[number, number], [number, number], [number, number]]
+  ): VoxelTriangle => ({ a, b, c, color: 0xffffff, uvs, flipY: false, texture });
+  const quad = (
+    a: [number, number, number],
+    b: [number, number, number],
+    c: [number, number, number],
+    d: [number, number, number]
+  ) => [
+    triangle(a, b, c, [[0, 0], [1, 0], [1, 1]]),
+    triangle(a, c, d, [[0, 0], [1, 1], [0, 1]])
+  ];
+  const side = 2;
+  const triangles = [
+    ...quad([0, 0, 0], [0, side, 0], [0, side, side], [0, 0, side]),
+    ...quad([side, 0, 0], [side, 0, side], [side, side, side], [side, side, 0]),
+    ...quad([0, 0, 0], [0, 0, side], [side, 0, side], [side, 0, 0]),
+    ...quad([0, side, 0], [side, side, 0], [side, side, side], [0, side, side]),
+    ...quad([0, 0, 0], [side, 0, 0], [side, side, 0], [0, side, 0]),
+    ...quad([0, 0, side], [0, side, side], [side, side, side], [side, 0, side])
+  ];
+
+  const result = voxelizeModel(triangles, 1, 0xffffff, { scale: 2, hollow: true });
+  const corner = result.blocks.find(block => block.dx === 0 && block.dy === 0 && block.dz === 0);
+  assert.equal(corner?.color, 0xff0000);
+});

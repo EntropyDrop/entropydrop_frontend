@@ -1,4 +1,8 @@
-import { callChatAgent, estimateTokens } from '../contraption/AgentChat.ts';
+import {
+  callChatAgent,
+  DEFAULT_AGENT_CONTEXT_K_TOKENS,
+  estimateTokens
+} from '../contraption/AgentChat.ts';
 import type { SpaceBuildPlanInput } from './SpaceBuilder.ts';
 
 export const BUILD_AGENT_SYSTEM_PROMPT = `You are the construction-planning assistant for the Space voxel world.
@@ -85,7 +89,7 @@ export async function runSpaceBuildAgentTurn(
   }
   const contextK = Number.isFinite(Number(config.contextKTokens))
     ? Math.max(1, Number(config.contextKTokens))
-    : 32;
+    : DEFAULT_AGENT_CONTEXT_K_TOKENS;
   const budget = Math.round(contextK * 1024);
   const baseTokens = estimateTokens(BUILD_AGENT_SYSTEM_PROMPT) + estimateTokens(prompt + contextNote) + 64;
   const historyBudget = Math.max(0, budget - baseTokens);

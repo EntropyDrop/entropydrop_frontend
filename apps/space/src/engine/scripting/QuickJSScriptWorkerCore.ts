@@ -160,6 +160,7 @@ const QUICKJS_BOOTSTRAP = String.raw`
       parentId: node.parentId ?? null,
       state: states[id],
       applyThrust: force => { emit('component', id, 'applyThrust', [force]); },
+      applyLocalThrust: force => { emit('component', id, 'applyLocalThrust', [force]); },
       getWorldPosition: () => frozenClone(node.worldPosition || [0, 0, 0]),
       getWorldRotation: () => frozenClone(node.worldRotation || [0, 0, 0, 1]),
       getPivot: () => frozenClone(node.pivot || [0, 0, 0]),

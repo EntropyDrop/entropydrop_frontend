@@ -70,6 +70,7 @@ const selfUniversalEntries: ApiEntry[] = [
   { signature: 'self.child(id)', description: "Look up a direct child; returns `null` when missing. `child('root')` returns the root API." },
   { signature: 'self.children()', description: 'Return a frozen array of direct children. Recurse from `ctx.root` to traverse the tree.' },
   { signature: 'self.applyThrust([x,y,z])', description: 'Apply root-local force at this component. A child mounting offset produces torque; dynamic root only and subject to `ctx.limits`.' },
+  { signature: 'self.applyLocalThrust([x,y,z])', description: 'Apply component-local force at this component. Installed anchor orientation controls its direction and an offset produces torque.' },
   { signature: 'self.applyForce([x,y,z])', description: 'Apply world-space force to the root center of mass; no effect on a kinematic root.' },
   { signature: 'self.applyLocalForce([x,y,z])', description: "Apply root/body-local force. A child's direction is interpreted in that component's local frame." },
   { signature: 'self.applyForceAt(force, localPoint)', description: 'Apply world-space force at a component-local offset, producing translation and torque.' },
@@ -275,7 +276,7 @@ const dz = wrappedDelta(ctx.position[2], target[2], 2048);`
   ],
   runtimeSurfaces: {
     self: [
-      'apiVersion', 'id', 'parentId', 'applyThrust', 'getWorldPosition', 'getWorldRotation', 'getPivot',
+      'apiVersion', 'id', 'parentId', 'applyThrust', 'applyLocalThrust', 'getWorldPosition', 'getWorldRotation', 'getPivot',
       'localToWorldDirection', 'getBounds', 'setLocalPosition', 'setLocalRotation', 'setLocalEuler',
       'setLocalSpin', 'getLocalPosition', 'getLocalRotation', 'setPivot', 'applyForce', 'applyLocalForce',
       'applyForceAt', 'applyTorque', 'setSeats', 'stop', 'getSeats', 'child', 'state', 'children',

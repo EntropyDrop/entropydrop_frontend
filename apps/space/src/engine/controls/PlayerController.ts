@@ -9,11 +9,11 @@ import {
 } from '../contraption/Contraption.ts';
 import { ActionDomain, executeBasicAction } from '../actions/BasicActions.ts';
 import {
-  bendPoint, bendDirection, unbendPoint, unwrapPeriodicNear,
+  applyCameraBend, bendPoint, bendDirection, unbendPoint, unwrapPeriodicNear,
   TORUS_GREF, TORUS_SIZE_X, TORUS_SIZE_Z, TORUS_SPAWN_X, TORUS_SPAWN_Z,
   wrapMicroX, wrapMicroZ
 } from '../torus/TorusWorld.ts';
-import { calculatePreviewDragForce } from '../render/SceneRenderer.ts';
+import { calculatePreviewDragForce, getInventoryPreviewBlocks } from '../render/SceneRenderer.ts';
 import { InventoryThumbnailRenderer } from '../render/InventoryThumbnailRenderer.ts';
 import type { SpaceStorage } from '../storage/BrowserStorage.ts';
 import {
@@ -21,6 +21,7 @@ import {
   decodeInventoryResource,
   encodeBackpack,
   encodeInventoryResource,
+  MAX_BACKPACK_SLOTS_PER_CATEGORY,
   portableEntityToRuntime,
   protobufFromBase64,
   protobufToBase64,
@@ -65,6 +66,52 @@ const MAX_PORTABLE_CONSTRAINT_VALUE = 10_000;
 export const BULK_EDIT_THRESHOLD = 256;
 export const BULK_EDIT_MAX_OPERATIONS_PER_FRAME = 128;
 export const BULK_EDIT_FRAME_BUDGET_MS = 5;
+const ENTITY_PLACEMENT_MAX_DROP = 48;
+const ENTITY_PLACEMENT_SUPPORT_BINS = 12;
+const ENTITY_PLACEMENT_SUPPORT_SAMPLE_LIMIT = 256;
+const ENTITY_PLACEMENT_EPSILON = 1e-5;
+const ENTITY_TARGET_PLACEMENT_MAX_OUTWARD_STEPS = MAX_ENTITY_BOUNDS * MICRO_DIVISIONS;
+const ENTITY_TARGET_PLACEMENT_BUCKET_SIZE = 2;
+// Wrench grabbing is a mass-independent editor servo. Its previous 36/s
+// position gain could request nearly 30 m/s in one 20 Hz tick, overshoot the
+// target, then reverse just as hard on the next tick. A bounded critically
+// damped controller preserves heavy-body handling without that oscillation.
+const WRENCH_GRAB_RESPONSE = 8;
+const WRENCH_GRAB_MAX_ACCELERATION = 36;
+const WRENCH_GRAB_MAX_TARGET_SPEED = 10;
+const WRENCH_GRAB_MAX_SPEED = 14;
+
+type EntityPlacementEntry = { center: THREE.Vector3; size: number };
+type EntityPlacementObb = {
+  center: THREE.Vector3;
+  axes: [THREE.Vector3, THREE.Vector3, THREE.Vector3];
+  halfExtents: [number, number, number];
+  min: THREE.Vector3;
+  max: THREE.Vector3;
+};
+
+type EntityPlacementShape = {
+  blocksRef: any[];
+  childEntitiesRef: any;
+  entries: EntityPlacementEntry[];
+  supportSamples: Array<{ x: number; z: number; bottom: number }>;
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
+  centerX: number;
+  centerZ: number;
+};
+
+const entityPlacementShapeCache = new WeakMap<object, EntityPlacementShape>();
+const entityPlacementTargetObbCache = new WeakMap<object, {
+  poseSignature: string;
+  entriesRef: any;
+  boxes: EntityPlacementObb[];
+  buckets: Map<string, EntityPlacementObb[]>;
+}>();
 
 type BulkEditPhase = 'applying' | 'waiting' | 'syncing' | 'complete' | 'failed';
 type BulkEditJob = {
@@ -147,6 +194,7 @@ export class PlayerController {
     }
     if (prev === SpecialTool.WRENCH && tool !== SpecialTool.WRENCH) {
       this.releaseWrenchGrab();
+      this.clearWrenchPivotInteraction(false);
     }
     this._activeTool = tool;
   }
@@ -156,6 +204,8 @@ export class PlayerController {
   hoveredContraption: any;
   hoveredContraptionHit: any;
   wrenchGrab: any;
+  wrenchPivotTarget: any;
+  wrenchPivotDrag: any;
   microCarvePreview: any;
   focusBlockPreview: any;
   boxSelectionPreview: any;
@@ -248,6 +298,8 @@ export class PlayerController {
     this.hoveredContraption = null;
     this.hoveredContraptionHit = null;
     this.wrenchGrab = null;
+    this.wrenchPivotTarget = null;
+    this.wrenchPivotDrag = null;
     this.microCarvePreview = null;
     // Selector focus block guide: { cellOrigin, active } | null
     this.focusBlockPreview = null;
@@ -295,6 +347,7 @@ export class PlayerController {
         this.pointerLockDesired = false;
         this.resetEntityInputState();
         this.releaseWrenchGrab();
+        this.clearWrenchPivotInteraction(false);
       }
 
       // A pending request may finish after a modal has already called
@@ -373,6 +426,11 @@ export class PlayerController {
     document.addEventListener('mousemove', (e) => {
       if (!this.isLocked) return;
 
+      if (this.wrenchPivotDrag) {
+        this.updateWrenchPivotDrag(e.movementX, e.movementY);
+        return;
+      }
+
       this.yaw -= e.movementX * this.mouseSensitivity;
       this.pitch -= e.movementY * this.mouseSensitivity;
 
@@ -383,7 +441,9 @@ export class PlayerController {
     });
 
     document.addEventListener('mouseup', (e) => {
-      if (e.button === 0) this.releaseWrenchGrab();
+      if (e.button !== 0) return;
+      if (this.wrenchPivotDrag) this.finishWrenchPivotDrag(true);
+      else this.releaseWrenchGrab();
     });
 
     // Mouse Clicks
@@ -553,6 +613,7 @@ export class PlayerController {
     window.addEventListener('blur', () => {
       this.resetEntityInputState();
       this.releaseWrenchGrab();
+      this.clearWrenchPivotInteraction(false);
     });
 
     document.addEventListener('wheel', (e) => {
@@ -674,6 +735,14 @@ export class PlayerController {
 
     // Wrench owns charged point grabbing while the left button is held.
     if (this.activeTool === SpecialTool.WRENCH) {
+      if (this.wrenchPivotTarget?.hoveredOrigin) {
+        this.resetWrenchPivot();
+        return;
+      }
+      if (this.wrenchPivotTarget?.hoveredAxis) {
+        this.startWrenchPivotDrag();
+        return;
+      }
       this.startWrenchGrab();
       return;
     }
@@ -2082,7 +2151,8 @@ export class PlayerController {
         entry: entityHit.point,
         kind: entityHit.kind,
         targetContraption: entityHit.contraption || this.hoveredContraption || null,
-        targetNodeId: entityHit.entityId || entityHit.entityNode?.id || 'root'
+        targetNodeId: entityHit.entityId || entityHit.entityNode?.id || 'root',
+        targetLocalNormal: entityHit.normal || entityHit.worldNormal || { x: 0, y: 1, z: 0 }
       };
     }
     return this.currentRaycast?.hit
@@ -2139,13 +2209,516 @@ export class PlayerController {
   }
 
   /**
+   * Cache the authored entity footprint used by both the Hammer ghost and the
+   * final build. A small spatial sample of bottom faces is enough to follow
+   * uneven terrain without raycasting every voxel of a large inventory item
+   * on every render frame.
+   */
+  private getEntityPlacementShape(slot): EntityPlacementShape | null {
+    if (!slot || typeof slot !== 'object' || !Array.isArray(slot.blocks)) return null;
+    const cached = entityPlacementShapeCache.get(slot);
+    if (cached
+      && cached.blocksRef === slot.blocks
+      && cached.childEntitiesRef === slot.childEntities) return cached;
+
+    const entries = getInventoryPreviewBlocks(slot).flatMap(entry => {
+      const size = Number(entry?.size) || 1;
+      const center = entry?.center;
+      if (!(size > 0) || !center
+        || ![center.x, center.y, center.z].every(Number.isFinite)) return [];
+      return [{ center: center.clone(), size }];
+    });
+    if (entries.length === 0) return null;
+
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (const entry of entries) {
+      const half = entry.size / 2;
+      minX = Math.min(minX, entry.center.x - half);
+      minY = Math.min(minY, entry.center.y - half);
+      minZ = Math.min(minZ, entry.center.z - half);
+      maxX = Math.max(maxX, entry.center.x + half);
+      maxY = Math.max(maxY, entry.center.y + half);
+      maxZ = Math.max(maxZ, entry.center.z + half);
+    }
+
+    // Preserve all small footprints. Large ones use one lowest voxel per X/Z
+    // bin, spreading support probes across the whole authored footprint.
+    let representatives = entries;
+    const binLimit = ENTITY_PLACEMENT_SUPPORT_BINS * ENTITY_PLACEMENT_SUPPORT_BINS;
+    if (entries.length > binLimit) {
+      const width = Math.max(ENTITY_PLACEMENT_EPSILON, maxX - minX);
+      const depth = Math.max(ENTITY_PLACEMENT_EPSILON, maxZ - minZ);
+      const bins = new Map<number, { center: THREE.Vector3; size: number }>();
+      for (const entry of entries) {
+        const bx = Math.min(
+          ENTITY_PLACEMENT_SUPPORT_BINS - 1,
+          Math.max(0, Math.floor((entry.center.x - minX) / width * ENTITY_PLACEMENT_SUPPORT_BINS))
+        );
+        const bz = Math.min(
+          ENTITY_PLACEMENT_SUPPORT_BINS - 1,
+          Math.max(0, Math.floor((entry.center.z - minZ) / depth * ENTITY_PLACEMENT_SUPPORT_BINS))
+        );
+        const key = bx * ENTITY_PLACEMENT_SUPPORT_BINS + bz;
+        const previous = bins.get(key);
+        if (!previous
+          || entry.center.y - entry.size / 2 < previous.center.y - previous.size / 2) {
+          bins.set(key, entry);
+        }
+      }
+      representatives = [...bins.values()];
+    }
+
+    const rawSamples: Array<{ x: number; z: number; bottom: number }> = [];
+    const sampleKeys = new Set<string>();
+    const addSample = (x, z, bottom) => {
+      const key = `${Math.round(x * 1000)},${Math.round(z * 1000)},${Math.round(bottom * 1000)}`;
+      if (sampleKeys.has(key)) return;
+      sampleKeys.add(key);
+      rawSamples.push({ x, z, bottom });
+    };
+    for (const entry of representatives) {
+      const half = entry.size / 2;
+      const bottom = entry.center.y - half;
+      addSample(entry.center.x, entry.center.z, bottom);
+      // Edge probes keep a one-voxel entity from hanging over a ledge merely
+      // because its centre ray missed the supporting terrain cell.
+      const inset = Math.max(0, half - Math.min(0.05, entry.size * 0.1));
+      if (inset > ENTITY_PLACEMENT_EPSILON) {
+        addSample(entry.center.x - inset, entry.center.z - inset, bottom);
+        addSample(entry.center.x + inset, entry.center.z - inset, bottom);
+        addSample(entry.center.x - inset, entry.center.z + inset, bottom);
+        addSample(entry.center.x + inset, entry.center.z + inset, bottom);
+      }
+    }
+    const supportSamples = rawSamples.length <= ENTITY_PLACEMENT_SUPPORT_SAMPLE_LIMIT
+      ? rawSamples
+      : Array.from({ length: ENTITY_PLACEMENT_SUPPORT_SAMPLE_LIMIT }, (_, index) => (
+          rawSamples[Math.floor(index * (rawSamples.length - 1) / (ENTITY_PLACEMENT_SUPPORT_SAMPLE_LIMIT - 1))]
+        ));
+
+    const shape: EntityPlacementShape = {
+      blocksRef: slot.blocks,
+      childEntitiesRef: slot.childEntities,
+      entries,
+      supportSamples,
+      minX, minY, minZ,
+      maxX, maxY, maxZ,
+      centerX: (minX + maxX) / 2,
+      centerZ: (minZ + maxZ) / 2
+    };
+    entityPlacementShapeCache.set(slot, shape);
+    return shape;
+  }
+
+  /** Exact face point when available; otherwise use the centre of the hit voxel face. */
+  private getEntityPlacementSurfacePoint(placementHit) {
+    const entry = placementHit?.entry;
+    if (entry && [entry.x, entry.y, entry.z].every(Number.isFinite)) {
+      return new THREE.Vector3(entry.x, entry.y, entry.z);
+    }
+    const hp = placementHit?.hitPos;
+    if (!hp || ![hp.x, hp.y, hp.z].every(Number.isFinite)) return null;
+    const normal = placementHit.normal || { x: 0, y: 1, z: 0 };
+    const cellSize = placementHit.kind === 'micro' ? 1 / MICRO_DIVISIONS : 1;
+    const onFace = (value, axisNormal) => value + (
+      axisNormal > 0 ? cellSize : axisNormal < 0 ? 0 : cellSize / 2
+    );
+    return new THREE.Vector3(
+      onFace(hp.x, Number(normal.x) || 0),
+      onFace(hp.y, Number(normal.y) || 0),
+      onFace(hp.z, Number(normal.z) || 0)
+    );
+  }
+
+  private clampEntityPlacementY(shape: EntityPlacementShape, y) {
+    const minOriginY = -shape.minY;
+    const maxOriginY = 128 - shape.maxY;
+    return Math.max(minOriginY, Math.min(maxOriginY, y));
+  }
+
+  private snapEntityPlacementMicroValue(value) {
+    const units = Math.round(value * MICRO_DIVISIONS);
+    return units === 0 ? 0 : units / MICRO_DIVISIONS;
+  }
+
+  private targetEntityLocalToWorld(target, nodeId, point: THREE.Vector3) {
+    if (typeof target?.entityLocalToWorld === 'function') {
+      return target.entityLocalToWorld(nodeId, point.clone());
+    }
+    const node = target?.getEntityNode?.(nodeId) || target?.entityNodes?.get?.(nodeId);
+    if (node?.group?.localToWorld) {
+      node.group.updateWorldMatrix?.(true, false);
+      return node.group.localToWorld(point.clone().sub(node.pivotLocal || new THREE.Vector3()));
+    }
+    return point.clone();
+  }
+
+  private targetEntityWorldToLocal(target, nodeId, point: THREE.Vector3) {
+    if (typeof target?.worldToEntityLocal === 'function') {
+      return target.worldToEntityLocal(nodeId, point.clone());
+    }
+    const node = target?.getEntityNode?.(nodeId) || target?.entityNodes?.get?.(nodeId);
+    if (node?.group?.worldToLocal) {
+      node.group.updateWorldMatrix?.(true, false);
+      return node.group.worldToLocal(point.clone()).add(node.pivotLocal || new THREE.Vector3());
+    }
+    return point.clone();
+  }
+
+  private getTargetEntityWorldQuaternion(target, nodeId) {
+    const direct = target?.getEntityNodeWorldQuaternion?.(nodeId);
+    if (direct?.isQuaternion) return direct.clone().normalize();
+    const node = target?.getEntityNode?.(nodeId) || target?.entityNodes?.get?.(nodeId);
+    if (node?.group?.getWorldQuaternion) {
+      node.group.updateWorldMatrix?.(true, false);
+      return node.group.getWorldQuaternion(new THREE.Quaternion()).normalize();
+    }
+    return new THREE.Quaternion();
+  }
+
+  /** Read a normalized quaternion without allowing malformed inventory data to poison placement math. */
+  private inventoryQuaternion(value, fallback = new THREE.Quaternion()) {
+    if (!Array.isArray(value) || value.length < 4) return fallback.clone();
+    const components = value.slice(0, 4).map(Number);
+    if (!components.every(Number.isFinite)) return fallback.clone();
+    const quaternion = new THREE.Quaternion(
+      components[0], components[1], components[2], components[3]
+    );
+    return quaternion.lengthSq() > 1e-12 ? quaternion.normalize() : fallback.clone();
+  }
+
+  /** Authored mounting frame: identity means local +Y is the outward axis. */
+  private getEntityAnchorRotation(slot) {
+    return this.inventoryQuaternion(slot?.anchorRotation);
+  }
+
+  /** Hammer-only roll. It is temporary and is never written back to the backpack item. */
+  private getEntityPlacementRotation(slot) {
+    return this.inventoryQuaternion(slot?.placementRotation);
+  }
+
+  private axisAlignedEntityFaceNormal(value) {
+    const normal = value?.isVector3
+      ? value.clone()
+      : new THREE.Vector3(Number(value?.x) || 0, Number(value?.y) || 0, Number(value?.z) || 0);
+    const components = [Math.abs(normal.x), Math.abs(normal.y), Math.abs(normal.z)];
+    const axis = components[1] > components[0]
+      ? (components[2] > components[1] ? 2 : 1)
+      : (components[2] > components[0] ? 2 : 0);
+    const result = new THREE.Vector3();
+    result.setComponent(axis, normal.getComponent(axis) < 0 ? -1 : 1);
+    return result;
+  }
+
+  private getRotatedEntityPlacementBounds(shape: EntityPlacementShape, rotation: THREE.Quaternion) {
+    const axes = [
+      new THREE.Vector3(1, 0, 0).applyQuaternion(rotation),
+      new THREE.Vector3(0, 1, 0).applyQuaternion(rotation),
+      new THREE.Vector3(0, 0, 1).applyQuaternion(rotation)
+    ];
+    const bounds = {
+      minX: Infinity, minY: Infinity, minZ: Infinity,
+      maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity
+    };
+    for (const entry of shape.entries) {
+      const center = entry.center.clone().applyQuaternion(rotation);
+      const half = entry.size / 2;
+      const radiusX = half * axes.reduce((sum, axis) => sum + Math.abs(axis.x), 0);
+      const radiusY = half * axes.reduce((sum, axis) => sum + Math.abs(axis.y), 0);
+      const radiusZ = half * axes.reduce((sum, axis) => sum + Math.abs(axis.z), 0);
+      bounds.minX = Math.min(bounds.minX, center.x - radiusX);
+      bounds.minY = Math.min(bounds.minY, center.y - radiusY);
+      bounds.minZ = Math.min(bounds.minZ, center.z - radiusZ);
+      bounds.maxX = Math.max(bounds.maxX, center.x + radiusX);
+      bounds.maxY = Math.max(bounds.maxY, center.y + radiusY);
+      bounds.maxZ = Math.max(bounds.maxZ, center.z + radiusZ);
+    }
+    return bounds;
+  }
+
+  /** Rotate cached support probes together with the entity without mutating the authored shape. */
+  private getRotatedEntityTerrainShape(shape: EntityPlacementShape, rotation: THREE.Quaternion): EntityPlacementShape {
+    const bounds = this.getRotatedEntityPlacementBounds(shape, rotation);
+    const supportSamples = shape.supportSamples.map(sample => {
+      const point = new THREE.Vector3(sample.x, sample.bottom, sample.z).applyQuaternion(rotation);
+      return { x: point.x, z: point.z, bottom: point.y };
+    });
+    return {
+      ...shape,
+      ...bounds,
+      supportSamples,
+      centerX: (bounds.minX + bounds.maxX) / 2,
+      centerZ: (bounds.minZ + bounds.maxZ) / 2
+    };
+  }
+
+  private createEntityPlacementObb(center: THREE.Vector3, size, quaternion: THREE.Quaternion): EntityPlacementObb {
+    const axes = [
+      new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion).normalize(),
+      new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize(),
+      new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).normalize()
+    ] as [THREE.Vector3, THREE.Vector3, THREE.Vector3];
+    const half = Number(size) / 2;
+    const radius = new THREE.Vector3(
+      half * axes.reduce((sum, axis) => sum + Math.abs(axis.x), 0),
+      half * axes.reduce((sum, axis) => sum + Math.abs(axis.y), 0),
+      half * axes.reduce((sum, axis) => sum + Math.abs(axis.z), 0)
+    );
+    return {
+      center,
+      axes,
+      halfExtents: [half, half, half],
+      min: center.clone().sub(radius),
+      max: center.clone().add(radius)
+    };
+  }
+
+  private entityPlacementObbsOverlap(a: EntityPlacementObb, b: EntityPlacementObb) {
+    if (a.max.x <= b.min.x + ENTITY_PLACEMENT_EPSILON || a.min.x >= b.max.x - ENTITY_PLACEMENT_EPSILON
+      || a.max.y <= b.min.y + ENTITY_PLACEMENT_EPSILON || a.min.y >= b.max.y - ENTITY_PLACEMENT_EPSILON
+      || a.max.z <= b.min.z + ENTITY_PLACEMENT_EPSILON || a.min.z >= b.max.z - ENTITY_PLACEMENT_EPSILON) {
+      return false;
+    }
+    const axes = [...a.axes, ...b.axes];
+    for (const axisA of a.axes) {
+      for (const axisB of b.axes) {
+        const cross = new THREE.Vector3().crossVectors(axisA, axisB);
+        if (cross.lengthSq() > 1e-10) axes.push(cross.normalize());
+      }
+    }
+    const delta = b.center.clone().sub(a.center);
+    for (const rawAxis of axes) {
+      const axis = rawAxis.clone().normalize();
+      const radiusA = a.halfExtents.reduce((sum, halfExtent, index) => (
+        sum + halfExtent * Math.abs(a.axes[index].dot(axis))
+      ), 0);
+      const radiusB = b.halfExtents.reduce((sum, halfExtent, index) => (
+        sum + halfExtent * Math.abs(b.axes[index].dot(axis))
+      ), 0);
+      if (radiusA + radiusB - Math.abs(delta.dot(axis)) <= ENTITY_PLACEMENT_EPSILON) return false;
+    }
+    return true;
+  }
+
+  private getTargetEntityPlacementPoseSignature(target) {
+    const values: Array<string | number> = [];
+    const appendVector = value => {
+      if (!value) return;
+      for (const key of ['x', 'y', 'z', 'w']) {
+        if (Number.isFinite(Number(value[key]))) values.push(Number(value[key]));
+      }
+    };
+    appendVector(target?.position);
+    appendVector(target?.quaternion);
+    for (const node of target?.entityNodes?.values?.() || []) {
+      values.push(String(node.id || ''));
+      appendVector(node.localPosition || node.group?.position);
+      appendVector(node.localQuaternion || node.group?.quaternion);
+    }
+    return values.length > 0
+      ? values.join(',')
+      : String(Number(target?.collisionPoseVersion) || 0);
+  }
+
+  private getTargetEntityPlacementObbs(target) {
+    if (!target) return { boxes: [], buckets: new Map<string, EntityPlacementObb[]>() };
+    const entries = Array.isArray(target.collisionEntries) && target.collisionEntries.length > 0
+      ? target.collisionEntries
+      : null;
+    const entriesRef = entries || target.blocks;
+    const poseSignature = this.getTargetEntityPlacementPoseSignature(target);
+    const cached = entityPlacementTargetObbCache.get(target);
+    if (cached && cached.entriesRef === entriesRef && cached.poseSignature === poseSignature) return cached;
+
+    const quaternionByNode = new Map<string, THREE.Quaternion>();
+    const quaternionFor = nodeId => {
+      const id = String(nodeId || 'root');
+      let quaternion = quaternionByNode.get(id);
+      if (!quaternion) {
+        quaternion = this.getTargetEntityWorldQuaternion(target, id);
+        quaternionByNode.set(id, quaternion);
+      }
+      return quaternion;
+    };
+    const boxes: EntityPlacementObb[] = [];
+    if (entries) {
+      for (const entry of entries) {
+        const nodeId = String(entry.entityId || 'root');
+        const size = Number(entry.span) / MICRO_DIVISIONS;
+        if (!(size > 0)) continue;
+        const center = this.targetEntityLocalToWorld(target, nodeId, new THREE.Vector3(
+          (Number(entry.x) + Number(entry.span) / 2) / MICRO_DIVISIONS,
+          (Number(entry.y) + Number(entry.span) / 2) / MICRO_DIVISIONS,
+          (Number(entry.z) + Number(entry.span) / 2) / MICRO_DIVISIONS
+        ));
+        boxes.push(this.createEntityPlacementObb(center, size, quaternionFor(nodeId)));
+      }
+    } else {
+      for (const block of target.blocks || []) {
+        const nodeId = String(block.entityId || 'root');
+        const size = Number(block.size) || 1;
+        const center = target.getBlockWorldCenter?.(block)
+          || this.targetEntityLocalToWorld(target, nodeId, new THREE.Vector3(
+            Number(block.localX) + size / 2,
+            Number(block.localY) + size / 2,
+            Number(block.localZ) + size / 2
+          ));
+        boxes.push(this.createEntityPlacementObb(center, size, quaternionFor(nodeId)));
+      }
+    }
+    const buckets = new Map<string, EntityPlacementObb[]>();
+    for (const box of boxes) {
+      const minX = Math.floor(box.min.x / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      const minY = Math.floor(box.min.y / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      const minZ = Math.floor(box.min.z / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      const maxX = Math.floor((box.max.x - ENTITY_PLACEMENT_EPSILON) / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      const maxY = Math.floor((box.max.y - ENTITY_PLACEMENT_EPSILON) / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      const maxZ = Math.floor((box.max.z - ENTITY_PLACEMENT_EPSILON) / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      for (let x = minX; x <= maxX; x++) {
+        for (let y = minY; y <= maxY; y++) {
+          for (let z = minZ; z <= maxZ; z++) {
+            const key = `${x},${y},${z}`;
+            const bucket = buckets.get(key);
+            if (bucket) bucket.push(box);
+            else buckets.set(key, [box]);
+          }
+        }
+      }
+    }
+    const result = { poseSignature, entriesRef, boxes, buckets };
+    entityPlacementTargetObbCache.set(target, result);
+    return result;
+  }
+
+  private entitySlotOverlapsTarget(slot, position: THREE.Vector3, quaternion: THREE.Quaternion, target) {
+    const shape = this.getEntityPlacementShape(slot);
+    if (!shape) return false;
+    const targetIndex = this.getTargetEntityPlacementObbs(target);
+    if (targetIndex.boxes.length === 0) return false;
+    for (const entry of shape.entries) {
+      const center = entry.center.clone().applyQuaternion(quaternion).add(position);
+      const placed = this.createEntityPlacementObb(center, entry.size, quaternion);
+      const candidates = new Set<EntityPlacementObb>();
+      const minX = Math.floor(placed.min.x / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      const minY = Math.floor(placed.min.y / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      const minZ = Math.floor(placed.min.z / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      const maxX = Math.floor((placed.max.x - ENTITY_PLACEMENT_EPSILON) / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      const maxY = Math.floor((placed.max.y - ENTITY_PLACEMENT_EPSILON) / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      const maxZ = Math.floor((placed.max.z - ENTITY_PLACEMENT_EPSILON) / ENTITY_TARGET_PLACEMENT_BUCKET_SIZE);
+      for (let x = minX; x <= maxX; x++) {
+        for (let y = minY; y <= maxY; y++) {
+          for (let z = minZ; z <= maxZ; z++) {
+            for (const box of targetIndex.buckets.get(`${x},${y},${z}`) || []) candidates.add(box);
+          }
+        }
+      }
+      for (const existing of candidates) {
+        if (this.entityPlacementObbsOverlap(placed, existing)) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Centre on the hit face, align to its component grid, then move only outward to clear occupied voxels. */
+  private resolveEntityTargetPlacement(slot, shape: EntityPlacementShape, surface: THREE.Vector3, placementHit) {
+    const target = placementHit.targetContraption;
+    const nodeId = placementHit.targetNodeId || 'root';
+    const targetWorldRotation = this.getTargetEntityWorldQuaternion(target, nodeId);
+    const localNormal = this.axisAlignedEntityFaceNormal(placementHit.targetLocalNormal);
+    const faceRotation = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      localNormal
+    ).normalize();
+    const relativeRotation = faceRotation
+      .clone()
+      .multiply(this.getEntityAnchorRotation(slot).invert())
+      .normalize();
+    const worldRotation = targetWorldRotation.clone().multiply(relativeRotation).normalize();
+    const bounds = this.getRotatedEntityPlacementBounds(shape, relativeRotation);
+    const surfaceLocal = this.targetEntityWorldToLocal(target, nodeId, surface);
+    const originLocal = new THREE.Vector3(
+      surfaceLocal.x - (bounds.minX + bounds.maxX) / 2,
+      surfaceLocal.y - (bounds.minY + bounds.maxY) / 2,
+      surfaceLocal.z - (bounds.minZ + bounds.maxZ) / 2
+    );
+    for (const axis of ['x', 'y', 'z'] as const) {
+      const normal = localNormal[axis];
+      if (normal > 0) originLocal[axis] = surfaceLocal[axis] - bounds[`min${axis.toUpperCase()}`];
+      else if (normal < 0) originLocal[axis] = surfaceLocal[axis] - bounds[`max${axis.toUpperCase()}`];
+      originLocal[axis] = this.snapEntityPlacementMicroValue(originLocal[axis]);
+    }
+
+    const position = this.targetEntityLocalToWorld(target, nodeId, originLocal);
+    const outwardWorld = localNormal.clone().applyQuaternion(targetWorldRotation).normalize();
+    for (let step = 0; step <= ENTITY_TARGET_PLACEMENT_MAX_OUTWARD_STEPS; step++) {
+      if (!this.entitySlotOverlapsTarget(slot, position, worldRotation, target)) {
+        return { position, quaternion: worldRotation, localNormal };
+      }
+      position.addScaledVector(outwardWorld, 1 / MICRO_DIVISIONS);
+    }
+    return null;
+  }
+
+  /** Drop (or minimally lift) a centred entity until sampled bottom faces meet terrain. */
+  private resolveEntityTerrainSupport(
+    shape: EntityPlacementShape,
+    origin: THREE.Vector3,
+    placementHit
+  ) {
+    const normalY = Number(placementHit?.normal?.y) || 0;
+    let bestOriginY = -Infinity;
+    let supported = false;
+    const down = new THREE.Vector3(0, -1, 0);
+    const canRaycastStandard = typeof this.world?.raycast === 'function';
+    const canRaycastMicro = typeof this.world?.raycastMicro === 'function';
+
+    if (canRaycastStandard || canRaycastMicro) {
+      // Start just below a downward-facing hit so the ceiling voxel itself is
+      // not mistaken for support. Other faces start above the placed shape.
+      const startY = origin.y + shape.maxY + (normalY < -0.5 ? -0.05 : 0.05);
+      for (const sample of shape.supportSamples) {
+        const lowestSurfaceY = origin.y + sample.bottom - ENTITY_PLACEMENT_MAX_DROP;
+        const maxDistance = Math.max(0.05, startY - lowestSurfaceY);
+        const rayOrigin = new THREE.Vector3(
+          origin.x + sample.x,
+          startY,
+          origin.z + sample.z
+        );
+        for (const raycast of [
+          canRaycastStandard ? this.world.raycast(rayOrigin, down, maxDistance) : null,
+          canRaycastMicro ? this.world.raycastMicro(rayOrigin, down, maxDistance) : null
+        ]) {
+          const distance = Number(raycast?.distance);
+          if (!raycast?.hit || !Number.isFinite(distance)
+            || distance < -ENTITY_PLACEMENT_EPSILON
+            || distance > maxDistance + ENTITY_PLACEMENT_EPSILON) continue;
+          const supportTop = startY - Math.max(0, distance);
+          bestOriginY = Math.max(bestOriginY, supportTop - sample.bottom);
+          supported = true;
+        }
+      }
+    }
+
+    return {
+      y: this.clampEntityPlacementY(
+        shape,
+        supported ? bestOriginY : origin.y
+      ),
+      supported
+    };
+  }
+
+  /**
    * Resolve the exact origin shared by the Hammer ghost and every Hammer
    * build (LMB/RMB). Placement always requires a hovered surface — terrain
    * or entity — so aiming at the sky (high altitude, open air) yields no
    * pose instead of falling back to a point in front of the eye.
    * Pure-micro block sets snap to the 1/5 grid; block sets containing standard
-   * voxels stay on the 1 m grid. Entity slots preserve the precise hit point
-   * so their local voxel coordinates and collider remain aligned.
+   * voxels stay on the 1 m grid. On terrain, entity slots geometrically centre
+   * and settle onto sampled support without moving away from the player. On
+   * another entity, they align to the targeted component's 0.2 m grid, rotate
+   * outward from side faces, and move only along that normal to clear voxels.
    */
   getInventoryPlacementPose(slot) {
     if (!slot || !Array.isArray(slot.blocks) || slot.blocks.length === 0) return null;
@@ -2166,6 +2739,7 @@ export class PlayerController {
       hp.y + (n?.y || 0),
       hp.z + (n?.z || 0)
     );
+    const quaternion = new THREE.Quaternion();
 
     if (slot.kind === 'blockset') {
       position.set(
@@ -2173,12 +2747,43 @@ export class PlayerController {
         Math.floor(position.y),
         Math.floor(position.z)
       );
+    } else {
+      const shape = this.getEntityPlacementShape(slot);
+      const surface = this.getEntityPlacementSurfacePoint(placementHit);
+      if (shape && surface) {
+        if (placementHit.targetContraption) {
+          const targetPose = this.resolveEntityTargetPlacement(slot, shape, surface, placementHit);
+          if (!targetPose) return null;
+          position.copy(targetPose.position);
+          quaternion.copy(targetPose.quaternion);
+        } else {
+          const placementRotation = this.getEntityPlacementRotation(slot);
+          const terrainShape = this.getRotatedEntityTerrainShape(shape, placementRotation);
+          quaternion.copy(placementRotation);
+          const normal = placementHit.normal || { x: 0, y: 1, z: 0 };
+          let originX = surface.x - terrainShape.centerX;
+          let originY = surface.y - terrainShape.minY;
+          let originZ = surface.z - terrainShape.centerZ;
+          // On a wall or ceiling, keep the nearest authored face outside the
+          // hit surface instead of centring half of the entity inside terrain.
+          if ((Number(normal.x) || 0) > 0.5) originX = surface.x - terrainShape.minX;
+          else if ((Number(normal.x) || 0) < -0.5) originX = surface.x - terrainShape.maxX;
+          if ((Number(normal.z) || 0) > 0.5) originZ = surface.z - terrainShape.minZ;
+          else if ((Number(normal.z) || 0) < -0.5) originZ = surface.z - terrainShape.maxZ;
+          if ((Number(normal.y) || 0) < -0.5) originY = surface.y - terrainShape.maxY;
+          const candidateOrigin = new THREE.Vector3(originX, originY, originZ);
+          candidateOrigin.y = this.clampEntityPlacementY(terrainShape, candidateOrigin.y);
+          position.copy(candidateOrigin);
+          position.y = this.resolveEntityTerrainSupport(terrainShape, position, placementHit).y;
+        }
+      }
     }
 
     return {
       slot,
       kind: slot.kind === 'blockset' ? 'blockset' : 'entity',
       position,
+      quaternion,
       targetContraption: placementHit.targetContraption || null,
       targetNodeId: placementHit.targetNodeId || null
     };
@@ -2919,13 +3524,30 @@ export class PlayerController {
       return this.hammerRotatedSlotCache;
     }
 
-    const rotatedSlot = {
-      ...slot,
-      blocks: this.rotateBlocksY90(slot.blocks, turns),
-      childEntities: Array.isArray(slot.childEntities)
-        ? this.rotateChildDefinitionsY90(slot.childEntities, turns)
-        : slot.childEntities
-    };
+    const isEntity = slot.kind === 'entity' || this.activeInventoryCategory === 'entity';
+    const placementRotation = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      turns * Math.PI / 2
+    );
+    const rotatedSlot = isEntity
+      ? {
+          ...slot,
+          // Entity geometry and scripts stay in their authored local frame.
+          // The temporary anchor carries this roll for component installation,
+          // while placementRotation carries the same pose for terrain builds.
+          anchorRotation: this.getEntityAnchorRotation(slot)
+            .multiply(placementRotation.clone().invert())
+            .normalize()
+            .toArray(),
+          placementRotation: placementRotation.toArray()
+        }
+      : {
+          ...slot,
+          blocks: this.rotateBlocksY90(slot.blocks, turns),
+          childEntities: Array.isArray(slot.childEntities)
+            ? this.rotateChildDefinitionsY90(slot.childEntities, turns)
+            : slot.childEntities
+        };
     this.hammerRotatedSlotSource = slot;
     this.hammerRotatedSlotTurns = turns;
     this.hammerRotatedSlotCache = rotatedSlot;
@@ -2961,6 +3583,347 @@ export class PlayerController {
     this.ui?.showToast?.(`Rotated "${slot.name || 'item'}" 90°`);
     this.ui?.syncInventoryState?.();
     return true;
+  }
+
+  private wrenchPivotAxisVector(axis: string) {
+    if (axis === 'x') return new THREE.Vector3(1, 0, 0);
+    if (axis === 'y') return new THREE.Vector3(0, 1, 0);
+    return new THREE.Vector3(0, 0, 1);
+  }
+
+  private refreshWrenchPivotTargetPose(target = this.wrenchPivotTarget) {
+    if (!target?.contraption) return null;
+    const contraption = target.contraption;
+    if (this.contraptions?.contraptions
+      && !this.contraptions.contraptions.includes(contraption)) return null;
+    const node = contraption.getEntityNode?.(target.nodeId)
+      || contraption.entityNodes?.get?.(target.nodeId);
+    if (!node?.group) return null;
+    node.group.updateWorldMatrix?.(true, false);
+    target.pivotLocal = node.pivotLocal.clone();
+    target.position = contraption.getEntityNodeWorldPosition?.(target.nodeId)
+      || node.group.getWorldPosition(new THREE.Vector3());
+    target.quaternion = contraption.getEntityNodeWorldQuaternion?.(target.nodeId)
+      || node.group.getWorldQuaternion(new THREE.Quaternion());
+    const eye = this.physics?.getEyePosition?.() || this.camera?.position || new THREE.Vector3();
+    const eyeBent = bendPoint(eye.x, eye.y, eye.z, new THREE.Vector3());
+    const pivotBent = bendPoint(
+      target.position.x,
+      target.position.y,
+      target.position.z,
+      new THREE.Vector3()
+    );
+    const distance = eyeBent.distanceTo(pivotBent);
+    if (!Number.isFinite(distance) || distance > 12) return null;
+    target.axisLength = Math.min(3.5, Math.max(1.2, distance * 0.18));
+    return target;
+  }
+
+  private pickWrenchPivotAxis(target, rayOriginBent, rayDirectionBent) {
+    if (!target?.position || !target?.quaternion || !rayOriginBent || !rayDirectionBent) return null;
+    const ray = new THREE.Ray(
+      rayOriginBent.clone(),
+      rayDirectionBent.clone().normalize()
+    );
+    const length = Math.max(0.1, Number(target.axisLength) || 1);
+    const threshold = Math.max(0.075, length * 0.09);
+    const closestOnRay = new THREE.Vector3();
+    const closestOnAxis = new THREE.Vector3();
+    let bestAxis = null;
+    let bestDistanceSq = threshold * threshold;
+
+    for (const axis of ['x', 'y', 'z']) {
+      const direction = this.wrenchPivotAxisVector(axis)
+        .applyQuaternion(target.quaternion)
+        .normalize();
+      // Ignore the shared origin where all three axes overlap. This keeps an
+      // ordinary click on the entity from accidentally becoming a pivot drag.
+      const startFlat = target.position.clone().addScaledVector(direction, length * 0.16);
+      const endFlat = target.position.clone().addScaledVector(direction, length);
+      const startBent = bendPoint(startFlat.x, startFlat.y, startFlat.z, new THREE.Vector3());
+      const endBent = bendPoint(endFlat.x, endFlat.y, endFlat.z, new THREE.Vector3());
+      const distanceSq = ray.distanceSqToSegment(startBent, endBent, closestOnRay, closestOnAxis);
+      const rayDistance = closestOnRay.distanceTo(ray.origin);
+      if (rayDistance > 12 || distanceSq > bestDistanceSq) continue;
+      bestDistanceSq = distanceSq;
+      bestAxis = axis;
+    }
+    return bestAxis;
+  }
+
+  private pickWrenchPivotOrigin(target, rayOriginBent, rayDirectionBent) {
+    if (!target?.position || !rayOriginBent || !rayDirectionBent) return false;
+    const ray = new THREE.Ray(
+      rayOriginBent.clone(),
+      rayDirectionBent.clone().normalize()
+    );
+    const originBent = bendPoint(
+      target.position.x,
+      target.position.y,
+      target.position.z,
+      new THREE.Vector3()
+    );
+    const closest = ray.closestPointToPoint(originBent, new THREE.Vector3());
+    const rayDistance = closest.distanceTo(ray.origin);
+    if (rayDistance > 12) return false;
+    const length = Math.max(0.1, Number(target.axisLength) || 1);
+    const radius = Math.max(0.1, length * 0.11);
+    return closest.distanceToSquared(originBent) <= radius * radius;
+  }
+
+  private renderWrenchPivotTarget() {
+    const target = this.wrenchPivotTarget;
+    if (!target?.position) {
+      this.sceneRenderer?.clearWrenchPivotGizmo?.();
+      return false;
+    }
+    this.sceneRenderer?.setWrenchPivotGizmo?.(
+      target.position,
+      target.quaternion,
+      target.axisLength,
+      target.hoveredAxis || null,
+      this.wrenchPivotDrag?.axis || null,
+      target.hoveredOrigin === true
+    );
+    return true;
+  }
+
+  updateWrenchPivotGizmo(entityHit, rayOriginBent, rayDirectionBent) {
+    if (this.activeTool !== SpecialTool.WRENCH) {
+      this.wrenchPivotTarget = null;
+      this.sceneRenderer?.clearWrenchPivotGizmo?.();
+      return null;
+    }
+    if (this.wrenchPivotDrag) {
+      this.renderWrenchPivotTarget();
+      return this.wrenchPivotTarget;
+    }
+
+    let current = this.refreshWrenchPivotTargetPose();
+    if (!current) this.wrenchPivotTarget = null;
+
+    // Prefer an already-visible axis over the voxel behind it. This lets the
+    // player move the crosshair from a block onto a pivot that sits outside the
+    // entity without losing the gizmo target.
+    const retainedOrigin = current
+      ? this.pickWrenchPivotOrigin(current, rayOriginBent, rayDirectionBent)
+      : false;
+    if (retainedOrigin) {
+      current.hoveredOrigin = true;
+      current.hoveredAxis = null;
+      this.renderWrenchPivotTarget();
+      return current;
+    }
+    const retainedAxis = current
+      ? this.pickWrenchPivotAxis(current, rayOriginBent, rayDirectionBent)
+      : null;
+    if (retainedAxis) {
+      current.hoveredOrigin = false;
+      current.hoveredAxis = retainedAxis;
+      this.renderWrenchPivotTarget();
+      return current;
+    }
+
+    if (entityHit?.contraption) {
+      const nodeId = String(entityHit.entityId || 'root');
+      if (!current || current.contraption !== entityHit.contraption || current.nodeId !== nodeId) {
+        this.wrenchPivotTarget = {
+          contraption: entityHit.contraption,
+          nodeId,
+          hoveredAxis: null,
+          hoveredOrigin: false
+        };
+        current = this.refreshWrenchPivotTargetPose();
+      }
+    }
+
+    if (!current) {
+      this.sceneRenderer?.clearWrenchPivotGizmo?.();
+      return null;
+    }
+    current.hoveredOrigin = this.pickWrenchPivotOrigin(current, rayOriginBent, rayDirectionBent);
+    current.hoveredAxis = current.hoveredOrigin
+      ? null
+      : this.pickWrenchPivotAxis(current, rayOriginBent, rayDirectionBent);
+    this.renderWrenchPivotTarget();
+    return current;
+  }
+
+  private wrenchPivotScreenDrag(target, axis: string) {
+    const axisWorld = this.wrenchPivotAxisVector(axis)
+      .applyQuaternion(target.quaternion)
+      .normalize();
+    const startFlat = target.position.clone();
+    const endFlat = startFlat.clone().addScaledVector(axisWorld, target.axisLength);
+    const startBent = bendPoint(startFlat.x, startFlat.y, startFlat.z, new THREE.Vector3());
+    const endBent = bendPoint(endFlat.x, endFlat.y, endFlat.z, new THREE.Vector3());
+
+    const projectedCamera = this.camera.clone();
+    projectedCamera.position.copy(this.camera.position);
+    projectedCamera.quaternion.copy(this.camera.quaternion);
+    projectedCamera.updateMatrixWorld(true);
+    applyCameraBend(projectedCamera);
+    const startScreen = startBent.clone().project(projectedCamera);
+    const endScreen = endBent.clone().project(projectedCamera);
+    const canvas = this.sceneRenderer?.renderer?.domElement;
+    const width = Math.max(1, Number(canvas?.clientWidth) || Number(globalThis.innerWidth) || 1280);
+    const height = Math.max(1, Number(canvas?.clientHeight) || Number(globalThis.innerHeight) || 720);
+    const screenVector = new THREE.Vector2(
+      (endScreen.x - startScreen.x) * width * 0.5,
+      -(endScreen.y - startScreen.y) * height * 0.5
+    );
+    const projectedPixels = screenVector.length();
+    if (projectedPixels >= 4 && Number.isFinite(projectedPixels)) {
+      return {
+        axisWorld,
+        screenDirection: screenVector.normalize(),
+        unitsPerPixel: Math.min(0.25, Math.max(0.0005, target.axisLength / projectedPixels))
+      };
+    }
+
+    const eye = this.physics?.getEyePosition?.() || this.camera.position;
+    const distance = Math.max(0.5, eye.distanceTo(target.position));
+    const fovRadians = THREE.MathUtils.degToRad(Number(this.camera.fov) || 75);
+    return {
+      axisWorld,
+      screenDirection: new THREE.Vector2(0, -1),
+      unitsPerPixel: Math.min(0.25, Math.max(0.0005, 2 * distance * Math.tan(fovRadians / 2) / height))
+    };
+  }
+
+  startWrenchPivotDrag() {
+    const target = this.wrenchPivotTarget;
+    const axis = target?.hoveredAxis;
+    if (!target || !axis) return false;
+    if (!this.canEditEntityInternals(target.contraption)) {
+      this.ui?.showToast?.('Wrench: stop the entity before editing its pivot');
+      return false;
+    }
+    const node = target.contraption.getEntityNode?.(target.nodeId)
+      || target.contraption.entityNodes?.get?.(target.nodeId);
+    if (!node) return false;
+
+    const projection = this.wrenchPivotScreenDrag(target, axis);
+    this.releaseWrenchGrab();
+    this.wrenchPivotDrag = {
+      contraption: target.contraption,
+      nodeId: target.nodeId,
+      axis,
+      startPivotLocal: node.pivotLocal.clone(),
+      previewPivotLocal: node.pivotLocal.clone(),
+      startWorldPosition: target.position.clone(),
+      axisWorld: projection.axisWorld,
+      screenDirection: projection.screenDirection,
+      unitsPerPixel: projection.unitsPerPixel,
+      scalar: 0
+    };
+    this.sound?.playWrenchClick?.();
+    this.renderWrenchPivotTarget();
+    return true;
+  }
+
+  updateWrenchPivotDrag(movementX = 0, movementY = 0) {
+    const drag = this.wrenchPivotDrag;
+    if (!drag) return false;
+    const pixelDelta = (Number(movementX) || 0) * drag.screenDirection.x
+      + (Number(movementY) || 0) * drag.screenDirection.y;
+    drag.scalar += pixelDelta * drag.unitsPerPixel;
+    const axisIndex = drag.axis === 'x' ? 0 : drag.axis === 'y' ? 1 : 2;
+    const nextValue = Math.round(
+      (drag.startPivotLocal.getComponent(axisIndex) + drag.scalar) * 100
+    ) / 100;
+    drag.previewPivotLocal.copy(drag.startPivotLocal).setComponent(axisIndex, nextValue);
+    const actualScalar = nextValue - drag.startPivotLocal.getComponent(axisIndex);
+
+    this.wrenchPivotTarget.pivotLocal = drag.previewPivotLocal.clone();
+    this.wrenchPivotTarget.position = drag.startWorldPosition.clone()
+      .addScaledVector(drag.axisWorld, actualScalar);
+    this.wrenchPivotTarget.hoveredAxis = drag.axis;
+    this.wrenchPivotTarget.hoveredOrigin = false;
+    this.renderWrenchPivotTarget();
+    return true;
+  }
+
+  finishWrenchPivotDrag(commit = true) {
+    const drag = this.wrenchPivotDrag;
+    if (!drag) return false;
+    this.wrenchPivotDrag = null;
+    let result: any = { ok: true, changed: false };
+    if (commit) {
+      result = drag.contraption.setComponentPivot?.(
+        drag.nodeId,
+        drag.previewPivotLocal,
+        { requireStopped: true, allowDynamic: true }
+      ) || { ok: false, reason: 'pivot_unavailable' };
+      if (result.ok && result.changed) {
+        this.contraptions?.saveEntitiesToStorage?.();
+        this.ui?.notifyContraptionStructureChanged?.(drag.contraption);
+        const values = drag.previewPivotLocal.toArray().map(value => Number(value.toFixed(2)));
+        this.ui?.showToast?.(`Pivot [${drag.nodeId}] → [${values.join(', ')}]`);
+        this.sound?.playWrenchClick?.();
+      } else if (!result.ok) {
+        this.ui?.showToast?.(
+          result.reason === 'target_not_stopped'
+            ? 'Wrench: stop the entity before editing its pivot'
+            : 'Wrench: could not update this pivot'
+        );
+      }
+    }
+
+    if (this.wrenchPivotTarget?.contraption === drag.contraption) {
+      this.wrenchPivotTarget.nodeId = drag.nodeId;
+      this.wrenchPivotTarget.hoveredAxis = null;
+      this.wrenchPivotTarget.hoveredOrigin = false;
+      this.refreshWrenchPivotTargetPose(this.wrenchPivotTarget);
+    }
+    this.renderWrenchPivotTarget();
+    return result.ok === true;
+  }
+
+  resetWrenchPivot() {
+    const target = this.wrenchPivotTarget;
+    if (!target?.contraption) return false;
+    if (!this.canEditEntityInternals(target.contraption)) {
+      this.ui?.showToast?.('Wrench: stop the entity before resetting its pivot');
+      return false;
+    }
+
+    this.releaseWrenchGrab();
+    const result = target.contraption.resetComponentPivot?.(
+      target.nodeId,
+      { requireStopped: true, allowDynamic: true }
+    ) || { ok: false, reason: 'pivot_unavailable' };
+    if (!result.ok) {
+      this.ui?.showToast?.(
+        result.reason === 'target_not_stopped'
+          ? 'Wrench: stop the entity before resetting its pivot'
+          : 'Wrench: could not reset this pivot'
+      );
+      return false;
+    }
+
+    if (result.changed) {
+      this.contraptions?.saveEntitiesToStorage?.();
+      this.ui?.notifyContraptionStructureChanged?.(target.contraption);
+    }
+    const values = (result.pivot || []).map(value => Number(Number(value).toFixed(2)));
+    this.ui?.showToast?.(
+      result.changed
+        ? `Pivot [${target.nodeId}] reset to center [${values.join(', ')}]`
+        : `Pivot [${target.nodeId}] is already centered`
+    );
+    this.sound?.playWrenchClick?.();
+    target.hoveredAxis = null;
+    target.hoveredOrigin = false;
+    this.refreshWrenchPivotTargetPose(target);
+    this.renderWrenchPivotTarget();
+    return true;
+  }
+
+  clearWrenchPivotInteraction(commit = false) {
+    if (this.wrenchPivotDrag) this.finishWrenchPivotDrag(commit);
+    this.wrenchPivotTarget = null;
+    this.sceneRenderer?.clearWrenchPivotGizmo?.();
   }
 
   getWrenchGrabBodyId(contraption, nodeId = 'root') {
@@ -3355,9 +4318,9 @@ export class PlayerController {
 
   createEmptyInventories() {
     return {
-      blockset: { items: new Array(99).fill(null), selected: 0 },
-      entity: { items: new Array(99).fill(null), selected: 0 },
-      colorset: { items: new Array(9).fill(null), selected: 0 }
+      blockset: { items: new Array(MAX_BACKPACK_SLOTS_PER_CATEGORY).fill(null), selected: 0 },
+      entity: { items: new Array(MAX_BACKPACK_SLOTS_PER_CATEGORY).fill(null), selected: 0 },
+      colorset: { items: new Array(MAX_BACKPACK_SLOTS_PER_CATEGORY).fill(null), selected: 0 }
     };
   }
 
@@ -3558,7 +4521,7 @@ export class PlayerController {
       const nonNullCount = group.items.filter(Boolean).length;
       if (nonNullCount <= 1) return false;
       group.items.splice(index, 1);
-      while (group.items.length < 9) {
+      while (group.items.length < MAX_BACKPACK_SLOTS_PER_CATEGORY) {
         group.items.push(null);
       }
       if (group.selected >= group.items.filter(Boolean).length) {
@@ -3753,6 +4716,11 @@ export class PlayerController {
         && value.slice(0, 3).every(component => Number.isFinite(Number(component)))
         ? value.slice(0, 3).map(Number)
         : undefined;
+      const quaternion4 = value => Array.isArray(value) && value.length >= 4
+        && value.slice(0, 4).every(component => Number.isFinite(Number(component)))
+        && value.slice(0, 4).reduce((sum, component) => sum + Number(component) ** 2, 0) > 1e-12
+        ? new THREE.Quaternion(...value.slice(0, 4).map(Number) as [number, number, number, number]).normalize().toArray()
+        : undefined;
       const optionalNumber = value => value !== null && value !== undefined && Number.isFinite(Number(value))
         ? Number(value)
         : undefined;
@@ -3763,6 +4731,9 @@ export class PlayerController {
         ...(definition.collisionEnabled === false ? { collisionEnabled: false } : {}),
         ...(typeof definition.useGravity === 'boolean' ? { useGravity: definition.useGravity } : {}),
         ...(vector3(definition.pivot) ? { pivot: vector3(definition.pivot) } : {}),
+        ...(vector3(definition.localPosition) ? { localPosition: vector3(definition.localPosition) } : {}),
+        ...(quaternion4(definition.localRotation) ? { localRotation: quaternion4(definition.localRotation) } : {}),
+        ...(quaternion4(definition.anchorRotation) ? { anchorRotation: quaternion4(definition.anchorRotation) } : {}),
         ...(['dynamic', 'kinematic'].includes(definition.bodyType) ? { bodyType: definition.bodyType } : {}),
         ...(optionalNumber(definition.mass) !== undefined ? { mass: optionalNumber(definition.mass) } : {}),
         ...(optionalNumber(definition.restitution) !== undefined ? { restitution: optionalNumber(definition.restitution) } : {}),
@@ -3829,6 +4800,7 @@ export class PlayerController {
         scripts: (item.scripts || []).map(script => ({ id: String(script.id || ''), code: String(script.code || '') })),
         enabled: (item.enabled || []).map(entry => ({ id: String(entry.id || ''), enabled: entry.enabled === true })),
         constraints,
+        ...(quaternion4(item.anchorRotation) ? { anchorRotation: quaternion4(item.anchorRotation) } : {}),
         bodyType: item.bodyType,
         mass: item.mass,
         restitution: item.restitution,
@@ -3888,6 +4860,16 @@ export class PlayerController {
       return vector.every(component => Number.isFinite(component) && Math.abs(component) <= maxAbs)
         ? vector
         : null;
+    };
+    const portableQuaternion = value => {
+      if (value === undefined) return undefined;
+      if (!Array.isArray(value) || value.length !== 4) return null;
+      const components = value.map(Number);
+      const lengthSq = components.reduce((sum, component) => sum + component * component, 0);
+      if (!components.every(Number.isFinite) || lengthSq <= 1e-12) return null;
+      return new THREE.Quaternion(
+        components[0], components[1], components[2], components[3]
+      ).normalize().toArray();
     };
     const withinEntityBounds = (blocks, keys, ownerKey = null) => {
       const groups = new Map();
@@ -4051,6 +5033,14 @@ export class PlayerController {
         }
         const pivot = portableVector(component.pivot, MAX_IMPORT_COORDINATE);
         if (pivot === null) throw new Error(`Component ${id} has an invalid pivot`);
+        const localPosition = portableVector(component.localPosition, MAX_IMPORT_COORDINATE);
+        if (localPosition === null) throw new Error(`Component ${id} has an invalid local position`);
+        for (const [label, value] of [
+          ['local rotation', component.localRotation],
+          ['anchor rotation', component.anchorRotation]
+        ]) {
+          if (portableQuaternion(value) === null) throw new Error(`Component ${id} has an invalid ${label}`);
+        }
         validateBody(component.body, id);
         if (!Array.isArray(component.blocks) || !Array.isArray(component.children) || !Array.isArray(component.seats)) {
           throw new Error(`Component ${id} has malformed repeated fields`);
@@ -4175,9 +5165,22 @@ export class PlayerController {
 
     return fail('Unknown inventory category');
   }
-  private finishEntitySlotBuild(slot, position, preparedBlocks = null) {
-    const created = this.contraptions.buildFromSlot(slot, position, null, true, preparedBlocks);
+  private finishEntitySlotBuild(slot, pose, preparedBlocks = null) {
+    const origin = pose?.position?.clone?.()
+      || new THREE.Vector3(Number(pose?.position?.x) || 0, Number(pose?.position?.y) || 0, Number(pose?.position?.z) || 0);
+    const rotation = pose?.quaternion?.isQuaternion
+      ? pose.quaternion.clone().normalize()
+      : new THREE.Quaternion();
+    const created = this.contraptions.buildFromSlot(slot, origin, null, false, preparedBlocks);
     if (created) {
+      // Preview coordinates use `origin + rotation * localPoint`, while a
+      // Contraption's root position is its local center. Move that center into
+      // the identical world pose before saving.
+      created.position.copy(origin).add(created.localCenter.clone().applyQuaternion(rotation));
+      created.quaternion.copy(rotation);
+      created.updateTransform();
+      created.originWorldPos.copy(origin);
+      this.contraptions.saveEntitiesToStorage?.();
       this.sound?.playBlockPlace?.();
       const builtLabel = slot.name || 'entity';
       this.ui?.showToast?.(`Built [${builtLabel}] (${slot.blockCount} blocks) as entity #${created.id}`);
@@ -4200,6 +5203,7 @@ export class PlayerController {
       scripts_too_large: 'Installing this module would exceed the entity script size limit',
       invalid_component_ids: 'The module contains invalid or duplicate component ids',
       invalid_component_hierarchy: 'The module component hierarchy is invalid',
+      overlapping_blocks: 'The module would overlap existing blocks on the target entity',
       invalid_blocks: 'The module contains invalid voxel data',
       invalid_constraints: 'The module contains invalid internal constraints',
       invalid_scripts: 'The module contains an invalid component script'
@@ -4210,13 +5214,21 @@ export class PlayerController {
   private finishEntitySlotInstall(slot, pose, preparedBlocks = null) {
     const target = pose?.targetContraption;
     const parentId = pose?.targetNodeId || 'root';
+    const placementRotation = pose?.quaternion?.isQuaternion
+      ? pose.quaternion
+      : new THREE.Quaternion();
+    if (this.entitySlotOverlapsTarget(slot, pose.position, placementRotation, target)) {
+      this.ui?.showToast?.(this.describeComponentInstallFailure('overlapping_blocks'));
+      return null;
+    }
     const result = this.contraptions.installSlotAsComponent?.(
       target,
       slot,
       parentId,
       pose.position,
       true,
-      preparedBlocks
+      preparedBlocks,
+      placementRotation
     );
     if (!result?.ok) {
       this.ui?.showToast?.(this.describeComponentInstallFailure(result?.reason));
@@ -4235,7 +5247,7 @@ export class PlayerController {
   }
 
   /** Map a large serialized entity slot incrementally; registration stays atomic. */
-  private startLargeEntitySlotBuild(slot, position) {
+  private startLargeEntitySlotBuild(slot, pose) {
     const source = [...slot.blocks];
     const preparedBlocks: any[] = [];
     return this.startBulkEditJob({
@@ -4257,7 +5269,7 @@ export class PlayerController {
         });
         return 1;
       },
-      finish: () => this.finishEntitySlotBuild(slot, position, preparedBlocks)
+      finish: () => this.finishEntitySlotBuild(slot, pose, preparedBlocks)
     });
   }
 
@@ -4291,8 +5303,9 @@ export class PlayerController {
   /**
    * Hammer left-click: place the current inventory slot at the crosshair.
    * - **Block set** (T copy, STL import): stamps plain world blocks.
-   * - **Entity** (R copy, imported): spawns an independent physics entity.
-   * - **Shift + entity**: installs the entity template on a stopped target component.
+   * - **Entity on terrain** (R copy, imported): spawns an independent physics entity.
+   * - **Entity on entity**: installs the template under the hit stopped component.
+   * - **Shift + entity**: explicitly requests component installation and requires an entity target.
    * - **Color set**: applies its 9 colors to the keyboard palette.
    */
   pasteInventorySlot(installAsComponent = false) {
@@ -4328,7 +5341,9 @@ export class PlayerController {
       return false;
     }
 
-    if (installAsComponent) {
+    const shouldInstallAsComponent = Boolean(pose.targetContraption) || installAsComponent;
+    const placedSlot = pose.slot || slot;
+    if (shouldInstallAsComponent) {
       if (!pose.targetContraption) {
         this.ui?.showToast?.('Shift+LMB installs modules — aim directly at a stopped entity component');
         return false;
@@ -4337,17 +5352,16 @@ export class PlayerController {
         this.ui?.showToast?.('Stop the target entity with the Wrench before installing components');
         return false;
       }
-      if (Array.isArray(slot.blocks) && slot.blocks.length > BULK_EDIT_THRESHOLD) {
-        return this.startLargeEntitySlotInstall(slot, pose);
+      if (Array.isArray(placedSlot.blocks) && placedSlot.blocks.length > BULK_EDIT_THRESHOLD) {
+        return this.startLargeEntitySlotInstall(placedSlot, pose);
       }
-      return !!this.finishEntitySlotInstall(slot, pose);
+      return !!this.finishEntitySlotInstall(placedSlot, pose);
     }
 
-    const position = pose.position.clone?.() || new THREE.Vector3(pose.position.x, pose.position.y, pose.position.z);
-    if (Array.isArray(slot.blocks) && slot.blocks.length > BULK_EDIT_THRESHOLD) {
-      return this.startLargeEntitySlotBuild(slot, position);
+    if (Array.isArray(placedSlot.blocks) && placedSlot.blocks.length > BULK_EDIT_THRESHOLD) {
+      return this.startLargeEntitySlotBuild(placedSlot, pose);
     }
-    return !!this.finishEntitySlotBuild(slot, position);
+    return !!this.finishEntitySlotBuild(placedSlot, pose);
   }
 
   /**
@@ -4789,21 +5803,48 @@ export class PlayerController {
 
           this.sceneRenderer?.setWrenchTether?.(eyePos, anchorPos);
 
-          // Treat the wrench as an editor-style velocity constraint instead of
-          // a spring force. This deliberately ignores mass so a billion-kilogram
-          // body follows just as readily as a single block. Movement still goes
-          // through the physics step, preserving terrain sweep/collision checks.
+          // Treat the wrench as a mass-independent, critically damped velocity
+          // servo. Acceleration and speed limits prevent one 20 Hz editor tick
+          // from crossing the target and reversing violently on the next tick.
+          // Movement still goes through physics sweep/collision checks.
           const safeDt = Math.max(1 / 240, Math.min(0.08, Number(dt) || 0));
           const targetVelocity = targetPos.clone()
             .sub(grab.lastTargetPosition)
             .divideScalar(safeDt);
-          if (targetVelocity.length() > 24) targetVelocity.setLength(24);
+          if (targetVelocity.length() > WRENCH_GRAB_MAX_TARGET_SPEED) {
+            targetVelocity.setLength(WRENCH_GRAB_MAX_TARGET_SPEED);
+          }
 
-          const desiredVelocity = targetPos.clone()
+          const anchorLever = anchorPos.clone().sub(body.position);
+          const anchorVelocity = body.velocity.clone()
+            .add(body.angularVelocity.clone().cross(anchorLever));
+          // Keep response*dt <= 0.4 even for a clamped/stalled frame so the
+          // discrete critical-damping update remains non-oscillatory.
+          const response = Math.min(WRENCH_GRAB_RESPONSE, 0.4 / safeDt);
+          const servoAcceleration = targetPos.clone()
             .sub(anchorPos)
-            .multiplyScalar(36)
-            .add(targetVelocity);
-          if (desiredVelocity.length() > 30) desiredVelocity.setLength(30);
+            .multiplyScalar(response * response)
+            .add(targetVelocity.clone().sub(anchorVelocity).multiplyScalar(2 * response));
+          if (servoAcceleration.length() > WRENCH_GRAB_MAX_ACCELERATION) {
+            servoAcceleration.setLength(WRENCH_GRAB_MAX_ACCELERATION);
+          }
+
+          const desiredVelocity = body.velocity.clone()
+            .addScaledVector(servoAcceleration, safeDt);
+          // Gravity is applied after the controller during the three physics
+          // substeps. Pre-compensating its expected velocity change prevents a
+          // held body from repeatedly sagging and being snapped upward.
+          const gravity = this.contraptions?.physics?.gravity;
+          if (contraption.getNodeGravityEnabled?.(bodyId) !== false && gravity?.isVector3) {
+            // About two thirds of the full-frame velocity change keeps the
+            // integrated anchor position fixed; compensating the full change
+            // would launch it upward before gravity is accumulated gradually
+            // across the three substeps.
+            desiredVelocity.addScaledVector(gravity, -safeDt * (2 / 3));
+          }
+          if (desiredVelocity.length() > WRENCH_GRAB_MAX_SPEED) {
+            desiredVelocity.setLength(WRENCH_GRAB_MAX_SPEED);
+          }
 
           const constrained = this.contraptions?.physics?.constrainWrenchVelocity?.(
             contraption,
@@ -4814,8 +5855,7 @@ export class PlayerController {
           );
           const collisionSafeVelocity = constrained?.velocity || desiredVelocity;
 
-          const velocityBlend = 1 - Math.exp(-80 * safeDt);
-          body.velocity.lerp(collisionSafeVelocity, velocityBlend);
+          body.velocity.copy(collisionSafeVelocity);
           for (const normal of constrained?.normals || []) {
             const inwardSpeed = body.velocity.dot(normal);
             if (inwardSpeed < 0) body.velocity.addScaledVector(normal, -inwardSpeed);
@@ -4879,6 +5919,11 @@ export class PlayerController {
     const contraptionHit = query.entityHit;
     const hovered = query.kind === 'entity' ? contraptionHit.contraption : null;
     this.hoveredContraptionHit = hovered ? contraptionHit : null;
+    this.updateWrenchPivotGizmo(
+      hovered ? contraptionHit : null,
+      eyeBent,
+      forwardBent
+    );
     if (this.hoveredContraption !== hovered) {
       if (this.hoveredContraption) {
         this.hoveredContraption.setHighlighted(false);

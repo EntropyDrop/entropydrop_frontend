@@ -1,5 +1,23 @@
 import { compileBehaviorPrompt } from './BehaviorAgent.ts';
 import { renderAgentApiReference } from './ScriptApiContract.ts';
+import {
+  DEFAULT_AGENT_CONTEXT_K_TOKENS,
+  DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS,
+} from './AgentConfig.ts';
+import {
+  isLocalDevelopmentHost,
+  readJsonResponse,
+} from '../../bootstrap/NetworkSafety.ts';
+
+export {
+  AGENT_CONFIG_STORAGE_KEY,
+  AGENT_SESSION_KEY_STORAGE_KEY,
+  DEFAULT_AGENT_CONTEXT_K_TOKENS,
+  DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS,
+  loadAgentConfig,
+  saveAgentConfig,
+} from './AgentConfig.ts';
+export { isLocalDevelopmentHost } from '../../bootstrap/NetworkSafety.ts';
 
 /**
  * Agent chat module.
@@ -16,7 +34,7 @@ const AGENT_GENERATION_RULES = `## Generation rules
 3. Never use unbounded loops. Avoid expensive full-tree traversal and cache known component ids when appropriate.
 4. Hover: lift = mass*abs(gravityY) + heightError*Kp - verticalVelocity*Kd, plus attitude torque.
 5. Stabilize with torque from attitude error and angular-velocity damping.
-6. Quadcopter children use setLocalSpin for visuals and applyThrust([0,thrust,0]) for differential lift; yaw uses root torque.
+6. Mounted rotors use setLocalSpin for visuals and applyLocalThrust([0,thrust,0]) so thrust follows each component's installed anchor frame; yaw uses root torque.
 7. Check ctx.players.length before following a player.
 8. Throttle logs, e.g. if (ctx.tick % 60 === 0) ctx.log(...).
 9. Respect the provisional queued-mutation semantics and command-limit behavior stated in the canonical contract.
@@ -30,79 +48,25 @@ export const AGENT_SYSTEM_PROMPT = [
   AGENT_GENERATION_RULES
 ].join('\n\n');
 
+const MAX_AGENT_JSON_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_AGENT_RESPONSE_CHARS = 2 * 1024 * 1024;
+const MAX_AGENT_MODELS = 1000;
+
+async function readAgentJson(response: any): Promise<any> {
+  if (typeof response?.arrayBuffer === 'function') {
+    return readJsonResponse(response, MAX_AGENT_JSON_RESPONSE_BYTES);
+  }
+  // Small injected test adapters may implement only the fetch methods used by
+  // the assertion. Production browser fetch always takes the bounded path.
+  return response?.json?.();
+}
+
 /**
  * Approximate token count for text. Roughly ~3.5 chars per token for code/English text.
  */
 export function estimateTokens(text = ''): number {
   if (!text) return 0;
   return Math.max(1, Math.ceil(text.length / 3.5));
-}
-
-export const AGENT_CONFIG_STORAGE_KEY = 'space.agent.config.v1';
-
-/**
- * Read/write non-secret agent preferences. API keys are deliberately kept in
- * the current UI session only and are never restored from localStorage.
- */
-export function loadAgentConfig() {
-  try {
-    const raw = localStorage.getItem(AGENT_CONFIG_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const contextK = Number.isFinite(parsed.contextKTokens)
-        ? Number(parsed.contextKTokens)
-        : (Number.isFinite(parsed.contextLength) ? Number(parsed.contextLength) : 32);
-      const maxOutputK = Number.isFinite(parsed.maxOutputKTokens)
-        ? Number(parsed.maxOutputKTokens)
-        : (Number.isFinite(parsed.maxTokens) ? Math.round(Number(parsed.maxTokens) / 1024) : 8);
-
-      const config = {
-        baseUrl: String(parsed.baseUrl || 'https://api.openai.com/v1'),
-        apiKey: '',
-        model: String(parsed.model || 'gpt-4o-mini'),
-        contextKTokens: Math.max(1, Math.min(2048, contextK || 32)),
-        maxOutputKTokens: Math.max(0.1, Math.min(128, maxOutputK || 8)),
-        timeoutSeconds: Math.max(5, Math.min(600, Number(parsed?.timeoutSeconds) || 60))
-      };
-      if (Object.prototype.hasOwnProperty.call(parsed, 'apiKey')) {
-        localStorage.setItem(AGENT_CONFIG_STORAGE_KEY, JSON.stringify({
-          baseUrl: config.baseUrl,
-          model: config.model,
-          contextKTokens: config.contextKTokens,
-          maxOutputKTokens: config.maxOutputKTokens,
-          timeoutSeconds: config.timeoutSeconds
-        }));
-      }
-      return config;
-    }
-  } catch { /* ignore */ }
-  return { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', contextKTokens: 32, maxOutputKTokens: 8, timeoutSeconds: 60 };
-}
-
-export function saveAgentConfig(config) {
-  try {
-    const persisted = {
-      baseUrl: String(config?.baseUrl || 'https://api.openai.com/v1'),
-      model: String(config?.model || 'gpt-4o-mini'),
-      contextKTokens: Math.max(1, Math.min(2048, Number(config?.contextKTokens) || 32)),
-      maxOutputKTokens: Math.max(0.1, Math.min(128, Number(config?.maxOutputKTokens) || 8)),
-      timeoutSeconds: Math.max(5, Math.min(600, Number(config?.timeoutSeconds) || 60))
-    };
-    localStorage.setItem(AGENT_CONFIG_STORAGE_KEY, JSON.stringify(persisted));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function isLocalDevelopmentHost(hostname: string): boolean {
-  if (['localhost', '127.0.0.1', '[::1]', '0.0.0.0'].includes(hostname)) return true;
-  if (hostname.endsWith('.local')) return true;
-  if (/^127\.\d+\.\d+\.\d+$/.test(hostname)) return true;
-  if (/^10\.\d+\.\d+\.\d+$/.test(hostname)) return true;
-  if (/^192\.168\.\d+\.\d+$/.test(hostname)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(hostname)) return true;
-  return false;
 }
 
 function resolveAgentEndpoint(baseUrl, path): any {
@@ -122,7 +86,8 @@ function resolveAgentEndpoint(baseUrl, path): any {
 
 /**
  * Fetch the model catalog exposed by an OpenAI-compatible API base URL.
- * API keys remain session-only and are sent only to HTTPS or localhost.
+ * API keys are restored from session storage (or explicit persistent opt-in)
+ * and sent only to HTTPS or localhost.
  *
  * Besides the canonical `{ data: [{ id }] }` response, accept a raw array and
  * `{ models: [...] }` for small local OpenAI-compatible servers.
@@ -159,7 +124,7 @@ export async function fetchAgentModels(config, fetchImpl = null) {
       };
     }
 
-    const payload = await response.json();
+    const payload = await readAgentJson(response);
     const entries = Array.isArray(payload)
       ? payload
       : (Array.isArray(payload?.data) ? payload.data : payload?.models);
@@ -169,11 +134,11 @@ export async function fetchAgentModels(config, fetchImpl = null) {
 
     const models = [];
     const seen = new Set();
-    for (const entry of entries) {
+    for (const entry of entries.slice(0, MAX_AGENT_MODELS)) {
       const id = typeof entry === 'string'
         ? entry.trim()
         : String(entry?.id || entry?.name || entry?.model || '').trim();
-      if (!id || seen.has(id)) continue;
+      if (!id || id.length > 256 || seen.has(id)) continue;
       seen.add(id);
       models.push(id);
     }
@@ -244,7 +209,9 @@ export async function callChatAgent(messages, config, fetchImpl = null, onChunk 
   const stream = typeof onChunk === 'function';
   const maxTokensK = Number.isFinite(config?.maxOutputKTokens) && config.maxOutputKTokens > 0
     ? config.maxOutputKTokens
-    : (Number.isFinite(config?.maxTokens) && config.maxTokens > 0 ? config.maxTokens / 1024 : 4);
+    : (Number.isFinite(config?.maxTokens) && config.maxTokens > 0
+      ? config.maxTokens / 1024
+      : DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS);
   const maxTokens = Math.max(64, Math.round(maxTokensK * 1024));
   const timeoutMs = Math.max(1000, Math.min(600000,
     Number(config?.timeoutSeconds) > 0
@@ -291,6 +258,10 @@ export async function callChatAgent(messages, config, fetchImpl = null, onChunk 
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
+        if (buffer.length + rawContent.length + rawReasoning.length > MAX_AGENT_RESPONSE_CHARS) {
+          await reader.cancel?.().catch?.(() => undefined);
+          return { ok: false, error: 'Agent response exceeded the 2 MiB safety limit.' };
+        }
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() || '';
 
@@ -309,6 +280,10 @@ export async function callChatAgent(messages, config, fetchImpl = null, onChunk 
                 const rDelta = delta.reasoning_content || delta.reasoning || delta.thought || '';
                 if (cDelta) rawContent += cDelta;
                 if (rDelta) rawReasoning += rDelta;
+                if (rawContent.length + rawReasoning.length > MAX_AGENT_RESPONSE_CHARS) {
+                  await reader.cancel?.().catch?.(() => undefined);
+                  return { ok: false, error: 'Agent response exceeded the 2 MiB safety limit.' };
+                }
 
                 const parsed = parseThoughtAndContent(rawContent, rawReasoning);
                 onChunk({
@@ -331,11 +306,14 @@ export async function callChatAgent(messages, config, fetchImpl = null, onChunk 
     }
 
     // Fallback for non-streaming response or mocked responses
-    const data = await response.json();
+    const data = await readAgentJson(response);
     const choice = data?.choices?.[0];
     const rawContent = choice?.message?.content;
     if (typeof rawContent !== 'string') {
       return { ok: false, error: 'API response is missing choices[0].message.content' };
+    }
+    if (rawContent.length > MAX_AGENT_RESPONSE_CHARS) {
+      return { ok: false, error: 'Agent response exceeded the 2 MiB safety limit.' };
     }
     const rawReasoning = choice?.message?.reasoning_content || choice?.message?.reasoning || choice?.message?.thought || '';
     const parsed = parseThoughtAndContent(rawContent, rawReasoning);
@@ -419,7 +397,9 @@ export async function runAgentTurn(
 
   const contextK = config && Number.isFinite(config.contextKTokens) && config.contextKTokens > 0
     ? config.contextKTokens
-    : (config && Number.isFinite(config.contextLength) && config.contextLength > 0 ? config.contextLength : 32);
+    : (config && Number.isFinite(config.contextLength) && config.contextLength > 0
+      ? config.contextLength
+      : DEFAULT_AGENT_CONTEXT_K_TOKENS);
   const totalContextTokens = Math.round(contextK * 1024);
   const systemTokens = estimateTokens(AGENT_SYSTEM_PROMPT);
   const userPromptTokens = estimateTokens(`${prompt}${targetNote}`);

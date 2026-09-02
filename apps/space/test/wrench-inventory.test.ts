@@ -8,6 +8,7 @@ import {
   SpecialTool
 } from '../src/engine/controls/PlayerController.ts';
 import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
+import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 import {
   bendPoint,
@@ -295,6 +296,268 @@ test('Wrench hold grabs the exact dynamic-body point and releases cleanly', () =
   assert.equal(controller.wrenchGrab, null);
 });
 
+test('Wrench pivot editing preserves rotated component and descendant voxel positions', () => {
+  const entity = makeContraptionWithChildren();
+  entity.stopAllNodeScripts();
+  entity.quaternion.setFromEuler(new THREE.Euler(0.15, 0.6, -0.1));
+  const arm = entity.getEntityNode('arm');
+  arm.localQuaternion.setFromEuler(new THREE.Euler(0.2, -0.35, 0.1));
+  arm.group.quaternion.copy(arm.localQuaternion);
+  entity.updateTransform();
+
+  const before = entity.blocks.map(block => entity.getBlockWorldCenter(block));
+  const result = entity.setComponentPivot('arm', [1.35, 0.8, -0.25], {
+    requireStopped: true,
+    allowDynamic: true
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(entity.getEntityNode('arm').pivotLocal.toArray(), [1.35, 0.8, -0.25]);
+  for (let index = 0; index < entity.blocks.length; index++) {
+    assert.ok(
+      entity.getBlockWorldCenter(entity.blocks[index]).distanceTo(before[index]) < 1e-7,
+      `block ${index} should stay fixed while the arm pivot moves`
+    );
+  }
+});
+
+test('Wrench can edit a stopped dynamic root pivot without moving its subtree', () => {
+  const entity = makeContraptionWithChildren();
+  entity.stopAllNodeScripts();
+  entity.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 3);
+  entity.updateTransform();
+  const before = entity.blocks.map(block => entity.getBlockWorldCenter(block));
+  const oldPivot = entity.getEntityNode('root').pivotLocal.clone();
+  const nextPivot = oldPivot.clone().add(new THREE.Vector3(0.75, -0.2, 0.4));
+
+  const result = entity.setComponentPivot('root', nextPivot, {
+    requireStopped: true,
+    allowDynamic: true
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(entity.getEntityNode('root').pivotLocal.distanceTo(nextPivot) < 1e-9);
+  for (let index = 0; index < entity.blocks.length; index++) {
+    assert.ok(
+      entity.getBlockWorldCenter(entity.blocks[index]).distanceTo(before[index]) < 1e-7,
+      `block ${index} should stay fixed while the root pivot moves`
+    );
+  }
+});
+
+test('Wrench pivot reset returns root and child pivots to their default centers without moving voxels', () => {
+  const entity = makeContraptionWithChildren();
+  entity.stopAllNodeScripts();
+  entity.quaternion.setFromEuler(new THREE.Euler(0.2, -0.45, 0.1));
+  entity.updateTransform();
+  const before = entity.blocks.map(block => entity.getBlockWorldCenter(block));
+
+  assert.equal(entity.setComponentPivot('root', [2.1, -0.4, 1.7], {
+    requireStopped: true,
+    allowDynamic: true
+  }).ok, true);
+  assert.equal(entity.setComponentPivot('arm', [1.8, 0.2, -0.6], {
+    requireStopped: true,
+    allowDynamic: true
+  }).ok, true);
+
+  const rootResult = entity.resetComponentPivot('root', {
+    requireStopped: true,
+    allowDynamic: true
+  });
+  const armResult = entity.resetComponentPivot('arm', {
+    requireStopped: true,
+    allowDynamic: true
+  });
+
+  assert.equal(rootResult.ok, true);
+  assert.equal(armResult.ok, true);
+  assert.ok(entity.getEntityNode('root').pivotLocal.distanceTo(entity.localCenter) < 1e-9);
+  assert.equal(entity.rootPivotOverride, null, 'root reset should restore automatic/default pivot semantics');
+  assert.deepEqual(entity.getEntityNode('arm').pivotLocal.toArray(), [0.5, 1.5, 0.5]);
+  for (let index = 0; index < entity.blocks.length; index++) {
+    assert.ok(
+      entity.getBlockWorldCenter(entity.blocks[index]).distanceTo(before[index]) < 1e-7,
+      `block ${index} should stay fixed while pivots reset`
+    );
+  }
+});
+
+test('Wrench axis drag previews continuously and commits the pivot only on mouse release', () => {
+  const entity = makeContraptionWithChildren();
+  entity.stopAllNodeScripts();
+  const node = entity.getEntityNode('arm');
+  const originalPivot = node.pivotLocal.clone();
+  const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 1000);
+  const pivotWorld = entity.getEntityNodeWorldPosition('arm');
+  camera.position.copy(pivotWorld).add(new THREE.Vector3(0, 0, 6));
+  camera.lookAt(pivotWorld);
+  camera.updateMatrixWorld(true);
+  let saves = 0;
+  let gizmoUpdates = 0;
+  const controller: any = Object.create(PlayerController.prototype);
+  Object.assign(controller, {
+    activeTool: SpecialTool.WRENCH,
+    camera,
+    physics: { getEyePosition: () => camera.position.clone() },
+    contraptions: {
+      contraptions: [entity],
+      saveEntitiesToStorage() { saves++; }
+    },
+    sceneRenderer: {
+      renderer: { domElement: { clientWidth: 1280, clientHeight: 720 } },
+      setWrenchPivotGizmo() { gizmoUpdates++; },
+      setWrenchTether() {}
+    },
+    sound: { playWrenchClick() {} },
+    ui: { showToast() {}, notifyContraptionStructureChanged() {} },
+    wrenchGrab: null,
+    wrenchPivotDrag: null,
+    wrenchPivotTarget: {
+      contraption: entity,
+      nodeId: 'arm',
+      pivotLocal: originalPivot.clone(),
+      position: pivotWorld.clone(),
+      quaternion: entity.getEntityNodeWorldQuaternion('arm'),
+      axisLength: 1.5,
+      hoveredAxis: 'x'
+    }
+  });
+
+  assert.equal(controller.startWrenchPivotDrag(), true);
+  const direction = controller.wrenchPivotDrag.screenDirection;
+  controller.updateWrenchPivotDrag(direction.x * 80, direction.y * 80);
+  assert.ok(controller.wrenchPivotDrag.previewPivotLocal.distanceTo(originalPivot) > 0.01);
+  assert.ok(node.pivotLocal.distanceTo(originalPivot) < 1e-9, 'dragging should be preview-only before release');
+  assert.equal(saves, 0);
+
+  assert.equal(controller.finishWrenchPivotDrag(true), true);
+  assert.ok(entity.getEntityNode('arm').pivotLocal.distanceTo(originalPivot) > 0.01);
+  assert.equal(saves, 1, 'committed pivot should persist immediately');
+  assert.ok(gizmoUpdates >= 2, 'gizmo should update during preview and after commit');
+});
+
+test('Wrench pivot gizmo renders color-coded XYZ axes with hover and active states', () => {
+  const renderer: any = Object.create(SceneRenderer.prototype);
+  renderer.scene = new THREE.Scene();
+  renderer.setupWrenchPivotGizmo();
+  assert.equal(renderer.wrenchPivotArrows.size, 3);
+
+  renderer.setWrenchPivotGizmo(
+    new THREE.Vector3(1, 2, 3),
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.4),
+    2,
+    'x',
+    'y'
+  );
+  assert.equal(renderer.wrenchPivotGizmo.visible, true);
+  assert.deepEqual(renderer.wrenchPivotGizmo.position.toArray(), [1, 2, 3]);
+  assert.deepEqual(renderer.wrenchPivotGizmo.scale.toArray(), [2, 2, 2]);
+  assert.equal(renderer.wrenchPivotArrows.get('x').line.material.color.getHex(), 0xffd60a);
+  assert.equal(renderer.wrenchPivotArrows.get('y').line.material.color.getHex(), 0xffffff);
+  assert.equal(renderer.wrenchPivotArrows.get('z').line.material.color.getHex(), 0x248aff);
+
+  renderer.setWrenchPivotGizmo(
+    new THREE.Vector3(1, 2, 3),
+    new THREE.Quaternion(),
+    2,
+    null,
+    null,
+    true
+  );
+  assert.equal(renderer.wrenchPivotOrigin.material.color.getHex(), 0xffd60a);
+  assert.equal(renderer.wrenchPivotOrigin.scale.x, 1.4);
+
+  renderer.clearWrenchPivotGizmo();
+  assert.equal(renderer.wrenchPivotGizmo.visible, false);
+});
+
+test('Wrench crosshair picking resolves the visible torus-bent pivot axis', () => {
+  const controller: any = Object.create(PlayerController.prototype);
+  const pivot = new THREE.Vector3(TORUS_SPAWN_X, 18, TORUS_SPAWN_Z - 4);
+  const target = {
+    position: pivot,
+    quaternion: new THREE.Quaternion(),
+    axisLength: 2
+  };
+  const eye = pivot.clone().add(new THREE.Vector3(0, 0, 6));
+  const pointOnX = pivot.clone().add(new THREE.Vector3(1.3, 0, 0));
+  const eyeBent = bendPoint(eye.x, eye.y, eye.z);
+  const pointBent = bendPoint(pointOnX.x, pointOnX.y, pointOnX.z);
+
+  assert.equal(
+    controller.pickWrenchPivotAxis(target, eyeBent, pointBent.sub(eyeBent).normalize()),
+    'x'
+  );
+});
+
+test('Wrench crosshair picking resolves the pivot origin before the entity behind it', () => {
+  const controller: any = Object.create(PlayerController.prototype);
+  const pivot = new THREE.Vector3(TORUS_SPAWN_X, 18, TORUS_SPAWN_Z - 4);
+  const target = {
+    position: pivot,
+    quaternion: new THREE.Quaternion(),
+    axisLength: 2
+  };
+  const eye = pivot.clone().add(new THREE.Vector3(0, 0, 6));
+  const eyeBent = bendPoint(eye.x, eye.y, eye.z);
+  const pivotBent = bendPoint(pivot.x, pivot.y, pivot.z);
+
+  assert.equal(
+    controller.pickWrenchPivotOrigin(target, eyeBent, pivotBent.sub(eyeBent).normalize()),
+    true
+  );
+});
+
+test('Wrench left-click on the pivot origin resets it instead of starting a grab', () => {
+  const entity = makeContraptionWithChildren();
+  entity.stopAllNodeScripts();
+  entity.setComponentPivot('arm', [1.8, 0.2, -0.6], {
+    requireStopped: true,
+    allowDynamic: true
+  });
+  const node = entity.getEntityNode('arm');
+  let saves = 0;
+  let notifications = 0;
+  let grabs = 0;
+  const messages: string[] = [];
+  const controller: any = Object.create(PlayerController.prototype);
+  Object.assign(controller, {
+    activeTool: SpecialTool.WRENCH,
+    contraptions: {
+      contraptions: [entity],
+      saveEntitiesToStorage() { saves++; }
+    },
+    ui: {
+      showToast(message) { messages.push(message); },
+      notifyContraptionStructureChanged() { notifications++; }
+    },
+    sound: { playWrenchClick() {} },
+    sceneRenderer: { setWrenchPivotGizmo() {}, setWrenchTether() {} },
+    wrenchGrab: null,
+    wrenchPivotDrag: null,
+    wrenchPivotTarget: {
+      contraption: entity,
+      nodeId: 'arm',
+      pivotLocal: node.pivotLocal.clone(),
+      position: entity.getEntityNodeWorldPosition('arm'),
+      quaternion: entity.getEntityNodeWorldQuaternion('arm'),
+      axisLength: 1.5,
+      hoveredAxis: null,
+      hoveredOrigin: true
+    },
+    startWrenchGrab() { grabs++; }
+  });
+
+  controller.handleLeftClick();
+
+  assert.deepEqual(entity.getEntityNode('arm').pivotLocal.toArray(), [0.5, 1.5, 0.5]);
+  assert.equal(grabs, 0);
+  assert.equal(saves, 1);
+  assert.equal(notifications, 1);
+  assert.ok(messages.some(message => message.includes('reset to center')));
+});
+
 test('Wrench grab does not push a target that is closer than 1.5 metres', () => {
   const scene = new THREE.Scene();
   const manager = new ContraptionManager(scene, {}, null, null);
@@ -442,6 +705,142 @@ test('Wrench grab holds a stationary target without pushing and follows player m
   }
   assert.ok(entity.position.x > 1.5, `the grabbed point must follow player motion, x=${entity.position.x}`);
   assert.ok(Math.abs(entity.position.z - originalPosition.z) < 0.2, 'following sideways must not become a forward push');
+});
+
+test('Wrench grab approaches a moved target without rapid overshoot oscillation', () => {
+  const scene = new THREE.Scene();
+  const world = {
+    getBlock: () => BlockTypes.AIR,
+    raycast: () => ({ hit: false, distance: 0 }),
+    raycastMicro: () => ({ hit: false, distance: 0 }),
+    microVoxels: { get: () => null }
+  };
+  const manager = new ContraptionManager(scene, world, null, null);
+  const entityPhysics = new ContraptionPhysics(world as any);
+  manager.setPhysics(entityPhysics);
+  const entity = new Contraption(
+    22,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0, 0, -5),
+    scene,
+    { bodyType: 'dynamic', friction: 0 }
+  );
+  entity.useGravity = false;
+  manager.registerContraption(entity);
+
+  const eye = new THREE.Vector3(0, 0, 0);
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.copy(eye);
+  camera.lookAt(entity.position);
+  const controller: any = Object.create(PlayerController.prototype);
+  Object.assign(controller, {
+    activeTool: SpecialTool.WRENCH,
+    contraptions: manager,
+    hoveredContraption: entity,
+    hoveredContraptionHit: {
+      contraption: entity,
+      entityId: 'root',
+      point: entity.position.clone()
+    },
+    sound: { playWrenchClick() {} },
+    ui: { showToast() {} },
+    camera,
+    physics: {
+      update() {},
+      getEyePosition() { return eye.clone(); },
+      position: eye,
+      velocity: new THREE.Vector3()
+    },
+    updateCameraPosition() {}
+  });
+  controller.handleLeftClick();
+  eye.x = 4;
+
+  let peakSpeed = 0;
+  let previousSign = 1;
+  let crossings = 0;
+  for (let frame = 0; frame < 100; frame++) {
+    controller.update(1 / 20);
+    entityPhysics.update(entity, 1 / 20);
+    peakSpeed = Math.max(peakSpeed, entity.velocity.length());
+    const anchor = entity.entityLocalToWorld('root', controller.wrenchGrab.localPoint.clone());
+    const error = controller.wrenchGrab.lastTargetPosition.x - anchor.x;
+    const sign = Math.abs(error) < 0.01 ? previousSign : Math.sign(error);
+    if (sign !== previousSign) crossings++;
+    previousSign = sign;
+  }
+
+  const finalAnchor = entity.entityLocalToWorld('root', controller.wrenchGrab.localPoint.clone());
+  assert.ok(peakSpeed <= 14.01, `grab speed should be bounded, peak=${peakSpeed}`);
+  assert.ok(crossings <= 1, `grab should not repeatedly cross the target, crossings=${crossings}`);
+  assert.ok(
+    finalAnchor.distanceTo(controller.wrenchGrab.lastTargetPosition) < 0.03,
+    'grabbed point should settle at the moved target'
+  );
+});
+
+test('Wrench grab compensates entity gravity without vertical snapping', () => {
+  const scene = new THREE.Scene();
+  const world = {
+    getBlock: () => BlockTypes.AIR,
+    raycast: () => ({ hit: false, distance: 0 }),
+    raycastMicro: () => ({ hit: false, distance: 0 }),
+    microVoxels: { get: () => null }
+  };
+  const manager = new ContraptionManager(scene, world, null, null);
+  const entityPhysics = new ContraptionPhysics(world as any);
+  manager.setPhysics(entityPhysics);
+  const entity = new Contraption(
+    23,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0, 4, -5),
+    scene,
+    { bodyType: 'dynamic', friction: 0 }
+  );
+  manager.registerContraption(entity);
+
+  const eye = new THREE.Vector3(0, 5, 0);
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.copy(eye);
+  camera.lookAt(entity.position);
+  const controller: any = Object.create(PlayerController.prototype);
+  Object.assign(controller, {
+    activeTool: SpecialTool.WRENCH,
+    contraptions: manager,
+    hoveredContraption: entity,
+    hoveredContraptionHit: {
+      contraption: entity,
+      entityId: 'root',
+      point: entity.position.clone()
+    },
+    sound: { playWrenchClick() {} },
+    ui: { showToast() {} },
+    camera,
+    physics: {
+      update() {},
+      getEyePosition() { return eye.clone(); },
+      position: eye,
+      velocity: new THREE.Vector3()
+    },
+    updateCameraPosition() {}
+  });
+  controller.handleLeftClick();
+  const initialAnchor = entity.entityLocalToWorld('root', controller.wrenchGrab.localPoint.clone());
+  let minY = initialAnchor.y;
+  let maxY = initialAnchor.y;
+
+  for (let frame = 0; frame < 120; frame++) {
+    controller.update(1 / 20);
+    entityPhysics.update(entity, 1 / 20);
+    const anchor = entity.entityLocalToWorld('root', controller.wrenchGrab.localPoint.clone());
+    minY = Math.min(minY, anchor.y);
+    maxY = Math.max(maxY, anchor.y);
+  }
+
+  const finalAnchor = entity.entityLocalToWorld('root', controller.wrenchGrab.localPoint.clone());
+  assert.ok(maxY - minY < 0.08, `held body should not bounce vertically, range=${maxY - minY}`);
+  const finalDrift = finalAnchor.distanceTo(initialAnchor);
+  assert.ok(finalDrift < 0.04, `gravity-compensated grab should hold its point, drift=${finalDrift}`);
 });
 
 test('Wrench grab is mass independent for extremely heavy entities', () => {

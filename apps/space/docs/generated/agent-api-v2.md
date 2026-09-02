@@ -70,6 +70,7 @@ Every root and child receives the same top-level API. Namespaces target the curr
 - `self.child(id)` — Look up a direct child; returns `null` when missing. `child('root')` returns the root API.
 - `self.children()` — Return a frozen array of direct children. Recurse from `ctx.root` to traverse the tree.
 - `self.applyThrust([x,y,z])` — Apply root-local force at this component. A child mounting offset produces torque; dynamic root only and subject to `ctx.limits`.
+- `self.applyLocalThrust([x,y,z])` — Apply component-local force at this component. Installed anchor orientation controls its direction and an offset produces torque.
 - `self.applyForce([x,y,z])` — Apply world-space force to the root center of mass; no effect on a kinematic root.
 - `self.applyLocalForce([x,y,z])` — Apply root/body-local force. A child's direction is interpreted in that component's local frame.
 - `self.applyForceAt(force, localPoint)` — Apply world-space force at a component-local offset, producing translation and torque.

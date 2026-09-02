@@ -90,6 +90,13 @@ export interface Vector3 {
   z?: number | undefined;
 }
 
+export interface Quaternion {
+  x?: number | undefined;
+  y?: number | undefined;
+  z?: number | undefined;
+  w?: number | undefined;
+}
+
 export interface BodyConfig {
   type?: BodyType | undefined;
   mass?: number | undefined;
@@ -115,7 +122,19 @@ export interface Component {
   script?: string | undefined;
   scriptDisabled?: boolean | undefined;
   seats?: Seat[] | undefined;
-  children?: Component[] | undefined;
+  children?:
+    | Component[]
+    | undefined;
+  /** Parent-relative authored transform. The root omits these fields. */
+  localPosition?: Vector3 | undefined;
+  localRotation?:
+    | Quaternion
+    | undefined;
+  /**
+   * Orientation of the mounting frame in component-local coordinates.
+   * Identity means +Y points away from the surface and -Z points forward.
+   */
+  anchorRotation?: Quaternion | undefined;
 }
 
 export interface ConstraintLimits {
@@ -596,6 +615,97 @@ export const Vector3: MessageFns<Vector3> = {
   },
 };
 
+function createBaseQuaternion(): Quaternion {
+  return { x: 0, y: 0, z: 0, w: 0 };
+}
+
+export const Quaternion: MessageFns<Quaternion> = {
+  encode(message: Quaternion, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.x !== undefined && message.x !== 0) {
+      writer.uint32(9).double(message.x);
+    }
+    if (message.y !== undefined && message.y !== 0) {
+      writer.uint32(17).double(message.y);
+    }
+    if (message.z !== undefined && message.z !== 0) {
+      writer.uint32(25).double(message.z);
+    }
+    if (message.w !== undefined && message.w !== 0) {
+      writer.uint32(33).double(message.w);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Quaternion {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseQuaternion();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 9) {
+              break;
+            }
+
+            message.x = reader.double();
+            continue;
+          }
+          case 2: {
+            if (tag !== 17) {
+              break;
+            }
+
+            message.y = reader.double();
+            continue;
+          }
+          case 3: {
+            if (tag !== 25) {
+              break;
+            }
+
+            message.z = reader.double();
+            continue;
+          }
+          case 4: {
+            if (tag !== 33) {
+              break;
+            }
+
+            message.w = reader.double();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create<I extends Exact<DeepPartial<Quaternion>, I>>(base?: I): Quaternion {
+    return Quaternion.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Quaternion>, I>>(object: I): Quaternion {
+    const message = createBaseQuaternion();
+    message.x = object.x ?? 0;
+    message.y = object.y ?? 0;
+    message.z = object.z ?? 0;
+    message.w = object.w ?? 0;
+    return message;
+  },
+};
+
 function createBaseBodyConfig(): BodyConfig {
   return {
     type: 0,
@@ -785,6 +895,9 @@ function createBaseComponent(): Component {
     scriptDisabled: false,
     seats: [],
     children: [],
+    localPosition: undefined,
+    localRotation: undefined,
+    anchorRotation: undefined,
   };
 }
 
@@ -819,6 +932,15 @@ export const Component: MessageFns<Component> = {
       for (const v of message.children) {
         Component.encode(v!, writer.uint32(66).fork()).join();
       }
+    }
+    if (message.localPosition !== undefined) {
+      Vector3.encode(message.localPosition, writer.uint32(74).fork()).join();
+    }
+    if (message.localRotation !== undefined) {
+      Quaternion.encode(message.localRotation, writer.uint32(82).fork()).join();
+    }
+    if (message.anchorRotation !== undefined) {
+      Quaternion.encode(message.anchorRotation, writer.uint32(90).fork()).join();
     }
     return writer;
   },
@@ -909,6 +1031,30 @@ export const Component: MessageFns<Component> = {
             }
             continue;
           }
+          case 9: {
+            if (tag !== 74) {
+              break;
+            }
+
+            message.localPosition = Vector3.decode(reader, reader.uint32());
+            continue;
+          }
+          case 10: {
+            if (tag !== 82) {
+              break;
+            }
+
+            message.localRotation = Quaternion.decode(reader, reader.uint32());
+            continue;
+          }
+          case 11: {
+            if (tag !== 90) {
+              break;
+            }
+
+            message.anchorRotation = Quaternion.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -938,6 +1084,15 @@ export const Component: MessageFns<Component> = {
     message.scriptDisabled = object.scriptDisabled ?? false;
     message.seats = object.seats?.map((e) => Seat.fromPartial(e)) || [];
     message.children = object.children?.map((e) => Component.fromPartial(e)) || [];
+    message.localPosition = (object.localPosition !== undefined && object.localPosition !== null)
+      ? Vector3.fromPartial(object.localPosition)
+      : undefined;
+    message.localRotation = (object.localRotation !== undefined && object.localRotation !== null)
+      ? Quaternion.fromPartial(object.localRotation)
+      : undefined;
+    message.anchorRotation = (object.anchorRotation !== undefined && object.anchorRotation !== null)
+      ? Quaternion.fromPartial(object.anchorRotation)
+      : undefined;
     return message;
   },
 };

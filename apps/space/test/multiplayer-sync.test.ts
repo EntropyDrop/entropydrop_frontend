@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { decode, encode } from '@msgpack/msgpack';
 import {
   MultiplayerSync,
+  parseRealtimePlayers,
   resolveWebSocketUrl,
 } from '../src/engine/network/MultiplayerSync.ts';
 import { World } from '../src/engine/voxel/World.ts';
@@ -18,6 +19,39 @@ test('resolveWebSocketUrl follows the API origin for relative realtime URLs', ()
     resolveWebSocketUrl('/space/ws/v2', 'http://localhost:8000'),
     'ws://localhost:8000/space/ws/v2'
   );
+  assert.throws(
+    () => resolveWebSocketUrl('wss://attacker.example/collect', 'https://entropydrop.com'),
+    /authenticated API host/
+  );
+  assert.throws(
+    () => resolveWebSocketUrl('ws://entropydrop.com/space/ws/v2', 'https://entropydrop.com'),
+    /require a WSS/
+  );
+});
+
+test('realtime player parsing drops non-finite records and caps untrusted snapshots', () => {
+  const valid = {
+    user_id: 'user-1',
+    username: 'A'.repeat(100),
+    player_entity_id: 'entity-1',
+    skin_url: '/skin/a.png',
+    skin_type: 'slim',
+    x_cm: 100,
+    y_cm: 200,
+    z_cm: 300,
+    yaw_q15: 0,
+    pitch_q15: 0,
+    is_self: false,
+  };
+  const parsed = parseRealtimePlayers([
+    { ...valid, x_cm: Number.NaN },
+    ...Array.from({ length: 40 }, (_, index) => ({ ...valid, user_id: `user-${index + 1}` })),
+  ], 'user-2');
+
+  assert.equal(parsed.length, 31);
+  assert.equal(parsed[0].username.length, 80);
+  assert.equal(parsed[1].is_self, true);
+  assert.deepEqual([parsed[0].x, parsed[0].y, parsed[0].z], [1, 2, 3]);
 });
 
 test('MultiplayerSync sends poses over binary WebSocket and keeps HTTP for terrain', async () => {

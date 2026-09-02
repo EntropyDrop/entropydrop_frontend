@@ -1,5 +1,15 @@
+import {
+  readJsonResponse,
+  readResponseBytes,
+  resolveSafeHttpUrl,
+  sha256Hex,
+} from './NetworkSafety.ts';
+
 export type SpaceMarketCategory = 'blockset' | 'entity' | 'colorset';
 export type SpaceMarketSort = 'downloads' | 'likes' | 'latest';
+
+export const MAX_MARKET_RESOURCE_BYTES = 8 * 1024 * 1024;
+const MAX_MARKET_API_RESPONSE_BYTES = 1024 * 1024;
 
 export interface SpaceMarketQuota {
   daily_limit: number;
@@ -86,7 +96,17 @@ export class SpaceMarketClient {
         ...(options.headers || {})
       }
     });
-    const body = await response.json().catch(() => null);
+    let body: any = null;
+    try {
+      body = await readJsonResponse(response, MAX_MARKET_API_RESPONSE_BYTES);
+    } catch (error) {
+      throw new SpaceMarketError(
+        response.status,
+        'MARKET_API_INVALID_RESPONSE',
+        'The Space market API returned an invalid or oversized response.',
+        error
+      );
+    }
     if (!response.ok) {
       const detail = body?.detail;
       throw new SpaceMarketError(
@@ -108,13 +128,21 @@ export class SpaceMarketClient {
     const query = new URLSearchParams({
       kind,
       sort,
-      limit: String(limit),
-      offset: String(offset)
+      limit: String(Math.max(1, Math.min(100, Math.floor(Number(limit) || 24)))),
+      offset: String(Math.max(0, Math.floor(Number(offset) || 0)))
     });
     return this.request<SpaceMarketListResponse>(`/resources?${query}`);
   }
 
   publishResource(_kind: SpaceMarketCategory, payload: Uint8Array) {
+    if (payload.byteLength < 1 || payload.byteLength > MAX_MARKET_RESOURCE_BYTES) {
+      return Promise.reject(new SpaceMarketError(
+        413,
+        'MARKET_RESOURCE_TOO_LARGE',
+        'Market resources must be non-empty and no larger than 8 MiB.',
+        null
+      ));
+    }
     const body = new Uint8Array(payload.byteLength);
     body.set(payload);
     return this.request<{ resource: SpaceMarketResource; quota: SpaceMarketQuota }>('/resources', {
@@ -124,12 +152,32 @@ export class SpaceMarketClient {
     });
   }
 
-  async loadResourceContent(contentUrl: string, signal?: AbortSignal): Promise<Uint8Array> {
+  async loadResourceContent(
+    contentUrl: string,
+    signal?: AbortSignal,
+    expectedDigest?: string
+  ): Promise<Uint8Array> {
+    let safeUrl: URL;
+    try {
+      safeUrl = resolveSafeHttpUrl(
+        contentUrl,
+        typeof window === 'undefined' ? this.baseUrl : window.location.href
+      );
+    } catch (error) {
+      throw new SpaceMarketError(
+        0,
+        'MARKET_CDN_URL_REJECTED',
+        'The market resource URL is not allowed.',
+        error
+      );
+    }
     let response: Response;
     try {
-      response = await this.fetchImpl(contentUrl, {
+      response = await this.fetchImpl(safeUrl.toString(), {
         headers: { Accept: 'application/x-protobuf' },
-        signal
+        signal,
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer'
       });
     } catch (error) {
       throw new SpaceMarketError(
@@ -139,7 +187,19 @@ export class SpaceMarketClient {
         error
       );
     }
-    const payload = response.ok ? new Uint8Array(await response.arrayBuffer()) : null;
+    let payload: Uint8Array | null = null;
+    try {
+      payload = response.ok
+        ? await readResponseBytes(response, MAX_MARKET_RESOURCE_BYTES)
+        : null;
+    } catch (error) {
+      throw new SpaceMarketError(
+        response.status,
+        'MARKET_CDN_RESPONSE_TOO_LARGE',
+        'The CDN resource exceeds the 8 MiB safety limit.',
+        error
+      );
+    }
     if (!response.ok || !payload || payload.byteLength === 0) {
       throw new SpaceMarketError(
         response.status,
@@ -148,6 +208,26 @@ export class SpaceMarketClient {
         payload
       );
     }
+    if (expectedDigest !== undefined) {
+      const normalizedDigest = expectedDigest.trim().toLowerCase();
+      if (!/^[0-9a-f]{64}$/.test(normalizedDigest)) {
+        throw new SpaceMarketError(
+          0,
+          'MARKET_DIGEST_INVALID',
+          'The market API returned an invalid resource digest.',
+          expectedDigest
+        );
+      }
+      const actualDigest = await sha256Hex(payload);
+      if (actualDigest !== normalizedDigest) {
+        throw new SpaceMarketError(
+          0,
+          'MARKET_DIGEST_MISMATCH',
+          'The downloaded market resource failed its SHA-256 integrity check.',
+          { expected: normalizedDigest, actual: actualDigest }
+        );
+      }
+    }
     return payload;
   }
 
@@ -155,7 +235,11 @@ export class SpaceMarketClient {
     const descriptor = await this.request<SpaceMarketDownloadDescriptor>(
       `/resources/${encodeURIComponent(resourceId)}/download`
     );
-    const payload = await this.loadResourceContent(descriptor.download_url);
+    const payload = await this.loadResourceContent(
+      descriptor.download_url,
+      undefined,
+      descriptor.digest
+    );
     return { ...descriptor, payload };
   }
 

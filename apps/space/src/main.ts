@@ -32,6 +32,9 @@ import {
   createSpacePersistentStorage,
   type SpaceStorage,
 } from './engine/storage/BrowserStorage.ts';
+import { logConsoleSecurityWarning } from './bootstrap/ConsoleSecurityWarning.ts';
+
+logConsoleSecurityWarning();
 
 // Mount the 2D interface as soon as the module starts. The authentication gate
 // remains above it until bootstrap succeeds, and every engine adapter created
@@ -540,8 +543,10 @@ window.addEventListener('DOMContentLoaded', () => {
         ),
         createSpacePersistentStorage()
       ]);
-      (window as any).spaceSession = session;
-      (window as any).game = new Game(session, distantLodCache, persistentStorage);
+      const game = new Game(session, distantLodCache, persistentStorage);
+      // Keep the convenient engine handle for local debugging without exposing
+      // the authenticated session graph to every production-page script.
+      if (import.meta.env.DEV) (window as any).game = game;
     },
     {
       onStateChange: state => {

@@ -3,6 +3,7 @@ import {
   encodePlayerPosition,
   terrainStreamAreaForPosition,
 } from '../../bootstrap/SpaceBootstrap.ts';
+import { readJsonResponse } from '../../bootstrap/NetworkSafety.ts';
 
 export interface RemotePlayerInfo {
   user_id: string;
@@ -46,15 +47,74 @@ const DEFAULT_POSE_INTERVAL_MS = 50;
 const DEFAULT_TERRAIN_POLL_INTERVAL_MS = 1000;
 const IDLE_POSE_INTERVAL_MS = 1000;
 const MAX_WEBSOCKET_BUFFERED_BYTES = 64 * 1024;
+const MAX_REALTIME_MESSAGE_BYTES = 1024 * 1024;
+const MAX_REALTIME_API_RESPONSE_BYTES = 16 * 1024 * 1024;
+const MAX_REMOTE_PLAYERS = 32;
 
 export function resolveWebSocketUrl(configuredUrl: string, apiOrigin: string) {
+  const apiUrl = new URL(apiOrigin);
   const resolved = new URL(configuredUrl, `${apiOrigin.replace(/\/+$/, '')}/`);
   if (resolved.protocol === 'http:') resolved.protocol = 'ws:';
   if (resolved.protocol === 'https:') resolved.protocol = 'wss:';
   if (resolved.protocol !== 'ws:' && resolved.protocol !== 'wss:') {
     throw new Error(`Unsupported Space WebSocket protocol: ${resolved.protocol}`);
   }
+  if (resolved.host !== apiUrl.host) {
+    throw new Error('Space WebSocket URL must use the authenticated API host.');
+  }
+  if (apiUrl.protocol === 'https:' && resolved.protocol !== 'wss:') {
+    throw new Error('Secure Space pages require a WSS realtime endpoint.');
+  }
+  resolved.username = '';
+  resolved.password = '';
+  resolved.hash = '';
   return resolved.toString();
+}
+
+export function parseRealtimePlayers(value: unknown, currentUserId: string): RemotePlayerInfo[] {
+  if (!Array.isArray(value)) return [];
+  const players: RemotePlayerInfo[] = [];
+  for (const raw of value.slice(0, MAX_REMOTE_PLAYERS)) {
+    const player = raw as Record<string, unknown>;
+    const userId = typeof player?.user_id === 'string' ? player.user_id.slice(0, 128) : '';
+    const playerEntityId = typeof player?.player_entity_id === 'string'
+      ? player.player_entity_id.slice(0, 128)
+      : userId;
+    const xCm = Number(player?.x_cm);
+    const yCm = Number(player?.y_cm);
+    const zCm = Number(player?.z_cm);
+    const yawQ15 = Number(player?.yaw_q15);
+    const pitchQ15 = Number(player?.pitch_q15 || 0);
+    if (
+      !userId
+      || !playerEntityId
+      || ![xCm, yCm, zCm, yawQ15, pitchQ15].every(Number.isFinite)
+      || Math.abs(yCm) > 10_000_000
+      || Math.abs(yawQ15) > 32767
+      || Math.abs(pitchQ15) > 32767
+    ) continue;
+    players.push({
+      user_id: userId,
+      username: typeof player.username === 'string' && player.username.trim()
+        ? player.username.trim().slice(0, 80)
+        : 'Player',
+      player_entity_id: playerEntityId,
+      skin_url: typeof player.skin_url === 'string' && player.skin_url.length <= 4096
+        ? player.skin_url
+        : '/skin/default.png',
+      skin_type: player.skin_type === 'slim' ? 'slim' : 'strong',
+      x: xCm / 100,
+      y: yCm / 100,
+      z: zCm / 100,
+      yaw: (yawQ15 / 32767) * Math.PI,
+      pitch: (pitchQ15 / 32767) * Math.PI,
+      is_self: player.is_self === true || userId === currentUserId,
+      updated_at: typeof player.updated_at === 'string'
+        ? player.updated_at.slice(0, 64)
+        : null
+    });
+  }
+  return players;
 }
 
 export class MultiplayerSync {
@@ -190,12 +250,15 @@ export class MultiplayerSync {
       if (!response.ok) {
         throw new Error(`Space terrain synchronization failed with HTTP ${response.status}`);
       }
-      const data = await response.json();
+      const data: any = await readJsonResponse(response, MAX_REALTIME_API_RESPONSE_BYTES);
+      if (!data || typeof data !== 'object') {
+        throw new Error('Space terrain synchronization returned invalid JSON');
+      }
       if (includePlayers && Array.isArray(data?.players)) {
-        this.onPlayersUpdate?.(data.players);
+        this.onPlayersUpdate?.(data.players.slice(0, MAX_REMOTE_PLAYERS));
       }
       if (Array.isArray(data?.terrain_chunks) && data.terrain_chunks.length > 0) {
-        this.onTerrainUpdate?.(data.terrain_chunks);
+        this.onTerrainUpdate?.(data.terrain_chunks.slice(0, 512));
       }
       if (Number.isFinite(data?.max_terrain_revision)) {
         this.sinceTerrainRevision = Math.max(
@@ -229,7 +292,7 @@ export class MultiplayerSync {
       if (!ticketResponse.ok) {
         throw new Error(`Space join ticket failed with HTTP ${ticketResponse.status}`);
       }
-      const ticketData = await ticketResponse.json();
+      const ticketData: any = await readJsonResponse(ticketResponse, MAX_REALTIME_API_RESPONSE_BYTES);
       if (!this.isRunning) return;
       const ticket = String(ticketData?.ticket || '');
       if (!ticket) throw new Error('Space join ticket response did not include a ticket');
@@ -247,7 +310,15 @@ export class MultiplayerSync {
       };
       socket.onmessage = event => {
         if (this.websocket !== socket || !(event.data instanceof ArrayBuffer)) return;
-        this.handleRealtimeMessage(decode(new Uint8Array(event.data)));
+        if (event.data.byteLength > MAX_REALTIME_MESSAGE_BYTES) {
+          socket.close(1009, 'Space realtime message too large');
+          return;
+        }
+        try {
+          this.handleRealtimeMessage(decode(new Uint8Array(event.data)));
+        } catch {
+          socket.close(1003, 'Invalid Space realtime message');
+        }
       };
       socket.onerror = () => {
         if (this.websocket === socket) socket.close();
@@ -295,20 +366,7 @@ export class MultiplayerSync {
       return;
     }
     if (message.type !== 'state' || !Array.isArray(message.players)) return;
-    const players = message.players.map((player: any): RemotePlayerInfo => ({
-      user_id: String(player.user_id || ''),
-      username: String(player.username || 'Player'),
-      player_entity_id: String(player.player_entity_id || player.user_id || ''),
-      skin_url: String(player.skin_url || '/skin/default.png'),
-      skin_type: player.skin_type === 'slim' ? 'slim' : 'strong',
-      x: Number(player.x_cm) / 100,
-      y: Number(player.y_cm) / 100,
-      z: Number(player.z_cm) / 100,
-      yaw: (Number(player.yaw_q15) / 32767) * Math.PI,
-      pitch: (Number(player.pitch_q15 || 0) / 32767) * Math.PI,
-      is_self: player.is_self === true || player.user_id === this.currentUserId,
-      updated_at: typeof player.updated_at === 'string' ? player.updated_at : null
-    }));
+    const players = parseRealtimePlayers(message.players, this.currentUserId);
     this.onPlayersUpdate?.(players);
   }
 

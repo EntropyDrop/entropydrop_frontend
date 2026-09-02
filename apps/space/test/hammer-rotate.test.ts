@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
 
 function makeTestController() {
@@ -96,6 +97,36 @@ test('Hammer right-click rotates a temporary placement view without mutating the
   const rotatedSlot = controller.getActiveHammerInventoryItem();
   const zVals = rotatedSlot.blocks.map((b: any) => b.dz).sort((a: number, b: number) => a - b);
   assert.deepEqual(zVals, [-1, 0, 1]);
+});
+
+test('Hammer right-click rotates entity placement with a temporary quaternion, not voxel rewrites', () => {
+  const controller = makeTestController();
+  const slot = {
+    name: 'Rotor',
+    kind: 'entity',
+    anchorRotation: [0, 0, 0, 1],
+    blocks: [
+      { localX: 0, localY: 0, localZ: 0, size: 1, color: '#fff', entityId: 'root' },
+      { localX: 2, localY: 0, localZ: 0, size: 1, color: '#fff', entityId: 'root' }
+    ],
+    childEntities: []
+  };
+  controller.inventories.entity.items[0] = slot;
+  controller.activeInventoryCategory = 'entity';
+  const originalBlocks = slot.blocks.map(block => ({ ...block }));
+
+  controller.handleRightClick(null);
+  const rotated = controller.getActiveHammerInventoryItem();
+
+  assert.deepEqual(slot.blocks, originalBlocks);
+  assert.deepEqual(rotated.blocks, originalBlocks);
+  assert.deepEqual(slot.anchorRotation, [0, 0, 0, 1]);
+  assert.ok(new THREE.Quaternion().fromArray(rotated.anchorRotation).angleTo(
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+  ) < 1e-9);
+  const rotation = new THREE.Quaternion().fromArray(rotated.placementRotation);
+  const direction = new THREE.Vector3(1, 0, 0).applyQuaternion(rotation);
+  assert.ok(direction.distanceTo(new THREE.Vector3(0, 0, -1)) < 1e-9);
 });
 
 test('consecutive Hammer rotations are always derived from the original item and four clicks are exact', () => {

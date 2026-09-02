@@ -4,10 +4,14 @@ import { parse3DModelData, planModelSize, voxelizeModel } from './ModelVoxelizer
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 
 workerScope.addEventListener('message', async event => {
-  const { buffer, filename, sizeBlocks, precision, color, hollow } = event.data || {};
+  const { buffer, filename, resources, triangles: suppliedTriangles, sizeBlocks, precision, color, hollow } = event.data || {};
   try {
-    if (!(buffer instanceof ArrayBuffer)) throw new Error('Missing 3D model file data');
-    const triangles = await parse3DModelData(buffer, filename);
+    if (!Array.isArray(suppliedTriangles) && !(buffer instanceof ArrayBuffer)) {
+      throw new Error('Missing 3D model file data');
+    }
+    const triangles = Array.isArray(suppliedTriangles)
+      ? suppliedTriangles
+      : await parse3DModelData(buffer, filename, Array.isArray(resources) ? resources : []);
     const plan = planModelSize(triangles, sizeBlocks, precision);
     const result = voxelizeModel(triangles, plan.cellSize, color, {
       micro: plan.micro,
@@ -18,7 +22,8 @@ workerScope.addEventListener('message', async event => {
   } catch (error) {
     workerScope.postMessage({
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      code: error && typeof error === 'object' ? (error as any).code : undefined
     });
   }
 });

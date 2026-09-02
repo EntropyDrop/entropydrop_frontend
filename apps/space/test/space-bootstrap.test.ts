@@ -9,6 +9,7 @@ import {
   loadTerrainEditRemote,
   OFFLINE_PLAYER_POSITION_KEY,
   OFFLINE_WORLD_ID,
+  parseSpaceBootstrapPayload,
   requestSpaceAdmission,
   resolveApiOrigin,
   resolveInitialPlayerPose,
@@ -27,6 +28,41 @@ test('Space derives the API origin from the main frontend API configuration', ()
 test('Space accepts only a PNG signature before decoding the configured skin', () => {
   assert.equal(hasPngSignature(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), true);
   assert.equal(hasPngSignature(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])), false);
+});
+
+test('Space validates the bootstrap V2 contract before constructing the game', () => {
+  const payload = {
+    protocol_version: 2,
+    max_online_players: 32,
+    queue_enabled: true,
+    websocket_url: '/space/ws/v2',
+    world: {
+      id: 'world-1',
+      name: 'EntropyDrop Space',
+      seed: 20260827,
+      terrain_generator_version: 1,
+      terrain_revision: 0,
+    },
+    player: {
+      user_id: 'user-1',
+      username: 'Alice',
+      player_entity_id: 'entity-1',
+      skin_url: 'https://cdn.example.test/alice.png',
+      skin_type: 'strong',
+      start_x_cm: null,
+      start_y_cm: null,
+      start_z_cm: null,
+      start_yaw_q15: null,
+      resumed: false,
+    },
+  };
+
+  assert.equal(parseSpaceBootstrapPayload(payload), payload);
+  assert.throws(() => parseSpaceBootstrapPayload({ ...payload, protocol_version: 3 }), /API V2/);
+  assert.throws(() => parseSpaceBootstrapPayload({
+    ...payload,
+    player: { ...payload.player, resumed: true, start_x_cm: 1 },
+  }), /API V2/);
 });
 
 test('Space loads every terrain snapshot page and posts authenticated mutation batches', async () => {
@@ -296,4 +332,3 @@ test('SpaceEntryError for missing skin includes collection, upload, generate, an
   assert.equal(err.actions[2].url, '/skin/generate');
   assert.equal(err.actions[3].url, '?mode=offline');
 });
-

@@ -1,4 +1,8 @@
+import { readJsonResponse } from './NetworkSafety.ts';
+
 type SpaceAuthStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+const MAX_AUTH_RESPONSE_BYTES = 64 * 1024;
 
 export interface SpaceSessionRefreshResult {
   token: string | null;
@@ -68,7 +72,7 @@ export async function refreshSpaceAuthSession(
     if (!response.ok) {
       return { token: null, terminal: response.status === 401 || response.status === 403 };
     }
-    const data = await response.json().catch(() => null);
+    const data = await readJsonResponse<any>(response, MAX_AUTH_RESPONSE_BYTES).catch(() => null);
     const token = typeof data?.access_token === 'string' ? data.access_token : null;
     if (!token) return { token: null, terminal: true };
     storage.setItem('token', token);

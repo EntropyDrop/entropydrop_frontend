@@ -23,6 +23,54 @@ import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
 
 import { LuShovel } from "react-icons/lu";
+
+const QUICK_START_DISMISSED_KEY = 'space.quick-start.dismissed.v1';
+
+function QuickStartGuide() {
+  const [open, setOpen] = useState(() => {
+    try {
+      return typeof localStorage === 'undefined'
+        || localStorage.getItem(QUICK_START_DISMISSED_KEY) !== 'true';
+    } catch {
+      return true;
+    }
+  });
+  const close = () => {
+    setOpen(false);
+    try { localStorage.setItem(QUICK_START_DISMISSED_KEY, 'true'); } catch { /* optional preference */ }
+  };
+
+  return (
+    <>
+      <button
+        id="quick-start-toggle"
+        type="button"
+        tabIndex={-1}
+        className="quick-start-toggle"
+        aria-expanded={open}
+        title="Show the first programmable entity guide"
+        onClick={() => setOpen(value => !value)}
+      >?</button>
+      {open ? (
+        <aside className="quick-start-guide" aria-labelledby="quick-start-title">
+          <div className="quick-start-heading">
+            <div><span className="quick-start-kicker">FIRST MISSION</span><h2 id="quick-start-title">Make one block come alive</h2></div>
+            <button type="button" tabIndex={-1} className="quick-start-close" aria-label="Dismiss quick start" onClick={close}>×</button>
+          </div>
+          <ol>
+            <li><kbd>1</kbd> Shovel: right-click to place a few blocks.</li>
+            <li><kbd>3</kbd> Selector: click two corners around the blocks.</li>
+            <li><kbd>G</kbd> Turn the selection into an entity.</li>
+            <li>Aim at it and press <kbd>C</kbd>; ask the assistant to “hover 3m”.</li>
+            <li>Apply the code, then press Play. Use <kbd>5</kbd> Wrench to grab or stop it.</li>
+          </ol>
+          <div className="quick-start-footer"><kbd>WASD</kbd> move · <kbd>F</kbd> fly · <kbd>E</kbd> backpack · <kbd>Esc</kbd> pause</div>
+        </aside>
+      ) : null}
+    </>
+  );
+}
+
 function getHotbarToolIcon(toolValue: string): React.ReactNode {
   switch (toolValue) {
     case SpecialTool.SHOVEL:
@@ -195,7 +243,7 @@ function InventoryBar() {
             ))}
           </div>
         </div>
-        <span className="palette-hotkey-hint"><b>E</b> Full Backpack · <b>Tab</b> BKS↔ENT{category === 'entity' ? <> · <b>Shift+LMB</b> Install</> : null}</span>
+        <span className="palette-hotkey-hint"><b>E</b> Full Backpack · <b>Tab</b> BKS↔ENT{category === 'entity' ? <> · <b>LMB</b> Auto-attach</> : null}</span>
       </div>
       <div id="inventory-bar" className="inventory-bar">
         {Array.from({ length: 9 }, (_, index) => {
@@ -258,11 +306,11 @@ function WrenchPanel() {
           </span>
           <span className="mode-badge std">PHYSICS & CONTROL</span>
         </div>
-        <span className="palette-hotkey-hint"><b>Hold LMB</b> grab · <b>RMB</b> start/stop</span>
+        <span className="palette-hotkey-hint"><b>Drag axis</b> pivot · <b>Hold LMB</b> grab · <b>RMB</b> start/stop</span>
       </div>
       <div className="selector-toolbox-content" id="wrench-toolbox-content">
         <div className="wrench-action-buttons">
-          <button type="button" tabIndex={-1} className="banner-btn secondary" title="Hold left-click on a dynamic entity to grab and move it" onClick={() => controller?.startWrenchGrab?.()}><b>Hold LMB</b> Grab</button>
+          <button type="button" tabIndex={-1} className="banner-btn secondary" title="Drag a stopped component's pivot axis, click its white origin to reset, or hold left-click on a dynamic entity to grab" onClick={() => controller?.startWrenchGrab?.()}><b>LMB</b> Pivot / Grab</button>
           <button type="button" tabIndex={-1} className="banner-btn secondary" title="Right-click on an entity to start or stop physics and scripts (RMB)" onClick={() => controller?.toggleHoveredEntityPlayback?.()}><b>RMB</b> Start/Stop</button>
           <button type="button" tabIndex={-1} className="banner-btn secondary" title="Point at an entity and press C to open its code editor" onClick={() => controller?.openCodeEditorForTarget?.()}><b>C</b> Code</button>
           <button type="button" tabIndex={-1} className="banner-btn secondary" title="Point at a seat block and press V to mount/drive" onClick={() => controller?.toggleDriveVehicle?.()}><b>V</b> Drive</button>
@@ -344,6 +392,7 @@ export function Hud() {
   return (
     <>
       <div id="crosshair" />
+      <QuickStartGuide />
       {state.sessionMode === 'offline' ? (
         <div className={`space-session-status ${state.onlineReady ? 'ready' : state.queuePosition !== null ? 'queued' : 'offline'}`} role="status" aria-live="polite">
           <span>{state.onlineReady ? 'Ready to Connect' : state.queuePosition !== null ? `Queue #${state.queuePosition}` : 'Offline Mode'}</span>

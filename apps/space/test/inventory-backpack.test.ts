@@ -22,7 +22,7 @@ import {
 import { SpaceUiStore, spaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
 
 /**
- * Backpack: three categories of 9 items each (block sets, entities, color sets),
+ * Backpack: three categories of 99 items each (block sets, entities, color sets),
  * per-category selection, Protobuf serialize/parse, caps, and deletion.
  */
 
@@ -45,7 +45,7 @@ function makeController(overrides: any = {}) {
     applyColorSetToPalette: set => appliedSets.push(set)
   };
   Object.assign(controller, overrides);
-  controller.inventoryCategory(); // lazy 3×9 bootstrap (prototype instances skip the constructor)
+  controller.inventoryCategory(); // lazy 3×99 bootstrap (prototype instances skip the constructor)
   controller.__toasts = toasts;
   controller.__appliedColorSets = appliedSets;
   return controller;
@@ -111,6 +111,33 @@ test('each category caps at 99 items and the copy reports the limit', () => {
   assert.equal(hundredth, null, 'the 100th entity copy must be rejected');
   assert.equal(controller.inventories.entity.items.filter(Boolean).length, 99);
   assert.ok(controller.__toasts.some(m => m.includes('full (99)')));
+});
+
+test('color set inventory has capacity 99 and renders without visible group or slot labels', () => {
+  const controller = makeController();
+  assert.equal(controller.inventories.colorset.items.length, 99);
+
+  for (let index = 0; index < 99; index++) {
+    assert.equal(controller.addInventoryItem('colorset', {
+      name: `Palette ${index + 1}`,
+      colors: new Array(9).fill('#123456')
+    }), index);
+  }
+  assert.equal(controller.addInventoryItem('colorset', {
+    name: 'Palette 100',
+    colors: new Array(9).fill('#abcdef')
+  }), null);
+
+  const inventorySource = readFileSync(new URL('../src/ui/react/components/InventoryModal.tsx', import.meta.url), 'utf8');
+  const colorSetSlotsSource = inventorySource.slice(
+    inventorySource.indexOf('function ColorSetSlots'),
+    inventorySource.indexOf('function MarketResourceCard')
+  );
+  assert.match(colorSetSlotsSource, /className="inventory-grid colorset-grid"/);
+  assert.doesNotMatch(colorSetSlotsSource, />Group /);
+  assert.doesNotMatch(colorSetSlotsSource, />Slots /);
+  assert.match(inventorySource, /<span>My Color Sets<\/span>/);
+  assert.doesNotMatch(inventorySource, /My Color Sets \([^)]*(?:slots|groups)/i);
 });
 
 test('deleteInventoryItem frees a slot and keeps a valid selection', () => {
@@ -272,6 +299,9 @@ test('serialize/parse round-trips recursive entities with component-local data',
     childEntities: [{
       id: 'arm',
       parentId: 'root',
+      localPosition: [1, 2, 3],
+      localRotation: [0, 1, 0, 0],
+      anchorRotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2],
       collisionEnabled: false,
       useGravity: false,
       pivot: [1.5, 0.5, 0.5],
@@ -297,6 +327,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
       runtimeOnly: 'must not be exported'
     }],
     bodyType: 'dynamic',
+    anchorRotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2],
     useGravity: false,
     collisionEnabled: false,
     seats: [{ position: [0.5, 1, 0.5] }]
@@ -309,6 +340,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.equal(serialized.root.body.useGravity, false);
   assert.equal(serialized.root.body.collisionEnabled, false);
   assert.deepEqual(serialized.root.seats, [{ position: [0.5, 1, 0.5] }]);
+  assert.deepEqual(serialized.root.anchorRotation, [0, 0, Math.SQRT1_2, Math.SQRT1_2]);
   assert.equal(serialized.root.children.length, 1);
   const arm = serialized.root.children[0];
   assert.equal(arm.id, 'arm');
@@ -316,6 +348,9 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.equal(arm.body.useGravity, false);
   assert.equal(arm.script, 'self.applyForce([0,1,0]);');
   assert.equal(arm.scriptDisabled, true);
+  assert.deepEqual(arm.localPosition, [1, 2, 3]);
+  assert.deepEqual(arm.localRotation, [0, 1, 0, 0], '180° quaternions must preserve w = 0');
+  assert.deepEqual(arm.anchorRotation, [Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
   assert.deepEqual(arm.seats, [
     { position: [0, 1, 0] },
     { position: [1, 1, 0] }
@@ -351,6 +386,10 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.deepEqual(parsed.item.enabled, [{ id: 'arm', enabled: false }]);
   assert.equal(parsed.item.childEntities[0].collisionEnabled, false);
   assert.equal(parsed.item.childEntities[0].useGravity, false);
+  assert.deepEqual(parsed.item.anchorRotation, [0, 0, Math.SQRT1_2, Math.SQRT1_2]);
+  assert.deepEqual(parsed.item.childEntities[0].localPosition, [1, 2, 3]);
+  assert.deepEqual(parsed.item.childEntities[0].localRotation, [0, 1, 0, 0]);
+  assert.deepEqual(parsed.item.childEntities[0].anchorRotation, [Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
   assert.equal(parsed.item.collisionEnabled, false);
   assert.deepEqual(parsed.item.childEntities[0].seats, [
     { position: [0, 1, 0] },
@@ -365,6 +404,8 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.ok(built, 'the imported entity should build');
   assert.equal(built.blocks.length, 4);
   assert.ok(built.entityNodes.has('arm'));
+  assert.deepEqual(built.getEntityNode('arm').localPosition.toArray(), [1, 2, 3]);
+  assert.deepEqual(built.getEntityNode('arm').localQuaternion.toArray(), [0, 1, 0, 0]);
   assert.equal(built.getNodeCollisionEnabled('root'), false);
   assert.equal(built.getComponentSeats('arm').length, 2);
 
@@ -877,10 +918,11 @@ test('ColorSet deletion is rejected when only 1 color set exists', () => {
   spaceUiStore.setController(controller);
 
   // Clear all except 1
-  controller.inventories.colorset.items = [
-    { name: 'Only Palette', colors: ['#ff0000', '#00ff00', '#0000ff', '#ffffff', '#000000', '#ffff00', '#00ffff', '#ff00ff', '#888888'] },
-    null, null, null, null, null, null, null, null
-  ];
+  controller.inventories.colorset.items = new Array(99).fill(null);
+  controller.inventories.colorset.items[0] = {
+    name: 'Only Palette',
+    colors: ['#ff0000', '#00ff00', '#0000ff', '#ffffff', '#000000', '#ffff00', '#00ffff', '#ff00ff', '#888888']
+  };
 
   spaceUiStore.deleteInventoryItem('colorset', 0);
   assert.ok(controller.inventories.colorset.items[0], 'Should not delete the only color set');
@@ -895,9 +937,8 @@ test('Deleting a color set automatically switches active palette to the first av
   const set2 = { id: 'cs_2', name: 'Second Set', colors: ['#aaaaaa', '#bbbbbb', '#cccccc', '#dddddd', '#eeeeee', '#ffffff', '#123456', '#654321', '#abcdef'] };
   const set3 = { id: 'cs_3', name: 'Third Set', colors: ['#222222', '#333333', '#444444', '#555555', '#666666', '#777777', '#888888', '#999999', '#000000'] };
 
-  controller.inventories.colorset.items = [
-    set1, set2, set3, null, null, null, null, null, null
-  ];
+  controller.inventories.colorset.items = new Array(99).fill(null);
+  controller.inventories.colorset.items.splice(0, 3, set1, set2, set3);
 
   // Apply set2 initially
   spaceUiStore.applyColorSetToPalette(set2);
@@ -905,11 +946,11 @@ test('Deleting a color set automatically switches active palette to the first av
   // Delete set2 (index 1)
   spaceUiStore.deleteInventoryItem('colorset', 1);
 
-  // Remaining array should be compacted: set1 at index 0, set3 shifted to index 1, index 2..8 are null
+  // Remaining array should be compacted: set1 at index 0, set3 shifted to index 1, later slots are null.
   assert.equal(controller.inventories.colorset.items[0].name, 'First Set');
   assert.equal(controller.inventories.colorset.items[1].name, 'Third Set');
   assert.equal(controller.inventories.colorset.items[2], null);
-  assert.equal(controller.inventories.colorset.items.length, 9);
+  assert.equal(controller.inventories.colorset.items.length, 99);
 
   // Active palette should have automatically switched to set1
   const snapshot = spaceUiStore.getSnapshot();
@@ -918,7 +959,7 @@ test('Deleting a color set automatically switches active palette to the first av
   assert.equal(activePaletteHexes[1], '#222222');
 });
 
-test('Color set tab does not display # numbers or import json on empty slots', () => {
+test('Color set tab does not display slot labels, # numbers, or import json on empty entries', () => {
   const inventorySource = readFileSync(new URL('../src/ui/react/components/InventoryModal.tsx', import.meta.url), 'utf8');
   assert.match(inventorySource, /function EmptyColorSetSlot/);
   // Verify EmptyColorSetSlot has no #{index + 1}
@@ -926,7 +967,8 @@ test('Color set tab does not display # numbers or import json on empty slots', (
   const emptySlotBody = emptySlotFunc.slice(0, emptySlotFunc.indexOf('function InventoryItemCard'));
   assert.doesNotMatch(emptySlotBody, /backpack-slot-index/);
   assert.doesNotMatch(emptySlotBody, /import JSON/i);
-  assert.match(emptySlotBody, />Empty slot<\/span>/);
+  assert.doesNotMatch(emptySlotBody, />Empty slot<\/span>/);
+  assert.match(emptySlotBody, />Empty color set<\/span>/);
 });
 
 test('backpack bar title in HUD has transparent background and clean button styling', () => {
@@ -949,4 +991,3 @@ test('InventoryModal has market toggle button and supports collapsing sidebar on
   assert.match(styleSource, /\.backpack-split-layout\.market-collapsed/);
   assert.match(styleSource, /\.market-close-btn/);
 });
-
