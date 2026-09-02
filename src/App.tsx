@@ -52,6 +52,13 @@ function LegacyOpenRedirect() {
   return <Navigate to={target} replace />
 }
 
+function SpaceAppRedirect() {
+  useEffect(() => {
+    window.location.replace('/space/app/index.html' + window.location.search + window.location.hash)
+  }, [])
+  return null
+}
+
 function RouteReadySignal({ children, onReady }: { children: ReactNode, onReady: () => void }) {
   useEffect(() => {
     const frame = window.requestAnimationFrame(onReady)
@@ -119,6 +126,9 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/skin/open/*" element={<LegacyOpenRedirect />} />
         <Route path="/figure" element={<FigureRedirect />} />
         <Route path="/figure/:category" element={<FigurePage current={currentLangData} />} />
+        <Route path="/space/app" element={<SpaceAppRedirect />} />
+        <Route path="/space/app/*" element={<SpaceAppRedirect />} />
+        <Route path="/space" element={<SpacePage current={currentLangData} />} />
         <Route path="/space/*" element={<SpacePage current={currentLangData} />} />
       </Routes>
     </RouteTransition>
