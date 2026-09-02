@@ -917,7 +917,7 @@ export class SceneRenderer {
     });
     this.microCarveFocusCell = new THREE.LineSegments(cellEdges, cellMat);
     this.microCarveFocusCell.visible = false;
-    this.microCarveGroup.add(this.microCarveFocusCell);
+    this.scene.add(this.microCarveFocusCell);
 
     this.microCarveGroup.visible = false;
     this.scene.add(this.microCarveGroup);
@@ -925,22 +925,34 @@ export class SceneRenderer {
 
   /**
    * Update the micro-carve focus preview.
-   * @param {null | { cellOrigin: THREE.Vector3, microCenter: THREE.Vector3|null }} preview
+   * @param {null | { cellOrigin: THREE.Vector3, microCenter: THREE.Vector3|null, quaternion?: THREE.Quaternion }} preview
    *   cellOrigin: world coordinates of the standard cell corner (5×5×5 grid drawn inside);
    *   microCenter: world coordinates of the focused micro cell center (when a micro
-   *   block is hit), otherwise null.
+   *   block is hit), otherwise null;
+   *   quaternion: optional orientation of the parent entity component.
    */
   setMicroCarvePreview(preview) {
     if (!this.microCarveGroup) return;
     if (!preview || !preview.cellOrigin) {
       this.microCarveGroup.visible = false;
+      if (this.microCarveFocusCell) this.microCarveFocusCell.visible = false;
       return;
     }
     this.microCarveGroup.position.copy(preview.cellOrigin);
-    if (preview.microCenter) {
-      this.microCarveFocusCell.position.copy(preview.microCenter);
-      this.microCarveFocusCell.visible = true;
+    if (preview.quaternion) {
+      this.microCarveGroup.quaternion.copy(preview.quaternion);
     } else {
+      this.microCarveGroup.quaternion.set(0, 0, 0, 1);
+    }
+    if (preview.microCenter && this.microCarveFocusCell) {
+      this.microCarveFocusCell.position.copy(preview.microCenter);
+      if (preview.quaternion) {
+        this.microCarveFocusCell.quaternion.copy(preview.quaternion);
+      } else {
+        this.microCarveFocusCell.quaternion.set(0, 0, 0, 1);
+      }
+      this.microCarveFocusCell.visible = true;
+    } else if (this.microCarveFocusCell) {
       this.microCarveFocusCell.visible = false;
     }
     this.microCarveGroup.visible = true;

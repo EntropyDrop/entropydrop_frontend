@@ -100,6 +100,36 @@ test('spoon over an entity standard block shows the grid without a microcell hig
   assert.equal(controller.microCarvePreview.microCenter, null);
 });
 
+test('spoon over a tilted entity inherits the entity quaternion orientation', () => {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    79,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(5, 5, 5),
+    scene
+  ) as any;
+  const tiltedEuler = new THREE.Euler(0.5, 0.25, -0.75);
+  const rootNode = contraption.entityNodes.get('root');
+  rootNode.group.quaternion.setFromEuler(tiltedEuler);
+  rootNode.group.updateMatrixWorld(true);
+
+  const controller = makeController(SpecialTool.SPOON);
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'root',
+    cell: { x: 0, y: 0, z: 0 },
+    kind: 'standard',
+    block: contraption.blocks[0]
+  };
+  controller.updateMicroCarvePreview();
+
+  const preview = controller.microCarvePreview;
+  assert.ok(preview, 'preview should be created for tilted entity');
+  assert.ok(preview.quaternion, 'quaternion should be included');
+  const expectedQuat = new THREE.Quaternion().setFromEuler(tiltedEuler);
+  assert.ok(Math.abs(preview.quaternion.dot(expectedQuat)) > 1 - 1e-6, 'quaternion should match the entity rotation');
+});
+
 test('no hit produces no preview', () => {
   const controller = makeController(SpecialTool.SPOON);
   controller.currentRaycast = { hit: false };

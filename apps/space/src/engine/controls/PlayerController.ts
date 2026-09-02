@@ -4826,11 +4826,15 @@ export class PlayerController {
       }
       // Only the spoon renders the 5×5 micro-voxel grid.
       if (!isSpoon) return;
+      const focusNode = contraption.entityNodes?.get?.(nodeId);
+      focusNode?.group?.updateWorldMatrix?.(true, false);
+      const quaternion = focusNode?.group
+        ?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
       let microCenter = null;
       if (hit.kind === 'micro' && hit.block) {
         microCenter = contraption.getBlockWorldCenter(hit.block);
       }
-      this.microCarvePreview = { cellOrigin, microCenter };
+      this.microCarvePreview = { cellOrigin, microCenter, quaternion };
       return;
     }
 
@@ -4888,12 +4892,14 @@ export class PlayerController {
         ),
         microCenter: isSpoon
           ? new THREE.Vector3((mp.x + 0.5) * 0.2, (mp.y + 0.5) * 0.2, (mp.z + 0.5) * 0.2)
-          : null
+          : null,
+        quaternion: new THREE.Quaternion()
       };
     } else {
       this.microCarvePreview = {
         cellOrigin: new THREE.Vector3(ray.hitPos.x, ray.hitPos.y, ray.hitPos.z),
-        microCenter: null
+        microCenter: null,
+        quaternion: new THREE.Quaternion()
       };
     }
   }

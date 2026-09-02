@@ -56,6 +56,25 @@ test('micro-carve preview positioning and visibility are correct', () => {
   assert.equal(renderer.microCarveFocusCell.visible, false, 'hide the highlight when no microcell is focused');
 });
 
+test('micro-carve preview applies entity quaternion orientation', () => {
+  const renderer = makeRendererWithPreview();
+  const tilted = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, 0.5, -0.2));
+
+  renderer.setMicroCarvePreview({
+    cellOrigin: new THREE.Vector3(2, 3, 4),
+    microCenter: new THREE.Vector3(2.3, 3.1, 4.7),
+    quaternion: tilted
+  });
+
+  assert.equal(renderer.microCarveGroup.visible, true);
+  assert.ok(Math.abs(renderer.microCarveGroup.quaternion.dot(tilted)) > 1 - 1e-12);
+  assert.equal(renderer.microCarveFocusCell.visible, true);
+  assert.ok(Math.abs(renderer.microCarveFocusCell.quaternion.dot(tilted)) > 1 - 1e-12);
+
+  renderer.setMicroCarvePreview(null);
+  assert.equal(renderer.microCarveGroup.visible, false);
+  assert.equal(renderer.microCarveFocusCell.visible, false);
+});
 
 test('focusBlockGuide registers and positions a 1x1x1 X-ray wireframe', () => {
   const renderer = makeRendererWithPreview();
