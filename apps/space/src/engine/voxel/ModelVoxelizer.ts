@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BlockTypes } from './BlockTypes.ts';
 
@@ -7,6 +8,7 @@ import { BlockTypes } from './BlockTypes.ts';
  *
  * Supports:
  * - GLTF / GLB full-color models with vertex colors, material colors, and texture maps.
+ * - FBX meshes with transforms, vertex colors, material colors, and embedded textures.
  * - STL files (binary & ASCII), including VisCAM/SolidView embedded 15-bit colors.
  * - Quantization into standard blocks (1×1×1) or micro voxels (5×5×5 / 0.2).
  * - Automatic hollow optimization to preserve surface shells and save resource budget.
@@ -65,7 +67,7 @@ export const MODEL_TEXTURE_ERROR_CODE = 'MODEL_TEXTURE_UNAVAILABLE';
 export const DEFAULT_MODEL_IMPORT_SIZE_BLOCKS = 12;
 
 export function isSupportedModelFilename(filename: string): boolean {
-  return /\.(?:glb|gltf|stl)$/i.test(String(filename || '').trim());
+  return /\.(?:fbx|glb|gltf|stl)$/i.test(String(filename || '').trim());
 }
 
 const MAX_GRID_CELLS = 16 * 1024 * 1024; // 256^3 limit.
@@ -408,7 +410,20 @@ function assertGLTFColorTexturesLoaded(gltf: any, json: any) {
 function normalizeResourceName(value: string) {
   let decoded = String(value || '');
   try { decoded = decodeURIComponent(decoded); } catch { /* keep the original URL */ }
-  return decoded.replace(/[?#].*$/, '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '');
+  const raw = decoded.replace(/[?#].*$/, '').replace(/\\/g, '/').replace(/^\/+/, '');
+  const parts: string[] = [];
+  for (const part of raw.split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') parts.pop();
+    else parts.push(part);
+  }
+  return parts.join('/');
+}
+
+function modelBasePath(filename: string): string {
+  const normalized = normalizeResourceName(filename);
+  const slash = normalized.lastIndexOf('/');
+  return slash >= 0 ? `${normalized.slice(0, slash + 1)}` : '';
 }
 
 function resourceMimeType(resource: ModelImportResource) {
@@ -418,6 +433,7 @@ function resourceMimeType(resource: ModelImportResource) {
   if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
   if (name.endsWith('.webp')) return 'image/webp';
   if (name.endsWith('.avif')) return 'image/avif';
+  if (name.endsWith('.bmp')) return 'image/bmp';
   return 'application/octet-stream';
 }
 
@@ -622,7 +638,8 @@ export function extractTrianglesFromObject3D(
 
 export async function parseGLTFData(
   buffer: ArrayBuffer,
-  resources: ModelImportResource[] = []
+  resources: ModelImportResource[] = [],
+  basePath = ''
 ): Promise<VoxelTriangle[]> {
   if (typeof globalThis.ProgressEvent === 'undefined') {
     (globalThis as any).ProgressEvent = class ProgressEvent extends Event {};
@@ -639,7 +656,7 @@ export async function parseGLTFData(
       gltf = await new Promise<any>((resolve, reject) => {
         loader.parse(
           prepared.buffer,
-          '',
+          basePath,
           res => resolve(res),
           err => reject(err instanceof Error ? err : new Error(String(err)))
         );
@@ -658,6 +675,49 @@ export async function parseGLTFData(
     if (!scene) throw new Error('GLTF/GLB has no valid scenes');
     assertGLTFColorTexturesLoaded(gltf, json);
     return extractTrianglesFromObject3D(scene, { requireTexturePixels: true });
+  } finally {
+    resourceManager.dispose();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FBX Parsing
+// ---------------------------------------------------------------------------
+
+export async function parseFBXData(
+  buffer: ArrayBuffer,
+  resources: ModelImportResource[] = [],
+  basePath = ''
+): Promise<VoxelTriangle[]> {
+  if (!buffer || buffer.byteLength === 0) throw new Error('FBX file is empty');
+
+  const resourceManager = createGLTFResourceManager(resources);
+  let resourceLoadStarted = false;
+  let resolveResources: (() => void) | null = null;
+  let rejectResources: ((error: Error) => void) | null = null;
+  const resourcesLoaded = new Promise<void>((resolve, reject) => {
+    resolveResources = resolve;
+    rejectResources = reject;
+  });
+  resourceManager.manager.onStart = () => { resourceLoadStarted = true; };
+  resourceManager.manager.onLoad = () => resolveResources?.();
+  resourceManager.manager.onError = url => {
+    rejectResources?.(modelTextureError(
+      `Could not load the FBX texture "${normalizeResourceName(url)}"; use an FBX with embedded textures`
+    ));
+  };
+
+  try {
+    const scene = new FBXLoader(resourceManager.manager).parse(buffer, basePath);
+    if (resourceLoadStarted) await resourcesLoaded;
+    return extractTrianglesFromObject3D(scene, { requireTexturePixels: true });
+  } catch (error) {
+    if ((error as any)?.code === MODEL_TEXTURE_ERROR_CODE) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (/texture|image|document|window|createObjectURL/i.test(message)) {
+      throw modelTextureError(`Could not load the FBX texture (${message}); use an FBX with embedded textures`);
+    }
+    throw error;
   } finally {
     resourceManager.dispose();
   }
@@ -770,15 +830,18 @@ export async function parse3DModelData(
 
   const name = (filename || '').toLowerCase();
   if (name.endsWith('.glb')) {
-    return parseGLTFData(buffer, resources);
+    return parseGLTFData(buffer, resources, modelBasePath(filename));
   }
   if (name.endsWith('.gltf')) {
-    return parseGLTFData(buffer, resources);
+    return parseGLTFData(buffer, resources, modelBasePath(filename));
+  }
+  if (name.endsWith('.fbx')) {
+    return parseFBXData(buffer, resources, modelBasePath(filename));
   }
   if (name.endsWith('.stl')) {
     return parseSTLData(buffer);
   }
-  throw new Error('Unsupported model file extension. Choose a .glb, .gltf, or .stl file; .bin files are not supported.');
+  throw new Error('Unsupported model file extension. Choose an .fbx, .glb, .gltf, or .stl file; .bin files are not supported.');
 }
 
 // ---------------------------------------------------------------------------

@@ -17,12 +17,18 @@ import {
 } from 'react-icons/lia';
 import { InventoryThumbnailRenderer } from '../../../engine/render/InventoryThumbnailRenderer.ts';
 import {
+  MAX_MODEL_RESOURCE_BYTES,
+  MAX_MODEL_RESOURCE_FILES,
   MAX_STL_FILE_BYTES,
   MODEL_TEXTURE_ERROR_CODE,
   DEFAULT_MODEL_IMPORT_SIZE_BLOCKS,
   isSupportedModelFilename,
   parse3DModelData,
 } from '../../../engine/voxel/STLVoxelizer.ts';
+import {
+  extractModelArchive,
+  MAX_MODEL_ARCHIVE_BYTES,
+} from '../../../engine/voxel/ModelImportArchive.ts';
 import { colorToHex, normalizeColor } from '../../../engine/voxel/BlockTypes.ts';
 import {
   decodeInventoryResource,
@@ -97,6 +103,8 @@ function Import3DModelPopover() {
   const [precision, setPrecision] = useState(1);
   const [sizeBlocks, setSizeBlocks] = useState(DEFAULT_MODEL_IMPORT_SIZE_BLOCKS);
   const [file, setFile] = useState<File | null>(null);
+  const [archiveFile, setArchiveFile] = useState<File | null>(null);
+  const [resourceFiles, setResourceFiles] = useState<File[]>([]);
   const [status, setStatus] = useState('No file selected');
   const workerRef = useRef<Worker | null>(null);
   const timeoutRef = useRef<number | null>(null);
@@ -139,13 +147,46 @@ function Import3DModelPopover() {
       setStatus('Import cancelled');
       return;
     }
-    if (!file) { setStatus('Choose a .glb, .gltf, or .stl file first'); return; }
-    if (!isSupportedModelFilename(file.name)) { setStatus('Error: Only .glb, .gltf, and .stl model files are supported'); return; }
-    if (file.size > MAX_STL_FILE_BYTES) { setStatus(`Error: Model files are limited to ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB`); return; }
+    if (!file && !archiveFile) { setStatus('Choose a model ZIP or model file first'); return; }
+    if (archiveFile && archiveFile.size > MAX_MODEL_ARCHIVE_BYTES) {
+      setStatus(`Error: ZIP archives are limited to ${MAX_MODEL_ARCHIVE_BYTES / (1024 * 1024)} MiB`);
+      return;
+    }
+    if (file && !isSupportedModelFilename(file.name)) { setStatus('Error: Only .fbx, .glb, .gltf, and .stl model files are supported'); return; }
+    if (file && file.size > MAX_STL_FILE_BYTES) { setStatus(`Error: Model files are limited to ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB`); return; }
+    if (!archiveFile && resourceFiles.length > MAX_MODEL_RESOURCE_FILES) {
+      setStatus(`Error: A model may use at most ${MAX_MODEL_RESOURCE_FILES} resource files`);
+      return;
+    }
+    const resourceBytes = resourceFiles.reduce((total, resource) => total + resource.size, 0);
+    if (!archiveFile && resourceBytes > MAX_MODEL_RESOURCE_BYTES) {
+      setStatus(`Error: Model resources are limited to ${MAX_MODEL_RESOURCE_BYTES / (1024 * 1024)} MiB total`);
+      return;
+    }
     if (!sizeBlocks || sizeBlocks < 1) { setStatus('Error: size in standard blocks must be at least 1'); return; }
     try {
-      setStatus(`Reading ${file.name}…`);
-      const buffer = await file.arrayBuffer();
+      let buffer: ArrayBuffer;
+      let resources: { name: string; buffer: ArrayBuffer; mimeType?: string }[];
+      let modelName: string;
+      if (archiveFile) {
+        setStatus(`Extracting ${archiveFile.name}…`);
+        const archive = await extractModelArchive(await archiveFile.arrayBuffer());
+        buffer = archive.model.buffer;
+        resources = archive.resources;
+        modelName = archive.model.name;
+      } else {
+        if (!file) throw new Error('Model file is missing');
+        setStatus(`Reading ${file.name}${resourceFiles.length ? ` and ${resourceFiles.length} resource file${resourceFiles.length === 1 ? '' : 's'}` : ''}…`);
+        [buffer, resources] = await Promise.all([
+          file.arrayBuffer(),
+          Promise.all(resourceFiles.map(async resource => ({
+            name: resource.webkitRelativePath || resource.name,
+            buffer: await resource.arrayBuffer(),
+            mimeType: resource.type || undefined,
+          }))),
+        ]);
+        modelName = file.webkitRelativePath || file.name;
+      }
       const worker = new Worker(new URL('../../../engine/voxel/STLImportWorker.ts', import.meta.url), { type: 'module' });
       workerRef.current = worker;
       timeoutRef.current = window.setTimeout(() => {
@@ -160,14 +201,14 @@ function Import3DModelPopover() {
         if (!event.data?.ok
           && event.data?.code === MODEL_TEXTURE_ERROR_CODE
           && !retriedTextureDecodeOnMainThread
-          && /\.gl(?:b|tf)$/i.test(file.name)) {
+          && /\.(?:fbx|glb|gltf)$/i.test(modelName)) {
           retriedTextureDecodeOnMainThread = true;
-          setStatus(`Worker could not read ${file.name} textures; retrying browser image decode…`);
+          setStatus(`Worker could not read ${modelName} textures; retrying browser image decode…`);
           try {
             // Safari and a few embedded browsers cannot decode images inside a
             // module worker, but can decode the same glTF texture on the page.
             // Keep voxelization in the worker after this compatibility parse.
-            const triangles = await parse3DModelData(buffer, file.name);
+            const triangles = await parse3DModelData(buffer, modelName, resources);
             if (workerRef.current !== worker) return;
             worker.postMessage({ triangles, sizeBlocks, precision, color: controller?.selectedColor ?? 0xf2a93b });
           } catch (error: any) {
@@ -180,12 +221,12 @@ function Import3DModelPopover() {
           if (!event.data?.ok) throw new Error(event.data?.error || 'Model worker failed');
           const result = event.data.result;
           const sizeLabel = `prec ${precision} · size ${sizeBlocks} blocks`;
-          const slot = controller?.importBlockSetToInventory?.(result.blocks, `${file.name} @${sizeLabel}`);
+          const slot = controller?.importBlockSetToInventory?.(result.blocks, `${modelName} @${sizeLabel}`);
           if (!slot) throw new Error('Block set inventory is full');
           const index = controller.inventories.blockset.items.indexOf(slot);
           setStatus(`OK: ${result.blocks.length} voxels (${result.size.sx}×${result.size.sy}×${result.size.sz}) · ${sizeLabel} → block set slot ${index + 1}`);
           spaceUiStore.syncInventoryState();
-          spaceUiStore.showToast(`Imported "${file.name}" to Block Set slot ${index + 1}`);
+          spaceUiStore.showToast(`Imported "${modelName}" to Block Set slot ${index + 1}`);
           setTimeout(() => setIsOpen(false), 1200);
         } catch (error: any) {
           setStatus(`Error: ${error?.message || String(error)}`);
@@ -195,10 +236,11 @@ function Import3DModelPopover() {
       };
       worker.onerror = event => { stopWorker(); setStatus(`Error: ${event.message || 'Model worker crashed'}`); };
       if (workerRef.current !== worker) return;
-      setStatus(`Voxelizing ${file.name} in background…`);
+      setStatus(`Voxelizing ${modelName} in background…`);
       worker.postMessage({
         buffer,
-        filename: file.name,
+        filename: modelName,
+        resources,
         sizeBlocks,
         precision,
         color: controller?.selectedColor ?? 0xf2a93b
@@ -215,7 +257,7 @@ function Import3DModelPopover() {
         type="button"
         tabIndex={-1}
         className={`backpack-section-btn ${isOpen ? 'active' : ''}`}
-        title="Import 3D Model (.glb / .gltf / .stl)"
+        title="Import 3D Model (.zip / .fbx / .glb / .gltf / .stl)"
         onClick={() => setIsOpen(!isOpen)}
       >
         <LiaCubeSolid size={15} style={{ marginRight: 4, display: 'inline', verticalAlign: 'text-bottom' }} />
@@ -241,8 +283,33 @@ function Import3DModelPopover() {
           </div>
 
           <div className="stl-popover-sub">
-            Convert full-color .glb, .gltf, or .stl meshes into a voxel block set.
-            External .bin files are not supported; .gltf resources must be embedded.
+            Convert a 3D mesh and its material colors or textures into a voxel block set.
+          </div>
+
+          <div className="model-import-guide" aria-label="Supported model upload formats">
+            <div className="model-import-guide-row">
+              <span className="model-import-format">GLB</span>
+              <span>Upload one self-contained <code>.glb</code> file. This is the simplest and recommended option.</span>
+            </div>
+            <div className="model-import-guide-row">
+              <span className="model-import-format">ZIP</span>
+              <span>
+                Include exactly one <code>.fbx</code> or <code>.gltf</code> model, plus every referenced
+                <code> .bin</code> and texture file. Keep the original relative folder structure.
+              </span>
+            </div>
+            <div className="model-import-guide-row">
+              <span className="model-import-format">OTHER</span>
+              <span>
+                Direct <code>.fbx</code>, <code>.gltf</code>, and <code>.stl</code> uploads are also supported.
+                Select external resources together with the model when needed.
+              </span>
+            </div>
+            <div className="model-import-limits">
+              One model per import · model up to {MAX_STL_FILE_BYTES / (1024 * 1024)} MiB · ZIP up to{' '}
+              {MAX_MODEL_ARCHIVE_BYTES / (1024 * 1024)} MiB compressed · at most {MAX_MODEL_RESOURCE_FILES}{' '}
+              resources / {MAX_MODEL_RESOURCE_BYTES / (1024 * 1024)} MiB total
+            </div>
           </div>
 
           {/* Form Fields */}
@@ -290,40 +357,65 @@ function Import3DModelPopover() {
 
             {/* File Dropzone */}
             <div className="stl-field-group">
-              <div className="stl-field-label">3D Model File</div>
+              <div className="stl-field-label">Model package or file</div>
               <div
-                className={`stl-dropzone ${file ? 'has-file' : ''}`}
+                className={`stl-dropzone ${file || archiveFile ? 'has-file' : ''}`}
                 onClick={() => fileInputRef.current?.click()}
               >
                 <input
                   ref={fileInputRef}
                   type="file"
                   id="stl-file-input"
-                  accept=".glb,.gltf,.stl"
+                  accept=".zip,.fbx,.glb,.gltf,.stl,.bin,.png,.jpg,.jpeg,.webp,.avif,.bmp"
+                  multiple
                   hidden
                   onChange={event => {
-                    const selected = event.target.files?.[0] || null;
-                    const next = selected && isSupportedModelFilename(selected.name) ? selected : null;
+                    const selected = Array.from(event.target.files || []);
+                    const archives = selected.filter(candidate => /\.zip$/i.test(candidate.name));
+                    const models = selected.filter(candidate => isSupportedModelFilename(candidate.name));
+                    const nextArchive = archives.length === 1 && selected.length === 1 ? archives[0] : null;
+                    const next = archives.length === 0 && models.length === 1 ? models[0] : null;
+                    const nextResources = next ? selected.filter(candidate => candidate !== next) : [];
                     setFile(next);
+                    setArchiveFile(nextArchive);
+                    setResourceFiles(nextResources);
+                    const resourceBytes = nextResources.reduce((total, resource) => total + resource.size, 0);
                     setStatus(
-                      next && next.size > MAX_STL_FILE_BYTES
+                      nextArchive && nextArchive.size > MAX_MODEL_ARCHIVE_BYTES
+                        ? `Error: ${nextArchive.name} exceeds ${MAX_MODEL_ARCHIVE_BYTES / (1024 * 1024)} MiB limit`
+                        : nextArchive
+                          ? `Ready: ${nextArchive.name} (model package)`
+                      : next && next.size > MAX_STL_FILE_BYTES
                         ? `Error: ${next.name} exceeds ${MAX_STL_FILE_BYTES / (1024 * 1024)} MiB limit`
+                        : nextResources.length > MAX_MODEL_RESOURCE_FILES
+                          ? `Error: Select at most ${MAX_MODEL_RESOURCE_FILES} resource files`
+                          : resourceBytes > MAX_MODEL_RESOURCE_BYTES
+                            ? `Error: Resources exceed ${MAX_MODEL_RESOURCE_BYTES / (1024 * 1024)} MiB total`
                         : next
-                          ? `Ready: ${next.name}`
-                          : selected
-                            ? 'Error: Select one .glb, .gltf, or .stl model file'
+                          ? `Ready: ${next.name}${nextResources.length ? ` + ${nextResources.length} resource file${nextResources.length === 1 ? '' : 's'}` : ''}`
+                          : selected.length > 0
+                            ? archives.length > 0
+                              ? 'Error: Select one ZIP by itself, or select one model with its resources'
+                              : models.length > 1
+                              ? 'Error: Select exactly one model file; the remaining files must be resources'
+                              : 'Error: Include one .fbx, .glb, .gltf, or .stl model file'
                             : 'No file selected'
                     );
                   }}
                 />
                 <LiaFileUploadSolid size={20} className="stl-dropzone-icon" />
                 <div className="stl-dropzone-text">
-                  {file ? (
+                  {archiveFile ? (
+                    <span className="stl-selected-name">
+                      {archiveFile.name} ({(archiveFile.size / 1024).toFixed(1)} KB ZIP)
+                    </span>
+                  ) : file ? (
                     <span className="stl-selected-name">
                       {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                      {resourceFiles.length > 0 && ` + ${resourceFiles.length} resource${resourceFiles.length === 1 ? '' : 's'}`}
                     </span>
                   ) : (
-                    <span>Choose a .glb, .gltf, or .stl model</span>
+                    <span>Choose .zip / .glb, or one model with its resources</span>
                   )}
                 </div>
               </div>
@@ -355,7 +447,7 @@ function Import3DModelPopover() {
                 id="stl-import-btn"
                 className="backpack-section-btn primary mc-btn-green"
                 onClick={importModel}
-                disabled={!file}
+                disabled={!file && !archiveFile}
               >
                 {workerRef.current ? 'Cancel' : 'Import & Voxelize'}
               </button>

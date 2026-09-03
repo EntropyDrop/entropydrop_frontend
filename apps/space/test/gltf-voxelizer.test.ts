@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
+import { strToU8, zipSync } from 'fflate';
 import {
   parseGLTFData,
+  parseFBXData,
   parse3DModelData,
   voxelizeModel,
   planModelSize,
@@ -16,6 +18,7 @@ import {
 } from '../src/engine/voxel/ModelVoxelizer.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { extractModelArchive } from '../src/engine/voxel/ModelImportArchive.ts';
 
 function makeController(overrides: any = {}) {
   const controller: any = Object.create(PlayerController.prototype);
@@ -71,6 +74,39 @@ function createGlb(json: any, bin: Buffer): ArrayBuffer {
 
 function toArrayBuffer(buffer: Buffer): ArrayBuffer {
   return Uint8Array.from(buffer).buffer;
+}
+
+function zippedArrayBuffer(entries: Record<string, Uint8Array>): ArrayBuffer {
+  const zipped = zipSync(entries);
+  return zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength) as ArrayBuffer;
+}
+
+function createAsciiTriangleFbx(): ArrayBuffer {
+  const source = `; FBX 7.3.0 project file
+FBXHeaderExtension:  {
+\tFBXHeaderVersion: 1003
+\tFBXVersion: 7300
+}
+Objects:  {
+\tGeometry: 1, "Geometry::Triangle", "Mesh" {
+\t\tVertices: *9 {
+\t\t\ta: 0,0,0,1,0,0,0,1,0
+\t\t}
+\t\tPolygonVertexIndex: *3 {
+\t\t\ta: 0,1,-3
+\t\t}
+\t}
+\tModel: 2, "Model::Triangle", "Mesh" {
+\t\tVersion: 232
+\t\tShading: T
+\t\tCulling: "CullingOff"
+\t}
+}
+Connections:  {
+\tC: "OO",1,2
+\tC: "OO",2,0
+}`;
+  return new TextEncoder().encode(source).buffer;
 }
 
 function createExternalTexturedGltf() {
@@ -508,7 +544,7 @@ test('voxelizeModel colors every shell block from large textured triangles', () 
   assert.deepEqual(new Set(result.blocks.map(block => block.color)), new Set([0xff0000]));
 });
 
-test('parse3DModelData accepts only GLB, GLTF, and STL filename extensions', async () => {
+test('parse3DModelData accepts FBX, GLB, GLTF, and STL filename extensions', async () => {
   // 1. GLB
   const glbJson = {
     asset: { version: '2.0' },
@@ -556,6 +592,7 @@ endsolid test`;
   const stlTris = await parse3DModelData(stlBuffer, 'test_model.stl');
   assert.equal(stlTris.length, 1);
 
+  assert.equal(isSupportedModelFilename('model.fbx'), true);
   assert.equal(isSupportedModelFilename('MODEL.GLB'), true);
   assert.equal(isSupportedModelFilename('model.gltf'), true);
   assert.equal(isSupportedModelFilename('model.stl'), true);
@@ -564,13 +601,71 @@ endsolid test`;
   assert.equal(DEFAULT_MODEL_IMPORT_SIZE_BLOCKS, 12);
 });
 
-test('3D model picker exposes only supported extensions and uses size 12 by default', () => {
+test('parseFBXData extracts mesh triangles from an ASCII FBX scene', async () => {
+  const triangles = await parseFBXData(createAsciiTriangleFbx());
+  assert.equal(triangles.length, 1);
+  assert.deepEqual(triangles[0].a, [0, 0, 0]);
+  assert.deepEqual(triangles[0].b, [1, 0, 0]);
+  assert.deepEqual(triangles[0].c, [0, 1, 0]);
+  assert.equal(triangles[0].color, 0xcccccc);
+
+  const routedTriangles = await parse3DModelData(createAsciiTriangleFbx(), 'triangle.FBX');
+  assert.equal(routedTriangles.length, 1);
+});
+
+test('ZIP model packages preserve nested paths and load glTF resources', async () => {
+  const { jsonBuffer, binBuffer } = createExternalTexturedGltf();
+  const manifest = JSON.parse(new TextDecoder().decode(jsonBuffer));
+  manifest.buffers[0].uri = '../buffers/mesh.bin';
+  manifest.images[0].uri = '../textures/albedo.png';
+  const archive = await extractModelArchive(zippedArrayBuffer({
+    'package/models/scene.gltf': new TextEncoder().encode(JSON.stringify(manifest)),
+    'package/buffers/mesh.bin': new Uint8Array(binBuffer),
+    'package/textures/albedo.png': new Uint8Array([1, 2, 3]),
+    '__MACOSX/._scene.gltf': new Uint8Array([0]),
+  }));
+
+  assert.equal(archive.model.name, 'package/models/scene.gltf');
+  assert.deepEqual(
+    archive.resources.map(resource => resource.name).sort(),
+    ['package/buffers/mesh.bin', 'package/textures/albedo.png']
+  );
+  const triangles = await withFakeImageBitmapDecoder(() => parse3DModelData(
+    archive.model.buffer,
+    archive.model.name,
+    archive.resources
+  ));
+  assert.equal(triangles.length, 1);
+  assert.equal(sampleTriangleColor(triangles[0], 1, 0, 0), 0xff0000);
+  assert.equal(sampleTriangleColor(triangles[0], 0, 0, 1), 0x0000ff);
+});
+
+test('ZIP model packages reject ambiguous models and unsafe paths', async () => {
+  await assert.rejects(
+    extractModelArchive(zippedArrayBuffer({
+      'a.gltf': strToU8('{}'),
+      'b.fbx': strToU8('invalid'),
+    })),
+    /contains 2 model files/
+  );
+  await assert.rejects(
+    extractModelArchive(zippedArrayBuffer({ '../scene.gltf': strToU8('{}') })),
+    /unsafe path/
+  );
+});
+
+test('3D model picker accepts one model with external buffers and textures', () => {
   const source = readFileSync(new URL('../src/ui/react/components/InventoryModal.tsx', import.meta.url), 'utf8');
-  assert.match(source, /accept="\.glb,\.gltf,\.stl"/);
-  assert.doesNotMatch(source, /accept="[^"]*\.bin/i);
-  assert.doesNotMatch(source, /accept="[^"]*image/i);
+  assert.match(source, /accept="\.zip,\.fbx,\.glb,\.gltf,\.stl,\.bin,\.png,\.jpg,\.jpeg,\.webp,\.avif,\.bmp"/);
+  assert.match(source, /multiple/);
+  assert.match(source, /resources,/);
+  assert.match(source, /extractModelArchive/);
+  assert.match(source, /parse3DModelData\(buffer, modelName, resources\)/);
   assert.match(source, /useState\(DEFAULT_MODEL_IMPORT_SIZE_BLOCKS\)/);
-  assert.match(source, /External \.bin files are not supported/);
+  assert.match(source, /Upload one self-contained/);
+  assert.match(source, /Include exactly one <code>\.fbx<\/code> or <code>\.gltf<\/code> model/);
+  assert.match(source, /Keep the original relative folder structure/);
+  assert.match(source, /One model per import/);
 });
 
 test('PlayerController imports full-color 3D model into block set inventory', async () => {

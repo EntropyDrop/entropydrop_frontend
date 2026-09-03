@@ -16,6 +16,7 @@ export {
   MAX_STL_TRIANGLES,
   isSupportedModelFilename,
   parseSTLData,
+  parseFBXData,
   parseGLTFData,
   parse3DModelData,
   planModelSize,

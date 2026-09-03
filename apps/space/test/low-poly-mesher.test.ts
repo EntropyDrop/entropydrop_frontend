@@ -1,0 +1,88 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { LowPolyMesher } from '../src/engine/mesher/LowPolyMesher.ts';
+import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { Chunk, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../src/engine/voxel/Chunk.ts';
+
+function meshGeometry(chunk: Chunk): THREE.BufferGeometry {
+  const group = new LowPolyMesher().buildChunkMesh(chunk);
+  const mesh = group.children.find(child => (child as THREE.Mesh).isMesh) as THREE.Mesh | undefined;
+  assert.ok(mesh, 'a non-empty chunk should create a mesh');
+  return mesh.geometry;
+}
+
+test('chunk meshing uses indexed quads and preserves internal-face culling', () => {
+  const chunk = new Chunk(0, 0, null);
+  chunk.setLocalBlock(4, 5, 6, BlockTypes.COLOR_BLOCK, 0x48dbfb);
+  chunk.setLocalBlock(5, 5, 6, BlockTypes.COLOR_BLOCK, 0x48dbfb);
+
+  const geometry = meshGeometry(chunk);
+  assert.ok(geometry.index);
+  assert.equal(geometry.index.count, 10 * 6, 'two adjacent cubes expose ten quads');
+  assert.equal(geometry.getAttribute('position').count, 10 * 4, 'each quad reuses four indexed vertices');
+  assert.equal(geometry.getAttribute('normal').count, 10 * 4);
+  assert.equal(geometry.getAttribute('color').count, 10 * 4);
+  assert.ok(geometry.getAttribute('position').array instanceof Uint8Array);
+  assert.ok(geometry.getAttribute('normal').array instanceof Int8Array);
+  assert.equal(geometry.getAttribute('normal').normalized, true);
+  assert.ok(geometry.getAttribute('color').array instanceof Uint8Array);
+  assert.equal(geometry.getAttribute('color').normalized, true);
+  assert.ok(geometry.index.array instanceof Uint16Array);
+});
+
+test('generated neighboring chunks cull their shared boundary faces', () => {
+  const chunks = new Map<string, Chunk>();
+  const world = {
+    worldToChunkCoords(wx: number, wz: number) {
+      return {
+        cx: Math.floor(wx / CHUNK_SIZE_X),
+        cz: Math.floor(wz / CHUNK_SIZE_Z)
+      };
+    },
+    getChunk(cx: number, cz: number) {
+      return chunks.get(`${cx},${cz}`);
+    },
+    markChunkDirty() {}
+  };
+  const center = new Chunk(0, 0, world);
+  const east = new Chunk(1, 0, world);
+  center.hasGenerated = true;
+  east.hasGenerated = true;
+  chunks.set('0,0', center);
+  chunks.set('1,0', east);
+  center.setLocalBlock(CHUNK_SIZE_X - 1, 8, 4, BlockTypes.COLOR_BLOCK);
+  east.setLocalBlock(0, 8, 4, BlockTypes.COLOR_BLOCK);
+
+  const geometry = meshGeometry(center);
+  assert.equal(geometry.index?.count, 5 * 6, 'the occupied east neighbor hides the shared face');
+});
+
+test('large exposed meshes promote their index buffer to 32 bits', () => {
+  const chunk = new Chunk(0, 0, null);
+  for (let ly = 0; ly < CHUNK_SIZE_Y; ly++) {
+    for (let lz = 0; lz < CHUNK_SIZE_Z; lz++) {
+      for (let lx = 0; lx < CHUNK_SIZE_X; lx++) {
+        if ((lx + ly + lz) % 2 === 0) {
+          chunk.setLocalBlock(lx, ly, lz, BlockTypes.COLOR_BLOCK);
+        }
+      }
+    }
+  }
+
+  const geometry = meshGeometry(chunk);
+  assert.ok(geometry.getAttribute('position').count > 0xffff);
+  const positions = geometry.getAttribute('position').array as Uint8Array;
+  let maximumPosition = 0;
+  for (const value of positions) maximumPosition = Math.max(maximumPosition, value);
+  assert.equal(
+    maximumPosition,
+    CHUNK_SIZE_Y,
+    'the compact position format must retain the top boundary at y=128'
+  );
+  assert.ok(geometry.index?.array instanceof Uint32Array);
+  const maxIndex = geometry.index
+    ? geometry.index.array.reduce((maximum, value) => Math.max(maximum, value), 0)
+    : 0;
+  assert.equal(maxIndex, geometry.getAttribute('position').count - 1);
+});
