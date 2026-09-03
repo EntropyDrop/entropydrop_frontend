@@ -128,7 +128,7 @@ class Game {
 
     this.playerPhysics = new PlayerPhysics(this.world, this.contraptionManager);
     this.uiStore = spaceUiStore;
-    this.uiStore.setMarketSession(
+    this.uiStore.setAuthenticatedSession(
       session.api_origin,
       session.mode === 'online' ? session.token : '',
       session.mode === 'online' && session.player.is_admin === true

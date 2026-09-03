@@ -134,7 +134,6 @@ export class SpaceEntitySync {
       && (this.leasedUntil.get(entity.id) || 0) > Date.now();
     return {
       serverManaged: true,
-      serverSourceKind: entity.source_kind,
       serverOwnerUserId: entity.owner_user_id,
       serverCanControl: entity.can_control,
       serverCanEdit: entity.can_edit,
@@ -267,7 +266,6 @@ export class SpaceEntitySync {
     const snapshot = { ...record };
     delete snapshot.slot;
     delete snapshot.serverManaged;
-    delete snapshot.serverSourceKind;
     delete snapshot.serverOwnerUserId;
     delete snapshot.serverCanControl;
     delete snapshot.serverCanEdit;

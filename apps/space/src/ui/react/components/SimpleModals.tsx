@@ -1,4 +1,5 @@
 import React from 'react';
+import type { SpaceApiKeyRecord } from '../../../bootstrap/SpaceApiKeyClient.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
 
@@ -8,6 +9,122 @@ function ModalBackdrop({ id, className = '', children, onClose }: { id: string; 
       if (event.target === event.currentTarget) onClose();
     }}>
       {children}
+    </div>
+  );
+}
+
+function SpaceApiKeysSettings() {
+  const client = spaceUiStore.getApiKeyClient();
+  const [keys, setKeys] = React.useState<SpaceApiKeyRecord[]>([]);
+  const [name, setName] = React.useState('My external agent');
+  const [allowRun, setAllowRun] = React.useState(false);
+  const [secret, setSecret] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [message, setMessage] = React.useState('');
+
+  const load = React.useCallback(async () => {
+    if (!client) return;
+    try {
+      setKeys(await client.list());
+      setMessage('');
+    } catch (error: any) {
+      setMessage(error?.message || 'Could not load API keys.');
+    }
+  }, [client]);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  const create = async () => {
+    if (!client || !name.trim() || busy) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const created = await client.create(name.trim(), allowRun);
+      setSecret(created.api_key);
+      setName('My external agent');
+      setAllowRun(false);
+      await load();
+    } catch (error: any) {
+      setMessage(error?.message || 'Could not create API key.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoke = async (apiKey: SpaceApiKeyRecord) => {
+    if (!client || busy) return;
+    if (!window.confirm(`Revoke API key “${apiKey.name}”? External agents using it will stop working immediately.`)) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      await client.revoke(apiKey.id);
+      await load();
+    } catch (error: any) {
+      setMessage(error?.message || 'Could not revoke API key.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!client) {
+    return <div className="settings-api-empty">Sign in and enter online Space to manage API keys.</div>;
+  }
+
+  return (
+    <div className="settings-api-keys">
+      <div className="settings-api-create">
+        <input
+          className="settings-api-name"
+          value={name}
+          maxLength={80}
+          aria-label="API key name"
+          onChange={event => setName(event.target.value)}
+          placeholder="Key name"
+        />
+        <label className="settings-api-scope">
+          <input type="checkbox" checked={allowRun} onChange={event => setAllowRun(event.target.checked)} />
+          Allow created entities to run
+        </label>
+        <button className="small-btn primary" disabled={busy || !name.trim()} onClick={() => void create()}>
+          {busy ? 'Working…' : 'Create key'}
+        </button>
+      </div>
+      {secret ? (
+        <div className="settings-api-secret">
+          <strong>Copy this key now. It will not be shown again.</strong>
+          <div className="settings-api-secret-row">
+            <input readOnly value={secret} aria-label="New Space API key" onFocus={event => event.currentTarget.select()} />
+            <button className="small-btn" onClick={() => {
+              if (!navigator.clipboard?.writeText) {
+                setMessage('Clipboard access is unavailable. Select the key and copy it manually.');
+                return;
+              }
+              void navigator.clipboard.writeText(secret).then(
+                () => setMessage('API key copied.'),
+                () => setMessage('Copy failed. Select the key and copy it manually.'),
+              );
+            }}>Copy</button>
+          </div>
+        </div>
+      ) : null}
+      {message ? <div className="settings-api-message" role="status">{message}</div> : null}
+      <div className="settings-api-list">
+        {keys.length === 0 ? <div className="settings-api-empty">No API keys yet.</div> : keys.map(apiKey => (
+          <div className="settings-api-key" key={apiKey.id}>
+            <div>
+              <div className="settings-api-key-name">{apiKey.name}</div>
+              <div className="settings-api-key-meta">
+                <code>{apiKey.key_prefix}…</code>
+                <span>{apiKey.scopes.includes('space:entity:run') ? 'create + run' : 'create only'}</span>
+                <span>Last used: {apiKey.last_used_at ? new Date(apiKey.last_used_at).toLocaleString() : 'never'}</span>
+              </div>
+            </div>
+            <button className="small-btn settings-api-revoke" disabled={busy} onClick={() => void revoke(apiKey)}>Revoke</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -99,6 +216,11 @@ export function GlobalSettingsModal() {
               ))}
             </div>
           </div>
+        </div>
+        <div className="settings-section">
+          <div className="settings-section-title">EXTERNAL AGENT API</div>
+          <div className="settings-desc">Long-lived account keys can create validated entities in any Space world you can access. Keep them secret and revoke unused keys.</div>
+          <SpaceApiKeysSettings />
         </div>
       </div>
     </ModalBackdrop>

@@ -6423,12 +6423,14 @@ button.palette-title:hover {
    ========================================================================= */
 
 .settings-modal-content {
-  max-width: 520px;
+  max-width: 680px;
+  max-height: min(90vh, 820px);
   width: 90vw;
   padding: 22px 26px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
 }
 
 .settings-section {
@@ -6520,6 +6522,102 @@ button.palette-title:hover {
   gap: 4px;
 }
 
+.settings-api-keys,
+.settings-api-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-api-create {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-api-name,
+.settings-api-secret-row input {
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: #fff;
+  font: 11px 'JetBrains Mono', monospace;
+  padding: 7px 9px;
+  outline: none;
+}
+
+.settings-api-name:focus,
+.settings-api-secret-row input:focus {
+  border-color: var(--accent-base);
+}
+
+.settings-api-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.settings-api-secret {
+  border: 1px solid var(--accent-base);
+  background: rgb(35 75 55 / 25%);
+  padding: 10px;
+  color: #dcfce7;
+  font-size: 10.5px;
+}
+
+.settings-api-secret-row {
+  display: flex;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.settings-api-secret-row input {
+  flex: 1;
+}
+
+.settings-api-message,
+.settings-api-empty {
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+
+.settings-api-key {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.settings-api-key-name {
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.settings-api-key-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 9.5px;
+}
+
+.settings-api-key-meta code {
+  color: var(--accent-light);
+}
+
+.settings-api-revoke {
+  color: #fecaca;
+  border-color: var(--color-danger);
+}
+
 .settings-resolution-control .segment-btn {
   padding-inline: 7px;
 }
@@ -6548,6 +6646,11 @@ button.palette-title:hover {
 }
 
 @media (max-width: 560px) {
+  .settings-api-create {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
   .settings-resolution-row {
     align-items: stretch;
     flex-direction: column;

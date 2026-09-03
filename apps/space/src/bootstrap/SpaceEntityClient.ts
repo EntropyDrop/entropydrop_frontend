@@ -15,8 +15,6 @@ export interface SpaceWorldEntityRecord {
   id: string;
   world_id: string;
   owner_user_id: string;
-  source_kind: 'market' | 'browser';
-  source_resource_id: string | null;
   name: string;
   schema_version: 3;
   definition_digest: string;
@@ -43,7 +41,7 @@ export interface SpaceWorldEntityList {
 
 export interface CreateSpaceWorldEntity {
   operation_id: string;
-  resource_id: string;
+  definition: Uint8Array;
   position: { x_cm: number; y_cm: number; z_cm: number };
   yaw_quarter_turns?: 0 | 1 | 2 | 3;
   desired_run_state?: SpaceEntityRunState;
@@ -87,8 +85,6 @@ function parseEntity(value: any): SpaceWorldEntityRecord {
     typeof value?.id !== 'string'
     || typeof value?.world_id !== 'string'
     || typeof value?.owner_user_id !== 'string'
-    || !['market', 'browser'].includes(value?.source_kind)
-    || !(value?.source_resource_id === null || typeof value?.source_resource_id === 'string')
     || typeof value?.name !== 'string'
     || value?.schema_version !== 3
     || !/^[0-9a-f]{64}$/i.test(value?.definition_digest || '')
@@ -191,9 +187,14 @@ export class SpaceEntityClient {
   }
 
   async create(payload: Omit<CreateSpaceWorldEntity, 'operation_id'> & { operation_id?: string }) {
+    const { definition, ...requestPayload } = payload;
     const body = await this.request('', {
       method: 'POST',
-      body: JSON.stringify({ ...payload, operation_id: payload.operation_id || operationId() }),
+      body: JSON.stringify({
+        ...requestPayload,
+        definition_base64: bytesToBase64(definition),
+        operation_id: payload.operation_id || operationId(),
+      }),
     });
     return parseEntity(body);
   }

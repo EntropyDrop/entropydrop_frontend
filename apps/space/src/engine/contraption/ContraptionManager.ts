@@ -590,7 +590,6 @@ export class ContraptionManager {
       behaviorPrompt: contraption.behaviorPrompt,
       agentInterpretation: contraption.agentInterpretation,
       serverManaged: contraption.serverManaged === true,
-      serverSourceKind: contraption.serverSourceKind || null,
       serverOwnerUserId: contraption.serverOwnerUserId || null,
       serverCanControl: contraption.serverCanControl === true,
       serverCanEdit: contraption.serverCanEdit === true,
@@ -1930,7 +1929,6 @@ export class ContraptionManager {
     this.registerContraption(contraption);
     if (restoreState?.serverManaged === true) {
       contraption.serverManaged = true;
-      contraption.serverSourceKind = restoreState.serverSourceKind || null;
       contraption.serverOwnerUserId = restoreState.serverOwnerUserId || null;
       contraption.serverCanControl = restoreState.serverCanControl === true;
       contraption.serverCanEdit = restoreState.serverCanEdit === true;

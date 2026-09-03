@@ -91,7 +91,7 @@ test('player tools cannot mutate a server entity locally, while its own script c
   assert.equal(contraption.physicsEnabled, false);
 });
 
-test('published server entities cannot be opened in the local code editor', () => {
+test('another owner’s server entity cannot be opened in the local code editor', () => {
   const messages: string[] = [];
   const target: any = { serverManaged: true, scriptStatus: 'stopped' };
   const controller: any = Object.create(PlayerController.prototype);
@@ -105,14 +105,13 @@ test('published server entities cannot be opened in the local code editor', () =
   assert.equal(controller.openCodeEditorForTarget(), false);
   assert.equal(controller.canEditEntityInternals(target), false);
   assert.deepEqual(messages, [
-    'Published world entities are read-only; edit and republish the source resource',
+    'Only this entity’s owner can edit it',
   ]);
 });
 
-test('an owned browser-authored server entity remains locally editable', () => {
+test('an owned server entity remains locally editable regardless of creation path', () => {
   const target: any = {
     serverManaged: true,
-    serverSourceKind: 'browser',
     serverCanEdit: true,
     scriptStatus: 'stopped',
     blocks: [{ localX: 0, localY: 0, localZ: 0, size: 1, color: 0x112233 }],

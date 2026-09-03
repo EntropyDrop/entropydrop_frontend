@@ -16,8 +16,6 @@ function entity(overrides: Record<string, unknown> = {}) {
     id: '3cd7daba-d196-44e8-a433-cf139258f617',
     world_id: 'world-1',
     owner_user_id: 'owner-1',
-    source_kind: 'market',
-    source_resource_id: 'resource-1',
     name: 'Walker',
     schema_version: 3,
     definition_digest: definitionDigest,
@@ -59,7 +57,7 @@ test('SpaceEntityClient lists, verifies definitions, creates, and changes run st
     }
     if (String(url).endsWith('/checkpoint')) {
       return new Response(JSON.stringify(entity({
-        source_kind: 'browser', source_resource_id: null, can_edit: true, revision: 2,
+        can_edit: true, revision: 2,
       })), { status: 200 });
     }
     if (options.method === 'DELETE') {
@@ -70,7 +68,7 @@ test('SpaceEntityClient lists, verifies definitions, creates, and changes run st
     }
     if (String(url).endsWith('/browser')) {
       return new Response(JSON.stringify(entity({
-        source_kind: 'browser', source_resource_id: null, can_edit: true,
+        can_edit: true,
       })), { status: 201 });
     }
     if (options.method === 'POST') return new Response(JSON.stringify(entity()), { status: 201 });
@@ -86,12 +84,10 @@ test('SpaceEntityClient lists, verifies definitions, creates, and changes run st
   const listed = await client.list(100, 200, 16_000);
   await client.getDefinition(listed.items[0]);
   await client.create({
-    resource_id: 'resource-1',
+    definition,
     position: { x_cm: 100, y_cm: 3200, z_cm: 200 },
   });
   const browserEntity = entity({
-    source_kind: 'browser',
-    source_resource_id: null,
     can_edit: true,
     snapshot_digest: snapshotDigest,
     snapshot_size_bytes: snapshot.byteLength,
@@ -125,7 +121,8 @@ test('SpaceEntityClient lists, verifies definitions, creates, and changes run st
   assert.equal((calls[0].options.headers as any).Authorization, 'Bearer space-token');
   assert.equal(calls[1].url, `https://api.example.test/space/api/v2/worlds/world-1/entities/3cd7daba-d196-44e8-a433-cf139258f617/definition?digest=${definitionDigest}`);
   assert.equal((calls[1].options.headers as any).Authorization, 'Bearer space-token');
-  assert.equal(JSON.parse(String(calls[2].options.body)).resource_id, 'resource-1');
+  assert.equal(JSON.parse(String(calls[2].options.body)).definition_base64, 'CAMaAA==');
+  assert.equal(JSON.parse(String(calls[2].options.body)).definition, undefined);
   assert.match(JSON.parse(String(calls[2].options.body)).operation_id, /^[0-9a-f-]{36}$/i);
   assert.match(calls[3].url, /\/browser$/);
   assert.equal(JSON.parse(String(calls[3].options.body)).definition_base64, 'CAMaAA==');

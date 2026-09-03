@@ -331,7 +331,6 @@ export class Contraption {
   scene: any;
   originWorldPos: THREE.Vector3;
   serverManaged?: boolean;
-  serverSourceKind?: 'market' | 'browser' | null;
   serverOwnerUserId?: string | null;
   serverCanControl?: boolean;
   serverCanEdit?: boolean;

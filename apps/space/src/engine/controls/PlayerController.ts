@@ -793,7 +793,7 @@ export class PlayerController {
       return false;
     }
     if (target.serverManaged === true && target.serverCanEdit !== true) {
-      this.ui?.showToast?.('Published world entities are read-only; edit and republish the source resource');
+      this.ui?.showToast?.('Only this entity’s owner can edit it');
       return false;
     }
 

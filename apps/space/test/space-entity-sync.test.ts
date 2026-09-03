@@ -12,8 +12,6 @@ function record() {
     id: '3cd7daba-d196-44e8-a433-cf139258f617',
     world_id: 'world-1',
     owner_user_id: 'owner-1',
-    source_kind: 'market',
-    source_resource_id: 'resource-1',
     name: 'Walker',
     schema_version: 3,
     definition_digest: definitionDigest,

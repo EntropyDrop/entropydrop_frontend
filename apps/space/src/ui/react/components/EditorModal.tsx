@@ -247,9 +247,7 @@ export function CodeEditorModal() {
   const status = state.telemetry.status;
   const backendManaged = contraption.serverManaged === true;
   const persistenceLabel = backendManaged ? 'backend' : 'offline browser';
-  const sourceLabel = backendManaged
-    ? contraption.serverSourceKind === 'market' ? 'market API' : 'browser authored'
-    : 'local';
+  const sourceLabel = backendManaged ? 'world entity' : 'local';
   const accessLabel = backendManaged
     ? contraption.serverCanEdit === true
       ? contraption.serverCanControl === true ? 'edit + control' : 'edit only'

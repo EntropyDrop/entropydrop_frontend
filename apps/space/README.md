@@ -123,7 +123,7 @@ the current local and composed world transforms, Euler angles for readability, p
 physics center of mass, body quaternion, velocity, angular velocity, grounded state, and
 simulation state. The root has no parent: its script-local position is `[0,0,0]`, while its
 live local quaternion is also its world quaternion. The Authority panel identifies backend
-versus offline persistence, source, edit/control permission, execution lease location, and
+versus offline persistence, edit/control permission, execution lease location, and
 backend revisions.
 
 ## Multiplayer backend
@@ -138,19 +138,19 @@ described below.
 Every world entity in online mode comes from the backend. The browser neither reads nor
 writes `entropydrop_space_entities.*`; entering an online world removes that world's legacy
 browser entity value. Creating or editing an entity uploads its canonical Protobuf definition
-and a bounded runtime snapshot, and active browser-authored entities checkpoint changed
+and a bounded runtime snapshot, and active owned entities checkpoint changed
 state every six seconds. Removing one performs a backend hard delete. Offline mode keeps the
 existing browser persistence and never calls these entity endpoints. This boundary applies
 only to world entities: the backpack deliberately remains local.
 
-Published entity resources can also be instantiated by the external create-only API. The
-browser polls the nearby wrapped AOI, verifies the copied Protobuf definition and optional
+External agents can submit canonical entity definitions directly with an account-level,
+long-lived Space API key; market publication is not required. The browser polls the nearby
+wrapped AOI, verifies the canonical Protobuf definition and optional
 snapshot, then restores the exact construction/runtime pose, including its quaternion. Only
 the owner's browser holding the current eight-second execution lease advances physics/scripts;
 observers retain a stopped collision pose. Wrench Start/Stop is accepted only for the owner
-or an administrator, so another ordinary player cannot stop the entity. Market-created
-instances remain structurally read-only. Browser-authored instances may be edited or deleted
-only by their owner or an administrator; their updated definition and state return to the
+or an administrator, so another ordinary player cannot stop the entity. Every instance may be
+edited or deleted only by its owner or an administrator; its updated definition and state return to the
 backend instead of browser storage. Entity `self.*` actions continue to run only on the lease
 holder.
 

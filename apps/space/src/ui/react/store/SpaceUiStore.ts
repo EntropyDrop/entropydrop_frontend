@@ -17,6 +17,7 @@ import {
 import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../../../engine/torus/TorusWorld.ts';
 import { triggerProtobufDownload } from '../browser/downloadProtobuf.ts';
 import { colorToHex, normalizeColor, PRESET_COLORS } from '../../../engine/voxel/BlockTypes.ts';
+import { SpaceApiKeyClient } from '../../../bootstrap/SpaceApiKeyClient.ts';
 import { SpaceMarketClient } from '../../../bootstrap/SpaceMarketClient.ts';
 import { MAX_BACKPACK_SLOTS_PER_CATEGORY } from '../../../engine/storage/InventoryProtobuf.ts';
 
@@ -248,6 +249,7 @@ export class SpaceUiStore {
   private toastSequence = 0;
   private remotePlayers: any[] = [];
   private marketClient: SpaceMarketClient | null = null;
+  private apiKeyClient: SpaceApiKeyClient | null = null;
   private queueCancelHandler: (() => Promise<void>) | null = null;
   private enterOnlineHandler: (() => void) | null = null;
 
@@ -362,13 +364,15 @@ export class SpaceUiStore {
     } catch { }
   }
 
-  setMarketSession(apiOrigin: string, token: string, isAdmin = false): void {
+  setAuthenticatedSession(apiOrigin: string, token: string, isAdmin = false): void {
     if (!token) {
       this.marketClient = null;
+      this.apiKeyClient = null;
       this.patch({ isAdmin: false });
       return;
     }
     this.marketClient = new SpaceMarketClient(apiOrigin, token);
+    this.apiKeyClient = new SpaceApiKeyClient(apiOrigin, token);
     this.patch({ isAdmin: !!isAdmin });
   }
 
@@ -400,6 +404,10 @@ export class SpaceUiStore {
 
   getMarketClient(): SpaceMarketClient | null {
     return this.marketClient;
+  }
+
+  getApiKeyClient(): SpaceApiKeyClient | null {
+    return this.apiKeyClient;
   }
 
   setWorld(world: any): void {
