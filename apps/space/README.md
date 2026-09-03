@@ -39,10 +39,23 @@ and rebuilds in 2 ms batches while the previous complete surface remains visible
 A 128 KiB GPU readiness mask hands each 16m chunk from the far snapshot to the
 detailed mesh only after that mesh is attached, preventing streaming holes and
 z-fighting without increasing the per-frame chunk budget.
+The settings panel exposes all five LOD transition distances, a final far-surface
+limit, per-tier 2/4/8/16/32/64m enable switches, and the neighbor-connection
+radius. Values are stored locally, applied immediately through the staged rebuild,
+constrained to increasing 50m bands and bounded by safe instance limits. A disabled
+tier falls through to the next enabled coarser tier; beyond the final limit no
+snapshot terrain is emitted, and setting connections to 0 disables them.
+Recommended defaults keep every tier enabled, cover the full world, use
+400/600/800/1000/1600m transitions, and connect through 4000m.
 
 An AI-native programmable voxel physics prototype:
 
 > Build anything. Tell it what to do.
+
+The renderer starts in Earth mode, with a spherical horizon and Earth-style
+surface projection. Players can switch between Earth mode and the seamless
+torus donut terrain at any time from Settings; an explicitly saved choice is
+restored on later visits.
 
 ## Player spawn and reconnect
 

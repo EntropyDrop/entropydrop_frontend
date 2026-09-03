@@ -95,6 +95,33 @@ test('touching an adjacent one-block step never lifts the player onto it', () =>
   assert.ok(Math.abs(player.position.x - (-0.3)) < 1e-9);
 });
 
+test('restoring inside terrain raises the player to the first free spawn height', () => {
+  const solids = new Set([
+    '0,0,0',
+    '0,1,0',
+    '0,2,0'
+  ]);
+  let prepared = null;
+  const world = {
+    preparePlayerSpawnArea(x, z, halfWidth) {
+      prepared = { x, z, halfWidth };
+    },
+    getBlock: (x, y, z) => solids.has(`${x},${y},${z}`)
+      ? BlockTypes.COLOR_BLOCK
+      : BlockTypes.AIR,
+    getMicroBlocksInAABB: () => []
+  };
+  const player = new PlayerPhysics(world as any, { contraptions: [] }) as any;
+
+  const raised = player.setInitialPosition(0.5, -4, 0.5);
+
+  assert.equal(raised, true);
+  assert.deepEqual(prepared, { x: 0.5, z: 0.5, halfWidth: 0.3 });
+  assert.equal(player.position.y, 3);
+  assert.equal(player.velocity.lengthSq(), 0);
+  assert.equal(player.getIntersectingSolidBlocks(player.getAABB()).length, 0);
+});
+
 test('near-top side contact with an entity does not use landing tolerance to climb', () => {
   const contraption = createSingleCellContraption();
   const player = createPlayer(contraption);

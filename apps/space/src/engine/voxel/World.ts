@@ -9,7 +9,10 @@ import {
   type TerrainEditChunk,
   type WorldEditPersistenceOptions,
 } from './WorldEditPersistence.ts';
-import { DistantSurfaceLayer } from '../render/DistantSurfaceLayer.ts';
+import {
+  DistantSurfaceLayer,
+  type DistantSurfaceSettings,
+} from '../render/DistantSurfaceLayer.ts';
 import type { SurfaceZoneSnapshot } from '../../bootstrap/SpaceSurfaceSnapshot.ts';
 import {
   wrapX, wrapZ, wrapChunkX, wrapChunkZ, wrapMicroX, wrapMicroZ,
@@ -158,6 +161,27 @@ export class World {
       this.dirtyChunks.add(chunk);
     }
     return chunk;
+  }
+
+  /**
+   * Generate every chunk touched by the player's horizontal collision box
+   * before restoring a saved pose. Normal streaming intentionally creates only
+   * a couple of chunks per frame; near a chunk corner that can otherwise make
+   * solid terrain appear around the player after physics has already started.
+   */
+  preparePlayerSpawnArea(playerX: number, playerZ: number, halfWidth = 0.3) {
+    const prepared = new Set<string>();
+    const radius = Math.max(0, Number(halfWidth) || 0);
+    for (const x of [playerX - radius, playerX + radius]) {
+      for (const z of [playerZ - radius, playerZ + radius]) {
+        const { cx, cz } = this.worldToChunkCoords(x, z);
+        const key = World.getChunkKey(cx, cz);
+        if (prepared.has(key)) continue;
+        this.getOrCreateChunk(cx, cz);
+        prepared.add(key);
+      }
+    }
+    return prepared.size;
   }
 
   worldToChunkCoords(wx, wz) {
@@ -635,6 +659,18 @@ export class World {
   setRenderDistance(distance) {
     this.renderDistance = Math.max(3, Math.min(24, Math.round(Number(distance)) || DEFAULT_RENDER_DISTANCE));
     this.lastStreamCenterKey = null;
+  }
+
+  getDistantSurfaceSettings(): DistantSurfaceSettings {
+    return this.distantSurface.getSettings();
+  }
+
+  setDistantSurfaceSettings(settings: Partial<DistantSurfaceSettings>): DistantSurfaceSettings {
+    return this.distantSurface.setSettings(settings);
+  }
+
+  setDistantSurfaceEnabled(enabled: boolean): boolean {
+    return this.distantSurface.setEnabled(enabled);
   }
 
   installSurfaceZone(zone: SurfaceZoneSnapshot) {

@@ -31,6 +31,51 @@ export const TORUS_SPAWN_Z = TORUS_SIZE_Z / 2;        // φ=π, inner tube surfa
 export const TORUS_MAX_RHO = TORUS_R - 1;             // Keep ρ ≤ R−1 so the embedding stays injective.
 export const TORUS_K_THETA = (Math.PI * 2) / TORUS_SIZE_X;
 export const TORUS_K_PHI = (Math.PI * 2) / TORUS_SIZE_Z;
+export const EARTH_R = TORUS_R;                       // Keeps one metre of X travel near the projection anchor.
+
+export type WorldShapeMode = 'earth' | 'torus';
+export const DEFAULT_WORLD_SHAPE_MODE: WorldShapeMode = 'earth';
+
+let worldShapeMode: WorldShapeMode = DEFAULT_WORLD_SHAPE_MODE;
+let earthProjectionAnchorPending = true;
+const worldProjectionAnchor = new THREE.Vector2(TORUS_SPAWN_X, TORUS_SPAWN_Z);
+const worldShapeModeUniform = { value: 1 };
+const worldProjectionAnchorUniform = {
+  value: new THREE.Vector2(TORUS_SPAWN_X, TORUS_SPAWN_Z),
+};
+
+export function normalizeWorldShapeMode(value: unknown): WorldShapeMode {
+  return value === 'torus' ? 'torus' : DEFAULT_WORLD_SHAPE_MODE;
+}
+
+/** Select the live visual projection without changing logical world storage. */
+export function setWorldShapeMode(value: unknown): WorldShapeMode {
+  const nextMode = normalizeWorldShapeMode(value);
+  if (nextMode === 'earth' && worldShapeMode !== 'earth') {
+    earthProjectionAnchorPending = true;
+  }
+  worldShapeMode = nextMode;
+  worldShapeModeUniform.value = worldShapeMode === 'earth' ? 1 : 0;
+  return worldShapeMode;
+}
+
+export function getWorldShapeMode(): WorldShapeMode {
+  return worldShapeMode;
+}
+
+/**
+ * Earth mode uses an azimuthal projection anchored where the mode starts.
+ * Keeping that anchor stable prevents the globe and its shadow map from being
+ * reprojected independently on every player movement.
+ */
+export function setWorldProjectionAnchor(x: number, z: number, force = false): void {
+  if (worldShapeMode === 'earth' && !earthProjectionAnchorPending && !force) return;
+  const nextX = wrapX(Number(x) || 0);
+  const nextZ = wrapZ(Number(z) || 0);
+  worldProjectionAnchor.set(nextX, nextZ);
+  worldProjectionAnchorUniform.value.set(nextX, nextZ);
+  if (worldShapeMode === 'earth') earthProjectionAnchorPending = false;
+}
 
 // -----------------------------------------------------------------------------
 // Coordinate wrapping into [0, size).
@@ -82,12 +127,17 @@ const _basis = new THREE.Matrix4();
 const _quatA = new THREE.Quaternion();
 const _quatB = new THREE.Quaternion();
 
-/** Map flat (x,y,z) to bent (bx,by,bz). Reuse out for zero-allocation hot paths. */
-export function bendPoint(x, y, z, out = new THREE.Vector3()) {
+function wrappedAxisDelta(value: number, anchor: number, period: number) {
+  let delta = value - anchor;
+  delta = ((delta + period / 2) % period + period) % period - period / 2;
+  return delta;
+}
+
+function bendTorusPoint(x: number, y: number, z: number, out: THREE.Vector3) {
   const theta = x * TORUS_K_THETA;
   const phi = z * TORUS_K_PHI;
   let rho = TORUS_RHO + (y - TORUS_GREF);
-  if (rho > TORUS_MAX_RHO) rho = TORUS_MAX_RHO; // Compress extreme altitude to prevent self-intersection.
+  if (rho > TORUS_MAX_RHO) rho = TORUS_MAX_RHO;
   const ct = Math.cos(theta);
   const st = Math.sin(theta);
   const cp = Math.cos(phi);
@@ -96,8 +146,46 @@ export function bendPoint(x, y, z, out = new THREE.Vector3()) {
   return out.set(rad * ct, rho * sp, rad * st);
 }
 
+function bendEarthPoint(x: number, y: number, z: number, out: THREE.Vector3) {
+  const dx = wrappedAxisDelta(x, worldProjectionAnchor.x, TORUS_SIZE_X);
+  const dz = wrappedAxisDelta(z, worldProjectionAnchor.y, TORUS_SIZE_Z);
+  const distance = Math.hypot(dx, dz);
+  const angle = distance / EARTH_R;
+  const radius = Math.max(1, EARTH_R + (y - TORUS_GREF));
+  const sinAngle = Math.sin(angle);
+  const scale = distance > 1e-9 ? sinAngle / distance : 1 / EARTH_R;
+  return out.set(
+    radius * Math.cos(angle),
+    -radius * dz * scale,
+    -radius * dx * scale,
+  );
+}
+
+/** Map flat (x,y,z) to bent (bx,by,bz). Reuse out for zero-allocation hot paths. */
+export function bendPoint(x, y, z, out = new THREE.Vector3()) {
+  return worldShapeMode === 'earth'
+    ? bendEarthPoint(x, y, z, out)
+    : bendTorusPoint(x, y, z, out);
+}
+
 /** Map bent coordinates back to flat space. The outer solution is unique for ρ ≤ R−1. */
 export function unbendPoint(bx, by, bz, out = new THREE.Vector3()) {
+  if (worldShapeMode === 'earth') {
+    const radius = Math.hypot(bx, by, bz);
+    if (radius < 1e-9) {
+      return out.set(worldProjectionAnchor.x, TORUS_GREF - EARTH_R, worldProjectionAnchor.y);
+    }
+    const angle = Math.acos(THREE.MathUtils.clamp(bx / radius, -1, 1));
+    const tangentLength = Math.hypot(by, bz);
+    const distance = angle * EARTH_R;
+    const dx = tangentLength > 1e-9 ? -distance * bz / tangentLength : 0;
+    const dz = tangentLength > 1e-9 ? -distance * by / tangentLength : 0;
+    return out.set(
+      wrapX(worldProjectionAnchor.x + dx),
+      radius - EARTH_R + TORUS_GREF,
+      wrapZ(worldProjectionAnchor.y + dz),
+    );
+  }
   const rxy = Math.hypot(bx, bz);
   let u = rxy - TORUS_R; // Outer solution for ρ·cosφ = ±rxy − R.
   if (u < -TORUS_MAX_RHO) u = -rxy - TORUS_R; // Hole fallback, outside the world and treated as air.
@@ -114,6 +202,39 @@ export function unbendPoint(bx, by, bz, out = new THREE.Vector3()) {
 
 // Local orthonormal frame: flat basis (X→eθ, Y→eρ, Z→eφ) to the bent tangent basis.
 function torusFrameAxes(x, y, z) {
+  if (worldShapeMode === 'earth') {
+    const dx = wrappedAxisDelta(x, worldProjectionAnchor.x, TORUS_SIZE_X);
+    const dz = wrappedAxisDelta(z, worldProjectionAnchor.y, TORUS_SIZE_Z);
+    const distance = Math.hypot(dx, dz);
+    if (distance < 1e-9) {
+      _vA.set(0, 0, -1);
+      _vB.set(1, 0, 0);
+      _vC.set(0, -1, 0);
+      return;
+    }
+    const ux = dx / distance;
+    const uz = dz / distance;
+    const angle = distance / EARTH_R;
+    const sinAngle = Math.sin(angle);
+    const cosAngle = Math.cos(angle);
+    const radialX = -sinAngle;
+    const radialY = -uz * cosAngle;
+    const radialZ = -ux * cosAngle;
+    const angularY = -ux;
+    const angularZ = uz;
+    _vB.set(cosAngle, -uz * sinAngle, -ux * sinAngle);
+    _vA.set(
+      ux * radialX,
+      ux * radialY - uz * angularY,
+      ux * radialZ - uz * angularZ,
+    );
+    _vC.set(
+      uz * radialX,
+      uz * radialY + ux * angularY,
+      uz * radialZ + ux * angularZ,
+    );
+    return;
+  }
   const theta = x * TORUS_K_THETA;
   const phi = z * TORUS_K_PHI;
   const ct = Math.cos(theta);
@@ -175,7 +296,7 @@ export function computeChunkBentSphere(cx, cz, out = null) {
     const lx = i & 1 ? ox + 16 : ox;
     const ly = i & 2 ? CHUNK_SIZE_Y : 0;
     const lz = i & 4 ? oz + 16 : oz;
-    const p = bendPoint(lx, ly, lz);
+    const p = bendTorusPoint(lx, ly, lz, _vA);
     if (p.x < minX) minX = p.x;
     if (p.y < minY) minY = p.y;
     if (p.z < minZ) minZ = p.z;
@@ -191,7 +312,7 @@ export function computeChunkBentSphere(cx, cz, out = null) {
     const lx = i & 1 ? ox + 16 : ox;
     const ly = i & 2 ? CHUNK_SIZE_Y : 0;
     const lz = i & 4 ? oz + 16 : oz;
-    const p = bendPoint(lx, ly, lz);
+    const p = bendTorusPoint(lx, ly, lz, _vA);
     const d = Math.hypot(p.x - cx2, p.y - cy2, p.z - cz2);
     if (d > radius) radius = d;
   }
@@ -213,8 +334,46 @@ uniform float uTorusR;
 uniform float uTorusRho;
 uniform float uTorusGRef;
 uniform float uTorusMaxRho;
+uniform float uWorldShapeMode;
+uniform float uEarthR;
+uniform vec2 uWorldProjectionAnchor;
+
+float wrappedWorldDelta( float value, float anchor, float period ) {
+	return mod( mod( value - anchor + period * 0.5, period ) + period, period ) - period * 0.5;
+}
+
+vec3 earthBend( vec3 p ) {
+	float dx = wrappedWorldDelta( p.x, uWorldProjectionAnchor.x, ${TORUS_SIZE_X.toFixed(1)} );
+	float dz = wrappedWorldDelta( p.z, uWorldProjectionAnchor.y, ${TORUS_SIZE_Z.toFixed(1)} );
+	float distance = length( vec2( dx, dz ) );
+	float angle = distance / uEarthR;
+	float radius = max( 1.0, uEarthR + ( p.y - uTorusGRef ) );
+	float scale = distance > 0.000001 ? sin( angle ) / distance : 1.0 / uEarthR;
+	return vec3( radius * cos( angle ), -radius * dz * scale, -radius * dx * scale );
+}
+
+mat3 earthFrame( vec3 p ) {
+	float dx = wrappedWorldDelta( p.x, uWorldProjectionAnchor.x, ${TORUS_SIZE_X.toFixed(1)} );
+	float dz = wrappedWorldDelta( p.z, uWorldProjectionAnchor.y, ${TORUS_SIZE_Z.toFixed(1)} );
+	float distance = length( vec2( dx, dz ) );
+	if ( distance < 0.000001 ) {
+		return mat3( vec3( 0.0, 0.0, -1.0 ), vec3( 1.0, 0.0, 0.0 ), vec3( 0.0, -1.0, 0.0 ) );
+	}
+	float ux = dx / distance;
+	float uz = dz / distance;
+	float angle = distance / uEarthR;
+	float sa = sin( angle );
+	float ca = cos( angle );
+	vec3 radialTangent = vec3( -sa, -uz * ca, -ux * ca );
+	vec3 angularTangent = vec3( 0.0, -ux, uz );
+	vec3 axisX = ux * radialTangent - uz * angularTangent;
+	vec3 axisY = vec3( ca, -uz * sa, -ux * sa );
+	vec3 axisZ = uz * radialTangent + ux * angularTangent;
+	return mat3( axisX, axisY, axisZ );
+}
 
 vec3 torusBend( vec3 p ) {
+	if ( uWorldShapeMode > 0.5 ) return earthBend( p );
 	float theta = p.x * uTorusKTheta;
 	float phi = p.z * uTorusKPhi;
 	float rho = uTorusRho + ( p.y - uTorusGRef );
@@ -252,6 +411,7 @@ vec3 torusAxisPhi( vec3 p ) {
 }
 
 mat3 torusFrame( vec3 p ) {
+	if ( uWorldShapeMode > 0.5 ) return earthFrame( p );
 	return mat3( torusAxisTheta( p ), torusAxisRho( p ), torusAxisPhi( p ) );
 }
 `;
@@ -320,6 +480,9 @@ function hookMaterialForTorus(material) {
     u.uTorusRho = { value: TORUS_RHO };
     u.uTorusGRef = { value: TORUS_GREF };
     u.uTorusMaxRho = { value: TORUS_MAX_RHO };
+    u.uWorldShapeMode = worldShapeModeUniform;
+    u.uEarthR = { value: EARTH_R };
+    u.uWorldProjectionAnchor = worldProjectionAnchorUniform;
     let vs = shader.vertexShader;
     if (!vs.includes('torusBend')) {
       vs = TORUS_GLSL_PREFIX + vs;
@@ -340,7 +503,7 @@ function hookMaterialForTorus(material) {
     const prior = typeof previousCacheKey === 'function'
       ? previousCacheKey.call(material)
       : '';
-    return `${prior}|torus-bend-v2`;
+    return `${prior}|world-shape-bend-v3`;
   };
   material.needsUpdate = true;
 }
@@ -383,6 +546,12 @@ const _frustum = new THREE.Frustum();
 
 export function cullChunks(camera, world) {
   if (!world || !world.chunks) return;
+  if (worldShapeMode === 'earth') {
+    for (const [chunkKey, chunk] of world.chunks) {
+      if (chunk.mesh) chunk.mesh.visible = !world.activeChunkKeys || world.activeChunkKeys.has(chunkKey);
+    }
+    return;
+  }
   _projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   _frustum.setFromProjectionMatrix(_projScreen);
   for (const [chunkKey, chunk] of world.chunks) {

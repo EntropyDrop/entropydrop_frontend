@@ -1,7 +1,25 @@
 import React from 'react';
 import type { SpaceApiKeyRecord } from '../../../bootstrap/SpaceApiKeyClient.ts';
+import {
+  DISTANT_SURFACE_SETTING_LIMITS,
+  type DistantSurfaceDistanceSettingKey,
+  type DistantSurfaceEnabledSettingKey,
+} from '../../../engine/render/DistantSurfaceLayer.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
+
+const DISTANT_LOD_CONTROLS: ReadonlyArray<{
+  distanceKey: DistantSurfaceDistanceSettingKey;
+  enabledKey: DistantSurfaceEnabledSettingKey;
+  label: string;
+  description: string;
+}> = [
+  { distanceKey: 'lod2Distance', enabledKey: 'lod2Enabled', label: '2m Samples', description: 'Highest-detail snapshot radius' },
+  { distanceKey: 'lod4Distance', enabledKey: 'lod4Enabled', label: '4m Samples', description: '4m → 8m transition distance' },
+  { distanceKey: 'lod8Distance', enabledKey: 'lod8Enabled', label: '8m Samples', description: '8m → 16m transition distance' },
+  { distanceKey: 'lod16Distance', enabledKey: 'lod16Enabled', label: '16m Samples', description: '16m → 32m transition distance' },
+  { distanceKey: 'lod32Distance', enabledKey: 'lod32Enabled', label: '32m Samples', description: '32m → 64m transition distance' },
+];
 
 function ModalBackdrop({ id, className = '', children, onClose }: { id: string; className?: string; children: React.ReactNode; onClose: () => void }) {
   return (
@@ -132,6 +150,7 @@ function SpaceApiKeysSettings() {
 export function GlobalSettingsModal() {
   const state = useSpaceUi(snapshot => snapshot);
   if (state.activeModal !== 'settings') return null;
+  const distantLodDisabled = state.worldShapeMode === 'earth';
   return (
     <ModalBackdrop id="global-settings-modal" onClose={() => spaceUiStore.toggleGlobalSettingsModal(false)}>
       <div className="modal-content settings-modal-content">
@@ -186,6 +205,25 @@ export function GlobalSettingsModal() {
         <div className="settings-section">
           <div className="settings-section-title">PHYSICS &amp; ENVIRONMENT</div>
           <div className="settings-row">
+            <div className="settings-label-group"><span className="settings-label">World Shape</span><span className="settings-desc">Switch between a spherical horizon and the original ring world</span></div>
+            <div className="settings-segmented-control" id="setting-world-shape-group">
+              {([
+                ['earth', '地球模式'],
+                ['torus', '甜甜圈模式']
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  tabIndex={-1}
+                  className={`segment-btn ${state.worldShapeMode === value ? 'active' : ''}`}
+                  aria-pressed={state.worldShapeMode === value}
+                  onClick={() => spaceUiStore.setWorldShapeMode(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-row">
             <div className="settings-label-group"><span className="settings-label">Entity Gravity</span><span className="settings-desc">Rigid body world gravity simulation</span></div>
             <div className="settings-segmented-control" id="setting-gravity-group">
               {([[-18, 'Standard (-18)'], [-5, 'Moon (-5)'], [0, 'Zero-G (0)']] as const).map(([value, label]) => <button key={value} tabIndex={-1} className={`segment-btn ${state.gravity === value ? 'active' : ''}`} onClick={() => spaceUiStore.setGravity(value)}>{label}</button>)}
@@ -194,6 +232,120 @@ export function GlobalSettingsModal() {
           <div className="settings-row">
             <div className="settings-label-group"><span className="settings-label">Chunk Render Distance</span><span className="settings-desc">Voxel terrain mesh streaming radius (4 ~ 20 chunks)</span></div>
             <div className="settings-control-group"><input id="setting-render-dist-slider" className="settings-slider" type="range" min="4" max="20" step="1" value={state.renderDistance} onChange={event => spaceUiStore.setRenderDistance(Number(event.target.value))} /><span id="setting-render-dist-val" className="settings-value-badge">{state.renderDistance} Chunks</span></div>
+          </div>
+        </div>
+        <div className="settings-section">
+          <div className="settings-section-title">
+            DISTANT TERRAIN LOD{distantLodDisabled ? ' · OFF IN EARTH MODE' : ''}
+          </div>
+          {DISTANT_LOD_CONTROLS.map(({ distanceKey, enabledKey, label, description }) => {
+            const limits = DISTANT_SURFACE_SETTING_LIMITS[distanceKey];
+            const enabled = !distantLodDisabled && state.distantSurfaceSettings[enabledKey];
+            return (
+              <div className="settings-row" key={distanceKey}>
+                <div className="settings-label-group">
+                  <span className="settings-label">{label}</span>
+                  <span className="settings-desc">{description} · thresholds remain at least 50m apart</span>
+                </div>
+                <div className="settings-control-group">
+                  <button
+                    className={`mini-toggle-btn ${enabled ? 'active' : ''}`}
+                    aria-pressed={enabled}
+                    disabled={distantLodDisabled}
+                    onClick={() => spaceUiStore.setDistantSurfaceSetting(enabledKey, !enabled)}
+                  >
+                    {enabled ? 'ON' : 'OFF'}
+                  </button>
+                  <input
+                    id={`setting-${distanceKey}-slider`}
+                    className="settings-slider"
+                    type="range"
+                    min={limits.min}
+                    max={limits.max}
+                    step={limits.step}
+                    value={state.distantSurfaceSettings[distanceKey]}
+                    disabled={!enabled || distantLodDisabled}
+                    onChange={event => spaceUiStore.setDistantSurfaceSetting(distanceKey, Number(event.target.value))}
+                  />
+                  <span className="settings-value-badge">{state.distantSurfaceSettings[distanceKey]} m</span>
+                </div>
+              </div>
+            );
+          })}
+          <div className="settings-row">
+            <div className="settings-label-group">
+              <span className="settings-label">64m Samples</span>
+              <span className="settings-desc">Coarsest tier, used after the 32m threshold up to the surface limit</span>
+            </div>
+            <div className="settings-control-group">
+              <button
+                className={`mini-toggle-btn ${!distantLodDisabled && state.distantSurfaceSettings.lod64Enabled ? 'active' : ''}`}
+                aria-pressed={!distantLodDisabled && state.distantSurfaceSettings.lod64Enabled}
+                disabled={distantLodDisabled}
+                onClick={() => spaceUiStore.setDistantSurfaceSetting(
+                  'lod64Enabled',
+                  !state.distantSurfaceSettings.lod64Enabled,
+                )}
+              >
+                {!distantLodDisabled && state.distantSurfaceSettings.lod64Enabled ? 'ON' : 'OFF'}
+              </button>
+              <span className="settings-value-badge">64 m</span>
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-label-group">
+              <span className="settings-label">Far Surface Limit</span>
+              <span className="settings-desc">Render no snapshot terrain beyond this distance</span>
+            </div>
+            <div className="settings-control-group">
+              <input
+                id="setting-far-surface-limit-slider"
+                className="settings-slider"
+                type="range"
+                min={Math.max(
+                  DISTANT_SURFACE_SETTING_LIMITS.maxDistance.min,
+                  state.distantSurfaceSettings.lod32Distance + 50,
+                )}
+                max={DISTANT_SURFACE_SETTING_LIMITS.maxDistance.max}
+                step={DISTANT_SURFACE_SETTING_LIMITS.maxDistance.step}
+                value={state.distantSurfaceSettings.maxDistance}
+                disabled={distantLodDisabled}
+                onChange={event => spaceUiStore.setDistantSurfaceSetting('maxDistance', Number(event.target.value))}
+              />
+              <span className="settings-value-badge">{state.distantSurfaceSettings.maxDistance} m</span>
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-label-group">
+              <span className="settings-label">Neighbor Connections</span>
+              <span className="settings-desc">Connect height differences up to this distance; 0 disables connections</span>
+            </div>
+            <div className="settings-control-group">
+              <input
+                id="setting-connection-distance-slider"
+                className="settings-slider"
+                type="range"
+                min={DISTANT_SURFACE_SETTING_LIMITS.connectionDistance.min}
+                max={DISTANT_SURFACE_SETTING_LIMITS.connectionDistance.max}
+                step={DISTANT_SURFACE_SETTING_LIMITS.connectionDistance.step}
+                value={state.distantSurfaceSettings.connectionDistance}
+                disabled={distantLodDisabled}
+                onChange={event => spaceUiStore.setDistantSurfaceSetting('connectionDistance', Number(event.target.value))}
+              />
+              <span className="settings-value-badge">
+                {state.distantSurfaceSettings.connectionDistance === 0
+                  ? 'Off'
+                  : `${state.distantSurfaceSettings.connectionDistance} m`}
+              </span>
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-label-group">
+              <span className="settings-desc">Recommended: all tiers on · 400 / 600 / 800 / 1000 / 1600m · full-world limit · connections 4000m</span>
+            </div>
+            <button className="small-btn" disabled={distantLodDisabled} onClick={() => spaceUiStore.resetDistantSurfaceSettings()}>
+              Reset Recommended
+            </button>
           </div>
         </div>
         <div className="settings-section">

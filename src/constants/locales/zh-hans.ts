@@ -909,9 +909,9 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
     space_page: {
         title: 'EntropyDrop Space',
         eyebrow: '可游玩原型',
-        platform: 'WebGL 2 · 体素物理 · 环面拓扑',
+        platform: 'WebGL 2 · 体素物理 · 地球 / 甜甜圈地形',
         tagline: 'AI 辅助建造与自动控制的体素物理世界',
-        description: '在无边界的环面甜甜圈几何世界中自由雕刻体素，一键将结构实体化为物理刚体。借助 AI 辅助快速建造复杂结构与机械，挂载 AI 智能体实现全自动动力巡航与行为控制，在现代浏览器中开启高自由度的体素物理创造实验。',
+        description: '默认在地球模式中自由雕刻体素，也可随时在设置中切换为无边界的环面甜甜圈地形。一键将结构实体化为物理刚体，借助 AI 辅助快速建造复杂机械，并挂载 AI 智能体实现全自动动力巡航与行为控制。',
         primaryCta: '进入 Space 世界',
         offlineCta: '离线模式',
         secondaryCta: '核心特性',
@@ -919,7 +919,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             scale: '0.2m 精细微雕',
             physics: '体素物理引擎',
             programmable: 'AI 辅助建造 & 自动控制',
-            torus: '环面无边几何'
+            torus: '地球 / 甜甜圈模式'
         },
         heroPreview: {
             title: 'Space 实时运行视口',
@@ -951,11 +951,11 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                 placeholderTitle: 'AI 辅助建造与自动控制终端截图'
             },
             {
-                tag: '无界几何',
-                title: '环面拓扑与无界漫游',
-                description: '基于环面（Torus，甜甜圈形状）几何打造的无边界宇宙，无任何空气墙阻隔，向任意方向全速漫游都将自然折跃循环相连。',
-                badge: 'Torus Topology // 甜甜圈',
-                placeholderTitle: '无缝环面宇宙与弯曲视效截图'
+                tag: '可切换地形',
+                title: '地球 / 甜甜圈地形模式',
+                description: '默认以地球模式呈现球形地平线，也可随时在设置中切换为无边界的环面甜甜圈拓扑；两种模式都保留连续漫游体验，没有空气墙阻隔。',
+                badge: 'Earth / Torus // 随时切换',
+                placeholderTitle: '地球与甜甜圈地形切换截图'
             }
         ],
         agentDevTitle: '核心技术与创作者生态',

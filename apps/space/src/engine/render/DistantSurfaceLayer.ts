@@ -10,11 +10,130 @@ const FINE_SAMPLES_PER_CHUNK_AXIS = CHUNK_SIZE / FINE_SAMPLE_SIZE;
 const MAX_SURFACE_INSTANCES = 512 * 1024;
 const MAX_SURFACE_CONNECTIONS = 1024 * 1024;
 const LOD_SAMPLE_SIZES = [2, 4, 8, 16, 32, 64] as const;
-const LOD_DISTANCE_BANDS = [400, 600, 800, 1000, 1600] as const;
-const CONNECTED_SURFACE_RADIUS = 4000;
 const FINE_WORLD_Z_AXIS = TORUS_SIZE_Z / FINE_SAMPLE_SIZE;
 const WORLD_CHUNKS_X = TORUS_SIZE_X / CHUNK_SIZE;
 const WORLD_CHUNKS_Z = TORUS_SIZE_Z / CHUNK_SIZE;
+const DISTANCE_STEP = 50;
+
+export interface DistantSurfaceSettings {
+  lod2Distance: number;
+  lod4Distance: number;
+  lod8Distance: number;
+  lod16Distance: number;
+  lod32Distance: number;
+  maxDistance: number;
+  connectionDistance: number;
+  lod2Enabled: boolean;
+  lod4Enabled: boolean;
+  lod8Enabled: boolean;
+  lod16Enabled: boolean;
+  lod32Enabled: boolean;
+  lod64Enabled: boolean;
+}
+
+export type DistantSurfaceSettingKey = keyof DistantSurfaceSettings;
+export type DistantSurfaceDistanceSettingKey =
+  | 'lod2Distance'
+  | 'lod4Distance'
+  | 'lod8Distance'
+  | 'lod16Distance'
+  | 'lod32Distance'
+  | 'maxDistance'
+  | 'connectionDistance';
+export type DistantSurfaceEnabledSettingKey =
+  | 'lod2Enabled'
+  | 'lod4Enabled'
+  | 'lod8Enabled'
+  | 'lod16Enabled'
+  | 'lod32Enabled'
+  | 'lod64Enabled';
+
+export const DEFAULT_DISTANT_SURFACE_SETTINGS: Readonly<DistantSurfaceSettings> = Object.freeze({
+  lod2Distance: 400,
+  lod4Distance: 600,
+  lod8Distance: 800,
+  lod16Distance: 1000,
+  lod32Distance: 1600,
+  maxDistance: 8500,
+  connectionDistance: 4000,
+  lod2Enabled: true,
+  lod4Enabled: true,
+  lod8Enabled: true,
+  lod16Enabled: true,
+  lod32Enabled: true,
+  lod64Enabled: true,
+});
+
+export const DISTANT_SURFACE_SETTING_LIMITS = Object.freeze({
+  lod2Distance: Object.freeze({ min: 100, max: 500, step: DISTANCE_STEP }),
+  lod4Distance: Object.freeze({ min: 150, max: 1000, step: DISTANCE_STEP }),
+  lod8Distance: Object.freeze({ min: 200, max: 1600, step: DISTANCE_STEP }),
+  lod16Distance: Object.freeze({ min: 250, max: 3000, step: DISTANCE_STEP }),
+  lod32Distance: Object.freeze({ min: 300, max: 8450, step: DISTANCE_STEP }),
+  maxDistance: Object.freeze({ min: 350, max: 8500, step: DISTANCE_STEP }),
+  connectionDistance: Object.freeze({ min: 0, max: 8500, step: 250 }),
+});
+
+const LOD_SETTING_KEYS = [
+  'lod2Distance',
+  'lod4Distance',
+  'lod8Distance',
+  'lod16Distance',
+  'lod32Distance',
+] as const;
+const LOD_ENABLED_KEYS = [
+  'lod2Enabled',
+  'lod4Enabled',
+  'lod8Enabled',
+  'lod16Enabled',
+  'lod32Enabled',
+  'lod64Enabled',
+] as const;
+const ORDERED_DISTANCE_KEYS = [...LOD_SETTING_KEYS, 'maxDistance'] as const;
+
+function snapDistance(value: unknown, fallback: number, step: number) {
+  const numeric = Number(value);
+  return Math.round((Number.isFinite(numeric) ? numeric : fallback) / step) * step;
+}
+
+export function normalizeDistantSurfaceSettings(
+  value: Partial<DistantSurfaceSettings> | null | undefined,
+): DistantSurfaceSettings {
+  const normalized = {} as DistantSurfaceSettings;
+  let previous = -DISTANCE_STEP;
+  for (const key of ORDERED_DISTANCE_KEYS) {
+    const limits = DISTANT_SURFACE_SETTING_LIMITS[key];
+    const candidate = snapDistance(
+      value?.[key],
+      DEFAULT_DISTANT_SURFACE_SETTINGS[key],
+      limits.step,
+    );
+    normalized[key] = Math.max(
+      limits.min,
+      previous + DISTANCE_STEP,
+      Math.min(limits.max, candidate),
+    );
+    previous = normalized[key];
+  }
+  for (const key of LOD_ENABLED_KEYS) {
+    normalized[key] = typeof value?.[key] === 'boolean'
+      ? value[key]
+      : DEFAULT_DISTANT_SURFACE_SETTINGS[key];
+  }
+  const connectionLimits = DISTANT_SURFACE_SETTING_LIMITS.connectionDistance;
+  normalized.connectionDistance = Math.max(
+    connectionLimits.min,
+    Math.min(
+      connectionLimits.max,
+      snapDistance(
+        value?.connectionDistance,
+        DEFAULT_DISTANT_SURFACE_SETTINGS.connectionDistance,
+        connectionLimits.step,
+      ),
+    ),
+  );
+  return normalized;
+}
 // Move the far topology anchor in 64 m increments. Ordinary chunk crossings
 // then avoid rebuilding roughly 190k surface cells; a separate ready mask
 // handles the exact per-chunk transition to detailed terrain.
@@ -273,11 +392,14 @@ function wrappedAxisDistanceToCell(
   return Math.max(0, centerDistance - cellSize / 2);
 }
 
-function desiredSampleSize(distance: number) {
-  for (let index = 0; index < LOD_DISTANCE_BANDS.length; index++) {
-    if (distance <= LOD_DISTANCE_BANDS[index]) return LOD_SAMPLE_SIZES[index];
+function desiredSampleSize(distance: number, settings: DistantSurfaceSettings): number | null {
+  const bands = ORDERED_DISTANCE_KEYS.map(key => settings[key]);
+  for (let index = 0; index < bands.length; index++) {
+    if (distance <= bands[index] && settings[LOD_ENABLED_KEYS[index]]) {
+      return LOD_SAMPLE_SIZES[index];
+    }
   }
-  return 64;
+  return null;
 }
 
 function quantizedChunkCenter(chunk: number, worldChunks: number) {
@@ -297,6 +419,7 @@ export class DistantSurfaceLayer {
   readonly loadedZones = new Set<string>();
   private readonly detailMaskData = new Uint8Array(WORLD_CHUNKS_X * WORLD_CHUNKS_Z);
   private readonly zones = new Map<string, StoredSurfaceZone>();
+  private settings = normalizeDistantSurfaceSettings(DEFAULT_DISTANT_SURFACE_SETTINGS);
   private offsets: Uint16Array | null = null;
   private heights: Uint16Array | null = null;
   private sizes: Uint8Array | null = null;
@@ -322,6 +445,7 @@ export class DistantSurfaceLayer {
   private connectionsDirty = true;
   private connectionBuildGeneration = 0;
   private connectionBuildPending = false;
+  private enabled = true;
   private centerChunkX = 0;
   private centerChunkZ = 0;
   private lodCenterKey = '';
@@ -351,11 +475,37 @@ export class DistantSurfaceLayer {
     this.mesh.receiveShadow = false;
     this.sideMesh = new THREE.Mesh(createSideGeometry(), createMaterial(this.detailMaskTexture, true));
     this.sideMesh.name = 'DistantSurfaceZoneConnections';
+    this.sideMesh.visible = false;
     this.sideMesh.frustumCulled = false;
     this.sideMesh.castShadow = false;
     this.sideMesh.receiveShadow = false;
     this.mesh.add(this.sideMesh);
     hookSceneMaterials(this.mesh);
+  }
+
+  private syncVisibility() {
+    this.mesh.visible = this.enabled && this.mesh.geometry.instanceCount > 0;
+    this.sideMesh.visible = this.enabled && this.sideMesh.geometry.instanceCount > 0;
+  }
+
+  setEnabled(enabled: boolean): boolean {
+    const next = Boolean(enabled);
+    if (next === this.enabled) return this.enabled;
+    this.enabled = next;
+    if (!next) {
+      this.connectionBuildGeneration++;
+      this.connectionBuildPending = false;
+      this.connectionsDirty = true;
+      this.syncVisibility();
+      return this.enabled;
+    }
+    if (this.zones.size > 0) this.rebuild();
+    else this.syncVisibility();
+    return this.enabled;
+  }
+
+  isEnabled(): boolean {
+    return this.enabled;
   }
 
   /**
@@ -440,7 +590,10 @@ export class DistantSurfaceLayer {
     const red = mip.colors[sourceIndex * 3];
     const green = mip.colors[sourceIndex * 3 + 1];
     const blue = mip.colors[sourceIndex * 3 + 2];
-    if (distance <= CONNECTED_SURFACE_RADIUS) {
+    if (
+      this.settings.connectionDistance > 0
+      && distance <= this.settings.connectionDistance
+    ) {
       this.connectedCells.push({ worldX, worldZ, cellSize, height, red, green, blue });
     }
     if (height === 0) return;
@@ -465,7 +618,9 @@ export class DistantSurfaceLayer {
     const dx = wrappedAxisDistanceToCell(playerX, worldX, cellSize, TORUS_SIZE_X);
     const dz = wrappedAxisDistanceToCell(playerZ, worldZ, cellSize, TORUS_SIZE_Z);
     const distance = Math.hypot(dx, dz);
-    if (cellSize > desiredSampleSize(distance)) {
+    const sampleSize = desiredSampleSize(distance, this.settings);
+    if (sampleSize === null) return;
+    if (cellSize > sampleSize) {
       const childSize = cellSize / 2;
       this.visitCell(zone, localX, localZ, childSize);
       this.visitCell(zone, localX + childSize, localZ, childSize);
@@ -614,7 +769,7 @@ export class DistantSurfaceLayer {
     }
     this.sideMesh.geometry.instanceCount = this.sideWriteIndex;
     this.uploadRange(this.sideMesh, 0, Math.max(this.sideWriteIndex, previousCount), true);
-    this.sideMesh.visible = this.sideWriteIndex > 0;
+    this.syncVisibility();
     this.connectionsDirty = false;
     this.connectionBuildPending = false;
   }
@@ -739,7 +894,7 @@ export class DistantSurfaceLayer {
       }
       this.mesh.geometry.instanceCount = this.writeIndex;
       this.uploadRange(this.mesh, 0, Math.max(this.writeIndex, previousTopCount), true);
-      this.mesh.visible = this.writeIndex > 0;
+      this.syncVisibility();
       this.finishConnectionUpload(previousCount);
     })().catch(error => {
       if (generation !== this.connectionBuildGeneration) return;
@@ -786,7 +941,7 @@ export class DistantSurfaceLayer {
     }
     this.mesh.geometry.instanceCount = this.writeIndex;
     this.uploadRange(this.mesh, 0, Math.max(this.writeIndex, previousCount), true);
-    this.mesh.visible = this.writeIndex > 0;
+    this.syncVisibility();
     if (this.connectionsReady) {
       this.rebuildConnections();
     } else {
@@ -821,6 +976,7 @@ export class DistantSurfaceLayer {
     this.zones.set(key, stored);
     this.loadedZones.add(key);
     this.connectionsDirty = true;
+    if (!this.enabled) return;
     if (replacing) {
       this.rebuild();
       return;
@@ -829,7 +985,7 @@ export class DistantSurfaceLayer {
     this.appendZone(stored);
     this.mesh.geometry.instanceCount = this.writeIndex;
     this.uploadRange(this.mesh, start, this.writeIndex - start);
-    this.mesh.visible = this.writeIndex > 0;
+    this.syncVisibility();
     if (this.connectionsReady) void this.scheduleConnectionRebuild();
   }
 
@@ -837,6 +993,7 @@ export class DistantSurfaceLayer {
     if (this.connectionsReady && !this.connectionsDirty) return;
     if (this.connectionsReady && this.connectionBuildPending) return;
     this.connectionsReady = true;
+    if (!this.enabled) return;
     await this.scheduleConnectionRebuild();
   }
 
@@ -845,7 +1002,25 @@ export class DistantSurfaceLayer {
     if (!this.zones.delete(key)) return;
     this.loadedZones.delete(key);
     this.connectionsDirty = true;
+    if (!this.enabled) return;
     this.rebuild();
+  }
+
+  getSettings(): DistantSurfaceSettings {
+    return { ...this.settings };
+  }
+
+  setSettings(value: Partial<DistantSurfaceSettings>): DistantSurfaceSettings {
+    const next = normalizeDistantSurfaceSettings({ ...this.settings, ...value });
+    const changed = (Object.keys(next) as DistantSurfaceSettingKey[])
+      .some(key => next[key] !== this.settings[key]);
+    if (!changed) return this.getSettings();
+    this.settings = next;
+    if (this.enabled && this.zones.size > 0) {
+      if (this.connectionsReady) this.scheduleRebuild();
+      else this.rebuild();
+    }
+    return this.getSettings();
   }
 
   setNearField(centerChunkX: number, centerChunkZ: number, _renderDistance: number) {
@@ -856,7 +1031,7 @@ export class DistantSurfaceLayer {
     this.centerChunkX = lodCenterChunkX;
     this.centerChunkZ = lodCenterChunkZ;
     this.lodCenterKey = nextLodCenterKey;
-    if (this.zones.size > 0) {
+    if (this.enabled && this.zones.size > 0) {
       // Progressive zone installation writes into the same staging arrays, so
       // only defer topology moves after the initial snapshot set is complete.
       if (this.connectionsReady) this.scheduleRebuild();

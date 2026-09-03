@@ -251,15 +251,15 @@ class Game {
     this.terrainAreaRetryAt = 0;
 
     // 5. Initial Spawn & Worldgen
-    this.initializeSpawn(session);
+    const spawnAdjusted = this.initializeSpawn(session);
     // bootstrapSpace already loaded this window. If a first-entry random spawn
     // crosses into an adjacent tile, the first frame will fetch that tile too.
-    this.lastSavedPlayerPosition = session.player.resumed
+    this.lastSavedPlayerPosition = session.player.resumed && !spawnAdjusted
       ? JSON.stringify(this.currentPlayerPosition())
       : '';
     this.installPlayerPositionPersistence();
-    // A random first-entry position is sampled on the client; persist it immediately to DB.
-    if (!session.player.resumed) this.queuePlayerPositionSave(true);
+    // Persist a first-entry position or a recovered embedded spawn immediately.
+    if (!session.player.resumed || spawnAdjusted) this.queuePlayerPositionSave(true);
 
     // 5b. Multiplayer Synchronizer (Real-time player presence & terrain updates)
     this.multiplayerSync = null;
@@ -318,8 +318,7 @@ class Game {
     // Pre-generate initial chunks around the restored position.
     this.world.updateChunksAround(pose.x, pose.z);
 
-    this.playerPhysics.position.set(pose.x, pose.y, pose.z);
-    this.playerPhysics.resetRenderInterpolation();
+    const spawnAdjusted = this.playerPhysics.setInitialPosition(pose.x, pose.y, pose.z);
     this.sceneRenderer.camera.position.copy(this.playerPhysics.getEyePosition());
 
     // The initial view follows the inner-ring horizon; look up through the central hole to see the opposite surface.
@@ -327,6 +326,7 @@ class Game {
     this.controller.pitch = 0;
     this.sceneRenderer.camera.rotation.set(this.controller.pitch, this.controller.yaw, 0, 'YXZ');
 
+    return spawnAdjusted;
   }
 
   currentPlayerPosition() {

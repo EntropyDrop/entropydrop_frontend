@@ -8,7 +8,11 @@ import {
   SURFACE_ZONE_HEADER_BYTES,
   SURFACE_ZONE_RECORD_BYTES,
 } from '../src/bootstrap/SpaceSurfaceSnapshot.ts';
-import { DistantSurfaceLayer } from '../src/engine/render/DistantSurfaceLayer.ts';
+import {
+  DISTANT_SURFACE_SETTING_LIMITS,
+  DistantSurfaceLayer,
+  normalizeDistantSurfaceSettings,
+} from '../src/engine/render/DistantSurfaceLayer.ts';
 
 function makeZoneBytes(zoneX = 0, zoneZ = 0, filled = false) {
   const records = 32 * 32 * 8 * 8;
@@ -48,6 +52,84 @@ test('surface-zone binary parsing preserves identity, heights and colors', () =>
   assert.equal(zone.heightsMicro[0], 85);
   assert.deepEqual([...zone.colors.subarray(0, 3)], [0x71, 0x8f, 0x61]);
   assert.throws(() => parseSurfaceZoneSnapshot(makeZoneBytes().subarray(0, 40)), /snapshot/);
+});
+
+test('distant-surface settings snap to safe ordered thresholds', () => {
+  assert.deepEqual(normalizeDistantSurfaceSettings({
+    lod2Distance: 999,
+    lod4Distance: 100,
+    lod8Distance: 100,
+    lod16Distance: 100,
+    lod32Distance: 100,
+    maxDistance: 100,
+    connectionDistance: -100,
+    lod4Enabled: false,
+  }), {
+    lod2Distance: 500,
+    lod4Distance: 550,
+    lod8Distance: 600,
+    lod16Distance: 650,
+    lod32Distance: 700,
+    maxDistance: 750,
+    connectionDistance: 0,
+    lod2Enabled: true,
+    lod4Enabled: false,
+    lod8Enabled: true,
+    lod16Enabled: true,
+    lod32Enabled: true,
+    lod64Enabled: true,
+  });
+});
+
+test('disabled LOD tiers fall through to the next enabled tier and the limit culls farther cells', () => {
+  const layer = new DistantSurfaceLayer();
+  layer.setNearField(0, 0, 8);
+  layer.setSettings({ lod2Enabled: false, lod4Enabled: false, maxDistance: 1650 });
+  layer.installZone(parseSurfaceZoneSnapshot(makeZoneBytes(0, 0, true)));
+  assert.equal(layer.mesh.geometry.getAttribute('surfaceSize').getX(0), 8);
+
+  const limited = new DistantSurfaceLayer();
+  limited.setNearField(0, 0, 8);
+  limited.setSettings({ maxDistance: 1650 });
+  limited.installZone(parseSurfaceZoneSnapshot(makeZoneBytes(4, 0, true)));
+  assert.equal(limited.mesh.geometry.instanceCount, 0);
+});
+
+test('settings can extend the 32 metre tier and rebuild the live topology', async () => {
+  const layer = new DistantSurfaceLayer();
+  layer.setNearField(0, 0, 8);
+  const settings = layer.setSettings({ lod32Distance: 3000, connectionDistance: 0 });
+  assert.equal(settings.lod32Distance, 3000);
+  assert.equal(settings.connectionDistance, 0);
+  layer.installZone(parseSurfaceZoneSnapshot(makeZoneBytes(4, 0, true)));
+  await layer.finalizeConnections();
+
+  const sizes = layer.mesh.geometry.getAttribute('surfaceSize');
+  assert.equal(sizes.getX(0), 32);
+  assert.equal(layer.sideMesh.geometry.instanceCount, 0);
+});
+
+test('maximum exposed LOD controls remain within the surface instance budget', async () => {
+  const layer = new DistantSurfaceLayer();
+  layer.setNearField(512, 64, 8);
+  layer.setSettings({
+    lod2Distance: DISTANT_SURFACE_SETTING_LIMITS.lod2Distance.max,
+    lod4Distance: DISTANT_SURFACE_SETTING_LIMITS.lod4Distance.max,
+    lod8Distance: DISTANT_SURFACE_SETTING_LIMITS.lod8Distance.max,
+    lod16Distance: DISTANT_SURFACE_SETTING_LIMITS.lod16Distance.max,
+    lod32Distance: DISTANT_SURFACE_SETTING_LIMITS.lod32Distance.max,
+    maxDistance: DISTANT_SURFACE_SETTING_LIMITS.maxDistance.max,
+    connectionDistance: 0,
+  });
+  const template = parseSurfaceZoneSnapshot(makeZoneBytes(0, 0, true));
+  for (let zoneX = 0; zoneX < 32; zoneX++) {
+    for (let zoneZ = 0; zoneZ < 4; zoneZ++) {
+      layer.installZone({ ...template, zoneX, zoneZ });
+    }
+  }
+  await layer.finalizeConnections();
+
+  assert.ok(layer.mesh.geometry.instanceCount < 512 * 1024);
 });
 
 test('adaptive surface emits 2/4/8/16/32/64 metre tiers instead of every fine sample', async () => {

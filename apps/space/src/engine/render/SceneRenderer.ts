@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import {
   applyCameraBend, hookSceneMaterials, cullChunks,
   bendPoint, bendDirection, unbendPoint, unbendDirection,
-  TORUS_SIZE_X, TORUS_SIZE_Z, unwrapPeriodicNear, wrapX, wrapZ
+  TORUS_SIZE_X, TORUS_SIZE_Z, unwrapPeriodicNear, wrapX, wrapZ,
+  getWorldShapeMode, setWorldProjectionAnchor,
+  setWorldShapeMode as setGlobalWorldShapeMode,
+  type WorldShapeMode,
 } from '../torus/TorusWorld.ts';
 import { CuteCharacter, loadCuteCharacter, type SkinModel } from './CuteCharacter.ts';
 import {
@@ -2391,6 +2394,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   }
 
   update(dt, playerPos, playerYaw = 0, playerMotion: any = null) {
+    setWorldProjectionAnchor(playerPos.x, playerPos.z);
     // Update player avatar when in third-person view
     this.updatePlayerAvatar(playerPos, playerYaw, dt, playerMotion);
 
@@ -2426,6 +2430,21 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
 
   setWorld(world) {
     this.world = world;
+  }
+
+  setWorldShapeMode(mode: WorldShapeMode) {
+    this.materialScanCountdown = 0;
+    const value = setGlobalWorldShapeMode(mode);
+    this.world?.setDistantSurfaceEnabled?.(value !== 'earth');
+    // Curved interpolated normals need a small receiver offset to avoid
+    // self-shadow striping. Donut mode keeps its established bias unchanged.
+    this.sunLight.shadow.normalBias = value === 'earth' ? 0.025 : 0;
+    this.sunLight.shadow.needsUpdate = true;
+    return value;
+  }
+
+  getWorldShapeMode(): WorldShapeMode {
+    return getWorldShapeMode();
   }
 
   render() {

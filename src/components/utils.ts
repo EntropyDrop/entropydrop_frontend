@@ -1,4 +1,6 @@
 
+import type { SkinImageSource } from '../utils/skin2dRenderer'
+
 type Skin2DOptions = {
     scale?: number
     showOverlay?: boolean
@@ -14,7 +16,7 @@ const DEFAULT_SKIN_2D_OPTIONS = {
 const MAX_SKIN_2D_CACHE_SIZE = 240
 const skin2DCache = new Map<string, Promise<HTMLCanvasElement>>()
 const skinAvatarCache = new Map<string, Promise<HTMLCanvasElement>>()
-let canvas2DRendererPromise: Promise<typeof import("@daidr/minecraft-skin-renderer/canvas2d")> | null = null
+let skin2DRendererPromise: Promise<typeof import('../utils/skin2dRenderer')> | null = null
 
 function getSkin2DCacheKey(imgSrc: string, options: Required<Skin2DOptions>) {
     return `${imgSrc}|s:${options.scale}|o:${Number(options.showOverlay)}|i:${Number(options.overlayInflated)}`
@@ -40,9 +42,9 @@ function rememberSkinAvatarRender(key: string, promise: Promise<HTMLCanvasElemen
     }
 }
 
-function getCanvas2DRenderer() {
-    canvas2DRendererPromise ??= import("@daidr/minecraft-skin-renderer/canvas2d")
-    return canvas2DRendererPromise
+function getSkin2DRenderer() {
+    skin2DRendererPromise ??= import('../utils/skin2dRenderer')
+    return skin2DRendererPromise
 }
 
 function getImageDataFromDrawable(source: CanvasImageSource & { width: number; height: number }) {
@@ -70,14 +72,16 @@ export const isSlim = (img: CanvasImageSource & { width: number; height: number 
     return getSlimFromImageData(getImageDataFromDrawable(img))
 }
 
-async function loadImageDataFromBlob(blob: Blob) {
+async function loadDrawableFromBlob(blob: Blob): Promise<{
+    source: SkinImageSource
+    dispose: () => void
+}> {
     if ('createImageBitmap' in window) {
         try {
             const bitmap = await createImageBitmap(blob)
-            try {
-                return getImageDataFromDrawable(bitmap)
-            } finally {
-                bitmap.close()
+            return {
+                source: bitmap,
+                dispose: () => bitmap.close(),
             }
         } catch (err) {
             console.warn('createImageBitmap failed for skin, falling back to Image:', err)
@@ -94,29 +98,32 @@ async function loadImageDataFromBlob(blob: Blob) {
             img.src = blobUrl
         })
 
-        return getImageDataFromDrawable(image)
+        return {
+            source: image,
+            dispose: () => undefined,
+        }
     } finally {
         URL.revokeObjectURL(blobUrl)
     }
 }
 
 async function renderSkin2D(imgSrc: string, options: Required<Skin2DOptions>) {
-    const { renderSkinIsometric } = await getCanvas2DRenderer()
+    const rendererPromise = getSkin2DRenderer()
 
     // Fetch as a blob so presigned/private URLs and CDN URLs follow the same path.
     const response = await fetch(imgSrc)
     if (!response.ok) throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`)
 
-    const imageData = await loadImageDataFromBlob(await response.blob())
+    const [decoded, { renderSkinIsometricFast }] = await Promise.all([
+        loadDrawableFromBlob(await response.blob()),
+        rendererPromise,
+    ])
     const canvas = document.createElement('canvas')
-
-    await renderSkinIsometric(canvas, {
-        skin: imageData,
-        slim: getSlimFromImageData(imageData),
-        scale: options.scale,
-        showOverlay: options.showOverlay,
-        overlayInflated: options.overlayInflated,
-    })
+    try {
+        renderSkinIsometricFast(canvas, decoded.source, options)
+    } finally {
+        decoded.dispose()
+    }
 
     const size = Math.max(canvas.width, canvas.height)
     const squareCanvas = document.createElement('canvas')
@@ -154,21 +161,20 @@ export async function Skin2D(imgSrc: string, options: Skin2DOptions = {}): Promi
 }
 
 async function renderSkinAvatar(imgSrc: string, options: Required<Skin2DOptions>) {
-    const { renderAvatar } = await getCanvas2DRenderer()
-
+    const rendererPromise = getSkin2DRenderer()
     const response = await fetch(imgSrc)
     if (!response.ok) throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`)
 
-    const imageData = await loadImageDataFromBlob(await response.blob())
+    const [decoded, { renderSkinAvatarFast }] = await Promise.all([
+        loadDrawableFromBlob(await response.blob()),
+        rendererPromise,
+    ])
     const canvas = document.createElement('canvas')
-
-    await renderAvatar(canvas, {
-        skin: imageData,
-        slim: getSlimFromImageData(imageData),
-        scale: options.scale,
-        showOverlay: options.showOverlay,
-        overlayInflated: options.overlayInflated,
-    })
+    try {
+        renderSkinAvatarFast(canvas, decoded.source, options)
+    } finally {
+        decoded.dispose()
+    }
 
     return canvas
 }

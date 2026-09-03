@@ -14,7 +14,23 @@ import {
   SpecialTool,
   type PlayerPerspective
 } from '../../../engine/controls/PlayerController.ts';
-import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../../../engine/torus/TorusWorld.ts';
+import {
+  DEFAULT_WORLD_SHAPE_MODE,
+  getWorldShapeMode,
+  normalizeWorldShapeMode,
+  setWorldShapeMode as setGlobalWorldShapeMode,
+  TORUS_SIZE_X,
+  TORUS_SIZE_Z,
+  wrapX,
+  wrapZ,
+  type WorldShapeMode,
+} from '../../../engine/torus/TorusWorld.ts';
+import {
+  DEFAULT_DISTANT_SURFACE_SETTINGS,
+  normalizeDistantSurfaceSettings,
+  type DistantSurfaceSettingKey,
+  type DistantSurfaceSettings,
+} from '../../../engine/render/DistantSurfaceLayer.ts';
 import { triggerProtobufDownload } from '../browser/downloadProtobuf.ts';
 import { colorToHex, normalizeColor, PRESET_COLORS } from '../../../engine/voxel/BlockTypes.ts';
 import { SpaceApiKeyClient } from '../../../bootstrap/SpaceApiKeyClient.ts';
@@ -165,7 +181,9 @@ export interface SpaceUiSnapshot {
   perspective: PlayerPerspective;
   cameraDistance: number;
   gravity: number;
+  worldShapeMode: WorldShapeMode;
   renderDistance: number;
+  distantSurfaceSettings: DistantSurfaceSettings;
   resolutionScaleMode: ResolutionScaleSetting;
   resolutionScale: number;
   resolutionPixelRatio: number;
@@ -307,7 +325,9 @@ export class SpaceUiStore {
     perspective: 'first_person',
     cameraDistance: 4,
     gravity: -18,
+    worldShapeMode: DEFAULT_WORLD_SHAPE_MODE,
     renderDistance: 12,
+    distantSurfaceSettings: { ...DEFAULT_DISTANT_SURFACE_SETTINGS },
     resolutionScaleMode: 'auto',
     resolutionScale: 1,
     resolutionPixelRatio: 1,
@@ -417,7 +437,23 @@ export class SpaceUiStore {
   }
 
   setWorld(world: any): void {
-    this.patch({ world, renderDistance: Number(world?.renderDistance || 12) });
+    let distantSurfaceSettings = normalizeDistantSurfaceSettings(
+      world?.getDistantSurfaceSettings?.() || DEFAULT_DISTANT_SURFACE_SETTINGS,
+    );
+    try {
+      const saved = localStorage.getItem('space_setting_distant_surface');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        distantSurfaceSettings = world?.setDistantSurfaceSettings?.(parsed)
+          || normalizeDistantSurfaceSettings(parsed);
+      }
+    } catch { }
+    this.patch({
+      world,
+      renderDistance: Number(world?.renderDistance || 12),
+      distantSurfaceSettings,
+    });
+    world?.setDistantSurfaceEnabled?.(this.snapshot.worldShapeMode !== 'earth');
     try {
       const saved = localStorage.getItem('space_setting_render_dist');
       if (saved) this.setRenderDistance(Number(saved), false);
@@ -453,13 +489,18 @@ export class SpaceUiStore {
       };
     }
     let setting: ResolutionScaleSetting = 'auto';
+    let worldShapeMode = getWorldShapeMode();
     try {
       setting = normalizeResolutionScaleSetting(localStorage.getItem('space_setting_resolution_scale'));
+      worldShapeMode = normalizeWorldShapeMode(localStorage.getItem('space_setting_world_shape'));
     } catch { }
+    setGlobalWorldShapeMode(worldShapeMode);
+    sceneRenderer?.setWorldShapeMode?.(worldShapeMode);
+    this.snapshot.world?.setDistantSurfaceEnabled?.(worldShapeMode !== 'earth');
     const state = sceneRenderer?.setResolutionScale?.(
       setting === 'auto' ? 'auto' : Number(setting)
     ) || sceneRenderer?.getResolutionScaleState?.();
-    this.patch({ sceneRenderer, ...resolutionSnapshot(state) });
+    this.patch({ sceneRenderer, worldShapeMode, ...resolutionSnapshot(state) });
   }
 
   setNavigationSystem(navigationSystem: any): void {
@@ -1397,7 +1438,11 @@ export class SpaceUiStore {
       fov: Number(controller.fov || 75),
       perspective: controller.perspective || 'first_person',
       cameraDistance: Number(controller.thirdPersonDistance || 4),
+      worldShapeMode: sceneRenderer?.getWorldShapeMode?.() || getWorldShapeMode(),
       renderDistance: Number(world?.renderDistance || this.snapshot.renderDistance),
+      distantSurfaceSettings: normalizeDistantSurfaceSettings(
+        world?.getDistantSurfaceSettings?.() || this.snapshot.distantSurfaceSettings,
+      ),
       ...resolution,
       isMuted
     });
@@ -1449,11 +1494,46 @@ export class SpaceUiStore {
     this.showToast(`Gravity set to ${value} m/s²`);
   }
 
+  setWorldShapeMode(mode: WorldShapeMode, persist = true): void {
+    const value = normalizeWorldShapeMode(mode);
+    setGlobalWorldShapeMode(value);
+    this.snapshot.sceneRenderer?.setWorldShapeMode?.(value);
+    this.snapshot.world?.setDistantSurfaceEnabled?.(value !== 'earth');
+    this.patch({ worldShapeMode: value });
+    if (persist) {
+      try { localStorage.setItem('space_setting_world_shape', value); } catch { }
+      this.showToast(value === 'earth' ? 'Earth mode enabled' : 'Donut mode enabled');
+    }
+  }
+
   setRenderDistance(distance: number, persist = true): void {
     const value = Math.max(4, Math.min(20, Number(distance) || 12));
     this.snapshot.world?.setRenderDistance?.(value);
     this.patch({ renderDistance: value });
     if (persist) try { localStorage.setItem('space_setting_render_dist', String(value)); } catch { }
+  }
+
+  setDistantSurfaceSetting(
+    key: DistantSurfaceSettingKey,
+    setting: number | boolean,
+    persist = true,
+  ): void {
+    const candidate = { ...this.snapshot.distantSurfaceSettings, [key]: setting };
+    const value = this.snapshot.world?.setDistantSurfaceSettings?.(candidate)
+      || normalizeDistantSurfaceSettings(candidate);
+    this.patch({ distantSurfaceSettings: value });
+    if (persist) {
+      try { localStorage.setItem('space_setting_distant_surface', JSON.stringify(value)); } catch { }
+    }
+  }
+
+  resetDistantSurfaceSettings(): void {
+    const value = this.snapshot.world?.setDistantSurfaceSettings?.(
+      DEFAULT_DISTANT_SURFACE_SETTINGS,
+    ) || normalizeDistantSurfaceSettings(DEFAULT_DISTANT_SURFACE_SETTINGS);
+    this.patch({ distantSurfaceSettings: value });
+    try { localStorage.setItem('space_setting_distant_surface', JSON.stringify(value)); } catch { }
+    this.showToast('Distant terrain LOD restored to recommended defaults');
   }
 
   setResolutionScale(setting: ResolutionScaleSetting | number, persist = true): void {

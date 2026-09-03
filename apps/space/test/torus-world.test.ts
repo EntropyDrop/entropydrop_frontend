@@ -6,11 +6,24 @@ import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 import { CHUNK_SIZE_Y } from '../src/engine/voxel/Chunk.ts';
 import {
   TORUS_SIZE_X, TORUS_SIZE_Z, TORUS_R, TORUS_RHO, TORUS_GREF,
-  TORUS_SPAWN_X, TORUS_SPAWN_Z,
+  TORUS_SPAWN_X, TORUS_SPAWN_Z, EARTH_R, DEFAULT_WORLD_SHAPE_MODE,
   wrapX, wrapZ, wrapChunkX, wrapChunkZ,
   bendPoint, unbendPoint, bendDirection, unbendDirection, bendFrameQuaternion,
+  getWorldShapeMode, normalizeWorldShapeMode, setWorldProjectionAnchor, setWorldShapeMode,
   hookSceneMaterials
 } from '../src/engine/torus/TorusWorld.ts';
+
+test('world shape defaults to earth while preserving an explicit torus choice', () => {
+  try {
+    assert.equal(DEFAULT_WORLD_SHAPE_MODE, 'earth');
+    assert.equal(getWorldShapeMode(), 'earth');
+    assert.equal(normalizeWorldShapeMode(null), 'earth');
+    assert.equal(normalizeWorldShapeMode('torus'), 'torus');
+  } finally {
+    // The remaining geometry tests explicitly exercise the original torus projection.
+    setWorldShapeMode('torus');
+  }
+});
 
 test('torus wrap: coordinates normalize into [0, size)', () => {
   assert.equal(wrapX(16384), 0);
@@ -57,6 +70,55 @@ test('torus frame is orthonormal and direction conversion round-trips', () => {
   assert.ok(back.distanceTo(flatDir) < 1e-4, 'locally linearized direction conversion should be reversible');
 });
 
+test('earth mode keeps the local world metric and coordinate conversion stable', () => {
+  setWorldShapeMode('earth');
+  setWorldProjectionAnchor(TORUS_SPAWN_X, TORUS_SPAWN_Z);
+  try {
+    assert.equal(getWorldShapeMode(), 'earth');
+    const origin = bendPoint(TORUS_SPAWN_X, TORUS_GREF, TORUS_SPAWN_Z);
+    assert.ok(origin.distanceTo(new THREE.Vector3(EARTH_R, 0, 0)) < 1e-6);
+
+    const xStep = origin.distanceTo(bendPoint(TORUS_SPAWN_X + 1, TORUS_GREF, TORUS_SPAWN_Z));
+    const zStep = origin.distanceTo(bendPoint(TORUS_SPAWN_X, TORUS_GREF, TORUS_SPAWN_Z + 1));
+    assert.ok(Math.abs(xStep - 1) < 1e-4, `earth X step should remain one metre, got ${xStep}`);
+    assert.ok(Math.abs(zStep - 1) < 1e-4, `earth Z step should remain one metre, got ${zStep}`);
+
+    const flat = new THREE.Vector3(TORUS_SPAWN_X + 12, 27, TORUS_SPAWN_Z - 9);
+    const bent = bendPoint(flat.x, flat.y, flat.z);
+    const roundTrip = unbendPoint(bent.x, bent.y, bent.z);
+    assert.ok(roundTrip.distanceTo(flat) < 1e-4, 'earth projection should invert near the active player');
+
+    const direction = new THREE.Vector3(0.3, 0.4, -0.5).normalize();
+    const bentDirection = bendDirection(flat.x, flat.y, flat.z, direction);
+    const restoredDirection = unbendDirection(flat.x, flat.y, flat.z, bentDirection);
+    assert.ok(restoredDirection.distanceTo(direction) < 1e-4, 'earth tangent frame should round-trip directions');
+
+    const frame = bendFrameQuaternion(TORUS_SPAWN_X, TORUS_GREF, TORUS_SPAWN_Z);
+    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(frame);
+    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(frame);
+    const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(frame);
+    assert.ok(cameraRight.distanceTo(new THREE.Vector3(0, 0, -1)) < 1e-4,
+      'earth camera right must match the torus frame at the player');
+    assert.ok(cameraUp.distanceTo(new THREE.Vector3(1, 0, 0)) < 1e-4,
+      'earth camera up must follow the globe surface normal');
+    assert.ok(cameraForward.distanceTo(new THREE.Vector3(0, 1, 0)) < 1e-4,
+      'earth camera forward must preserve the player look direction');
+
+    const projectedSurface = bendPoint(flat.x, TORUS_GREF, flat.z).normalize();
+    const projectedUp = bendDirection(flat.x, TORUS_GREF, flat.z, new THREE.Vector3(0, 1, 0));
+    assert.ok(projectedUp.distanceTo(projectedSurface) < 1e-4,
+      'earth lighting normal must match the projected surface normal');
+
+    const beforeAnchorMove = bendPoint(flat.x, flat.y, flat.z);
+    setWorldProjectionAnchor(TORUS_SPAWN_X + 100, TORUS_SPAWN_Z + 100);
+    const afterAnchorMove = bendPoint(flat.x, flat.y, flat.z);
+    assert.ok(afterAnchorMove.distanceTo(beforeAnchorMove) < 1e-9,
+      'earth projection anchor must stay fixed while the player moves');
+  } finally {
+    setWorldShapeMode('torus');
+  }
+});
+
 test('torus world setBlock and getBlock wrap automatically', () => {
   const world = new World(new THREE.Scene()) as any;
   world.setBlock(-1, 10, -1, BlockTypes.COLOR_BLOCK, false, 0x48dbfb);
@@ -65,6 +127,17 @@ test('torus world setBlock and getBlock wrap automatically', () => {
   assert.equal(world.getBlockColor(-1, 10, -1), 0x48dbfb);
   // Equivalence: (-1,-1) ≡ (16383,2047), and (16384,2048) ≡ (0,0).
   assert.equal(world.getBlock(16384, 10, 2048), world.getBlock(0, 10, 0));
+});
+
+test('spawn preparation synchronously generates every chunk touched at a boundary', () => {
+  const world = new World(new THREE.Scene()) as any;
+  const prepared = world.preparePlayerSpawnArea(16, 16, 0.3);
+
+  assert.equal(prepared, 4);
+  assert.ok(world.getChunk(0, 0));
+  assert.ok(world.getChunk(0, 1));
+  assert.ok(world.getChunk(1, 0));
+  assert.ok(world.getChunk(1, 1));
 });
 
 test('torus world raycastBent hits a known block', () => {
@@ -187,6 +260,17 @@ test('torus rendering starts with no synthetic far terrain and preserves near-fi
   assert.ok(world.microVoxels.mesh.customDepthMaterial, 'new microvoxel mesh should get torus depth material immediately');
 });
 
+test('earth mode disables every distant terrain LOD and donut mode restores it', () => {
+  const world = new World(new THREE.Scene()) as any;
+  assert.equal(world.distantSurface.isEnabled(), true);
+  world.setDistantSurfaceEnabled(false);
+  assert.equal(world.distantSurface.isEnabled(), false);
+  assert.equal(world.distantSurface.mesh.visible, false);
+  assert.equal(world.distantSurface.sideMesh.visible, false);
+  world.setDistantSurfaceEnabled(true);
+  assert.equal(world.distantSurface.isEnabled(), true);
+});
+
 test('chunk streaming evicts procedural arrays but retains authored edits', () => {
   const world = new World(new THREE.Scene()) as any;
   world.setRenderDistance(3);
@@ -230,4 +314,28 @@ test('torus rendering avoids flat-space culling for runtime selections and entit
   assert.equal(selection.frustumCulled, false, 'GPU-bent selection wireframes must not use flat bounding spheres');
   assert.equal(entity.frustumCulled, false, 'GPU-bent entity meshes must not use flat bounding spheres');
   assert.equal(distant.frustumCulled, true, 'prebent LOD can use native bent-space culling');
+});
+
+test('earth shadows use the same live projection as visible geometry', () => {
+  const scene = new THREE.Scene();
+  const caster = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+  caster.castShadow = true;
+  scene.add(caster);
+  hookSceneMaterials(scene);
+
+  const shader: any = {
+    uniforms: {},
+    vertexShader: 'void main() { vec3 transformed = position; #include <project_vertex> }',
+  };
+  caster.customDepthMaterial.onBeforeCompile(shader, null);
+  assert.match(shader.vertexShader, /earthBend/);
+  assert.ok(shader.uniforms.uWorldProjectionAnchor, 'shadow depth shader needs the live earth anchor');
+
+  setWorldShapeMode('earth');
+  try {
+    assert.equal(shader.uniforms.uWorldShapeMode.value, 1,
+      'shadow depth shader must switch projection together with visible materials');
+  } finally {
+    setWorldShapeMode('torus');
+  }
 });

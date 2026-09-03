@@ -909,9 +909,9 @@ Email: support@entropydrop.com`
     space_page: {
         title: 'EntropyDrop Space',
         eyebrow: 'PLAYABLE PROTOTYPE',
-        platform: 'WebGL 2 · Voxel Physics · Torus Topology',
+        platform: 'WebGL 2 · Voxel Physics · Earth / Donut Terrain',
         tagline: 'AI-Assisted Building & Autonomous Control Voxel Universe',
-        description: 'Sculpt voxels across a seamless toroidal universe and turn structures into dynamic rigid bodies with one click. Leverage AI-assisted building to construct complex machinery and mount intelligent AI for autonomous control, cruising, and physical interaction directly in your browser.',
+        description: 'Sculpt voxels in Earth mode by default, or switch to the seamless torus donut terrain in Settings. Turn structures into dynamic rigid bodies with one click, use AI-assisted building to construct complex machinery, and mount intelligent AI for autonomous control, cruising, and physical interaction directly in your browser.',
         primaryCta: 'Enter Space',
         offlineCta: 'Play Offline',
         secondaryCta: 'Core Features',
@@ -919,7 +919,7 @@ Email: support@entropydrop.com`
             scale: '0.2m Micro Sculpting',
             physics: 'Voxel Physics Engine',
             programmable: 'AI Building & Auto Control',
-            torus: 'Seamless Torus'
+            torus: 'Earth / Donut Modes'
         },
         heroPreview: {
             title: 'Space Realtime Viewport',
@@ -951,11 +951,11 @@ Email: support@entropydrop.com`
                 placeholderTitle: 'AI Building & Autonomous Control Terminal Screenshot'
             },
             {
-                tag: 'SEAMLESS TORUS',
-                title: 'Seamless Torus Donut Topology',
-                description: 'A boundary-free toroidal universe without invisible walls. Moving in any direction wraps smoothly around the donut surface for endless exploration.',
-                badge: 'Torus Topology // Donut',
-                placeholderTitle: 'Seamless Torus Universe & Curved Horizon Screenshot'
+                tag: 'SWITCHABLE TERRAIN',
+                title: 'Earth & Donut Terrain Modes',
+                description: 'Explore a spherical Earth-style horizon by default, then switch to the boundary-free torus donut topology at any time in Settings. Both modes preserve continuous world travel without invisible walls.',
+                badge: 'Earth / Torus // Switchable',
+                placeholderTitle: 'Switchable Earth and Donut Terrain Screenshot'
             }
         ],
         agentDevTitle: 'Core Engine & Creator Ecosystem',

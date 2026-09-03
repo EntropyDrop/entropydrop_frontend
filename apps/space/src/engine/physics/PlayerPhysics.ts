@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BlockTypes } from '../voxel/BlockTypes.ts';
+import { CHUNK_SIZE_Y } from '../voxel/Chunk.ts';
 import type { World } from '../voxel/World.ts';
 
 const COLLISION_EPSILON = 1e-5;
@@ -127,6 +128,36 @@ export class PlayerPhysics {
     this.previousPosition.copy(this.position);
     this.renderSimulationPosition.copy(this.position);
     this.renderInterpolated = false;
+  }
+
+  /**
+   * Restore a player pose only after all terrain beneath its collision box is
+   * available. If the saved feet position is below the world or now intersects
+   * edited terrain, raise it to the first free height instead of leaving the
+   * character permanently embedded.
+   */
+  setInitialPosition(x: number, y: number, z: number) {
+    this.world.preparePlayerSpawnArea?.(x, z, this.width / 2);
+    const requestedY = Number(y) || 0;
+    const initialY = Math.max(0, requestedY);
+    this.position.set(x, initialY, z);
+    this.velocity.set(0, 0, 0);
+    this.isOnGround = false;
+    this.ridingContraption = null;
+    this.ridingBodyId = null;
+
+    let adjusted = initialY !== requestedY;
+    for (let attempt = 0; attempt < CHUNK_SIZE_Y + 2; attempt++) {
+      const overlaps = this.getIntersectingSolidBlocks(this.getAABB());
+      if (overlaps.length === 0) break;
+      const nextY = Math.max(...overlaps.map(block => block.y + (block.size || 1)));
+      if (!(nextY > this.position.y + COLLISION_EPSILON)) break;
+      this.position.y = nextY;
+      adjusted = true;
+    }
+
+    this.resetRenderInterpolation();
+    return adjusted;
   }
 
   capturePreviousPosition() {
