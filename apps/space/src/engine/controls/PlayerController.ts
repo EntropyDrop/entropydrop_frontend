@@ -9,7 +9,7 @@ import {
 } from '../contraption/Contraption.ts';
 import { ActionDomain, executeBasicAction } from '../actions/BasicActions.ts';
 import {
-  applyCameraBend, bendPoint, bendDirection, unbendPoint, unwrapPeriodicNear,
+  bendPoint, bendDirection, unbendPoint, unwrapPeriodicNear,
   TORUS_GREF, TORUS_SIZE_X, TORUS_SIZE_Z, TORUS_SPAWN_X, TORUS_SPAWN_Z,
   wrapMicroX, wrapMicroZ
 } from '../torus/TorusWorld.ts';
@@ -214,7 +214,7 @@ export const SpecialTool = {
   SPOON: 'spoon',           // 2. Spoon (carve 5x5x5 micro voxels)
   SELECTOR: 'selector',     // 3. Selector (world/component selection and copy)
   HAMMER: 'hammer',         // 4. Hammer (preview/place inventory items)
-  WRENCH: 'wrench',         // 5. Wrench (hold to grab, right start/stop)
+  WRENCH: 'wrench',         // 5. Wrench (show pivot XYZ, hold to grab, right start/stop)
   BRUSH: 'brush',           // 6. Brush (repaint block colors)
   PIPETTE: 'pipette',       // Legacy alias; color sampling is part of Brush
   SUPER_GLUE: 'selector'    // alias for backwards compatibility
@@ -277,7 +277,7 @@ export class PlayerController {
     }
     if (prev === SpecialTool.WRENCH && tool !== SpecialTool.WRENCH) {
       this.releaseWrenchGrab();
-      this.clearWrenchPivotInteraction(false);
+      this.clearWrenchPivotDisplay();
     }
     this._activeTool = tool;
   }
@@ -288,7 +288,6 @@ export class PlayerController {
   hoveredContraptionHit: any;
   wrenchGrab: any;
   wrenchPivotTarget: any;
-  wrenchPivotDrag: any;
   microCarvePreview: any;
   focusBlockPreview: any;
   boxSelectionPreview: any;
@@ -309,6 +308,7 @@ export class PlayerController {
   private hammerRotatedSlotCache: any;
   persistentStorage: SpaceStorage | null;
   bulkEditJob: BulkEditJob | null;
+  serverEntityRunStateHandler: ((contraption: any, state: 'running' | 'stopped') => Promise<any>) | null;
 
   // --- Camera / View Settings ---
   sceneRenderer: any;
@@ -341,6 +341,7 @@ export class PlayerController {
     this.ui = uiBridge;
     this.persistentStorage = persistentStorage;
     this.bulkEditJob = null;
+    this.serverEntityRunStateHandler = null;
     if (this.contraptions) this.contraptions.selectionHost = this;
 
     this.sceneRenderer = null;
@@ -382,7 +383,6 @@ export class PlayerController {
     this.hoveredContraptionHit = null;
     this.wrenchGrab = null;
     this.wrenchPivotTarget = null;
-    this.wrenchPivotDrag = null;
     this.microCarvePreview = null;
     // Selector focus block guide: { cellOrigin, active } | null
     this.focusBlockPreview = null;
@@ -430,7 +430,7 @@ export class PlayerController {
         this.pointerLockDesired = false;
         this.resetEntityInputState();
         this.releaseWrenchGrab();
-        this.clearWrenchPivotInteraction(false);
+        this.clearWrenchPivotDisplay();
       }
 
       // A pending request may finish after a modal has already called
@@ -509,11 +509,6 @@ export class PlayerController {
     document.addEventListener('mousemove', (e) => {
       if (!this.isLocked) return;
 
-      if (this.wrenchPivotDrag) {
-        this.updateWrenchPivotDrag(e.movementX, e.movementY);
-        return;
-      }
-
       this.yaw -= e.movementX * this.mouseSensitivity;
       this.pitch -= e.movementY * this.mouseSensitivity;
 
@@ -525,8 +520,7 @@ export class PlayerController {
 
     document.addEventListener('mouseup', (e) => {
       if (e.button !== 0) return;
-      if (this.wrenchPivotDrag) this.finishWrenchPivotDrag(true);
-      else this.releaseWrenchGrab();
+      this.releaseWrenchGrab();
     });
 
     // Mouse Clicks
@@ -696,7 +690,7 @@ export class PlayerController {
     window.addEventListener('blur', () => {
       this.resetEntityInputState();
       this.releaseWrenchGrab();
-      this.clearWrenchPivotInteraction(false);
+      this.clearWrenchPivotDisplay();
     });
 
     document.addEventListener('wheel', (e) => {
@@ -798,6 +792,10 @@ export class PlayerController {
       if (this.ui) this.ui.showToast(`Point directly at an assembled entity to program it.`);
       return false;
     }
+    if (target.serverManaged === true && target.serverCanEdit !== true) {
+      this.ui?.showToast?.('Published world entities are read-only; edit and republish the source resource');
+      return false;
+    }
 
     this.contraptions.activeProgrammingContraption = target;
     if (this.ui) this.ui.openCodeEditor(target);
@@ -816,16 +814,9 @@ export class PlayerController {
       return;
     }
 
-    // Wrench owns charged point grabbing while the left button is held.
+    // The pivot axes are informational only. Wrench left-click always keeps
+    // its single interaction: charged point grabbing while the button is held.
     if (this.activeTool === SpecialTool.WRENCH) {
-      if (this.wrenchPivotTarget?.hoveredOrigin) {
-        this.resetWrenchPivot();
-        return;
-      }
-      if (this.wrenchPivotTarget?.hoveredAxis) {
-        this.startWrenchPivotDrag();
-        return;
-      }
       this.startWrenchGrab();
       return;
     }
@@ -1306,7 +1297,8 @@ export class PlayerController {
   }
 
   canEditEntityInternals(contraption) {
-    return !!contraption && (typeof contraption.canEditInternalSelection === 'function'
+    return !!contraption && (contraption.serverManaged !== true || contraption.serverCanEdit === true)
+      && (typeof contraption.canEditInternalSelection === 'function'
       ? contraption.canEditInternalSelection()
       : contraption.scriptStatus === 'stopped');
   }
@@ -3668,12 +3660,6 @@ export class PlayerController {
     return true;
   }
 
-  private wrenchPivotAxisVector(axis: string) {
-    if (axis === 'x') return new THREE.Vector3(1, 0, 0);
-    if (axis === 'y') return new THREE.Vector3(0, 1, 0);
-    return new THREE.Vector3(0, 0, 1);
-  }
-
   private refreshWrenchPivotTargetPose(target = this.wrenchPivotTarget) {
     if (!target?.contraption) return null;
     const contraption = target.contraption;
@@ -3683,7 +3669,6 @@ export class PlayerController {
       || contraption.entityNodes?.get?.(target.nodeId);
     if (!node?.group) return null;
     node.group.updateWorldMatrix?.(true, false);
-    target.pivotLocal = node.pivotLocal.clone();
     target.position = contraption.getEntityNodeWorldPosition?.(target.nodeId)
       || node.group.getWorldPosition(new THREE.Vector3());
     target.quaternion = contraption.getEntityNodeWorldQuaternion?.(target.nodeId)
@@ -3702,58 +3687,6 @@ export class PlayerController {
     return target;
   }
 
-  private pickWrenchPivotAxis(target, rayOriginBent, rayDirectionBent) {
-    if (!target?.position || !target?.quaternion || !rayOriginBent || !rayDirectionBent) return null;
-    const ray = new THREE.Ray(
-      rayOriginBent.clone(),
-      rayDirectionBent.clone().normalize()
-    );
-    const length = Math.max(0.1, Number(target.axisLength) || 1);
-    const threshold = Math.max(0.075, length * 0.09);
-    const closestOnRay = new THREE.Vector3();
-    const closestOnAxis = new THREE.Vector3();
-    let bestAxis = null;
-    let bestDistanceSq = threshold * threshold;
-
-    for (const axis of ['x', 'y', 'z']) {
-      const direction = this.wrenchPivotAxisVector(axis)
-        .applyQuaternion(target.quaternion)
-        .normalize();
-      // Ignore the shared origin where all three axes overlap. This keeps an
-      // ordinary click on the entity from accidentally becoming a pivot drag.
-      const startFlat = target.position.clone().addScaledVector(direction, length * 0.16);
-      const endFlat = target.position.clone().addScaledVector(direction, length);
-      const startBent = bendPoint(startFlat.x, startFlat.y, startFlat.z, new THREE.Vector3());
-      const endBent = bendPoint(endFlat.x, endFlat.y, endFlat.z, new THREE.Vector3());
-      const distanceSq = ray.distanceSqToSegment(startBent, endBent, closestOnRay, closestOnAxis);
-      const rayDistance = closestOnRay.distanceTo(ray.origin);
-      if (rayDistance > 12 || distanceSq > bestDistanceSq) continue;
-      bestDistanceSq = distanceSq;
-      bestAxis = axis;
-    }
-    return bestAxis;
-  }
-
-  private pickWrenchPivotOrigin(target, rayOriginBent, rayDirectionBent) {
-    if (!target?.position || !rayOriginBent || !rayDirectionBent) return false;
-    const ray = new THREE.Ray(
-      rayOriginBent.clone(),
-      rayDirectionBent.clone().normalize()
-    );
-    const originBent = bendPoint(
-      target.position.x,
-      target.position.y,
-      target.position.z,
-      new THREE.Vector3()
-    );
-    const closest = ray.closestPointToPoint(originBent, new THREE.Vector3());
-    const rayDistance = closest.distanceTo(ray.origin);
-    if (rayDistance > 12) return false;
-    const length = Math.max(0.1, Number(target.axisLength) || 1);
-    const radius = Math.max(0.1, length * 0.11);
-    return closest.distanceToSquared(originBent) <= radius * radius;
-  }
-
   private renderWrenchPivotTarget() {
     const target = this.wrenchPivotTarget;
     if (!target?.position) {
@@ -3763,248 +3696,35 @@ export class PlayerController {
     this.sceneRenderer?.setWrenchPivotGizmo?.(
       target.position,
       target.quaternion,
-      target.axisLength,
-      target.hoveredAxis || null,
-      this.wrenchPivotDrag?.axis || null,
-      target.hoveredOrigin === true
+      target.axisLength
     );
     return true;
   }
 
-  updateWrenchPivotGizmo(entityHit, rayOriginBent, rayDirectionBent) {
-    if (this.activeTool !== SpecialTool.WRENCH) {
+  updateWrenchPivotGizmo(entityHit) {
+    if (this.activeTool !== SpecialTool.WRENCH || !entityHit?.contraption) {
       this.wrenchPivotTarget = null;
       this.sceneRenderer?.clearWrenchPivotGizmo?.();
       return null;
     }
-    if (this.wrenchPivotDrag) {
-      this.renderWrenchPivotTarget();
-      return this.wrenchPivotTarget;
+    const nodeId = String(entityHit.entityId || 'root');
+    if (
+      this.wrenchPivotTarget?.contraption !== entityHit.contraption
+      || this.wrenchPivotTarget?.nodeId !== nodeId
+    ) {
+      this.wrenchPivotTarget = { contraption: entityHit.contraption, nodeId };
     }
-
-    let current = this.refreshWrenchPivotTargetPose();
-    if (!current) this.wrenchPivotTarget = null;
-
-    // Prefer an already-visible axis over the voxel behind it. This lets the
-    // player move the crosshair from a block onto a pivot that sits outside the
-    // entity without losing the gizmo target.
-    const retainedOrigin = current
-      ? this.pickWrenchPivotOrigin(current, rayOriginBent, rayDirectionBent)
-      : false;
-    if (retainedOrigin) {
-      current.hoveredOrigin = true;
-      current.hoveredAxis = null;
-      this.renderWrenchPivotTarget();
-      return current;
-    }
-    const retainedAxis = current
-      ? this.pickWrenchPivotAxis(current, rayOriginBent, rayDirectionBent)
-      : null;
-    if (retainedAxis) {
-      current.hoveredOrigin = false;
-      current.hoveredAxis = retainedAxis;
-      this.renderWrenchPivotTarget();
-      return current;
-    }
-
-    if (entityHit?.contraption) {
-      const nodeId = String(entityHit.entityId || 'root');
-      if (!current || current.contraption !== entityHit.contraption || current.nodeId !== nodeId) {
-        this.wrenchPivotTarget = {
-          contraption: entityHit.contraption,
-          nodeId,
-          hoveredAxis: null,
-          hoveredOrigin: false
-        };
-        current = this.refreshWrenchPivotTargetPose();
-      }
-    }
-
+    const current = this.refreshWrenchPivotTargetPose();
     if (!current) {
+      this.wrenchPivotTarget = null;
       this.sceneRenderer?.clearWrenchPivotGizmo?.();
       return null;
     }
-    current.hoveredOrigin = this.pickWrenchPivotOrigin(current, rayOriginBent, rayDirectionBent);
-    current.hoveredAxis = current.hoveredOrigin
-      ? null
-      : this.pickWrenchPivotAxis(current, rayOriginBent, rayDirectionBent);
     this.renderWrenchPivotTarget();
     return current;
   }
 
-  private wrenchPivotScreenDrag(target, axis: string) {
-    const axisWorld = this.wrenchPivotAxisVector(axis)
-      .applyQuaternion(target.quaternion)
-      .normalize();
-    const startFlat = target.position.clone();
-    const endFlat = startFlat.clone().addScaledVector(axisWorld, target.axisLength);
-    const startBent = bendPoint(startFlat.x, startFlat.y, startFlat.z, new THREE.Vector3());
-    const endBent = bendPoint(endFlat.x, endFlat.y, endFlat.z, new THREE.Vector3());
-
-    const projectedCamera = this.camera.clone();
-    projectedCamera.position.copy(this.camera.position);
-    projectedCamera.quaternion.copy(this.camera.quaternion);
-    projectedCamera.updateMatrixWorld(true);
-    applyCameraBend(projectedCamera);
-    const startScreen = startBent.clone().project(projectedCamera);
-    const endScreen = endBent.clone().project(projectedCamera);
-    const canvas = this.sceneRenderer?.renderer?.domElement;
-    const width = Math.max(1, Number(canvas?.clientWidth) || Number(globalThis.innerWidth) || 1280);
-    const height = Math.max(1, Number(canvas?.clientHeight) || Number(globalThis.innerHeight) || 720);
-    const screenVector = new THREE.Vector2(
-      (endScreen.x - startScreen.x) * width * 0.5,
-      -(endScreen.y - startScreen.y) * height * 0.5
-    );
-    const projectedPixels = screenVector.length();
-    if (projectedPixels >= 4 && Number.isFinite(projectedPixels)) {
-      return {
-        axisWorld,
-        screenDirection: screenVector.normalize(),
-        unitsPerPixel: Math.min(0.25, Math.max(0.0005, target.axisLength / projectedPixels))
-      };
-    }
-
-    const eye = this.physics?.getEyePosition?.() || this.camera.position;
-    const distance = Math.max(0.5, eye.distanceTo(target.position));
-    const fovRadians = THREE.MathUtils.degToRad(Number(this.camera.fov) || 75);
-    return {
-      axisWorld,
-      screenDirection: new THREE.Vector2(0, -1),
-      unitsPerPixel: Math.min(0.25, Math.max(0.0005, 2 * distance * Math.tan(fovRadians / 2) / height))
-    };
-  }
-
-  startWrenchPivotDrag() {
-    const target = this.wrenchPivotTarget;
-    const axis = target?.hoveredAxis;
-    if (!target || !axis) return false;
-    if (!this.canEditEntityInternals(target.contraption)) {
-      this.ui?.showToast?.('Wrench: stop the entity before editing its pivot');
-      return false;
-    }
-    const node = target.contraption.getEntityNode?.(target.nodeId)
-      || target.contraption.entityNodes?.get?.(target.nodeId);
-    if (!node) return false;
-
-    const projection = this.wrenchPivotScreenDrag(target, axis);
-    this.releaseWrenchGrab();
-    this.wrenchPivotDrag = {
-      contraption: target.contraption,
-      nodeId: target.nodeId,
-      axis,
-      startPivotLocal: node.pivotLocal.clone(),
-      previewPivotLocal: node.pivotLocal.clone(),
-      startWorldPosition: target.position.clone(),
-      axisWorld: projection.axisWorld,
-      screenDirection: projection.screenDirection,
-      unitsPerPixel: projection.unitsPerPixel,
-      scalar: 0
-    };
-    this.sound?.playWrenchClick?.();
-    this.renderWrenchPivotTarget();
-    return true;
-  }
-
-  updateWrenchPivotDrag(movementX = 0, movementY = 0) {
-    const drag = this.wrenchPivotDrag;
-    if (!drag) return false;
-    const pixelDelta = (Number(movementX) || 0) * drag.screenDirection.x
-      + (Number(movementY) || 0) * drag.screenDirection.y;
-    drag.scalar += pixelDelta * drag.unitsPerPixel;
-    const axisIndex = drag.axis === 'x' ? 0 : drag.axis === 'y' ? 1 : 2;
-    const nextValue = Math.round(
-      (drag.startPivotLocal.getComponent(axisIndex) + drag.scalar) * 100
-    ) / 100;
-    drag.previewPivotLocal.copy(drag.startPivotLocal).setComponent(axisIndex, nextValue);
-    const actualScalar = nextValue - drag.startPivotLocal.getComponent(axisIndex);
-
-    this.wrenchPivotTarget.pivotLocal = drag.previewPivotLocal.clone();
-    this.wrenchPivotTarget.position = drag.startWorldPosition.clone()
-      .addScaledVector(drag.axisWorld, actualScalar);
-    this.wrenchPivotTarget.hoveredAxis = drag.axis;
-    this.wrenchPivotTarget.hoveredOrigin = false;
-    this.renderWrenchPivotTarget();
-    return true;
-  }
-
-  finishWrenchPivotDrag(commit = true) {
-    const drag = this.wrenchPivotDrag;
-    if (!drag) return false;
-    this.wrenchPivotDrag = null;
-    let result: any = { ok: true, changed: false };
-    if (commit) {
-      result = drag.contraption.setComponentPivot?.(
-        drag.nodeId,
-        drag.previewPivotLocal,
-        { requireStopped: true, allowDynamic: true }
-      ) || { ok: false, reason: 'pivot_unavailable' };
-      if (result.ok && result.changed) {
-        this.contraptions?.saveEntitiesToStorage?.();
-        this.ui?.notifyContraptionStructureChanged?.(drag.contraption);
-        const values = drag.previewPivotLocal.toArray().map(value => Number(value.toFixed(2)));
-        this.ui?.showToast?.(`Pivot [${drag.nodeId}] → [${values.join(', ')}]`);
-        this.sound?.playWrenchClick?.();
-      } else if (!result.ok) {
-        this.ui?.showToast?.(
-          result.reason === 'target_not_stopped'
-            ? 'Wrench: stop the entity before editing its pivot'
-            : 'Wrench: could not update this pivot'
-        );
-      }
-    }
-
-    if (this.wrenchPivotTarget?.contraption === drag.contraption) {
-      this.wrenchPivotTarget.nodeId = drag.nodeId;
-      this.wrenchPivotTarget.hoveredAxis = null;
-      this.wrenchPivotTarget.hoveredOrigin = false;
-      this.refreshWrenchPivotTargetPose(this.wrenchPivotTarget);
-    }
-    this.renderWrenchPivotTarget();
-    return result.ok === true;
-  }
-
-  resetWrenchPivot() {
-    const target = this.wrenchPivotTarget;
-    if (!target?.contraption) return false;
-    if (!this.canEditEntityInternals(target.contraption)) {
-      this.ui?.showToast?.('Wrench: stop the entity before resetting its pivot');
-      return false;
-    }
-
-    this.releaseWrenchGrab();
-    const result = target.contraption.resetComponentPivot?.(
-      target.nodeId,
-      { requireStopped: true, allowDynamic: true }
-    ) || { ok: false, reason: 'pivot_unavailable' };
-    if (!result.ok) {
-      this.ui?.showToast?.(
-        result.reason === 'target_not_stopped'
-          ? 'Wrench: stop the entity before resetting its pivot'
-          : 'Wrench: could not reset this pivot'
-      );
-      return false;
-    }
-
-    if (result.changed) {
-      this.contraptions?.saveEntitiesToStorage?.();
-      this.ui?.notifyContraptionStructureChanged?.(target.contraption);
-    }
-    const values = (result.pivot || []).map(value => Number(Number(value).toFixed(2)));
-    this.ui?.showToast?.(
-      result.changed
-        ? `Pivot [${target.nodeId}] reset to center [${values.join(', ')}]`
-        : `Pivot [${target.nodeId}] is already centered`
-    );
-    this.sound?.playWrenchClick?.();
-    target.hoveredAxis = null;
-    target.hoveredOrigin = false;
-    this.refreshWrenchPivotTargetPose(target);
-    this.renderWrenchPivotTarget();
-    return true;
-  }
-
-  clearWrenchPivotInteraction(commit = false) {
-    if (this.wrenchPivotDrag) this.finishWrenchPivotDrag(commit);
+  clearWrenchPivotDisplay() {
     this.wrenchPivotTarget = null;
     this.sceneRenderer?.clearWrenchPivotGizmo?.();
   }
@@ -4105,6 +3825,9 @@ export class PlayerController {
       this.ui?.showToast?.('Wrench: point at an entity to stop it');
       return false;
     }
+    if (contraption.serverManaged === true) {
+      return this.requestServerEntityRunState(contraption, 'stopped');
+    }
     const result = this.performBasicAction({
       domain: ActionDomain.ENTITY,
       action: 'stop-scripts',
@@ -4128,6 +3851,9 @@ export class PlayerController {
       return false;
     }
     const shouldStart = contraption.isPhysicsSimulationEnabled?.() === false;
+    if (contraption.serverManaged === true) {
+      return this.requestServerEntityRunState(contraption, shouldStart ? 'running' : 'stopped');
+    }
     const result = this.performBasicAction({
       domain: ActionDomain.ENTITY,
       action: shouldStart ? 'start-scripts' : 'stop-scripts',
@@ -4145,6 +3871,43 @@ export class PlayerController {
       this.ui.showToast(message);
     }
     return result.ok;
+  }
+
+  setServerEntityRunStateHandler(handler) {
+    this.serverEntityRunStateHandler = typeof handler === 'function' ? handler : null;
+  }
+
+  async requestServerEntityRunState(contraption, desiredState) {
+    if (contraption.serverCanControl !== true) {
+      this.ui?.showToast?.('Only this entity’s owner can start or stop it');
+      return false;
+    }
+    if (!this.serverEntityRunStateHandler) {
+      this.ui?.showToast?.('Entity control is temporarily unavailable');
+      return false;
+    }
+    try {
+      await this.serverEntityRunStateHandler(contraption, desiredState);
+      this.sound?.playWrenchClick?.();
+      const executesHere = contraption.serverExecutesLocally === true;
+      this.ui?.showToast?.(
+        desiredState === 'stopped'
+          ? `Entity #${contraption.id} stopped (state reset)`
+          : executesHere
+            ? `Entity #${contraption.id} started`
+            : `Entity #${contraption.id} start requested for its owner browser`
+      );
+      return true;
+    } catch (error: any) {
+      if (error?.code === 'ENTITY_REVISION_CONFLICT') {
+        this.ui?.showToast?.('Entity state changed elsewhere; try again');
+      } else if (error?.code === 'ENTITY_CONTROL_FORBIDDEN') {
+        this.ui?.showToast?.('Only this entity’s owner can start or stop it');
+      } else {
+        this.ui?.showToast?.('Entity could not be updated');
+      }
+      return false;
+    }
   }
 
   paintTargetedBlock() {
@@ -5269,10 +5032,20 @@ export class PlayerController {
       created.quaternion.copy(rotation);
       created.updateTransform();
       created.originWorldPos.copy(origin);
+      // Placing an independent entity is a completed spawn operation, so it
+      // has the same result as pressing global Play: physics is active and all
+      // runnable component scripts start, even if the backpack copy was saved
+      // with its script switches paused. Component installation intentionally
+      // keeps its target stopped and does not pass through this path.
+      this.performBasicAction({
+        domain: ActionDomain.ENTITY,
+        action: 'start-scripts',
+        target: { contraption: created }
+      });
       this.contraptions.saveEntitiesToStorage?.();
       this.sound?.playBlockPlace?.();
       const builtLabel = slot.name || 'entity';
-      this.ui?.showToast?.(`Built [${builtLabel}] (${slot.blockCount} blocks) as entity #${created.id}`);
+      this.ui?.showToast?.(`Built [${builtLabel}] (${slot.blockCount} blocks) as running entity #${created.id}`);
     }
     return created;
   }
@@ -6008,11 +5781,7 @@ export class PlayerController {
     const contraptionHit = query.entityHit;
     const hovered = query.kind === 'entity' ? contraptionHit.contraption : null;
     this.hoveredContraptionHit = hovered ? contraptionHit : null;
-    this.updateWrenchPivotGizmo(
-      hovered ? contraptionHit : null,
-      eyeBent,
-      forwardBent
-    );
+    this.updateWrenchPivotGizmo(hovered ? contraptionHit : null);
     if (this.hoveredContraption !== hovered) {
       if (this.hoveredContraption) {
         this.hoveredContraption.setHighlighted(false);

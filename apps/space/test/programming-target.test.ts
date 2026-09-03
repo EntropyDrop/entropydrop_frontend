@@ -7,7 +7,10 @@ import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerCont
 import {
   calculateEntityPreviewCameraPose,
   calculatePreviewDragForce,
-  ENTITY_PREVIEW_FORCE_LIMIT_RATIO
+  ENTITY_PREVIEW_FORCE_LIMIT_RATIO,
+  ENTITY_PREVIEW_LAYER,
+  ENTITY_PREVIEW_MAX_FPS,
+  SceneRenderer
 } from '../src/engine/render/SceneRenderer.ts';
 import {
   bendPoint,
@@ -32,13 +35,20 @@ test('React editor state exposes the entity random id', t => {
     new THREE.Scene()
   ) as any;
   const ui = new SpaceUiStore();
-  ui.setSceneRenderer({ setEntityPreviewTarget() {}, renderEntityPreview() {} });
+  const previewTargets: any[] = [];
+  ui.setSceneRenderer({
+    setEntityPreviewTarget(target) { previewTargets.push(target); },
+    renderEntityPreview() {}
+  });
 
   ui.openCodeEditor(entity);
 
   assert.equal(ui.getSnapshot().editingContraption.publicId, entity.publicId);
   assert.match(ui.getSnapshot().editingContraption.publicId, /^ent_[0-9a-f-]{36}$/);
   assert.equal(ui.getSnapshot().activeModal, 'code');
+  ui.toggleApiDocs(true);
+  ui.toggleApiDocs(false);
+  assert.deepEqual(previewTargets, [entity, null, entity], 'covered previews suspend and resume their WebGL work');
 });
 
 test('programming terminal opens under any tool when pointed at contraption', () => {
@@ -284,6 +294,51 @@ test('programming preview camera is fitted behind the entity bounding box', () =
   assert.ok(framingLift.distanceTo(new THREE.Vector3(0, pose.radius * 0.28, 0)) < 1e-9);
   assert.deepEqual(pose.center.toArray(), contraption.position.toArray());
   assert.deepEqual(pose.up.toArray(), [0, 1, 0]);
+});
+
+test('programming preview isolates the selected entity on its own render layer', () => {
+  const renderer: any = Object.create(SceneRenderer.prototype);
+  renderer.previewTarget = null;
+  renderer.previewForceArrow = null;
+  renderer.previewCanvas = { classList: { remove() {} } };
+  renderer.previewOrbit = renderer.createDefaultPreviewOrbit();
+  renderer.previewInteraction = null;
+  renderer.previewArrowHoldUntil = 0;
+  renderer.previewLastRenderedAt = 99;
+  const firstRoot = new THREE.Group();
+  const firstMesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
+  firstRoot.add(firstMesh);
+  const secondRoot = new THREE.Group();
+  const previewLayer = new THREE.Layers();
+  previewLayer.set(ENTITY_PREVIEW_LAYER);
+
+  renderer.setEntityPreviewTarget({ rootGroup: firstRoot });
+  assert.equal(firstRoot.layers.test(previewLayer), true);
+  assert.equal(firstMesh.layers.test(previewLayer), true);
+  assert.equal(renderer.previewLastRenderedAt, 0);
+
+  renderer.setEntityPreviewTarget({ rootGroup: secondRoot });
+  assert.equal(firstRoot.layers.test(previewLayer), false, 'the previous target leaves the preview layer');
+  assert.equal(firstMesh.layers.test(previewLayer), false);
+  assert.equal(secondRoot.layers.test(previewLayer), true);
+});
+
+test('programming preview refresh is capped independently of the React HUD', () => {
+  const renderer: any = Object.create(SceneRenderer.prototype);
+  renderer.previewTarget = {};
+  renderer.previewRenderer = {};
+  renderer.previewCamera = {};
+  renderer.previewCanvas = {};
+  renderer.previewLastRenderedAt = 100;
+  let renders = 0;
+  renderer.renderEntityPreview = () => { renders += 1; };
+
+  assert.equal(renderer.renderEntityPreviewIfDue(120), false);
+  assert.equal(renderer.renderEntityPreviewIfDue(134), true);
+  assert.equal(renderer.renderEntityPreviewIfDue(150), false);
+  assert.equal(renderer.renderEntityPreviewIfDue(168), true);
+  assert.equal(renders, 2);
+  assert.equal(ENTITY_PREVIEW_MAX_FPS, 30);
 });
 
 test('programming preview drag maps camera-plane motion to a bounded world force', () => {

@@ -258,6 +258,14 @@ function executeEntityAction(context: any, command: any) {
   if (!contraption || !Array.isArray(contraption.blocks)) {
     return actionResult(command.action, 0, 'entity_not_found');
   }
+  if (
+    contraption.serverManaged === true
+    && contraption.serverCanEdit !== true
+    && command.actor?.source !== 'script'
+    && command.actor?.source !== 'server-sync'
+  ) {
+    return actionResult(command.action, 0, 'server_entity_read_only');
+  }
   const nodeId = String(command.nodeId || command.target?.nodeId || 'root');
   const cell = finiteCell(command.cell ?? command.position);
   const micro = finiteMicro(command.micro);
@@ -1008,7 +1016,8 @@ function executeSelectionAction(context: any, command: any) {
         const result = executeEntityAction(context, {
           action: 'remove-subtree',
           target: { contraption: selected.contraption },
-          nodeId
+          nodeId,
+          actor: command.actor
         });
         selected.contraption?.clearSubtreeHighlight?.();
         owner.entitySelection = null;
@@ -1029,7 +1038,8 @@ function executeSelectionAction(context: any, command: any) {
           action: 'remove-blocks',
           target: { contraption: selected.contraption },
           nodeId: selected.nodeId,
-          blocks: selected.blocks
+          blocks: selected.blocks,
+          actor: command.actor
         });
         selected.contraption?.clearSubtreeHighlight?.();
         owner.entitySelection = null;

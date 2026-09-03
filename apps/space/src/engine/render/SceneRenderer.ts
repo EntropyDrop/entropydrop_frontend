@@ -19,6 +19,8 @@ import { AdaptiveResolutionController } from './AdaptiveResolution.ts';
 
 export const ENTITY_PREVIEW_LAYER = 1;
 export const ENTITY_PREVIEW_FORCE_LIMIT_RATIO = 0.72;
+export const ENTITY_PREVIEW_MAX_FPS = 30;
+const ENTITY_PREVIEW_FRAME_INTERVAL_MS = 1000 / ENTITY_PREVIEW_MAX_FPS;
 const MAX_SELECTION_BEND_SEGMENTS = 64;
 const remotePlayerCullCamera = new THREE.PerspectiveCamera();
 const remotePlayerProjectedPosition = new THREE.Vector3();
@@ -612,6 +614,7 @@ export class SceneRenderer {
   declare previewInteraction: any;
   declare previewForceArrow: any;
   declare previewArrowHoldUntil: number;
+  declare previewLastRenderedAt: number;
   declare onPreviewPointerDown: any;
   declare onPreviewPointerMove: any;
   declare onPreviewPointerUp: any;
@@ -721,6 +724,7 @@ export class SceneRenderer {
     this.previewInteraction = null;
     this.previewForceArrow = null;
     this.previewArrowHoldUntil = 0;
+    this.previewLastRenderedAt = 0;
     this.onPreviewPointerDown = event => this.handleEntityPreviewPointerDown(event);
     this.onPreviewPointerMove = event => this.handleEntityPreviewPointerMove(event);
     this.onPreviewPointerUp = event => this.handleEntityPreviewPointerUp(event);
@@ -749,6 +753,7 @@ export class SceneRenderer {
   setupLighting() {
     // Ambient / Hemisphere Light
     this.hemiLight = new THREE.HemisphereLight(0xffffff, 0x556644, 0.7);
+    this.hemiLight.layers.enable(ENTITY_PREVIEW_LAYER);
     this.scene.add(this.hemiLight);
 
     // Sun Light
@@ -764,6 +769,7 @@ export class SceneRenderer {
     this.sunLight.shadow.camera.top = d;
     this.sunLight.shadow.camera.bottom = -d;
     this.sunLight.shadow.bias = -0.0005;
+    this.sunLight.layers.enable(ENTITY_PREVIEW_LAYER);
     this.scene.add(this.sunLight);
   }
 
@@ -1172,20 +1178,24 @@ export class SceneRenderer {
     if (this.previewRenderer) this.previewRenderer.dispose();
     this.previewCanvas = canvas;
     this.previewCamera = new THREE.PerspectiveCamera(42, 1, 0.05, 500);
-    this.previewCamera.layers.set(0);
-    this.previewCamera.layers.enable(ENTITY_PREVIEW_LAYER);
+    // The target entity is added to this layer while retaining layer 0 for the
+    // main camera. Rendering layer 0 here used to draw the entire world a
+    // second time for every tiny editor preview frame.
+    this.previewCamera.layers.set(ENTITY_PREVIEW_LAYER);
 
     this.previewRenderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
       alpha: false,
-      powerPreference: 'low-power'
+      powerPreference: 'high-performance'
     });
-    this.previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this.previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
     this.previewRenderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.previewRenderer.toneMappingExposure = 1.15;
-    this.previewRenderer.shadowMap.enabled = true;
-    this.previewRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // The main renderer already pays for the 2048px world shadow map. A second
+    // shadow pass caused large GPU spikes and adds little at 340x240.
+    this.previewRenderer.shadowMap.enabled = false;
+    this.previewLastRenderedAt = 0;
 
     this.previewForceArrow = new THREE.ArrowHelper(
       new THREE.Vector3(1, 0, 0),
@@ -1210,10 +1220,18 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   setEntityPreviewTarget(contraption) {
     if (this.previewTarget === contraption) return;
 
+    this.previewTarget?.rootGroup?.traverse?.(object => {
+      object.layers.disable(ENTITY_PREVIEW_LAYER);
+    });
+
     this.previewTarget = contraption || null;
+    this.previewTarget?.rootGroup?.traverse?.(object => {
+      object.layers.enable(ENTITY_PREVIEW_LAYER);
+    });
     this.previewOrbit = this.createDefaultPreviewOrbit();
     this.previewInteraction = null;
     this.previewArrowHoldUntil = 0;
+    this.previewLastRenderedAt = 0;
     if (this.previewForceArrow) this.previewForceArrow.visible = false;
     this.previewCanvas?.classList.remove('is-dragging', 'is-applying-force');
   }
@@ -1397,6 +1415,11 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   renderEntityPreview(contraption = this.previewTarget) {
     if (!this.previewRenderer || !this.previewCamera || !this.previewCanvas || !contraption) return;
     this.setEntityPreviewTarget(contraption);
+    // Hierarchy rebuilds can introduce new meshes while the same entity stays
+    // selected, so ensure only that small subtree joins the preview layer.
+    contraption.rootGroup?.traverse?.(object => {
+      object.layers.enable(ENTITY_PREVIEW_LAYER);
+    });
 
     const width = Math.max(1, Math.round(this.previewCanvas.clientWidth));
     const height = Math.max(1, Math.round(this.previewCanvas.clientHeight));
@@ -1448,6 +1471,19 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     }
 
     this.previewRenderer.render(this.scene, this.previewCamera);
+    this.previewLastRenderedAt = performance.now();
+  }
+
+  /** Render the editor preview smoothly without tying it to the 10 Hz React HUD. */
+  renderEntityPreviewIfDue(now = performance.now()) {
+    if (!this.previewTarget || !this.previewRenderer || !this.previewCamera || !this.previewCanvas) return false;
+    if (this.previewLastRenderedAt > 0
+      && now - this.previewLastRenderedAt < ENTITY_PREVIEW_FRAME_INTERVAL_MS) return false;
+    this.renderEntityPreview(this.previewTarget);
+    // Tests and non-browser render adapters may not update the timestamp in
+    // renderEntityPreview, so the scheduler owns the definitive due time.
+    this.previewLastRenderedAt = now;
+    return true;
   }
 
   /**
@@ -1495,6 +1531,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   }
 
   setupWrenchPivotGizmo() {
+    // Display-only local axes for the pointed component pivot. They are not
+    // raycast handles and never change color in response to pointer state.
     this.wrenchPivotGizmo = new THREE.Group();
     this.wrenchPivotGizmo.name = 'WrenchPivotGizmo';
     this.wrenchPivotGizmo.visible = false;
@@ -1509,7 +1547,6 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     for (const [axis, direction, color] of definitions) {
       const arrow = new THREE.ArrowHelper(direction, new THREE.Vector3(), 1, color, 0.24, 0.12);
       arrow.name = `WrenchPivotAxis_${axis.toUpperCase()}`;
-      arrow.userData.axis = axis;
       for (const object of [arrow.line, arrow.cone]) {
         const material: any = object.material;
         material.depthTest = false;
@@ -1534,7 +1571,6 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       })
     );
     center.name = 'WrenchPivotOrigin';
-    center.userData.handle = 'origin';
     center.renderOrder = 97;
     center.frustumCulled = false;
     this.wrenchPivotOrigin = center;
@@ -1547,10 +1583,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   setWrenchPivotGizmo(
     position: THREE.Vector3 | null,
     quaternion: THREE.Quaternion | null = null,
-    axisLength = 1,
-    hoveredAxis: string | null = null,
-    activeAxis: string | null = null,
-    hoveredOrigin = false
+    axisLength = 1
   ) {
     if (!this.wrenchPivotGizmo) this.setupWrenchPivotGizmo();
     if (!position) {
@@ -1565,17 +1598,12 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     this.wrenchPivotGizmo.scale.setScalar(Math.max(0.1, Number(axisLength) || 1));
     const baseColors = { x: 0xff3b30, y: 0x34c759, z: 0x248aff };
     for (const [axis, arrow] of this.wrenchPivotArrows) {
-      const color = activeAxis === axis
-        ? 0xffffff
-        : hoveredAxis === axis
-          ? 0xffd60a
-          : baseColors[axis];
-      arrow.setColor(new THREE.Color(color));
+      arrow.setColor(new THREE.Color(baseColors[axis]));
     }
     if (this.wrenchPivotOrigin) {
       const material = this.wrenchPivotOrigin.material as THREE.MeshBasicMaterial;
-      material.color.setHex(hoveredOrigin ? 0xffd60a : 0xffffff);
-      this.wrenchPivotOrigin.scale.setScalar(hoveredOrigin ? 1.4 : 1);
+      material.color.setHex(0xffffff);
+      this.wrenchPivotOrigin.scale.setScalar(1);
     }
     this.wrenchPivotGizmo.visible = true;
     this.wrenchPivotGizmo.updateMatrixWorld(true);
@@ -2389,6 +2417,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     this.updateAdaptiveResolution();
     if (!this.world) {
       this.renderer.render(this.scene, this.camera);
+      this.renderEntityPreviewIfDue();
       return;
     }
 
@@ -2417,5 +2446,6 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       this.camera.quaternion.copy(this.flatCameraQuaternion);
       this.camera.updateMatrixWorld(true);
     }
+    this.renderEntityPreviewIfDue();
   }
 }

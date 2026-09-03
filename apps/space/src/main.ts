@@ -26,6 +26,7 @@ import {
 import { loadDistantLodCache } from './bootstrap/DistantLodCache.ts';
 import type { DistantLodCacheData } from './engine/render/DistantLodCacheFormat.ts';
 import { MultiplayerSync, type RemotePlayerInfo } from './engine/network/MultiplayerSync.ts';
+import { SpaceEntitySync } from './engine/network/SpaceEntitySync.ts';
 import { mountSpaceUi } from './ui/react/mountSpaceUi.tsx';
 import { spaceUiStore, type SpaceUiStore } from './ui/react/store/SpaceUiStore.ts';
 import {
@@ -66,6 +67,7 @@ class Game {
   pendingPlayerPosition: PlayerPositionPayload | null;
   playerPositionSaveInFlight: boolean;
   multiplayerSync: MultiplayerSync | null;
+  entitySync: SpaceEntitySync | null;
   remotePlayers: RemotePlayerInfo[];
   terrainEditRemote: ReadySpaceSession['terrain_edit_remote'];
   terrainArea: TerrainStreamArea;
@@ -119,7 +121,10 @@ class Game {
     );
     this.contraptionManager.setPhysics(this.contraptionPhysics);
     this.contraptionManager.setWorldId(session.world.id);
-    this.contraptionManager.loadEntitiesFromStorage();
+    this.contraptionManager.setEntityPersistenceMode(
+      session.mode === 'online' ? 'remote' : 'browser'
+    );
+    if (session.mode === 'offline') this.contraptionManager.loadEntitiesFromStorage();
 
     this.playerPhysics = new PlayerPhysics(this.world, this.contraptionManager);
     this.uiStore = spaceUiStore;
@@ -249,6 +254,7 @@ class Game {
 
     // 5b. Multiplayer Synchronizer (Real-time player presence & terrain updates)
     this.multiplayerSync = null;
+    this.entitySync = null;
     if (session.mode === 'online') {
       this.multiplayerSync = new MultiplayerSync({
         apiOrigin: session.api_origin,
@@ -276,6 +282,18 @@ class Game {
       });
       this.multiplayerSync.setSinceTerrainRevision(session.world.terrain_revision);
       this.multiplayerSync.start();
+
+      this.entitySync = new SpaceEntitySync({
+        apiOrigin: session.api_origin,
+        token: session.token,
+        worldId: session.world.id,
+        currentUserId: session.player.user_id,
+        controller: this.controller,
+        contraptions: this.contraptionManager,
+        world: this.world,
+        getPlayerPosition: () => this.playerPhysics.position,
+      });
+      this.entitySync.start();
     }
 
     // 6. Start Loop

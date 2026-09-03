@@ -87,6 +87,8 @@ export class ContraptionManager {
   declare worldId: string;
   declare lastEntitySaveTime: number;
   declare persistentStorage: SpaceStorage | null;
+  declare entityPersistenceMode: 'browser' | 'remote';
+  declare remoteEntityPersistence: any;
 
   constructor(scene, world, soundManager, particleSystem, persistentStorage: SpaceStorage | null = null) {
     this.scene = scene;
@@ -101,6 +103,8 @@ export class ContraptionManager {
     this.worldId = 'default';
     this.lastEntitySaveTime = 0;
     this.persistentStorage = persistentStorage;
+    this.entityPersistenceMode = 'browser';
+    this.remoteEntityPersistence = null;
 
     // Selection State
     this.selectionCornerA = null;
@@ -494,6 +498,32 @@ export class ContraptionManager {
     return false;
   }
 
+  findActiveContraptionByPublicId(publicId) {
+    const id = String(publicId || '');
+    return this.contraptions.find(contraption => String(contraption.publicId) === id) || null;
+  }
+
+  updateDormantServerEntity(publicId, metadata) {
+    const id = String(publicId || '');
+    for (const [chunkId, records] of this.dormantContraptions) {
+      const record = records.get(id);
+      if (!record) continue;
+      const contentChanged = record.serverDefinitionDigest !== metadata.serverDefinitionDigest
+        || record.serverSnapshotDigest !== metadata.serverSnapshotDigest;
+      if (contentChanged) {
+        records.delete(id);
+        if (records.size === 0) this.dormantContraptions.delete(chunkId);
+        return false;
+      }
+      const playbackChanged = Number(record.serverRevision) !== Number(metadata.serverRevision)
+        || record.serverExecutesLocally !== metadata.serverExecutesLocally;
+      Object.assign(record, metadata);
+      if (playbackChanged) record.serverPlaybackRevision = 0;
+      return true;
+    }
+    return false;
+  }
+
   captureContraptionForStreaming(contraption, chunk) {
     const states = contraption.getSerializableComponentStates?.()
       || Object.fromEntries([...(contraption.componentVariables || [])]);
@@ -523,7 +553,10 @@ export class ContraptionManager {
       previousKinematicQuaternion: body.previousKinematicQuaternion?.toArray?.() || [0, 0, 0, 1],
       isOnGround: !!body.isOnGround
     }));
-    const constructorOrigin = contraption.position.clone().sub(contraption.localCenter || new THREE.Vector3());
+    const centerOffset = (contraption.localCenter || new THREE.Vector3())
+      .clone()
+      .applyQuaternion(contraption.quaternion);
+    const constructorOrigin = contraption.position.clone().sub(centerOffset);
     return {
       id: contraption.id,
       publicId: contraption.publicId,
@@ -556,6 +589,17 @@ export class ContraptionManager {
       groundDistance: contraption.groundDistance,
       behaviorPrompt: contraption.behaviorPrompt,
       agentInterpretation: contraption.agentInterpretation,
+      serverManaged: contraption.serverManaged === true,
+      serverSourceKind: contraption.serverSourceKind || null,
+      serverOwnerUserId: contraption.serverOwnerUserId || null,
+      serverCanControl: contraption.serverCanControl === true,
+      serverCanEdit: contraption.serverCanEdit === true,
+      serverExecutesLocally: contraption.serverExecutesLocally === true,
+      serverRevision: Number(contraption.serverRevision) || 0,
+      serverPlaybackRevision: Number(contraption.serverPlaybackRevision) || 0,
+      serverDesiredRunState: contraption.serverDesiredRunState || null,
+      serverDefinitionDigest: contraption.serverDefinitionDigest || null,
+      serverSnapshotDigest: contraption.serverSnapshotDigest || null,
       bearingAngle: contraption.bearingAngle,
       pistonProgress: contraption.pistonProgress,
       pistonDirection: contraption.pistonDirection,
@@ -865,6 +909,30 @@ export class ContraptionManager {
     this.worldId = String(worldId || 'default');
   }
 
+  /** Select browser persistence for offline worlds or backend persistence online. */
+  setEntityPersistenceMode(mode: 'browser' | 'remote', adapter: any = null) {
+    this.entityPersistenceMode = mode === 'remote' ? 'remote' : 'browser';
+    this.remoteEntityPersistence = this.entityPersistenceMode === 'remote' ? adapter : null;
+    if (this.entityPersistenceMode === 'remote') this.purgeBrowserEntityStorage();
+  }
+
+  setRemoteEntityPersistence(adapter: any) {
+    this.entityPersistenceMode = 'remote';
+    this.remoteEntityPersistence = adapter || null;
+    this.purgeBrowserEntityStorage();
+  }
+
+  purgeBrowserEntityStorage(storage = this.entityStorage()): boolean {
+    if (!storage) return false;
+    try {
+      storage.removeItem(worldEntitiesStorageKey(this.worldId));
+      return true;
+    } catch (err) {
+      console.warn('Could not remove legacy browser entity storage:', err);
+      return false;
+    }
+  }
+
   entityStorage(): SpaceStorage | null {
     if (this.persistentStorage) return this.persistentStorage;
     try {
@@ -878,6 +946,24 @@ export class ContraptionManager {
    * Persist all active and dormant entities to browser storage.
    */
   saveEntitiesToStorage(storage = this.entityStorage()): boolean {
+    if (this.entityPersistenceMode === 'remote') {
+      const seenPublicIds = new Set<string>();
+      const queue = (record: any) => {
+        if (!record?.publicId || seenPublicIds.has(String(record.publicId))) return;
+        if (record.serverManaged === true && record.serverCanEdit !== true) return;
+        seenPublicIds.add(String(record.publicId));
+        this.remoteEntityPersistence?.save?.(record, { definitionChanged: true });
+      };
+      for (const contraption of this.contraptions) {
+        if (!contraption) continue;
+        const chunk = this.getContraptionChunk(contraption) || { id: '0,0', cx: 0, cz: 0 };
+        queue(this.captureContraptionForStreaming(contraption, chunk));
+      }
+      for (const records of this.dormantContraptions.values()) {
+        for (const record of records.values()) queue(record);
+      }
+      return true;
+    }
     if (!storage) return false;
     try {
       const entityRecords: any[] = [];
@@ -885,7 +971,7 @@ export class ContraptionManager {
 
       // 1. Active contraptions
       for (const c of this.contraptions) {
-        if (!c || !c.publicId) continue;
+        if (!c || !c.publicId || c.serverManaged === true) continue;
         const chunk = this.getContraptionChunk(c) || { id: '0,0', cx: 0, cz: 0 };
         const record = this.captureContraptionForStreaming(c, chunk);
         if (record) {
@@ -897,7 +983,7 @@ export class ContraptionManager {
       // 2. Dormant contraptions
       for (const records of this.dormantContraptions.values()) {
         for (const record of records.values()) {
-          if (record?.publicId && !seenPublicIds.has(String(record.publicId))) {
+          if (record?.publicId && record.serverManaged !== true && !seenPublicIds.has(String(record.publicId))) {
             entityRecords.push(record);
             seenPublicIds.add(String(record.publicId));
           }
@@ -923,6 +1009,7 @@ export class ContraptionManager {
    * Load and restore all saved entities from browser storage on world startup.
    */
   loadEntitiesFromStorage(storage = this.entityStorage()): number {
+    if (this.entityPersistenceMode !== 'browser') return 0;
     if (!storage) return 0;
     try {
       const raw = storage.getItem(worldEntitiesStorageKey(this.worldId));
@@ -1841,6 +1928,19 @@ export class ContraptionManager {
     }
 
     this.registerContraption(contraption);
+    if (restoreState?.serverManaged === true) {
+      contraption.serverManaged = true;
+      contraption.serverSourceKind = restoreState.serverSourceKind || null;
+      contraption.serverOwnerUserId = restoreState.serverOwnerUserId || null;
+      contraption.serverCanControl = restoreState.serverCanControl === true;
+      contraption.serverCanEdit = restoreState.serverCanEdit === true;
+      contraption.serverExecutesLocally = restoreState.serverExecutesLocally === true;
+      contraption.serverRevision = Number(restoreState.serverRevision) || 0;
+      contraption.serverPlaybackRevision = Number(restoreState.serverPlaybackRevision) || 0;
+      contraption.serverDesiredRunState = restoreState.serverDesiredRunState || null;
+      contraption.serverDefinitionDigest = restoreState.serverDefinitionDigest || null;
+      contraption.serverSnapshotDigest = restoreState.serverSnapshotDigest || null;
+    }
     if (restoreState) {
       try {
         this.restoreContraptionStreamingState(contraption, restoreState);
@@ -1951,7 +2051,16 @@ export class ContraptionManager {
     if (this.activeProgrammingContraption === contraption) {
       this.activeProgrammingContraption = this.contraptions[this.contraptions.length - 1] || null;
     }
-    if (!options.preserveDormant) this.deleteDormantContraption(contraption.publicId);
+    if (!options.preserveDormant) {
+      this.deleteDormantContraption(contraption.publicId);
+      if (
+        this.entityPersistenceMode === 'remote'
+        && options.skipRemoteDelete !== true
+        && (contraption.serverManaged !== true || contraption.serverCanEdit === true)
+      ) {
+        this.remoteEntityPersistence?.remove?.(String(contraption.publicId));
+      }
+    }
     contraption.setActionContext?.(null);
     contraption.dispose();
     if (!options.skipSave) {
@@ -2143,7 +2252,8 @@ export class ContraptionManager {
 
     // 4. Periodic entity persistence
     this.lastEntitySaveTime = (this.lastEntitySaveTime || 0) + dt;
-    if (this.lastEntitySaveTime >= 2.0) {
+    const persistenceInterval = this.entityPersistenceMode === 'remote' ? 6.0 : 2.0;
+    if (this.lastEntitySaveTime >= persistenceInterval) {
       this.lastEntitySaveTime = 0;
       if (this.contraptions.length > 0 || this.getDormantContraptionCount() > 0) {
         this.saveEntitiesToStorage();

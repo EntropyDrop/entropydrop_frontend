@@ -174,8 +174,8 @@ test('standalone entity build keeps the rotated Hammer ghost pose exactly', () =
       { localX: 2, localY: 0, localZ: 0, size: 1, color: 0xf2a93b, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }
     ],
     childEntities: [],
-    scripts: [],
-    enabled: [],
+    scripts: [{ id: 'root', code: 'self.state.started = true;' }],
+    enabled: [{ id: 'root', enabled: false }],
     constraints: []
   };
   const controller: any = makeController(slot);
@@ -197,6 +197,9 @@ test('standalone entity build keeps the rotated Hammer ghost pose exactly', () =
 
   assert.ok(actual.distanceTo(expected) < 1e-8);
   assert.ok(created.quaternion.angleTo(rotation) < 1e-8);
+  assert.equal(created.isPhysicsSimulationEnabled(), true);
+  assert.equal(created.isNodeScriptEnabled('root'), true, 'Hammer placement acts like global Play');
+  assert.equal(created.scriptStatus, 'running');
 });
 
 test('Hammer keeps an entity outside a side face while centring it along the tangent axis', () => {

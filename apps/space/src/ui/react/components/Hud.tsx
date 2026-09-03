@@ -259,11 +259,11 @@ function WrenchPanel() {
           </span>
           <span className="mode-badge std">PHYSICS & CONTROL</span>
         </div>
-        <span className="palette-hotkey-hint"><b>Drag axis</b> pivot · <b>Hold LMB</b> grab · <b>RMB</b> start/stop</span>
+        <span className="palette-hotkey-hint"><b>XYZ</b> pivot · <b>Hold LMB</b> grab · <b>RMB</b> start/stop</span>
       </div>
       <div className="selector-toolbox-content" id="wrench-toolbox-content">
         <div className="wrench-action-buttons">
-          <button type="button" tabIndex={-1} className="banner-btn secondary" title="Drag a stopped component's pivot axis, click its white origin to reset, or hold left-click on a dynamic entity to grab" onClick={() => controller?.startWrenchGrab?.()}><b>LMB</b> Pivot / Grab</button>
+          <button type="button" tabIndex={-1} className="banner-btn secondary" title="The targeted component's pivot XYZ axes are display-only; hold left-click on a dynamic entity to grab" onClick={() => controller?.startWrenchGrab?.()}><b>LMB</b> Grab</button>
           <button type="button" tabIndex={-1} className="banner-btn secondary" title="Right-click on an entity to start or stop physics and scripts (RMB)" onClick={() => controller?.toggleHoveredEntityPlayback?.()}><b>RMB</b> Start/Stop</button>
           <button type="button" tabIndex={-1} className="banner-btn secondary" title="Point at an entity and press C to open its code editor" onClick={() => controller?.openCodeEditorForTarget?.()}><b>C</b> Code</button>
           <button type="button" tabIndex={-1} className="banner-btn secondary" title="Point at a seat block and press V to mount/drive" onClick={() => controller?.toggleDriveVehicle?.()}><b>V</b> Drive</button>

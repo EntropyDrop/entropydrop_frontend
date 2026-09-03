@@ -21,6 +21,8 @@ const REQUIRED_UI_IDS = [
   'selector-panel-wrapper', 'hotbar', 'toast', 'code-editor-modal',
   'global-playback-group', 'component-tree-list', 'component-inspector-panel',
   'inspector-tab-defaults', 'inspector-tab-runtime',
+  'prop-node-anchor-quaternion', 'prop-node-local-quaternion', 'prop-node-world-quaternion',
+  'runtime-body-quaternion', 'entity-authority-grid',
   'code-tab-bar', 'script-textarea', 'entity-preview-canvas', 'tele-console-logs',
   'agent-chat-box', 'inventory-modal',
   'inventory-grid', 'api-docs-modal', 'api-docs-body', 'global-settings-modal',

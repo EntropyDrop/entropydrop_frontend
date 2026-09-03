@@ -377,3 +377,69 @@ test('disassembling or removing contraption updates storage so it stays removed 
   assert.equal(loadedCount, 0);
   assert.equal(managerReloaded.contraptions.length, 0);
 });
+
+test('server-managed entities stay out of browser persistence and preserve a rotated construction origin', () => {
+  const storage = new MockStorage();
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null, storage);
+  manager.setWorldId('shared-world');
+  const origin = new THREE.Vector3(25, 10, 40);
+  const entity = manager.buildFromSlot({
+    rootId: 'root',
+    mode: ContraptionMode.PROGRAMMABLE,
+    blocks: [
+      { localX: 0, localY: 0, localZ: 0, size: 1, color: 0xff0000, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
+      { localX: 2, localY: 0, localZ: 0, size: 1, color: 0x00ff00, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }
+    ],
+    childEntities: [],
+    scripts: [],
+    enabled: [],
+    constraints: []
+  }, origin, null, false);
+  assert.ok(entity);
+  entity.serverManaged = true;
+  entity.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  entity.position.copy(origin).add(entity.localCenter.clone().applyQuaternion(entity.quaternion));
+
+  const streamRecord = manager.captureContraptionForStreaming(entity, { id: '0,0' });
+  assert.ok(new THREE.Vector3().fromArray(streamRecord.constructorOrigin).distanceTo(origin) < 1e-12);
+  assert.equal(streamRecord.serverManaged, true);
+
+  assert.equal(manager.saveEntitiesToStorage(), true);
+  const saved = JSON.parse(storage.getItem(worldEntitiesStorageKey('shared-world'))!);
+  assert.deepEqual(saved.entities, []);
+});
+
+test('online entity persistence never reads or writes browser storage and delegates to the backend adapter', () => {
+  const storage = new MockStorage();
+  const worldId = 'online-world';
+  storage.setItem(worldEntitiesStorageKey(worldId), JSON.stringify({
+    type: 'space-entities', version: 1, worldId, entities: [{ publicId: 'legacy' }],
+  }));
+  const saved: any[] = [];
+  const removed: string[] = [];
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null, storage);
+  manager.setWorldId(worldId);
+  manager.setEntityPersistenceMode('remote', {
+    save: record => saved.push(record),
+    remove: publicId => removed.push(publicId),
+  });
+
+  assert.equal(storage.getItem(worldEntitiesStorageKey(worldId)), null);
+  assert.equal(manager.loadEntitiesFromStorage(), 0);
+  const entity = manager.buildFromSlot({
+    rootId: 'root',
+    mode: ContraptionMode.PROGRAMMABLE,
+    blocks: [{
+      localX: 0, localY: 0, localZ: 0, size: 1,
+      color: 0xff0000, block: BlockTypes.COLOR_BLOCK, entityId: 'root',
+    }],
+    childEntities: [], scripts: [], enabled: [], constraints: [],
+  }, new THREE.Vector3(4, 5, 6));
+
+  assert.ok(entity);
+  assert.equal(saved.length, 1);
+  assert.equal(storage.getItem(worldEntitiesStorageKey(worldId)), null);
+  manager.removeContraption(entity);
+  assert.deepEqual(removed, [entity.publicId]);
+  assert.equal(storage.getItem(worldEntitiesStorageKey(worldId)), null);
+});

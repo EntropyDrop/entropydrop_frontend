@@ -241,11 +241,16 @@ test('per-node scripting, renaming and property inspection work as expected', ()
   assert.equal(rootProps.kind, 'root');
   assert.equal(rootProps.blockCount, 1);
   assert.equal(rootProps.hasScript, false);
+  assert.deepEqual(rootProps.anchorQuaternion, [0, 0, 0, 1]);
+  assert.deepEqual(rootProps.localQuaternion, [0, 0, 0, 1]);
+  assert.deepEqual(rootProps.worldQuaternion, [0, 0, 0, 1]);
 
   const armProps = contraption.getNodeProperties('arm_1');
   assert.equal(armProps.id, 'arm_1');
   assert.equal(armProps.parentId, 'root');
   assert.equal(armProps.blockCount, 2);
+  assert.deepEqual(armProps.restLocalQuaternion, [0, 0, 0, 1]);
+  assert.deepEqual(armProps.runtimeBody.quaternion, [0, 0, 0, 1]);
 
   // Test setNodeScript & execution
   contraption.setNodeScript('root', `self.applyForce([10, 0, 0]);`);
@@ -277,6 +282,30 @@ test('per-node scripting, renaming and property inspection work as expected', ()
   assert.equal(contraption.getNodeScript('robot_arm'), `self.setLocalPosition([0, 1, 0]);`);
 });
 
+test('getNodeProperties reports the live root quaternion instead of its identity hierarchy placeholder', () => {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    89,
+    [standardBlock(0)],
+    new THREE.Vector3(3, 4, 5),
+    scene,
+    { mode: ContraptionMode.PROGRAMMABLE }
+  ) as any;
+
+  contraption.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  contraption.updateTransform();
+  const props = contraption.getNodeProperties('root');
+
+  assert.deepEqual(props.localPosition, [0, 0, 0], 'root script-local position has no parent');
+  assert.deepEqual(props.localQuaternion, [0, 0.7071, 0, 0.7071]);
+  assert.deepEqual(props.worldQuaternion, [0, 0.7071, 0, 0.7071]);
+  assert.deepEqual(props.runtimeBody.quaternion, [0, 0.7071, 0, 0.7071]);
+  assert.deepEqual(props.worldPosition, [3.5, 4.5, 5.5]);
+  assert.equal(props.runtimeBody.simulationEnabled, true);
+  assert.equal(props.runtimeBody.speed, 0);
+  assert.equal(props.runtimeBody.rpm, 0);
+});
+
 test('getNodeProperties splits persisted defaults from live runtime values', () => {
   const scene = new THREE.Scene();
   const contraption = new Contraption(
@@ -301,6 +330,9 @@ test('getNodeProperties splits persisted defaults from live runtime values', () 
   assert.equal(props.runtimeBody.mass, 77, 'runtime view shows the live mass');
   assert.equal(props.runtimeBody.restitution, 0.9, 'runtime view shows the live material');
   assert.deepEqual(props.runtimeBody.velocity, [0, 0, 0]);
+  assert.deepEqual(props.runtimeBody.angularVelocity, [0, 0, 0]);
+  assert.deepEqual(props.runtimeBody.centerOfMassLocal, [0, 0, 0]);
+  assert.equal(props.runtimeBody.simulationEnabled, true);
 
   // Panel-side (persistent) edits update the defaults themselves.
   contraption.setNodeBodyMass('root', 30);
@@ -317,6 +349,7 @@ test('getNodeProperties splits persisted defaults from live runtime values', () 
   assert.equal(restored.runtimeBody.bodyType, 'dynamic');
   assert.equal(restored.runtimeBody.mass, 30);
   assert.equal(restored.runtimeBody.restitution, 0.25);
+  assert.equal(restored.runtimeBody.simulationEnabled, false);
 });
 
 test('shovel and spoon can directly modify running entities and append blocks to child components', () => {

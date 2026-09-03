@@ -4070,6 +4070,63 @@ button.palette-title:hover {
   color: #f5f6fa;
 }
 
+.inspector-group-title {
+  margin-top: 2px;
+  padding: 2px 1px;
+  color: var(--accent-light);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.35px;
+}
+
+.inspector-transform-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 5px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+}
+
+.inspector-transform-row {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  align-items: start;
+  gap: 5px;
+}
+
+.inspector-transform-row > .inspector-val {
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.inspector-error {
+  max-height: 56px;
+  overflow-y: auto;
+  padding: 4px 6px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: rgba(127, 29, 29, 0.22);
+  color: #fca5a5;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.inspector-state-enabled {
+  color: #86efac;
+}
+
+.inspector-state-disabled,
+.inspector-state-empty {
+  color: var(--text-muted);
+}
+
+.inspector-state-error {
+  color: #fca5a5;
+}
+
 .inspector-field {
   display: flex;
   flex-direction: column;
@@ -4402,6 +4459,20 @@ button.palette-title:hover {
 
 .telemetry-item.power-item {
   grid-column: 1 / -1;
+}
+
+.telemetry-item-wide {
+  grid-column: 1 / -1;
+}
+
+.telemetry-grid-compact .telemetry-item {
+  padding: 4px 6px;
+}
+
+.telemetry-grid-compact .tele-val {
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .power-meter {

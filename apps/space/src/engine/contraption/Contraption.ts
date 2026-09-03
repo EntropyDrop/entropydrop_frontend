@@ -330,6 +330,17 @@ export class Contraption {
   blocks: any[];
   scene: any;
   originWorldPos: THREE.Vector3;
+  serverManaged?: boolean;
+  serverSourceKind?: 'market' | 'browser' | null;
+  serverOwnerUserId?: string | null;
+  serverCanControl?: boolean;
+  serverCanEdit?: boolean;
+  serverExecutesLocally?: boolean;
+  serverRevision?: number;
+  serverPlaybackRevision?: number;
+  serverDesiredRunState?: 'running' | 'stopped' | null;
+  serverDefinitionDigest?: string | null;
+  serverSnapshotDigest?: string | null;
 
   // --- Spatial / 3D hierarchy ---
   rootGroup: THREE.Group;
@@ -2144,11 +2155,31 @@ export class Contraption {
     const id = String(nodeId || 'root');
     const node = this.entityNodes.get(id);
     if (!node) return null;
+    const isRoot = id === 'root';
     const blocks = this.blocks.filter(b => (b.entityId || 'root') === id);
     const volume = blocks.reduce((sum, b) => sum + Math.pow(b.size || 1, 3), 0);
-    const euler = new THREE.Euler().setFromQuaternion(node.localQuaternion, 'YXZ');
+    this.rootGroup.updateMatrixWorld(true);
+    const localPosition = isRoot ? new THREE.Vector3() : node.localPosition.clone();
+    // The root node's stored local quaternion is intentionally identity because
+    // its live transform belongs to rootGroup. Showing it in the inspector made
+    // a rotated root look unrotated, so use the same value exposed by
+    // self.getLocalRotation().
+    const localQuaternion = isRoot ? this.quaternion.clone() : node.localQuaternion.clone();
+    const worldPosition = isRoot
+      ? this.position.clone()
+      : node.group.getWorldPosition(new THREE.Vector3());
+    const worldQuaternion = isRoot
+      ? this.quaternion.clone()
+      : node.group.getWorldQuaternion(new THREE.Quaternion());
+    const localEuler = new THREE.Euler().setFromQuaternion(localQuaternion, 'YXZ');
     const defaults = this.getNodeDefaultBodyConfig(id);
     const liveBody = this.getRigidBody(id);
+    const round = (value, digits = 2) => {
+      const rounded = Number(Number(value || 0).toFixed(digits));
+      return Object.is(rounded, -0) ? 0 : rounded;
+    };
+    const vector = (value, digits = 2) => value.toArray().map(part => round(part, digits));
+    const quaternion = value => value.toArray().map(part => round(part, 4));
     const runtimeBody = liveBody
       ? {
         bodyType: liveBody.type,
@@ -2157,8 +2188,16 @@ export class Contraption {
         friction: liveBody.friction,
         useGravity: this.getNodeGravityEnabled(id),
         collisionEnabled: this.getNodeCollisionEnabled(id),
-        velocity: liveBody.velocity.toArray().map(part => Number(part.toFixed(2))),
-        angularVelocity: liveBody.angularVelocity.toArray().map(part => Number(part.toFixed(2)))
+        simulationEnabled: liveBody.simulationEnabled !== false,
+        isOnGround: !!liveBody.isOnGround,
+        position: vector(liveBody.position),
+        quaternion: quaternion(liveBody.quaternion),
+        centerOfMassLocal: vector(liveBody.centerOfMassLocal),
+        velocity: vector(liveBody.velocity),
+        angularVelocity: vector(liveBody.angularVelocity),
+        speed: round(liveBody.velocity.length()),
+        angularSpeed: round(liveBody.angularVelocity.length()),
+        rpm: round(liveBody.angularVelocity.length() * 60 / (Math.PI * 2), 1)
       }
       : null;
 
@@ -2176,16 +2215,24 @@ export class Contraption {
       constraintCount: this.getConstraints(id).length,
       blockCount: blocks.length,
       volume: Number(volume.toFixed(2)),
-      pivot: [Number(node.pivotLocal.x.toFixed(2)), Number(node.pivotLocal.y.toFixed(2)), Number(node.pivotLocal.z.toFixed(2))],
-      localPosition: [Number(node.localPosition.x.toFixed(2)), Number(node.localPosition.y.toFixed(2)), Number(node.localPosition.z.toFixed(2))],
+      pivot: vector(node.pivotLocal),
+      anchorQuaternion: quaternion(node.anchorQuaternion),
+      restLocalPosition: isRoot ? null : vector(node.initialLocalPosition || node.localPosition),
+      restLocalQuaternion: isRoot ? null : quaternion(node.initialLocalQuaternion || node.localQuaternion),
+      localPosition: vector(localPosition),
+      localQuaternion: quaternion(localQuaternion),
+      worldPosition: vector(worldPosition),
+      worldQuaternion: quaternion(worldQuaternion),
       localEuler: [
-        Number((euler.x * 180 / Math.PI).toFixed(1)),
-        Number((euler.y * 180 / Math.PI).toFixed(1)),
-        Number((euler.z * 180 / Math.PI).toFixed(1))
+        round(localEuler.x * 180 / Math.PI, 1),
+        round(localEuler.y * 180 / Math.PI, 1),
+        round(localEuler.z * 180 / Math.PI, 1)
       ],
-      rpm: Math.round(node.localAngularVelocity.length() * 60 / (Math.PI * 2)),
+      rpm: round(node.localAngularVelocity.length() * 60 / (Math.PI * 2), 1),
       hasScript: !!(this.getNodeScript(id) && this.getNodeScript(id).trim().length > 0),
-      isScriptEnabled: this.isNodeScriptEnabled(id)
+      isScriptEnabled: this.isNodeScriptEnabled(id),
+      scriptError: this.nodeScriptErrors.get(id) || (isRoot ? this.scriptError : null) || null,
+      stateKeyCount: Object.keys(this.getComponentState(id)).length
     };
   }
 

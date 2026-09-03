@@ -12,7 +12,7 @@ that user's immutable `skin_url` PNG. The first random position is checkpointed
 immediately; later wrapped position/yaw updates are saved every five seconds,
 on realtime disconnect, and before page suspension. A user without a configured
 skin is blocked and sent to `/skin/edit`. Backpack data remains browser-local under
-`space.backpack.v2` and is never uploaded by this app. Player-authored standard
+`space.backpack.v3.pb` and is never uploaded by this app. Player-authored standard
 and micro-voxel terrain overlays are loaded from the authenticated Space API and
 sent back in idempotent batches of at most 256 mutations. A durable browser
 outbox under `space.world-edits.v2.*` preserves unacknowledged batches across a
@@ -103,9 +103,11 @@ backend configured by `VITE_API_BASE_URL` (default: `http://localhost:8000`).
 4. Aim at the entity and press `C`.
 5. Describe the behavior, inspect the generated controller, and run it.
 
-Entity backpack items can also be reused as modules with the Hammer: left-click
-spawns an independent entity, while `Shift` + left-click on a stopped entity
-installs the item as a rigid child component of the component under the crosshair.
+Entity backpack items can also be reused as modules with the Hammer: left-clicking
+terrain spawns an independent entity and immediately puts it in **Play** (physics
+active and all runnable component scripts enabled). Placing on a stopped entity
+installs the item as a rigid child component under the crosshair; `Shift` + left-click
+requests this installation mode explicitly, and the combined entity stays stopped.
 
 The bundled local Agent prototype currently understands English hover, follow,
 orbit, launch, spin, attitude-stabilization, and stop intents.
@@ -113,6 +115,16 @@ Its result contract is intentionally small so it can later be replaced by a
 remote LLM without changing the controller runtime.
 
 Detailed component script and controller API documentation is available directly in-game via the Code Editor terminal (press `C` → API Reference) and in the generated [Script API V2 reference](docs/generated/api-v2.md). The [Agent API reference](docs/generated/agent-api-v2.md), in-game reference, and runtime Agent prompt are all rendered from `src/engine/contraption/ScriptApiContract.ts`; edit that contract instead of these generated views.
+
+The Entity Editor inspector separates authored values from live simulation data. **Defaults**
+shows the pivot (`XYZ`), saved mounting-frame quaternion (`XYZW`), and, for child
+components, the parent-relative position/quaternion restored by **Stop**. **Runtime** shows
+the current local and composed world transforms, Euler angles for readability, plus the
+physics center of mass, body quaternion, velocity, angular velocity, grounded state, and
+simulation state. The root has no parent: its script-local position is `[0,0,0]`, while its
+live local quaternion is also its world quaternion. The Authority panel identifies backend
+versus offline persistence, source, edit/control permission, execution lease location, and
+backend revisions.
 
 ## Multiplayer backend
 
@@ -122,6 +134,25 @@ nearby-player snapshots arrive at 10 Hz, terrain is invalidated immediately and 
 through its durable REST cursor, and reconnect positions are checkpointed every five
 seconds. This relay is a compatibility stage, not the authoritative simulation protocol
 described below.
+
+Every world entity in online mode comes from the backend. The browser neither reads nor
+writes `entropydrop_space_entities.*`; entering an online world removes that world's legacy
+browser entity value. Creating or editing an entity uploads its canonical Protobuf definition
+and a bounded runtime snapshot, and active browser-authored entities checkpoint changed
+state every six seconds. Removing one performs a backend hard delete. Offline mode keeps the
+existing browser persistence and never calls these entity endpoints. This boundary applies
+only to world entities: the backpack deliberately remains local.
+
+Published entity resources can also be instantiated by the external create-only API. The
+browser polls the nearby wrapped AOI, verifies the copied Protobuf definition and optional
+snapshot, then restores the exact construction/runtime pose, including its quaternion. Only
+the owner's browser holding the current eight-second execution lease advances physics/scripts;
+observers retain a stopped collision pose. Wrench Start/Stop is accepted only for the owner
+or an administrator, so another ordinary player cannot stop the entity. Market-created
+instances remain structurally read-only. Browser-authored instances may be edited or deleted
+only by their owner or an administrator; their updated definition and state return to the
+backend instead of browser storage. Entity `self.*` actions continue to run only on the lease
+holder.
 
 The Multiplayer V2 target is server-authoritative: zone workers own the 60 Hz
 simulation and active chunks, binary WebSocket messages carry inputs and AOI

@@ -179,7 +179,7 @@ const HOTBAR_SLOTS = [
   { type: 'tool', value: SpecialTool.SPOON, name: 'Spoon', icon: '', desc: 'Carve 5x5x5 micro voxels cell by cell' },
   { type: 'tool', value: SpecialTool.SELECTOR, name: 'Selector', icon: '', desc: 'Select and copy world/entity regions (max 64×64×64); no build action' },
   { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'LMB build / attach to entity · RMB rotate 90°' },
-  { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Drag pivot axes · click origin to reset · hold left-click to grab · right-click start/stop' },
+  { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Show pivot XYZ axes · hold left-click to grab · right-click start/stop' },
   { type: 'tool', value: SpecialTool.BRUSH, name: 'Brush', icon: '', desc: 'LMB paint · RMB sample · Tab micro/std' }
 ];
 
@@ -570,8 +570,16 @@ export class SpaceUiStore {
   toggleApiDocs(forceState: boolean | null = null): void {
     const open = forceState === null ? !this.snapshot.apiDocsOpen : forceState;
     this.patch({ apiDocsOpen: open });
-    if (open) this.snapshot.controller?.unlock?.();
-    else if (this.snapshot.activeModal !== 'code') void this.snapshot.controller?.requestLock?.();
+    if (open) {
+      // The reference modal covers the editor preview completely; suspend its
+      // second WebGL context until the user returns to the editor.
+      this.snapshot.sceneRenderer?.setEntityPreviewTarget?.(null);
+      this.snapshot.controller?.unlock?.();
+    } else if (this.snapshot.activeModal === 'code' && this.snapshot.editingContraption) {
+      this.snapshot.sceneRenderer?.setEntityPreviewTarget?.(this.snapshot.editingContraption);
+    } else {
+      void this.snapshot.controller?.requestLock?.();
+    }
   }
 
   handleEscape(): boolean {
@@ -1567,7 +1575,6 @@ export class SpaceUiStore {
 
     let telemetry = this.snapshot.telemetry;
     if (activeModal === 'code' && editingContraption) {
-      sceneRenderer?.renderEntityPreview?.(editingContraption);
       const powerPercent = Math.round(Math.min(1, Math.max(0, editingContraption.powerUtilization || 0)) * 100);
       telemetry = {
         groundDistance: `${(editingContraption.groundDistance || 0).toFixed(2)} m`,
