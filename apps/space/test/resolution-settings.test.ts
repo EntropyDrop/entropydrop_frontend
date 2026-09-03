@@ -33,10 +33,12 @@ test('resolution setting is applied to the renderer and follows automatic update
     scale: 0.8,
     fixedScale: 0.67,
     averageFrameMs: 16.5,
+    effectsQuality: 'reduced',
     nativePixelRatio: 2,
     effectivePixelRatio: 1.6,
   });
   assert.equal(store.getSnapshot().resolutionScaleMode, 'auto');
   assert.equal(store.getSnapshot().resolutionScale, 0.8);
   assert.equal(store.getSnapshot().resolutionPixelRatio, 1.6);
+  assert.equal(store.getSnapshot().resolutionEffectsQuality, 'reduced');
 });

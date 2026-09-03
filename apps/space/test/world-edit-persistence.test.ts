@@ -53,7 +53,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1_000) {
 test('standard and micro terrain edits survive constructing a fresh world after refresh', () => {
   const storage = new MemoryStorage();
   const persistence = { worldId: 'refresh-test-world', storage };
-  const first = new World(new THREE.Scene(), 1337, null, persistence) as any;
+  const first = new World(new THREE.Scene(), 1337, persistence) as any;
 
   // Added/recolored cells and AIR tombstones over generated terrain must both
   // survive. Without the tombstone, the y=0 block would regenerate on refresh.
@@ -67,7 +67,7 @@ test('standard and micro terrain edits survive constructing a fresh world after 
   assert.equal(first.removeMicroBlock(43 * 5 + 4, 80 * 5 + 4, 48 * 5 + 4), true);
   assert.equal(first.flushPersistedEdits(), true);
 
-  const second = new World(new THREE.Scene(), 1337, null, persistence) as any;
+  const second = new World(new THREE.Scene(), 1337, persistence) as any;
   second.getOrCreateChunk(2, 3);
 
   assert.equal(second.getBlock(40, 80, 48), BlockTypes.COLOR_BLOCK);

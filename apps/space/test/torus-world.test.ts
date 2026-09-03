@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { World } from '../src/engine/voxel/World.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { CHUNK_SIZE_Y } from '../src/engine/voxel/Chunk.ts';
 import {
   TORUS_SIZE_X, TORUS_SIZE_Z, TORUS_R, TORUS_RHO, TORUS_GREF,
   TORUS_SPAWN_X, TORUS_SPAWN_Z,
@@ -32,8 +33,8 @@ test('torus bend is geometrically continuous across wrapped seams', () => {
 });
 
 test('torus unbend is the inverse of bend throughout the world', () => {
-  // The 1024x128 ratio keeps R large enough to avoid folding throughout y∈[0,127].
-  for (const [x, y, z] of [[0, 16, 0], [8192, 16, 1024], [16383, 30, 2047], [100, 2, 64], [14208, 127, 1600]]) {
+  // The 1024x128 ring ratio keeps R large enough to avoid folding throughout y∈[0,255].
+  for (const [x, y, z] of [[0, 16, 0], [8192, 16, 1024], [16383, 30, 2047], [100, 2, 64], [14208, 255, 1600]]) {
     const bent = bendPoint(x, y, z);
     const flat = unbendPoint(bent.x, bent.y, bent.z);
     assert.ok(Math.abs(flat.x - x) < 1e-4, `x ${x} -> ${flat.x}`);
@@ -139,7 +140,8 @@ test('torus constants preserve R/r=8 for the scaled 1024x128 chunk world', () =>
   assert.equal(TORUS_SIZE_Z, 2048);
   assert.ok(Math.abs(TORUS_R / TORUS_RHO - 8) < 1e-9, 'R:r should equal the 8:1 aspect ratio');
   assert.equal(TORUS_GREF, 16);
-  assert.ok(TORUS_RHO + (127 - TORUS_GREF) < TORUS_R - 1, 'the full build height should not trigger fold protection');
+  assert.equal(CHUNK_SIZE_Y, 256);
+  assert.ok(TORUS_RHO + (CHUNK_SIZE_Y - 1 - TORUS_GREF) < TORUS_R - 1, 'the full build height should not trigger fold protection');
 
   const atSpawn = bendPoint(TORUS_SPAWN_X, 16, TORUS_SPAWN_Z);
   const xEdge = atSpawn.distanceTo(bendPoint(TORUS_SPAWN_X + 1, 16, TORUS_SPAWN_Z));
@@ -148,54 +150,13 @@ test('torus constants preserve R/r=8 for the scaled 1024x128 chunk world', () =>
   assert.ok(Math.abs(zEdge - 1) < 0.001, `inner-ring Z edges should remain about one cell, got ${zEdge}`);
 });
 
-test('torus distant LOD coalesces edits and updates only affected vertices in batches', () => {
+test('torus rendering starts with no synthetic far terrain and preserves near-field culling contracts', () => {
   const world = new World(new THREE.Scene()) as any;
-  const stride = 64 + 1;
-  const ix = 512 / 2;
-  const iz = 64 / 2;
-  const vertexIndex = ix * stride + iz;
-  const positions = world.distantSurface.geometry.getAttribute('position');
-  const before = new THREE.Vector3().fromBufferAttribute(positions, vertexIndex);
-
-  world.setBlock(TORUS_SPAWN_X, 50, TORUS_SPAWN_Z, BlockTypes.COLOR_BLOCK, false, 0xeb4d4b);
-  world.setBlock(TORUS_SPAWN_X, 51, TORUS_SPAWN_Z, BlockTypes.COLOR_BLOCK, false, 0xeb4d4b);
-  assert.equal(world.distantPendingColumns.size, 1, 'successive edits in one column should coalesce');
-  assert.equal(world.distantLodRevision, 0, 'an edit should not synchronously rebuild the full ring');
-
-  assert.equal(world.flushDistantSurfaceUpdates(true), 1);
-  const after = new THREE.Vector3().fromBufferAttribute(positions, vertexIndex);
-  assert.ok(after.distanceTo(before) > 10, 'distant vertices should reflect the new tower');
-  assert.equal(world.distantSurface.geometry.getAttribute('terrainHeight').getX(vertexIndex), 51);
-  assert.equal(world.distantSurface.geometry.getAttribute('terrainEditMask').getX(vertexIndex), 1,
-    'the distant shader should preserve block colors in player-edited areas');
-  assert.equal(world.distantLodRevision, 1);
-  assert.equal(world.distantPendingColumns.size, 0);
-  const normal = new THREE.Vector3().fromBufferAttribute(
-    world.distantSurface.geometry.getAttribute('normal'),
-    vertexIndex
-  );
-  assert.ok(Number.isFinite(normal.length()) && Math.abs(normal.length() - 1) < 1e-4,
-    'normals should remain normalized after a local update');
-
-  const highMicroY = 60 * 5;
-  world.setMicroBlock(TORUS_SPAWN_X * 5, highMicroY, TORUS_SPAWN_Z * 5, 0x48dbfb);
-  assert.equal(world.microVoxels.getColumnTop(TORUS_SPAWN_X, TORUS_SPAWN_Z).my, highMicroY,
-    'microblock height should use the sparse column index');
-  assert.equal(world.flushDistantSurfaceUpdates(true), 1);
-  const afterMicro = new THREE.Vector3().fromBufferAttribute(positions, vertexIndex);
-  assert.ok(afterMicro.distanceTo(after) > 5, 'microblock height should also reach the distant summary mesh');
-
-  for (let x = 0; x < 49; x++) world.queueDistantSurfaceUpdate(x, 0);
-  assert.equal(world.flushDistantSurfaceUpdates(true), 48, 'one flush must respect the 48-column budget');
-  assert.equal(world.distantPendingColumns.size, 1, 'over-budget columns should wait for the next batch');
-});
-
-test('torus rendering honors full-ring LOD and near-field bent-space culling contracts', () => {
-  const world = new World(new THREE.Scene()) as any;
-  assert.equal(world.distantSurface.userData.torusPreBent, true);
-  const lodTriangles = world.distantSurface.geometry.index.count / 3;
-  assert.ok(lodTriangles <= 66000, `full-ring LOD should remain lightweight, got ${lodTriangles} triangles`);
-  assert.ok(Number.isFinite(world.distantSurface.geometry.boundingSphere.radius));
+  assert.equal(world.distantSurface.mesh.userData.distantSurfaceZones, true);
+  assert.equal(world.distantSurface.mesh.visible, false);
+  assert.equal(world.distantSurface.loadedZones.size, 0);
+  assert.equal(world.distantSurface.mesh.geometry.instanceCount, 0,
+    'unvisited terrain must not be replaced with synthetic geometry');
 
   world.updateChunksAround(TORUS_SPAWN_X, TORUS_SPAWN_Z);
   const expectedChunkCount = (2 * world.renderDistance + 1) ** 2;
@@ -205,7 +166,11 @@ test('torus rendering honors full-ring LOD and near-field bent-space culling con
     'the full configured window should be tracked while allocation proceeds');
   const meshed = [...world.chunks.values()].filter((chunk: any) => chunk.mesh);
   assert.equal(meshed.length, 1, 'only one expensive chunk mesh should build per frame');
+  const detailMask = world.distantSurface.detailMaskTexture.image.data as Uint8Array;
   for (const chunk of meshed) {
+    const maskIndex = chunk.cz * (TORUS_SIZE_X / 16) + chunk.cx;
+    assert.equal(detailMask[maskIndex], 255,
+      'far terrain must be hidden only after the detailed chunk mesh is ready');
     chunk.mesh.traverse((child) => {
       if (!child.isMesh) return;
       assert.equal(child.frustumCulled, false, 'child meshes must not be culled again by flat bounding spheres');
@@ -230,10 +195,16 @@ test('chunk streaming evicts procedural arrays but retains authored edits', () =
   const center = world.worldToChunkCoords(TORUS_SPAWN_X, TORUS_SPAWN_Z);
   const editedKey = `${center.cx},${center.cz}`;
   const uneditedKey = `${center.cx + 1},${center.cz}`;
-  assert.equal(world.setBlock(TORUS_SPAWN_X, 127, TORUS_SPAWN_Z, BlockTypes.COLOR_BLOCK), true);
+  const detailMask = world.distantSurface.detailMaskTexture.image.data as Uint8Array;
+  const centerMaskIndex = center.cz * (TORUS_SIZE_X / 16) + center.cx;
+  assert.equal(detailMask[centerMaskIndex], 255, 'the initial detailed chunk should own its pixels');
+  assert.equal(world.setBlock(TORUS_SPAWN_X, 255, TORUS_SPAWN_Z, BlockTypes.COLOR_BLOCK), true);
+  assert.equal(world.setBlock(TORUS_SPAWN_X, 256, TORUS_SPAWN_Z, BlockTypes.COLOR_BLOCK), false);
   assert.equal(world.chunks.get(editedKey).hasUserEdits, true);
 
   world.updateChunksAround(TORUS_SPAWN_X + 10 * 16, TORUS_SPAWN_Z);
+  assert.equal(detailMask[centerMaskIndex], 0,
+    'far terrain must resume before an old detailed chunk leaves the active window');
   assert.equal(world.chunks.has(editedKey), true, 'authored chunks must remain available for persistence/re-entry');
   assert.equal(world.chunks.has(uneditedKey), false, 'procedural chunks should be regenerated instead of retained');
   assert.ok(world.chunks.size <= world.activeChunkKeys.size + 1,

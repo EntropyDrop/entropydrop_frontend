@@ -17,6 +17,7 @@
 // the CPU bends one camera, frustum-culls chunk spheres, and unbends ray samples.
 // =============================================================================
 import * as THREE from 'three';
+import { CHUNK_SIZE_Y } from '../voxel/Chunk.ts';
 
 export const TORUS_CHUNKS_X = 1024;
 export const TORUS_CHUNKS_Z = 128;
@@ -172,7 +173,7 @@ export function computeChunkBentSphere(cx, cz, out = null) {
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (let i = 0; i < 8; i++) {
     const lx = i & 1 ? ox + 16 : ox;
-    const ly = i & 2 ? 128 : 0;
+    const ly = i & 2 ? CHUNK_SIZE_Y : 0;
     const lz = i & 4 ? oz + 16 : oz;
     const p = bendPoint(lx, ly, lz);
     if (p.x < minX) minX = p.x;
@@ -188,7 +189,7 @@ export function computeChunkBentSphere(cx, cz, out = null) {
   let radius = 0;
   for (let i = 0; i < 8; i++) {
     const lx = i & 1 ? ox + 16 : ox;
-    const ly = i & 2 ? 128 : 0;
+    const ly = i & 2 ? CHUNK_SIZE_Y : 0;
     const lz = i & 4 ? oz + 16 : oz;
     const p = bendPoint(lx, ly, lz);
     const d = Math.hypot(p.x - cx2, p.y - cy2, p.z - cz2);
@@ -268,6 +269,26 @@ gl_Position = projectionMatrix * mvPosition;
 const TORUS_NORMAL_VERTEX = `
 vec4 torusWp = modelMatrix * vec4( position, 1.0 );
 vec3 torusObjectNormal = objectNormal;
+#ifdef TORUS_SURFACE_POSITION
+	#ifdef TORUS_SURFACE_AXIS
+		vec2 torusSurfaceCenterOffset = mix(
+			vec2(surfaceSize * 0.5, 0.0),
+			vec2(0.0, surfaceSize * 0.5),
+			surfaceAxis
+		);
+	#else
+		vec2 torusSurfaceCenterOffset = vec2(surfaceSize * 0.5);
+	#endif
+	torusWp = modelMatrix * vec4(
+		surfaceOffset.x + torusSurfaceCenterOffset.x,
+		surfaceHeight * 0.2,
+		surfaceOffset.y + torusSurfaceCenterOffset.y,
+		1.0
+	);
+#endif
+#ifdef TORUS_SURFACE_NORMAL
+	torusObjectNormal = vec3(surfaceNormal.x, 0.0, surfaceNormal.y);
+#endif
 #ifdef USE_INSTANCING
 	torusWp = modelMatrix * ( instanceMatrix * vec4( position, 1.0 ) );
 	torusObjectNormal = mat3( instanceMatrix ) * torusObjectNormal;
@@ -329,7 +350,7 @@ hookMaterialForTorus(torusDepthMaterial);
 /** Scan the scene at low frequency and inject bending into new materials; WeakSet deduplicates them. */
 export function hookSceneMaterials(root) {
   root.traverse((obj) => {
-    // The distant terrain LOD is generated directly in bent coordinates.
+    // Some helpers may already provide geometry in bent coordinates.
     if (obj.userData?.torusPreBent) return;
     const mat = obj.material;
     if (mat) {

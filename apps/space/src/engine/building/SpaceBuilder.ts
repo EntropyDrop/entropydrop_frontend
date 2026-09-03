@@ -7,6 +7,7 @@ import {
   MAX_ENTITY_COMPONENTS
 } from '../contraption/Contraption.ts';
 import { BlockTypes, DEFAULT_BLOCK_COLOR, normalizeColor } from '../voxel/BlockTypes.ts';
+import { CHUNK_SIZE_Y } from '../voxel/Chunk.ts';
 
 export const SPACE_BUILD_PLAN_VERSION = 1;
 export const MAX_BUILD_PLAN_VOXELS = 65_536;
@@ -680,8 +681,8 @@ export class SpaceBuilder {
     let overlapsPlayer = false;
     for (const block of plan.blocks) {
       const y = position.y + block.y;
-      if (y < 0 || y + block.size > 128) {
-        errors.push('The preview extends outside the buildable world height [0,128).');
+      if (y < 0 || y + block.size > CHUNK_SIZE_Y) {
+        errors.push(`The preview extends outside the buildable world height [0,${CHUNK_SIZE_Y}).`);
         break;
       }
       const x = position.x + block.x;

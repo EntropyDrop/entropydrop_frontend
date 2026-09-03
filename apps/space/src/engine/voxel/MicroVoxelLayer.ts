@@ -24,8 +24,6 @@ function meshChunkKey(mx, mz) {
 export class MicroVoxelLayer {
   cells: Map<string, number>;
   parts: Map<string, any>;
-  columnLayers: Map<string, Map<number, { count: number; color: number }>>;
-  columnTops: Map<string, { my: number; color: number }>;
   dirty: boolean;
   group: THREE.Group;
   /** Compatibility alias for callers that only need to know whether a mesh exists. */
@@ -39,10 +37,6 @@ export class MicroVoxelLayer {
   constructor() {
     this.cells = new Map();
     this.parts = new Map();
-    // Sparse per-column height index used by the deferred distant-terrain LOD.
-    // It avoids scanning 5×5×640 possible micro cells for every thumbnail update.
-    this.columnLayers = new Map();
-    this.columnTops = new Map();
     this.dirty = false;
     this.group = new THREE.Group();
     this.group.name = 'MicroVoxelLayer';
@@ -97,62 +91,6 @@ export class MicroVoxelLayer {
     if (cells?.size === 0) this.chunkCells.delete(chunkKey);
   }
 
-  private getColumnKey(mx, mz) {
-    return `${Math.floor(wrapMicroX(mx) / MICRO_DIVISIONS)},${Math.floor(wrapMicroZ(mz) / MICRO_DIVISIONS)}`;
-  }
-
-  private indexCellSet(mx, my, mz, color, isNew) {
-    const columnKey = this.getColumnKey(mx, mz);
-    let layers = this.columnLayers.get(columnKey);
-    if (!layers) {
-      layers = new Map();
-      this.columnLayers.set(columnKey, layers);
-    }
-    let layer = layers.get(my);
-    if (!layer) {
-      layer = { count: 0, color };
-      layers.set(my, layer);
-    }
-    if (isNew) layer.count++;
-    layer.color = color;
-    const top = this.columnTops.get(columnKey);
-    if (!top || my >= top.my) this.columnTops.set(columnKey, { my, color });
-  }
-
-  private indexCellDelete(mx, my, mz) {
-    const columnKey = this.getColumnKey(mx, mz);
-    const layers = this.columnLayers.get(columnKey);
-    const layer = layers?.get(my);
-    if (!layers || !layer) return;
-    layer.count--;
-    if (layer.count <= 0) layers.delete(my);
-    if (layers.size === 0) {
-      this.columnLayers.delete(columnKey);
-      this.columnTops.delete(columnKey);
-      return;
-    }
-    const top = this.columnTops.get(columnKey);
-    if (top?.my !== my) return;
-    if (layers.has(my)) {
-      this.columnTops.set(columnKey, { my, color: layers.get(my).color });
-      return;
-    }
-    let topMy = -1;
-    let topColor = DEFAULT_BLOCK_COLOR;
-    for (const [layerY, value] of layers) {
-      if (layerY <= topMy) continue;
-      topMy = layerY;
-      topColor = value.color;
-    }
-    this.columnTops.set(columnKey, { my: topMy, color: topColor });
-  }
-
-  /** Highest occupied micro layer in a standard X/Z column, cached in O(1). */
-  getColumnTop(wx, wz) {
-    const columnKey = this.getColumnKey(wx * MICRO_DIVISIONS, wz * MICRO_DIVISIONS);
-    return this.columnTops.get(columnKey) ?? null;
-  }
-
   set(mx, my, mz, color = DEFAULT_BLOCK_COLOR, part = null) {
     const normalized = normalizeColor(color);
     const cellKey = key(mx, my, mz);
@@ -161,7 +99,6 @@ export class MicroVoxelLayer {
     if (this.cells.get(cellKey) === normalized && currentPart === part) return false;
     this.cells.set(cellKey, normalized);
     if (isNew) this.addChunkCell(cellKey, mx, mz);
-    this.indexCellSet(mx, my, mz, normalized, isNew);
     if (part) this.parts.set(cellKey, part);
     else this.parts.delete(cellKey);
     this.markMeshChunkDirty(mx, mz);
@@ -174,7 +111,6 @@ export class MicroVoxelLayer {
     this.parts.delete(cellKey);
     if (removed) {
       this.removeChunkCell(cellKey, mx, mz);
-      this.indexCellDelete(mx, my, mz);
       this.markMeshChunkDirty(mx, mz);
     }
     return removed;
@@ -245,7 +181,6 @@ export class MicroVoxelLayer {
       if (!this.cells.delete(cellKey)) continue;
       this.parts.delete(cellKey);
       this.removeChunkCell(cellKey, mx, mz);
-      this.indexCellDelete(mx, my, mz);
       const localX = wrapMicroX(mx) % MICRO_CHUNK_SIZE;
       const localZ = wrapMicroZ(mz) % MICRO_CHUNK_SIZE;
       touchesMinX ||= localX === 0;
@@ -283,7 +218,6 @@ export class MicroVoxelLayer {
       extracted.push({ mx: extractedMx, my, mz: extractedMz, color, part: this.parts.get(cellKey) ?? null });
       this.cells.delete(cellKey);
       this.removeChunkCell(cellKey, mx, mz);
-      this.indexCellDelete(mx, my, mz);
       this.parts.delete(cellKey);
       this.markMeshChunkDirty(mx, mz);
     }
@@ -311,7 +245,6 @@ export class MicroVoxelLayer {
       extracted.push({ mx: extractedMx, my, mz: extractedMz, color, part: this.parts.get(cellKey) ?? null });
       this.cells.delete(cellKey);
       this.removeChunkCell(cellKey, mx, mz);
-      this.indexCellDelete(mx, my, mz);
       this.parts.delete(cellKey);
       this.markMeshChunkDirty(mx, mz);
     }

@@ -148,9 +148,9 @@ export class LowPolyMesher {
     // Apart from reducing uploads, this also cuts the torus vertex-shader work
     // by one third while retaining one-metre tessellation along curved terrain.
     const vertexCount = faceCount * 4;
-    // Chunk-local coordinates are integral and bounded by 0..128. Compact
+    // Chunk-local coordinates are integral and bounded by 0..256. Compact
     // integer attributes are expanded by WebGL during vertex fetch, avoiding
-    // 32-bit floats for data that only needs 8 bits (similar to Sodium's
+    // 32-bit floats for data that only needs 16 bits (similar to Sodium's
     // compact terrain vertex formats).
     const PositionArray = Math.max(CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z) <= 0xff
       ? Uint8Array

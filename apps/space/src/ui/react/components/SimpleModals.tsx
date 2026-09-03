@@ -160,7 +160,7 @@ export function GlobalSettingsModal() {
           <div className="settings-row settings-resolution-row">
             <div className="settings-label-group">
               <span className="settings-label">Render Resolution</span>
-              <span className="settings-desc">Auto targets a stable frame rate · currently {Math.round(state.resolutionScale * 100)}% ({state.resolutionPixelRatio.toFixed(2)}× pixel ratio)</span>
+              <span className="settings-desc">Auto targets 120 FPS · currently {Math.round(state.resolutionScale * 100)}% ({state.resolutionPixelRatio.toFixed(2)}× pixel ratio){state.resolutionEffectsQuality === 'reduced' ? ' · shadows paused' : ''}</span>
             </div>
             <div className="settings-segmented-control settings-resolution-control" id="setting-resolution-group">
               {([

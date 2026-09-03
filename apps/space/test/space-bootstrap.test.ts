@@ -43,6 +43,7 @@ test('Space validates the bootstrap V2 contract before constructing the game', (
       seed: 20260827,
       terrain_generator_version: 1,
       terrain_revision: 0,
+      surface_snapshot_url: '/space/api/v2/worlds/world-1/surface-zones',
     },
     player: {
       user_id: 'user-1',

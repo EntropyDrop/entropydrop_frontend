@@ -25,6 +25,10 @@ import {
   readResponseBytes,
   resolveSafeHttpUrl,
 } from './NetworkSafety.ts';
+import {
+  createSpaceSurfaceSnapshotRemote,
+  type SpaceSurfaceSnapshotRemote,
+} from './SpaceSurfaceSnapshot.ts';
 
 export { LatencyMonitor, type LatencyMonitorOptions };
 
@@ -63,6 +67,7 @@ export interface SpaceBootstrapPayload {
     seed: number;
     terrain_generator_version: number;
     terrain_revision: number;
+    surface_snapshot_url: string;
   };
   player: {
     user_id: string;
@@ -112,6 +117,7 @@ export function parseSpaceBootstrapPayload(value: unknown): SpaceBootstrapPayloa
     || !isBoundedInteger(world?.seed, -2_147_483_648, 2_147_483_647)
     || !isBoundedInteger(world?.terrain_generator_version, 1, 1_000_000)
     || !isBoundedInteger(world?.terrain_revision, 0, Number.MAX_SAFE_INTEGER)
+    || !isBoundedString(world?.surface_snapshot_url, 4096)
     || !isBoundedString(player?.user_id, 128)
     || !(player?.username === null || typeof player?.username === 'string')
     || !isBoundedString(player?.player_entity_id, 128)
@@ -143,6 +149,7 @@ export interface ReadySpaceSession extends SpaceBootstrapPayload {
   token: string;
   skin_object_url: string;
   terrain_edit_remote: WorldEditRemote | null;
+  surface_snapshot_remote: SpaceSurfaceSnapshotRemote | null;
   player_position_remote: PlayerPositionRemote;
   latency_monitor: LatencyMonitor | null;
 }
@@ -809,6 +816,13 @@ async function completeOnlineSpace(prepared: PreparedOnlineSpace): Promise<Ready
     token,
     skin_object_url: skinObjectUrl,
     terrain_edit_remote: terrainEditRemote,
+    surface_snapshot_remote: createSpaceSurfaceSnapshotRemote(
+      apiOrigin,
+      token,
+      payload.world.surface_snapshot_url,
+      payload.world.seed,
+      payload.world.terrain_generator_version,
+    ),
     player_position_remote: createPlayerPositionRemote(apiOrigin, token, payload.world.id, fetch, latencyMonitor),
     latency_monitor: latencyMonitor
   };
@@ -868,7 +882,8 @@ export function createOfflineSpaceSession(
       name: 'Offline Sandbox',
       seed: OFFLINE_WORLD_SEED,
       terrain_generator_version: 1,
-      terrain_revision: 0
+      terrain_revision: 0,
+      surface_snapshot_url: '',
     },
     player: {
       user_id: sourcePlayer?.user_id || 'offline-player',
@@ -888,6 +903,7 @@ export function createOfflineSpaceSession(
     token: prepared?.token || '',
     skin_object_url: prepared?.skinObjectUrl || OFFLINE_SKIN_URL,
     terrain_edit_remote: null,
+    surface_snapshot_remote: null,
     player_position_remote: createOfflinePlayerPositionRemote(),
     latency_monitor: null
   };

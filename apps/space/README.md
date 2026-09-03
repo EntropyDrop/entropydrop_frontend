@@ -19,17 +19,26 @@ outbox under `space.world-edits.v2.*` preserves unacknowledged batches across a
 refresh; the earlier `space.world-edits.v1.*` local-only overlay is migrated and
 uploaded on first entry after this version.
 
-The default world's distant torus uses a build-time, versioned binary cache.
-Its `512x64` height lattice and `1024x256` RGBA albedo are fetched once through
-the normal content-hashed Vite asset URL, so the browser/CDN HTTP cache can
-reuse them for later entrants. The albedo base level is exactly 1 MiB. The
-client validates the cache schema, seed, terrain-generator version, dimensions,
-and expanded size before use; a miss or mismatch falls back to deterministic
-local generation. Server-authored edits currently arrive as paginated chunk
-overlays over REST and update the existing deferred distant shell after their
-affected chunks load. The multiplayer worker can later deliver the same chunk
-revisions and reliable deltas over WebSocket without changing the local world
-overlay model.
+The distant world no longer uses a browser-generated low-poly thumbnail or a
+synthetic doughnut. The backend builds 128 revisioned `32x32`-chunk zone
+snapshots, each carrying an `8x8` two-metre height/color summary per chunk. The
+browser validates the finest data and derives 4/8/16/32/64-metre mip levels, then
+progressively installs them into one compact instanced surface layer. Outside
+the fully loaded AOI the renderer uses 2m samples through 400m, 4m through 600m,
+8m through 800m, 16m through 1000m, 32m through 1600m, and 64m beyond.
+Samples through 4000m add merged side faces only where neighboring
+heights actually differ, keeping nearby LOD boundaries continuous without the
+overdraw of four full skirts per cell; farther tiers draw only their top faces.
+Empty summaries render nothing and terrain edits dirty only their zone.
+Automatic render resolution targets 120 FPS, reducing drawing-buffer scale
+quickly below that cadence and restoring clarity only after a sustained healthy interval.
+If 50% resolution is still insufficient, Auto temporarily pauses real-time
+shadows before accepting a sub-120 cadence. The local sun shadow is 1024², and
+streaming work is capped at 3 ms per frame. Far topology follows a 64 m anchor
+and rebuilds in 2 ms batches while the previous complete surface remains visible.
+A 128 KiB GPU readiness mask hands each 16m chunk from the far snapshot to the
+detailed mesh only after that mesh is attached, preventing streaming holes and
+z-fighting without increasing the per-frame chunk budget.
 
 An AI-native programmable voxel physics prototype:
 

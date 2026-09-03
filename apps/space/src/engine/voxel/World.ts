@@ -9,31 +9,19 @@ import {
   type TerrainEditChunk,
   type WorldEditPersistenceOptions,
 } from './WorldEditPersistence.ts';
-import {
-  applyDistantTerrainMaterial,
-  bakeDistantTerrainTexture,
-  createDistantTerrainTexture,
-} from '../render/DistantTerrainMaterial.ts';
-import {
-  DISTANT_LOD_SEGMENTS_X,
-  DISTANT_LOD_SEGMENTS_Z,
-  DISTANT_LOD_TEXTURE_HEIGHT,
-  DISTANT_LOD_TEXTURE_WIDTH,
-  type DistantLodCacheData,
-} from '../render/DistantLodCacheFormat.ts';
+import { DistantSurfaceLayer } from '../render/DistantSurfaceLayer.ts';
+import type { SurfaceZoneSnapshot } from '../../bootstrap/SpaceSurfaceSnapshot.ts';
 import {
   wrapX, wrapZ, wrapChunkX, wrapChunkZ, wrapMicroX, wrapMicroZ,
   bendPoint, unbendPoint, computeChunkBentSphere, hookSceneMaterials,
-  TORUS_SIZE_X, TORUS_SIZE_Z, TORUS_R, TORUS_RHO, TORUS_GREF
+  TORUS_SIZE_X, TORUS_SIZE_Z
 } from '../torus/TorusWorld.ts';
 
-const DISTANT_SEGMENTS_X = DISTANT_LOD_SEGMENTS_X;
-const DISTANT_SEGMENTS_Z = DISTANT_LOD_SEGMENTS_Z;
-const DISTANT_TERRAIN_COLOR = 0x718f61;
-const DISTANT_UPDATE_INTERVAL_MS = 200;
-const DISTANT_COLUMNS_PER_FLUSH = 48;
-const STREAM_WORK_BUDGET_MS = 7;
-const MAX_STREAM_CHUNKS_PER_FRAME = 6;
+// Leave most of a 120 Hz frame's 8.33 ms budget for simulation, culling and
+// rendering. Missing detailed chunks may take a few more frames to stream in,
+// while the already-present distant surface prevents visible holes.
+const STREAM_WORK_BUDGET_MS = 3;
+const MAX_STREAM_CHUNKS_PER_FRAME = 2;
 const MAX_CHUNK_MESHES_PER_FRAME = 1;
 const MAX_REMOTE_CHUNKS_PER_FRAME = 2;
 const MAX_MICRO_MESH_CHUNKS_PER_FRAME = 1;
@@ -68,10 +56,7 @@ export class World {
   mesher: LowPolyMesher;
   renderDistance: number;
   worldGroup: THREE.Group;
-  distantSurface: THREE.Mesh;
-  /** Seamless 1024x256 baked albedo for the distant shell (1 MiB RGBA, sRGB). */
-  distantTexture: THREE.DataTexture;
-  distantLodSource: 'shared-cache' | 'generated';
+  distantSurface: DistantSurfaceLayer;
   microVoxels: MicroVoxelLayer;
   /** Browser-local sparse overlay that survives a page refresh for this world. */
   editPersistence: WorldEditPersistence | null;
@@ -86,26 +71,10 @@ export class World {
   private rayFlatPoint: THREE.Vector3;
   /** Bumped on any block/micro-voxel mutation — lets caches (e.g. minimap) know terrain changed. */
   terrainVersion: number;
-  /** Incremented after a deferred batch changes the distant terrain shell. */
-  distantLodRevision: number;
-  private distantBaseHeights: Float32Array;
-  private distantPendingColumns: Map<string, { x: number; z: number }>;
-  private distantColumnSamples: Map<string, any>;
-  private distantVertexColumns: Map<number, Set<string>>;
-  private distantLastFlushAt: number;
-  private distantSampleRevision: number;
-  private distantPoint: THREE.Vector3;
-  private distantColor: THREE.Color;
-  private distantTangentX: THREE.Vector3;
-  private distantTangentZ: THREE.Vector3;
-  private distantNormal: THREE.Vector3;
-  private distantNeighborA: THREE.Vector3;
-  private distantNeighborB: THREE.Vector3;
 
   constructor(
     scene,
     seed = 1337,
-    distantCache: DistantLodCacheData | null = null,
     persistenceOptions: WorldEditPersistenceOptions | null = null
   ) {
     this.scene = scene;
@@ -113,34 +82,15 @@ export class World {
     this.terrainGen = new TerrainGenerator(seed);
     this.mesher = new LowPolyMesher();
 
-    // Keep 1 m voxel detail nearby. The whole-ring LOD preserves long-range
-    // visibility while the default 17x17 window bounds resident voxel arrays.
-    // A prebent, roughly 65k-triangle LOD covers the full ring and merges blocks into 4/16/64 m cells by distance.
+    // Keep 1 m voxel detail nearby. The backend's compact zone snapshots fill
+    // one instanced far-surface layer without generating the world in-browser.
     this.renderDistance = DEFAULT_RENDER_DISTANCE;
     this.terrainVersion = 0;
-    this.distantLodRevision = 0;
-    const acceptedDistantCache = distantCache?.seed === seed ? distantCache : null;
-    this.distantLodSource = acceptedDistantCache ? 'shared-cache' : 'generated';
-    this.distantBaseHeights = new Float32Array(DISTANT_SEGMENTS_X * DISTANT_SEGMENTS_Z);
-    // Terrain edits first coalesce by world column, then a 5 Hz budgeted batch
-    // updates only the affected low-resolution vertices and their local normals.
-    this.distantPendingColumns = new Map();
-    this.distantColumnSamples = new Map();
-    this.distantVertexColumns = new Map();
-    this.distantLastFlushAt = Date.now();
-    this.distantSampleRevision = 0;
-    this.distantPoint = new THREE.Vector3();
-    this.distantColor = new THREE.Color();
-    this.distantTangentX = new THREE.Vector3();
-    this.distantTangentZ = new THREE.Vector3();
-    this.distantNormal = new THREE.Vector3();
-    this.distantNeighborA = new THREE.Vector3();
-    this.distantNeighborB = new THREE.Vector3();
     this.worldGroup = new THREE.Group();
     this.worldGroup.name = 'VoxelWorld';
     this.scene.add(this.worldGroup);
-    this.distantSurface = this.buildDistantSurface(acceptedDistantCache);
-    this.worldGroup.add(this.distantSurface);
+    this.distantSurface = new DistantSurfaceLayer();
+    this.worldGroup.add(this.distantSurface.mesh);
     this.microVoxels = new MicroVoxelLayer();
     this.worldGroup.add(this.microVoxels.group);
     this.editPersistence = persistenceOptions?.worldId
@@ -151,18 +101,12 @@ export class World {
     // can be restored immediately. Standard edits are applied lazily below when
     // their chunks stream in.
     if (this.editPersistence) {
-      const restoredColumns = new Set<string>();
       let restoredMicro = 0;
       for (const edit of this.editPersistence.getMicroEdits()) {
         if (!this.microVoxels.set(edit.mx, edit.my, edit.mz, edit.color, edit.part)) continue;
         restoredMicro++;
-        restoredColumns.add(`${Math.floor(edit.mx / MICRO_DIVISIONS)},${Math.floor(edit.mz / MICRO_DIVISIONS)}`);
       }
       this.terrainVersion += restoredMicro;
-      for (const column of restoredColumns) {
-        const [x, z] = column.split(',').map(Number);
-        this.queueDistantSurfaceUpdate(x, z);
-      }
     }
 
     // Dirty chunks queue for mesh regeneration
@@ -180,352 +124,6 @@ export class World {
     }
     this.rayBentPoint = new THREE.Vector3();
     this.rayFlatPoint = new THREE.Vector3();
-  }
-
-  /**
-   * An ~65k-triangle pre-bent terrain shell keeps the whole doughnut visible
-   * across the central hole. Nearby voxel chunks sit 0.35 m above it and retain
-   * full block detail; distant terrain no longer requires loading all 131072 chunks.
-   */
-  buildDistantSurface(cache: DistantLodCacheData | null = null) {
-    const segmentsX = DISTANT_SEGMENTS_X;
-    const segmentsZ = DISTANT_SEGMENTS_Z;
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const terrainUvs: number[] = [];
-    const terrainHeights: number[] = [];
-    const terrainEditMasks: number[] = [];
-    const indices: number[] = [];
-    const point = new THREE.Vector3();
-    const color = new THREE.Color();
-
-    for (let ix = 0; ix <= segmentsX; ix++) {
-      const x = (ix / segmentsX) * TORUS_SIZE_X;
-      for (let iz = 0; iz <= segmentsZ; iz++) {
-        const z = (iz / segmentsZ) * TORUS_SIZE_Z;
-        const logicalIndex = (ix % segmentsX) * segmentsZ + (iz % segmentsZ);
-        const height = cache?.heights[logicalIndex]
-          ?? this.terrainGen.sampleHeight(wrapX(x), wrapZ(z));
-        if (ix < segmentsX && iz < segmentsZ) {
-          this.distantBaseHeights[ix * segmentsZ + iz] = height;
-        }
-        // Voxel y=height has its top at height+1.0; match exact terrain surface elevation.
-        bendPoint(x, height + 1.0, z, point);
-        positions.push(point.x, point.y, point.z);
-        terrainUvs.push(ix / segmentsX, iz / segmentsZ);
-        terrainHeights.push(height);
-        terrainEditMasks.push(0);
-        color.setHex(DISTANT_TERRAIN_COLOR);
-        colors.push(color.r, color.g, color.b);
-      }
-    }
-
-    const stride = segmentsZ + 1;
-    for (let ix = 0; ix < segmentsX; ix++) {
-      for (let iz = 0; iz < segmentsZ; iz++) {
-        const a = ix * stride + iz;
-        const b = (ix + 1) * stride + iz;
-        const c = (ix + 1) * stride + iz + 1;
-        const d = ix * stride + iz + 1;
-        // Reversed winding: X×Z points inward for this torus parameterization.
-        indices.push(a, c, b, a, d, c);
-      }
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geometry.setAttribute('terrainUv', new THREE.Float32BufferAttribute(terrainUvs, 2));
-    geometry.setAttribute('terrainHeight', new THREE.Float32BufferAttribute(terrainHeights, 1));
-    geometry.setAttribute('terrainEditMask', new THREE.Float32BufferAttribute(terrainEditMasks, 1));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-    geometry.computeBoundingSphere();
-    // Player-built towers may lift individual LOD vertices above the generated
-    // hills. Keep one conservative sphere instead of recomputing the full shell.
-    geometry.boundingSphere.radius = Math.max(
-      geometry.boundingSphere.radius,
-      TORUS_R + TORUS_RHO + (CHUNK_SIZE_Y - TORUS_GREF) + 2
-    );
-
-    const material = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      side: THREE.DoubleSide,
-      flatShading: true,
-      roughness: 0.65,
-      metalness: 0.15,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1
-    });
-    material.customProgramCacheKey = () => 'torus-distant-surface-v1';
-    // Reuse the immutable shared albedo when its seed matches. Cache misses bake
-    // the exact same 1 MiB texture locally; the GPU mip chain then supplies
-    // distance-dependent detail coarsening per pixel.
-    // Heights are bilinearly resampled from the shell's own 512×64 vertex grid
-    // (the same smooth field the surface is built from) instead of re-running
-    // noise per texel.
-    const baseHeights = this.distantBaseHeights;
-    const heightSampler = (wx, wz) => {
-      const fx = (wx / TORUS_SIZE_X) * DISTANT_SEGMENTS_X;
-      const fz = (wz / TORUS_SIZE_Z) * DISTANT_SEGMENTS_Z;
-      const x0 = Math.floor(fx) % DISTANT_SEGMENTS_X;
-      const z0 = Math.floor(fz) % DISTANT_SEGMENTS_Z;
-      const x1 = (x0 + 1) % DISTANT_SEGMENTS_X;
-      const z1 = (z0 + 1) % DISTANT_SEGMENTS_Z;
-      const tx = fx - Math.floor(fx);
-      const tz = fz - Math.floor(fz);
-      const h00 = baseHeights[x0 * DISTANT_SEGMENTS_Z + z0];
-      const h10 = baseHeights[x1 * DISTANT_SEGMENTS_Z + z0];
-      const h01 = baseHeights[x0 * DISTANT_SEGMENTS_Z + z1];
-      const h11 = baseHeights[x1 * DISTANT_SEGMENTS_Z + z1];
-      return (h00 + (h10 - h00) * tx) * (1 - tz) + (h01 + (h11 - h01) * tx) * tz;
-    };
-    this.distantTexture = cache
-      ? createDistantTerrainTexture(cache.textureRgba, cache.textureWidth, cache.textureHeight)
-      : bakeDistantTerrainTexture(
-          heightSampler,
-          TORUS_SIZE_X,
-          TORUS_SIZE_Z,
-          DISTANT_LOD_TEXTURE_WIDTH,
-          DISTANT_LOD_TEXTURE_HEIGHT
-        );
-    applyDistantTerrainMaterial(material, TORUS_SIZE_X, TORUS_SIZE_Z, this.renderDistance, this.distantTexture);
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = 'TorusDistantSurfaceLOD';
-    mesh.userData.torusPreBent = true;
-    mesh.userData.lodSource = this.distantLodSource;
-    mesh.frustumCulled = false;
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    return mesh;
-  }
-
-  /** Coalesce rapid edits to one pending update per standard X/Z column. */
-  queueDistantSurfaceUpdate(wx, wz) {
-    const x = Math.floor(wrapX(wx));
-    const z = Math.floor(wrapZ(wz));
-    this.distantPendingColumns.set(`${x},${z}`, { x, z });
-  }
-
-  private getDistantVertexForColumn(x, z) {
-    const ix = Math.round((x / TORUS_SIZE_X) * DISTANT_SEGMENTS_X) % DISTANT_SEGMENTS_X;
-    const iz = Math.round((z / TORUS_SIZE_Z) * DISTANT_SEGMENTS_Z) % DISTANT_SEGMENTS_Z;
-    return { ix, iz, logicalIndex: ix * DISTANT_SEGMENTS_Z + iz };
-  }
-
-  /** Read the edited column at flush time, after a burst of block operations settles. */
-  private sampleCurrentDistantColumn(x, z) {
-    const { cx, cz, lx, lz } = this.worldToChunkCoords(x, z);
-    const chunk = this.getOrCreateChunk(cx, cz);
-    let surfaceY = 0;
-    let color = DISTANT_TERRAIN_COLOR;
-
-    for (let y = CHUNK_SIZE_Y - 1; y >= 0; y--) {
-      if (chunk.getLocalBlock(lx, y, lz) === BlockTypes.AIR) continue;
-      surfaceY = y + 1;
-      color = chunk.getLocalColor(lx, y, lz);
-      break;
-    }
-
-    const microTop = this.microVoxels.getColumnTop(x, z);
-    if (microTop && (microTop.my + 1) / MICRO_DIVISIONS > surfaceY) {
-      surfaceY = (microTop.my + 1) / MICRO_DIVISIONS;
-      color = microTop.color;
-    }
-
-    return { surfaceY, color };
-  }
-
-  private updateDistantColumnSample(columnKey, x, z, dirtyVertices) {
-    const { ix, iz, logicalIndex } = this.getDistantVertexForColumn(x, z);
-    const current = this.sampleCurrentDistantColumn(x, z);
-    const baseSurfaceY = this.terrainGen.sampleHeight(x, z) + 1;
-    const delta = current.surfaceY - baseSurfaceY;
-    const visibleOverride = Math.abs(delta) > 1e-6 || current.color !== DISTANT_TERRAIN_COLOR;
-    const previous = this.distantColumnSamples.get(columnKey);
-
-    if (previous && previous.logicalIndex !== logicalIndex) {
-      const previousColumns = this.distantVertexColumns.get(previous.logicalIndex);
-      previousColumns?.delete(columnKey);
-      if (previousColumns?.size === 0) this.distantVertexColumns.delete(previous.logicalIndex);
-      dirtyVertices.add(previous.logicalIndex);
-    }
-
-    if (visibleOverride) {
-      this.distantColumnSamples.set(columnKey, {
-        x, z, ix, iz, logicalIndex, delta, color: current.color,
-        revision: ++this.distantSampleRevision
-      });
-      let columns = this.distantVertexColumns.get(logicalIndex);
-      if (!columns) {
-        columns = new Set();
-        this.distantVertexColumns.set(logicalIndex, columns);
-      }
-      columns.add(columnKey);
-    } else {
-      this.distantColumnSamples.delete(columnKey);
-      const columns = this.distantVertexColumns.get(logicalIndex);
-      columns?.delete(columnKey);
-      if (columns?.size === 0) this.distantVertexColumns.delete(logicalIndex);
-    }
-    dirtyVertices.add(logicalIndex);
-  }
-
-  private forEachDistantSeamCopy(ix, iz, visit) {
-    visit(ix, iz);
-    if (ix === 0) visit(DISTANT_SEGMENTS_X, iz);
-    if (iz === 0) visit(ix, DISTANT_SEGMENTS_Z);
-    if (ix === 0 && iz === 0) visit(DISTANT_SEGMENTS_X, DISTANT_SEGMENTS_Z);
-  }
-
-  private writeDistantVertex(
-    logicalIndex,
-    changedPositions,
-    changedColors,
-    changedHeights,
-    changedEditMasks
-  ) {
-    const ix = Math.floor(logicalIndex / DISTANT_SEGMENTS_Z);
-    const iz = logicalIndex % DISTANT_SEGMENTS_Z;
-    const columns = this.distantVertexColumns.get(logicalIndex);
-    let dominant = null;
-    if (columns) {
-      for (const columnKey of columns) {
-        const sample = this.distantColumnSamples.get(columnKey);
-        if (!sample) continue;
-        if (!dominant
-          || Math.abs(sample.delta) > Math.abs(dominant.delta)
-          || (Math.abs(sample.delta) === Math.abs(dominant.delta) && sample.revision > dominant.revision)) {
-          dominant = sample;
-        }
-      }
-    }
-
-    const baseHeight = this.distantBaseHeights[logicalIndex];
-    const height = baseHeight + (dominant?.delta || 0);
-    const x = (ix / DISTANT_SEGMENTS_X) * TORUS_SIZE_X;
-    const z = (iz / DISTANT_SEGMENTS_Z) * TORUS_SIZE_Z;
-    bendPoint(x, height + 0.65, z, this.distantPoint);
-    const shade = THREE.MathUtils.clamp(0.82 + (height - TORUS_GREF) * 0.012, 0.68, 1.0);
-    this.distantColor.setHex(dominant?.color ?? DISTANT_TERRAIN_COLOR).multiplyScalar(shade);
-
-    const geometry = this.distantSurface.geometry;
-    const positions = geometry.getAttribute('position');
-    const colors = geometry.getAttribute('color');
-    const heights = geometry.getAttribute('terrainHeight');
-    const editMasks = geometry.getAttribute('terrainEditMask');
-    const stride = DISTANT_SEGMENTS_Z + 1;
-    this.forEachDistantSeamCopy(ix, iz, (copyX, copyZ) => {
-      const vertexIndex = copyX * stride + copyZ;
-      positions.setXYZ(vertexIndex, this.distantPoint.x, this.distantPoint.y, this.distantPoint.z);
-      colors.setXYZ(vertexIndex, this.distantColor.r, this.distantColor.g, this.distantColor.b);
-      heights.setX(vertexIndex, height);
-      editMasks.setX(vertexIndex, dominant ? 1 : 0);
-      changedPositions.add(vertexIndex);
-      changedColors.add(vertexIndex);
-      changedHeights.add(vertexIndex);
-      changedEditMasks.add(vertexIndex);
-    });
-  }
-
-  private recomputeDistantNormal(logicalIndex, changedNormals) {
-    const ix = Math.floor(logicalIndex / DISTANT_SEGMENTS_Z);
-    const iz = logicalIndex % DISTANT_SEGMENTS_Z;
-    const xm = (ix - 1 + DISTANT_SEGMENTS_X) % DISTANT_SEGMENTS_X;
-    const xp = (ix + 1) % DISTANT_SEGMENTS_X;
-    const zm = (iz - 1 + DISTANT_SEGMENTS_Z) % DISTANT_SEGMENTS_Z;
-    const zp = (iz + 1) % DISTANT_SEGMENTS_Z;
-    const stride = DISTANT_SEGMENTS_Z + 1;
-    const positions = this.distantSurface.geometry.getAttribute('position');
-    const normals = this.distantSurface.geometry.getAttribute('normal');
-
-    this.distantNeighborA.fromBufferAttribute(positions, xp * stride + iz);
-    this.distantNeighborB.fromBufferAttribute(positions, xm * stride + iz);
-    this.distantTangentX.subVectors(this.distantNeighborA, this.distantNeighborB);
-    this.distantNeighborA.fromBufferAttribute(positions, ix * stride + zp);
-    this.distantNeighborB.fromBufferAttribute(positions, ix * stride + zm);
-    this.distantTangentZ.subVectors(this.distantNeighborA, this.distantNeighborB);
-    // Reversed X/Z winding in buildDistantSurface means outward = dZ × dX.
-    this.distantNormal.crossVectors(this.distantTangentZ, this.distantTangentX).normalize();
-
-    this.forEachDistantSeamCopy(ix, iz, (copyX, copyZ) => {
-      const vertexIndex = copyX * stride + copyZ;
-      normals.setXYZ(vertexIndex, this.distantNormal.x, this.distantNormal.y, this.distantNormal.z);
-      changedNormals.add(vertexIndex);
-    });
-  }
-
-  private markDistantAttributeRanges(attribute, changedIndices) {
-    if (changedIndices.size === 0) return;
-    const sorted = [...changedIndices].sort((a, b) => a - b);
-    attribute.clearUpdateRanges();
-    let start = sorted[0];
-    let previous = start;
-    for (let i = 1; i <= sorted.length; i++) {
-      const current = sorted[i];
-      if (current === previous + 1) {
-        previous = current;
-        continue;
-      }
-      attribute.addUpdateRange(start * attribute.itemSize, (previous - start + 1) * attribute.itemSize);
-      start = current;
-      previous = current;
-    }
-    attribute.needsUpdate = true;
-  }
-
-  /**
-   * Flush at most 48 coalesced columns every 200 ms. No full-ring rebuild,
-   * normal recomputation, or buffer upload occurs during an individual edit.
-   */
-  flushDistantSurfaceUpdates(force = false) {
-    if (this.distantPendingColumns.size === 0) return 0;
-    const now = Date.now();
-    if (!force && now - this.distantLastFlushAt < DISTANT_UPDATE_INTERVAL_MS) return 0;
-    this.distantLastFlushAt = now;
-
-    const dirtyVertices = new Set<number>();
-    let processed = 0;
-    for (const [columnKey, column] of this.distantPendingColumns) {
-      this.distantPendingColumns.delete(columnKey);
-      this.updateDistantColumnSample(columnKey, column.x, column.z, dirtyVertices);
-      processed++;
-      if (processed >= DISTANT_COLUMNS_PER_FLUSH) break;
-    }
-
-    const changedPositions = new Set<number>();
-    const changedColors = new Set<number>();
-    const changedHeights = new Set<number>();
-    const changedEditMasks = new Set<number>();
-    const dirtyNormals = new Set<number>();
-    for (const logicalIndex of dirtyVertices) {
-      this.writeDistantVertex(
-        logicalIndex,
-        changedPositions,
-        changedColors,
-        changedHeights,
-        changedEditMasks
-      );
-      const ix = Math.floor(logicalIndex / DISTANT_SEGMENTS_Z);
-      const iz = logicalIndex % DISTANT_SEGMENTS_Z;
-      dirtyNormals.add(logicalIndex);
-      dirtyNormals.add(((ix - 1 + DISTANT_SEGMENTS_X) % DISTANT_SEGMENTS_X) * DISTANT_SEGMENTS_Z + iz);
-      dirtyNormals.add(((ix + 1) % DISTANT_SEGMENTS_X) * DISTANT_SEGMENTS_Z + iz);
-      dirtyNormals.add(ix * DISTANT_SEGMENTS_Z + ((iz - 1 + DISTANT_SEGMENTS_Z) % DISTANT_SEGMENTS_Z));
-      dirtyNormals.add(ix * DISTANT_SEGMENTS_Z + ((iz + 1) % DISTANT_SEGMENTS_Z));
-    }
-
-    const changedNormals = new Set<number>();
-    for (const logicalIndex of dirtyNormals) this.recomputeDistantNormal(logicalIndex, changedNormals);
-    const geometry = this.distantSurface.geometry;
-    this.markDistantAttributeRanges(geometry.getAttribute('position'), changedPositions);
-    this.markDistantAttributeRanges(geometry.getAttribute('color'), changedColors);
-    this.markDistantAttributeRanges(geometry.getAttribute('terrainHeight'), changedHeights);
-    this.markDistantAttributeRanges(geometry.getAttribute('terrainEditMask'), changedEditMasks);
-    this.markDistantAttributeRanges(geometry.getAttribute('normal'), changedNormals);
-    this.distantLodRevision++;
-    return processed;
   }
 
   static getChunkKey(cx, cz) {
@@ -551,7 +149,6 @@ export class World {
         const lz = edit.z - cz * CHUNK_SIZE_Z;
         if (chunk.setLocalBlock(lx, edit.y, lz, edit.block, edit.color)) {
           restoredStandard++;
-          this.queueDistantSurfaceUpdate(edit.x, edit.z);
         }
       }
       if (restoredStandard > 0) {
@@ -604,7 +201,6 @@ export class World {
     }
     if (changed || clearedMicro > 0) {
       this.terrainVersion++;
-      this.queueDistantSurfaceUpdate(wx, wz);
     }
     if (changed) {
       this.editPersistence?.recordStandard(wx, wy, wz, blockType, normalizedColor);
@@ -658,7 +254,6 @@ export class World {
       const persistedColor = this.microVoxels.get(mx, my, mz);
       this.editPersistence?.recordMicro(mx, my, mz, persistedColor, part);
       this.terrainVersion++;
-      this.queueDistantSurfaceUpdate(wx, wz);
     }
     return ok;
   }
@@ -677,10 +272,6 @@ export class World {
     if (removed) {
       this.editPersistence?.removeMicro(mx, my, mz);
       this.terrainVersion++;
-      this.queueDistantSurfaceUpdate(
-        Math.floor(mx / MICRO_DIVISIONS),
-        Math.floor(mz / MICRO_DIVISIONS)
-      );
     }
     return removed;
   }
@@ -690,7 +281,6 @@ export class World {
     if (removed) {
       this.editPersistence?.removeMicroStandardCell(wx, wy, wz);
       this.terrainVersion++;
-      this.queueDistantSurfaceUpdate(wx, wz);
     }
     return removed;
   }
@@ -928,6 +518,7 @@ export class World {
     const centerCx = Math.floor(wrapX(playerX) / CHUNK_SIZE_X);
     const centerCz = Math.floor(wrapZ(playerZ) / CHUNK_SIZE_Z);
     const r = this.renderDistance;
+    this.distantSurface.setNearField(centerCx, centerCz, r);
 
     // Recompute the streaming window only after crossing a chunk boundary. The
     // old implementation repeated 169 modulo/map lookups on every frame and
@@ -945,10 +536,13 @@ export class World {
           this.pendingChunkEvictions.delete(key);
           const chunk = this.getChunk(cx, cz);
           if (!chunk) {
+            this.distantSurface.setDetailChunkReady(cx, cz, false);
             pending.push({ cx, cz, distanceSq: dx * dx + dz * dz });
           } else if (chunk.mesh) {
             chunk.mesh.visible = true;
+            this.distantSurface.setDetailChunkReady(cx, cz, true);
           } else if (!chunk.mesh) {
+            this.distantSurface.setDetailChunkReady(cx, cz, false);
             chunk.isDirty = true;
             this.dirtyChunks.add(chunk);
           }
@@ -958,6 +552,7 @@ export class World {
       for (const [key, chunk] of this.chunks) {
         if (nextActive.has(key)) continue;
         this.dirtyChunks.delete(chunk);
+        this.distantSurface.setDetailChunkReady(chunk.cx, chunk.cz, false);
         if (chunk.mesh) chunk.mesh.visible = false;
         this.pendingChunkEvictions.set(key, chunk);
       }
@@ -1028,37 +623,35 @@ export class World {
         if (child.isMesh) child.frustumCulled = false;
       });
       this.worldGroup.add(chunk.mesh);
+      this.distantSurface.setDetailChunkReady(chunk.cx, chunk.cz, true);
 
       chunk.isDirty = false;
       this.dirtyChunks.delete(chunk);
       updates++;
     }
 
-    if (performance.now() - frameWorkStartedAt < STREAM_WORK_BUDGET_MS) {
-      this.flushDistantSurfaceUpdates();
-    }
   }
 
   setRenderDistance(distance) {
     this.renderDistance = Math.max(3, Math.min(24, Math.round(Number(distance)) || DEFAULT_RENDER_DISTANCE));
     this.lastStreamCenterKey = null;
-    this.syncDistantLodUniforms();
   }
 
-  syncDistantLodUniforms() {
-    const shader = (this.distantSurface?.material as any)?.userData?.shader;
-    if (shader?.uniforms) {
-      const r = this.renderDistance;
-      if (shader.uniforms.uLodDiscardRadius) shader.uniforms.uLodDiscardRadius.value = Math.max(48.0, (r - 0.75) * 16.0);
-      if (shader.uniforms.uNearRadius) shader.uniforms.uNearRadius.value = Math.max(150.0, (r - 0.75) * 16.0);
-      if (shader.uniforms.uNearEndRadius) shader.uniforms.uNearEndRadius.value = Math.max(400.0, r * 16.0 * 2.6);
-      if (shader.uniforms.uAtmoStart) shader.uniforms.uAtmoStart.value = Math.max(900.0, r * 16.0 * 5.0);
-      if (shader.uniforms.uAtmoEnd) shader.uniforms.uAtmoEnd.value = Math.max(2600.0, r * 16.0 * 18.0);
-    }
+  installSurfaceZone(zone: SurfaceZoneSnapshot) {
+    this.distantSurface.installZone(zone);
+  }
+
+  finalizeSurfaceConnections() {
+    return this.distantSurface.finalizeConnections();
+  }
+
+  removeSurfaceZone(zoneX: number, zoneZ: number) {
+    this.distantSurface.removeZone(zoneX, zoneZ);
   }
 
   disposeChunkMesh(chunk) {
     if (!chunk?.mesh) return;
+    this.distantSurface.setDetailChunkReady(chunk.cx, chunk.cz, false);
     this.worldGroup.remove(chunk.mesh);
     chunk.mesh.traverse((child) => {
       if (child.isMesh && child.geometry) child.geometry.dispose();
@@ -1257,16 +850,8 @@ export class World {
   extractMicroRegion(minX, minY, minZ, maxX, maxY, maxZ) {
     const extracted = this.microVoxels.extractRegion(minX, minY, minZ, maxX, maxY, maxZ);
     if (extracted.length > 0) {
-      const columns = new Set<string>();
       for (const cell of extracted) {
         this.editPersistence?.removeMicro(cell.mx, cell.my, cell.mz);
-        const x = Math.floor(cell.mx / MICRO_DIVISIONS);
-        const z = Math.floor(cell.mz / MICRO_DIVISIONS);
-        columns.add(`${x},${z}`);
-      }
-      for (const column of columns) {
-        const [x, z] = column.split(',').map(Number);
-        this.queueDistantSurfaceUpdate(x, z);
       }
       this.terrainVersion++;
     }
@@ -1281,16 +866,8 @@ export class World {
   extractMicroCellRegion(minMx, minMy, minMz, maxMx, maxMy, maxMz) {
     const extracted = this.microVoxels.extractCellsInBox(minMx, minMy, minMz, maxMx, maxMy, maxMz);
     if (extracted.length > 0) {
-      const columns = new Set<string>();
       for (const cell of extracted) {
         this.editPersistence?.removeMicro(cell.mx, cell.my, cell.mz);
-        const x = Math.floor(cell.mx / MICRO_DIVISIONS);
-        const z = Math.floor(cell.mz / MICRO_DIVISIONS);
-        columns.add(`${x},${z}`);
-      }
-      for (const column of columns) {
-        const [x, z] = column.split(',').map(Number);
-        this.queueDistantSurfaceUpdate(x, z);
       }
       this.terrainVersion++;
     }
@@ -1349,7 +926,6 @@ export class World {
     const key = World.getChunkKey(cx, cz);
     const revision = Number.isFinite(Number(update.revision)) ? Number(update.revision) : 0;
     if ((this.remoteChunkRevisions.get(key) ?? -1) >= revision) return;
-
     this.editPersistence?.replaceRemoteChunk({
       chunk_x: cx,
       chunk_z: cz,
@@ -1383,14 +959,15 @@ export class World {
         const lx = edit.x - cx * CHUNK_SIZE_X;
         const lz = edit.z - cz * CHUNK_SIZE_Z;
         chunk.setLocalBlock(lx, edit.y, lz, edit.block, edit.color);
-        this.queueDistantSurfaceUpdate(edit.x, edit.z);
       }
       chunk.hasUserEdits = true;
-      chunk.isDirty = true;
-      this.dirtyChunks.add(chunk);
-    } else {
-      for (const edit of standardEdits) {
-        this.queueDistantSurfaceUpdate(edit.x, edit.z);
+      if (this.activeChunkKeys.has(key)) {
+        chunk.isDirty = true;
+        this.dirtyChunks.add(chunk);
+      } else {
+        if (chunk.mesh) this.disposeChunkMesh(chunk);
+        this.pendingChunkEvictions.delete(key);
+        chunk.isDirty = false;
       }
     }
     this.remoteChunkRevisions.set(key, revision);

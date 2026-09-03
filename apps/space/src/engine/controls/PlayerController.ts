@@ -30,6 +30,7 @@ import {
   type PortableBackpack,
 } from '../storage/InventoryProtobuf.ts';
 import { PLAYER_GRAVITY_MPS2, PLAYER_MASS_KG } from '../physics/PlayerPhysics.ts';
+import { CHUNK_SIZE_Y } from '../voxel/Chunk.ts';
 
 // Global editor/game commands stay engine-owned and are not exposed to entity
 // programs, avoiding collisions between scripts and C/V/tool shortcuts.
@@ -2408,7 +2409,7 @@ export class PlayerController {
 
   private clampEntityPlacementY(shape: EntityPlacementShape, y) {
     const minOriginY = -shape.minY;
-    const maxOriginY = 128 - shape.maxY;
+    const maxOriginY = CHUNK_SIZE_Y - shape.maxY;
     return Math.max(minOriginY, Math.min(maxOriginY, y));
   }
 

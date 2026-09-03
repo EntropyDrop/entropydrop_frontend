@@ -16,6 +16,7 @@ import {
   wrappedAxisDelta,
 } from './RemotePlayerMotion.ts';
 import { AdaptiveResolutionController } from './AdaptiveResolution.ts';
+import type { AdaptiveEffectsQuality } from './AdaptiveResolution.ts';
 
 export const ENTITY_PREVIEW_LAYER = 1;
 export const ENTITY_PREVIEW_FORCE_LIMIT_RATIO = 0.72;
@@ -602,6 +603,7 @@ export class SceneRenderer {
   declare camera: THREE.PerspectiveCamera;
   declare renderer: THREE.WebGLRenderer;
   declare adaptiveResolution: AdaptiveResolutionController;
+  declare adaptiveEffectsQuality: AdaptiveEffectsQuality;
   declare resolutionScale: number;
   declare onResolutionScaleChange: ((state: any) => void) | null;
   declare previewRenderer: any;
@@ -680,6 +682,7 @@ export class SceneRenderer {
     this.bentLightDirection = new THREE.Vector3();
     this.materialScanCountdown = 0;
     this.adaptiveResolution = new AdaptiveResolutionController();
+    this.adaptiveEffectsQuality = 'full';
     this.resolutionScale = this.adaptiveResolution.currentScale;
     this.onResolutionScaleChange = null;
 
@@ -689,7 +692,7 @@ export class SceneRenderer {
     this.scene.background = this.skyColorDay.clone();
     // Preserve opposite-ring visibility after doubling both map circumferences.
     // The opposite inner wall is now about 4,563 m away, so fog density scales
-    // down so the dramatic planetary doughnut ring remains clearly visible in the sky.
+    // down so distant real chunks remain visible across the curved world.
     this.scene.fog = new THREE.FogExp2('#74b9ff', 0.00012);
 
     // 2. Camera
@@ -759,8 +762,10 @@ export class SceneRenderer {
     // Sun Light
     this.sunLight = new THREE.DirectionalLight(0xfffaed, 1.4);
     this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.width = 2048;
-    this.sunLight.shadow.mapSize.height = 2048;
+    // A 1024² local shadow map retains soft contact shadows around the player
+    // at one quarter of the texel work and memory of the previous 2048² map.
+    this.sunLight.shadow.mapSize.width = 1024;
+    this.sunLight.shadow.mapSize.height = 1024;
     this.sunLight.shadow.camera.near = 0.5;
     this.sunLight.shadow.camera.far = 150;
     const d = 45;
@@ -2007,6 +2012,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   setResolutionScale(setting: 'auto' | number) {
     const scale = this.adaptiveResolution.setSetting(setting);
     this.applyResolutionScale(scale);
+    this.applyAdaptiveEffects(this.adaptiveResolution.getState().effectsQuality);
     this.notifyResolutionScaleChange();
     return this.getResolutionScaleState();
   }
@@ -2026,6 +2032,15 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     if (Math.abs(scale - this.resolutionScale) > 0.001) {
       this.applyResolutionScale(scale, true);
     }
+    this.applyAdaptiveEffects(this.adaptiveResolution.getState().effectsQuality);
+  }
+
+  private applyAdaptiveEffects(quality: AdaptiveEffectsQuality) {
+    if (quality === this.adaptiveEffectsQuality) return;
+    this.adaptiveEffectsQuality = quality;
+    this.renderer.shadowMap.enabled = quality === 'full';
+    this.renderer.shadowMap.needsUpdate = true;
+    this.notifyResolutionScaleChange();
   }
 
   setupPlayerAvatar() {

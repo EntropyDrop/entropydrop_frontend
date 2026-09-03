@@ -210,3 +210,20 @@ test('SpaceBuilder placement review reports occupancy and rejects player overlap
   assert.equal(collision.ok, false);
   assert.match(collision.errors.join(' '), /intersects the local player/);
 });
+
+test('SpaceBuilder accepts height 255 and rejects blocks crossing the 256 m ceiling', () => {
+  const { builder } = createHarness();
+  assert.equal(builder.preview({
+    kind: 'structure',
+    anchor: [10, 255, 10],
+    blocks: [{ x: 0, y: 0, z: 0 }],
+  }).ok, true);
+
+  const aboveCeiling = builder.preview({
+    kind: 'structure',
+    anchor: [10, 256, 10],
+    blocks: [{ x: 0, y: 0, z: 0 }],
+  });
+  assert.equal(aboveCeiling.ok, false);
+  assert.match(aboveCeiling.errors.join(' '), /\[0,256\)/);
+});

@@ -28,11 +28,11 @@ test('auto resolution quickly reduces drawing-buffer scale under sustained slow 
 
 test('auto resolution ignores isolated long frames and time spent in a hidden tab', () => {
   const controller = new AdaptiveResolutionController();
-  let now = sampleFrames(controller, 0, 30, 16.5);
+  let now = sampleFrames(controller, 0, 30, 8.2);
   now = sampleFrames(controller, now, 1, 250);
-  now = sampleFrames(controller, now, 60, 16.5);
+  now = sampleFrames(controller, now, 60, 8.2);
   controller.sampleFrame(now + 5_000, false);
-  sampleFrames(controller, now + 5_000, 60, 16.5);
+  sampleFrames(controller, now + 5_000, 60, 8.2);
 
   assert.equal(controller.currentScale, 1);
 });
@@ -46,17 +46,37 @@ test('fixed resolution never changes in response to frame cadence', () => {
     mode: 'fixed',
     scale: 0.67,
     fixedScale: 0.67,
-    averageFrameMs: 1000 / 60,
+    averageFrameMs: 1000 / 120,
+    effectsQuality: 'full',
   });
+});
+
+test('auto resolution treats a stable sub-120 cadence as too slow', () => {
+  const controller = new AdaptiveResolutionController();
+  sampleFrames(controller, 0, 100, 12);
+
+  assert.equal(controller.currentScale, 0.8);
 });
 
 test('auto resolution cautiously probes one step upward after a long healthy interval', () => {
   const controller = new AdaptiveResolutionController();
-  let now = sampleFrames(controller, 0, 30, 33);
+  let now = sampleFrames(controller, 0, 60, 16.5);
   const reducedScale = controller.currentScale;
-  now = sampleFrames(controller, now, 730, 16.5);
+  now = sampleFrames(controller, now, 1_470, 8.2);
 
   assert.equal(reducedScale, 0.7);
   assert.ok(controller.currentScale > reducedScale);
   assert.equal(controller.currentScale, 0.8);
+});
+
+test('auto resolution drops secondary effects only after reaching its scale floor', () => {
+  const controller = new AdaptiveResolutionController();
+  let now = sampleFrames(controller, 0, 500, 12);
+
+  assert.equal(controller.currentScale, 0.5);
+  assert.equal(controller.getState().effectsQuality, 'reduced');
+
+  now = sampleFrames(controller, now, 1_500, 8.2);
+  assert.equal(controller.getState().effectsQuality, 'full');
+  assert.equal(controller.currentScale, 0.5);
 });

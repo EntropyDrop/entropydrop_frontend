@@ -1,9 +1,9 @@
 import { DEFAULT_BLOCK_COLOR, normalizeColor } from './BlockTypes.ts';
 
-// Voxel Chunk Data Storage (16x128x16)
+// Voxel Chunk Data Storage (16x256x16)
 
 export const CHUNK_SIZE_X = 16;
-export const CHUNK_SIZE_Y = 128;
+export const CHUNK_SIZE_Y = 256;
 export const CHUNK_SIZE_Z = 16;
 
 export class Chunk {

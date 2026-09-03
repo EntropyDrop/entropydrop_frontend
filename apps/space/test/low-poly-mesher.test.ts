@@ -23,7 +23,7 @@ test('chunk meshing uses indexed quads and preserves internal-face culling', () 
   assert.equal(geometry.getAttribute('position').count, 10 * 4, 'each quad reuses four indexed vertices');
   assert.equal(geometry.getAttribute('normal').count, 10 * 4);
   assert.equal(geometry.getAttribute('color').count, 10 * 4);
-  assert.ok(geometry.getAttribute('position').array instanceof Uint8Array);
+  assert.ok(geometry.getAttribute('position').array instanceof Uint16Array);
   assert.ok(geometry.getAttribute('normal').array instanceof Int8Array);
   assert.equal(geometry.getAttribute('normal').normalized, true);
   assert.ok(geometry.getAttribute('color').array instanceof Uint8Array);
@@ -72,13 +72,13 @@ test('large exposed meshes promote their index buffer to 32 bits', () => {
 
   const geometry = meshGeometry(chunk);
   assert.ok(geometry.getAttribute('position').count > 0xffff);
-  const positions = geometry.getAttribute('position').array as Uint8Array;
+  const positions = geometry.getAttribute('position').array as Uint16Array;
   let maximumPosition = 0;
   for (const value of positions) maximumPosition = Math.max(maximumPosition, value);
   assert.equal(
     maximumPosition,
     CHUNK_SIZE_Y,
-    'the compact position format must retain the top boundary at y=128'
+    'the compact position format must retain the top boundary at y=256'
   );
   assert.ok(geometry.index?.array instanceof Uint32Array);
   const maxIndex = geometry.index

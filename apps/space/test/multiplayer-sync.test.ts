@@ -379,7 +379,7 @@ test('queued remote chunks are coalesced and applied during the bounded frame up
 test('remote chunk snapshots are cached without echoing them back as local mutations', async () => {
   const scene = new THREE.Scene();
   const sent: any[] = [];
-  const world = new World(scene, 12345, null, {
+  const world = new World(scene, 12345, {
     worldId: 'shared-world',
     storage: null,
     saveDelayMs: 0,

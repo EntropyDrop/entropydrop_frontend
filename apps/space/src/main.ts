@@ -23,8 +23,6 @@ import {
   type ReadySpaceSession,
   type TerrainStreamArea,
 } from './bootstrap/SpaceBootstrap.ts';
-import { loadDistantLodCache } from './bootstrap/DistantLodCache.ts';
-import type { DistantLodCacheData } from './engine/render/DistantLodCacheFormat.ts';
 import { MultiplayerSync, type RemotePlayerInfo } from './engine/network/MultiplayerSync.ts';
 import { SpaceEntitySync } from './engine/network/SpaceEntitySync.ts';
 import { mountSpaceUi } from './ui/react/mountSpaceUi.tsx';
@@ -79,7 +77,6 @@ class Game {
 
   constructor(
     session: ReadySpaceSession,
-    distantLodCache: DistantLodCacheData | null,
     persistentStorage: SpaceStorage | null
   ) {
     this.canvasContainer = document.getElementById('canvas-container');
@@ -89,12 +86,11 @@ class Game {
       skinUrl: session.skin_object_url,
       skinModel: session.player.skin_type
     });
-    // Procedural terrain and every derived LOD/cache must use the durable,
-    // server-authoritative seed so all players reconstruct the same base world.
+    // Procedural terrain must use the durable, server-authoritative seed so all
+    // players reconstruct the same base world.
     this.world = new World(
       this.sceneRenderer.scene,
       session.world.seed,
-      distantLodCache,
       {
         worldId: session.world.id,
         remote: session.terrain_edit_remote,
@@ -108,6 +104,19 @@ class Game {
         }
       }
     );
+    if (session.surface_snapshot_remote) {
+      const syncSurfaceSnapshots = () => {
+        void session.surface_snapshot_remote!.loadAll(
+          zone => this.world.installSurfaceZone(zone),
+          (zoneX, zoneZ) => this.world.removeSurfaceZone(zoneX, zoneZ),
+        ).then(() => this.world.finalizeSurfaceConnections()).catch(error => {
+          console.warn('Space far-surface snapshots are temporarily unavailable.', error);
+        }).finally(() => {
+          window.setTimeout(syncSurfaceSnapshots, 10_000);
+        });
+      };
+      syncSurfaceSnapshots();
+    }
     this.sceneRenderer.setWorld(this.world);
     this.soundManager = new SoundManager();
     this.particleSystem = new ParticleSystem(this.sceneRenderer.scene);
@@ -554,14 +563,8 @@ class Game {
 window.addEventListener('DOMContentLoaded', () => {
   void enterSpace(
     async session => {
-      const [distantLodCache, persistentStorage] = await Promise.all([
-        loadDistantLodCache(
-          session.world.seed,
-          session.world.terrain_generator_version
-        ),
-        createSpacePersistentStorage()
-      ]);
-      const game = new Game(session, distantLodCache, persistentStorage);
+      const persistentStorage = await createSpacePersistentStorage();
+      const game = new Game(session, persistentStorage);
       // Keep the convenient engine handle for local debugging without exposing
       // the authenticated session graph to every production-page script.
       if (import.meta.env.DEV) (window as any).game = game;

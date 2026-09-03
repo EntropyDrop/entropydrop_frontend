@@ -36,13 +36,17 @@ function normalizeResolutionScaleSetting(value: unknown): ResolutionScaleSetting
   return String(nearest) as ResolutionScaleSetting;
 }
 
-function resolutionSnapshot(state: any) {
+function resolutionSnapshot(state: any): Pick<
+  SpaceUiSnapshot,
+  'resolutionScaleMode' | 'resolutionScale' | 'resolutionPixelRatio' | 'resolutionEffectsQuality'
+> {
   return {
     resolutionScaleMode: state?.mode === 'fixed'
       ? normalizeResolutionScaleSetting(state.fixedScale)
       : 'auto' as ResolutionScaleSetting,
     resolutionScale: Number(state?.scale) || 1,
-    resolutionPixelRatio: Number(state?.effectivePixelRatio) || 1
+    resolutionPixelRatio: Number(state?.effectivePixelRatio) || 1,
+    resolutionEffectsQuality: state?.effectsQuality === 'reduced' ? 'reduced' : 'full'
   };
 }
 
@@ -165,6 +169,7 @@ export interface SpaceUiSnapshot {
   resolutionScaleMode: ResolutionScaleSetting;
   resolutionScale: number;
   resolutionPixelRatio: number;
+  resolutionEffectsQuality: 'full' | 'reduced';
   toast: { id: number; message: string } | null;
   isAdmin: boolean;
   isMuted: boolean;
@@ -306,6 +311,7 @@ export class SpaceUiStore {
     resolutionScaleMode: 'auto',
     resolutionScale: 1,
     resolutionPixelRatio: 1,
+    resolutionEffectsQuality: 'full',
     toast: null,
     isAdmin: false,
     isMuted: false,
@@ -1460,7 +1466,8 @@ export class SpaceUiStore {
       : {
           resolutionScaleMode: mode,
           resolutionScale: mode === 'auto' ? this.snapshot.resolutionScale : Number(mode),
-          resolutionPixelRatio: this.snapshot.resolutionPixelRatio
+          resolutionPixelRatio: this.snapshot.resolutionPixelRatio,
+          resolutionEffectsQuality: this.snapshot.resolutionEffectsQuality
         });
     if (persist) {
       try { localStorage.setItem('space_setting_resolution_scale', mode); } catch { }

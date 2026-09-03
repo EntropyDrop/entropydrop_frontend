@@ -16,7 +16,7 @@ Use only the API below. API facts in this section are generated from the same co
 
 ### World topology
 
-- The world is a torus: X is `[0,16384)` and Z is `[0,2048)` for world voxel operations and raycasts. Y does not wrap; voxel edits require Y in `[0,128)`.
+- The world is a torus: X is `[0,16384)` and Z is `[0,2048)` for world voxel operations and raycasts. Y does not wrap; voxel edits require Y in `[0,256)`.
 - `ctx.position` is continuous and does not wrap. Follow/orbit/seek logic must use shortest wrapped X/Z deltas.
 - An entity whose root falls below `y = -30` is removed with its scripts and state.
 
