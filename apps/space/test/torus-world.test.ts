@@ -10,6 +10,7 @@ import {
   wrapX, wrapZ, wrapChunkX, wrapChunkZ,
   bendPoint, unbendPoint, bendDirection, unbendDirection, bendFrameQuaternion,
   getWorldShapeMode, normalizeWorldShapeMode, setWorldProjectionAnchor, setWorldShapeMode,
+  applyCameraBend, computeChunkBentSphere, cullChunks, getWorldProjectionRevision,
   hookSceneMaterials
 } from '../src/engine/torus/TorusWorld.ts';
 
@@ -260,6 +261,289 @@ test('torus rendering starts with no synthetic far terrain and preserves near-fi
   assert.ok(world.microVoxels.mesh.customDepthMaterial, 'new microvoxel mesh should get torus depth material immediately');
 });
 
+test('simulation refreshes the active window without spending another mesh budget', () => {
+  const world = new World(new THREE.Scene()) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(TORUS_SPAWN_X, TORUS_SPAWN_Z, false);
+
+  assert.equal(world.activeChunkKeys.size, 49);
+  assert.equal(world.chunks.size, 0, 'simulation-only streaming must not synchronously generate chunks');
+
+  world.updateChunksAround(TORUS_SPAWN_X, TORUS_SPAWN_Z);
+  assert.ok(world.chunks.size > 0, 'the render-frame budget should still progress chunk streaming');
+});
+
+test('off-thread streaming leaves unfinished chunks empty and non-colliding', () => {
+  const world = new World(new THREE.Scene()) as any;
+  const requests: any[] = [];
+  world.terrainWorker = {
+    postMessage(request: any) {
+      requests.push(request);
+    },
+  };
+  world.setRenderDistance(3);
+  world.updateChunksAround(TORUS_SPAWN_X, TORUS_SPAWN_Z, false);
+  world.updateChunksAround(TORUS_SPAWN_X, TORUS_SPAWN_Z, true, 1, true);
+
+  assert.equal(requests.length, 1, 'streaming should dispatch one complete worker job');
+  assert.equal(requests[0].type, 'generate');
+  assert.equal(world.chunks.size, 0, 'dispatching work must not publish partial collision data');
+  assert.equal(
+    world.getBlock(TORUS_SPAWN_X, 0, TORUS_SPAWN_Z),
+    BlockTypes.AIR,
+    'an unfinished chunk must behave as air to player and entity physics',
+  );
+  world.setMicroBlock(TORUS_SPAWN_X * 5, 5, TORUS_SPAWN_Z * 5, 0x48dbfb);
+  assert.deepEqual(world.getMicroBlocksInAABB({
+    minX: TORUS_SPAWN_X,
+    maxX: TORUS_SPAWN_X + 0.2,
+    minY: 1,
+    maxY: 1.2,
+    minZ: TORUS_SPAWN_Z,
+    maxZ: TORUS_SPAWN_Z + 0.2,
+  }, true), [], 'unpublished micro meshes must not create invisible collision');
+  assert.equal(
+    world.getMicroCollisionBlock(TORUS_SPAWN_X * 5, 5, TORUS_SPAWN_Z * 5),
+    null,
+    'point collision probes must follow the same unpublished-chunk rule',
+  );
+});
+
+test('a dirty micro mesh keeps its already-published collision live', () => {
+  const world = new World(new THREE.Scene()) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  assert.ok(world.getChunk(0, 0)?.mesh);
+
+  assert.equal(world.setMicroBlock(5, 1_000, 5, 0x112233), true);
+  world.microVoxels.updateMesh();
+  assert.equal(world.setMicroBlock(5, 1_000, 5, 0x445566), true);
+
+  const collision = world.getMicroBlocksInAABB({
+    minX: 1,
+    maxX: 1.19,
+    minY: 200,
+    maxY: 200.19,
+    minZ: 1,
+    maxZ: 1.19,
+  }, true);
+  assert.equal(collision.length, 1,
+    'marking the 4 m render partition dirty must not disable its collision');
+  assert.equal(world.getMicroCollisionBlock(5, 1_000, 5)?.color, 0x445566);
+});
+
+test('a standard remesh swaps detailed geometry without clearing its ownership mask', () => {
+  const world = new World(new THREE.Scene()) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  const chunk = world.getChunk(0, 0);
+  assert.ok(chunk?.mesh);
+  const previousMesh = chunk.mesh;
+  const transitions: boolean[] = [];
+  const setDetailChunkReady = world.distantSurface.setDetailChunkReady.bind(world.distantSurface);
+  world.distantSurface.setDetailChunkReady = (cx, cz, ready) => {
+    if (cx === 0 && cz === 0) transitions.push(ready);
+    return setDetailChunkReady(cx, cz, ready);
+  };
+
+  world.setBlock(1, 200, 1, BlockTypes.COLOR_BLOCK, false, 0x48dbfb);
+  world.publishChunkMesh(chunk, world.mesher.buildChunkMeshData(chunk));
+
+  assert.notEqual(chunk.mesh, previousMesh);
+  assert.equal(previousMesh.parent, null, 'the retired mesh should leave the scene after replacement');
+  assert.deepEqual(transitions, [true], 'a remesh must never expose the far-surface fallback');
+});
+
+test('subdivision publishes standard and micro replacement meshes at one commit point', () => {
+  const world = new World(new THREE.Scene()) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  const chunk = world.getChunk(0, 0);
+  world.setBlock(1, 200, 1, BlockTypes.COLOR_BLOCK, false, 0x48dbfb);
+  world.publishChunkMesh(chunk, world.mesher.buildChunkMeshData(chunk));
+  world.dirtyChunks.delete(chunk);
+  const standardBeforeSubdivision = chunk.mesh;
+
+  assert.equal(world.subdivideBlock(1, 200, 1), 125);
+  world.microVoxels.updateMesh(
+    Infinity,
+    world.activeChunkKeys,
+    null,
+    Infinity,
+    world.crossLayerPublicationChunks,
+  );
+  assert.equal(chunk.mesh, standardBeforeSubdivision,
+    'the old standard block should remain visible while its micro replacement is staged');
+  assert.equal(world.microVoxels.meshChunks.size, 0,
+    'coplanar micro faces must not publish early and z-fight the standard block');
+
+  world.publishChunkMesh(chunk, world.mesher.buildChunkMeshData(chunk));
+  world.commitCrossLayerPublication('0,0');
+  assert.notEqual(chunk.mesh, standardBeforeSubdivision);
+  assert.ok(world.microVoxels.mesh, 'the micro replacement should publish in the same task');
+  assert.equal(world.crossLayerPublicationChunks.has('0,0'), false);
+});
+
+test('leaving a cross-layer edit chunk cannot block the global worker result queue', () => {
+  const world = new World(new THREE.Scene()) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  const chunk = world.getChunk(0, 0);
+  world.setBlock(1, 200, 1, BlockTypes.COLOR_BLOCK, false, 0x48dbfb);
+  world.publishChunkMesh(chunk, world.mesher.buildChunkMeshData(chunk));
+  world.pendingStreamChunks = [];
+  world.dirtyChunks.clear();
+  world.subdivideBlock(1, 200, 1);
+  world.terrainWorker = { postMessage() {} };
+  world.updateChunksAround(0, 0, true, 50, true);
+
+  const job = world.terrainWorkerJob;
+  world.terrainWorkerJob = null;
+  world.completedTerrainWorkerJobs.push({
+    job,
+    result: {
+      ok: true,
+      type: 'remesh',
+      requestId: job.requestId,
+      cx: 0,
+      cz: 0,
+      dataVersion: job.dataVersion,
+      mesh: world.mesher.buildChunkMeshData(chunk),
+    },
+  });
+
+  world.updateChunksAround(10 * 16, 0, true, 50, true);
+  assert.equal(world.crossLayerPublicationChunks.has('0,0'), false,
+    'leaving the active window should abort the local publication barrier');
+  world.updateChunksAround(10 * 16, 0, true, 50, true);
+  assert.equal(world.completedTerrainWorkerJobs.length, 0,
+    'the inactive result must be discarded instead of blocking every later terrain job');
+});
+
+test('a cross-layer edit resumes when its chunk quickly leaves and re-enters', () => {
+  const world = new World(new THREE.Scene()) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  const chunk = world.getChunk(0, 0);
+  world.setBlock(1, 200, 1, BlockTypes.COLOR_BLOCK, false, 0x48dbfb);
+  world.publishChunkMesh(chunk, world.mesher.buildChunkMeshData(chunk));
+  world.dirtyChunks.delete(chunk);
+
+  world.subdivideBlock(1, 200, 1);
+  world.microVoxels.updateMesh(
+    Infinity,
+    world.activeChunkKeys,
+    null,
+    Infinity,
+    world.crossLayerPublicationChunks,
+  );
+  world.updateChunksAround(10 * 16, 0, false);
+  assert.equal(world.crossLayerPublicationChunks.has('0,0'), false);
+  assert.equal(world.suspendedCrossLayerPublicationChunks.has('0,0'), true);
+
+  world.updateChunksAround(0, 0, false);
+  assert.equal(world.suspendedCrossLayerPublicationChunks.has('0,0'), false);
+  assert.equal(world.crossLayerPublicationChunks.has('0,0'), true,
+    'the atomic standard/micro publication requirement must resume on re-entry');
+  assert.equal(world.dirtyChunks.has(chunk), true,
+    'the edited standard chunk must be queued for the remesh that was interrupted');
+});
+
+test('render-loop streaming waits for browser idle time', () => {
+  const world = new World(new THREE.Scene()) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(TORUS_SPAWN_X, TORUS_SPAWN_Z, false);
+  assert.equal(world.chunks.size, 0);
+
+  const previousRequestIdleCallback = globalThis.requestIdleCallback;
+  let idleCallback: IdleRequestCallback | null = null;
+  globalThis.requestIdleCallback = ((callback: IdleRequestCallback) => {
+    idleCallback = callback;
+    return 1;
+  }) as typeof requestIdleCallback;
+  try {
+    world.scheduleStreamingWork();
+    assert.equal(world.chunks.size, 0, 'scheduling alone must not run before the current render');
+    idleCallback!({ didTimeout: false, timeRemaining: () => 4 });
+    assert.ok(world.chunks.size > 0, 'an idle slice should advance terrain streaming');
+  } finally {
+    globalThis.requestIdleCallback = previousRequestIdleCallback;
+  }
+});
+
+test('earth projection culls distant terrain with occupied-height bounds', () => {
+  setWorldShapeMode('earth');
+  setWorldProjectionAnchor(TORUS_SPAWN_X, TORUS_SPAWN_Z, true);
+  try {
+    const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 90);
+    camera.position.set(TORUS_SPAWN_X, 22, TORUS_SPAWN_Z);
+    camera.lookAt(TORUS_SPAWN_X, 22, TORUS_SPAWN_Z - 1);
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(true);
+    applyCameraBend(camera);
+
+    const centerCx = Math.floor(TORUS_SPAWN_X / 16);
+    const centerCz = Math.floor(TORUS_SPAWN_Z / 16);
+    const chunks = new Map();
+    const microMeshes = new Map();
+    const activeChunkKeys = new Set<string>();
+    for (let dx = -8; dx <= 8; dx++) {
+      for (let dz = -8; dz <= 8; dz++) {
+        const cx = centerCx + dx;
+        const cz = centerCz + dz;
+        const key = `${cx},${cz}`;
+        const mesh = new THREE.Group();
+        mesh.userData.occupiedMinY = 0;
+        mesh.userData.occupiedMaxY = 33;
+        const microMesh = new THREE.Mesh();
+        const terrainChild = new THREE.Mesh();
+        terrainChild.castShadow = true;
+        mesh.add(terrainChild);
+        microMesh.castShadow = true;
+        microMesh.userData.standardChunkKey = key;
+        microMesh.userData.projectionChunkCx = cx;
+        microMesh.userData.projectionChunkCz = cz;
+        microMesh.userData.bentSpan = 4;
+        microMesh.userData.occupiedMinY = 14;
+        microMesh.userData.occupiedMaxY = 18;
+        chunks.set(key, {
+          cx,
+          cz,
+          mesh,
+          getOccupiedYRange: () => ({ min: 0, max: 32 }),
+        });
+        microMeshes.set(key, microMesh);
+        activeChunkKeys.add(key);
+      }
+    }
+
+    cullChunks(camera, { chunks, activeChunkKeys, microVoxels: { meshChunks: microMeshes } });
+    const visible = [...chunks.values()].filter(chunk => chunk.mesh.visible).length;
+    const visibleMicro = [...microMeshes.values()].filter(mesh => mesh.visible).length;
+    const shadowCasters = [...chunks.values()].filter(chunk => chunk.mesh.children[0].castShadow).length;
+    const microShadowCasters = [...microMeshes.values()].filter(mesh => mesh.castShadow).length;
+    assert.ok(visible > 0);
+    assert.ok(visible < chunks.size, `earth culling should reject distant chunks, got ${visible}/${chunks.size}`);
+    assert.ok(visibleMicro > 0 && visibleMicro < microMeshes.size,
+      `earth culling should also reject distant micro meshes, got ${visibleMicro}/${microMeshes.size}`);
+    assert.ok(shadowCasters > 0 && shadowCasters < visible,
+      'only terrain near the player should enter the local sunlight shadow pass');
+    assert.ok(microShadowCasters > 0 && microShadowCasters < visibleMicro,
+      'far visible micro meshes should stay out of the local sunlight shadow pass');
+    for (const chunk of chunks.values()) {
+      assert.equal(chunk.mesh.userData.bentSphereRevision, getWorldProjectionRevision());
+      assert.ok(chunk.mesh.userData.bentSphere.radius < 40,
+        'terrain-height bounds should replace the old full 256-block sphere');
+    }
+
+    const fullHeight = computeChunkBentSphere(centerCx, centerCz);
+    const terrainHeight = computeChunkBentSphere(centerCx, centerCz, null, 0, 33);
+    assert.ok(terrainHeight.radius < fullHeight.radius / 2);
+  } finally {
+    setWorldShapeMode('torus');
+  }
+});
+
 test('earth mode disables every distant terrain LOD and donut mode restores it', () => {
   const world = new World(new THREE.Scene()) as any;
   assert.equal(world.distantSurface.isEnabled(), true);
@@ -286,6 +570,7 @@ test('chunk streaming evicts procedural arrays but retains authored edits', () =
   assert.equal(world.setBlock(TORUS_SPAWN_X, 256, TORUS_SPAWN_Z, BlockTypes.COLOR_BLOCK), false);
   assert.equal(world.chunks.get(editedKey).hasUserEdits, true);
 
+  world.updateChunksAround(TORUS_SPAWN_X + 10 * 16, TORUS_SPAWN_Z);
   world.updateChunksAround(TORUS_SPAWN_X + 10 * 16, TORUS_SPAWN_Z);
   assert.equal(detailMask[centerMaskIndex], 0,
     'far terrain must resume before an old detailed chunk leaves the active window');

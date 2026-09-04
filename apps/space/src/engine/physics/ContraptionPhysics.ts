@@ -41,7 +41,9 @@ export class ContraptionPhysics {
   getGroundDistance(worldPos, maxCheckDist = 40) {
     const down = new THREE.Vector3(0, -1, 0);
     const standardHit = this.world.raycast(worldPos, down, maxCheckDist);
-    const microHit = this.world.raycastMicro(worldPos, down, maxCheckDist);
+    const microRaycast = this.world.raycastMicroCollision?.bind(this.world)
+      ?? this.world.raycastMicro.bind(this.world);
+    const microHit = microRaycast(worldPos, down, maxCheckDist);
     const standardDistance = standardHit.hit ? standardHit.distance : maxCheckDist;
     const microDistance = microHit.hit ? microHit.distance : maxCheckDist;
     return Math.max(0, Math.min(standardDistance, microDistance));
@@ -1132,9 +1134,12 @@ export class ContraptionPhysics {
     const mx = Math.floor(point.x * 5);
     const my = Math.floor(point.y * 5);
     const mz = Math.floor(point.z * 5);
-    const micro = (this.world as any).getMicroBlock?.(mx, my, mz)
-      ?? (this.world as any).microVoxels?.get(mx, my, mz)
-      ?? null;
+    const collisionReader = (this.world as any).getMicroCollisionBlock;
+    const micro = typeof collisionReader === 'function'
+      ? collisionReader.call(this.world, mx, my, mz)
+      : ((this.world as any).getMicroBlock?.(mx, my, mz)
+        ?? (this.world as any).microVoxels?.get(mx, my, mz)
+        ?? null);
     if (micro === null || micro === undefined) return null;
     return {
       minX: mx / 5,
@@ -1290,7 +1295,7 @@ export class ContraptionPhysics {
       maxY: obb.maxY,
       maxZ: obb.maxZ
     };
-    const queriedMicro = this.world.getMicroBlocksInAABB?.(bounds);
+    const queriedMicro = this.world.getMicroBlocksInAABB?.(bounds, true);
     if (Array.isArray(queriedMicro)) {
       for (const cell of queriedMicro) {
         const size = Number(cell.size) || 0.2;

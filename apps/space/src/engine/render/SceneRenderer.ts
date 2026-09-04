@@ -607,6 +607,7 @@ export class SceneRenderer {
   declare renderer: THREE.WebGLRenderer;
   declare adaptiveResolution: AdaptiveResolutionController;
   declare adaptiveEffectsQuality: AdaptiveEffectsQuality;
+  declare shadowsEnabled: boolean;
   declare resolutionScale: number;
   declare onResolutionScaleChange: ((state: any) => void) | null;
   declare previewRenderer: any;
@@ -686,6 +687,7 @@ export class SceneRenderer {
     this.materialScanCountdown = 0;
     this.adaptiveResolution = new AdaptiveResolutionController();
     this.adaptiveEffectsQuality = 'full';
+    this.shadowsEnabled = true;
     this.resolutionScale = this.adaptiveResolution.currentScale;
     this.onResolutionScaleChange = null;
 
@@ -2029,6 +2031,16 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     };
   }
 
+  setShadowsEnabled(enabled: boolean) {
+    this.shadowsEnabled = Boolean(enabled);
+    this.applyShadowState();
+    return this.shadowsEnabled;
+  }
+
+  getShadowsEnabled() {
+    return this.shadowsEnabled;
+  }
+
   private updateAdaptiveResolution() {
     const visible = typeof document === 'undefined' || document.visibilityState !== 'hidden';
     const scale = this.adaptiveResolution.sampleFrame(performance.now(), visible);
@@ -2041,9 +2053,15 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   private applyAdaptiveEffects(quality: AdaptiveEffectsQuality) {
     if (quality === this.adaptiveEffectsQuality) return;
     this.adaptiveEffectsQuality = quality;
-    this.renderer.shadowMap.enabled = quality === 'full';
-    this.renderer.shadowMap.needsUpdate = true;
+    this.applyShadowState();
     this.notifyResolutionScaleChange();
+  }
+
+  private applyShadowState() {
+    const enabled = this.shadowsEnabled && this.adaptiveEffectsQuality === 'full';
+    if (this.renderer.shadowMap.enabled === enabled) return;
+    this.renderer.shadowMap.enabled = enabled;
+    this.renderer.shadowMap.needsUpdate = true;
   }
 
   setupPlayerAvatar() {

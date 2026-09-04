@@ -250,7 +250,9 @@ export class MultiplayerSync {
       if (!response.ok) {
         throw new Error(`Space terrain synchronization failed with HTTP ${response.status}`);
       }
-      const data: any = await readJsonResponse(response, MAX_REALTIME_API_RESPONSE_BYTES);
+      const data: any = await readJsonResponse(response, MAX_REALTIME_API_RESPONSE_BYTES, {
+        offMainThread: true,
+      });
       if (!data || typeof data !== 'object') {
         throw new Error('Space terrain synchronization returned invalid JSON');
       }

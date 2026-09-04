@@ -5,6 +5,7 @@ import {
   DEFAULT_DISTANT_SURFACE_SETTINGS,
   normalizeDistantSurfaceSettings,
 } from '../src/engine/render/DistantSurfaceLayer.ts';
+import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
 
 test('resolution setting is applied to the renderer and follows automatic updates', () => {
   const applied: Array<'auto' | number> = [];
@@ -45,6 +46,49 @@ test('resolution setting is applied to the renderer and follows automatic update
   assert.equal(store.getSnapshot().resolutionScale, 0.8);
   assert.equal(store.getSnapshot().resolutionPixelRatio, 1.6);
   assert.equal(store.getSnapshot().resolutionEffectsQuality, 'reduced');
+});
+
+test('shadow preference is applied to the renderer independently of adaptive quality', () => {
+  const applied: boolean[] = [];
+  const renderer: any = {
+    setResolutionScale() {
+      return { mode: 'auto', scale: 1, effectivePixelRatio: 1, effectsQuality: 'full' };
+    },
+    setShadowsEnabled(enabled: boolean) {
+      applied.push(enabled);
+      return enabled;
+    },
+    getShadowsEnabled: () => applied.at(-1) ?? true,
+  };
+  const store = new SpaceUiStore();
+
+  store.setSceneRenderer(renderer);
+  store.setShadowsEnabled(false, false);
+
+  assert.deepEqual(applied, [true, false]);
+  assert.equal(store.getSnapshot().shadowsEnabled, false);
+});
+
+test('renderer combines the shadow preference with adaptive effects quality', () => {
+  const renderer = Object.create(SceneRenderer.prototype) as SceneRenderer;
+  const internal = renderer as any;
+  internal.renderer = { shadowMap: { enabled: true, needsUpdate: false } };
+  internal.shadowsEnabled = true;
+  internal.adaptiveEffectsQuality = 'full';
+
+  renderer.setShadowsEnabled(false);
+  assert.equal(internal.renderer.shadowMap.enabled, false);
+  assert.equal(internal.renderer.shadowMap.needsUpdate, true);
+
+  internal.renderer.shadowMap.needsUpdate = false;
+  internal.adaptiveEffectsQuality = 'reduced';
+  renderer.setShadowsEnabled(true);
+  assert.equal(internal.renderer.shadowMap.enabled, false);
+  assert.equal(internal.renderer.shadowMap.needsUpdate, false);
+
+  internal.adaptiveEffectsQuality = 'full';
+  renderer.setShadowsEnabled(true);
+  assert.equal(internal.renderer.shadowMap.enabled, true);
 });
 
 test('world shape setting is applied immediately through the renderer bridge', () => {

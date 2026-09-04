@@ -8,6 +8,69 @@ export class NetworkPayloadTooLargeError extends Error {
   }
 }
 
+const OFF_MAIN_THREAD_JSON_THRESHOLD_BYTES = 256 * 1024;
+let jsonParserWorker: Worker | null = null;
+let jsonParserRequestId = 0;
+const pendingJsonParses = new Map<number, {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+}>();
+
+function rejectPendingJsonParses(error: Error) {
+  for (const pending of pendingJsonParses.values()) pending.reject(error);
+  pendingJsonParses.clear();
+}
+
+function getJsonParserWorker(): Worker | null {
+  if (jsonParserWorker) return jsonParserWorker;
+  if (typeof document === 'undefined' || typeof Worker !== 'function') return null;
+  try {
+    jsonParserWorker = new Worker(new URL('./JsonParseWorker.ts', import.meta.url), {
+      type: 'module',
+      name: 'space-json-parser',
+    });
+    jsonParserWorker.onmessage = event => {
+      const id = Number(event.data?.id);
+      const pending = pendingJsonParses.get(id);
+      if (!pending) return;
+      pendingJsonParses.delete(id);
+      if (event.data?.ok) pending.resolve(event.data.value);
+      else pending.reject(new SyntaxError(event.data?.error || 'Invalid JSON response.'));
+    };
+    jsonParserWorker.onerror = event => {
+      const error = new Error(event.message || 'The JSON parser worker stopped unexpectedly.');
+      rejectPendingJsonParses(error);
+      jsonParserWorker?.terminate();
+      jsonParserWorker = null;
+    };
+    return jsonParserWorker;
+  } catch {
+    jsonParserWorker = null;
+    return null;
+  }
+}
+
+function parseJsonBytesOffMainThread<T>(bytes: Uint8Array): Promise<T> | null {
+  if (bytes.byteLength < OFF_MAIN_THREAD_JSON_THRESHOLD_BYTES) return null;
+  const worker = getJsonParserWorker();
+  if (!worker) return null;
+  const id = ++jsonParserRequestId;
+  const transferable = bytes.byteOffset === 0
+    && bytes.buffer instanceof ArrayBuffer
+    && bytes.byteLength === bytes.buffer.byteLength
+    ? bytes.buffer
+    : bytes.slice().buffer;
+  return new Promise<T>((resolve, reject) => {
+    pendingJsonParses.set(id, { resolve: value => resolve(value as T), reject });
+    try {
+      worker.postMessage({ id, buffer: transferable }, [transferable]);
+    } catch (error) {
+      pendingJsonParses.delete(id);
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
+
 export function isLocalDevelopmentHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
   if (['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0'].includes(normalized)) return true;
@@ -71,9 +134,17 @@ export async function readResponseBytes(response: Response, maxBytes: number): P
   return output;
 }
 
-export async function readJsonResponse<T = unknown>(response: Response, maxBytes: number): Promise<T | null> {
+export async function readJsonResponse<T = unknown>(
+  response: Response,
+  maxBytes: number,
+  options: { offMainThread?: boolean } = {},
+): Promise<T | null> {
   const bytes = await readResponseBytes(response, maxBytes);
   if (bytes.byteLength === 0) return null;
+  if (options.offMainThread) {
+    const pending = parseJsonBytesOffMainThread<T>(bytes);
+    if (pending) return pending;
+  }
   return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
 

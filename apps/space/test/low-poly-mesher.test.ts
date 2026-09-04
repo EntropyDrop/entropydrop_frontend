@@ -58,6 +58,50 @@ test('generated neighboring chunks cull their shared boundary faces', () => {
   assert.equal(geometry.index?.count, 5 * 6, 'the occupied east neighbor hides the shared face');
 });
 
+test('missing procedural neighbors are sampled without creating temporary boundary faces', () => {
+  const chunks = new Map<string, Chunk>();
+  const world = {
+    terrainGen: { sampleHeight: () => 8 },
+    worldToChunkCoords(wx: number, wz: number) {
+      return {
+        cx: Math.floor(wx / CHUNK_SIZE_X),
+        cz: Math.floor(wz / CHUNK_SIZE_Z)
+      };
+    },
+    getChunk(cx: number, cz: number) {
+      return chunks.get(`${cx},${cz}`);
+    },
+    markChunkDirty() {}
+  };
+  const center = new Chunk(0, 0, world);
+  center.hasGenerated = true;
+  chunks.set('0,0', center);
+  center.setLocalBlock(CHUNK_SIZE_X - 1, 8, 4, BlockTypes.COLOR_BLOCK);
+
+  const geometry = meshGeometry(center);
+  assert.equal(
+    geometry.index?.count,
+    5 * 6,
+    'the deterministic east terrain sample hides the shared face before its chunk is allocated'
+  );
+});
+
+test('chunk occupancy bounds shrink lazily and constrain meshing height', () => {
+  const chunk = new Chunk(0, 0, null);
+  assert.equal(chunk.getOccupiedYRange(), null);
+
+  chunk.setLocalBlock(2, 5, 3, BlockTypes.COLOR_BLOCK);
+  chunk.setLocalBlock(2, 200, 3, BlockTypes.COLOR_BLOCK);
+  assert.deepEqual(chunk.getOccupiedYRange(), { min: 5, max: 200 });
+
+  chunk.setLocalBlock(2, 200, 3, BlockTypes.AIR);
+  assert.deepEqual(chunk.getOccupiedYRange(), { min: 5, max: 5 });
+
+  const group = new LowPolyMesher().buildChunkMesh(chunk);
+  assert.equal(group.userData.occupiedMinY, 5);
+  assert.equal(group.userData.occupiedMaxY, 6);
+});
+
 test('large exposed meshes promote their index buffer to 32 bits', () => {
   const chunk = new Chunk(0, 0, null);
   for (let ly = 0; ly < CHUNK_SIZE_Y; ly++) {

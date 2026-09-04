@@ -311,12 +311,15 @@ function BulkEditProgressPanel() {
           : 'APPLYING';
   const syncIdle = worldEditSync.pendingBatches === 0 && !worldEditSync.sending;
   const syncText = worldEditSync.retrying
-    ? `Retrying in ${Math.max(1, Math.ceil(worldEditSync.retryDelayMs / 1_000))}s · ${worldEditSync.pendingBatches} batches queued`
+    ? `${worldEditSync.blockedCode === 'TERRAIN_EDIT_QUOTA_REACHED' ? 'Edit limit reached' : 'Retrying'} in ${Math.max(1, Math.ceil(worldEditSync.retryDelayMs / 1_000))}s · ${worldEditSync.pendingBatches} batches queued`
     : worldEditSync.backpressured
       ? `Queue paused · ${worldEditSync.pendingBatches} batches / ${worldEditSync.pendingMutations} edits pending`
       : syncIdle
         ? 'Server synced'
         : `Server sync · ${worldEditSync.pendingBatches} batches / ${worldEditSync.pendingMutations} edits pending`;
+  const quotaText = worldEditSync.quota
+    ? `${worldEditSync.quota.remainingToday.toLocaleString()} / ${worldEditSync.quota.dailyLimit.toLocaleString()} daily edits remaining`
+    : null;
 
   return (
     <div className={`bulk-edit-progress phase-${bulkEdit.phase}`} role="status" aria-live="polite">
@@ -334,6 +337,7 @@ function BulkEditProgressPanel() {
         <div className={`bulk-edit-track sync ${syncIdle ? 'idle' : 'active'}`}><span /></div>
         <span className="bulk-edit-value">{syncText}</span>
       </div>
+      {quotaText ? <div className="bulk-edit-detail">{quotaText}</div> : null}
       {bulkEdit.detail ? <div className="bulk-edit-detail">{bulkEdit.detail}</div> : null}
     </div>
   );

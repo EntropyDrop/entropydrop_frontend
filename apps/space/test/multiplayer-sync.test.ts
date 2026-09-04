@@ -9,6 +9,7 @@ import {
 } from '../src/engine/network/MultiplayerSync.ts';
 import { World } from '../src/engine/voxel/World.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { Chunk } from '../src/engine/voxel/Chunk.ts';
 
 test('resolveWebSocketUrl follows the API origin for relative realtime URLs', () => {
   assert.equal(
@@ -374,6 +375,335 @@ test('queued remote chunks are coalesced and applied during the bounded frame up
   }]);
   world.updateChunksAround(0, 0);
   assert.equal(world.getBlockColor(5, 40, 5), 0x222222, 'an older AOI page must not regress a newer heartbeat');
+});
+
+test('off-thread remote snapshots keep published terrain and collision until atomic replacement', () => {
+  const world = new World(new THREE.Scene(), 12345) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  const chunk = world.getChunk(0, 0);
+  assert.ok(chunk?.mesh);
+  const previousMesh = chunk.mesh;
+  world.pendingStreamChunks = [];
+  world.dirtyChunks.clear();
+
+  const requests: any[] = [];
+  world.terrainWorker = {
+    postMessage(request) {
+      requests.push(request);
+    },
+  };
+  const detailTransitions: boolean[] = [];
+  const setDetailChunkReady = world.distantSurface.setDetailChunkReady.bind(world.distantSurface);
+  world.distantSurface.setDetailChunkReady = (cx, cz, ready) => {
+    if (cx === 0 && cz === 0) detailTransitions.push(ready);
+    return setDetailChunkReady(cx, cz, ready);
+  };
+
+  world.queueRemoteChunkUpdates([{
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 1,
+    standard: [[5, 200, 5, BlockTypes.COLOR_BLOCK, 0xabcdef]],
+    micro: [],
+  }]);
+  world.updateChunksAround(0, 0, true, 50, true);
+
+  assert.equal(requests.length, 1);
+  assert.equal(world.getChunk(0, 0), chunk, 'the live chunk must not be detached for regeneration');
+  assert.equal(chunk.mesh, previousMesh, 'the previous detailed mesh remains published while work runs');
+  assert.equal(world.getBlock(5, 200, 5), BlockTypes.AIR,
+    'collision stays on the complete previous snapshot until publication');
+  assert.deepEqual(detailTransitions, []);
+
+  const generated = new Chunk(0, 0, world);
+  world.terrainGen.generateChunk(generated);
+  generated.setLocalBlock(5, 200, 5, BlockTypes.COLOR_BLOCK, 0xabcdef);
+  const mesh = world.mesher.buildChunkMeshData(generated);
+  const job = world.terrainWorkerJob;
+  world.terrainWorkerJob = null;
+  world.completedTerrainWorkerJobs.push({
+    job,
+    result: {
+      ok: true,
+      type: 'generate',
+      requestId: job.requestId,
+      cx: 0,
+      cz: 0,
+      hasUserEdits: true,
+      blocks: generated.blocks,
+      terrainColors: generated.colors,
+      mesh,
+    },
+  });
+  world.updateChunksAround(0, 0, true, 50, true);
+
+  assert.equal(world.getChunk(0, 0), chunk, 'replacement should preserve the live chunk identity');
+  assert.notEqual(chunk.mesh, previousMesh);
+  assert.equal(previousMesh.parent, null);
+  assert.equal(world.getBlock(5, 200, 5), BlockTypes.COLOR_BLOCK);
+  assert.deepEqual(detailTransitions, [true], 'publication must not clear the detail ownership mask');
+});
+
+test('remote standard-to-micro replacement waits and publishes both layers together', () => {
+  const world = new World(new THREE.Scene(), 12345) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  const chunk = world.getChunk(0, 0);
+  world.setBlock(1, 200, 1, BlockTypes.COLOR_BLOCK, false, 0x48dbfb);
+  world.publishChunkMesh(chunk, world.mesher.buildChunkMeshData(chunk));
+  world.pendingStreamChunks = [];
+  world.dirtyChunks.clear();
+  const previousMesh = chunk.mesh;
+  const requests: any[] = [];
+  world.terrainWorker = { postMessage: request => requests.push(request) };
+  const micro = Array.from({ length: 125 }, (_, index) => {
+    const dx = index % 5;
+    const dy = Math.floor(index / 5) % 5;
+    const dz = Math.floor(index / 25);
+    return [5 + dx, 1_000 + dy, 5 + dz, 0x48dbfb];
+  });
+
+  world.queueRemoteChunkUpdates([{
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 1,
+    standard: [],
+    micro,
+  }]);
+  for (let frame = 0; frame < 10 && requests.length === 0; frame++) {
+    world.updateChunksAround(0, 0, true, 50, true);
+  }
+
+  assert.equal(requests.length, 1);
+  assert.equal(chunk.mesh, previousMesh, 'the old standard block remains visible during staging');
+  assert.equal(world.microVoxels.meshChunks.size, 0,
+    'the new coplanar micro geometry must not publish before standard removal');
+  assert.equal(world.crossLayerPublicationChunks.has('0,0'), true);
+
+  const generated = new Chunk(0, 0, world);
+  world.terrainGen.generateChunk(generated);
+  const mesh = world.mesher.buildChunkMeshData(generated);
+  const job = world.terrainWorkerJob;
+  world.terrainWorkerJob = null;
+  world.completedTerrainWorkerJobs.push({
+    job,
+    result: {
+      ok: true,
+      type: 'generate',
+      requestId: job.requestId,
+      cx: 0,
+      cz: 0,
+      hasUserEdits: false,
+      blocks: generated.blocks,
+      terrainColors: generated.colors,
+      mesh,
+    },
+  });
+  for (let frame = 0; frame < 40 && world.crossLayerPublicationChunks.has('0,0'); frame++) {
+    world.updateChunksAround(0, 0, true, 50, true);
+  }
+
+  assert.notEqual(chunk.mesh, previousMesh);
+  assert.ok(world.microVoxels.mesh);
+  assert.equal(world.crossLayerPublicationChunks.has('0,0'), false);
+});
+
+test('an evicted remote replacement keeps its atomic barrier through the missing-chunk retry', () => {
+  const world = new World(new THREE.Scene(), 12345) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  const replacedChunk = world.getChunk(0, 0);
+  assert.ok(replacedChunk?.mesh);
+  world.pendingStreamChunks = [];
+  world.dirtyChunks.clear();
+  const requests: any[] = [];
+  world.terrainWorker = { postMessage: request => requests.push(request) };
+
+  world.queueRemoteChunkUpdates([{
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 1,
+    standard: [],
+    micro: [[5, 1_000, 5, 0x48dbfb]],
+  }]);
+  for (let frame = 0; frame < 10 && requests.length === 0; frame++) {
+    world.updateChunksAround(0, 0, true, 50, true);
+  }
+  const replacingJob = world.terrainWorkerJob;
+  assert.equal(replacingJob.replacingChunk, replacedChunk);
+  assert.equal(world.crossLayerPublicationChunks.has('0,0'), true);
+
+  world.updateChunksAround(10 * 16, 0, true, 50, true);
+  world.updateChunksAround(10 * 16, 0, true, 50, true);
+  assert.equal(world.getChunk(0, 0), null, 'the unedited procedural chunk should be evicted');
+  assert.equal(world.suspendedCrossLayerPublicationChunks.has('0,0'), true);
+
+  world.updateChunksAround(0, 0, false);
+  assert.equal(world.crossLayerPublicationChunks.has('0,0'), true);
+  const firstGenerated = new Chunk(0, 0, world);
+  world.terrainGen.generateChunk(firstGenerated);
+  world.terrainWorkerJob = null;
+  world.completedTerrainWorkerJobs.push({
+    job: replacingJob,
+    result: {
+      ok: true,
+      type: 'generate',
+      requestId: replacingJob.requestId,
+      cx: 0,
+      cz: 0,
+      blocks: firstGenerated.blocks,
+      terrainColors: firstGenerated.colors,
+      mesh: world.mesher.buildChunkMeshData(firstGenerated),
+    },
+  });
+  world.updateChunksAround(0, 0, true, 50, true);
+  world.updateChunksAround(0, 0, true, 50, true);
+
+  assert.equal(requests.length, 2, 'the stale replacing job should retry as a missing-chunk snapshot');
+  assert.equal(world.terrainWorkerJob.replacingChunk, null);
+  assert.equal(world.crossLayerPublicationChunks.has('0,0'), true,
+    'discarding the stale replacing job must not discard its publication intent');
+  assert.equal(world.microVoxels.meshChunks.size, 0,
+    'the micro replacement must remain staged until retry publication');
+
+  const retryJob = world.terrainWorkerJob;
+  const retryGenerated = new Chunk(0, 0, world);
+  world.terrainGen.generateChunk(retryGenerated);
+  world.terrainWorkerJob = null;
+  world.completedTerrainWorkerJobs.push({
+    job: retryJob,
+    result: {
+      ok: true,
+      type: 'generate',
+      requestId: retryJob.requestId,
+      cx: 0,
+      cz: 0,
+      blocks: retryGenerated.blocks,
+      terrainColors: retryGenerated.colors,
+      mesh: world.mesher.buildChunkMeshData(retryGenerated),
+    },
+  });
+  for (let frame = 0; frame < 20 && world.crossLayerPublicationChunks.has('0,0'); frame++) {
+    world.updateChunksAround(0, 0, true, 50, true);
+  }
+
+  assert.ok(world.getChunk(0, 0)?.mesh);
+  assert.ok(world.microVoxels.mesh);
+  assert.equal(world.crossLayerPublicationChunks.has('0,0'), false);
+});
+
+test('a local edit racing a completed remote snapshot is included in its retry', () => {
+  const world = new World(new THREE.Scene(), 12345) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  const chunk = world.getChunk(0, 0);
+  world.pendingStreamChunks = [];
+  world.dirtyChunks.clear();
+  const requests: any[] = [];
+  world.terrainWorker = { postMessage: request => requests.push(request) };
+
+  world.queueRemoteChunkUpdates([{
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 1,
+    standard: [[5, 200, 5, BlockTypes.COLOR_BLOCK, 0xabcdef]],
+    micro: [],
+  }]);
+  world.updateChunksAround(0, 0, true, 50, true);
+  const firstJob = world.terrainWorkerJob;
+  const generated = new Chunk(0, 0, world);
+  world.terrainGen.generateChunk(generated);
+  generated.setLocalBlock(5, 200, 5, BlockTypes.COLOR_BLOCK, 0xabcdef);
+  const mesh = world.mesher.buildChunkMeshData(generated);
+  world.terrainWorkerJob = null;
+  world.completedTerrainWorkerJobs.push({
+    job: firstJob,
+    result: {
+      ok: true,
+      type: 'generate',
+      requestId: firstJob.requestId,
+      cx: 0,
+      cz: 0,
+      hasUserEdits: true,
+      blocks: generated.blocks,
+      terrainColors: generated.colors,
+      mesh,
+    },
+  });
+
+  world.setBlock(6, 200, 5, BlockTypes.COLOR_BLOCK, true, 0x123456);
+  world.updateChunksAround(0, 0, true, 50, true);
+
+  assert.equal(world.getChunk(0, 0), chunk);
+  assert.equal(world.getBlock(6, 200, 5), BlockTypes.COLOR_BLOCK);
+  assert.equal(requests.length, 2, 'the stale completed snapshot should be regenerated');
+  assert.deepEqual(
+    requests[1].standardEdits.at(-1),
+    [6, 200, 5, BlockTypes.COLOR_BLOCK, 0x123456],
+    'the retry must carry the edit made after worker completion',
+  );
+});
+
+test('a local micro edit made during remote replacement survives incremental clearing', () => {
+  const world = new World(new THREE.Scene(), 12345) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  world.pendingStreamChunks = [];
+  world.dirtyChunks.clear();
+  world.terrainWorker = { postMessage() {} };
+
+  for (let index = 0; index < 500; index++) {
+    world.setMicroBlock(index % 80, 1_000, Math.floor(index / 80), 0x111111);
+  }
+  const targetMx = 499 % 80;
+  const targetMz = Math.floor(499 / 80);
+  world.queueRemoteChunkUpdates([{
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 1,
+    standard: [],
+    micro: [],
+  }]);
+  world.updateChunksAround(0, 0, true, 50, true);
+  assert.ok(world.pendingRemoteChunkApply, 'the 500-cell clear should span multiple bounded slices');
+
+  world.setMicroBlock(targetMx, 1_000, targetMz, 0xabcdef);
+  for (let frame = 0; frame < 20 && world.pendingRemoteChunkApply; frame++) {
+    world.updateChunksAround(0, 0, true, 50, true);
+  }
+
+  assert.equal(world.pendingRemoteChunkApply, null);
+  assert.equal(world.getMicroBlock(targetMx, 1_000, targetMz)?.color, 0xabcdef,
+    'the local override must be replayed after the old detached index finishes clearing');
+});
+
+test('large queued micro snapshots are installed over multiple frame budgets', () => {
+  const world = new World(new THREE.Scene(), 12345) as any;
+  const micro = Array.from({ length: 5_000 }, (_, index) => [
+    index % 80,
+    Math.floor(index / 80),
+    0,
+    0x48dbfb,
+  ]);
+  world.queueRemoteChunkUpdates([{
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 1,
+    standard: [],
+    micro,
+  }]);
+
+  world.updateChunksAround(0, 0);
+  assert.ok(world.microVoxels.cells.size > 0 && world.microVoxels.cells.size < micro.length);
+  assert.equal(world.microMeshBuildBlockedChunks.has('0,0'), true,
+    'partial snapshots must not repeatedly rebuild incomplete micro meshes');
+
+  for (let frame = 0; frame < 10 && world.microVoxels.cells.size < micro.length; frame++) {
+    world.updateChunksAround(0, 0);
+  }
+  assert.equal(world.microVoxels.cells.size, micro.length);
+  assert.equal(world.microMeshBuildBlockedChunks.size, 0);
 });
 
 test('remote chunk snapshots are cached without echoing them back as local mutations', async () => {

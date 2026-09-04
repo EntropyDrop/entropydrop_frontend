@@ -172,6 +172,8 @@ export interface SpaceEntryHooks {
   onStateChange?: (state: SpaceEntryState) => void;
 }
 
+type SpaceEntryProgressReporter = (value: number, message: string) => void;
+
 export interface PreparedOnlineSpace {
   payload: SpaceBootstrapPayload;
   apiOrigin: string;
@@ -555,7 +557,9 @@ export async function loadTerrainEditRemote(
         },
         cache: 'no-store'
       });
-      const body = await readJsonResponse<any>(response, MAX_TERRAIN_PAGE_BYTES).catch(() => null);
+      const body = await readJsonResponse<any>(response, MAX_TERRAIN_PAGE_BYTES, {
+        offMainThread: true,
+      }).catch(() => null);
       if (!response.ok) {
         throw new SpaceEntryError(
           response.status === 401 || response.status === 403 ? 'LOGIN_REQUIRED' : 'BOOTSTRAP_FAILED',
@@ -639,10 +643,12 @@ export async function loadTerrainEditRemote(
       });
       if (!response.ok) {
         const body = await readJsonResponse<any>(response, MAX_SPACE_API_RESPONSE_BYTES).catch(() => null);
-        const code = body?.detail?.code || `HTTP_${response.status}`;
-        const error: Error & { retryAfterMs?: number; permanent?: boolean } = new Error(
-          `Space terrain batch was not accepted: ${code}`
+        const detail = body?.detail;
+        const code = detail?.code || `HTTP_${response.status}`;
+        const error: Error & { code?: string; retryAfterMs?: number; permanent?: boolean } = new Error(
+          detail?.message || `Space terrain batch was not accepted: ${code}`
         );
+        error.code = code;
         if (code === 'TERRAIN_BATCH_EXPIRED') error.permanent = true;
         const retryAfter = response.headers?.get?.('Retry-After');
         if (retryAfter) {
@@ -654,6 +660,12 @@ export async function loadTerrainEditRemote(
               ? Math.max(0, retryAt - Date.now())
               : NaN;
           if (Number.isFinite(retryAfterMs)) error.retryAfterMs = retryAfterMs;
+        }
+        if (error.retryAfterMs === undefined) {
+          const retryAfterSeconds = Number(detail?.retry_after_seconds);
+          if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+            error.retryAfterMs = retryAfterSeconds * 1_000;
+          }
         }
         throw error;
       }
@@ -691,9 +703,12 @@ export function createPlayerPositionRemote(
   };
 }
 
-async function prepareOnlineSpace(): Promise<PreparedOnlineSpace> {
+async function prepareOnlineSpace(
+  reportProgress?: SpaceEntryProgressReporter
+): Promise<PreparedOnlineSpace> {
   const apiOrigin = resolveApiOrigin(import.meta.env.VITE_API_BASE_URL, window.location.origin);
   installSpaceAuthFetchInterceptor(apiOrigin);
+  reportProgress?.(14, isZhLang() ? '正在验证 EntropyDrop 账号…' : 'Verifying EntropyDrop account…');
   const token = await ensureSpaceAccessToken(apiOrigin);
   if (!token) {
     throw new SpaceEntryError(
@@ -706,6 +721,7 @@ async function prepareOnlineSpace(): Promise<PreparedOnlineSpace> {
 
   const latencyMonitor = new LatencyMonitor({ apiOrigin });
 
+  reportProgress?.(30, isZhLang() ? '正在加载 Space 角色与世界信息…' : 'Loading Space profile and world…');
   const response = await fetch(`${apiOrigin}/space/api/v2/bootstrap`, {
     method: 'POST',
     headers: {
@@ -730,7 +746,9 @@ async function prepareOnlineSpace(): Promise<PreparedOnlineSpace> {
     );
   }
 
+  reportProgress?.(46, isZhLang() ? '正在下载角色皮肤…' : 'Downloading character skin…');
   const skinObjectUrl = await downloadSkinPng(payload.player.skin_url);
+  reportProgress?.(58, isZhLang() ? '角色资源已就绪…' : 'Character resources ready…');
   return { payload, apiOrigin, token, skinObjectUrl, latencyMonitor };
 }
 
@@ -792,11 +810,15 @@ export async function cancelSpaceAdmission(
   }
 }
 
-async function completeOnlineSpace(prepared: PreparedOnlineSpace): Promise<ReadySpaceSession> {
+async function completeOnlineSpace(
+  prepared: PreparedOnlineSpace,
+  reportProgress?: SpaceEntryProgressReporter
+): Promise<ReadySpaceSession> {
   const { payload, apiOrigin, token, skinObjectUrl, latencyMonitor } = prepared;
   latencyMonitor.start();
   let terrainEditRemote: WorldEditRemote;
   try {
+    reportProgress?.(74, isZhLang() ? '正在加载附近地形…' : 'Loading nearby terrain…');
     terrainEditRemote = await loadTerrainEditRemote(
       apiOrigin,
       token,
@@ -809,6 +831,7 @@ async function completeOnlineSpace(prepared: PreparedOnlineSpace): Promise<Ready
     latencyMonitor.stop();
     throw error;
   }
+  reportProgress?.(86, isZhLang() ? '地形数据已就绪…' : 'Terrain data ready…');
   return {
     ...payload,
     mode: 'online',
@@ -945,8 +968,14 @@ function renderEntryError(error: unknown) {
   const status = document.getElementById('space-entry-status');
   const actionContainer = document.getElementById('space-entry-actions');
   const action = document.getElementById('space-entry-action') as HTMLAnchorElement | null;
+  const progress = document.getElementById('space-entry-progress');
   if (gate) gate.hidden = false;
   if (status) status.textContent = entryError.message;
+  if (progress) {
+    progress.classList.add('failed');
+    progress.setAttribute('aria-invalid', 'true');
+    progress.setAttribute('aria-valuetext', entryError.message);
+  }
   if (actionContainer) {
     actionContainer.innerHTML = '';
     for (const act of entryError.actions) {
@@ -970,8 +999,23 @@ export async function enterSpace(
   const gate = document.getElementById('space-entry-gate');
   const status = document.getElementById('space-entry-status');
   const action = document.getElementById('space-entry-action') as HTMLAnchorElement | null;
+  const progress = document.getElementById('space-entry-progress');
+  const progressFill = document.getElementById('space-entry-progress-fill') as HTMLElement | null;
+  const progressValue = document.getElementById('space-entry-progress-value');
+  const reportProgress: SpaceEntryProgressReporter = (value, message) => {
+    const normalized = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+    if (status) status.textContent = message;
+    if (progress) {
+      progress.classList.remove('failed');
+      progress.removeAttribute('aria-invalid');
+      progress.setAttribute('aria-valuenow', String(normalized));
+      progress.setAttribute('aria-valuetext', `${message} ${normalized}%`);
+    }
+    if (progressFill) progressFill.style.width = `${normalized}%`;
+    if (progressValue) progressValue.textContent = `${normalized}%`;
+  };
   if (gate) gate.hidden = false;
-  if (status) status.textContent = 'Verifying EntropyDrop account and downloading character skin…';
+  reportProgress(5, isZhLang() ? '正在准备进入 Space…' : 'Preparing to enter Space…');
   if (action) action.hidden = true;
 
   try {
@@ -1001,6 +1045,7 @@ export async function enterSpace(
 
     const requestedMode = searchParams.get('mode');
     if (requestedMode === 'offline') {
+      reportProgress(38, isZhLang() ? '正在读取离线世界…' : 'Loading offline world…');
       const session = createOfflineSpaceSession();
       hooks.onStateChange?.({
         mode: 'offline',
@@ -1009,20 +1054,22 @@ export async function enterSpace(
         cancelQueue: null,
         enterOnline: null
       });
-      if (status) status.textContent = 'Loading offline world…';
+      reportProgress(88, isZhLang() ? '正在初始化离线世界…' : 'Initializing offline world…');
       await startGame(session);
+      reportProgress(100, isZhLang() ? '离线世界已就绪' : 'Offline world ready');
       if (gate) gate.hidden = true;
       return;
     }
 
-    const prepared = await prepareOnlineSpace();
+    const prepared = await prepareOnlineSpace(reportProgress);
+    reportProgress(64, isZhLang() ? '正在加入共享世界…' : 'Joining shared world…');
     const admission = await requestSpaceAdmission(
       prepared.apiOrigin,
       prepared.token,
       prepared.payload.world.id
     );
     if (admission.state === 'admitted') {
-      const session = await completeOnlineSpace(prepared);
+      const session = await completeOnlineSpace(prepared, reportProgress);
       hooks.onStateChange?.({
         mode: 'online',
         queuePosition: null,
@@ -1030,8 +1077,9 @@ export async function enterSpace(
         cancelQueue: null,
         enterOnline: null
       });
-      if (status) status.textContent = 'Loading shared distant terrain cache…';
+      reportProgress(92, isZhLang() ? '正在初始化地球模式场景…' : 'Initializing Earth-mode scene…');
       await startGame(session);
+      reportProgress(100, isZhLang() ? 'Space 世界已就绪' : 'Space world ready');
       if (gate) gate.hidden = true;
       return;
     }
@@ -1083,8 +1131,14 @@ export async function enterSpace(
       cancelQueue,
       enterOnline: null
     });
-    if (status) status.textContent = `Space Queue #${admission.position}, entering offline world…`;
+    reportProgress(
+      72,
+      isZhLang()
+        ? `在线队列 #${admission.position}，正在进入离线世界…`
+        : `Space Queue #${admission.position}, entering offline world…`
+    );
     await startGame(createOfflineSpaceSession(prepared));
+    reportProgress(100, isZhLang() ? '离线世界已就绪' : 'Offline world ready');
     if (gate) gate.hidden = true;
 
     cancelBeforeUnload = () => {

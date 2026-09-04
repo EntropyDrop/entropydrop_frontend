@@ -453,7 +453,7 @@ class Game {
       // Entity streaming consumes this exact active window, so chunks must be
       // current after player movement and before entities run.
       const simulationPlayerPos = this.playerPhysics.position;
-      this.world.updateChunksAround(simulationPlayerPos.x, simulationPlayerPos.z);
+      this.world.updateChunksAround(simulationPlayerPos.x, simulationPlayerPos.z, false);
 
       const entityInput = this.controller.consumeEntityInputFrame();
       this.contraptionManager.update(simulationDt, entityInput);
@@ -467,7 +467,9 @@ class Game {
     });
 
     const playerPos = this.playerPhysics.position;
-    this.world.updateChunksAround(playerPos.x, playerPos.z);
+    // Keep movement and camera presentation independent from terrain loading.
+    // The actual stream work is requested after rendering below.
+    this.world.updateChunksAround(playerPos.x, playerPos.z, false);
     this.ensureTerrainArea(playerPos.x, playerPos.z);
 
     // Pick only after programmable child motion and rigid-body physics have
@@ -554,6 +556,7 @@ class Game {
 
     // 8. Render 3D Scene
     this.sceneRenderer.render();
+    this.world.scheduleStreamingWork();
     this.playerPhysics.endRenderInterpolation();
     this.contraptionManager.endRenderInterpolation();
   }

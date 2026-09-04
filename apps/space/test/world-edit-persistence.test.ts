@@ -150,6 +150,51 @@ test('remote snapshot replacement touches only its indexed standard and micro ch
   );
 });
 
+test('large remote snapshot replacement can be installed in bounded slices', () => {
+  const persistence = new WorldEditPersistence({
+    worldId: 'incremental-remote-world',
+    storage: null,
+    remote: { chunks: [], async sendBatch() {} }
+  });
+  const micro = Array.from({ length: 3_000 }, (_, index) => [
+    index % 80,
+    Math.floor(index / 80),
+    0,
+    0x48dbfb,
+  ]);
+  const cursor = persistence.beginRemoteChunkReplacement({
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 1,
+    standard: [],
+    micro,
+  });
+
+  assert.equal(persistence.continueRemoteChunkReplacement(cursor, 1_000), false);
+  assert.equal([...persistence.getMicroEditsForChunk(0, 0)].length, 1_000);
+  assert.equal(persistence.continueRemoteChunkReplacement(cursor, 1_000), false);
+  assert.equal([...persistence.getMicroEditsForChunk(0, 0)].length, 2_000);
+  assert.equal(persistence.continueRemoteChunkReplacement(cursor, 1_000), true);
+  assert.equal([...persistence.getMicroEditsForChunk(0, 0)].length, 3_000);
+
+  const replacement = persistence.beginRemoteChunkReplacement({
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 2,
+    standard: [],
+    micro: [[1, 1, 1, 0xff3366]],
+  });
+  assert.equal(
+    persistence.continueRemoteChunkReplacement(replacement, 1_000),
+    false,
+    'clearing the previous large snapshot must consume the same bounded slices',
+  );
+  assert.equal(persistence.continueRemoteChunkReplacement(replacement, 1_000), false);
+  assert.equal(persistence.continueRemoteChunkReplacement(replacement, 1_000), false);
+  assert.equal(persistence.continueRemoteChunkReplacement(replacement, 1_000), true);
+  assert.equal([...persistence.getMicroEditsForChunk(0, 0)].length, 1);
+});
+
 test('remote terrain mutations are split into stable batches of at most 256 operations', async () => {
   const storage = new MemoryStorage();
   const sent: { batchId: string; mutations: any[] }[] = [];
@@ -177,6 +222,146 @@ test('remote terrain mutations are split into stable batches of at most 256 oper
     null,
     'an acknowledged remote overlay must not remain duplicated in browser storage'
   );
+});
+
+test('remote terrain mutations are split by chunk and surface-zone footprint', async () => {
+  const chunkBatches: any[][] = [];
+  const chunkPersistence = new WorldEditPersistence({
+    worldId: 'remote-chunk-footprint-world',
+    storage: new MemoryStorage(),
+    saveDelayMs: 0,
+    remoteBatchDelayMs: 0,
+    remote: {
+      chunks: [],
+      async sendBatch(_batchId, mutations) {
+        chunkBatches.push(structuredClone(mutations));
+      }
+    }
+  });
+  for (let chunk = 0; chunk < 17; chunk++) {
+    chunkPersistence.recordStandard(chunk * 16, 80, 1, BlockTypes.COLOR_BLOCK, chunk);
+  }
+  await waitFor(() => chunkBatches.length === 2);
+  assert.deepEqual(chunkBatches.map(batch => batch.length), [16, 1]);
+
+  const zoneBatches: any[][] = [];
+  const zonePersistence = new WorldEditPersistence({
+    worldId: 'remote-zone-footprint-world',
+    storage: new MemoryStorage(),
+    saveDelayMs: 0,
+    remoteBatchDelayMs: 0,
+    remote: {
+      chunks: [],
+      async sendBatch(_batchId, mutations) {
+        zoneBatches.push(structuredClone(mutations));
+      }
+    }
+  });
+  for (let zone = 0; zone < 5; zone++) {
+    zonePersistence.recordStandard(zone * 32 * 16, 80, 1, BlockTypes.COLOR_BLOCK, zone);
+  }
+  await waitFor(() => zoneBatches.length === 2);
+  assert.deepEqual(zoneBatches.map(batch => batch.length), [4, 1]);
+});
+
+test('remote terrain acknowledgements expose the daily quota in sync status', async () => {
+  const persistence = new WorldEditPersistence({
+    worldId: 'remote-quota-status-world',
+    storage: new MemoryStorage(),
+    saveDelayMs: 0,
+    remote: {
+      chunks: [],
+      async sendBatch() {
+        return {
+          quota: {
+            daily_limit: 100_000,
+            used_today: 12,
+            remaining_today: 99_988,
+            reset_at: '2026-09-05T00:00:00+00:00',
+          },
+        };
+      }
+    }
+  });
+  persistence.recordStandard(1, 80, 1, BlockTypes.COLOR_BLOCK, 1);
+  await waitFor(() => persistence.getSyncStatus().acknowledgedBatches === 1);
+
+  assert.deepEqual(persistence.getSyncStatus().quota, {
+    dailyLimit: 100_000,
+    usedToday: 12,
+    remainingToday: 99_988,
+    resetAt: '2026-09-05T00:00:00+00:00',
+  });
+});
+
+test('a server size rejection splits the same durable outbox instead of dropping edits', async () => {
+  const attempts: number[] = [];
+  let resyncs = 0;
+  const persistence = new WorldEditPersistence({
+    worldId: 'remote-adaptive-split-world',
+    storage: new MemoryStorage(),
+    saveDelayMs: 0,
+    remoteBatchDelayMs: 0,
+    onResyncRequired: () => { resyncs++; },
+    remote: {
+      chunks: [],
+      async sendBatch(_batchId, mutations) {
+        attempts.push(mutations.length);
+        if (mutations.length > 1) {
+          throw Object.assign(new Error('too large'), { code: 'TERRAIN_EVENT_TOO_LARGE' });
+        }
+      }
+    }
+  });
+  for (let index = 0; index < 4; index++) {
+    persistence.recordStandard(index, 80, 1, BlockTypes.COLOR_BLOCK, index);
+  }
+  await waitFor(() => persistence.getSyncStatus().acknowledgedMutations === 4);
+
+  assert.deepEqual(attempts, [4, 2, 1, 1, 2, 1, 1]);
+  assert.equal(resyncs, 0);
+  assert.equal(persistence.getSyncStatus().pendingMutations, 0);
+});
+
+test('restored legacy outbox batches are repartitioned to the current spatial limits', async () => {
+  const storage = new MemoryStorage();
+  const worldId = 'restored-spatial-outbox-world';
+  const originalBatchId = '00000000-0000-4000-8000-000000000001';
+  storage.setItem(worldEditStorageKey(worldId), JSON.stringify({
+    version: 2,
+    worldId,
+    pendingBatches: [{
+      batchId: originalBatchId,
+      mutations: Array.from({ length: 17 }, (_value, chunk) => ({
+        kind: 'set_standard',
+        x: chunk * 16,
+        y: 80,
+        z: 1,
+        block: BlockTypes.COLOR_BLOCK,
+        color: chunk,
+      })),
+      dedupeEpoch: 0,
+      createdAtMs: null,
+    }],
+  }));
+  const sent: { batchId: string; mutations: any[] }[] = [];
+  new WorldEditPersistence({
+    worldId,
+    storage,
+    saveDelayMs: 0,
+    remoteBatchDelayMs: 0,
+    remote: {
+      chunks: [],
+      async sendBatch(batchId, mutations) {
+        sent.push({ batchId, mutations: structuredClone(mutations) });
+      }
+    }
+  });
+  await waitFor(() => sent.length === 2);
+
+  assert.deepEqual(sent.map(batch => batch.mutations.length), [16, 1]);
+  assert.equal(sent[0].batchId, originalBatchId);
+  assert.notEqual(sent[1].batchId, originalBatchId);
 });
 
 test('remote persistence stores only the durable outbox, not acknowledged world snapshots', async () => {

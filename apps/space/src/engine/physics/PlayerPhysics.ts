@@ -715,7 +715,7 @@ export class PlayerPhysics {
         }
       }
     }
-    solidBlocks.push(...this.world.getMicroBlocksInAABB(aabb));
+    solidBlocks.push(...this.world.getMicroBlocksInAABB(aabb, true));
 
     // Integer scan bounds include cells that merely touch the player's AABB.
     // Filter those out so walking parallel to an adjacent block cannot be

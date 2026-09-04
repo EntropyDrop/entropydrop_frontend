@@ -4683,13 +4683,20 @@ export class Contraption {
   raycastBentCollisionCells(rayOriginBent, rayDirectionBent, maxDistance = 15) {
     const ray = new THREE.Ray(rayOriginBent.clone(), rayDirectionBent.clone().normalize());
     const barycentric = new THREE.Vector3();
+    const flatCenter = new THREE.Vector3();
+    const bentCenter = new THREE.Vector3();
+    const centerDelta = new THREE.Vector3();
+    const updatedNodes = new Set();
     let closest = null;
     let closestDistance = maxDistance;
 
     for (const block of this.blocks) {
       const node = this.entityNodes.get(block.entityId || 'root') || this.entityNodes.get('root');
       if (!node) continue;
-      node.group.updateWorldMatrix(true, false);
+      if (!updatedNodes.has(node)) {
+        node.group.updateWorldMatrix(true, false);
+        updatedNodes.add(node);
+      }
 
       const size = block.size || 1;
       const baseX = block.localX - node.pivotLocal.x;
@@ -4700,18 +4707,18 @@ export class Contraption {
       // scaled by the local torus Jacobian so picking remains correct even for
       // flying entities far above the terrain, where tube-direction stretching
       // is larger than it is at normal building height.
-      const flatCenter = new THREE.Vector3(
+      flatCenter.set(
         baseX + size / 2,
         baseY + size / 2,
         baseZ + size / 2
       ).applyMatrix4(node.group.matrixWorld);
-      const bentCenter = bendPoint(flatCenter.x, flatCenter.y, flatCenter.z);
+      bendPoint(flatCenter.x, flatCenter.y, flatCenter.z, bentCenter);
       const rho = Math.min(TORUS_RHO + flatCenter.y - TORUS_GREF, TORUS_MAX_RHO);
       const thetaScale = Math.abs((TORUS_R + rho * Math.cos(flatCenter.z * TORUS_K_PHI)) / TORUS_R);
       const phiScale = Math.abs(rho / TORUS_RHO);
       const maxLocalScale = Math.max(1, thetaScale, phiScale);
       const pickRadius = size * Math.sqrt(3) * 0.5 * maxLocalScale * 1.02 + 0.02;
-      const centerDistance = bentCenter.clone().sub(rayOriginBent).dot(ray.direction);
+      const centerDistance = centerDelta.copy(bentCenter).sub(rayOriginBent).dot(ray.direction);
       if (centerDistance < -pickRadius || centerDistance > closestDistance + pickRadius) continue;
       if (ray.distanceSqToPoint(bentCenter) > pickRadius * pickRadius) continue;
 

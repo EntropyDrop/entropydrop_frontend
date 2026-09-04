@@ -915,6 +915,9 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         primaryCta: '进入 Space 世界',
         offlineCta: '离线模式',
         secondaryCta: '核心特性',
+        onlinePlayers: '人在线',
+        onlineLoading: '正在获取在线人数…',
+        onlineUnavailable: '在线人数暂不可用',
         stats: {
             scale: '0.2m 精细微雕',
             physics: '体素物理引擎',

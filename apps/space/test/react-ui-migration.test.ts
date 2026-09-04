@@ -49,8 +49,35 @@ test('legacy UIManager is removed and the engine uses the DOM-free store', () =>
 test('index.html contains only the auth gate and React host', () => {
   const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   assert.match(indexHtml, /id="space-entry-gate"/);
+  assert.match(indexHtml, /id="space-entry-progress"[^>]*role="progressbar"/s);
+  assert.match(indexHtml, /aria-valuemin="0"/);
+  assert.match(indexHtml, /aria-valuemax="100"/);
   assert.match(indexHtml, /id="space-react-root"/);
   assert.doesNotMatch(indexHtml, /id="canvas-container"|id="hud-overlay"|id="pause-screen"|id="inventory-modal"/);
+});
+
+test('Space entry progress follows real bootstrap stages and exposes percentage state', () => {
+  const bootstrapSource = readFileSync(new URL('../src/bootstrap/SpaceBootstrap.ts', import.meta.url), 'utf8');
+  const styleSource = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(bootstrapSource, /prepareOnlineSpace\(reportProgress\)/);
+  assert.match(bootstrapSource, /completeOnlineSpace\(prepared, reportProgress\)/);
+  assert.match(bootstrapSource, /progress\.setAttribute\('aria-valuenow'/);
+  assert.match(bootstrapSource, /progressFill\.style\.width/);
+  assert.match(styleSource, /\.space-entry-progress-fill/);
+  assert.match(styleSource, /prefers-reduced-motion/);
+});
+
+test('global settings remains English-only', () => {
+  const settingsSource = readFileSync(
+    new URL('../src/ui/react/components/SimpleModals.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(settingsSource, /\['earth', 'Earth Mode'\]/);
+  assert.match(settingsSource, /\['torus', 'Donut Mode'\]/);
+  assert.match(settingsSource, />PERFORMANCE</);
+  assert.match(settingsSource, /id="setting-shadows-group"/);
+  assert.doesNotMatch(settingsSource, /Entity Gravity|setting-gravity-group|setGravity/);
+  assert.doesNotMatch(settingsSource, /[\u3400-\u9fff]/);
 });
 
 test('React mounts synchronously before Game construction', () => {

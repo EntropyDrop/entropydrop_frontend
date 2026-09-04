@@ -14,6 +14,20 @@
     <div class="space-entry-card">
       <div class="space-entry-brand">EntropyDrop · Space</div>
       <p id="space-entry-status">Verifying EntropyDrop account and downloading character skin…</p>
+      <div
+        id="space-entry-progress"
+        class="space-entry-progress"
+        role="progressbar"
+        aria-labelledby="space-entry-status"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="5"
+      >
+        <div class="space-entry-progress-track" aria-hidden="true">
+          <div id="space-entry-progress-fill" class="space-entry-progress-fill" style="width: 5%"></div>
+        </div>
+        <span id="space-entry-progress-value" class="space-entry-progress-value">5%</span>
+      </div>
       <div id="space-entry-actions" class="space-entry-actions">
         <a id="space-entry-action" class="space-entry-action" href="/skin/" hidden>Back to Main Site</a>
         <a id="space-entry-offline-action" class="space-entry-action secondary" href="?mode=offline">Enter Offline Mode</a>

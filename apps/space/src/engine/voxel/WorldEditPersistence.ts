@@ -16,8 +16,12 @@ const LEGACY_STORAGE_PREFIX = 'space.world-edits.v1';
 const DEFAULT_SAVE_DELAY_MS = 75;
 const DEFAULT_REMOTE_BATCH_DELAY_MS = 200;
 const REMOTE_RETRY_DELAY_MS = 2_000;
-const MAX_REMOTE_RETRY_DELAY_MS = 30_000;
+const MAX_TRANSIENT_REMOTE_RETRY_DELAY_MS = 30_000;
+const MAX_SERVER_RETRY_DELAY_MS = 24 * 60 * 60 * 1_000;
 const MAX_MUTATIONS_PER_BATCH = 256;
+const MAX_CHUNKS_PER_BATCH = 16;
+const MAX_ZONES_PER_BATCH = 4;
+const SURFACE_ZONE_SIZE_CHUNKS = 32;
 const OUTBOX_HIGH_WATER_MUTATIONS = 4_096;
 const OUTBOX_LOW_WATER_MUTATIONS = 2_048;
 const MAX_STORED_STANDARD_EDITS = 250_000;
@@ -63,6 +67,15 @@ export interface WorldEditSyncStatus {
   acknowledgedBatches: number;
   acknowledgedMutations: number;
   backpressured: boolean;
+  quota: TerrainEditQuota | null;
+  blockedCode: string | null;
+}
+
+export interface TerrainEditQuota {
+  dailyLimit: number;
+  usedToday: number;
+  remainingToday: number;
+  resetAt: string;
 }
 
 export interface WorldEditPersistenceOptions {
@@ -89,6 +102,19 @@ export interface PersistedMicroEdit {
   mz: number;
   color: number;
   part: string | null;
+}
+
+export interface RemoteChunkReplacementCursor {
+  chunkKey: string;
+  previousStandardIterator: Iterator<[string, PersistedStandardEdit]> | null;
+  previousMicroIterator: Iterator<[string, PersistedMicroEdit]> | null;
+  standard: unknown[];
+  micro: unknown[];
+  standardIndex: number;
+  microIndex: number;
+  standardLimit: number;
+  microLimit: number;
+  complete: boolean;
 }
 
 interface PersistedMutationBatch {
@@ -119,6 +145,33 @@ function chunkKeyForMutation(mutation: TerrainMutation) {
     return chunkKeyForMicroCell(mutation.mx, mutation.mz);
   }
   return chunkKeyForWorldCell(mutation.x, mutation.z);
+}
+
+function zoneKeyForChunkKey(chunkKey: string) {
+  const [chunkX, chunkZ] = chunkKey.split(',').map(Number);
+  return `${Math.floor(chunkX / SURFACE_ZONE_SIZE_CHUNKS)},${Math.floor(chunkZ / SURFACE_ZONE_SIZE_CHUNKS)}`;
+}
+
+function batchAcceptsMutation(batch: PersistedMutationBatch, mutation: TerrainMutation) {
+  const chunkKeys = new Set(batch.mutations.map(chunkKeyForMutation));
+  chunkKeys.add(chunkKeyForMutation(mutation));
+  if (chunkKeys.size > MAX_CHUNKS_PER_BATCH) return false;
+  const zoneKeys = new Set([...chunkKeys].map(zoneKeyForChunkKey));
+  return zoneKeys.size <= MAX_ZONES_PER_BATCH;
+}
+
+function parseTerrainEditQuota(value: unknown): TerrainEditQuota | null {
+  const quota = value as any;
+  const dailyLimit = finiteInteger(quota?.daily_limit);
+  const usedToday = finiteInteger(quota?.used_today);
+  const remainingToday = finiteInteger(quota?.remaining_today);
+  if (dailyLimit === null || usedToday === null || remainingToday === null) return null;
+  return {
+    dailyLimit,
+    usedToday,
+    remainingToday,
+    resetAt: typeof quota?.reset_at === 'string' ? quota.reset_at : '',
+  };
 }
 
 function finiteInteger(value: unknown) {
@@ -155,9 +208,9 @@ function legacyWorldEditStorageKey(worldId: string) {
  * Sparse local cache plus durable remote outbox for player-authored terrain.
  *
  * Standard AIR entries are tombstones over deterministic generated terrain.
- * Remote mutations are grouped into stable, idempotent batches of at most 256;
- * a batch is committed to browser storage before transmission and removed only
- * after the server acknowledges it.
+ * Remote mutations are grouped into stable, idempotent batches of at most 256
+ * operations, 16 chunks and 4 surface zones; a batch is committed to browser
+ * storage before transmission and removed only after the server acknowledges it.
  */
 export class WorldEditPersistence {
   readonly worldId: string;
@@ -185,6 +238,8 @@ export class WorldEditPersistence {
   private acknowledgedBatches = 0;
   private acknowledgedMutations = 0;
   private backpressured = false;
+  private quota: TerrainEditQuota | null = null;
+  private blockedCode: string | null = null;
   private lastSyncStatusKey = '';
   private dirty = false;
 
@@ -229,6 +284,8 @@ export class WorldEditPersistence {
       acknowledgedBatches: this.acknowledgedBatches,
       acknowledgedMutations: this.acknowledgedMutations,
       backpressured: this.backpressured,
+      quota: this.quota,
+      blockedCode: this.blockedCode,
     };
   }
 
@@ -246,28 +303,94 @@ export class WorldEditPersistence {
 
   /** Replace one server-authored chunk snapshot without creating an outgoing echo batch. */
   replaceRemoteChunk(chunk: TerrainEditChunk) {
+    const cursor = this.beginRemoteChunkReplacement(chunk);
+    this.continueRemoteChunkReplacement(cursor);
+  }
+
+  /** Begin a replace operation that callers may install over several frames. */
+  beginRemoteChunkReplacement(chunk: TerrainEditChunk): RemoteChunkReplacementCursor {
     const chunkCountX = TORUS_SIZE_X / CHUNK_SIZE_X;
     const chunkCountZ = TORUS_SIZE_Z / CHUNK_SIZE_Z;
     const cx = ((Math.floor(chunk.chunk_x) % chunkCountX) + chunkCountX) % chunkCountX;
     const cz = ((Math.floor(chunk.chunk_z) % chunkCountZ) + chunkCountZ) % chunkCountZ;
     const chunkKey = `${cx},${cz}`;
     const previousStandard = this.standardEditsByChunk.get(chunkKey);
-    if (previousStandard) {
-      for (const key of previousStandard.keys()) this.standardEdits.delete(key);
-      this.standardEditsByChunk.delete(chunkKey);
-    }
-
     const previousMicro = this.microEditsByChunk.get(chunkKey);
-    if (previousMicro) {
-      for (const key of previousMicro.keys()) this.microEdits.delete(key);
-      this.microEditsByChunk.delete(chunkKey);
+    // Detach the per-chunk indexes immediately, but clear their global entries
+    // incrementally in continueRemoteChunkReplacement. This avoids a 100k-cell
+    // snapshot replacement becoming one long main-thread task.
+    this.standardEditsByChunk.delete(chunkKey);
+    this.microEditsByChunk.delete(chunkKey);
+
+    const standard = Array.isArray(chunk.standard) ? chunk.standard : [];
+    const micro = Array.isArray(chunk.micro) ? chunk.micro : [];
+    return {
+      chunkKey,
+      previousStandardIterator: previousStandard?.entries() ?? null,
+      previousMicroIterator: previousMicro?.entries() ?? null,
+      standard,
+      micro,
+      standardIndex: 0,
+      microIndex: 0,
+      standardLimit: Math.min(standard.length, MAX_STORED_STANDARD_EDITS),
+      microLimit: Math.min(micro.length, MAX_STORED_MICRO_EDITS),
+      complete: false,
+    };
+  }
+
+  /** Continue a bounded remote replacement; returns true once it is complete. */
+  continueRemoteChunkReplacement(
+    cursor: RemoteChunkReplacementCursor,
+    maxPackedEdits = Number.POSITIVE_INFINITY,
+  ): boolean {
+    if (cursor.complete) return true;
+    let remaining = Number.isFinite(maxPackedEdits)
+      ? Math.max(1, Math.floor(maxPackedEdits))
+      : Number.POSITIVE_INFINITY;
+
+    while (cursor.previousStandardIterator && remaining > 0) {
+      const next = cursor.previousStandardIterator.next();
+      if (next.done) {
+        cursor.previousStandardIterator = null;
+        break;
+      }
+      const [key, previous] = next.value;
+      if (this.standardEdits.get(key) === previous) this.standardEdits.delete(key);
+      remaining--;
+    }
+    while (!cursor.previousStandardIterator && cursor.previousMicroIterator && remaining > 0) {
+      const next = cursor.previousMicroIterator.next();
+      if (next.done) {
+        cursor.previousMicroIterator = null;
+        break;
+      }
+      const [key, previous] = next.value;
+      if (this.microEdits.get(key) === previous) this.microEdits.delete(key);
+      remaining--;
     }
 
-    this.loadPackedEdits(chunk.standard, chunk.micro);
+    if (cursor.previousStandardIterator || cursor.previousMicroIterator) return false;
+
+    while (cursor.standardIndex < cursor.standardLimit && remaining > 0) {
+      this.loadPackedStandardEdit(cursor.standard[cursor.standardIndex++]);
+      remaining--;
+    }
+    while (cursor.standardIndex >= cursor.standardLimit
+      && cursor.microIndex < cursor.microLimit
+      && remaining > 0) {
+      this.loadPackedMicroEdit(cursor.micro[cursor.microIndex++]);
+      remaining--;
+    }
+    if (cursor.standardIndex < cursor.standardLimit || cursor.microIndex < cursor.microLimit) {
+      return false;
+    }
+
     // A remote snapshot can race a still-unacknowledged local batch. Reapply
     // the durable outbox so local intent stays visible and is not discarded.
-    this.replayPendingBatchesForChunk(chunkKey);
-    this.reconcileStandardMicroExclusionForChunk(chunkKey);
+    this.replayPendingBatchesForChunk(cursor.chunkKey);
+    this.reconcileStandardMicroExclusionForChunk(cursor.chunkKey);
+    cursor.complete = true;
+    return true;
   }
 
   recordStandard(x: number, y: number, z: number, block: number, color: number) {
@@ -470,6 +593,7 @@ export class WorldEditPersistence {
         !batch
         || batch.mutations.length >= MAX_MUTATIONS_PER_BATCH
         || this.sealedBatchIds.has(batch.batchId)
+        || !batchAcceptsMutation(batch, mutation)
       ) {
         batch = {
           batchId: createBatchId(),
@@ -531,10 +655,13 @@ export class WorldEditPersistence {
       return;
     }
     try {
-      await this.remote.sendBatch(batch.batchId, batch.mutations, {
+      const result = await this.remote.sendBatch(batch.batchId, batch.mutations, {
         dedupeEpoch: batch.dedupeEpoch,
         createdAtMs: batch.createdAtMs,
       });
+      const quota = parseTerrainEditQuota((result as any)?.quota);
+      if (quota) this.quota = quota;
+      this.blockedCode = null;
       const index = this.pendingBatches.findIndex(item => item.batchId === batch.batchId);
       if (index >= 0) this.pendingBatches.splice(index, 1);
       this.sealedBatchIds.delete(batch.batchId);
@@ -550,6 +677,31 @@ export class WorldEditPersistence {
       this.notifySyncStatus();
     } catch (error) {
       this.sendingBatchId = null;
+      this.blockedCode = typeof (error as any)?.code === 'string' ? (error as any).code : null;
+      if (
+        (
+          this.blockedCode === 'TERRAIN_BATCH_TOO_MANY_CHUNKS'
+          || this.blockedCode === 'TERRAIN_BATCH_TOO_MANY_ZONES'
+          || this.blockedCode === 'TERRAIN_EVENT_TOO_LARGE'
+        )
+        && this.splitRejectedBatch(batch)
+      ) {
+        this.remoteFailureCount = 0;
+        this.currentRetryDelayMs = 0;
+        this.dirty = true;
+        this.flush();
+        this.refreshBackpressure();
+        this.scheduleRemoteFlush();
+        this.notifySyncStatus();
+        return;
+      }
+      if (
+        this.blockedCode === 'TERRAIN_BATCH_TOO_MANY_CHUNKS'
+        || this.blockedCode === 'TERRAIN_BATCH_TOO_MANY_ZONES'
+        || this.blockedCode === 'TERRAIN_EVENT_TOO_LARGE'
+      ) {
+        (error as any).permanent = true;
+      }
       if ((error as any)?.permanent === true) {
         const index = this.pendingBatches.findIndex(item => item.batchId === batch.batchId);
         if (index >= 0) this.pendingBatches.splice(index, 1);
@@ -578,6 +730,24 @@ export class WorldEditPersistence {
     return count;
   }
 
+  private splitRejectedBatch(batch: PersistedMutationBatch) {
+    if (batch.mutations.length <= 1) return false;
+    const index = this.pendingBatches.findIndex(item => item.batchId === batch.batchId);
+    if (index < 0) return false;
+    const midpoint = Math.ceil(batch.mutations.length / 2);
+    const first = { ...batch, mutations: batch.mutations.slice(0, midpoint) };
+    const second = {
+      batchId: createBatchId(),
+      mutations: batch.mutations.slice(midpoint),
+      dedupeEpoch: 1,
+      createdAtMs: Date.now(),
+    };
+    this.pendingBatches.splice(index, 1, first, second);
+    this.sealedBatchIds.add(first.batchId);
+    this.sealedBatchIds.add(second.batchId);
+    return true;
+  }
+
   private refreshBackpressure() {
     if (!this.remote) {
       this.backpressured = false;
@@ -594,10 +764,10 @@ export class WorldEditPersistence {
   private resolveRetryDelay(error: unknown) {
     const requested = Number((error as any)?.retryAfterMs);
     if (Number.isFinite(requested) && requested >= 0) {
-      return Math.min(MAX_REMOTE_RETRY_DELAY_MS, Math.max(REMOTE_RETRY_DELAY_MS, requested));
+      return Math.min(MAX_SERVER_RETRY_DELAY_MS, Math.max(REMOTE_RETRY_DELAY_MS, requested));
     }
     return Math.min(
-      MAX_REMOTE_RETRY_DELAY_MS,
+      MAX_TRANSIENT_REMOTE_RETRY_DELAY_MS,
       REMOTE_RETRY_DELAY_MS * (2 ** Math.max(0, this.remoteFailureCount - 1))
     );
   }
@@ -629,41 +799,45 @@ export class WorldEditPersistence {
     const standard = Array.isArray(standardInput)
       ? standardInput.slice(0, MAX_STORED_STANDARD_EDITS)
       : [];
-    for (const packed of standard) {
-      if (!Array.isArray(packed) || packed.length < 5) continue;
-      const x = finiteInteger(packed[0]);
-      const y = finiteInteger(packed[1]);
-      const z = finiteInteger(packed[2]);
-      const block = finiteInteger(packed[3]);
-      const color = finiteInteger(packed[4]);
-      if (x === null || y === null || z === null || block === null || color === null) continue;
-      if (x < 0 || x >= TORUS_SIZE_X || y < 0 || y >= CHUNK_SIZE_Y || z < 0 || z >= TORUS_SIZE_Z) continue;
-      this.addStandardEdit({ x, y, z, block: Math.max(0, Math.min(255, block)), color: color & 0xffffff });
-    }
+    for (const packed of standard) this.loadPackedStandardEdit(packed);
 
     const micro = Array.isArray(microInput)
       ? microInput.slice(0, MAX_STORED_MICRO_EDITS)
       : [];
-    for (const packed of micro) {
-      if (!Array.isArray(packed) || packed.length < 4) continue;
-      const mx = finiteInteger(packed[0]);
-      const my = finiteInteger(packed[1]);
-      const mz = finiteInteger(packed[2]);
-      const color = finiteInteger(packed[3]);
-      if (mx === null || my === null || mz === null || color === null) continue;
-      if (
-        mx < 0 || mx >= TORUS_SIZE_X * MICRO_DIVISIONS
-        || my < 0 || my >= CHUNK_SIZE_Y * MICRO_DIVISIONS
-        || mz < 0 || mz >= TORUS_SIZE_Z * MICRO_DIVISIONS
-      ) continue;
-      this.addMicroEdit({
-        mx,
-        my,
-        mz,
-        color: color & 0xffffff,
-        part: typeof packed[4] === 'string' ? packed[4].slice(0, 64) : null,
-      });
-    }
+    for (const packed of micro) this.loadPackedMicroEdit(packed);
+  }
+
+  private loadPackedStandardEdit(packed: unknown) {
+    if (!Array.isArray(packed) || packed.length < 5) return;
+    const x = finiteInteger(packed[0]);
+    const y = finiteInteger(packed[1]);
+    const z = finiteInteger(packed[2]);
+    const block = finiteInteger(packed[3]);
+    const color = finiteInteger(packed[4]);
+    if (x === null || y === null || z === null || block === null || color === null) return;
+    if (x < 0 || x >= TORUS_SIZE_X || y < 0 || y >= CHUNK_SIZE_Y || z < 0 || z >= TORUS_SIZE_Z) return;
+    this.addStandardEdit({ x, y, z, block: Math.max(0, Math.min(255, block)), color: color & 0xffffff });
+  }
+
+  private loadPackedMicroEdit(packed: unknown) {
+    if (!Array.isArray(packed) || packed.length < 4) return;
+    const mx = finiteInteger(packed[0]);
+    const my = finiteInteger(packed[1]);
+    const mz = finiteInteger(packed[2]);
+    const color = finiteInteger(packed[3]);
+    if (mx === null || my === null || mz === null || color === null) return;
+    if (
+      mx < 0 || mx >= TORUS_SIZE_X * MICRO_DIVISIONS
+      || my < 0 || my >= CHUNK_SIZE_Y * MICRO_DIVISIONS
+      || mz < 0 || mz >= TORUS_SIZE_Z * MICRO_DIVISIONS
+    ) return;
+    this.addMicroEdit({
+      mx,
+      my,
+      mz,
+      color: color & 0xffffff,
+      part: typeof packed[4] === 'string' ? packed[4].slice(0, 64) : null,
+    });
   }
 
   private loadLocalState() {
@@ -713,16 +887,46 @@ export class WorldEditPersistence {
       if (mutations.length > 0) {
         const hasBoundedDedupeMetadata = item.dedupeEpoch === 1
           && Number.isFinite(Number(item.createdAtMs));
-        this.pendingBatches.push({
-          batchId: item.batchId,
-          mutations,
+        this.appendRestoredMutations(mutations, {
+          firstBatchId: item.batchId,
           // Old V2 outboxes may already have reached the server and lost their
-          // ACK. Keep them in epoch 0 so the server retains their receipts.
-          dedupeEpoch: hasBoundedDedupeMetadata ? 1 : 0,
-          createdAtMs: hasBoundedDedupeMetadata ? Math.floor(Number(item.createdAtMs)) : null,
+          // ACK. Keep their original id in epoch 0 so the server retains that
+          // receipt; any newly split suffix gets bounded epoch-1 metadata.
+          firstDedupeEpoch: hasBoundedDedupeMetadata ? 1 : 0,
+          firstCreatedAtMs: hasBoundedDedupeMetadata ? Math.floor(Number(item.createdAtMs)) : null,
         });
-        this.sealedBatchIds.add(item.batchId);
       }
+    }
+  }
+
+  private appendRestoredMutations(
+    mutations: TerrainMutation[],
+    options: {
+      firstBatchId?: string;
+      firstDedupeEpoch?: number;
+      firstCreatedAtMs?: number | null;
+    } = {}
+  ) {
+    let batch: PersistedMutationBatch | null = null;
+    let batchIndex = 0;
+    for (const mutation of mutations) {
+      if (
+        !batch
+        || batch.mutations.length >= MAX_MUTATIONS_PER_BATCH
+        || !batchAcceptsMutation(batch, mutation)
+      ) {
+        const keepOriginalMetadata = batchIndex === 0 && options.firstBatchId;
+        batch = {
+          batchId: keepOriginalMetadata ? options.firstBatchId! : createBatchId(),
+          mutations: [],
+          dedupeEpoch: keepOriginalMetadata ? (options.firstDedupeEpoch ?? 0) : 1,
+          createdAtMs: keepOriginalMetadata ? (options.firstCreatedAtMs ?? null) : Date.now(),
+        };
+        this.pendingBatches.push(batch);
+        this.sealedBatchIds.add(batch.batchId);
+        batchIndex++;
+      }
+      batch.mutations.push(mutation);
     }
   }
 
@@ -841,15 +1045,7 @@ export class WorldEditPersistence {
         ...(edit.part ? { part: edit.part } : {}),
       });
     }
-    for (let start = 0; start < mutations.length; start += MAX_MUTATIONS_PER_BATCH) {
-      this.pendingBatches.push({
-        batchId: createBatchId(),
-        mutations: mutations.slice(start, start + MAX_MUTATIONS_PER_BATCH),
-        dedupeEpoch: 1,
-        createdAtMs: Date.now(),
-      });
-      this.sealedBatchIds.add(this.pendingBatches[this.pendingBatches.length - 1].batchId);
-    }
+    this.appendRestoredMutations(mutations);
   }
 
   private installLifecycleFlush() {

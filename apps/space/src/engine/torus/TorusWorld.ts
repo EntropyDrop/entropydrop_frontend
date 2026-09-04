@@ -38,6 +38,7 @@ export const DEFAULT_WORLD_SHAPE_MODE: WorldShapeMode = 'earth';
 
 let worldShapeMode: WorldShapeMode = DEFAULT_WORLD_SHAPE_MODE;
 let earthProjectionAnchorPending = true;
+let worldProjectionRevision = 0;
 const worldProjectionAnchor = new THREE.Vector2(TORUS_SPAWN_X, TORUS_SPAWN_Z);
 const worldShapeModeUniform = { value: 1 };
 const worldProjectionAnchorUniform = {
@@ -51,16 +52,23 @@ export function normalizeWorldShapeMode(value: unknown): WorldShapeMode {
 /** Select the live visual projection without changing logical world storage. */
 export function setWorldShapeMode(value: unknown): WorldShapeMode {
   const nextMode = normalizeWorldShapeMode(value);
-  if (nextMode === 'earth' && worldShapeMode !== 'earth') {
+  if (nextMode === worldShapeMode) return worldShapeMode;
+  if (nextMode === 'earth') {
     earthProjectionAnchorPending = true;
   }
   worldShapeMode = nextMode;
   worldShapeModeUniform.value = worldShapeMode === 'earth' ? 1 : 0;
+  worldProjectionRevision++;
   return worldShapeMode;
 }
 
 export function getWorldShapeMode(): WorldShapeMode {
   return worldShapeMode;
+}
+
+/** Changes whenever cached bent-space bounds need to be rebuilt. */
+export function getWorldProjectionRevision(): number {
+  return worldProjectionRevision;
 }
 
 /**
@@ -72,6 +80,9 @@ export function setWorldProjectionAnchor(x: number, z: number, force = false): v
   if (worldShapeMode === 'earth' && !earthProjectionAnchorPending && !force) return;
   const nextX = wrapX(Number(x) || 0);
   const nextZ = wrapZ(Number(z) || 0);
+  if (nextX !== worldProjectionAnchor.x || nextZ !== worldProjectionAnchor.y) {
+    worldProjectionRevision++;
+  }
   worldProjectionAnchor.set(nextX, nextZ);
   worldProjectionAnchorUniform.value.set(nextX, nextZ);
   if (worldShapeMode === 'earth') earthProjectionAnchorPending = false;
@@ -287,40 +298,59 @@ export function applyCameraBend(camera) {
 }
 
 /** Bent-space chunk bounding sphere used for correct frustum culling. */
-export function computeChunkBentSphere(cx, cz, out = null) {
+export function computeChunkBentSphere(
+  cx,
+  cz,
+  out = null,
+  minY = 0,
+  maxY = CHUNK_SIZE_Y,
+  span = 16,
+) {
   const ox = cx * 16;
   const oz = cz * 16;
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-  for (let i = 0; i < 8; i++) {
-    const lx = i & 1 ? ox + 16 : ox;
-    const ly = i & 2 ? CHUNK_SIZE_Y : 0;
-    const lz = i & 4 ? oz + 16 : oz;
-    const p = bendTorusPoint(lx, ly, lz, _vA);
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.z < minZ) minZ = p.z;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-    if (p.z > maxZ) maxZ = p.z;
+  const safeSpan = THREE.MathUtils.clamp(Number(span) || 16, 0.2, 16);
+  const safeMinY = THREE.MathUtils.clamp(Number(minY) || 0, 0, CHUNK_SIZE_Y);
+  const safeMaxY = THREE.MathUtils.clamp(Number(maxY) || 0, safeMinY, CHUNK_SIZE_Y);
+  let boundsMinX = Infinity, boundsMinY = Infinity, boundsMinZ = Infinity;
+  let boundsMaxX = -Infinity, boundsMaxY = -Infinity, boundsMaxZ = -Infinity;
+  for (let yi = 0; yi < 2; yi++) {
+    const ly = yi === 0 ? safeMinY : safeMaxY;
+    for (let xi = 0; xi < 3; xi++) {
+      const lx = ox + xi * safeSpan * 0.5;
+      for (let zi = 0; zi < 3; zi++) {
+        const lz = oz + zi * safeSpan * 0.5;
+        const p = bendPoint(lx, ly, lz, _vA);
+        if (p.x < boundsMinX) boundsMinX = p.x;
+        if (p.y < boundsMinY) boundsMinY = p.y;
+        if (p.z < boundsMinZ) boundsMinZ = p.z;
+        if (p.x > boundsMaxX) boundsMaxX = p.x;
+        if (p.y > boundsMaxY) boundsMaxY = p.y;
+        if (p.z > boundsMaxZ) boundsMaxZ = p.z;
+      }
+    }
   }
-  const cx2 = (minX + maxX) / 2;
-  const cy2 = (minY + maxY) / 2;
-  const cz2 = (minZ + maxZ) / 2;
+  const cx2 = (boundsMinX + boundsMaxX) / 2;
+  const cy2 = (boundsMinY + boundsMaxY) / 2;
+  const cz2 = (boundsMinZ + boundsMaxZ) / 2;
   let radius = 0;
-  for (let i = 0; i < 8; i++) {
-    const lx = i & 1 ? ox + 16 : ox;
-    const ly = i & 2 ? CHUNK_SIZE_Y : 0;
-    const lz = i & 4 ? oz + 16 : oz;
-    const p = bendTorusPoint(lx, ly, lz, _vA);
-    const d = Math.hypot(p.x - cx2, p.y - cy2, p.z - cz2);
-    if (d > radius) radius = d;
+  for (let yi = 0; yi < 2; yi++) {
+    const ly = yi === 0 ? safeMinY : safeMaxY;
+    for (let xi = 0; xi < 3; xi++) {
+      const lx = ox + xi * safeSpan * 0.5;
+      for (let zi = 0; zi < 3; zi++) {
+        const lz = oz + zi * safeSpan * 0.5;
+        const p = bendPoint(lx, ly, lz, _vA);
+        const d = Math.hypot(p.x - cx2, p.y - cy2, p.z - cz2);
+        if (d > radius) radius = d;
+      }
+    }
   }
   if (!out) out = {};
   out.cx = cx2;
   out.cy = cy2;
   out.cz = cz2;
-  out.radius = radius;
+  // Covers the small amount of curvature between the 3×3 samples.
+  out.radius = radius + 1;
   return out;
 }
 
@@ -543,15 +573,37 @@ export function hookSceneMaterials(root) {
 // -----------------------------------------------------------------------------
 const _projScreen = new THREE.Matrix4();
 const _frustum = new THREE.Frustum();
+const TERRAIN_SHADOW_CASTER_DISTANCE = 64;
+
+function isLocalShadowCaster(camera, bs): boolean {
+  return Math.hypot(
+    camera.position.x - bs.cx,
+    camera.position.y - bs.cy,
+    camera.position.z - bs.cz,
+  ) <= bs.radius + TERRAIN_SHADOW_CASTER_DISTANCE;
+}
+
+function isBentSphereVisible(camera, bs): boolean {
+  // Parent visibility also gates the directional-light shadow pass. Keep a
+  // compact ring of nearby casters even when they sit just behind the camera.
+  const cameraDistance = Math.hypot(
+    camera.position.x - bs.cx,
+    camera.position.y - bs.cy,
+    camera.position.z - bs.cz,
+  );
+  if (cameraDistance <= bs.radius + 80) return true;
+
+  for (let i = 0; i < 6; i++) {
+    const p = _frustum.planes[i];
+    if (p.normal.x * bs.cx + p.normal.y * bs.cy + p.normal.z * bs.cz + p.constant < -bs.radius) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export function cullChunks(camera, world) {
   if (!world || !world.chunks) return;
-  if (worldShapeMode === 'earth') {
-    for (const [chunkKey, chunk] of world.chunks) {
-      if (chunk.mesh) chunk.mesh.visible = !world.activeChunkKeys || world.activeChunkKeys.has(chunkKey);
-    }
-    return;
-  }
   _projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   _frustum.setFromProjectionMatrix(_projScreen);
   for (const [chunkKey, chunk] of world.chunks) {
@@ -561,19 +613,57 @@ export function cullChunks(camera, world) {
       mesh.visible = false;
       continue;
     }
-    const bs = mesh.userData && mesh.userData.bentSphere;
-    if (!bs) {
-      mesh.visible = true;
+    let bs = mesh.userData && mesh.userData.bentSphere;
+    if (!bs || mesh.userData.bentSphereRevision !== worldProjectionRevision) {
+      const occupiedRange = chunk.getOccupiedYRange?.();
+      const minY = Number.isFinite(mesh.userData?.occupiedMinY)
+        ? mesh.userData.occupiedMinY
+        : occupiedRange?.min ?? 0;
+      const maxY = Number.isFinite(mesh.userData?.occupiedMaxY)
+        ? mesh.userData.occupiedMaxY
+        : occupiedRange ? occupiedRange.max + 1 : CHUNK_SIZE_Y;
+      bs = computeChunkBentSphere(chunk.cx, chunk.cz, bs, minY, maxY);
+      mesh.userData.bentSphere = bs;
+      mesh.userData.bentSphereRevision = worldProjectionRevision;
+    }
+
+    mesh.visible = isBentSphereVisible(camera, bs);
+    const castShadow = mesh.visible && isLocalShadowCaster(camera, bs);
+    mesh.traverse((child) => {
+      if (child.isMesh) child.castShadow = castShadow;
+    });
+  }
+
+  // Micro voxels use independent horizontal meshes and bypass Three's native
+  // flat-space frustum test. Apply the same mode-aware coarse culling here so
+  // a large authored area does not render every micro mesh in Earth mode.
+  const microMeshes = world.microVoxels?.meshChunks;
+  if (!microMeshes) return;
+  for (const [chunkKey, mesh] of microMeshes) {
+    const standardChunkKey = mesh.userData?.standardChunkKey ?? chunkKey;
+    if (world.activeChunkKeys && !world.activeChunkKeys.has(standardChunkKey)) {
+      mesh.visible = false;
       continue;
     }
-    let visible = true;
-    for (let i = 0; i < 6; i++) {
-      const p = _frustum.planes[i];
-      if (p.normal.x * bs.cx + p.normal.y * bs.cy + p.normal.z * bs.cz + p.constant < -bs.radius) {
-        visible = false;
-        break;
+    let bs = mesh.userData?.bentSphere;
+    if (!bs || mesh.userData.bentSphereRevision !== worldProjectionRevision) {
+      let cx = Number(mesh.userData?.projectionChunkCx);
+      let cz = Number(mesh.userData?.projectionChunkCz);
+      if (!Number.isFinite(cx) || !Number.isFinite(cz)) {
+        [cx, cz] = String(chunkKey).split(',').map(Number);
       }
+      const minY = Number.isFinite(mesh.userData?.occupiedMinY)
+        ? mesh.userData.occupiedMinY
+        : 0;
+      const maxY = Number.isFinite(mesh.userData?.occupiedMaxY)
+        ? mesh.userData.occupiedMaxY
+        : CHUNK_SIZE_Y;
+      const span = Number.isFinite(mesh.userData?.bentSpan) ? mesh.userData.bentSpan : 16;
+      bs = computeChunkBentSphere(cx, cz, bs, minY, maxY, span);
+      mesh.userData.bentSphere = bs;
+      mesh.userData.bentSphereRevision = worldProjectionRevision;
     }
-    mesh.visible = visible;
+    mesh.visible = isBentSphereVisible(camera, bs);
+    mesh.castShadow = mesh.visible && isLocalShadowCaster(camera, bs);
   }
 }

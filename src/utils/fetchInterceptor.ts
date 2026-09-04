@@ -138,7 +138,8 @@ function prepareRequest(
     init: ExtendedRequestInit | undefined,
     token: string | null
 ): { input: RequestInfo | URL; init?: RequestInit; retryInput: RequestInfo | URL; retryInit?: RequestInit } {
-    const { skipGlobalError: _skip, ...cleanInit } = init || {};
+    const cleanInit: ExtendedRequestInit = { ...init };
+    delete cleanInit.skipGlobalError;
     const url = absoluteUrl(input);
     const isApi = isBackendApiRequest(url);
     const shouldAuthorize = isApi && !isSessionControlRequest(url);
@@ -170,6 +171,7 @@ window.fetch = async (input: RequestInfo | URL, init?: ExtendedRequestInit) => {
     const url = absoluteUrl(input);
     const isApiRequest = isBackendApiRequest(url);
     const skipGlobalError = !!init?.skipGlobalError;
+    const requestSignal = init?.signal || (input instanceof Request ? input.signal : null);
     const prepared = prepareRequest(input, init, localStorage.getItem('token'));
 
     try {
@@ -209,12 +211,15 @@ window.fetch = async (input: RequestInfo | URL, init?: ExtendedRequestInit) => {
             }
         }
         return response;
-    } catch (error: any) {
-        if (isApiRequest && !skipGlobalError) {
+    } catch (error: unknown) {
+        const errorName = error instanceof Error ? error.name : '';
+        const errorMessage = error instanceof Error ? error.message : '';
+        const requestWasAborted = requestSignal?.aborted || errorName === 'AbortError';
+        if (isApiRequest && !skipGlobalError && !requestWasAborted) {
             const locale = await getCurrentLocale();
             window.dispatchEvent(new CustomEvent('global-error', {
                 detail: {
-                    message: error.message || locale.common.networkConnectFailed,
+                    message: errorMessage || locale.common.networkConnectFailed,
                     title: locale.common.networkError
                 }
             }));

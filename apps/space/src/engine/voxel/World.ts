@@ -2,11 +2,18 @@ import * as THREE from 'three';
 import { Chunk, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from './Chunk.ts';
 import { BlockTypes, DEFAULT_BLOCK_COLOR, normalizeColor } from './BlockTypes.ts';
 import { TerrainGenerator } from '../worldgen/TerrainGenerator.ts';
-import { LowPolyMesher } from '../mesher/LowPolyMesher.ts';
-import { MicroVoxelLayer, MICRO_DIVISIONS } from './MicroVoxelLayer.ts';
+import { LowPolyMesher, type ChunkMeshData } from '../mesher/LowPolyMesher.ts';
+import {
+  MicroVoxelLayer,
+  MICRO_DIVISIONS,
+  type MicroChunkClearCursor,
+} from './MicroVoxelLayer.ts';
 import {
   WorldEditPersistence,
   type TerrainEditChunk,
+  type PersistedMicroEdit,
+  type PersistedStandardEdit,
+  type RemoteChunkReplacementCursor,
   type WorldEditPersistenceOptions,
 } from './WorldEditPersistence.ts';
 import {
@@ -17,18 +24,23 @@ import type { SurfaceZoneSnapshot } from '../../bootstrap/SpaceSurfaceSnapshot.t
 import {
   wrapX, wrapZ, wrapChunkX, wrapChunkZ, wrapMicroX, wrapMicroZ,
   bendPoint, unbendPoint, computeChunkBentSphere, hookSceneMaterials,
-  TORUS_SIZE_X, TORUS_SIZE_Z
+  getWorldProjectionRevision, TORUS_SIZE_X, TORUS_SIZE_Z
 } from '../torus/TorusWorld.ts';
 
 // Leave most of a 120 Hz frame's 8.33 ms budget for simulation, culling and
 // rendering. Missing detailed chunks may take a few more frames to stream in,
 // while the already-present distant surface prevents visible holes.
 const STREAM_WORK_BUDGET_MS = 3;
-const MAX_STREAM_CHUNKS_PER_FRAME = 2;
+const BACKGROUND_MAIN_THREAD_BUDGET_MS = 1;
+const MAX_STREAM_CHUNKS_PER_FRAME = 1;
 const MAX_CHUNK_MESHES_PER_FRAME = 1;
 const MAX_REMOTE_CHUNKS_PER_FRAME = 2;
+const MAX_REMOTE_EDITS_PER_FRAME = 1_024;
+const MAX_BACKGROUND_REMOTE_EDITS_PER_FRAME = 128;
+const REMOTE_EDIT_TIME_CHECK_INTERVAL = 32;
 const MAX_MICRO_MESH_CHUNKS_PER_FRAME = 1;
 const MAX_CHUNK_EVICTIONS_PER_FRAME = 8;
+const MAX_RECYCLED_PROCEDURAL_CHUNKS = 64;
 export const DEFAULT_RENDER_DISTANCE = 8;
 
 // Matches LowPolyMesher and MicroVoxelLayer exactly: each rendered quad is
@@ -41,6 +53,74 @@ const BENT_VOXEL_RAYCAST_FACES = [
   { normal: [-1, 0, 0], quad: [[0, 1, 0], [0, 0, 0], [0, 0, 1], [0, 1, 1]] },
   { normal: [1, 0, 0], quad: [[1, 1, 1], [1, 0, 1], [1, 0, 0], [1, 1, 0]] }
 ];
+
+type PendingRemoteChunkApplyJob = {
+  update: TerrainEditChunk;
+  key: string;
+  cx: number;
+  cz: number;
+  revision: number;
+  phase: 'micro-clear' | 'persistence' | 'micro' | 'standard';
+  microClearCursor: MicroChunkClearCursor;
+  persistenceCursor: RemoteChunkReplacementCursor | null;
+  microIterator: Iterator<PersistedMicroEdit> | null;
+  standardIterator: Iterator<PersistedStandardEdit> | null;
+  rawMicroIndex: number;
+  rawStandardIndex: number;
+  chunk: Chunk | null;
+  chunkPrepared: boolean;
+  standardComplete: boolean;
+  workerStandardEdits: PackedStandardEdit[];
+  localStandardOverrides: PackedStandardEdit[];
+  localMicroOverrides: PendingMicroOverride[];
+};
+
+type PackedStandardEdit = [number, number, number, number, number];
+
+type PendingMicroOverride =
+  | { type: 'set'; mx: number; my: number; mz: number; color: number; part: string | null }
+  | { type: 'delete'; mx: number; my: number; mz: number }
+  | { type: 'clear-standard'; wx: number; wy: number; wz: number }
+  | { type: 'subdivide'; wx: number; wy: number; wz: number; color: number };
+
+type PendingTerrainSnapshot = {
+  key: string;
+  cx: number;
+  cz: number;
+  revision: number;
+  standardEdits: PackedStandardEdit[];
+};
+
+type TerrainWorkerJob = {
+  requestId: number;
+  type: 'generate' | 'remesh';
+  key: string;
+  cx: number;
+  cz: number;
+  dataVersion?: number;
+  recycledChunk?: Chunk | null;
+  replacingChunk?: Chunk | null;
+  snapshot?: PendingTerrainSnapshot;
+};
+
+type TerrainWorkerResult = {
+  ok: boolean;
+  type: 'generate' | 'remesh';
+  requestId: number;
+  cx: number;
+  cz: number;
+  error?: string;
+  hasUserEdits?: boolean;
+  dataVersion?: number;
+  blocks?: Uint8Array;
+  terrainColors?: Uint32Array;
+  mesh?: ChunkMeshData;
+};
+
+type CompletedTerrainWorkerJob = {
+  job: TerrainWorkerJob;
+  result: TerrainWorkerResult;
+};
 
 function intersectTriangleInclusive(ray, a, b, c, point, barycentric) {
   const plane = new THREE.Plane().setFromCoplanarPoints(a, b, c);
@@ -56,6 +136,7 @@ export class World {
   scene: any;
   chunks: Map<string, Chunk>;
   terrainGen: TerrainGenerator;
+  private terrainSeed: number;
   mesher: LowPolyMesher;
   renderDistance: number;
   worldGroup: THREE.Group;
@@ -66,9 +147,22 @@ export class World {
   dirtyChunks: Set<Chunk>;
   activeChunkKeys: Set<string>;
   lastStreamCenterKey: string;
+  private deferStreamWorkOnce: boolean;
   private pendingStreamChunks: { cx: number; cz: number; distanceSq: number }[];
   private pendingChunkEvictions: Map<string, Chunk>;
+  private recycledProceduralChunks: Chunk[];
+  private streamWorkScheduled: boolean;
+  private requireOffThreadTerrainStreaming: boolean;
+  private terrainWorker: Worker | null;
+  private terrainWorkerJob: TerrainWorkerJob | null;
+  private completedTerrainWorkerJobs: CompletedTerrainWorkerJob[];
+  private nextTerrainWorkerRequestId: number;
+  private pendingTerrainSnapshots: Map<string, PendingTerrainSnapshot>;
   private pendingRemoteChunkUpdates: Map<string, TerrainEditChunk>;
+  private pendingRemoteChunkApply: PendingRemoteChunkApplyJob | null;
+  private microMeshBuildBlockedChunks: Set<string>;
+  private crossLayerPublicationChunks: Set<string>;
+  private suspendedCrossLayerPublicationChunks: Set<string>;
   private remoteChunkRevisions: Map<string, number>;
   private rayBentPoint: THREE.Vector3;
   private rayFlatPoint: THREE.Vector3;
@@ -82,7 +176,8 @@ export class World {
   ) {
     this.scene = scene;
     this.chunks = new Map(); // key: "cx,cz" -> Chunk on the wrapped 1024x128 chunk grid.
-    this.terrainGen = new TerrainGenerator(seed);
+    this.terrainSeed = Number.isFinite(Number(seed)) ? Number(seed) : 1337;
+    this.terrainGen = new TerrainGenerator(this.terrainSeed);
     this.mesher = new LowPolyMesher();
 
     // Keep 1 m voxel detail nearby. The backend's compact zone snapshots fill
@@ -116,9 +211,23 @@ export class World {
     this.dirtyChunks = new Set();
     this.activeChunkKeys = new Set();
     this.lastStreamCenterKey = '';
+    this.deferStreamWorkOnce = false;
     this.pendingStreamChunks = [];
     this.pendingChunkEvictions = new Map();
+    this.recycledProceduralChunks = [];
+    this.streamWorkScheduled = false;
+    this.requireOffThreadTerrainStreaming = typeof window !== 'undefined';
+    this.terrainWorker = null;
+    this.terrainWorkerJob = null;
+    this.completedTerrainWorkerJobs = [];
+    this.nextTerrainWorkerRequestId = 1;
+    this.pendingTerrainSnapshots = new Map();
+    this.initializeTerrainWorker();
     this.pendingRemoteChunkUpdates = new Map();
+    this.pendingRemoteChunkApply = null;
+    this.microMeshBuildBlockedChunks = new Set();
+    this.crossLayerPublicationChunks = new Set();
+    this.suspendedCrossLayerPublicationChunks = new Set();
     this.remoteChunkRevisions = new Map();
     for (const chunk of persistenceOptions?.remote?.chunks ?? []) {
       const key = World.getChunkKey(wrapChunkX(chunk.chunk_x), wrapChunkZ(chunk.chunk_z));
@@ -127,6 +236,60 @@ export class World {
     }
     this.rayBentPoint = new THREE.Vector3();
     this.rayFlatPoint = new THREE.Vector3();
+  }
+
+  private initializeTerrainWorker() {
+    // Unit tests and non-browser renderers retain the deterministic synchronous
+    // path. Production browsers never generate or scan a streamed chunk on the
+    // animation thread.
+    if (typeof window === 'undefined' || typeof Worker === 'undefined') return;
+    try {
+      const worker = new Worker(new URL('./TerrainStreamWorker.ts', import.meta.url), {
+        type: 'module',
+        name: 'space-terrain-stream',
+      });
+      worker.onmessage = (event: MessageEvent<TerrainWorkerResult>) => {
+        const job = this.terrainWorkerJob;
+        const result = event.data;
+        if (!job || result.requestId !== job.requestId) return;
+        this.terrainWorkerJob = null;
+        if (!result.ok) {
+          this.disableTerrainWorker(result.error || 'Terrain worker job failed.', job);
+          return;
+        }
+        this.completedTerrainWorkerJobs.push({ job, result });
+      };
+      worker.onerror = event => {
+        this.disableTerrainWorker(event.message || 'Terrain worker stopped unexpectedly.');
+      };
+      this.terrainWorker = worker;
+    } catch (error) {
+      console.warn('Space terrain worker is unavailable; detailed chunks will remain unloaded.', error);
+    }
+  }
+
+  private disableTerrainWorker(message: string, failedJob = this.terrainWorkerJob) {
+    if (failedJob?.snapshot) {
+      this.requeueTerrainSnapshot(failedJob.snapshot);
+    } else if (failedJob?.type === 'generate' && this.activeChunkKeys.has(failedJob.key)) {
+      this.pendingStreamChunks.unshift({
+        cx: failedJob.cx,
+        cz: failedJob.cz,
+        distanceSq: 0,
+      });
+    }
+    this.terrainWorkerJob = null;
+    this.terrainWorker?.terminate();
+    this.terrainWorker = null;
+    console.warn(`Space terrain worker disabled: ${message}`);
+  }
+
+  private requeueTerrainSnapshot(snapshot: PendingTerrainSnapshot) {
+    if ((this.remoteChunkRevisions.get(snapshot.key) ?? -1) !== snapshot.revision) return;
+    const pending = this.pendingTerrainSnapshots.get(snapshot.key);
+    if (!pending || pending.revision <= snapshot.revision) {
+      this.pendingTerrainSnapshots.set(snapshot.key, snapshot);
+    }
   }
 
   static getChunkKey(cx, cz) {
@@ -143,7 +306,8 @@ export class World {
     const key = World.getChunkKey(cx, cz);
     let chunk = this.chunks.get(key);
     if (!chunk) {
-      chunk = new Chunk(cx, cz, this);
+      chunk = this.recycledProceduralChunks.pop() ?? new Chunk(cx, cz, this);
+      chunk.reuseAt(cx, cz, this);
       this.chunks.set(key, chunk);
       this.terrainGen.generateChunk(chunk);
       let restoredStandard = 0;
@@ -228,11 +392,55 @@ export class World {
     }
     if (changed) {
       this.editPersistence?.recordStandard(wx, wy, wz, blockType, normalizedColor);
+      this.trackPendingTerrainSnapshotEdit(
+        World.getChunkKey(cx, cz),
+        wrapX(wx),
+        wy,
+        wrapZ(wz),
+        blockType,
+        normalizedColor,
+      );
     }
     if (clearedMicro > 0) {
       this.editPersistence?.removeMicroStandardCell(wx, wy, wz);
+      if (changed) this.crossLayerPublicationChunks.add(World.getChunkKey(cx, cz));
+      this.trackPendingRemoteMicroOverride({
+        type: 'clear-standard',
+        wx: wrapX(wx),
+        wy,
+        wz: wrapZ(wz),
+      });
     }
     return changed;
+  }
+
+  private trackPendingTerrainSnapshotEdit(
+    key: string,
+    x: number,
+    y: number,
+    z: number,
+    block: number,
+    color: number,
+  ) {
+    const edit: PackedStandardEdit = [x, y, z, block, color];
+    const applying = this.pendingRemoteChunkApply;
+    if (applying?.key === key) applying.localStandardOverrides.push(edit);
+
+    const pending = this.pendingTerrainSnapshots.get(key);
+    if (pending) pending.standardEdits.push(edit);
+
+    const inFlight = this.terrainWorkerJob?.snapshot;
+    if (inFlight?.key === key && inFlight !== pending) inFlight.standardEdits.push(edit);
+
+    // onmessage moves a finished worker job into this queue before the next
+    // frame publishes it. A local edit in that narrow window must also make a
+    // stale retry carry the newest value.
+    for (const completed of this.completedTerrainWorkerJobs) {
+      const snapshot = completed.job.snapshot;
+      if (snapshot?.key === key && snapshot !== pending && snapshot !== inFlight) {
+        snapshot.standardEdits.push(edit);
+      }
+    }
   }
 
   setBlockColor(wx, wy, wz, color, updateMesh = true) {
@@ -250,6 +458,9 @@ export class World {
     this.setBlock(wx, wy, wz, BlockTypes.AIR, true);
     const n = this.microVoxels.subdivide(wx, wy, wz, color);
     if (n > 0) {
+      const { cx, cz } = this.worldToChunkCoords(wx, wz);
+      this.crossLayerPublicationChunks.add(World.getChunkKey(cx, cz));
+      this.trackPendingRemoteMicroOverride({ type: 'subdivide', wx, wy, wz, color });
       const baseX = wrapX(wx) * MICRO_DIVISIONS;
       const baseY = wy * MICRO_DIVISIONS;
       const baseZ = wrapZ(wz) * MICRO_DIVISIONS;
@@ -277,6 +488,14 @@ export class World {
     if (ok) {
       const persistedColor = this.microVoxels.get(mx, my, mz);
       this.editPersistence?.recordMicro(mx, my, mz, persistedColor, part);
+      this.trackPendingRemoteMicroOverride({
+        type: 'set',
+        mx,
+        my,
+        mz,
+        color: persistedColor,
+        part,
+      });
       this.terrainVersion++;
     }
     return ok;
@@ -289,12 +508,23 @@ export class World {
     return { block: BlockTypes.COLOR_BLOCK, color };
   }
 
+  /** Read only micro occupancy represented by an already-published terrain view. */
+  getMicroCollisionBlock(mx, my, mz) {
+    mx = wrapMicroX(mx);
+    mz = wrapMicroZ(mz);
+    if (!this.isMicroCollisionReady(mx, mz)) return null;
+    const color = this.microVoxels.getPublishedCollisionColor(mx, my, mz);
+    if (color === null || color === undefined) return null;
+    return { block: BlockTypes.COLOR_BLOCK, color };
+  }
+
   removeMicroBlock(mx, my, mz) {
     mx = wrapMicroX(mx);
     mz = wrapMicroZ(mz);
     const removed = this.microVoxels.delete(mx, my, mz);
     if (removed) {
       this.editPersistence?.removeMicro(mx, my, mz);
+      this.trackPendingRemoteMicroOverride({ type: 'delete', mx, my, mz });
       this.terrainVersion++;
     }
     return removed;
@@ -304,9 +534,28 @@ export class World {
     const removed = this.microVoxels.clearStandardCell(wrapX(wx), wy, wrapZ(wz));
     if (removed) {
       this.editPersistence?.removeMicroStandardCell(wx, wy, wz);
+      this.trackPendingRemoteMicroOverride({
+        type: 'clear-standard',
+        wx: wrapX(wx),
+        wy,
+        wz: wrapZ(wz),
+      });
       this.terrainVersion++;
     }
     return removed;
+  }
+
+  private trackPendingRemoteMicroOverride(override: PendingMicroOverride) {
+    const applying = this.pendingRemoteChunkApply;
+    if (!applying) return;
+    const wx = override.type === 'set' || override.type === 'delete'
+      ? override.mx / MICRO_DIVISIONS
+      : override.wx;
+    const wz = override.type === 'set' || override.type === 'delete'
+      ? override.mz / MICRO_DIVISIONS
+      : override.wz;
+    const { cx, cz } = this.worldToChunkCoords(wx, wz);
+    if (World.getChunkKey(cx, cz) === applying.key) applying.localMicroOverrides.push(override);
   }
 
   hasMicroInStandardCell(wx, wy, wz) {
@@ -314,11 +563,40 @@ export class World {
   }
 
   raycastMicro(origin, direction, maxDistance = 10) {
-    return this.microVoxels.raycast(origin, direction, maxDistance);
+    // Tool targeting should follow the same published view the player sees
+    // while an authoritative micro snapshot is staged.
+    return this.microVoxels.raycast(origin, direction, maxDistance, null, true);
   }
 
-  getMicroBlocksInAABB(aabb) {
-    return this.microVoxels.getCellsInAABB(aabb);
+  raycastMicroCollision(origin, direction, maxDistance = 10) {
+    return this.microVoxels.raycast(
+      origin,
+      direction,
+      maxDistance,
+      (mx, mz) => this.isMicroCollisionReady(mx, mz),
+      true,
+    );
+  }
+
+  getMicroBlocksInAABB(aabb, collisionReadyOnly = false) {
+    const cells = collisionReadyOnly
+      ? this.microVoxels.getPublishedCollisionCellsInAABB(aabb)
+      : this.microVoxels.getCellsInAABB(aabb);
+    if (!collisionReadyOnly) return cells;
+    return cells.filter(cell => this.isMicroCollisionReady(
+      Math.round(cell.x * MICRO_DIVISIONS),
+      Math.round(cell.z * MICRO_DIVISIONS),
+    ));
+  }
+
+  private isMicroCollisionReady(mx: number, mz: number) {
+    const wx = mx / MICRO_DIVISIONS;
+    const wz = mz / MICRO_DIVISIONS;
+    const { cx, cz } = this.worldToChunkCoords(wx, wz);
+    // A dirty micro partition still has valid live cell data. Keep using it for
+    // collision while its replacement mesh is built; only a standard chunk
+    // that has never been published is intentionally treated as empty.
+    return Boolean(this.getChunk(cx, cz)?.mesh);
   }
 
   /**
@@ -536,9 +814,17 @@ export class World {
   /**
    * Update and regenerate dirty chunks
    */
-  updateChunksAround(playerX, playerZ) {
-    const frameWorkStartedAt = performance.now();
-    this.processPendingRemoteChunkUpdates(frameWorkStartedAt);
+  updateChunksAround(
+    playerX,
+    playerZ,
+    processWork = true,
+    workBudgetMs = STREAM_WORK_BUDGET_MS,
+    offThreadStreaming = false,
+  ) {
+    const frameWorkStartedAt = processWork ? performance.now() : 0;
+    const boundedWorkBudgetMs = Number.isFinite(workBudgetMs)
+      ? Math.max(0, Math.min(STREAM_WORK_BUDGET_MS, workBudgetMs))
+      : STREAM_WORK_BUDGET_MS;
     const centerCx = Math.floor(wrapX(playerX) / CHUNK_SIZE_X);
     const centerCz = Math.floor(wrapZ(playerZ) / CHUNK_SIZE_Z);
     const r = this.renderDistance;
@@ -549,6 +835,7 @@ export class World {
     // kept every visited mesh resident forever.
     const streamCenterKey = `${centerCx},${centerCz}`;
     if (streamCenterKey !== this.lastStreamCenterKey) {
+      const hadPreviousStreamCenter = Boolean(this.lastStreamCenterKey);
       const nextActive = new Set<string>();
       const pending: { cx: number; cz: number; distanceSq: number }[] = [];
       for (let dx = -r; dx <= r; dx++) {
@@ -558,6 +845,9 @@ export class World {
           const key = World.getChunkKey(cx, cz);
           nextActive.add(key);
           this.pendingChunkEvictions.delete(key);
+          if (this.suspendedCrossLayerPublicationChunks.delete(key)) {
+            this.crossLayerPublicationChunks.add(key);
+          }
           const chunk = this.getChunk(cx, cz);
           if (!chunk) {
             this.distantSurface.setDetailChunkReady(cx, cz, false);
@@ -565,6 +855,10 @@ export class World {
           } else if (chunk.mesh) {
             chunk.mesh.visible = true;
             this.distantSurface.setDetailChunkReady(cx, cz, true);
+            // A chunk can leave and re-enter before its deferred eviction runs.
+            // Its old mesh is still publishable, but a pending edit must resume
+            // the remesh instead of becoming permanently stranded.
+            if (chunk.isDirty) this.dirtyChunks.add(chunk);
           } else if (!chunk.mesh) {
             this.distantSurface.setDetailChunkReady(cx, cz, false);
             chunk.isDirty = true;
@@ -575,6 +869,7 @@ export class World {
 
       for (const [key, chunk] of this.chunks) {
         if (nextActive.has(key)) continue;
+        this.suspendCrossLayerPublication(key);
         this.dirtyChunks.delete(chunk);
         this.distantSurface.setDetailChunkReady(chunk.cx, chunk.cz, false);
         if (chunk.mesh) chunk.mesh.visible = false;
@@ -584,27 +879,64 @@ export class World {
       this.activeChunkKeys = nextActive;
       this.pendingStreamChunks = pending.sort((a, b) => a.distanceSq - b.distanceSq);
       this.lastStreamCenterKey = streamCenterKey;
+      // Crossing a chunk boundary already updates physics, camera and active
+      // visibility. Start background allocation on the following render frame
+      // so that boundary input itself never shares a frame with loading work.
+      if (hadPreviousStreamCenter) this.deferStreamWorkOnce = true;
     }
 
-    this.processPendingChunkEvictions(frameWorkStartedAt);
+    // The fixed simulation step only needs the current active window for
+    // entity streaming. Chunk generation and meshing are render-frame work and
+    // must consume a single shared budget, not another budget every 20 Hz tick.
+    if (!processWork) return;
+    if (this.deferStreamWorkOnce) {
+      this.deferStreamWorkOnce = false;
+      return;
+    }
+
+    if (offThreadStreaming) {
+      this.publishCompletedTerrainWorkerJob();
+      this.dispatchTerrainWorkerJob();
+    }
+
+    this.processPendingRemoteChunkUpdates(
+      frameWorkStartedAt,
+      boundedWorkBudgetMs,
+      offThreadStreaming,
+    );
+    this.processPendingChunkEvictions(frameWorkStartedAt, boundedWorkBudgetMs);
 
     // Player-authored and remote micro edits are visible work; service one
     // dirty micro mesh before spending the remaining frame budget on new
     // procedural chunks.
     if (
-      performance.now() - frameWorkStartedAt < STREAM_WORK_BUDGET_MS
-      && this.microVoxels.updateMesh(MAX_MICRO_MESH_CHUNKS_PER_FRAME)
+      performance.now() - frameWorkStartedAt < boundedWorkBudgetMs
+      && this.microVoxels.updateMesh(
+        MAX_MICRO_MESH_CHUNKS_PER_FRAME,
+        this.activeChunkKeys,
+        this.microMeshBuildBlockedChunks,
+        Math.max(0, boundedWorkBudgetMs - (performance.now() - frameWorkStartedAt)),
+        this.crossLayerPublicationChunks,
+      )
     ) {
       for (const mesh of this.microVoxels.takeRecentlyRebuiltMeshes()) {
         hookSceneMaterials(mesh);
       }
     }
 
+    if (offThreadStreaming) {
+      // Standard terrain generation and voxel face scanning never run on the
+      // page thread. A missing chunk therefore remains empty/non-colliding
+      // until its complete result is ready for an atomic scene publication.
+      this.dispatchTerrainWorkerJob();
+      return;
+    }
+
     // Allocate/generate the nearest missing chunks progressively instead of
     // synchronously constructing the entire window during one frame.
     let generated = 0;
     while (this.pendingStreamChunks.length > 0 && generated < MAX_STREAM_CHUNKS_PER_FRAME) {
-      if (performance.now() - frameWorkStartedAt >= STREAM_WORK_BUDGET_MS) break;
+      if (performance.now() - frameWorkStartedAt >= boundedWorkBudgetMs) break;
       const next = this.pendingStreamChunks.shift();
       if (!next) break;
       const { cx, cz } = next;
@@ -624,36 +956,401 @@ export class World {
 
     for (const chunk of this.dirtyChunks) {
       if (updates >= maxUpdatesPerFrame) break;
-      if (performance.now() - frameWorkStartedAt >= STREAM_WORK_BUDGET_MS) break;
+      if (performance.now() - frameWorkStartedAt >= boundedWorkBudgetMs) break;
       const key = World.getChunkKey(chunk.cx, chunk.cz);
       if (!this.activeChunkKeys.has(key)) continue;
+      if (
+        this.crossLayerPublicationChunks.has(key)
+        && !this.microVoxels.isDeferredPublicationReady(key, this.activeChunkKeys)
+      ) continue;
 
-      if (chunk.mesh) {
-        this.disposeChunkMesh(chunk);
-      }
-
-      chunk.mesh = this.mesher.buildChunkMesh(chunk);
-      // Bent-space bounding-sphere cache for frustum culling.
-      chunk.mesh.userData.bentSphere = computeChunkBentSphere(chunk.cx, chunk.cz);
-      // A rebuilt chunk must receive both its torus vertex shader and bent
-      // customDepthMaterial before it is attached to the live scene. Waiting
-      // for SceneRenderer's low-frequency material scan lets one or more
-      // shadow passes render the replacement in flat coordinates, producing a
-      // full-screen light/dark flash whenever terrain is destroyed.
-      hookSceneMaterials(chunk.mesh);
-      // cullChunks handles the parent Group in bent space. Its child meshes must
-      // not be culled a second time with their flat-space geometry spheres.
-      chunk.mesh.traverse((child) => {
-        if (child.isMesh) child.frustumCulled = false;
-      });
-      this.worldGroup.add(chunk.mesh);
-      this.distantSurface.setDetailChunkReady(chunk.cx, chunk.cz, true);
+      this.publishChunkMesh(chunk, this.mesher.buildChunkMeshData(chunk));
+      this.commitCrossLayerPublication(key);
 
       chunk.isDirty = false;
       this.dirtyChunks.delete(chunk);
       updates++;
     }
 
+  }
+
+  private publishChunkMesh(chunk: Chunk, meshData: ChunkMeshData) {
+    const previousMesh = chunk.mesh;
+    const nextMesh = this.mesher.createChunkMeshFromData(chunk, meshData);
+    nextMesh.userData.bentSphere = computeChunkBentSphere(
+      chunk.cx,
+      chunk.cz,
+      null,
+      nextMesh.userData.occupiedMinY,
+      nextMesh.userData.occupiedMaxY,
+    );
+    nextMesh.userData.bentSphereRevision = getWorldProjectionRevision();
+    // Install the projection and matching shadow shader before publication so
+    // the first visible frame cannot flash in flat coordinates.
+    hookSceneMaterials(nextMesh);
+    nextMesh.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) child.frustumCulled = false;
+    });
+
+    // Publish first, then retire the previous mesh. The far-surface ownership
+    // mask remains set throughout an edit, so rendering and collision never
+    // observe an empty transition state.
+    this.worldGroup.add(nextMesh);
+    chunk.mesh = nextMesh;
+    this.distantSurface.setDetailChunkReady(chunk.cx, chunk.cz, true);
+    if (previousMesh) this.disposeDetachedChunkMesh(previousMesh);
+  }
+
+  private disposeDetachedChunkMesh(mesh) {
+    this.worldGroup.remove(mesh);
+    mesh.traverse((child) => {
+      if (child.isMesh && child.geometry) child.geometry.dispose();
+    });
+  }
+
+  private publishCompletedTerrainWorkerJob() {
+    const nextCompleted = this.completedTerrainWorkerJobs[0];
+    if (!nextCompleted) return false;
+    const { job: nextJob, result: nextResult } = nextCompleted;
+    const nextChunk = this.chunks.get(nextJob.key) ?? null;
+    if (
+      this.crossLayerPublicationChunks.has(nextJob.key)
+      && !this.activeChunkKeys.has(nextJob.key)
+    ) {
+      this.abortCrossLayerPublication(nextJob.key);
+    }
+    let waitsForMicroPublication = false;
+    if (
+      this.crossLayerPublicationChunks.has(nextJob.key)
+      && this.activeChunkKeys.has(nextJob.key)
+    ) {
+      if (nextJob.type === 'remesh') {
+        waitsForMicroPublication = nextChunk?.dataVersion === nextJob.dataVersion
+          && Boolean(nextResult.mesh);
+      } else if (nextJob.snapshot) {
+        const queuedRevision = Number(
+          this.pendingRemoteChunkUpdates.get(nextJob.key)?.revision ?? -1,
+        );
+        const applyingRevision = this.pendingRemoteChunkApply?.key === nextJob.key
+          ? this.pendingRemoteChunkApply.revision
+          : -1;
+        const snapshotIsCurrent = (this.remoteChunkRevisions.get(nextJob.key) ?? -1)
+            === nextJob.snapshot.revision
+          && queuedRevision <= nextJob.snapshot.revision
+          && applyingRevision <= nextJob.snapshot.revision;
+        const replacementIsCurrent = nextJob.replacingChunk
+          ? nextChunk === nextJob.replacingChunk && nextChunk.dataVersion === nextJob.dataVersion
+          : nextChunk === null;
+        waitsForMicroPublication = snapshotIsCurrent
+          && replacementIsCurrent
+          && Boolean(nextResult.blocks && nextResult.terrainColors && nextResult.mesh);
+      } else {
+        const blockedByRemoteSnapshot = this.pendingRemoteChunkUpdates.has(nextJob.key)
+          || this.pendingRemoteChunkApply?.key === nextJob.key
+          || this.pendingTerrainSnapshots.has(nextJob.key);
+        waitsForMicroPublication = nextChunk === null
+          && !blockedByRemoteSnapshot
+          && Boolean(nextResult.blocks && nextResult.terrainColors && nextResult.mesh);
+      }
+    }
+    if (
+      waitsForMicroPublication
+      && !this.microVoxels.isDeferredPublicationReady(
+        nextCompleted.job.key,
+        this.activeChunkKeys,
+      )
+    ) return false;
+    const completed = this.completedTerrainWorkerJobs.shift()!;
+    const { job, result } = completed;
+
+    if (job.type === 'remesh') {
+      const chunk = this.chunks.get(job.key);
+      if (
+        !chunk
+        || !this.activeChunkKeys.has(job.key)
+        || chunk.dataVersion !== job.dataVersion
+        || !result.mesh
+      ) return false;
+      this.publishChunkMesh(chunk, result.mesh);
+      this.commitCrossLayerPublication(job.key);
+      chunk.isDirty = false;
+      this.dirtyChunks.delete(chunk);
+      return true;
+    }
+
+    if (job.snapshot) {
+      const snapshot = job.snapshot;
+      const queuedRevision = Number(this.pendingRemoteChunkUpdates.get(job.key)?.revision ?? -1);
+      const applyingRevision = this.pendingRemoteChunkApply?.key === job.key
+        ? this.pendingRemoteChunkApply.revision
+        : -1;
+      const snapshotIsCurrent = (this.remoteChunkRevisions.get(job.key) ?? -1) === snapshot.revision
+        && queuedRevision <= snapshot.revision
+        && applyingRevision <= snapshot.revision;
+      const replacingChunk = job.replacingChunk ?? null;
+      const currentChunk = this.chunks.get(job.key) ?? null;
+      const replacementIsCurrent = replacingChunk
+        ? currentChunk === replacingChunk && currentChunk.dataVersion === job.dataVersion
+        : currentChunk === null;
+      if (
+        !snapshotIsCurrent
+        || !this.activeChunkKeys.has(job.key)
+        || !replacementIsCurrent
+        || !result.blocks
+        || !result.terrainColors
+        || !result.mesh
+      ) {
+        if (snapshotIsCurrent) this.requeueTerrainSnapshot(snapshot);
+        this.recycleCompletedWorkerChunk(job, result);
+        return false;
+      }
+
+      const chunk = replacingChunk
+        ?? job.recycledChunk
+        ?? new Chunk(job.cx, job.cz, this);
+      if (!replacingChunk) chunk.reuseAt(job.cx, job.cz, this);
+      chunk.installGeneratedData(
+        result.blocks,
+        result.terrainColors,
+        result.mesh.occupiedMinY,
+        result.mesh.occupiedMaxY - 1,
+        result.hasUserEdits === true,
+      );
+      if (!replacingChunk) this.chunks.set(job.key, chunk);
+      this.publishChunkMesh(chunk, result.mesh);
+      this.commitCrossLayerPublication(job.key);
+      chunk.isDirty = false;
+      this.dirtyChunks.delete(chunk);
+      return true;
+    }
+
+    const blockedByRemoteSnapshot = this.pendingRemoteChunkUpdates.has(job.key)
+      || this.pendingRemoteChunkApply?.key === job.key
+      || this.pendingTerrainSnapshots.has(job.key);
+    if (
+      !this.activeChunkKeys.has(job.key)
+      || this.chunks.has(job.key)
+      || blockedByRemoteSnapshot
+      || !result.blocks
+      || !result.terrainColors
+      || !result.mesh
+    ) {
+      if (blockedByRemoteSnapshot && this.activeChunkKeys.has(job.key) && !this.chunks.has(job.key)) {
+        this.pendingStreamChunks.unshift({ cx: job.cx, cz: job.cz, distanceSq: 0 });
+      }
+      this.recycleCompletedWorkerChunk(job, result);
+      return false;
+    }
+
+    const chunk = job.recycledChunk ?? new Chunk(job.cx, job.cz, this);
+    chunk.reuseAt(job.cx, job.cz, this);
+    chunk.installGeneratedData(
+      result.blocks,
+      result.terrainColors,
+      result.mesh.occupiedMinY,
+      result.mesh.occupiedMaxY - 1,
+      result.hasUserEdits === true,
+    );
+    this.chunks.set(job.key, chunk);
+    this.publishChunkMesh(chunk, result.mesh);
+    this.commitCrossLayerPublication(job.key);
+    return true;
+  }
+
+  private recycleCompletedWorkerChunk(job: TerrainWorkerJob, result: TerrainWorkerResult) {
+    const chunk = job.recycledChunk;
+    if (!chunk || !result.blocks || !result.terrainColors) return;
+    chunk.blocks = result.blocks;
+    chunk.colors = result.terrainColors;
+    if (this.recycledProceduralChunks.length < MAX_RECYCLED_PROCEDURAL_CHUNKS) {
+      this.recycledProceduralChunks.push(chunk);
+    }
+  }
+
+  private dispatchTerrainWorkerJob() {
+    const worker = this.terrainWorker;
+    if (!worker || this.terrainWorkerJob) return false;
+    if (this.completedTerrainWorkerJobs.length > 0) return false;
+
+    // Authoritative snapshots replace a published chunk only after their full
+    // generated data and mesh are ready. Until then, the previous collision
+    // arrays and detailed mesh remain live.
+    for (const [key, snapshot] of this.pendingTerrainSnapshots) {
+      if (!this.activeChunkKeys.has(key)) continue;
+      if (this.pendingRemoteChunkApply?.key === key) continue;
+      const queuedRevision = Number(this.pendingRemoteChunkUpdates.get(key)?.revision ?? -1);
+      if (queuedRevision > snapshot.revision) continue;
+
+      const replacingChunk = this.chunks.get(key) ?? null;
+      const recycledChunk = replacingChunk
+        ? null
+        : (this.recycledProceduralChunks.pop() ?? null);
+      const job: TerrainWorkerJob = {
+        requestId: this.nextTerrainWorkerRequestId++,
+        type: 'generate',
+        key,
+        cx: snapshot.cx,
+        cz: snapshot.cz,
+        dataVersion: replacingChunk?.dataVersion,
+        recycledChunk,
+        replacingChunk,
+        snapshot,
+      };
+      const request: any = {
+        type: job.type,
+        requestId: job.requestId,
+        seed: this.terrainSeed,
+        cx: job.cx,
+        cz: job.cz,
+        standardEdits: snapshot.standardEdits,
+      };
+      const transfer: ArrayBuffer[] = [];
+      if (recycledChunk?.blocks.buffer.byteLength && recycledChunk?.colors.buffer.byteLength) {
+        request.blocksBuffer = recycledChunk.blocks.buffer;
+        request.colorsBuffer = recycledChunk.colors.buffer;
+        transfer.push(
+          recycledChunk.blocks.buffer as ArrayBuffer,
+          recycledChunk.colors.buffer as ArrayBuffer,
+        );
+      }
+      this.pendingTerrainSnapshots.delete(key);
+      this.terrainWorkerJob = job;
+      worker.postMessage(request, transfer);
+      return true;
+    }
+
+    // Rebuild authored chunks first so tool feedback remains prompt. The copy
+    // preserves the collision arrays on the page while the worker scans them.
+    for (const chunk of this.dirtyChunks) {
+      const key = World.getChunkKey(chunk.cx, chunk.cz);
+      if (!this.activeChunkKeys.has(key)) continue;
+      const occupied = chunk.getOccupiedYRange();
+      const blocks = chunk.blocks.slice();
+      const colors = chunk.colors.slice();
+      const job: TerrainWorkerJob = {
+        requestId: this.nextTerrainWorkerRequestId++,
+        type: 'remesh',
+        key,
+        cx: chunk.cx,
+        cz: chunk.cz,
+        dataVersion: chunk.dataVersion,
+      };
+      this.terrainWorkerJob = job;
+      worker.postMessage({
+        type: job.type,
+        requestId: job.requestId,
+        seed: this.terrainSeed,
+        cx: job.cx,
+        cz: job.cz,
+        dataVersion: job.dataVersion,
+        minOccupiedY: occupied?.min ?? 0,
+        maxOccupiedY: occupied?.max ?? -1,
+        blocksBuffer: blocks.buffer,
+        colorsBuffer: colors.buffer,
+      }, [blocks.buffer, colors.buffer]);
+      return true;
+    }
+
+    while (this.pendingStreamChunks.length > 0) {
+      const next = this.pendingStreamChunks.shift();
+      if (!next) break;
+      const key = World.getChunkKey(next.cx, next.cz);
+      if (!this.activeChunkKeys.has(key) || this.chunks.has(key)) continue;
+      if (
+        this.pendingRemoteChunkUpdates.has(key)
+        || this.pendingRemoteChunkApply?.key === key
+        || this.pendingTerrainSnapshots.has(key)
+      ) {
+        this.pendingStreamChunks.push(next);
+        return false;
+      }
+
+      const standardEdits = [...(this.editPersistence?.getStandardEditsForChunk(next.cx, next.cz)
+        ?? [])].map(edit => [edit.x, edit.y, edit.z, edit.block, edit.color]);
+      const recycledChunk = this.recycledProceduralChunks.pop() ?? null;
+      const job: TerrainWorkerJob = {
+        requestId: this.nextTerrainWorkerRequestId++,
+        type: 'generate',
+        key,
+        cx: next.cx,
+        cz: next.cz,
+        recycledChunk,
+      };
+      const request: any = {
+        type: job.type,
+        requestId: job.requestId,
+        seed: this.terrainSeed,
+        cx: job.cx,
+        cz: job.cz,
+        standardEdits,
+      };
+      const transfer: ArrayBuffer[] = [];
+      if (recycledChunk?.blocks.buffer.byteLength && recycledChunk?.colors.buffer.byteLength) {
+        request.blocksBuffer = recycledChunk.blocks.buffer;
+        request.colorsBuffer = recycledChunk.colors.buffer;
+        transfer.push(
+          recycledChunk.blocks.buffer as ArrayBuffer,
+          recycledChunk.colors.buffer as ArrayBuffer,
+        );
+      }
+      this.terrainWorkerJob = job;
+      worker.postMessage(request, transfer);
+      return true;
+    }
+    return false;
+  }
+
+  private commitCrossLayerPublication(key: string) {
+    if (!this.crossLayerPublicationChunks.has(key)) return;
+    this.microVoxels.publishDeferredForStandardChunk(key, mesh => hookSceneMaterials(mesh));
+    this.crossLayerPublicationChunks.delete(key);
+  }
+
+  private abortCrossLayerPublication(key: string) {
+    if (!this.crossLayerPublicationChunks.delete(key)) return;
+    this.microVoxels.abortDeferredForStandardChunk(key);
+  }
+
+  private suspendCrossLayerPublication(key: string) {
+    if (!this.crossLayerPublicationChunks.has(key)) return;
+    this.suspendedCrossLayerPublicationChunks.add(key);
+    this.abortCrossLayerPublication(key);
+  }
+
+  /**
+   * Run streaming after the current scene has rendered, and only when
+   * the browser reports genuine idle time before the next display frame.
+   */
+  scheduleStreamingWork() {
+    if (this.streamWorkScheduled || !this.lastStreamCenterKey) return;
+    this.streamWorkScheduled = true;
+    const run = (budgetMs: number) => {
+      this.streamWorkScheduled = false;
+      if (!this.lastStreamCenterKey) return;
+      const [centerCx, centerCz] = this.lastStreamCenterKey.split(',').map(Number);
+      this.updateChunksAround(
+        centerCx * CHUNK_SIZE_X + CHUNK_SIZE_X * 0.5,
+        centerCz * CHUNK_SIZE_Z + CHUNK_SIZE_Z * 0.5,
+        true,
+        budgetMs,
+        this.requireOffThreadTerrainStreaming,
+      );
+    };
+    const requestIdle = globalThis.requestIdleCallback;
+    if (typeof requestIdle === 'function') {
+      requestIdle(deadline => {
+        const remaining = deadline.timeRemaining();
+        if (remaining < 1.5) {
+          this.streamWorkScheduled = false;
+          return;
+        }
+        run(Math.min(BACKGROUND_MAIN_THREAD_BUDGET_MS, remaining - 0.5));
+      });
+      return;
+    }
+    // Older browsers still run the work after the submitted render, using a
+    // tighter cap so the timer cannot monopolize the next animation frame.
+    globalThis.setTimeout(() => run(1), 0);
   }
 
   setRenderDistance(distance) {
@@ -688,23 +1385,25 @@ export class World {
   disposeChunkMesh(chunk) {
     if (!chunk?.mesh) return;
     this.distantSurface.setDetailChunkReady(chunk.cx, chunk.cz, false);
-    this.worldGroup.remove(chunk.mesh);
-    chunk.mesh.traverse((child) => {
-      if (child.isMesh && child.geometry) child.geometry.dispose();
-    });
+    this.disposeDetachedChunkMesh(chunk.mesh);
     chunk.mesh = null;
   }
 
-  private processPendingChunkEvictions(frameWorkStartedAt: number) {
+  private processPendingChunkEvictions(frameWorkStartedAt: number, workBudgetMs: number) {
     let processed = 0;
     for (const [key, chunk] of this.pendingChunkEvictions) {
       if (processed >= MAX_CHUNK_EVICTIONS_PER_FRAME) break;
-      if (performance.now() - frameWorkStartedAt >= STREAM_WORK_BUDGET_MS) break;
+      if (performance.now() - frameWorkStartedAt >= workBudgetMs) break;
       this.pendingChunkEvictions.delete(key);
       if (this.activeChunkKeys.has(key)) continue;
       if (chunk.mesh) this.disposeChunkMesh(chunk);
       this.dirtyChunks.delete(chunk);
-      if (!chunk.hasUserEdits) this.chunks.delete(key);
+      if (!chunk.hasUserEdits) {
+        this.chunks.delete(key);
+        if (this.recycledProceduralChunks.length < MAX_RECYCLED_PROCEDURAL_CHUNKS) {
+          this.recycledProceduralChunks.push(chunk);
+        }
+      }
       processed++;
     }
   }
@@ -888,6 +1587,12 @@ export class World {
     if (extracted.length > 0) {
       for (const cell of extracted) {
         this.editPersistence?.removeMicro(cell.mx, cell.my, cell.mz);
+        this.trackPendingRemoteMicroOverride({
+          type: 'delete',
+          mx: cell.mx,
+          my: cell.my,
+          mz: cell.mz,
+        });
       }
       this.terrainVersion++;
     }
@@ -904,6 +1609,12 @@ export class World {
     if (extracted.length > 0) {
       for (const cell of extracted) {
         this.editPersistence?.removeMicro(cell.mx, cell.my, cell.mz);
+        this.trackPendingRemoteMicroOverride({
+          type: 'delete',
+          mx: cell.mx,
+          my: cell.my,
+          mz: cell.mz,
+        });
       }
       this.terrainVersion++;
     }
@@ -928,6 +1639,8 @@ export class World {
       const key = World.getChunkKey(cx, cz);
       const revision = Number.isFinite(Number(update.revision)) ? Number(update.revision) : 0;
       if ((this.remoteChunkRevisions.get(key) ?? -1) >= revision) continue;
+      if (this.pendingRemoteChunkApply?.key === key
+        && this.pendingRemoteChunkApply.revision >= revision) continue;
       const previous = this.pendingRemoteChunkUpdates.get(key);
       if (previous && Number(previous.revision) >= revision) continue;
       this.pendingRemoteChunkUpdates.set(key, {
@@ -940,15 +1653,262 @@ export class World {
     }
   }
 
-  private processPendingRemoteChunkUpdates(frameWorkStartedAt: number) {
-    let processed = 0;
-    for (const [key, update] of this.pendingRemoteChunkUpdates) {
-      if (processed >= MAX_REMOTE_CHUNKS_PER_FRAME) break;
-      if (processed > 0 && performance.now() - frameWorkStartedAt >= STREAM_WORK_BUDGET_MS) break;
-      this.pendingRemoteChunkUpdates.delete(key);
-      this.applyRemoteChunkUpdate(update);
-      processed++;
+  private processPendingRemoteChunkUpdates(
+    frameWorkStartedAt: number,
+    workBudgetMs: number,
+    offThreadStreaming: boolean,
+  ) {
+    const maxEdits = offThreadStreaming
+      ? MAX_BACKGROUND_REMOTE_EDITS_PER_FRAME
+      : MAX_REMOTE_EDITS_PER_FRAME;
+    let completedChunks = 0;
+    while (completedChunks < MAX_REMOTE_CHUNKS_PER_FRAME) {
+      if (!this.pendingRemoteChunkApply) {
+        const next = this.pendingRemoteChunkUpdates.entries().next();
+        if (next.done) return;
+        const [key, update] = next.value;
+        this.pendingRemoteChunkUpdates.delete(key);
+        if ((this.remoteChunkRevisions.get(key) ?? -1) >= Number(update.revision)) continue;
+        this.pendingRemoteChunkApply = this.beginPendingRemoteChunkApply(update);
+      }
+
+      if (!this.advancePendingRemoteChunkApply(
+        frameWorkStartedAt,
+        workBudgetMs,
+        maxEdits,
+        offThreadStreaming,
+      )) return;
+      completedChunks++;
+      if (performance.now() - frameWorkStartedAt >= workBudgetMs) return;
     }
+  }
+
+  private beginPendingRemoteChunkApply(update: TerrainEditChunk): PendingRemoteChunkApplyJob {
+    const cx = wrapChunkX(update.chunk_x);
+    const cz = wrapChunkZ(update.chunk_z);
+    const key = World.getChunkKey(cx, cz);
+    const revision = Number.isFinite(Number(update.revision)) ? Number(update.revision) : 0;
+    if (this.activeChunkKeys.has(key) && this.chunks.get(key)?.mesh) {
+      this.crossLayerPublicationChunks.add(key);
+    }
+    this.microMeshBuildBlockedChunks.add(key);
+    const microClearCursor = this.microVoxels.beginClearChunk(cx, cz);
+    const persistenceCursor = this.editPersistence
+      ? this.editPersistence.beginRemoteChunkReplacement(update)
+      : null;
+    return {
+      update,
+      key,
+      cx,
+      cz,
+      revision,
+      phase: 'micro-clear',
+      microClearCursor,
+      persistenceCursor,
+      microIterator: null,
+      standardIterator: null,
+      rawMicroIndex: 0,
+      rawStandardIndex: 0,
+      chunk: null,
+      chunkPrepared: false,
+      standardComplete: false,
+      workerStandardEdits: [],
+      localStandardOverrides: [],
+      localMicroOverrides: [],
+    };
+  }
+
+  private advancePendingRemoteChunkApply(
+    frameWorkStartedAt: number,
+    workBudgetMs: number,
+    maxEdits: number,
+    offThreadStreaming: boolean,
+  ): boolean {
+    const job = this.pendingRemoteChunkApply;
+    if (!job) return true;
+
+    if (job.phase === 'micro-clear') {
+      if (!this.microVoxels.continueClearChunk(job.microClearCursor, maxEdits)) return false;
+      job.phase = job.persistenceCursor ? 'persistence' : 'micro';
+      if (performance.now() - frameWorkStartedAt >= workBudgetMs) return false;
+    }
+
+    if (job.phase === 'persistence' && job.persistenceCursor) {
+      const persistenceComplete = this.editPersistence!.continueRemoteChunkReplacement(
+        job.persistenceCursor,
+        maxEdits,
+      );
+      if (!persistenceComplete) return false;
+      job.microIterator = this.editPersistence!.getMicroEditsForChunk(job.cx, job.cz);
+      job.standardIterator = this.editPersistence!.getStandardEditsForChunk(job.cx, job.cz);
+      job.phase = 'micro';
+      if (performance.now() - frameWorkStartedAt >= workBudgetMs) return false;
+    }
+
+    let processed = 0;
+    if (job.phase === 'micro') {
+      while (processed < maxEdits) {
+        const next = this.nextPendingRemoteMicroEdit(job);
+        if (next.done) {
+          job.phase = 'standard';
+          break;
+        }
+        const edit = next.value;
+        this.microVoxels.set(edit.mx, edit.my, edit.mz, edit.color, edit.part);
+        processed++;
+        if (
+          processed % REMOTE_EDIT_TIME_CHECK_INTERVAL === 0
+          && performance.now() - frameWorkStartedAt >= workBudgetMs
+        ) return false;
+      }
+      if (job.phase === 'micro') return false;
+    }
+
+    if (!job.chunkPrepared) {
+      job.chunk = this.chunks.get(job.key) ?? null;
+      if (job.chunk && !offThreadStreaming) {
+        // Startup/tests can explicitly request immediate visibility before the
+        // animation loop exists. Runtime streaming never takes this branch.
+        this.terrainGen.generateChunk(job.chunk);
+      }
+      job.chunkPrepared = true;
+      processed = 0;
+    }
+
+    while (processed < maxEdits) {
+      const next = this.nextPendingRemoteStandardEdit(job);
+      if (next.done) {
+        job.standardComplete = true;
+        break;
+      }
+      const edit = next.value;
+      if (offThreadStreaming) {
+        job.workerStandardEdits.push([
+          edit.x,
+          edit.y,
+          edit.z,
+          edit.block,
+          edit.color,
+        ]);
+      } else if (job.chunk) {
+        const lx = edit.x - job.cx * CHUNK_SIZE_X;
+        const lz = edit.z - job.cz * CHUNK_SIZE_Z;
+        job.chunk.setLocalBlock(lx, edit.y, lz, edit.block, edit.color);
+      }
+      processed++;
+      if (
+        processed % REMOTE_EDIT_TIME_CHECK_INTERVAL === 0
+        && performance.now() - frameWorkStartedAt >= workBudgetMs
+      ) return false;
+    }
+    if (!job.standardComplete) return false;
+
+    this.replayPendingRemoteMicroOverrides(job.localMicroOverrides);
+
+    if (offThreadStreaming) {
+      const snapshot: PendingTerrainSnapshot = {
+        key: job.key,
+        cx: job.cx,
+        cz: job.cz,
+        revision: job.revision,
+        // Local writes can race any phase of a remote replacement. Append
+        // them last so the worker preserves the user's newest intent.
+        standardEdits: job.workerStandardEdits.concat(job.localStandardOverrides),
+      };
+      this.pendingTerrainSnapshots.set(job.key, snapshot);
+      if (this.activeChunkKeys.has(job.key)) this.pendingChunkEvictions.delete(job.key);
+    } else if (job.chunk) {
+      job.chunk.hasUserEdits = true;
+      if (this.activeChunkKeys.has(job.key)) {
+        job.chunk.isDirty = true;
+        this.dirtyChunks.add(job.chunk);
+      } else {
+        if (job.chunk.mesh) this.disposeChunkMesh(job.chunk);
+        this.pendingChunkEvictions.delete(job.key);
+        job.chunk.isDirty = false;
+      }
+    } else if (this.activeChunkKeys.has(job.key) && !this.chunks.has(job.key)) {
+      this.pendingStreamChunks.unshift({ cx: job.cx, cz: job.cz, distanceSq: 0 });
+    }
+    this.remoteChunkRevisions.set(job.key, job.revision);
+    this.terrainVersion++;
+    this.microMeshBuildBlockedChunks.delete(job.key);
+    this.microVoxels.finalizeCollisionSnapshots(job.microClearCursor.targetMeshChunks);
+    this.pendingRemoteChunkApply = null;
+    return true;
+  }
+
+  private replayPendingRemoteMicroOverrides(overrides: PendingMicroOverride[]) {
+    for (const override of overrides) {
+      if (override.type === 'set') {
+        this.microVoxels.set(
+          override.mx,
+          override.my,
+          override.mz,
+          override.color,
+          override.part,
+        );
+      } else if (override.type === 'delete') {
+        this.microVoxels.delete(override.mx, override.my, override.mz);
+      } else if (override.type === 'clear-standard') {
+        this.microVoxels.clearStandardCell(override.wx, override.wy, override.wz);
+      } else {
+        this.microVoxels.subdivide(override.wx, override.wy, override.wz, override.color);
+      }
+    }
+  }
+
+  private nextPendingRemoteMicroEdit(
+    job: PendingRemoteChunkApplyJob,
+  ): IteratorResult<PersistedMicroEdit> {
+    if (job.microIterator) return job.microIterator.next();
+    while (job.rawMicroIndex < job.update.micro.length) {
+      const packed = job.update.micro[job.rawMicroIndex++];
+      if (!Array.isArray(packed) || packed.length < 4) continue;
+      const mx = Number(packed[0]);
+      const my = Number(packed[1]);
+      const mz = Number(packed[2]);
+      const color = Number(packed[3]);
+      if (![mx, my, mz, color].every(Number.isFinite)) continue;
+      if (my < 0 || my >= CHUNK_SIZE_Y * MICRO_DIVISIONS) continue;
+      return {
+        done: false,
+        value: {
+          mx: Math.floor(wrapMicroX(mx)),
+          my: Math.floor(my),
+          mz: Math.floor(wrapMicroZ(mz)),
+          color: color & 0xffffff,
+          part: typeof packed[4] === 'string' ? packed[4].slice(0, 64) : null,
+        },
+      };
+    }
+    return { done: true, value: undefined };
+  }
+
+  private nextPendingRemoteStandardEdit(
+    job: PendingRemoteChunkApplyJob,
+  ): IteratorResult<PersistedStandardEdit> {
+    if (job.standardIterator) return job.standardIterator.next();
+    while (job.rawStandardIndex < job.update.standard.length) {
+      const packed = job.update.standard[job.rawStandardIndex++];
+      if (!Array.isArray(packed) || packed.length < 5) continue;
+      const x = Number(packed[0]);
+      const y = Number(packed[1]);
+      const z = Number(packed[2]);
+      const block = Number(packed[3]);
+      const color = Number(packed[4]);
+      if (![x, y, z, block, color].every(Number.isFinite)) continue;
+      if (y < 0 || y >= CHUNK_SIZE_Y) continue;
+      const value = {
+        x: Math.floor(wrapX(x)),
+        y: Math.floor(y),
+        z: Math.floor(wrapZ(z)),
+        block: Math.max(0, Math.min(255, Math.floor(block))),
+        color: color & 0xffffff,
+      };
+      return { done: false, value };
+    }
+    return { done: true, value: undefined };
   }
 
   applyRemoteChunkUpdates(updates: TerrainEditChunk[]) {

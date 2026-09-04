@@ -6755,7 +6755,56 @@ button.palette-title:hover {
   color: rgba(255, 255, 255, 0.85);
   font-size: 14px;
   line-height: 1.7;
+  margin: 0 0 16px;
+}
+
+.space-entry-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 12px;
   margin: 0 0 24px;
+}
+
+.space-entry-progress-track {
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(139, 214, 109, 0.48);
+  background: rgba(139, 214, 109, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.42);
+}
+
+.space-entry-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3c8527 0%, #8bd66d 72%, #d8ffd0 100%);
+  box-shadow: 0 0 16px rgba(139, 214, 109, 0.45);
+  transition: width 240ms ease-out;
+}
+
+.space-entry-progress-value {
+  color: #bdf3a8;
+  font: 700 12px/1 'JetBrains Mono', monospace;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.space-entry-progress.failed .space-entry-progress-track {
+  border-color: rgba(239, 68, 68, 0.65);
+}
+
+.space-entry-progress.failed .space-entry-progress-fill {
+  background: #b93838;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.35);
+}
+
+.space-entry-progress.failed .space-entry-progress-value {
+  color: #ffb4b4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .space-entry-progress-fill {
+    transition: none;
+  }
 }
 
 .space-entry-action {

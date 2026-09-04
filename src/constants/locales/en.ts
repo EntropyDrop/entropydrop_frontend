@@ -915,6 +915,9 @@ Email: support@entropydrop.com`
         primaryCta: 'Enter Space',
         offlineCta: 'Play Offline',
         secondaryCta: 'Core Features',
+        onlinePlayers: 'players online',
+        onlineLoading: 'Checking online players…',
+        onlineUnavailable: 'Online count unavailable',
         stats: {
             scale: '0.2m Micro Sculpting',
             physics: 'Voxel Physics Engine',

@@ -176,10 +176,57 @@ export function GlobalSettingsModal() {
             <div className="settings-label-group"><span className="settings-label">Third Person Distance</span><span className="settings-desc">Camera offset distance from player</span></div>
             <div className="settings-control-group"><input id="setting-cam-dist-slider" className="settings-slider" type="range" min="2" max="8" step="0.5" value={state.cameraDistance} onChange={event => spaceUiStore.setCameraDistance(Number(event.target.value))} /><span id="setting-cam-dist-val" className="settings-value-badge">{state.cameraDistance.toFixed(1)} m</span></div>
           </div>
+        </div>
+        <div className="settings-section">
+          <div className="settings-section-title">WORLD &amp; ENVIRONMENT</div>
+          <div className="settings-row">
+            <div className="settings-label-group"><span className="settings-label">World Shape</span><span className="settings-desc">Switch between a spherical horizon and the original ring world</span></div>
+            <div className="settings-segmented-control" id="setting-world-shape-group">
+              {([
+                ['earth', 'Earth Mode'],
+                ['torus', 'Donut Mode']
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  tabIndex={-1}
+                  className={`segment-btn ${state.worldShapeMode === value ? 'active' : ''}`}
+                  aria-pressed={state.worldShapeMode === value}
+                  onClick={() => spaceUiStore.setWorldShapeMode(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="settings-section">
+          <div className="settings-section-title">PERFORMANCE</div>
+          <div className="settings-row">
+            <div className="settings-label-group">
+              <span className="settings-label">Shadows</span>
+              <span className="settings-desc">Render real-time sunlight shadows{state.shadowsEnabled && state.resolutionEffectsQuality === 'reduced' ? ' · temporarily paused by Auto resolution' : ''}</span>
+            </div>
+            <div className="settings-segmented-control" id="setting-shadows-group">
+              {([
+                [true, 'Enabled'],
+                [false, 'Disabled']
+              ] as const).map(([value, label]) => (
+                <button
+                  key={String(value)}
+                  tabIndex={-1}
+                  className={`segment-btn ${state.shadowsEnabled === value ? 'active' : ''}`}
+                  aria-pressed={state.shadowsEnabled === value}
+                  onClick={() => spaceUiStore.setShadowsEnabled(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="settings-row settings-resolution-row">
             <div className="settings-label-group">
               <span className="settings-label">Render Resolution</span>
-              <span className="settings-desc">Auto targets 120 FPS · currently {Math.round(state.resolutionScale * 100)}% ({state.resolutionPixelRatio.toFixed(2)}× pixel ratio){state.resolutionEffectsQuality === 'reduced' ? ' · shadows paused' : ''}</span>
+              <span className="settings-desc">Auto targets 120 FPS · currently {Math.round(state.resolutionScale * 100)}% ({state.resolutionPixelRatio.toFixed(2)}× pixel ratio){state.resolutionEffectsQuality === 'reduced' ? ' · effects reduced' : ''}</span>
             </div>
             <div className="settings-segmented-control settings-resolution-control" id="setting-resolution-group">
               {([
@@ -199,34 +246,6 @@ export function GlobalSettingsModal() {
                   {label}
                 </button>
               ))}
-            </div>
-          </div>
-        </div>
-        <div className="settings-section">
-          <div className="settings-section-title">PHYSICS &amp; ENVIRONMENT</div>
-          <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">World Shape</span><span className="settings-desc">Switch between a spherical horizon and the original ring world</span></div>
-            <div className="settings-segmented-control" id="setting-world-shape-group">
-              {([
-                ['earth', '地球模式'],
-                ['torus', '甜甜圈模式']
-              ] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  tabIndex={-1}
-                  className={`segment-btn ${state.worldShapeMode === value ? 'active' : ''}`}
-                  aria-pressed={state.worldShapeMode === value}
-                  onClick={() => spaceUiStore.setWorldShapeMode(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">Entity Gravity</span><span className="settings-desc">Rigid body world gravity simulation</span></div>
-            <div className="settings-segmented-control" id="setting-gravity-group">
-              {([[-18, 'Standard (-18)'], [-5, 'Moon (-5)'], [0, 'Zero-G (0)']] as const).map(([value, label]) => <button key={value} tabIndex={-1} className={`segment-btn ${state.gravity === value ? 'active' : ''}`} onClick={() => spaceUiStore.setGravity(value)}>{label}</button>)}
             </div>
           </div>
           <div className="settings-row">

@@ -1,5 +1,5 @@
 import { createNoise3D } from 'simplex-noise';
-import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../voxel/Chunk.ts';
+import { Chunk, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../voxel/Chunk.ts';
 import { BlockTypes } from '../voxel/BlockTypes.ts';
 import {
   TORUS_SIZE_X, TORUS_SIZE_Z, TORUS_R, TORUS_RHO, TORUS_GREF,
@@ -87,12 +87,15 @@ export class TerrainGenerator {
 
   generateChunk(chunk) {
     const origin = chunk.getWorldOrigin();
+    chunk.resetForTerrainGeneration();
+    let maxHeight = -1;
 
     for (let lx = 0; lx < CHUNK_SIZE_X; lx++) {
       for (let lz = 0; lz < CHUNK_SIZE_Z; lz++) {
         const wx = origin.x + lx;
         const wz = origin.z + lz;
         const height = this.sampleHeight(wx, wz);
+        maxHeight = Math.max(maxHeight, height);
 
         for (let wy = 0; wy <= height; wy++) {
           const color = wy === height
@@ -100,10 +103,13 @@ export class TerrainGenerator {
             : wy >= height - 3
               ? TERRAIN_COLORS.middle
               : TERRAIN_COLORS.deep;
-          chunk.setLocalBlock(lx, wy, lz, BlockTypes.COLOR_BLOCK, color);
+          const index = Chunk.getIndex(lx, wy, lz);
+          chunk.blocks[index] = BlockTypes.COLOR_BLOCK;
+          chunk.colors[index] = color;
         }
       }
     }
+    chunk.setGeneratedOccupiedYRange(0, maxHeight);
     chunk.hasGenerated = true;
   }
 }

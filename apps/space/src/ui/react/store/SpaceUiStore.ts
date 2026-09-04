@@ -119,6 +119,13 @@ export interface WorldEditSyncView {
   acknowledgedBatches: number;
   acknowledgedMutations: number;
   backpressured: boolean;
+  quota: {
+    dailyLimit: number;
+    usedToday: number;
+    remainingToday: number;
+    resetAt: string;
+  } | null;
+  blockedCode: string | null;
 }
 
 export interface TelemetryView {
@@ -180,7 +187,6 @@ export interface SpaceUiSnapshot {
   fov: number;
   perspective: PlayerPerspective;
   cameraDistance: number;
-  gravity: number;
   worldShapeMode: WorldShapeMode;
   renderDistance: number;
   distantSurfaceSettings: DistantSurfaceSettings;
@@ -188,6 +194,7 @@ export interface SpaceUiSnapshot {
   resolutionScale: number;
   resolutionPixelRatio: number;
   resolutionEffectsQuality: 'full' | 'reduced';
+  shadowsEnabled: boolean;
   toast: { id: number; message: string } | null;
   isAdmin: boolean;
   isMuted: boolean;
@@ -236,7 +243,9 @@ const EMPTY_WORLD_EDIT_SYNC: WorldEditSyncView = {
   retryDelayMs: 0,
   acknowledgedBatches: 0,
   acknowledgedMutations: 0,
-  backpressured: false
+  backpressured: false,
+  quota: null,
+  blockedCode: null
 };
 
 function defaultCode(nodeId: string, node: any): string {
@@ -324,7 +333,6 @@ export class SpaceUiStore {
     fov: 75,
     perspective: 'first_person',
     cameraDistance: 4,
-    gravity: -18,
     worldShapeMode: DEFAULT_WORLD_SHAPE_MODE,
     renderDistance: 12,
     distantSurfaceSettings: { ...DEFAULT_DISTANT_SURFACE_SETTINGS },
@@ -332,6 +340,7 @@ export class SpaceUiStore {
     resolutionScale: 1,
     resolutionPixelRatio: 1,
     resolutionEffectsQuality: 'full',
+    shadowsEnabled: true,
     toast: null,
     isAdmin: false,
     isMuted: false,
@@ -490,9 +499,11 @@ export class SpaceUiStore {
     }
     let setting: ResolutionScaleSetting = 'auto';
     let worldShapeMode = getWorldShapeMode();
+    let shadowsEnabled = true;
     try {
       setting = normalizeResolutionScaleSetting(localStorage.getItem('space_setting_resolution_scale'));
       worldShapeMode = normalizeWorldShapeMode(localStorage.getItem('space_setting_world_shape'));
+      shadowsEnabled = localStorage.getItem('space_setting_shadows') !== 'false';
     } catch { }
     setGlobalWorldShapeMode(worldShapeMode);
     sceneRenderer?.setWorldShapeMode?.(worldShapeMode);
@@ -500,7 +511,8 @@ export class SpaceUiStore {
     const state = sceneRenderer?.setResolutionScale?.(
       setting === 'auto' ? 'auto' : Number(setting)
     ) || sceneRenderer?.getResolutionScaleState?.();
-    this.patch({ sceneRenderer, worldShapeMode, ...resolutionSnapshot(state) });
+    shadowsEnabled = sceneRenderer?.setShadowsEnabled?.(shadowsEnabled) ?? shadowsEnabled;
+    this.patch({ sceneRenderer, worldShapeMode, shadowsEnabled, ...resolutionSnapshot(state) });
   }
 
   setNavigationSystem(navigationSystem: any): void {
@@ -680,6 +692,7 @@ export class SpaceUiStore {
   }
 
   setWorldEditSync(status: Partial<WorldEditSyncView>): void {
+    const previousBlockedCode = this.snapshot.worldEditSync.blockedCode;
     const worldEditSync = { ...EMPTY_WORLD_EDIT_SYNC, ...status };
     const current = this.snapshot.bulkEdit;
     const syncIdle = worldEditSync.pendingBatches === 0 && !worldEditSync.sending;
@@ -687,6 +700,17 @@ export class SpaceUiStore {
       ? { ...current, phase: 'complete' as const }
       : current;
     this.patch({ worldEditSync, bulkEdit });
+    if (worldEditSync.blockedCode && worldEditSync.blockedCode !== previousBlockedCode) {
+      const message = {
+        TERRAIN_EDIT_QUOTA_REACHED: 'Terrain edit limit reached; queued changes will retry after reset',
+        TERRAIN_BURST_QUOTA_REACHED: 'Terrain edits are arriving too quickly; syncing will retry',
+        TERRAIN_WORLD_BUSY: 'The world is busy; queued terrain edits will retry',
+        TERRAIN_EDIT_OUT_OF_RANGE: 'Move closer before editing this terrain',
+        TERRAIN_PLAYER_POSITION_REQUIRED: 'Waiting for your position before syncing terrain edits',
+        TERRAIN_PLAYER_POSITION_STALE: 'Refreshing your position before syncing terrain edits',
+      }[worldEditSync.blockedCode];
+      if (message) this.showToast(message);
+    }
     if (bulkEdit?.phase === 'complete' && current?.phase !== 'complete') this.scheduleBulkEditClear();
   }
 
@@ -1443,6 +1467,7 @@ export class SpaceUiStore {
       distantSurfaceSettings: normalizeDistantSurfaceSettings(
         world?.getDistantSurfaceSettings?.() || this.snapshot.distantSurfaceSettings,
       ),
+      shadowsEnabled: sceneRenderer?.getShadowsEnabled?.() ?? this.snapshot.shadowsEnabled,
       ...resolution,
       isMuted
     });
@@ -1484,14 +1509,6 @@ export class SpaceUiStore {
     this.snapshot.controller?.setThirdPersonDistance?.(value);
     this.patch({ cameraDistance: value });
     if (persist) try { localStorage.setItem('space_setting_cam_dist', String(value)); } catch { }
-  }
-
-  setGravity(gravity: number): void {
-    const value = Number(gravity);
-    const game = typeof window !== 'undefined' ? (window as any).game : (globalThis as any).game;
-    if (game?.contraptionPhysics?.gravity) game.contraptionPhysics.gravity.y = value;
-    this.patch({ gravity: value });
-    this.showToast(`Gravity set to ${value} m/s²`);
   }
 
   setWorldShapeMode(mode: WorldShapeMode, persist = true): void {
@@ -1551,6 +1568,16 @@ export class SpaceUiStore {
         });
     if (persist) {
       try { localStorage.setItem('space_setting_resolution_scale', mode); } catch { }
+    }
+  }
+
+  setShadowsEnabled(enabled: boolean, persist = true): void {
+    const value = this.snapshot.sceneRenderer?.setShadowsEnabled?.(Boolean(enabled))
+      ?? Boolean(enabled);
+    this.patch({ shadowsEnabled: value });
+    if (persist) {
+      try { localStorage.setItem('space_setting_shadows', String(value)); } catch { }
+      this.showToast(value ? 'Shadows enabled' : 'Shadows disabled');
     }
   }
 
