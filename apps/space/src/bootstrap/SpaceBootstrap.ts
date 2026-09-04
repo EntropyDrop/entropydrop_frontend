@@ -54,7 +54,7 @@ export type SpaceSessionMode = 'online' | 'offline';
 export const OFFLINE_WORLD_ID = 'offline-sandbox-v1';
 export const OFFLINE_PLAYER_POSITION_KEY = 'space.offline.player-position.v1';
 const OFFLINE_WORLD_SEED = 20260827;
-const OFFLINE_SKIN_URL = new URL('../../skin_D2A9EB7A.png', import.meta.url).href;
+export const DEFAULT_PLAYER_SKIN_URL = new URL('../../skin_D2A9EB7A.png', import.meta.url).href;
 
 export interface SpaceBootstrapPayload {
   protocol_version: 2;
@@ -106,6 +106,10 @@ export function parseSpaceBootstrapPayload(value: unknown): SpaceBootstrapPayloa
   const startPositionValid = positions.every(position => (
     isBoundedInteger(position, -10_000_000, 10_000_000)
   ));
+  const skinUrlMissing = player?.skin_url === null
+    || player?.skin_url === undefined
+    || (typeof player?.skin_url === 'string' && player.skin_url.trim().length === 0);
+  const skinTypeMissing = player?.skin_type === null || player?.skin_type === undefined;
 
   if (
     payload?.protocol_version !== 2
@@ -121,14 +125,22 @@ export function parseSpaceBootstrapPayload(value: unknown): SpaceBootstrapPayloa
     || !isBoundedString(player?.user_id, 128)
     || !(player?.username === null || typeof player?.username === 'string')
     || !isBoundedString(player?.player_entity_id, 128)
-    || !isBoundedString(player?.skin_url, 4096)
-    || !['strong', 'slim'].includes(player?.skin_type)
+    || !(skinUrlMissing || isBoundedString(player?.skin_url, 4096))
+    || !(skinTypeMissing || ['strong', 'slim'].includes(player?.skin_type))
     || typeof player?.resumed !== 'boolean'
     || !startPositionValid
   ) {
     throw new Error('Invalid Space bootstrap API V2 response.');
   }
-  return payload as SpaceBootstrapPayload;
+  if (!skinUrlMissing && !skinTypeMissing) return payload as SpaceBootstrapPayload;
+  return {
+    ...payload,
+    player: {
+      ...player,
+      skin_url: skinUrlMissing ? DEFAULT_PLAYER_SKIN_URL : player.skin_url,
+      skin_type: skinUrlMissing || skinTypeMissing ? 'strong' : player.skin_type,
+    },
+  } as SpaceBootstrapPayload;
 }
 
 export interface PlayerPositionPayload {
@@ -148,6 +160,7 @@ export interface ReadySpaceSession extends SpaceBootstrapPayload {
   api_origin: string;
   token: string;
   skin_object_url: string;
+  entry_warning: string | null;
   terrain_edit_remote: WorldEditRemote | null;
   surface_snapshot_remote: SpaceSurfaceSnapshotRemote | null;
   player_position_remote: PlayerPositionRemote;
@@ -179,20 +192,20 @@ export interface PreparedOnlineSpace {
   apiOrigin: string;
   token: string;
   skinObjectUrl: string;
+  entryWarning: string | null;
   latencyMonitor: LatencyMonitor;
 }
 
 export type SpaceEntryErrorCode =
   | 'PC_ONLY_REQUIRED'
   | 'LOGIN_REQUIRED'
-  | 'SKIN_REQUIRED'
-  | 'SKIN_DOWNLOAD_FAILED'
   | 'BOOTSTRAP_FAILED';
 
 export interface SpaceEntryAction {
   label: string;
   url: string;
   secondary?: boolean;
+  subtle?: boolean;
 }
 
 export class SpaceEntryError extends Error {
@@ -394,15 +407,6 @@ export function encodePlayerPosition(
   };
 }
 
-function createSkinRequiredActions(zh: boolean): SpaceEntryAction[] {
-  return [
-    { label: zh ? '选择已创建的皮肤' : 'Choose Created Skin', url: '/skin/collection' },
-    { label: zh ? '上传自己的皮肤' : 'Upload Skin', url: '/skin/collection' },
-    { label: zh ? '生成皮肤' : 'Generate Skin', url: '/skin/generate' },
-    { label: zh ? '进入离线模式' : 'Enter Offline Mode', url: '?mode=offline', secondary: true }
-  ];
-}
-
 function entryErrorFromResponse(status: number, body: any) {
   const detail = body?.detail;
   const zh = isZhLang();
@@ -416,17 +420,6 @@ function entryErrorFromResponse(status: number, body: any) {
         { label: zh ? '前往登录' : 'Log In', url: '/skin/' },
         { label: zh ? '进入离线模式' : 'Enter Offline Mode', url: '?mode=offline', secondary: true }
       ]
-    );
-  }
-  if (status === 409 && detail?.code === 'SKIN_REQUIRED') {
-    return new SpaceEntryError(
-      'SKIN_REQUIRED',
-      detail.message || (zh
-        ? '进入 Space 前需要先设置角色皮肤。您可以选择已创建的皮肤、上传自己的皮肤，或直接生成新皮肤：'
-        : 'You must set a character skin before entering Space. You can choose from your created skins, upload your own skin, or generate a new skin:'),
-      detail.action_url || '/skin/collection',
-      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
-      createSkinRequiredActions(zh)
     );
   }
   return new SpaceEntryError(
@@ -455,45 +448,29 @@ async function downloadSkinPng(url: string) {
       referrerPolicy: 'no-referrer',
     });
   } catch {
-    throw new SpaceEntryError(
-      'SKIN_DOWNLOAD_FAILED',
-      zh ? '下载角色皮肤失败，请重新配置您的皮肤。' : 'Failed to download character skin PNG. Please reconfigure your skin.',
-      '/skin/collection',
-      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
-      createSkinRequiredActions(zh)
-    );
+    throw new Error(zh
+      ? '下载角色皮肤失败，请重新配置您的皮肤。'
+      : 'Failed to download character skin PNG. Please reconfigure your skin.');
   }
 
   if (!response.ok) {
-    throw new SpaceEntryError(
-      'SKIN_DOWNLOAD_FAILED',
-      zh ? `下载角色皮肤失败 (${response.status})，请重新配置您的皮肤。` : `Failed to download character skin PNG (${response.status}).`,
-      '/skin/collection',
-      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
-      createSkinRequiredActions(zh)
-    );
+    throw new Error(zh
+      ? `下载角色皮肤失败 (${response.status})，请重新配置您的皮肤。`
+      : `Failed to download character skin PNG (${response.status}).`);
   }
 
   let bytes: Uint8Array;
   try {
     bytes = await readResponseBytes(response, MAX_SKIN_PNG_BYTES);
   } catch {
-    throw new SpaceEntryError(
-      'SKIN_DOWNLOAD_FAILED',
-      zh ? '角色皮肤文件无效或超过 256 KiB，请重新配置。' : 'Character skin is invalid or exceeds the 256 KiB safety limit.',
-      '/skin/collection',
-      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
-      createSkinRequiredActions(zh)
-    );
+    throw new Error(zh
+      ? '角色皮肤文件无效或超过 256 KiB，请重新配置。'
+      : 'Character skin is invalid or exceeds the 256 KiB safety limit.');
   }
   if (!hasPngSignature(bytes)) {
-    throw new SpaceEntryError(
-      'SKIN_DOWNLOAD_FAILED',
-      zh ? '角色皮肤不是有效的 PNG 格式图片，请重新配置。' : 'Character skin is not a valid PNG file. Please reconfigure your skin.',
-      '/skin/collection',
-      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
-      createSkinRequiredActions(zh)
-    );
+    throw new Error(zh
+      ? '角色皮肤不是有效的 PNG 格式图片，请重新配置。'
+      : 'Character skin is not a valid PNG file. Please reconfigure your skin.');
   }
 
   const pngBuffer = new Uint8Array(bytes.byteLength);
@@ -505,13 +482,9 @@ async function downloadSkinPng(url: string) {
     bitmap.close();
     if (!validSize) throw new Error('invalid dimensions');
   } catch {
-    throw new SpaceEntryError(
-      'SKIN_DOWNLOAD_FAILED',
-      zh ? '角色皮肤必须是可解析的 64×64 PNG 图片，请重新配置。' : 'Character skin must be a decodable 64×64 PNG. Please reconfigure your skin.',
-      '/skin/collection',
-      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
-      createSkinRequiredActions(zh)
-    );
+    throw new Error(zh
+      ? '角色皮肤必须是可解析的 64×64 PNG 图片，请重新配置。'
+      : 'Character skin must be a decodable 64×64 PNG. Please reconfigure your skin.');
   }
   return URL.createObjectURL(blob);
 }
@@ -732,24 +705,32 @@ async function prepareOnlineSpace(
   const body = await readJsonResponse<any>(response, MAX_SPACE_API_RESPONSE_BYTES).catch(() => null);
   if (!response.ok) throw entryErrorFromResponse(response.status, body);
 
+  const configuredSkinUrl = typeof body?.player?.skin_url === 'string'
+    && body.player.skin_url.trim().length > 0
+    ? body.player.skin_url
+    : null;
   const payload = parseSpaceBootstrapPayload(body);
-  if (!payload?.player?.skin_url) {
-    const zh = isZhLang();
-    throw new SpaceEntryError(
-      'SKIN_REQUIRED',
-      zh
-        ? '进入 Space 前需要先设置角色皮肤。您可以选择已创建的皮肤、上传自己的皮肤，或直接生成新皮肤：'
-        : 'You must set a character skin before entering Space. You can choose from your created skins, upload your own skin, or generate a new skin:',
-      '/skin/collection',
-      zh ? '选择已创建的皮肤' : 'Choose Created Skin',
-      createSkinRequiredActions(zh)
-    );
+  const zh = isZhLang();
+  let skinObjectUrl = DEFAULT_PLAYER_SKIN_URL;
+  let entryWarning: string | null = null;
+  if (configuredSkinUrl) {
+    reportProgress?.(46, zh ? '正在下载角色皮肤…' : 'Downloading character skin…');
+    try {
+      skinObjectUrl = await downloadSkinPng(configuredSkinUrl);
+    } catch (error) {
+      console.warn('Configured Space skin could not be loaded; using the bundled default skin.', error);
+      entryWarning = zh
+        ? '⚠ 已设置的角色皮肤暂时无法加载，当前使用默认皮肤。按 O 打开设置查看处理方法。'
+        : '⚠ Your configured character skin could not be loaded, so the default skin is in use. Press O to open Settings for help.';
+    }
+  } else {
+    reportProgress?.(46, zh ? '正在使用默认角色皮肤…' : 'Using the default character skin…');
+    entryWarning = zh
+      ? '⚠ 尚未设置角色皮肤，当前使用默认皮肤。按 O 打开设置查看设置方法。'
+      : '⚠ No character skin is configured, so the default skin is in use. Press O to open Settings and set one up.';
   }
-
-  reportProgress?.(46, isZhLang() ? '正在下载角色皮肤…' : 'Downloading character skin…');
-  const skinObjectUrl = await downloadSkinPng(payload.player.skin_url);
   reportProgress?.(58, isZhLang() ? '角色资源已就绪…' : 'Character resources ready…');
-  return { payload, apiOrigin, token, skinObjectUrl, latencyMonitor };
+  return { payload, apiOrigin, token, skinObjectUrl, entryWarning, latencyMonitor };
 }
 
 export async function requestSpaceAdmission(
@@ -814,7 +795,7 @@ async function completeOnlineSpace(
   prepared: PreparedOnlineSpace,
   reportProgress?: SpaceEntryProgressReporter
 ): Promise<ReadySpaceSession> {
-  const { payload, apiOrigin, token, skinObjectUrl, latencyMonitor } = prepared;
+  const { payload, apiOrigin, token, skinObjectUrl, entryWarning, latencyMonitor } = prepared;
   latencyMonitor.start();
   let terrainEditRemote: WorldEditRemote;
   try {
@@ -838,6 +819,7 @@ async function completeOnlineSpace(
     api_origin: apiOrigin,
     token,
     skin_object_url: skinObjectUrl,
+    entry_warning: entryWarning,
     terrain_edit_remote: terrainEditRemote,
     surface_snapshot_remote: createSpaceSurfaceSnapshotRemote(
       apiOrigin,
@@ -913,7 +895,7 @@ export function createOfflineSpaceSession(
       username: sourcePlayer?.username || 'Offline Player',
       is_admin: false,
       player_entity_id: 'offline-player',
-      skin_url: sourcePlayer?.skin_url || OFFLINE_SKIN_URL,
+      skin_url: sourcePlayer?.skin_url || DEFAULT_PLAYER_SKIN_URL,
       skin_type: sourcePlayer?.skin_type || 'strong',
       start_x_cm: savedPosition?.x_cm ?? null,
       start_y_cm: savedPosition?.y_cm ?? null,
@@ -924,7 +906,8 @@ export function createOfflineSpaceSession(
     mode: 'offline',
     api_origin: apiOrigin,
     token: prepared?.token || '',
-    skin_object_url: prepared?.skinObjectUrl || OFFLINE_SKIN_URL,
+    skin_object_url: prepared?.skinObjectUrl || DEFAULT_PLAYER_SKIN_URL,
+    entry_warning: prepared?.entryWarning || null,
     terrain_edit_remote: null,
     surface_snapshot_remote: null,
     player_position_remote: createOfflinePlayerPositionRemote(),
@@ -980,7 +963,11 @@ function renderEntryError(error: unknown) {
     actionContainer.innerHTML = '';
     for (const act of entryError.actions) {
       const a = document.createElement('a');
-      a.className = `space-entry-action ${act.secondary ? 'secondary' : ''}`.trim();
+      a.className = [
+        'space-entry-action',
+        act.secondary ? 'secondary' : '',
+        act.subtle ? 'subtle' : '',
+      ].filter(Boolean).join(' ');
       a.href = act.url;
       a.textContent = act.label;
       actionContainer.appendChild(a);
@@ -1031,7 +1018,11 @@ export async function enterSpace(
         '/space',
         zh ? '返回主站' : 'Back to Main Site',
         [
-          { label: zh ? '返回 Space 主页' : 'Back to Space Overview', url: '/space' },
+          {
+            label: zh ? '返回 Space 主页' : 'Back to Space Overview',
+            url: '/space',
+            subtle: true,
+          },
           {
             label: zh ? '仍然尝试进入 (开发者)' : 'Try Anyway (Dev)',
             url: window.location.search ? `${window.location.search}&force_pc=1` : '?force_pc=1',

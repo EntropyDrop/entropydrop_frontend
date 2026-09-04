@@ -431,7 +431,13 @@ export function Hud() {
           </div>
         </div>
       </div>
-      <div id="toast" className={`toast ${state.toast ? 'show' : ''}`}>{state.toast?.message || ''}</div>
+      <div
+        id="toast"
+        className={`toast ${state.toast ? `show ${state.toast.tone}` : ''}`}
+        role={state.toast?.tone === 'warning' ? 'alert' : 'status'}
+      >
+        {state.toast?.message || ''}
+      </div>
     </>
   );
 }

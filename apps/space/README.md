@@ -7,11 +7,13 @@ the main site's `localStorage` login token. It does not own an account system.
 
 Before constructing the Three.js scene it calls `POST /space/api/v2/bootstrap`,
 loads the existing EntropyDrop user's latest backend state, or receives an
-ephemeral world-wide random position when no snapshot exists, and downloads
-that user's immutable `skin_url` PNG. The first random position is checkpointed
+ephemeral world-wide random position when no snapshot exists. A configured
+`skin_url` PNG is downloaded when available; otherwise Space immediately uses
+the bundled offline-mode skin and shows a non-blocking reminder to configure a
+character skin. An invalid or temporarily unavailable configured skin falls back
+the same way instead of blocking entry. The first random position is checkpointed
 immediately; later wrapped position/yaw updates are saved every five seconds,
-on realtime disconnect, and before page suspension. A user without a configured
-skin is blocked and sent to `/skin/edit`. Backpack data remains browser-local under
+on realtime disconnect, and before page suspension. Backpack data remains browser-local under
 `space.backpack.v3.pb` and is never uploaded by this app. Player-authored standard
 and micro-voxel terrain overlays are loaded from the authenticated Space API and
 sent back in idempotent batches of at most 256 mutations. A durable browser

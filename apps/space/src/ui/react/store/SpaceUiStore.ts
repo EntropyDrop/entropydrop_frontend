@@ -196,7 +196,8 @@ export interface SpaceUiSnapshot {
   resolutionPixelRatio: number;
   resolutionEffectsQuality: 'full' | 'reduced';
   shadowsEnabled: boolean;
-  toast: { id: number; message: string } | null;
+  skinWarning: string | null;
+  toast: { id: number; message: string; tone: 'default' | 'warning' } | null;
   isAdmin: boolean;
   isMuted: boolean;
   sessionMode: 'online' | 'offline';
@@ -343,6 +344,7 @@ export class SpaceUiStore {
     resolutionPixelRatio: 1,
     resolutionEffectsQuality: 'full',
     shadowsEnabled: true,
+    skinWarning: null,
     toast: null,
     isAdmin: false,
     isMuted: false,
@@ -670,13 +672,24 @@ export class SpaceUiStore {
     return false;
   }
 
-  showToast(message: unknown): void {
-    const toast = { id: ++this.toastSequence, message: String(message) };
+  showToast(
+    message: unknown,
+    options: { tone?: 'default' | 'warning'; durationMs?: number } = {}
+  ): void {
+    const toast = {
+      id: ++this.toastSequence,
+      message: String(message),
+      tone: options.tone || 'default' as const,
+    };
     this.patch({ toast });
     if (this.toastTimer) clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => {
       if (this.snapshot.toast?.id === toast.id) this.patch({ toast: null });
-    }, 2800);
+    }, options.durationMs ?? 2800);
+  }
+
+  setSkinWarning(message: string | null): void {
+    this.patch({ skinWarning: message });
   }
 
   setBulkEditProgress(progress: BulkEditView | null): void {

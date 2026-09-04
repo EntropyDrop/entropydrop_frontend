@@ -58,7 +58,7 @@ test('generated neighboring chunks cull their shared boundary faces', () => {
   assert.equal(geometry.index?.count, 5 * 6, 'the occupied east neighbor hides the shared face');
 });
 
-test('missing procedural neighbors are sampled without creating temporary boundary faces', () => {
+test('missing procedural neighbors receive an opaque cut face', () => {
   const chunks = new Map<string, Chunk>();
   const world = {
     terrainGen: { sampleHeight: () => 8 },
@@ -81,9 +81,40 @@ test('missing procedural neighbors are sampled without creating temporary bounda
   const geometry = meshGeometry(center);
   assert.equal(
     geometry.index?.count,
-    5 * 6,
-    'the deterministic east terrain sample hides the shared face before its chunk is allocated'
+    6 * 6,
+    'the east face must remain visible until real neighboring geometry exists'
   );
+});
+
+test('temporary chunk-edge faces merge vertically without leaving a gap', () => {
+  const world = {
+    worldToChunkCoords(wx: number, wz: number) {
+      return {
+        cx: Math.floor(wx / CHUNK_SIZE_X),
+        cz: Math.floor(wz / CHUNK_SIZE_Z)
+      };
+    },
+    getChunk() {
+      return null;
+    },
+    markChunkDirty() {}
+  };
+  const chunk = new Chunk(0, 0, world);
+  chunk.hasGenerated = true;
+  for (let y = 0; y < 16; y++) {
+    chunk.setLocalBlock(CHUNK_SIZE_X - 1, y, 4, BlockTypes.COLOR_BLOCK, 0x48dbfb);
+  }
+
+  const geometry = meshGeometry(chunk);
+  const positions = geometry.getAttribute('position').array as Uint16Array;
+  const normals = geometry.getAttribute('normal').array as Int8Array;
+  const eastFaceY: number[] = [];
+  for (let vertex = 0; vertex < normals.length / 3; vertex++) {
+    if (normals[vertex * 3] !== 127) continue;
+    eastFaceY.push(positions[vertex * 3 + 1]);
+  }
+
+  assert.deepEqual(eastFaceY.sort((a, b) => a - b), [0, 0, 16, 16]);
 });
 
 test('chunk occupancy bounds shrink lazily and constrain meshing height', () => {

@@ -98,6 +98,7 @@ type TerrainWorkerJob = {
   cx: number;
   cz: number;
   dataVersion?: number;
+  remeshChunk?: Chunk;
   recycledChunk?: Chunk | null;
   replacingChunk?: Chunk | null;
   snapshot?: PendingTerrainSnapshot;
@@ -145,6 +146,8 @@ export class World {
   /** Browser-local sparse overlay that survives a page refresh for this world. */
   editPersistence: WorldEditPersistence | null;
   dirtyChunks: Set<Chunk>;
+  /** Locally edited chunks that must bypass idle-only terrain streaming. */
+  private interactiveDirtyChunks: Set<Chunk>;
   activeChunkKeys: Set<string>;
   lastStreamCenterKey: string;
   private deferStreamWorkOnce: boolean;
@@ -209,6 +212,7 @@ export class World {
 
     // Dirty chunks queue for mesh regeneration
     this.dirtyChunks = new Set();
+    this.interactiveDirtyChunks = new Set();
     this.activeChunkKeys = new Set();
     this.lastStreamCenterKey = '';
     this.deferStreamWorkOnce = false;
@@ -386,6 +390,7 @@ export class World {
     if (changed || clearedMicro > 0) chunk.hasUserEdits = true;
     if (changed && updateMesh) {
       this.dirtyChunks.add(chunk);
+      this.queueInteractiveChunkRemesh(chunk, lx, lz);
     }
     if (changed || clearedMicro > 0) {
       this.terrainVersion++;
@@ -412,6 +417,24 @@ export class World {
       });
     }
     return changed;
+  }
+
+  private queueInteractiveChunkRemesh(chunk: Chunk, lx: number, lz: number) {
+    // Keep the directly edited chunk first. Boundary edits also change which
+    // faces are visible in an already-loaded neighbour, but those follow-up
+    // meshes should never delay the block the player just placed.
+    const affected: Array<Chunk | null> = [chunk];
+    if (lx === 0) affected.push(this.getChunk(wrapChunkX(chunk.cx - 1), chunk.cz));
+    if (lx === CHUNK_SIZE_X - 1) affected.push(this.getChunk(wrapChunkX(chunk.cx + 1), chunk.cz));
+    if (lz === 0) affected.push(this.getChunk(chunk.cx, wrapChunkZ(chunk.cz - 1)));
+    if (lz === CHUNK_SIZE_Z - 1) affected.push(this.getChunk(chunk.cx, wrapChunkZ(chunk.cz + 1)));
+    for (const affectedChunk of affected) {
+      if (!affectedChunk) continue;
+      const key = World.getChunkKey(affectedChunk.cx, affectedChunk.cz);
+      if (!this.activeChunkKeys.has(key)) continue;
+      this.dirtyChunks.add(affectedChunk);
+      this.interactiveDirtyChunks.add(affectedChunk);
+    }
   }
 
   private trackPendingTerrainSnapshotEdit(
@@ -871,6 +894,7 @@ export class World {
         if (nextActive.has(key)) continue;
         this.suspendCrossLayerPublication(key);
         this.dirtyChunks.delete(chunk);
+        this.interactiveDirtyChunks.delete(chunk);
         this.distantSurface.setDetailChunkReady(chunk.cx, chunk.cz, false);
         if (chunk.mesh) chunk.mesh.visible = false;
         this.pendingChunkEvictions.set(key, chunk);
@@ -969,12 +993,17 @@ export class World {
 
       chunk.isDirty = false;
       this.dirtyChunks.delete(chunk);
+      this.interactiveDirtyChunks.delete(chunk);
       updates++;
     }
 
   }
 
-  private publishChunkMesh(chunk: Chunk, meshData: ChunkMeshData) {
+  private publishChunkMesh(
+    chunk: Chunk,
+    meshData: ChunkMeshData,
+    dataVersion = chunk.dataVersion,
+  ) {
     const previousMesh = chunk.mesh;
     const nextMesh = this.mesher.createChunkMeshFromData(chunk, meshData);
     nextMesh.userData.bentSphere = computeChunkBentSphere(
@@ -997,6 +1026,7 @@ export class World {
     // observe an empty transition state.
     this.worldGroup.add(nextMesh);
     chunk.mesh = nextMesh;
+    chunk.publishedDataVersion = dataVersion;
     this.distantSurface.setDetailChunkReady(chunk.cx, chunk.cz, true);
     if (previousMesh) this.disposeDetachedChunkMesh(previousMesh);
   }
@@ -1068,13 +1098,31 @@ export class World {
       if (
         !chunk
         || !this.activeChunkKeys.has(job.key)
-        || chunk.dataVersion !== job.dataVersion
+        || (job.remeshChunk && chunk !== job.remeshChunk)
         || !result.mesh
       ) return false;
-      this.publishChunkMesh(chunk, result.mesh);
+
+      const resultDataVersion = job.dataVersion ?? -1;
+      if (chunk.dataVersion !== resultDataVersion) {
+        // Continuous placement can make every in-flight result stale. Publish
+        // monotonically newer intermediate meshes so visual feedback keeps
+        // advancing, then leave the latest chunk state queued for one more
+        // rebuild. Cross-layer replacements retain their atomic barrier.
+        if (
+          !this.crossLayerPublicationChunks.has(job.key)
+          && resultDataVersion > chunk.publishedDataVersion
+        ) {
+          this.publishChunkMesh(chunk, result.mesh, resultDataVersion);
+          return true;
+        }
+        return false;
+      }
+
+      this.publishChunkMesh(chunk, result.mesh, resultDataVersion);
       this.commitCrossLayerPublication(job.key);
       chunk.isDirty = false;
       this.dirtyChunks.delete(chunk);
+      this.interactiveDirtyChunks.delete(chunk);
       return true;
     }
 
@@ -1121,6 +1169,7 @@ export class World {
       this.commitCrossLayerPublication(job.key);
       chunk.isDirty = false;
       this.dirtyChunks.delete(chunk);
+      this.interactiveDirtyChunks.delete(chunk);
       return true;
     }
 
@@ -1219,21 +1268,40 @@ export class World {
       return true;
     }
 
-    // Rebuild authored chunks first so tool feedback remains prompt. The copy
-    // preserves the collision arrays on the page while the worker scans them.
-    for (const chunk of this.dirtyChunks) {
+    // Rebuild direct player edits before ordinary dirty chunks. Keeping this
+    // queue separate also lets the render loop service it without waiting for
+    // requestIdleCallback while movement is continuously streaming terrain.
+    let remeshChunk: Chunk | null = null;
+    for (const chunk of this.interactiveDirtyChunks) {
       const key = World.getChunkKey(chunk.cx, chunk.cz);
-      if (!this.activeChunkKeys.has(key)) continue;
-      const occupied = chunk.getOccupiedYRange();
-      const blocks = chunk.blocks.slice();
-      const colors = chunk.colors.slice();
+      if (!this.activeChunkKeys.has(key) || !this.dirtyChunks.has(chunk)) {
+        this.interactiveDirtyChunks.delete(chunk);
+        continue;
+      }
+      remeshChunk = chunk;
+      break;
+    }
+    if (!remeshChunk) {
+      for (const chunk of this.dirtyChunks) {
+        const key = World.getChunkKey(chunk.cx, chunk.cz);
+        if (!this.activeChunkKeys.has(key)) continue;
+        remeshChunk = chunk;
+        break;
+      }
+    }
+    if (remeshChunk) {
+      const key = World.getChunkKey(remeshChunk.cx, remeshChunk.cz);
+      const occupied = remeshChunk.getOccupiedYRange();
+      const blocks = remeshChunk.blocks.slice();
+      const colors = remeshChunk.colors.slice();
       const job: TerrainWorkerJob = {
         requestId: this.nextTerrainWorkerRequestId++,
         type: 'remesh',
         key,
-        cx: chunk.cx,
-        cz: chunk.cz,
-        dataVersion: chunk.dataVersion,
+        cx: remeshChunk.cx,
+        cz: remeshChunk.cz,
+        dataVersion: remeshChunk.dataVersion,
+        remeshChunk,
       };
       this.terrainWorkerJob = job;
       worker.postMessage({
@@ -1298,6 +1366,19 @@ export class World {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Service player-authored terrain before the next draw. Background chunk
+   * generation remains idle-budgeted, but an edit can publish a finished job
+   * and launch its high-priority remesh even while movement keeps the browser
+   * too busy to grant requestIdleCallback time.
+   */
+  processInteractiveTerrainWork() {
+    if (!this.terrainWorker || this.interactiveDirtyChunks.size === 0) return false;
+    const published = this.publishCompletedTerrainWorkerJob();
+    const dispatched = this.dispatchTerrainWorkerJob();
+    return published || dispatched;
   }
 
   private commitCrossLayerPublication(key: string) {
@@ -1398,6 +1479,7 @@ export class World {
       if (this.activeChunkKeys.has(key)) continue;
       if (chunk.mesh) this.disposeChunkMesh(chunk);
       this.dirtyChunks.delete(chunk);
+      this.interactiveDirtyChunks.delete(chunk);
       if (!chunk.hasUserEdits) {
         this.chunks.delete(key);
         if (this.recycledProceduralChunks.length < MAX_RECYCLED_PROCEDURAL_CHUNKS) {

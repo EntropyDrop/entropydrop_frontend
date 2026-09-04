@@ -156,6 +156,31 @@ export function GlobalSettingsModal() {
       <div className="modal-content settings-modal-content">
         <div className="modal-header"><h2>Global Settings</h2><button id="close-global-settings-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close settings (ESC)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(false)}>✕</button></div>
         <div className="modal-sub">Configure camera, perspective, and world preferences</div>
+        {state.skinWarning ? (
+          <section className="settings-skin-warning" aria-labelledby="settings-skin-warning-title">
+            <div className="settings-skin-warning-heading">
+              <span className="settings-skin-warning-icon" aria-hidden="true">!</span>
+              <div>
+                <div id="settings-skin-warning-title" className="settings-skin-warning-title">Set up your character skin</div>
+                <div className="settings-skin-warning-message">{state.skinWarning}</div>
+              </div>
+            </div>
+            <ol className="settings-skin-steps">
+              <li>Open Collection to upload a skin or choose one you already have.</li>
+              <li>Alternatively, create a new skin on the Generate page.</li>
+              <li>Open the chosen skin's detail page and select <strong>Set as My Skin</strong>.</li>
+              <li>Return to Space and reload to use the new skin.</li>
+            </ol>
+            <div className="settings-skin-actions">
+              <a className="small-btn primary settings-skin-link" href="/skin/collection" target="_blank" rel="noopener noreferrer">
+                Open Collection
+              </a>
+              <a className="small-btn settings-skin-link" href="/skin/generate" target="_blank" rel="noopener noreferrer">
+                Generate a Skin
+              </a>
+            </div>
+          </section>
+        ) : null}
         <div className="settings-section">
           <div className="settings-section-title">CAMERA &amp; VIEW</div>
           <div className="settings-row">

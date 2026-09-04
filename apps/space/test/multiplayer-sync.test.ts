@@ -7,6 +7,7 @@ import {
   parseRealtimePlayers,
   resolveWebSocketUrl,
 } from '../src/engine/network/MultiplayerSync.ts';
+import { DEFAULT_PLAYER_SKIN_URL } from '../src/bootstrap/SpaceBootstrap.ts';
 import { World } from '../src/engine/voxel/World.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 import { Chunk } from '../src/engine/voxel/Chunk.ts';
@@ -53,6 +54,10 @@ test('realtime player parsing drops non-finite records and caps untrusted snapsh
   assert.equal(parsed[0].username.length, 80);
   assert.equal(parsed[1].is_self, true);
   assert.deepEqual([parsed[0].x, parsed[0].y, parsed[0].z], [1, 2, 3]);
+
+  const withoutSkin = parseRealtimePlayers([{ ...valid, skin_url: null }], 'someone-else');
+  assert.equal(withoutSkin[0].skin_url, DEFAULT_PLAYER_SKIN_URL);
+  assert.equal(withoutSkin[0].skin_type, 'strong');
 });
 
 test('MultiplayerSync sends poses over binary WebSocket and keeps HTTP for terrain', async () => {

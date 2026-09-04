@@ -50,6 +50,14 @@ test('a completed queue waits for the player to choose online or offline Space',
   assert.equal(store.getSnapshot().onlineReady, false);
 });
 
+test('Space UI keeps skin setup guidance available in settings', () => {
+  const store = new SpaceUiStore();
+  assert.equal(store.getSnapshot().skinWarning, null);
+
+  store.setSkinWarning('Default skin is in use.');
+  assert.equal(store.getSnapshot().skinWarning, 'Default skin is in use.');
+});
+
 
 test('both Space welcome surfaces expose a direct offline entry', () => {
   const appHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');

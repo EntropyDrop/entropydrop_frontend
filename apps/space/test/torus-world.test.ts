@@ -309,6 +309,81 @@ test('off-thread streaming leaves unfinished chunks empty and non-colliding', ()
   );
 });
 
+test('interactive standard edits bypass idle-only terrain scheduling', () => {
+  const world = new World(new THREE.Scene()) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  const chunk = world.getChunk(0, 0);
+  assert.ok(chunk?.mesh);
+  world.pendingStreamChunks = [];
+  world.dirtyChunks.clear();
+
+  const requests: any[] = [];
+  world.terrainWorker = {
+    postMessage(request: any) {
+      requests.push(request);
+    },
+  };
+  world.requireOffThreadTerrainStreaming = true;
+
+  assert.equal(world.setBlock(1, 200, 1, BlockTypes.COLOR_BLOCK, true, 0x48dbfb), true);
+  assert.equal(requests.length, 0, 'the input handler should only mutate lightweight world data');
+  assert.equal(world.processInteractiveTerrainWork(), true);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].type, 'remesh');
+  assert.equal(requests[0].dataVersion, chunk.dataVersion);
+});
+
+test('continuous edits publish newer completed meshes without waiting for input to stop', () => {
+  const world = new World(new THREE.Scene()) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  const chunk = world.getChunk(0, 0);
+  assert.ok(chunk?.mesh);
+  world.pendingStreamChunks = [];
+  world.dirtyChunks.clear();
+
+  const requests: any[] = [];
+  world.terrainWorker = {
+    postMessage(request: any) {
+      requests.push(request);
+    },
+  };
+  world.requireOffThreadTerrainStreaming = true;
+
+  world.setBlock(1, 200, 1, BlockTypes.COLOR_BLOCK, true, 0x48dbfb);
+  const firstMeshData = world.mesher.buildChunkMeshData(chunk);
+  world.processInteractiveTerrainWork();
+  const firstJob = world.terrainWorkerJob;
+  const firstVersion = firstJob.dataVersion;
+  const meshBeforeWorkerResult = chunk.mesh;
+
+  world.setBlock(2, 200, 1, BlockTypes.COLOR_BLOCK, true, 0x22c55e);
+  assert.ok(chunk.dataVersion > firstVersion);
+  world.terrainWorkerJob = null;
+  world.completedTerrainWorkerJobs.push({
+    job: firstJob,
+    result: {
+      ok: true,
+      type: 'remesh',
+      requestId: firstJob.requestId,
+      cx: 0,
+      cz: 0,
+      dataVersion: firstVersion,
+      mesh: firstMeshData,
+    },
+  });
+
+  assert.equal(world.processInteractiveTerrainWork(), true);
+  assert.notEqual(chunk.mesh, meshBeforeWorkerResult,
+    'the finished first edit should become visible even though a newer edit exists');
+  assert.equal(chunk.publishedDataVersion, firstVersion);
+  assert.equal(world.dirtyChunks.has(chunk), true,
+    'the newer edit must remain queued after the intermediate mesh is published');
+  assert.equal(requests.length, 2, 'the latest chunk state should immediately start another remesh');
+  assert.equal(requests[1].dataVersion, chunk.dataVersion);
+});
+
 test('a dirty micro mesh keeps its already-published collision live', () => {
   const world = new World(new THREE.Scene()) as any;
   world.setRenderDistance(3);

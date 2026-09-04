@@ -1,5 +1,6 @@
 import { decode, encode } from '@msgpack/msgpack';
 import {
+  DEFAULT_PLAYER_SKIN_URL,
   encodePlayerPosition,
   terrainStreamAreaForPosition,
 } from '../../bootstrap/SpaceBootstrap.ts';
@@ -93,16 +94,19 @@ export function parseRealtimePlayers(value: unknown, currentUserId: string): Rem
       || Math.abs(yawQ15) > 32767
       || Math.abs(pitchQ15) > 32767
     ) continue;
+    const configuredSkinUrl = typeof player.skin_url === 'string'
+      && player.skin_url.trim().length > 0
+      && player.skin_url.length <= 4096
+      ? player.skin_url
+      : null;
     players.push({
       user_id: userId,
       username: typeof player.username === 'string' && player.username.trim()
         ? player.username.trim().slice(0, 80)
         : 'Player',
       player_entity_id: playerEntityId,
-      skin_url: typeof player.skin_url === 'string' && player.skin_url.length <= 4096
-        ? player.skin_url
-        : '/skin/default.png',
-      skin_type: player.skin_type === 'slim' ? 'slim' : 'strong',
+      skin_url: configuredSkinUrl || DEFAULT_PLAYER_SKIN_URL,
+      skin_type: configuredSkinUrl && player.skin_type === 'slim' ? 'slim' : 'strong',
       x: xCm / 100,
       y: yCm / 100,
       z: zCm / 100,

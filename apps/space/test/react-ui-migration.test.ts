@@ -78,6 +78,9 @@ test('global settings remains English-only', () => {
   assert.match(settingsSource, /id="setting-shadows-group"/);
   assert.match(settingsSource, /id="setting-minimap-group"/);
   assert.match(settingsSource, /may reduce performance while moving/);
+  assert.match(settingsSource, /Set as My Skin/);
+  assert.match(settingsSource, /href="\/skin\/collection"/);
+  assert.match(settingsSource, /href="\/skin\/generate"/);
   assert.doesNotMatch(settingsSource, /Entity Gravity|setting-gravity-group|setGravity/);
   assert.doesNotMatch(settingsSource, /[\u3400-\u9fff]/);
 });

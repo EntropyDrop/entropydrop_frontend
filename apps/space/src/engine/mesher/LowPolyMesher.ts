@@ -21,6 +21,7 @@ const FACES: readonly FaceDefinition[] = [
 ] as const;
 
 const CUT_EDGE_FLAG = 0x100;
+const VISIBLE_FACE_STRIDE = 7;
 
 export type ChunkMeshData = {
   occupiedMinY: number;
@@ -98,20 +99,10 @@ export class LowPolyMesher {
     // boundary voxel face (up to thousands of times per rebuild).
     const world = chunk.world;
     const neighborChunks = new Map<number, any>();
-    const proceduralNeighborHeights = new Map<number, Int16Array>();
     if (world) {
       const resolve = (faceIndex: number, wx: number, wz: number) => {
         const { cx, cz } = world.worldToChunkCoords(wx, wz);
-        const neighbor = world.getChunk(cx, cz);
-        neighborChunks.set(faceIndex, neighbor);
-        if (neighbor?.hasGenerated || typeof world.terrainGen?.sampleHeight !== 'function') return;
-        const heights = new Int16Array(CHUNK_SIZE_X);
-        for (let offset = 0; offset < heights.length; offset++) {
-          heights[offset] = faceIndex === 2 || faceIndex === 3
-            ? world.terrainGen.sampleHeight(origin.x + offset, wz)
-            : world.terrainGen.sampleHeight(wx, origin.z + offset);
-        }
-        proceduralNeighborHeights.set(faceIndex, heights);
+        neighborChunks.set(faceIndex, world.getChunk(cx, cz));
       };
       resolve(2, origin.x, origin.z - 1);
       resolve(3, origin.x, origin.z + CHUNK_SIZE_Z);
@@ -139,12 +130,12 @@ export class LowPolyMesher {
       if (!world || ny < 0 || ny >= CHUNK_SIZE_Y) return BlockTypes.AIR;
 
       const neighborChunk = neighborChunks.get(faceIndex);
-      if (!neighborChunk?.hasGenerated) {
-        const heights = proceduralNeighborHeights.get(faceIndex);
-        if (!heights) return CUT_EDGE_FLAG;
-        const height = heights[faceIndex === 2 || faceIndex === 3 ? lx : lz];
-        return ny <= height ? BlockTypes.COLOR_BLOCK : BlockTypes.AIR;
-      }
+      // A predicted procedural neighbour is not renderable geometry. Culling
+      // against it leaves a transparent wall at the active streaming edge and
+      // around not-yet-published edited chunks. Keep a temporary opaque cut
+      // face. Meshes that can see a real neighbour still cull shared faces;
+      // isolated worker meshes retain a harmless sealed internal boundary.
+      if (!neighborChunk?.hasGenerated) return CUT_EDGE_FLAG;
       if (faceIndex === 2) return neighborChunk.getLocalBlock(lx, ny, CHUNK_SIZE_Z - 1);
       if (faceIndex === 3) return neighborChunk.getLocalBlock(lx, ny, 0);
       if (faceIndex === 4) return neighborChunk.getLocalBlock(CHUNK_SIZE_X - 1, ny, lz);
@@ -191,10 +182,28 @@ export class LowPolyMesher {
     // implementation walked the full chunk and repeated neighbour sampling a
     // second time after allocating its typed buffers.
     const visibleFaces: number[] = [];
-    visitVisibleFaces((lx, ly, lz, faceIndex, _face, cutEdge, color) => {
-      visibleFaces.push(lx, ly, lz, faceIndex, cutEdge ? 1 : 0, color);
+    const cutFaceRuns = new Map<number, number>();
+    visitVisibleFaces((lx, ly, lz, faceIndex, face, cutEdge, color) => {
+      // Streaming cut faces can span the whole solid depth of a terrain
+      // column. Merge vertically adjacent faces with the same color so fixing
+      // the hole does not add one quad per voxel layer.
+      if (cutEdge && face.face === 'side') {
+        const runKey = (
+          ((faceIndex * CHUNK_SIZE_X + lx) * CHUNK_SIZE_Z + lz) * 0x1000000
+        ) + color;
+        const runOffset = cutFaceRuns.get(runKey);
+        if (
+          runOffset !== undefined
+          && visibleFaces[runOffset + 1] + visibleFaces[runOffset + 6] === ly
+        ) {
+          visibleFaces[runOffset + 6]++;
+          return;
+        }
+        cutFaceRuns.set(runKey, visibleFaces.length);
+      }
+      visibleFaces.push(lx, ly, lz, faceIndex, cutEdge ? 1 : 0, color, 1);
     });
-    const faceCount = visibleFaces.length / 6;
+    const faceCount = visibleFaces.length / VISIBLE_FACE_STRIDE;
     if (faceCount === 0) {
       return {
         occupiedMinY: minOccupiedY,
@@ -227,13 +236,18 @@ export class LowPolyMesher {
     let vertexOffset = 0;
     let attributeOffset = 0;
     let indexOffset = 0;
-    for (let faceOffset = 0; faceOffset < visibleFaces.length; faceOffset += 6) {
+    for (
+      let faceOffset = 0;
+      faceOffset < visibleFaces.length;
+      faceOffset += VISIBLE_FACE_STRIDE
+    ) {
       const lx = visibleFaces[faceOffset];
       const ly = visibleFaces[faceOffset + 1];
       const lz = visibleFaces[faceOffset + 2];
       const face = FACES[visibleFaces[faceOffset + 3]];
       const cutEdge = visibleFaces[faceOffset + 4] === 1;
       const color = visibleFaces[faceOffset + 5];
+      const verticalSpan = visibleFaces[faceOffset + 6];
       this._tempColor.setHex(color);
       const shade = face.face === 'top' ? 1 : face.face === 'bottom' ? 0.6 : cutEdge ? 1 : 0.85;
       const r = this._tempColor.r * shade;
@@ -245,7 +259,7 @@ export class LowPolyMesher {
         positions[attributeOffset] = lx + vertex[0];
         normals[attributeOffset] = face.norm[0] * 127;
         colors[attributeOffset++] = Math.round(r * 255);
-        positions[attributeOffset] = ly + vertex[1];
+        positions[attributeOffset] = ly + vertex[1] * verticalSpan;
         normals[attributeOffset] = face.norm[1] * 127;
         colors[attributeOffset++] = Math.round(g * 255);
         positions[attributeOffset] = lz + vertex[2];

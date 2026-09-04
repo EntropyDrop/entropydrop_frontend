@@ -17,6 +17,8 @@ export class Chunk {
   hasGenerated: boolean;
   /** Changes whenever collision-relevant standard voxel data changes. */
   dataVersion: number;
+  /** Newest data version represented by the currently published render mesh. */
+  publishedDataVersion: number;
   /** Procedural chunks can be regenerated; edited chunks must survive streaming. */
   hasUserEdits: boolean;
   private minOccupiedY: number;
@@ -36,6 +38,7 @@ export class Chunk {
     this.isDirty = true;
     this.hasGenerated = false;
     this.dataVersion = 0;
+    this.publishedDataVersion = -1;
     this.hasUserEdits = false;
     this.minOccupiedY = CHUNK_SIZE_Y;
     this.maxOccupiedY = -1;
@@ -55,6 +58,7 @@ export class Chunk {
     this.isDirty = true;
     this.hasGenerated = false;
     this.dataVersion++;
+    this.publishedDataVersion = -1;
     this.hasUserEdits = false;
     this.minOccupiedY = CHUNK_SIZE_Y;
     this.maxOccupiedY = -1;

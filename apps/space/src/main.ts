@@ -142,6 +142,7 @@ class Game {
       session.mode === 'online' ? session.token : '',
       session.mode === 'online' && session.player.is_admin === true
     );
+    this.uiStore.setSkinWarning(session.entry_warning);
     this.minimap = new Minimap(this.world, this.contraptionManager);
 
     // 2. Player Controller
@@ -554,7 +555,10 @@ class Game {
 
     // 7c. Autopilot Navigation System is updated in controller.updateSimulation()
 
-    // 8. Render 3D Scene
+    // 8. Publish/dispatch direct terrain edits before drawing. This path is
+    // intentionally independent from idle-budgeted background chunk streaming
+    // so walking cannot starve newly placed blocks of visual feedback.
+    this.world.processInteractiveTerrainWork();
     this.sceneRenderer.render();
     this.world.scheduleStreamingWork();
     this.playerPhysics.endRenderInterpolation();
@@ -568,6 +572,14 @@ window.addEventListener('DOMContentLoaded', () => {
     async session => {
       const persistentStorage = await createSpacePersistentStorage();
       const game = new Game(session, persistentStorage);
+      if (session.entry_warning) {
+        requestAnimationFrame(() => {
+          spaceUiStore.showToast(session.entry_warning, {
+            tone: 'warning',
+            durationMs: 8000,
+          });
+        });
+      }
       // Keep the convenient engine handle for local debugging without exposing
       // the authenticated session graph to every production-page script.
       if (import.meta.env.DEV) (window as any).game = game;
