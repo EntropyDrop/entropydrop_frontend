@@ -176,6 +176,25 @@ export function GlobalSettingsModal() {
             <div className="settings-label-group"><span className="settings-label">Third Person Distance</span><span className="settings-desc">Camera offset distance from player</span></div>
             <div className="settings-control-group"><input id="setting-cam-dist-slider" className="settings-slider" type="range" min="2" max="8" step="0.5" value={state.cameraDistance} onChange={event => spaceUiStore.setCameraDistance(Number(event.target.value))} /><span id="setting-cam-dist-val" className="settings-value-badge">{state.cameraDistance.toFixed(1)} m</span></div>
           </div>
+          <div className="settings-row">
+            <div className="settings-label-group"><span className="settings-label">Minimap</span><span className="settings-desc">Continuously updates nearby terrain and entities · may reduce performance while moving</span></div>
+            <div className="settings-segmented-control" id="setting-minimap-group">
+              {([
+                [true, 'Enabled'],
+                [false, 'Disabled']
+              ] as const).map(([value, label]) => (
+                <button
+                  key={String(value)}
+                  tabIndex={-1}
+                  className={`segment-btn ${state.minimapEnabled === value ? 'active' : ''}`}
+                  aria-pressed={state.minimapEnabled === value}
+                  onClick={() => spaceUiStore.setMinimapEnabled(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         <div className="settings-section">
           <div className="settings-section-title">WORLD &amp; ENVIRONMENT</div>

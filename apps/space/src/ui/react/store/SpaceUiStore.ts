@@ -189,6 +189,7 @@ export interface SpaceUiSnapshot {
   cameraDistance: number;
   worldShapeMode: WorldShapeMode;
   renderDistance: number;
+  minimapEnabled: boolean;
   distantSurfaceSettings: DistantSurfaceSettings;
   resolutionScaleMode: ResolutionScaleSetting;
   resolutionScale: number;
@@ -335,6 +336,7 @@ export class SpaceUiStore {
     cameraDistance: 4,
     worldShapeMode: DEFAULT_WORLD_SHAPE_MODE,
     renderDistance: 12,
+    minimapEnabled: false,
     distantSurfaceSettings: { ...DEFAULT_DISTANT_SURFACE_SETTINGS },
     resolutionScaleMode: 'auto',
     resolutionScale: 1,
@@ -520,7 +522,12 @@ export class SpaceUiStore {
   }
 
   setMinimap(minimap: any): void {
-    this.patch({ minimap });
+    let minimapEnabled = false;
+    try {
+      minimapEnabled = localStorage.getItem('space_setting_minimap') === 'true';
+    } catch { }
+    minimapEnabled = minimap?.setEnabled?.(minimapEnabled) ?? minimapEnabled;
+    this.patch({ minimap, minimapEnabled });
   }
 
   setRemotePlayers(players: any[]): void {
@@ -1454,7 +1461,7 @@ export class SpaceUiStore {
   }
 
   syncSettingsUI(): void {
-    const { controller, world, sceneRenderer } = this.snapshot;
+    const { controller, world, sceneRenderer, minimap } = this.snapshot;
     if (!controller) return;
     const isMuted = controller.sound?.getMuted?.() ?? this.snapshot.isMuted;
     const resolution = resolutionSnapshot(sceneRenderer?.getResolutionScaleState?.());
@@ -1467,6 +1474,7 @@ export class SpaceUiStore {
       distantSurfaceSettings: normalizeDistantSurfaceSettings(
         world?.getDistantSurfaceSettings?.() || this.snapshot.distantSurfaceSettings,
       ),
+      minimapEnabled: minimap?.isEnabled?.() ?? this.snapshot.minimapEnabled,
       shadowsEnabled: sceneRenderer?.getShadowsEnabled?.() ?? this.snapshot.shadowsEnabled,
       ...resolution,
       isMuted
@@ -1528,6 +1536,12 @@ export class SpaceUiStore {
     this.snapshot.world?.setRenderDistance?.(value);
     this.patch({ renderDistance: value });
     if (persist) try { localStorage.setItem('space_setting_render_dist', String(value)); } catch { }
+  }
+
+  setMinimapEnabled(enabled: boolean, persist = true): void {
+    const value = this.snapshot.minimap?.setEnabled?.(Boolean(enabled)) ?? Boolean(enabled);
+    this.patch({ minimapEnabled: value });
+    if (persist) try { localStorage.setItem('space_setting_minimap', String(value)); } catch { }
   }
 
   setDistantSurfaceSetting(

@@ -76,6 +76,8 @@ test('global settings remains English-only', () => {
   assert.match(settingsSource, /\['torus', 'Donut Mode'\]/);
   assert.match(settingsSource, />PERFORMANCE</);
   assert.match(settingsSource, /id="setting-shadows-group"/);
+  assert.match(settingsSource, /id="setting-minimap-group"/);
+  assert.match(settingsSource, /may reduce performance while moving/);
   assert.doesNotMatch(settingsSource, /Entity Gravity|setting-gravity-group|setGravity/);
   assert.doesNotMatch(settingsSource, /[\u3400-\u9fff]/);
 });

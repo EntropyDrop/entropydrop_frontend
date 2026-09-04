@@ -64,9 +64,11 @@ export function NavigationPanel() {
 
 export function MinimapCanvas() {
   const minimap = useSpaceUi(state => state.minimap);
+  const enabled = useSpaceUi(state => state.minimapEnabled);
   const attachCanvas = useCallback((canvas: HTMLCanvasElement | null) => {
     minimap?.attachCanvas?.(canvas);
   }, [minimap]);
+  if (!enabled) return null;
   return (
     <div id="minimap-container" className="minimap-container">
       <canvas ref={attachCanvas} className="minimap-canvas" aria-label="World minimap" />

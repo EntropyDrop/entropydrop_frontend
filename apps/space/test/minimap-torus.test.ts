@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Minimap } from '../src/ui/Minimap.ts';
+import { Chunk, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../src/engine/voxel/Chunk.ts';
 import { TORUS_SIZE_X, TORUS_SIZE_Z } from '../src/engine/torus/TorusWorld.ts';
 
 function createMockElement(tag = 'div'): any {
@@ -71,6 +72,116 @@ function makeMockChunk(cx: number, cz: number, blockHeight = 10, color = 0x3c852
     getLocalColor: (lx: number, y: number, lz: number) => color
   };
 }
+
+test('Minimap bounds and caches column scans without changing array-backed samples', () => {
+  const dom = setupMockDOM();
+  let blockProbes = 0;
+  let highestProbedY = -1;
+  let rangeReads = 0;
+  const topAt = (lx: number, lz: number) => (lx * 3 + lz * 5) % 13;
+  const colorAt = (lx: number, lz: number) => 0x110000 | (lx << 8) | lz;
+  const referenceChunk = {
+    dataVersion: 1,
+    getOccupiedYRange: () => ({ min: 0, max: 12 }),
+    getLocalBlock: (lx: number, y: number, lz: number) => {
+      blockProbes++;
+      highestProbedY = Math.max(highestProbedY, y);
+      return y <= topAt(lx, lz) ? 1 : 0;
+    },
+    getLocalColor: (lx: number, _y: number, lz: number) => colorAt(lx, lz),
+  };
+  referenceChunk.getOccupiedYRange = () => {
+    rangeReads++;
+    return { min: 0, max: 12 };
+  };
+
+  const blocks = new Uint8Array(CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z);
+  const colors = new Uint32Array(blocks.length);
+  let expectedProbes = 0;
+  for (let lx = 0; lx < CHUNK_SIZE_X; lx++) {
+    for (let lz = 0; lz < CHUNK_SIZE_Z; lz++) {
+      const topY = topAt(lx, lz);
+      const index = Chunk.getIndex(lx, topY, lz);
+      blocks[index] = 1;
+      colors[index] = colorAt(lx, lz);
+      expectedProbes += 12 - topY + 1;
+    }
+  }
+  const arrayChunk = {
+    dataVersion: 1,
+    blocks,
+    colors,
+    getOccupiedYRange: () => ({ min: 0, max: 12 }),
+    getLocalBlock: () => { throw new Error('array-backed chunks should use direct storage'); },
+    getLocalColor: () => { throw new Error('array-backed chunks should use direct storage'); },
+  };
+  const makeWorld = (chunk: any) => {
+    const chunks = new Map([['0,0', chunk]]);
+    return {
+      chunks,
+      getChunk: (cx: number, cz: number) => chunks.get(`${cx},${cz}`) || null,
+      microVoxels: { cells: new Map() },
+    };
+  };
+
+  const reference = new Minimap(makeWorld(referenceChunk), null);
+  const optimized = new Minimap(makeWorld(arrayChunk), null);
+  reference.recomputeTerrain(0, 0);
+  optimized.recomputeTerrain(0, 0);
+
+  assert.equal(highestProbedY, 12, 'the minimap must not probe known-empty upper layers');
+  assert.equal(blockProbes, expectedProbes);
+  assert.equal(rangeReads, 1, 'occupied bounds should be read once per chunk version');
+  assert.deepEqual(optimized.heights, reference.heights);
+  assert.deepEqual(optimized.colors, reference.colors);
+  assert.deepEqual(optimized.imageData?.data, reference.imageData?.data);
+
+  reference.recomputeTerrain(1, 0);
+  assert.equal(blockProbes, expectedProbes, 'player movement should reuse unchanged chunk surfaces');
+  assert.equal(rangeReads, 1);
+
+  referenceChunk.dataVersion++;
+  reference.recomputeTerrain(2, 0);
+  assert.equal(blockProbes, expectedProbes * 2, 'voxel revisions must invalidate the cached surface');
+  assert.equal(rangeReads, 2);
+  dom.cleanup();
+});
+
+test('Minimap skips standard scans for an empty chunk', () => {
+  const dom = setupMockDOM();
+  let blockProbes = 0;
+  const chunk = {
+    getOccupiedYRange: () => null,
+    getLocalBlock: () => { blockProbes++; return 0; },
+    getLocalColor: () => 0,
+  };
+  const chunks = new Map([['0,0', chunk]]);
+  const minimap = new Minimap({
+    chunks,
+    getChunk: (cx: number, cz: number) => chunks.get(`${cx},${cz}`) || null,
+    microVoxels: { cells: new Map() },
+  }, null);
+
+  minimap.recomputeTerrain(0, 0);
+
+  assert.equal(blockProbes, 0);
+  dom.cleanup();
+});
+
+test('disabled Minimap skips all terrain work', () => {
+  const dom = setupMockDOM();
+  const minimap = new Minimap({
+    get chunks() {
+      throw new Error('disabled minimap should not inspect terrain');
+    },
+  }, null);
+  minimap.attachCanvas(createMockCanvas());
+  minimap.setEnabled(false);
+
+  assert.equal(minimap.isEnabled(), false);
+  assert.doesNotThrow(() => minimap.update({ x: 0, z: 0 }, 0, false, null));
+  dom.cleanup();
+});
 
 test('Minimap seamlessly renders across toroidal boundary at (1, 1, 1)', () => {
   const dom = setupMockDOM();

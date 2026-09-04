@@ -69,6 +69,57 @@ test('shadow preference is applied to the renderer independently of adaptive qua
   assert.equal(store.getSnapshot().shadowsEnabled, false);
 });
 
+test('minimap preference is restored, applied immediately, and persisted', () => {
+  const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, String(value)),
+    },
+  });
+  try {
+    const applied: boolean[] = [];
+    const minimap = {
+      enabled: true,
+      setEnabled(enabled: boolean) {
+        this.enabled = enabled;
+        applied.push(enabled);
+        return enabled;
+      },
+      isEnabled() {
+        return this.enabled;
+      },
+    };
+    const store = new SpaceUiStore();
+
+    assert.equal(store.getSnapshot().minimapEnabled, false, 'minimap should default to off');
+    store.setMinimap(minimap);
+    assert.equal(store.getSnapshot().minimapEnabled, false);
+    assert.deepEqual(applied, [false]);
+
+    store.setMinimapEnabled(true);
+    assert.equal(store.getSnapshot().minimapEnabled, true);
+    assert.equal(values.get('space_setting_minimap'), 'true');
+    assert.deepEqual(applied, [false, true]);
+
+    const restored: boolean[] = [];
+    const restoredStore = new SpaceUiStore();
+    restoredStore.setMinimap({
+      setEnabled(enabled: boolean) {
+        restored.push(enabled);
+        return enabled;
+      },
+    });
+    assert.equal(restoredStore.getSnapshot().minimapEnabled, true);
+    assert.deepEqual(restored, [true]);
+  } finally {
+    if (originalStorage) Object.defineProperty(globalThis, 'localStorage', originalStorage);
+    else delete (globalThis as any).localStorage;
+  }
+});
+
 test('renderer combines the shadow preference with adaptive effects quality', () => {
   const renderer = Object.create(SceneRenderer.prototype) as SceneRenderer;
   const internal = renderer as any;

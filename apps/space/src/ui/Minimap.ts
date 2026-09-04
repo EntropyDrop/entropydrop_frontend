@@ -2,6 +2,12 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../engine/voxel/Chunk.
 import { MICRO_DIVISIONS } from '../engine/voxel/MicroVoxelLayer.ts';
 import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ, wrapChunkX, wrapChunkZ } from '../engine/torus/TorusWorld.ts';
 
+type CachedChunkSurface = {
+  dataVersion: number | null;
+  heights: Int16Array;
+  colors: Uint32Array;
+};
+
 /**
  * Bottom-right minimap rendered on a top-down 2D canvas with seamless Torus wrap.
  * - Terrain: scans the highest standard or microblock in each loaded chunk column
@@ -36,6 +42,8 @@ export class Minimap {
   imageData: ImageData | null = null;
   remotePlayers: any[];
   dpr = 1;
+  private enabled = true;
+  private chunkSurfaceCache = new WeakMap<object, CachedChunkSurface>();
 
   private readonly resizeHandler = () => this.applySize();
 
@@ -84,6 +92,15 @@ export class Minimap {
     this.remotePlayers = Array.isArray(players) ? players : [];
   }
 
+  setEnabled(enabled: boolean): boolean {
+    this.enabled = Boolean(enabled);
+    return this.enabled;
+  }
+
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
   /**
    * Called every frame.
    * @param playerPos Player world coordinates {x, z}.
@@ -92,7 +109,7 @@ export class Minimap {
    * @param drivenContraption The driven entity, or null.
    */
   update(playerPos, yaw, isDriving, drivenContraption) {
-    if (!this.canvas || !this.ctx) return;
+    if (!this.enabled || !this.canvas || !this.ctx) return;
     const px = playerPos.x;
     const pz = playerPos.z;
     const now = performance.now();
@@ -203,13 +220,52 @@ export class Minimap {
     ctx.lineWidth = 1.2;
     ctx.strokeStyle = 'rgba(10, 12, 18, 0.85)';
     ctx.stroke();
+  }
 
-    // North marker.
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-    ctx.font = '9px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText('N', size / 2, 5);
+  /** Cache the standard-block top sample until that chunk's voxel data changes. */
+  private getChunkSurface(chunk: any): CachedChunkSurface {
+    const dataVersion = Number.isFinite(chunk.dataVersion) ? Number(chunk.dataVersion) : null;
+    const cached = dataVersion === null ? null : this.chunkSurfaceCache.get(chunk);
+    if (cached?.dataVersion === dataVersion) return cached;
+
+    const cellCount = CHUNK_SIZE_X * CHUNK_SIZE_Z;
+    const heights = new Int16Array(cellCount);
+    const colors = new Uint32Array(cellCount);
+    heights.fill(-1);
+
+    // Generated terrain only occupies a small vertical slice (normally
+    // around y=10..20). Starting every column at y=255 used to turn one
+    // minimap refresh into roughly ten million empty-block probes.
+    const hasOccupiedRange = typeof chunk.getOccupiedYRange === 'function';
+    const occupiedRange = hasOccupiedRange ? chunk.getOccupiedYRange() : null;
+    const scanTopY = hasOccupiedRange && !occupiedRange
+      ? -1
+      : Math.min(CHUNK_SIZE_Y - 1, occupiedRange?.max ?? CHUNK_SIZE_Y - 1);
+    const blocks = chunk.blocks instanceof Uint8Array ? chunk.blocks : null;
+    const terrainColors = chunk.colors instanceof Uint32Array ? chunk.colors : null;
+
+    if (scanTopY >= 0) {
+      for (let lx = 0; lx < CHUNK_SIZE_X; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE_Z; lz++) {
+          const surfaceIndex = lz * CHUNK_SIZE_X + lx;
+          for (let y = scanTopY; y >= 0; y--) {
+            const blockIndex = (y * CHUNK_SIZE_Z + lz) * CHUNK_SIZE_X + lx;
+            const block = blocks ? blocks[blockIndex] : chunk.getLocalBlock(lx, y, lz);
+            if (block === 0) continue;
+            heights[surfaceIndex] = y;
+            colors[surfaceIndex] = terrainColors
+              ? terrainColors[blockIndex]
+              : chunk.getLocalColor(lx, y, lz);
+            break;
+          }
+        }
+      }
+    }
+
+    const surface = { dataVersion, heights, colors };
+    // Duck-typed/legacy chunks without a revision cannot be safely cached.
+    if (dataVersion !== null) this.chunkSurfaceCache.set(chunk, surface);
+    return surface;
   }
 
   /** Rebuild the terrain layer on an offscreen canvas with toroidal wrap around integer world coordinates. */
@@ -239,6 +295,7 @@ export class Minimap {
         const cz = wrapChunkZ(centerChunkZ + dcz);
         const chunk = world.getChunk ? world.getChunk(cx, cz) : world.chunks.get(`${cx},${cz}`);
         if (!chunk) continue;
+        const surface = this.getChunkSurface(chunk);
 
         for (let lx = 0; lx < CHUNK_SIZE_X; lx++) {
           const cellWx = cx * CHUNK_SIZE_X + lx;
@@ -259,18 +316,11 @@ export class Minimap {
             if (gz < 0 || gz >= C) continue;
 
             const i = gz * C + gx;
-            let topY = -1;
-            let color = 0;
-            for (let y = CHUNK_SIZE_Y - 1; y >= 0; y--) {
-              if (chunk.getLocalBlock(lx, y, lz) !== 0) {
-                topY = y;
-                color = chunk.getLocalColor(lx, y, lz);
-                break;
-              }
-            }
+            const surfaceIndex = lz * CHUNK_SIZE_X + lx;
+            const topY = surface.heights[surfaceIndex];
             if (topY >= 0) {
               this.heights[i] = topY + 1; // 0 means no block.
-              this.colors[i] = color;
+              this.colors[i] = surface.colors[surfaceIndex];
             }
           }
         }
