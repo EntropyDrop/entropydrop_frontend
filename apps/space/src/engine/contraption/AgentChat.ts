@@ -1,5 +1,5 @@
 import { compileBehaviorPrompt } from './BehaviorAgent.ts';
-import { renderAgentApiReference } from './ScriptApiContract.ts';
+import { renderAgentApiReference } from '@entropydrop/space-engine/contraption/ScriptApiContract.ts';
 import {
   DEFAULT_AGENT_CONTEXT_K_TOKENS,
   DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS,

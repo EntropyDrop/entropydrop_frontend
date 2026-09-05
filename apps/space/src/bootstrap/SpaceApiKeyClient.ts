@@ -3,7 +3,7 @@ import { readJsonResponse } from './NetworkSafety.ts';
 
 const MAX_API_KEY_RESPONSE_BYTES = 256 * 1024;
 
-export type SpaceApiKeyScope = 'space:entity:create' | 'space:entity:run';
+export type SpaceApiKeyScope = 'space:entity:create' | 'space:entity:run' | 'space:blockset:build';
 
 export interface SpaceApiKeyRecord {
   id: string;
@@ -42,6 +42,7 @@ function parseApiKey(value: any): SpaceApiKeyRecord {
     || value.scopes.some((scope: unknown) => ![
       'space:entity:create',
       'space:entity:run',
+      'space:blockset:build',
     ].includes(String(scope)))
     || !value.scopes.includes('space:entity:create')
     || typeof value?.created_at !== 'string'
@@ -69,7 +70,7 @@ export class SpaceApiKeyClient {
   }
 
   private async request(path: string, options: RequestInit = {}): Promise<any> {
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+    const response = await this.fetchImpl(new URL(`${this.baseUrl}${path}`).href, {
       ...options,
       headers: {
         Authorization: `Bearer ${this.token}`,
@@ -114,7 +115,7 @@ export class SpaceApiKeyClient {
     return body.items.map(parseApiKey);
   }
 
-  async create(name: string, allowRun: boolean): Promise<CreatedSpaceApiKey> {
+  async create(name: string, allowRun: boolean, allowBuild = false): Promise<CreatedSpaceApiKey> {
     const body = await this.request('', {
       method: 'POST',
       body: JSON.stringify({
@@ -122,6 +123,7 @@ export class SpaceApiKeyClient {
         scopes: [
           'space:entity:create',
           ...(allowRun ? ['space:entity:run'] : []),
+          ...(allowBuild ? ['space:blockset:build'] : []),
         ],
       }),
     });
@@ -137,6 +139,27 @@ export class SpaceApiKeyClient {
     return { ...record, api_key: body.api_key };
   }
 
+  async usage(worldId: string): Promise<SpaceApiUsage> {
+    const body = await this.request(`/../worlds/${encodeURIComponent(worldId)}/api-usage`);
+    const nonnegative = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;
+    const allowance = (value: any) => value && ['used', 'limit', 'remaining'].every(key => nonnegative(value[key]));
+    if (body?.world_id !== worldId || !nonnegative(body?.credits)
+      || !Number.isFinite(Date.parse(body?.updated_at))
+      || !['entity_create_credits', 'blockset_build_credits'].every(key => nonnegative(body?.pricing?.[key]))
+      || !['api_keys', 'entities', 'entity_storage_bytes', 'running_entities'].every(key => allowance(body?.quotas?.[key]))
+      || !['hour', 'day'].every(key => allowance(body?.quotas?.terrain?.[key]) && Number.isFinite(Date.parse(body.quotas.terrain[key].reset_at)))
+      || !['blockset_blocks_per_build', 'terrain_chunks_per_build', 'terrain_zones_per_build', 'build_requests_per_minute', 'build_requests_per_hour'].every(key => nonnegative(body?.limits?.[key]))
+      || typeof body?.admin_quota_exemptions !== 'boolean'
+      || (body?.features?.entity_hosting === true && (
+        !['hosting_credits_per_hour', 'hosting_max_budget_credits'].every(key => nonnegative(body?.pricing?.[key]))
+        || !allowance(body?.quotas?.hosted_entities_world)
+        || !['hosted_blocks_per_entity', 'hosted_components_per_entity'].every(key => nonnegative(body?.limits?.[key]))
+      ))) {
+      throw new SpaceApiKeyError(0, 'SPACE_API_USAGE_INVALID_RESPONSE', 'The Space API allowance response is invalid.', body);
+    }
+    return body;
+  }
+
   async revoke(apiKeyId: string): Promise<void> {
     const body = await this.request(`/${encodeURIComponent(apiKeyId)}`, { method: 'DELETE' });
     if (body?.revoked !== true || body?.api_key_id !== apiKeyId) {
@@ -148,4 +171,43 @@ export class SpaceApiKeyClient {
       );
     }
   }
+}
+
+
+export interface ApiAllowance { used: number; limit: number; remaining: number }
+export interface SpaceApiUsage {
+  world_id: string;
+  updated_at: string;
+  features?: { entity_hosting: boolean };
+  credits: number;
+  pricing: {
+    entity_create_credits: number;
+    blockset_build_credits: number;
+    hosting_credits_per_hour?: number;
+    hosting_billing?: string;
+    hosting_max_budget_credits?: number;
+  };
+  quotas: {
+    api_keys: ApiAllowance;
+    entities: ApiAllowance;
+    entity_storage_bytes: ApiAllowance;
+    running_entities: ApiAllowance;
+    hosted_entities_world?: ApiAllowance;
+    terrain: { hour: ApiAllowance & { reset_at: string }; day: ApiAllowance & { reset_at: string } };
+  };
+  limits: {
+    blockset_blocks_per_build: number;
+    blockset_definition_bytes: number;
+    build_requests_per_minute: number;
+    build_requests_per_hour: number;
+    entity_create_requests_per_minute: number;
+    entity_create_requests_per_hour: number;
+    terrain_submitted_per_10_seconds: number;
+    terrain_chunks_per_build: number;
+    terrain_zones_per_build: number;
+    build_retry_days: number;
+    hosted_blocks_per_entity?: number;
+    hosted_components_per_entity?: number;
+  };
+  admin_quota_exemptions: boolean;
 }

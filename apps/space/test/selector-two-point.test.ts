@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { Contraption, ContraptionMode } from '../src/engine/contraption/Contraption.ts';
-import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import { Contraption, ContraptionMode } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 
 /**
  * Two-point selector boxes, entity-subtree selection, and child-component range selection.

@@ -1,5 +1,5 @@
-import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../engine/torus/TorusWorld.ts';
-import type { PlayerPhysics } from '../engine/physics/PlayerPhysics.ts';
+import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '@entropydrop/space-engine/torus/TorusWorld.ts';
+import type { PlayerPhysics } from '@entropydrop/space-engine/physics/PlayerPhysics.ts';
 import type { PlayerController } from '../engine/controls/PlayerController.ts';
 
 export interface NavigationTarget {

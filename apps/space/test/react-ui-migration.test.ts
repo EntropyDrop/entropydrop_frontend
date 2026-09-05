@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { compareComponentIds } from '../src/engine/contraption/Contraption.ts';
+import { compareComponentIds } from '@entropydrop/space-engine/contraption/Contraption.ts';
 
 const COMPONENT_FILES = [
   '../src/ui/react/SpaceRoot.tsx',
@@ -81,6 +81,11 @@ test('global settings remains English-only', () => {
   assert.match(settingsSource, />PERFORMANCE</);
   assert.match(settingsSource, /id="setting-shadows-group"/);
   assert.match(settingsSource, /id="setting-minimap-group"/);
+  assert.match(settingsSource, /id="setting-music-group"/);
+  assert.match(settingsSource, /id="setting-effects-group"/);
+  assert.match(settingsSource, />Background Music</);
+  assert.match(settingsSource, />Sound Effects</);
+  assert.doesNotMatch(settingsSource, /setting-mute-group|>Mute Audio</);
   assert.match(settingsSource, /may reduce performance while moving/);
   assert.match(settingsSource, /Set as My Skin/);
   assert.match(settingsSource, /href="\/skin\/collection"/);

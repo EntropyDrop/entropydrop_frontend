@@ -17,7 +17,7 @@ import {
   type VoxelTriangle
 } from '../src/engine/voxel/ModelVoxelizer.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import { extractModelArchive } from '../src/engine/voxel/ModelImportArchive.ts';
 
 function makeController(overrides: any = {}) {

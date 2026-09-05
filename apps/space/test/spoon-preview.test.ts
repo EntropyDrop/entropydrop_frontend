@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
-import { Contraption } from '../src/engine/contraption/Contraption.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 
 /**
  * Spoon-focus 5x5x5 preview tests for updateMicroCarvePreview coordinate conversion.

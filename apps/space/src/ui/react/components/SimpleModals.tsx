@@ -1,10 +1,12 @@
 import React from 'react';
-import type { SpaceApiKeyRecord } from '../../../bootstrap/SpaceApiKeyClient.ts';
+import { SPACE_HOSTING_UI_ENABLED } from '../../../bootstrap/SpaceFeatures.ts';
+import { CharacterSkinPreview } from './CharacterSkinPreview.tsx';
+import type { SpaceApiKeyRecord, SpaceApiUsage } from '../../../bootstrap/SpaceApiKeyClient.ts';
 import {
   DISTANT_SURFACE_SETTING_LIMITS,
   type DistantSurfaceDistanceSettingKey,
   type DistantSurfaceEnabledSettingKey,
-} from '../../../engine/render/DistantSurfaceLayer.ts';
+} from '@entropydrop/space-engine/render/DistantSurfaceLayer.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
 
@@ -35,6 +37,11 @@ function SpaceApiKeysSettings() {
   const client = spaceUiStore.getApiKeyClient();
   const [keys, setKeys] = React.useState<SpaceApiKeyRecord[]>([]);
   const [name, setName] = React.useState('My external agent');
+  const worldId = useSpaceUi(state => state.apiWorldId);
+  const [usage, setUsage] = React.useState<SpaceApiUsage | null>(null);
+  const [usageError, setUsageError] = React.useState('');
+  const hostingAvailable = SPACE_HOSTING_UI_ENABLED && usage?.features?.entity_hosting === true;
+  const [allowBuild, setAllowBuild] = React.useState(false);
   const [allowRun, setAllowRun] = React.useState(false);
   const [secret, setSecret] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -54,16 +61,37 @@ function SpaceApiKeysSettings() {
     void load();
   }, [load]);
 
+  const loadUsage = React.useCallback(async () => {
+    if (!client || !worldId) return;
+    try {
+      setUsage(await client.usage(worldId));
+      setUsageError('');
+    } catch (error: any) {
+      setUsageError(error?.message || 'Could not load API allowances.');
+    }
+  }, [client, worldId]);
+
+  React.useEffect(() => {
+    let active = true;
+    setUsage(null);
+    void loadUsage();
+    const refresh = () => { if (active && document.visibilityState === 'visible') void loadUsage(); };
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener('focus', refresh);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [loadUsage]);
+
   const create = async () => {
     if (!client || !name.trim() || busy) return;
     setBusy(true);
     setMessage('');
     try {
-      const created = await client.create(name.trim(), allowRun);
+      const created = await client.create(name.trim(), allowRun, allowBuild);
       setSecret(created.api_key);
       setName('My external agent');
       setAllowRun(false);
-      await load();
+      setAllowBuild(false);
+      await Promise.all([load(), loadUsage()]);
     } catch (error: any) {
       setMessage(error?.message || 'Could not create API key.');
     } finally {
@@ -78,7 +106,7 @@ function SpaceApiKeysSettings() {
     setMessage('');
     try {
       await client.revoke(apiKey.id);
-      await load();
+      await Promise.all([load(), loadUsage()]);
     } catch (error: any) {
       setMessage(error?.message || 'Could not revoke API key.');
     } finally {
@@ -92,6 +120,33 @@ function SpaceApiKeysSettings() {
 
   return (
     <div className="settings-api-keys">
+      {usage ? <>
+        <div className="settings-api-pricing">
+          <div><strong>{usage.credits.toLocaleString()}</strong><span>Credit balance</span></div>
+          {hostingAvailable ? <div><strong>{usage.pricing.hosting_credits_per_hour} credit / hour</strong><span>Hosted entity · each</span></div> : null}
+          <div><strong>{usage.pricing.entity_create_credits === 0 && usage.pricing.blockset_build_credits === 0 ? 'Free' : `${usage.pricing.entity_create_credits} / ${usage.pricing.blockset_build_credits} credits`}</strong><span>Create entity / build blockset</span></div>
+        </div>
+        {hostingAvailable ? <p className="settings-desc">Hosting buys one hour when execution starts, then uses prepaid simulation time. Pauses and downtime preserve unused time. A spending budget is required (up to {usage.pricing.hosting_max_budget_credits} credits); prepaid time is used first, and hosting pauses if the next hour cannot be funded.</p> : null}
+        <dl className="settings-api-allowances">
+          {([
+            ['API keys · account', usage.quotas.api_keys],
+            ['Entities · this world', usage.quotas.entities],
+            ['Running entities · you', usage.quotas.running_entities],
+            ...(hostingAvailable ? [['Hosted entities · entire world', usage.quotas.hosted_entities_world] as const] : []),
+            ['Terrain changes · this UTC hour', usage.quotas.terrain.hour],
+            ['Terrain changes · today (UTC)', usage.quotas.terrain.day],
+          ] as const).map(([label, quota]) => <div key={label}>
+            <dt>{label}</dt><dd><strong>{quota.remaining.toLocaleString()} remaining</strong><span>{quota.used.toLocaleString()} / {quota.limit.toLocaleString()} used</span></dd>
+          </div>)}
+          <div><dt>Entity storage · this world</dt><dd>{(usage.quotas.entity_storage_bytes.used / 1048576).toFixed(1)} / {(usage.quotas.entity_storage_bytes.limit / 1048576).toFixed(0)} MiB</dd></div>
+        </dl>
+        <div className="settings-desc">Terrain allowance is shared by manual edits and API builds{hostingAvailable ? ', including hosted scripts' : ''}. Daily reset: {new Date(usage.quotas.terrain.day.reset_at).toLocaleString()}.</div>
+        <div className="settings-desc">Build: up to {usage.limits.blockset_blocks_per_build.toLocaleString()} voxels, {usage.limits.terrain_chunks_per_build} chunks and {usage.limits.terrain_zones_per_build} zones per request. Build / create endpoints: {usage.limits.build_requests_per_minute} requests/minute, {usage.limits.build_requests_per_hour}/hour each.{hostingAvailable ? ` Hosting: ${usage.limits.hosted_blocks_per_entity} voxels and ${usage.limits.hosted_components_per_entity} components per entity.` : ''}</div>
+        {usage.admin_quota_exemptions ? <div className="settings-desc">Administrator exemptions apply to terrain, entity storage, and running-entity quotas. Other limits still apply.</div> : null}
+        <div className="settings-api-refresh"><span className="settings-desc">Updated {new Date(usage.updated_at).toLocaleTimeString()}</span><button className="small-btn" onClick={() => void loadUsage()}>Refresh allowance</button></div>
+      </> : <div className="settings-api-empty">{worldId ? 'Loading pricing and allowances…' : 'Enter an online world to view pricing and allowances.'}</div>}
+      {usageError ? <div className="settings-api-message" role="status">{usageError} <button className="small-btn" onClick={() => void loadUsage()}>Retry</button></div> : null}
+      <div className="settings-section-title">API KEYS</div>
       <div className="settings-api-create">
         <input
           className="settings-api-name"
@@ -102,8 +157,12 @@ function SpaceApiKeysSettings() {
           placeholder="Key name"
         />
         <label className="settings-api-scope">
+          <input type="checkbox" checked={allowBuild} onChange={event => setAllowBuild(event.target.checked)} />
+          Allow building blocksets
+        </label>
+        <label className="settings-api-scope">
           <input type="checkbox" checked={allowRun} onChange={event => setAllowRun(event.target.checked)} />
-          Allow created entities to run
+          {hostingAvailable ? 'Allow entity execution and paid hosting' : 'Allow created entities to run'}
         </label>
         <button className="small-btn primary" disabled={busy || !name.trim()} onClick={() => void create()}>
           {busy ? 'Working…' : 'Create key'}
@@ -135,7 +194,7 @@ function SpaceApiKeysSettings() {
               <div className="settings-api-key-name">{apiKey.name}</div>
               <div className="settings-api-key-meta">
                 <code>{apiKey.key_prefix}…</code>
-                <span>{apiKey.scopes.includes('space:entity:run') ? 'create + run' : 'create only'}</span>
+                <span>{['create', ...(apiKey.scopes.includes('space:blockset:build') ? ['build'] : []), ...(apiKey.scopes.includes('space:entity:run') ? [hostingAvailable ? 'run + hosting' : 'run'] : [])].join(' · ')}</span>
                 <span>Last used: {apiKey.last_used_at ? new Date(apiKey.last_used_at).toLocaleString() : 'never'}</span>
               </div>
             </div>
@@ -149,20 +208,46 @@ function SpaceApiKeysSettings() {
 
 export function GlobalSettingsModal() {
   const state = useSpaceUi(snapshot => snapshot);
+  const [tab, setTab] = React.useState<'character' | 'graphics' | 'sound' | 'api'>('character');
   if (state.activeModal !== 'settings') return null;
   const distantLodDisabled = state.worldShapeMode === 'earth';
   return (
     <ModalBackdrop id="global-settings-modal" onClose={() => spaceUiStore.toggleGlobalSettingsModal(false)}>
       <div className="modal-content settings-modal-content">
         <div className="modal-header"><h2>Global Settings</h2><button id="close-global-settings-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close settings (ESC)" onClick={() => spaceUiStore.toggleGlobalSettingsModal(false)}>✕</button></div>
-        <div className="modal-sub">Configure camera, perspective, and world preferences</div>
-        {state.skinWarning ? (
+        <div className="modal-sub">Your character, world preferences, and external API</div>
+        <div className="settings-tabs" role="tablist" aria-label="Settings categories">
+          {(['character', 'graphics', 'sound', 'api'] as const).map((value, index, tabs) => <button
+            key={value} id={`settings-tab-${value}`} role="tab" aria-selected={tab === value}
+            aria-controls={`settings-panel-${value}`} tabIndex={tab === value ? 0 : -1}
+            className={`settings-tab ${tab === value ? 'active' : ''}`} onClick={() => setTab(value)}
+            onKeyDown={event => {
+              const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+                : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+                : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null;
+              if (next === null) return;
+              event.preventDefault();
+              setTab(tabs[next]);
+              (event.currentTarget.parentElement?.children[next] as HTMLElement | undefined)?.focus();
+            }}
+          >{{ character: 'Character', graphics: 'Graphics', sound: 'Sound', api: 'API' }[value]}</button>)}
+        </div>
+        <div className="settings-tab-panel" role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`} tabIndex={0}>
+        {tab === 'character' ? <>
+        {state.currentSkin ? <section className="settings-section settings-character-card">
+          <div className="settings-section-title">CURRENT SKIN</div>
+          <CharacterSkinPreview url={state.currentSkin.url} model={state.currentSkin.model} />
+          <div className="settings-label">{state.currentSkin.model === 'slim' ? 'Slim' : 'Strong'} character</div>
+          <div className="settings-desc">This is the skin currently in use. Select a skin in Collection, choose Set as My Skin, then reload Space.</div>
+          <div className="settings-skin-actions"><a className="small-btn primary settings-skin-link" href="/skin/collection" target="_blank" rel="noopener noreferrer">Change Skin</a></div>
+        </section> : null}
+        {state.skinWarning || !state.currentSkin ? (
           <section className="settings-skin-warning" aria-labelledby="settings-skin-warning-title">
             <div className="settings-skin-warning-heading">
               <span className="settings-skin-warning-icon" aria-hidden="true">!</span>
               <div>
                 <div id="settings-skin-warning-title" className="settings-skin-warning-title">Set up your character skin</div>
-                <div className="settings-skin-warning-message">{state.skinWarning}</div>
+                <div className="settings-skin-warning-message">{state.skinWarning || 'No character skin is configured, so the default skin is in use.'}</div>
               </div>
             </div>
             <ol className="settings-skin-steps">
@@ -181,6 +266,8 @@ export function GlobalSettingsModal() {
             </div>
           </section>
         ) : null}
+        </> : null}
+        {tab === 'graphics' ? <>
         <div className="settings-section">
           <div className="settings-section-title">CAMERA &amp; VIEW</div>
           <div className="settings-row">
@@ -411,20 +498,39 @@ export function GlobalSettingsModal() {
             </button>
           </div>
         </div>
-        <div className="settings-section">
+        </> : null}
+        {tab === 'sound' ? <div className="settings-section">
           <div className="settings-section-title">AUDIO &amp; SOUND</div>
           <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">Mute Audio</span><span className="settings-desc">Disable background music, procedural sound effects, and mechanical audio</span></div>
-            <div className="settings-segmented-control" id="setting-mute-group">
+            <div className="settings-label-group"><span className="settings-label">Background Music</span><span className="settings-desc">Play the Space soundtrack; disabled by default</span></div>
+            <div className="settings-segmented-control" id="setting-music-group">
               {([
-                [false, 'Sound ON'],
-                [true, 'Muted']
+                [false, 'Off'],
+                [true, 'On']
               ] as const).map(([value, label]) => (
                 <button
                   key={String(value)}
                   tabIndex={-1}
-                  className={`segment-btn ${state.isMuted === value ? 'active' : ''}`}
-                  onClick={() => spaceUiStore.setMuted(value)}
+                  className={`segment-btn ${state.musicEnabled === value ? 'active' : ''}`}
+                  onClick={() => spaceUiStore.setMusicEnabled(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-label-group"><span className="settings-label">Sound Effects</span><span className="settings-desc">Block, tool, mechanical, and physics sounds</span></div>
+            <div className="settings-segmented-control" id="setting-effects-group">
+              {([
+                [true, 'On'],
+                [false, 'Off']
+              ] as const).map(([value, label]) => (
+                <button
+                  key={String(value)}
+                  tabIndex={-1}
+                  className={`segment-btn ${state.effectsEnabled === value ? 'active' : ''}`}
+                  onClick={() => spaceUiStore.setEffectsEnabled(value)}
                 >
                   {label}
                 </button>
@@ -432,10 +538,12 @@ export function GlobalSettingsModal() {
             </div>
           </div>
         </div>
-        <div className="settings-section">
+        : null}
+        {tab === 'api' ? <div className="settings-section">
           <div className="settings-section-title">EXTERNAL AGENT API</div>
-          <div className="settings-desc">Long-lived account keys can create validated entities in any Space world you can access. Keep them secret and revoke unused keys.</div>
+          <div className="settings-desc">Account keys can create entities and build blocksets at specified coordinates in worlds you can access.{SPACE_HOSTING_UI_ENABLED ? ' Hosted entity execution is also available.' : ''} Enable only the permissions your agent needs. Keep them secret and revoke unused keys.</div>
           <SpaceApiKeysSettings />
+        </div> : null}
         </div>
       </div>
     </ModalBackdrop>

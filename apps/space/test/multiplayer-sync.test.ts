@@ -8,9 +8,9 @@ import {
   resolveWebSocketUrl,
 } from '../src/engine/network/MultiplayerSync.ts';
 import { DEFAULT_PLAYER_SKIN_URL } from '../src/bootstrap/SpaceBootstrap.ts';
-import { World } from '../src/engine/voxel/World.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
-import { Chunk } from '../src/engine/voxel/Chunk.ts';
+import { World } from '@entropydrop/space-engine/voxel/World.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { Chunk } from '@entropydrop/space-engine/voxel/Chunk.ts';
 
 test('resolveWebSocketUrl follows the API origin for relative realtime URLs', () => {
   assert.equal(

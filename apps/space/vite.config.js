@@ -1,8 +1,21 @@
-import { defineConfig } from 'vite';
+import { defineConfig, searchForWorkspaceRoot } from 'vite';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   base: '/space/app/',
   envDir: '../..',
+  resolve: {
+    // The linked engine has its own test dependencies; the browser uses one Three instance.
+    dedupe: ['three'],
+  },
+  server: {
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        fileURLToPath(new URL('../../../entropydrop_space_engine', import.meta.url)),
+      ],
+    },
+  },
   build: {
     // Three's minified ESM core is about 600 kB by itself. Application chunks
     // remain below this vendor-aware ceiling and are split by change cadence.
@@ -26,7 +39,9 @@ export default defineConfig({
           if (id.endsWith('/engine/contraption/AgentChat.ts')
             || id.endsWith('/engine/contraption/BehaviorAgent.ts')) return 'agent';
           if (id.endsWith('/engine/contraption/Blueprints.ts')) return 'blueprints';
-          if (id.includes('/apps/space/src/engine/scripting/')) return 'script-runtime';
+          if (id.includes('/entropydrop_space_engine/src/scripting/')) return 'script-runtime';
+          if (/\/entropydrop_space_engine\/src\/(physics|contraption|simulation|actions)\//.test(id)) return 'simulation';
+          if (/\/entropydrop_space_engine\/src\/(voxel|torus|worldgen|mesher|render)\//.test(id)) return 'world-rendering';
           if (id.includes('/apps/space/src/engine/physics/')
             || id.includes('/apps/space/src/engine/contraption/')
             || id.includes('/apps/space/src/engine/simulation/')

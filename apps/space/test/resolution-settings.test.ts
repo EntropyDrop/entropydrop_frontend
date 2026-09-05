@@ -4,7 +4,7 @@ import { SpaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
 import {
   DEFAULT_DISTANT_SURFACE_SETTINGS,
   normalizeDistantSurfaceSettings,
-} from '../src/engine/render/DistantSurfaceLayer.ts';
+} from '@entropydrop/space-engine/render/DistantSurfaceLayer.ts';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
 
 test('resolution setting is applied to the renderer and follows automatic updates', () => {

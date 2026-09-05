@@ -1,3 +1,6 @@
+import type { SurfaceZoneSnapshot } from '@entropydrop/space-engine/voxel/SurfaceZoneSnapshot.ts';
+export type { SurfaceZoneSnapshot } from '@entropydrop/space-engine/voxel/SurfaceZoneSnapshot.ts';
+
 import {
   readJsonResponse,
   readResponseBytes,
@@ -15,18 +18,6 @@ const MAX_SURFACE_MANIFEST_BYTES = 256 * 1024;
 const MAX_SURFACE_ZONES = 128;
 const SURFACE_DOWNLOAD_CONCURRENCY = 6;
 const SURFACE_MANIFEST_POLL_MS = 2_500;
-
-export interface SurfaceZoneSnapshot {
-  zoneX: number;
-  zoneZ: number;
-  seed: number;
-  terrainGeneratorVersion: number;
-  sourceTerrainRevision: number;
-  zoneSizeChunks: number;
-  samplesPerChunkAxis: number;
-  heightsMicro: Uint16Array;
-  colors: Uint8Array;
-}
 
 interface SurfaceZoneManifestEntry {
   zone_x: number;

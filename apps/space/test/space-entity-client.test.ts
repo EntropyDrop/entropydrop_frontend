@@ -17,7 +17,7 @@ function entity(overrides: Record<string, unknown> = {}) {
     world_id: 'world-1',
     owner_user_id: 'owner-1',
     name: 'Walker',
-    schema_version: 4,
+    schema_version: 5,
     definition_digest: definitionDigest,
     definition_size_bytes: definition.byteLength,
     definition_url: '/ignored/untrusted/path',
@@ -148,4 +148,15 @@ test('SpaceEntityClient rejects a definition whose exact-byte digest does not ma
       && error.code === 'ENTITY_DEFINITION_DIGEST_MISMATCH'
     ),
   );
+});
+
+test('disabled hosting methods never issue a network request', async () => {
+  let requests = 0;
+  const client = new SpaceEntityClient('https://api.example.test', 'token', 'world-1', (async () => {
+    requests++;
+    return Response.json({});
+  }) as typeof fetch);
+  await assert.rejects(client.setHosting('entity-1', true), { code: 'HOSTING_DISABLED' });
+  await assert.rejects(client.getHosting('entity-1'), { code: 'HOSTING_DISABLED' });
+  assert.equal(requests, 0);
 });

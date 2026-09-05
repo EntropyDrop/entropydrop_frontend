@@ -1,21 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { Contraption } from '../src/engine/contraption/Contraption.ts';
-import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import {
   PlayerController,
   SpecialTool
 } from '../src/engine/controls/PlayerController.ts';
-import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
+import { ContraptionPhysics } from '@entropydrop/space-engine/physics/ContraptionPhysics.ts';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import {
   bendPoint,
   unbendDirection,
   TORUS_SPAWN_X,
   TORUS_SPAWN_Z
-} from '../src/engine/torus/TorusWorld.ts';
+} from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
 /**
  * Selector copies entity/component selections; Hammer builds inventory items;

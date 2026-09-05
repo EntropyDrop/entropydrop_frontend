@@ -57,8 +57,8 @@ class EnumerableMemoryStorage {
 }
 
 test('large game payloads are selected for IndexedDB while synchronous preferences stay local', () => {
-  assert.equal(isLargeSpaceStorageKey('space.backpack.v5.pb'), true);
-  assert.equal(isLargeSpaceStorageKey('space.backpack.v4.pb'), false);
+  assert.equal(isLargeSpaceStorageKey('space.backpack.v6.pb'), true);
+  assert.equal(isLargeSpaceStorageKey('space.backpack.v5.pb'), false);
   assert.equal(isLargeSpaceStorageKey('space.backpack.v3.pb'), false);
   assert.equal(isLargeSpaceStorageKey('space.backpack.v2'), false);
   assert.equal(isLargeSpaceStorageKey('space.world-edits.v2.world-a'), true);
@@ -75,19 +75,19 @@ test('IndexedDB hydration migrates legacy large payloads and preserves fallback-
   legacy.setItem('space_setting_fov', '80');
   legacy.setItem('space.world-edits.v2.world-a', 'legacy-terrain');
   legacy.setItem('entropydrop_space_entities.world-a', 'legacy-entities');
-  legacy.setItem('space.backpack.v5.pb', 'fallback-session-backpack');
-  const backend = new MemoryBackend([['space.backpack.v5.pb', 'older-indexeddb-backpack']]);
+  legacy.setItem('space.backpack.v6.pb', 'fallback-session-backpack');
+  const backend = new MemoryBackend([['space.backpack.v6.pb', 'older-indexeddb-backpack']]);
 
   const storage = await BufferedIndexedDbStorage.hydrate(backend, legacy);
 
   assert.equal(storage.getItem('space.world-edits.v2.world-a'), 'legacy-terrain');
   assert.equal(storage.getItem('entropydrop_space_entities.world-a'), 'legacy-entities');
-  assert.equal(storage.getItem('space.backpack.v5.pb'), 'fallback-session-backpack');
-  assert.equal(backend.values.get('space.backpack.v5.pb'), 'fallback-session-backpack');
+  assert.equal(storage.getItem('space.backpack.v6.pb'), 'fallback-session-backpack');
+  assert.equal(backend.values.get('space.backpack.v6.pb'), 'fallback-session-backpack');
   assert.equal(backend.values.get('space.world-edits.v2.world-a'), 'legacy-terrain');
   assert.equal(legacy.getItem('space.world-edits.v2.world-a'), null);
   assert.equal(legacy.getItem('entropydrop_space_entities.world-a'), null);
-  assert.equal(legacy.getItem('space.backpack.v5.pb'), null);
+  assert.equal(legacy.getItem('space.backpack.v6.pb'), null);
   assert.equal(legacy.getItem('token'), 'keep-synchronous');
   assert.equal(legacy.getItem('space_setting_fov'), '80');
 });
@@ -96,29 +96,29 @@ test('the hydrated adapter is synchronous in memory and exposes durable write co
   const backend = new MemoryBackend();
   const storage = await BufferedIndexedDbStorage.hydrate(backend);
 
-  storage.setItem('space.backpack.v5.pb', 'payload');
-  assert.equal(storage.getItem('space.backpack.v5.pb'), 'payload');
+  storage.setItem('space.backpack.v6.pb', 'payload');
+  assert.equal(storage.getItem('space.backpack.v6.pb'), 'payload');
   await storage.whenIdle();
-  assert.equal(backend.values.get('space.backpack.v5.pb'), 'payload');
+  assert.equal(backend.values.get('space.backpack.v6.pb'), 'payload');
 
   const bytes = Uint8Array.from([8, 5, 26, 0]);
-  storage.setBytes('space.backpack.v5.pb', bytes);
+  storage.setBytes('space.backpack.v6.pb', bytes);
   bytes[0] = 0;
-  assert.deepEqual(storage.getBytes('space.backpack.v5.pb'), Uint8Array.from([8, 5, 26, 0]));
-  assert.equal(storage.getItem('space.backpack.v5.pb'), null);
+  assert.deepEqual(storage.getBytes('space.backpack.v6.pb'), Uint8Array.from([8, 5, 26, 0]));
+  assert.equal(storage.getItem('space.backpack.v6.pb'), null);
   await storage.whenIdle();
-  assert.deepEqual(backend.values.get('space.backpack.v5.pb'), Uint8Array.from([8, 5, 26, 0]));
+  assert.deepEqual(backend.values.get('space.backpack.v6.pb'), Uint8Array.from([8, 5, 26, 0]));
 
-  storage.removeItem('space.backpack.v5.pb');
-  assert.equal(storage.getBytes('space.backpack.v5.pb'), null);
+  storage.removeItem('space.backpack.v6.pb');
+  assert.equal(storage.getBytes('space.backpack.v6.pb'), null);
   await storage.whenIdle();
-  assert.equal(backend.values.has('space.backpack.v5.pb'), false);
+  assert.equal(backend.values.has('space.backpack.v6.pb'), false);
 
   backend.failNextWrite = true;
   const originalWarn = console.warn;
   console.warn = () => undefined;
   try {
-    storage.setItem('space.backpack.v5.pb', 'retryable');
+    storage.setItem('space.backpack.v6.pb', 'retryable');
     await assert.rejects(storage.whenIdle(), /simulated IndexedDB failure/);
   } finally {
     console.warn = originalWarn;

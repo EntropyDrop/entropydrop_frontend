@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { Contraption } from '../src/engine/contraption/Contraption.ts';
-import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
-import { World } from '../src/engine/voxel/World.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { World } from '@entropydrop/space-engine/voxel/World.ts';
 
 /**
  * Copy as block set with T: copy raw selected blocks and paste them as ordinary

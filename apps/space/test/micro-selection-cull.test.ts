@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
-import { Contraption } from '../src/engine/contraption/Contraption.ts';
+import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.ts';
 
 test('micro selection hologram renders unified outer bounding box like standard selection', () => {
   const renderer = Object.create(SceneRenderer.prototype);

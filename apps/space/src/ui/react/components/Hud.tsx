@@ -16,7 +16,7 @@ import {
   LiaBoxesSolid,
   LiaRobotSolid
 } from 'react-icons/lia';
-import { ContraptionMode } from '../../../engine/contraption/Contraption.ts';
+import { ContraptionMode } from '@entropydrop/space-engine/contraption/Contraption.ts';
 import { SpecialTool } from '../../../engine/controls/PlayerController.ts';
 import { InventoryThumbnailRenderer } from '../../../engine/render/InventoryThumbnailRenderer.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';

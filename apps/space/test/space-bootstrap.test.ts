@@ -18,8 +18,8 @@ import {
   terrainStreamAreaForPosition,
   terrainStreamAreaForPositionWithHysteresis,
 } from '../src/bootstrap/SpaceBootstrap.ts';
-import { worldEntitiesStorageKey } from '../src/engine/contraption/ContraptionManager.ts';
-import { worldEditStorageKey } from '../src/engine/voxel/WorldEditPersistence.ts';
+import { worldEntitiesStorageKey } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
+import { worldEditStorageKey } from '@entropydrop/space-engine/voxel/WorldEditPersistence.ts';
 
 test('Space derives the API origin from the main frontend API configuration', () => {
   assert.equal(resolveApiOrigin('http://localhost:8000/skin', 'http://localhost:5173'), 'http://localhost:8000');
@@ -330,7 +330,7 @@ test('offline Space isolates world, entity, and player state while retaining sha
     assert.notEqual(worldEditStorageKey(session.world.id), worldEditStorageKey(onlineWorldId));
     assert.notEqual(worldEntitiesStorageKey(session.world.id), worldEntitiesStorageKey(onlineWorldId));
 
-    values.set('space.backpack.v5.pb', 'shared-backpack');
+    values.set('space.backpack.v6.pb', 'shared-backpack');
     await session.player_position_remote.save({
       x_cm: 10,
       y_cm: 20,
@@ -338,7 +338,7 @@ test('offline Space isolates world, entity, and player state while retaining sha
       yaw_q15: 40,
       pitch_q15: 0
     });
-    assert.equal(values.get('space.backpack.v5.pb'), 'shared-backpack');
+    assert.equal(values.get('space.backpack.v6.pb'), 'shared-backpack');
     assert.match(values.get(OFFLINE_PLAYER_POSITION_KEY) || '', /"x_cm":10/);
     assert.equal(values.has(`space.player-position.${onlineWorldId}`), false);
   } finally {

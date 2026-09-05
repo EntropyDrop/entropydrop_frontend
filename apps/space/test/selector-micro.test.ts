@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { Contraption } from '../src/engine/contraption/Contraption.ts';
-import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
-import { ActionDomain, executeBasicAction } from '../src/engine/actions/BasicActions.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { ActionDomain, executeBasicAction } from '@entropydrop/space-engine/actions/BasicActions.ts';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
 import { SpaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
 

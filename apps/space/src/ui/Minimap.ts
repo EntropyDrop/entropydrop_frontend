@@ -1,6 +1,6 @@
-import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../engine/voxel/Chunk.ts';
-import { MICRO_DIVISIONS } from '../engine/voxel/MicroVoxelLayer.ts';
-import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ, wrapChunkX, wrapChunkZ } from '../engine/torus/TorusWorld.ts';
+import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '@entropydrop/space-engine/voxel/Chunk.ts';
+import { MICRO_DIVISIONS } from '@entropydrop/space-engine/voxel/MicroVoxelLayer.ts';
+import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ, wrapChunkX, wrapChunkZ } from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
 type CachedChunkSurface = {
   dataVersion: number | null;

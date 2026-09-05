@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { BodyType, Contraption, ContraptionMode } from '../src/engine/contraption/Contraption.ts';
-import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { BodyType, Contraption, ContraptionMode } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { ContraptionPhysics } from '@entropydrop/space-engine/physics/ContraptionPhysics.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import { compileBehaviorPrompt } from '../src/engine/contraption/BehaviorAgent.ts';
-import { SPACE_SCRIPT_API_V2 } from '../src/engine/contraption/ScriptApiContract.ts';
+import { SPACE_SCRIPT_API_V2 } from '@entropydrop/space-engine/contraption/ScriptApiContract.ts';
 
 function makeContraption() {
   return new Contraption(

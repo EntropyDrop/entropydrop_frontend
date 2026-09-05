@@ -1,3 +1,4 @@
+import { SPACE_HOSTING_UI_ENABLED } from './SpaceFeatures.ts';
 import {
   readJsonResponse,
   readResponseBytes,
@@ -11,12 +12,29 @@ export const MAX_WORLD_ENTITY_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 
 export type SpaceEntityRunState = 'running' | 'stopped';
 
+export interface SpaceEntityHostingStatus {
+  entity_id: string;
+  world_id: string;
+  execution_mode: 'browser' | 'hosted';
+  enabled: boolean;
+  state: 'running' | 'starting' | 'paused';
+  reason: string | null;
+  error: string | null;
+  credits_per_hour: 1;
+  remaining_ms: number;
+  budget_remaining_credits: number;
+  billed_hours: number;
+  last_tick_at: string | null;
+  activity_radius_chunks: number;
+  logs?: string[];
+}
+
 export interface SpaceWorldEntityRecord {
   id: string;
   world_id: string;
   owner_user_id: string;
   name: string;
-  schema_version: 4;
+  schema_version: 5;
   definition_digest: string;
   definition_size_bytes: number;
   definition_url: string;
@@ -26,6 +44,8 @@ export interface SpaceWorldEntityRecord {
   position: { x_cm: number; y_cm: number; z_cm: number };
   yaw_quarter_turns: 0 | 1 | 2 | 3;
   desired_run_state: SpaceEntityRunState;
+  execution_mode?: 'browser' | 'hosted';
+  hosting_enabled?: boolean;
   revision: number;
   can_control: boolean;
   can_edit: boolean;
@@ -86,7 +106,7 @@ function parseEntity(value: any): SpaceWorldEntityRecord {
     || typeof value?.world_id !== 'string'
     || typeof value?.owner_user_id !== 'string'
     || typeof value?.name !== 'string'
-    || value?.schema_version !== 4
+    || value?.schema_version !== 5
     || !/^[0-9a-f]{64}$/i.test(value?.definition_digest || '')
     || !isInteger(value?.definition_size_bytes)
     || value.definition_size_bytes < 1
@@ -332,6 +352,23 @@ export class SpaceEntityClient {
     if (body?.deleted !== true || body?.entity_id !== entityId) {
       throw new SpaceEntityApiError(0, 'ENTITY_API_INVALID_RESPONSE', 'Invalid entity deletion response.', body);
     }
+  }
+
+  async setHosting(entityId: string, enabled: boolean, maxCredits = 1, operation = operationId()): Promise<SpaceEntityHostingStatus> {
+    if (!SPACE_HOSTING_UI_ENABLED) {
+      throw new SpaceEntityApiError(503, 'HOSTING_DISABLED', 'Entity hosting is not available.', null);
+    }
+    return this.request(`/${encodeURIComponent(entityId)}/hosting`, {
+      method: 'PUT',
+      body: JSON.stringify({ operation_id: operation, enabled, max_credits: maxCredits }),
+    });
+  }
+
+  async getHosting(entityId: string): Promise<SpaceEntityHostingStatus> {
+    if (!SPACE_HOSTING_UI_ENABLED) {
+      throw new SpaceEntityApiError(503, 'HOSTING_DISABLED', 'Entity hosting is not available.', null);
+    }
+    return this.request(`/${encodeURIComponent(entityId)}/hosting`);
   }
 
   async setRunState(entityId: string, desiredRunState: SpaceEntityRunState, expectedRevision: number) {

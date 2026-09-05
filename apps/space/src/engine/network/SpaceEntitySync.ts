@@ -5,9 +5,9 @@ import {
   type SpaceWorldEntityRecord,
 } from '../../bootstrap/SpaceEntityClient.ts';
 import { sha256Hex } from '../../bootstrap/NetworkSafety.ts';
-import { ActionDomain } from '../actions/BasicActions.ts';
-import { CHUNK_SIZE_X } from '../voxel/Chunk.ts';
-import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '../torus/TorusWorld.ts';
+import { ActionDomain } from '@entropydrop/space-engine/actions/BasicActions.ts';
+import { CHUNK_SIZE_X } from '@entropydrop/space-engine/voxel/Chunk.ts';
+import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
 
 export const SPACE_ENTITY_POLL_INTERVAL_MS = 2_000;
@@ -131,9 +131,12 @@ export class SpaceEntitySync {
 
   private metadata(entity: SpaceWorldEntityRecord) {
     const executesLocally = entity.owner_user_id === this.currentUserId
+      && entity.execution_mode !== 'hosted'
       && (this.leasedUntil.get(entity.id) || 0) > Date.now();
     return {
       serverManaged: true,
+      serverExecutionMode: entity.execution_mode || 'browser',
+      serverHostingEnabled: entity.hosting_enabled === true,
       serverOwnerUserId: entity.owner_user_id,
       serverCanControl: entity.can_control,
       serverCanEdit: entity.can_edit,
@@ -159,6 +162,7 @@ export class SpaceEntitySync {
     const now = Date.now();
     const ownedRunning = entities.filter(entity => (
       entity.owner_user_id === this.currentUserId && entity.desired_run_state === 'running'
+      && entity.execution_mode !== 'hosted'
     ));
     const runningIds = new Set(ownedRunning.map(entity => entity.id));
     for (const entity of entities) {
@@ -178,6 +182,13 @@ export class SpaceEntitySync {
   }
 
   private applyPlayback(contraption: any, entity: SpaceWorldEntityRecord) {
+    if (entity.execution_mode === 'hosted') {
+      // Freeze the latest server pose. Global Stop would reset component state and
+      // construction transforms, destroying the authoritative runtime snapshot.
+      contraption.scriptStatus = 'stopped';
+      contraption.setPhysicsSimulationEnabled?.(false);
+      return;
+    }
     const shouldRun = (this.leasedUntil.get(entity.id) || 0) > Date.now()
       && entity.desired_run_state === 'running';
     const isRunning = contraption.isPhysicsSimulationEnabled?.() !== false;
@@ -266,6 +277,8 @@ export class SpaceEntitySync {
     const snapshot = { ...record };
     delete snapshot.slot;
     delete snapshot.serverManaged;
+    delete snapshot.serverExecutionMode;
+    delete snapshot.serverHostingEnabled;
     delete snapshot.serverOwnerUserId;
     delete snapshot.serverCanControl;
     delete snapshot.serverCanEdit;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PlayerController } from '../src/engine/controls/PlayerController.ts';
-import { ActionDomain, executeBasicAction } from '../src/engine/actions/BasicActions.ts';
+import { ActionDomain, executeBasicAction } from '@entropydrop/space-engine/actions/BasicActions.ts';
 
 
 test('Wrench refuses to stop another owner’s server entity', async () => {

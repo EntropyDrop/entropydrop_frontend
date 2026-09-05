@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { normalizeColor } from '../voxel/BlockTypes.ts';
+import { normalizeColor } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import { getInventoryPreviewBlocks } from './SceneRenderer.ts';
 
 export class InventoryThumbnailRenderer {

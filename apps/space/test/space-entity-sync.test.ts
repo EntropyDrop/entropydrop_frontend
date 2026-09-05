@@ -13,7 +13,7 @@ function record() {
     world_id: 'world-1',
     owner_user_id: 'owner-1',
     name: 'Walker',
-    schema_version: 4,
+    schema_version: 5,
     definition_digest: definitionDigest,
     definition_size_bytes: definition.byteLength,
     definition_url: '/definition',
@@ -31,7 +31,7 @@ function record() {
   };
 }
 
-function harness(currentUserId: string) {
+function harness(currentUserId: string, overrides: Record<string, unknown> = {}) {
   const actions: string[] = [];
   const created: any[] = [];
   const manager: any = {
@@ -49,6 +49,7 @@ function harness(currentUserId: string) {
         isPhysicsSimulationEnabled: () => running,
         updateTransform() {},
         setRunning(value: boolean) { running = value; },
+        setPhysicsSimulationEnabled(value: boolean) { running = value; },
       };
       created.push(entity);
       return entity;
@@ -63,6 +64,7 @@ function harness(currentUserId: string) {
   const fetchImpl = async (url: string | URL | Request, options: RequestInit = {}) => {
     if (String(url).includes('/definition?digest=')) return new Response(definition, { status: 200 });
     if (String(url).endsWith('/execution-leases')) {
+      assert.notEqual(overrides.execution_mode, 'hosted', 'hosted entities never request browser leases');
       const request = JSON.parse(String(options.body));
       return new Response(JSON.stringify({
         instance_id: request.instance_id,
@@ -75,7 +77,7 @@ function harness(currentUserId: string) {
         }],
       }), { status: 200 });
     }
-    return new Response(JSON.stringify({ items: [record()], truncated: false, limit: 256 }), { status: 200 });
+    return new Response(JSON.stringify({ items: [{ ...record(), ...overrides }], truncated: false, limit: 256 }), { status: 200 });
   };
   const sync = new SpaceEntitySync({
     apiOrigin: 'https://api.example.test',
@@ -113,4 +115,16 @@ test('a non-owner browser keeps the shared entity in stopped collision state', a
   assert.equal(created[0].serverExecutesLocally, false);
   assert.equal(created[0].isPhysicsSimulationEnabled(), false);
   assert.deepEqual(actions, ['stop-scripts']);
+});
+
+test('hosted entities preserve the server pose without browser execution or global Stop', async () => {
+  const { sync, created, actions } = harness('owner-1', { execution_mode: 'hosted', hosting_enabled: true });
+  await sync.poll();
+  const entity = created[0];
+  assert.equal(entity.serverExecutesLocally, false);
+  assert.equal(entity.serverExecutionMode, 'hosted');
+  assert.equal(entity.serverHostingEnabled, true);
+  assert.equal(entity.isPhysicsSimulationEnabled(), false);
+  assert.deepEqual(actions, [], 'global Stop would erase the saved runtime pose');
+  assert.ok(entity.position.distanceTo(new THREE.Vector3(1, 32, 1)) < 1e-12);
 });

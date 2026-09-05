@@ -2,15 +2,15 @@ import type {
   TerrainEditChunk,
   TerrainMutation,
   WorldEditRemote,
-} from '../engine/voxel/WorldEditPersistence.ts';
-import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '../engine/voxel/Chunk.ts';
+} from '@entropydrop/space-engine/voxel/WorldEditPersistence.ts';
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '@entropydrop/space-engine/voxel/Chunk.ts';
 import {
   TORUS_GREF,
   TORUS_SIZE_X,
   TORUS_SIZE_Z,
   wrapX,
   wrapZ,
-} from '../engine/torus/TorusWorld.ts';
+} from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
 import {
   LatencyMonitor,

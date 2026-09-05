@@ -88,7 +88,9 @@ The repository includes specialized preprocessing and structural analysis python
 ## 🚀 Getting Started
 
 ### Prerequisites
-Make sure you have **Node.js** (v18.0+ recommended) and **npm** or **pnpm** installed.
+Use **Node.js 24+** and **npm 10+**. Keep the shared `entropydrop_space_engine`
+repository beside this checkout and run `npm ci` in it first. Space consumes that
+repository as a local source dependency; see its [setup guide](../entropydrop_space_engine/README.md).
 
 ### 1. Clone & Install
 ```bash

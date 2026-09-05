@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { colorToHex } from '../../engine/voxel/BlockTypes.ts';
+import { colorToHex } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import { Hud } from './components/Hud.tsx';
 import { GlobalSettingsModal, PauseScreen } from './components/SimpleModals.tsx';
 import { MinimapCanvas, NavigationPanel } from './components/WorldWidgets.tsx';

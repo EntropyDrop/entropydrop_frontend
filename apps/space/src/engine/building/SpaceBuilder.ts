@@ -1,14 +1,15 @@
 import * as THREE from 'three';
-import { ActionDomain } from '../actions/BasicActions.ts';
+import { normalizeInventoryName, inventoryNameLength, MAX_INVENTORY_NAME_LENGTH } from '@entropydrop/space-engine/storage/InventoryName.ts';
+import { ActionDomain } from '@entropydrop/space-engine/actions/BasicActions.ts';
 import {
   ContraptionMode,
   isValidComponentId,
   isValidConstraintId,
   MAX_ENTITY_BOUNDS,
   MAX_ENTITY_COMPONENTS
-} from '../contraption/Contraption.ts';
-import { BlockTypes, DEFAULT_BLOCK_COLOR, normalizeColor } from '../voxel/BlockTypes.ts';
-import { CHUNK_SIZE_Y } from '../voxel/Chunk.ts';
+} from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { BlockTypes, DEFAULT_BLOCK_COLOR, normalizeColor } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { CHUNK_SIZE_Y } from '@entropydrop/space-engine/voxel/Chunk.ts';
 
 export const SPACE_BUILD_PLAN_VERSION = 1;
 export const MAX_BUILD_PLAN_VOXELS = 65_536;
@@ -43,6 +44,7 @@ export interface SpaceBuildPrimitiveInput {
 
 export interface SpaceBuildComponentInput {
   id: string;
+  name?: string;
   parentId?: string | null;
   pivot?: [number, number, number];
   bodyType?: 'dynamic' | 'kinematic';
@@ -197,6 +199,7 @@ function closedBuildComponent(raw: any): SpaceBuildComponentInput {
     parentId: raw?.parentId,
   };
   for (const field of [
+    'name',
     'pivot',
     'bodyType',
     'mass',
@@ -406,7 +409,7 @@ function runtimeSlot(plan: NormalizedSpaceBuildPlan): any {
     .map(component => ({ id: component.id, code: component.script }));
   return Object.freeze({
     kind: 'entity',
-    name: plan.name,
+    name: root.name ?? '',
     rootComponentId,
     mode: scripts.length > 0 ? ContraptionMode.PROGRAMMABLE : ContraptionMode.FREE_PHYSICS,
     blockCount: plan.blocks.length,
@@ -422,6 +425,7 @@ function runtimeSlot(plan: NormalizedSpaceBuildPlan): any {
     })),
     childEntities: children.map(component => ({
       id: component.id,
+      name: component.name ?? '',
       parentId: component.parentId,
       ...(component.pivot ? { pivot: [...component.pivot] } : {}),
       bodyType: component.bodyType || 'kinematic',
@@ -511,6 +515,11 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
     }
     if (componentIds.has(id)) errors.push(`Duplicate component id '${id}'.`);
     component.id = id;
+    if (component.name !== undefined && (typeof component.name !== 'string'
+      || inventoryNameLength(component.name) > MAX_INVENTORY_NAME_LENGTH)) {
+      errors.push(`Component '${id}' name must contain at most ${MAX_INVENTORY_NAME_LENGTH} characters.`);
+    }
+    if (component.name !== undefined) component.name = normalizeInventoryName(component.name);
     componentIds.add(id);
     const parentId = component.parentId === null
       ? null
@@ -548,6 +557,10 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
     }
   }
   const roots = components.filter(component => component.parentId === null);
+  // The plan title is only a creation default, never a second stored entity name.
+  if (roots.length === 1 && roots[0].name === undefined) {
+    roots[0].name = normalizeInventoryName(input?.name);
+  }
   if (kind === 'entity' && roots.length !== 1) {
     errors.push('Entity components must contain exactly one structural root (parentId: null).');
   }

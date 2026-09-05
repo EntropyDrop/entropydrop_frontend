@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
-import { MicroVoxelLayer } from '../src/engine/voxel/MicroVoxelLayer.ts';
-import { TORUS_SIZE_X, TORUS_SIZE_Z } from '../src/engine/torus/TorusWorld.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { MicroVoxelLayer } from '@entropydrop/space-engine/voxel/MicroVoxelLayer.ts';
+import { TORUS_SIZE_X, TORUS_SIZE_Z } from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
 const MICRO_DIVISIONS = 5;
 

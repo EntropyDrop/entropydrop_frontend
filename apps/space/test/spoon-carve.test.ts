@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
-import { World } from '../src/engine/voxel/World.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { World } from '@entropydrop/space-engine/voxel/World.ts';
 import {
   getWorldShapeMode,
   setWorldShapeMode,
   TORUS_SPAWN_X,
   TORUS_SPAWN_Z,
-} from '../src/engine/torus/TorusWorld.ts';
+} from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
 /**
  * Direct spoon carving subdivides a standard block into 5x5x5 and immediately removes

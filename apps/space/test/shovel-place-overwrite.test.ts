@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { World } from '../src/engine/voxel/World.ts';
+import { World } from '@entropydrop/space-engine/voxel/World.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 
 /**
  * Shovel destruction reports successful standard-cell removals to the sound layer.

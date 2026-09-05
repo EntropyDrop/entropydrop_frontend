@@ -1,16 +1,9 @@
+import type { SpaceStorage } from '@entropydrop/space-engine/storage/SpaceStorage.ts';
+export type { SpaceStorage } from '@entropydrop/space-engine/storage/SpaceStorage.ts';
+
 const DATABASE_NAME = 'entropydrop-space';
 const DATABASE_VERSION = 1;
 const OBJECT_STORE_NAME = 'persistent-values';
-
-export interface SpaceStorage {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  getBytes?(key: string): Uint8Array | null;
-  setBytes?(key: string, value: Uint8Array): void;
-  removeItem(key: string): void;
-  /** Resolves after queued IndexedDB writes commit; rejects if any write failed. */
-  whenIdle?(): Promise<void>;
-}
 
 export interface EnumerableSpaceStorage extends SpaceStorage {
   readonly length?: number;
@@ -26,7 +19,7 @@ export interface AsyncKeyValueBackend {
 type SpaceStoredValue = string | Uint8Array;
 
 export function isLargeSpaceStorageKey(key: string) {
-  return key === 'space.backpack.v5.pb'
+  return key === 'space.backpack.v6.pb'
     || key.startsWith('space.world-edits.v1.')
     || key.startsWith('space.world-edits.v2.')
     || key.startsWith('entropydrop_space_entities.');

@@ -1,4 +1,4 @@
-import { TORUS_SIZE_X, TORUS_SIZE_Z } from '../torus/TorusWorld.ts';
+import { TORUS_SIZE_X, TORUS_SIZE_Z } from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
 const NUMBER_PATTERN = /(-?\d+(?:\.\d+)?)/;
 

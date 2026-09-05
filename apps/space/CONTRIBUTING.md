@@ -2,8 +2,11 @@
 
 ## Local verification
 
-Use Node.js 20.19 or newer, npm 10 or newer, and a `protoc` release with
+Use Node.js 24 or newer, npm 10 or newer, and a `protoc` release with
 proto3 optional-field support:
+
+Install the sibling `entropydrop_space_engine` repository with `npm ci` first.
+Then from this application directory:
 
 ```bash
 npm ci
@@ -11,10 +14,11 @@ npm run check
 npm run audit:deps
 ```
 
-`proto/inventory.proto` is the shared frontend/backend resource contract, while
-`proto/backpack.proto` is browser-local state. After either schema changes, run
+`entropydrop_space_engine/proto/inventory.proto` is the shared frontend/backend resource contract, while
+`entropydrop_space_engine/proto/backpack.proto` is browser-local state. After either schema changes, run
 `npm run generate:protobuf` and commit the regenerated TypeScript descriptor and
-bindings; shared resource changes must also regenerate the backend Python binding.
+bindings in the engine repository; shared resource changes must also regenerate the backend Python binding.
+`npm run check` includes engine checks and frontend integration tests.
 
 Add a regression test for behavior changes. Browser-facing changes should also
 be checked manually in a current WebGL 2 browser with the developer console open.

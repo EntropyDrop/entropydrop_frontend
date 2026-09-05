@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
-import { ActionDomain, executeBasicAction } from '../src/engine/actions/BasicActions.ts';
-import { Contraption } from '../src/engine/contraption/Contraption.ts';
-import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
-import { World } from '../src/engine/voxel/World.ts';
+import { ActionDomain, executeBasicAction } from '@entropydrop/space-engine/actions/BasicActions.ts';
+import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { World } from '@entropydrop/space-engine/voxel/World.ts';
 
 function block(x, y = 0, z = 0, color = 0x123456) {
   return { localX: x, localY: y, localZ: z, size: 1, block: BlockTypes.COLOR_BLOCK, color, entityId: 'root' };

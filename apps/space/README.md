@@ -14,7 +14,7 @@ character skin. An invalid or temporarily unavailable configured skin falls back
 the same way instead of blocking entry. The first random position is checkpointed
 immediately; later wrapped position/yaw updates are saved every five seconds,
 on realtime disconnect, and before page suspension. Backpack data remains browser-local under
-`space.backpack.v5.pb` and is never uploaded by this app. Older backpack schemas are
+`space.backpack.v6.pb` and is never uploaded by this app. Older backpack schemas are
 intentionally ignored. Player-authored standard
 and micro-voxel terrain overlays are loaded from the authenticated Space API and
 sent back in idempotent batches of at most 256 mutations. A durable browser
@@ -101,12 +101,13 @@ drive dynamic bodies through force/torque or kinematic bodies through direct pos
 
 Requirements:
 
-- Node.js 20.19 or newer and npm 10 or newer
+- Node.js 24 or newer and npm 10 or newer
 - A current desktop browser with WebGL 2, ES modules, Web Workers, and WebAssembly
 - No API key is required for the bundled local behavior compiler; remote Agent
   endpoints require HTTPS, except for localhost development
 
-From the frontend repository root:
+Keep `entropydrop_space_engine` beside the frontend repository and run `npm ci`
+in the engine repository first. Then, from the frontend repository root:
 
 ```bash
 npm ci
@@ -139,7 +140,7 @@ orbit, launch, spin, attitude-stabilization, and stop intents.
 Its result contract is intentionally small so it can later be replaced by a
 remote LLM without changing the controller runtime.
 
-Detailed component script and controller API documentation is available directly in-game via the Code Editor terminal (press `C` → API Reference) and in the generated [Script API V2 reference](docs/generated/api-v2.md). The [Agent API reference](docs/generated/agent-api-v2.md), in-game reference, and runtime Agent prompt are all rendered from `src/engine/contraption/ScriptApiContract.ts`; edit that contract instead of these generated views.
+Detailed component script and controller API documentation is available directly in-game via the Code Editor terminal (press `C` → API Reference) and in the generated [Script API V2 reference](../../../entropydrop_space_engine/docs/generated/api-v2.md). The [Agent API reference](../../../entropydrop_space_engine/docs/generated/agent-api-v2.md), in-game reference, and runtime Agent prompt are all rendered from `entropydrop_space_engine/src/contraption/ScriptApiContract.ts`; edit that contract instead of these generated views.
 
 The Entity Editor inspector separates authored values from live simulation data. **Defaults**
 shows the pivot (`XYZ`), saved mounting-frame quaternion (`XYZW`), and, for child
@@ -165,20 +166,40 @@ writes `entropydrop_space_entities.*`; entering an online world removes that wor
 browser entity value. Creating or editing an entity uploads its canonical Protobuf definition
 and a bounded runtime snapshot, and active owned entities checkpoint changed
 state every six seconds. Removing one performs a backend hard delete. Offline mode keeps the
-version-2 browser persistence and never calls these entity endpoints; obsolete version-1
+version-3 browser persistence and never calls these entity endpoints; older
 entity data is intentionally ignored. This boundary applies
 only to world entities: the backpack deliberately remains local.
+
+Inventory Protobuf v5 stores display names on every `Component`, with no `Entity.name`.
+An entity's display name is `root.name`; empty names display the component ID. Names may
+repeat and survive subtree copies, attachment, independent publication, and reloads.
+Only IDs determine references and sibling ordering. Market content digests recursively
+omit all component names; database list names are derived metadata. Browser backpacks
+use Protobuf v6, and old resource, backpack, and offline entity versions are not migrated.
 
 External agents can submit canonical entity definitions directly with an account-level,
 long-lived Space API key; market publication is not required. The browser polls the nearby
 wrapped AOI, verifies the canonical Protobuf definition and optional
-snapshot, then restores the exact construction/runtime pose, including its quaternion. Only
+snapshot, then restores the exact construction/runtime pose, including its quaternion. For browser-executed entities, only
 the owner's browser holding the current eight-second execution lease advances physics/scripts;
 observers retain a stopped collision pose. Wrench Start/Stop is accepted only for the owner
 or an administrator, so another ordinary player cannot stop the entity. Every instance may be
 edited or deleted only by its owner or an administrator; its updated definition and state return to the
 backend instead of browser storage. Entity `self.*` actions continue to run only on the lease
 holder.
+
+Explicit paid hosting now runs bounded entities without an owner browser at **1 credit/hour**.
+The hosting API accepts an entity ID and a maximum credit budget; the independent worker
+commits simulation, terrain edits and billing atomically. Hosted entity viewers install
+server snapshots and never obtain a browser execution lease. The editor Authority panel
+shows the server executor. See the backend [hosting API and deployment guide](../../../entropydrop_backend/docs/space-entity-hosting.md).
+This bounded worker uses the current 20 Hz entity / 60 Hz physics engine and does not
+replace the full multiplayer authority protocol below.
+Its server-only source lives in `entropydrop_backend/space/runtime/`. The backend build
+bundles `@entropydrop/space-engine` from the sibling `entropydrop_space_engine` repository.
+Install that repository’s dependencies with `npm ci` before installing the frontend.
+The deployed worker needs neither frontend nor engine source files. Rebuild both consumers
+when the shared engine changes. See the [engine setup and checks](../../../entropydrop_space_engine/README.md).
 
 The Multiplayer V2 target is server-authoritative: zone workers own the 60 Hz
 simulation and active chunks, binary WebSocket messages carry inputs and AOI
@@ -204,3 +225,24 @@ npm run audit:deps
 
 `npm run check` performs TypeScript validation, the complete Node test suite,
 and a production Vite build. Pull requests run the same commands in CI.
+
+
+### External blockset building and settings
+
+Settings is organized into Character, Graphics, Sound, and API tabs. Character previews
+its current skin with drag-to-rotate controls, retaining the setup guide when no skin
+is available. The API tab shows live credit balance, pricing, account/world allowances,
+and key management. Building and creation are free within quotas. Paid hosting pricing,
+allowances, and labels are temporarily hidden by `SPACE_HOSTING_UI_ENABLED = false` in
+`src/bootstrap/SpaceFeatures.ts` until a production worker is available. Backend hosting
+code and server-snapshot synchronization remain in place. The backend also defaults to
+`SPACE_HOSTING_ENABLED=false`: hosting calls are rejected, workers cannot run or bill,
+and hosting pricing/allowances are omitted. Client hosting methods reject without a
+network request while the UI flag is false. Ordinary browser execution and its API-key
+run permission are unchanged.
+
+Keys with `space:blockset:build` can call
+`POST /space/api/v2/worlds/{world_id}/blocksets/build` to stamp a portable blockset at a
+specified grid origin without an online browser. Builds support quarter-turn rotation,
+standard and micro voxels, atomic quota enforcement, and bounded idempotent retries.
+See [blockset API and live allowances](../../../entropydrop_backend/docs/space-blockset-build-api.md).

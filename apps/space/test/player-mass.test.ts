@@ -5,10 +5,10 @@ import {
   PlayerPhysics,
   PLAYER_GRAVITY_MPS2,
   PLAYER_MASS_KG
-} from '../src/engine/physics/PlayerPhysics.ts';
-import { Contraption } from '../src/engine/contraption/Contraption.ts';
-import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+} from '@entropydrop/space-engine/physics/PlayerPhysics.ts';
+import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { ContraptionPhysics } from '@entropydrop/space-engine/physics/ContraptionPhysics.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import { PlayerController } from '../src/engine/controls/PlayerController.ts';
 
 function makeWorld() {

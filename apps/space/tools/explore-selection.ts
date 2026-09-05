@@ -1,13 +1,13 @@
 /* Exploratory checks of the Selector tool, especially micro (0.2 m) selection. */
 import * as THREE from 'three';
-import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
-import { World } from '../src/engine/voxel/World.ts';
+import { World } from '@entropydrop/space-engine/voxel/World.ts';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
-import { ActionDomain, executeBasicAction } from '../src/engine/actions/BasicActions.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
-import { bendPoint, bendDirection } from '../src/engine/torus/TorusWorld.ts';
-import { CHUNK_SIZE_X } from '../src/engine/voxel/Chunk.ts';
+import { ActionDomain, executeBasicAction } from '@entropydrop/space-engine/actions/BasicActions.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { bendPoint, bendDirection } from '@entropydrop/space-engine/torus/TorusWorld.ts';
+import { CHUNK_SIZE_X } from '@entropydrop/space-engine/voxel/Chunk.ts';
 
 function makeController(overrides: any = {}) {
   const controller: any = Object.create(PlayerController.prototype);

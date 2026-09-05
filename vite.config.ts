@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -56,6 +56,17 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  resolve: {
+    dedupe: ['three'],
+  },
+  server: {
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        fileURLToPath(new URL('../entropydrop_space_engine', import.meta.url)),
+      ],
+    },
+  },
   optimizeDeps: {
     // Space loads this WASM variant from a worker. Pre-bundling can strand the
     // module-relative WASM URL inside Vite's dependency cache.

@@ -6,7 +6,7 @@ import {
   getWorldShapeMode, setWorldProjectionAnchor,
   setWorldShapeMode as setGlobalWorldShapeMode,
   type WorldShapeMode,
-} from '../torus/TorusWorld.ts';
+} from '@entropydrop/space-engine/torus/TorusWorld.ts';
 import { CuteCharacter, loadCuteCharacter, type SkinModel } from './CuteCharacter.ts';
 import {
   isProjectedPlayerVisible,

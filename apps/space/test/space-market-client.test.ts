@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { SpaceMarketClient, SpaceMarketError } from '../src/bootstrap/SpaceMarketClient.ts';
-import { encodeInventoryResource } from '../src/engine/storage/InventoryProtobuf.ts';
+import { decodeInventoryResource, encodeInventoryResource } from '@entropydrop/space-engine/storage/InventoryProtobuf.ts';
 
 const COLORSET = {
   type: 'space-colorset',
-  version: 4,
+  version: 5,
   name: 'Sunset',
   colors: [
     '#111111', '#222222', '#333333',
@@ -21,13 +21,38 @@ const COLORSET_DIGEST = createHash('sha256')
 
 const BLOCKSET = {
   type: 'space-blockset',
-  version: 4,
+  version: 5,
   name: 'Signal tower',
   blocks: [{ dx: 1, dy: 2, dz: 3, block: 1, color: 0xf2a93b }],
 };
 const BLOCKSET_PROTOBUF = encodeInventoryResource('blockset', BLOCKSET);
 // Cross-language fixture for the backend's deterministic, name-omitting digest.
-const BLOCKSET_DIGEST = '337f5cc6c96e8e5e62a4da9558a806b44a080a0a9b8043ee884e51d676ffedbb';
+const BLOCKSET_DIGEST = '6c972747dbed341845d8f3e69ee930385f0e5259e53938077daab6bce3abdf38';
+
+test('market component names match Python bytes and recursive name-free digests', async () => {
+  const component = (id, name, children) => ({ id, name, body: { type: 'dynamic' }, blocks: [], seats: [], children });
+  const entity = { type: 'space-entity', version: 5, constraints: [],
+    root: component('world', '机体', [component('root', '模块', [component('tip', '末端', [])])]) };
+  const wire = encodeInventoryResource('entity', entity);
+  assert.equal(Buffer.from(wire).toString('hex'), '08055a3612340a05776f726c641a0042210a04726f6f741a00420f0a037469701a006206e69cabe7abaf6206e6a8a1e59d976206e69cbae4bd93');
+  assert.deepEqual(decodeInventoryResource(wire).portable, entity);
+  const digest = '84523322927e6b15cfe45217dcdd190be7b6cf6fce53dd00fe334a4d3d0bb78b';
+  assert.equal(createHash('sha256').update(encodeInventoryResource('entity', entity, { includeNames: false })).digest('hex'), digest);
+  assert.equal(entity.root.children[0].name, '模块', 'digest encoding does not mutate names');
+  let payload = wire;
+  const client = new SpaceMarketClient('https://api.example.test', 'token', async () => new Response(responseBody(payload)));
+  await client.loadResourceContent('https://cdn.example.test/entity.pb', undefined, { kind: 'entity', name: '机体', digest });
+
+  entity.root.name = '';
+  entity.root.children[0].name = 'Renamed';
+  entity.root.children[0].children[0].name = 'Renamed';
+  payload = encodeInventoryResource('entity', entity);
+  await client.loadResourceContent('https://cdn.example.test/entity.pb', undefined, { kind: 'entity', name: 'world', digest });
+  entity.root.children[0].children[0].body.type = 'kinematic';
+  payload = encodeInventoryResource('entity', entity);
+  await assert.rejects(client.loadResourceContent('https://cdn.example.test/entity.pb', undefined, { kind: 'entity', name: 'world', digest }),
+    error => error instanceof SpaceMarketError && error.code === 'MARKET_DIGEST_MISMATCH');
+});
 
 function responseBody(bytes: Uint8Array): ArrayBuffer {
   const body = new Uint8Array(bytes.byteLength);

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
-import { executeBasicAction } from '../src/engine/actions/BasicActions.ts';
+import { executeBasicAction } from '@entropydrop/space-engine/actions/BasicActions.ts';
 import {
   SpaceBuilder,
   validateSpaceBuildPlan
 } from '../src/engine/building/SpaceBuilder.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 
 function createHarness() {
   const standard = new Map<string, { block: number; color: number }>();
@@ -214,7 +214,7 @@ test('BuildPlan keeps constraint ids in a namespace separate from component ids'
   });
   assert.equal(closedConstraint.ok, true, closedConstraint.errors.join(' '));
   assert.deepEqual(Object.keys(closedConstraint.plan!.components[0]).sort(), [
-    'bodyType', 'id', 'parentId'
+    'bodyType', 'id', 'name', 'parentId'
   ]);
   for (const constraint of [closedConstraint.plan!.constraints[0], closedConstraint.slot.constraints[0]]) {
     assert.deepEqual(Object.keys(constraint).sort(), [

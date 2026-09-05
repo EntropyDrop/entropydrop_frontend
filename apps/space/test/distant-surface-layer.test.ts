@@ -12,7 +12,7 @@ import {
   DISTANT_SURFACE_SETTING_LIMITS,
   DistantSurfaceLayer,
   normalizeDistantSurfaceSettings,
-} from '../src/engine/render/DistantSurfaceLayer.ts';
+} from '@entropydrop/space-engine/render/DistantSurfaceLayer.ts';
 
 function makeZoneBytes(zoneX = 0, zoneZ = 0, filled = false) {
   const records = 32 * 32 * 8 * 8;

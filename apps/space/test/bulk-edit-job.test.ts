@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
-import { World } from '../src/engine/voxel/World.ts';
-import { Contraption } from '../src/engine/contraption/Contraption.ts';
-import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { World } from '@entropydrop/space-engine/voxel/World.ts';
+import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import {
   BULK_EDIT_THRESHOLD,
   PlayerController,
@@ -169,7 +169,8 @@ test('large Hammer component installation prepares blocks before one atomic tree
 
   assert.equal(manager.contraptions.length, 1);
   assert.equal(target.blocks.length, total + 1);
-  assert.ok(target.getEntityNode('Cargo'));
+  assert.ok(target.getEntityNode('root_2'));
+  assert.equal(target.getComponentName('root_2'), 'Cargo');
   assert.equal(controller.__progress.at(-1).phase, 'complete');
 });
 

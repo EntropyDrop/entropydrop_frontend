@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { BlockTypes, colorToHex, normalizeColor, PRESET_COLORS } from '../voxel/BlockTypes.ts';
+import { MAX_INVENTORY_NAME_LENGTH, trimInventoryName, inventoryNameLength, truncateInventoryName } from '@entropydrop/space-engine/storage/InventoryName.ts';
+import { BlockTypes, colorToHex, normalizeColor, PRESET_COLORS } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import {
   BodyType,
   ContraptionMode,
@@ -7,13 +8,13 @@ import {
   isValidConstraintId,
   MAX_ENTITY_BOUNDS,
   MAX_ENTITY_COMPONENTS
-} from '../contraption/Contraption.ts';
-import { ActionDomain, executeBasicAction } from '../actions/BasicActions.ts';
+} from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { ActionDomain, executeBasicAction } from '@entropydrop/space-engine/actions/BasicActions.ts';
 import {
   bendPoint, bendDirection, unbendPoint, unwrapPeriodicNear,
   TORUS_GREF, TORUS_SIZE_X, TORUS_SIZE_Z, TORUS_SPAWN_X, TORUS_SPAWN_Z,
   wrapMicroX, wrapMicroZ
-} from '../torus/TorusWorld.ts';
+} from '@entropydrop/space-engine/torus/TorusWorld.ts';
 import { calculatePreviewDragForce, getInventoryPreviewBlocks } from '../render/SceneRenderer.ts';
 import { InventoryThumbnailRenderer } from '../render/InventoryThumbnailRenderer.ts';
 import type { SpaceStorage } from '../storage/BrowserStorage.ts';
@@ -29,9 +30,9 @@ import {
   runtimeEntityToPortable,
   type InventoryKind,
   type PortableBackpack,
-} from '../storage/InventoryProtobuf.ts';
-import { PLAYER_GRAVITY_MPS2, PLAYER_MASS_KG } from '../physics/PlayerPhysics.ts';
-import { CHUNK_SIZE_Y } from '../voxel/Chunk.ts';
+} from '@entropydrop/space-engine/storage/InventoryProtobuf.ts';
+import { PLAYER_GRAVITY_MPS2, PLAYER_MASS_KG } from '@entropydrop/space-engine/physics/PlayerPhysics.ts';
+import { CHUNK_SIZE_Y } from '@entropydrop/space-engine/voxel/Chunk.ts';
 
 // Global editor/game commands stay engine-owned and are not exposed to entity
 // programs, avoiding collisions between scripts and C/V/tool shortcuts.
@@ -51,24 +52,9 @@ export function isPerspectiveToggleCode(code: string) {
 export type PlayerPerspective = 'first_person' | 'third_person' | 'third_person_front';
 
 const HEX_COLOR = /^#?[0-9a-f]{6}$/i;
-const MAX_INVENTORY_NAME_LENGTH = 80;
-const PYTHON_LEADING_WHITESPACE = /^[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/;
-const PYTHON_TRAILING_WHITESPACE = /[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/;
-
-function trimInventoryName(value: string): string {
-  return value.replace(PYTHON_LEADING_WHITESPACE, '').replace(PYTHON_TRAILING_WHITESPACE, '');
-}
-
-function inventoryNameLength(value: string): number {
-  return Array.from(value).length;
-}
-
-function truncateInventoryName(value: string): string {
-  return Array.from(value).slice(0, MAX_INVENTORY_NAME_LENGTH).join('');
-}
 
 const MICRO_DIVISIONS = 5;
-const INVENTORY_STORAGE_KEY = 'space.backpack.v5.pb';
+const INVENTORY_STORAGE_KEY = 'space.backpack.v6.pb';
 const INVENTORY_CATEGORIES = ['blockset', 'entity', 'colorset'];
 const DEFAULT_COLOR_SET_NAME = 'Default palette';
 export const MAX_INVENTORY_IMPORT_BYTES = 8 * 1024 * 1024;
@@ -4436,7 +4422,7 @@ export class PlayerController {
     // Put an item into the first available empty slot in the category.
     const index = group.items.findIndex(slot => !slot);
     if (index < 0) return null;
-    item.name = this.inventoryItemName(category, item, index);
+    if (category !== 'entity') item.name = this.inventoryItemName(category, item, index);
     group.items[index] = item;
     if (index < 9) {
       if (this.activeInventoryCategory === category && group.selected !== index) this.clearHammerRotation();
@@ -4454,7 +4440,7 @@ export class PlayerController {
       return `Block set ${index + 1}`;
     }
     if (category === 'entity') {
-      return `Entity ${index + 1}`;
+      return String(item?.rootComponentId || `Entity ${index + 1}`);
     }
     return `Color set ${index + 1}`;
   }
@@ -4636,7 +4622,7 @@ export class PlayerController {
     if (category === 'blockset') {
       return {
         type: 'space-blockset',
-        version: 4,
+        version: 5,
         name: this.inventoryItemName('blockset', item),
         blocks: (item.blocks || []).map(b => {
           const shared = {
@@ -4687,6 +4673,7 @@ export class PlayerController {
         : undefined;
       const childEntities = (item.childEntities || []).map(definition => ({
         id: String(definition.id || ''),
+        name: typeof definition.name === 'string' ? truncateInventoryName(trimInventoryName(definition.name)) : '',
         parentId: String(definition.parentId ?? ''),
         ...(definition.collisionEnabled === false ? { collisionEnabled: false } : {}),
         ...(typeof definition.useGravity === 'boolean' ? { useGravity: definition.useGravity } : {}),
@@ -4723,7 +4710,7 @@ export class PlayerController {
       }));
       const rootPivotOverride = vector3(item.rootPivotOverride ?? item.pivot);
       return runtimeEntityToPortable({
-        name: this.inventoryItemName('entity', item),
+        name: typeof item.name === 'string' ? truncateInventoryName(trimInventoryName(item.name)) : '',
         rootComponentId,
         blocks: (item.blocks || []).map(b => {
           const shared = {
@@ -4781,7 +4768,7 @@ export class PlayerController {
     if (category === 'colorset') {
       return {
         type: 'space-colorset',
-        version: 4,
+        version: 5,
         name: item.name || 'color set',
         colors: item.colors
       };
@@ -4887,7 +4874,7 @@ export class PlayerController {
     };
     const runtimeVoxel = (block, ownerId = null) => {
       if (block?.block !== undefined && block.block !== BlockTypes.COLOR_BLOCK) {
-        throw new Error('Inventory v4 supports only color block id 1');
+        throw new Error('Inventory v5 supports only color block id 1');
       }
       const color = Number(block?.color ?? 0xf2a93b);
       if (!Number.isSafeInteger(color) || color < 0 || color > 0xffffff) {
@@ -4925,8 +4912,8 @@ export class PlayerController {
     };
 
     if (category === 'blockset') {
-      if (data?.type !== 'space-blockset' || data?.version !== 4) {
-        return fail('Expected a space-blockset v4 Protobuf file');
+      if (data?.type !== 'space-blockset' || data?.version !== 5) {
+        return fail('Expected a space-blockset v5 Protobuf file');
       }
       if (typeof data.name !== 'string' || !trimInventoryName(data.name)) return fail('A block set must have a name');
       if (inventoryNameLength(data.name) > MAX_INVENTORY_NAME_LENGTH) {
@@ -4960,13 +4947,10 @@ export class PlayerController {
     }
 
     if (category === 'entity') {
-      if (data?.type !== 'space-entity' || data?.version !== 4 || !data.root) {
-        return fail('Expected a recursive space-entity v4 Protobuf file');
+      if (data?.type !== 'space-entity' || data?.version !== 5 || !data.root) {
+        return fail('Expected a recursive space-entity v5 Protobuf file');
       }
-      if (typeof data.name !== 'string' || !trimInventoryName(data.name)) return fail('An entity must have a name');
-      if (inventoryNameLength(data.name) > MAX_INVENTORY_NAME_LENGTH) {
-        return fail(`An entity name may contain at most ${MAX_INVENTORY_NAME_LENGTH} characters`);
-      }
+      if (Object.hasOwn(data, 'name')) return fail('Entity names belong to root.name');
 
       const ids = new Set();
       let componentCount = 0;
@@ -5001,6 +4985,11 @@ export class PlayerController {
           throw new Error('Component hierarchy is malformed or exceeds depth 16');
         }
         const id = component.id;
+        if (component.name !== undefined && (typeof component.name !== 'string'
+          || inventoryNameLength(component.name) > MAX_INVENTORY_NAME_LENGTH)) {
+          throw new Error(`Component ${id} name must be a string of at most ${MAX_INVENTORY_NAME_LENGTH} characters`);
+        }
+        component.name = trimInventoryName(component.name ?? '');
         if (!isValidComponentId(id) || ids.has(id)) {
           throw new Error('Component ids must be unique portable identifiers');
         }
@@ -5124,7 +5113,6 @@ export class PlayerController {
           collideConnected: constraint.collideConnected === true
         });
       }
-      runtime.name = truncateInventoryName(trimInventoryName(data.name));
       runtime.kind = 'entity';
       runtime.constraints = constraints;
       runtime.blockCount = runtime.blocks.length;
@@ -5133,8 +5121,8 @@ export class PlayerController {
     }
 
     if (category === 'colorset') {
-      if (data?.type !== 'space-colorset' || data?.version !== 4) {
-        return fail('Expected a space-colorset v4 Protobuf file');
+      if (data?.type !== 'space-colorset' || data?.version !== 5) {
+        return fail('Expected a space-colorset v5 Protobuf file');
       }
       if (typeof data.name !== 'string' || !trimInventoryName(data.name)) return fail('A color set must have a name');
       if (inventoryNameLength(data.name) > MAX_INVENTORY_NAME_LENGTH) {

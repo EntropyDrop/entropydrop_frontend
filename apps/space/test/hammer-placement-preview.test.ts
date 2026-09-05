@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
-import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import { SceneRenderer, getInventoryPreviewBlocks, buildUnifiedInventoryPreviewMesh } from '../src/engine/render/SceneRenderer.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 
 function makeController(slot) {
   const controller = Object.create(PlayerController.prototype);

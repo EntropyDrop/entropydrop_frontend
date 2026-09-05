@@ -1,4 +1,4 @@
-import { ActionDomain } from '../../../engine/actions/BasicActions.ts';
+import { ActionDomain } from '@entropydrop/space-engine/actions/BasicActions.ts';
 import type {
   SpaceBuildValidation,
   SpaceBuilderJobStatus
@@ -8,7 +8,7 @@ import {
   normalizeAgentConfig,
   saveAgentConfig
 } from '../../../engine/contraption/AgentConfig.ts';
-import { compareComponentIds, ContraptionMode } from '../../../engine/contraption/Contraption.ts';
+import { compareComponentIds, ContraptionMode } from '@entropydrop/space-engine/contraption/Contraption.ts';
 import {
   MAX_INVENTORY_IMPORT_BYTES,
   SpecialTool,
@@ -24,23 +24,32 @@ import {
   wrapX,
   wrapZ,
   type WorldShapeMode,
-} from '../../../engine/torus/TorusWorld.ts';
+} from '@entropydrop/space-engine/torus/TorusWorld.ts';
 import {
   DEFAULT_DISTANT_SURFACE_SETTINGS,
   normalizeDistantSurfaceSettings,
   type DistantSurfaceSettingKey,
   type DistantSurfaceSettings,
-} from '../../../engine/render/DistantSurfaceLayer.ts';
+} from '@entropydrop/space-engine/render/DistantSurfaceLayer.ts';
 import { triggerProtobufDownload } from '../browser/downloadProtobuf.ts';
-import { colorToHex, normalizeColor, PRESET_COLORS } from '../../../engine/voxel/BlockTypes.ts';
+import { colorToHex, normalizeColor, PRESET_COLORS } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import { SpaceApiKeyClient } from '../../../bootstrap/SpaceApiKeyClient.ts';
 import { SpaceMarketClient } from '../../../bootstrap/SpaceMarketClient.ts';
-import { MAX_BACKPACK_SLOTS_PER_CATEGORY } from '../../../engine/storage/InventoryProtobuf.ts';
+import { MAX_BACKPACK_SLOTS_PER_CATEGORY } from '@entropydrop/space-engine/storage/InventoryProtobuf.ts';
 
 export type SpaceModal = 'inventory' | 'code' | 'settings' | 'builder' | null;
 export type ResolutionScaleSetting = 'auto' | '1' | '0.8' | '0.67' | '0.5';
 
 const RESOLUTION_SCALE_PRESETS = [1, 0.8, 0.67, 0.5] as const;
+const MUSIC_ENABLED_SETTING_KEY = 'space_setting_music_enabled';
+const EFFECTS_ENABLED_SETTING_KEY = 'space_setting_effects_enabled';
+const LEGACY_MUTED_SETTING_KEY = 'space_setting_muted';
+
+function storedBoolean(value: string | null, fallback: boolean): boolean {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return fallback;
+}
 
 function normalizeResolutionScaleSetting(value: unknown): ResolutionScaleSetting {
   if (value === 'auto' || value === null || value === undefined || value === '') return 'auto';
@@ -197,9 +206,12 @@ export interface SpaceUiSnapshot {
   resolutionEffectsQuality: 'full' | 'reduced';
   shadowsEnabled: boolean;
   skinWarning: string | null;
+  currentSkin: { url: string; model: 'strong' | 'slim' } | null;
+  apiWorldId: string | null;
   toast: { id: number; message: string; tone: 'default' | 'warning' } | null;
   isAdmin: boolean;
-  isMuted: boolean;
+  musicEnabled: boolean;
+  effectsEnabled: boolean;
   sessionMode: 'online' | 'offline';
   queuePosition: number | null;
   onlineReady: boolean;
@@ -354,9 +366,12 @@ export class SpaceUiStore {
     resolutionEffectsQuality: 'full',
     shadowsEnabled: true,
     skinWarning: null,
+    currentSkin: null,
+    apiWorldId: null,
     toast: null,
     isAdmin: false,
-    isMuted: false,
+    musicEnabled: false,
+    effectsEnabled: true,
     sessionMode: 'online',
     queuePosition: null,
     onlineReady: false
@@ -404,24 +419,42 @@ export class SpaceUiStore {
       const savedFov = localStorage.getItem('space_setting_fov');
       const savedPerspective = localStorage.getItem('space_setting_perspective') as PlayerPerspective | null;
       const savedDistance = localStorage.getItem('space_setting_cam_dist');
-      const savedMuted = localStorage.getItem('space_setting_muted');
+      const savedMusicEnabled = localStorage.getItem(MUSIC_ENABLED_SETTING_KEY);
+      const savedEffectsEnabled = localStorage.getItem(EFFECTS_ENABLED_SETTING_KEY);
+      const savedMuted = localStorage.getItem(LEGACY_MUTED_SETTING_KEY);
       if (savedFov) this.setFov(Number(savedFov), false);
       if (savedPerspective) this.setPerspective(savedPerspective, false);
       if (savedDistance) this.setCameraDistance(Number(savedDistance), false);
-      if (savedMuted !== null) this.setMuted(savedMuted === 'true', false);
+
+      const legacyEnabled = savedMuted === 'true' ? false : savedMuted === 'false' ? true : null;
+      const musicEnabled = savedMusicEnabled === null
+        ? (legacyEnabled ?? false)
+        : storedBoolean(savedMusicEnabled, false);
+      const effectsEnabled = savedEffectsEnabled === null
+        ? (legacyEnabled ?? true)
+        : storedBoolean(savedEffectsEnabled, true);
+      this.setMusicEnabled(musicEnabled, false);
+      this.setEffectsEnabled(effectsEnabled, false);
+
+      // Preserve an explicit old preference once, then let the two new keys
+      // evolve independently. An absent legacy key receives the new defaults.
+      if (legacyEnabled !== null) {
+        if (savedMusicEnabled === null) localStorage.setItem(MUSIC_ENABLED_SETTING_KEY, String(musicEnabled));
+        if (savedEffectsEnabled === null) localStorage.setItem(EFFECTS_ENABLED_SETTING_KEY, String(effectsEnabled));
+      }
     } catch { }
   }
 
-  setAuthenticatedSession(apiOrigin: string, token: string, isAdmin = false): void {
+  setAuthenticatedSession(apiOrigin: string, token: string, isAdmin = false, worldId: string | null = null): void {
     if (!token) {
       this.marketClient = null;
       this.apiKeyClient = null;
-      this.patch({ isAdmin: false });
+      this.patch({ isAdmin: false, apiWorldId: null });
       return;
     }
     this.marketClient = new SpaceMarketClient(apiOrigin, token);
     this.apiKeyClient = new SpaceApiKeyClient(apiOrigin, token);
-    this.patch({ isAdmin: !!isAdmin });
+    this.patch({ isAdmin: !!isAdmin, apiWorldId: worldId });
   }
 
   setSessionState(
@@ -695,6 +728,10 @@ export class SpaceUiStore {
     this.toastTimer = setTimeout(() => {
       if (this.snapshot.toast?.id === toast.id) this.patch({ toast: null });
     }, options.durationMs ?? 2800);
+  }
+
+  setCurrentSkin(url: string | null, model: 'strong' | 'slim'): void {
+    this.patch({ currentSkin: url ? { url, model } : null });
   }
 
   setSkinWarning(message: string | null): void {
@@ -1105,6 +1142,18 @@ export class SpaceUiStore {
     return null;
   }
 
+  setSelectedComponentName(name: string): boolean {
+    const { editingContraption, selectedComponentNodeId, contraptions } = this.snapshot;
+    if (editingContraption?.serverManaged && !editingContraption.serverCanEdit) return false;
+    const success = editingContraption?.setComponentName?.(selectedComponentNodeId, name) === true;
+    if (success) {
+      contraptions?.saveEntitiesToStorage?.();
+      this.refresh();
+      this.showToast('Component name updated');
+    }
+    return success;
+  }
+
   renameSelectedComponent(newId: string): boolean {
     const { editingContraption, selectedComponentNodeId } = this.snapshot;
     if (!editingContraption) return false;
@@ -1486,7 +1535,8 @@ export class SpaceUiStore {
   syncSettingsUI(): void {
     const { controller, world, sceneRenderer, minimap } = this.snapshot;
     if (!controller) return;
-    const isMuted = controller.sound?.getMuted?.() ?? this.snapshot.isMuted;
+    const musicEnabled = controller.sound?.getMusicEnabled?.() ?? this.snapshot.musicEnabled;
+    const effectsEnabled = controller.sound?.getEffectsEnabled?.() ?? this.snapshot.effectsEnabled;
     const resolution = resolutionSnapshot(sceneRenderer?.getResolutionScaleState?.());
     this.patch({
       fov: Number(controller.fov || 75),
@@ -1500,26 +1550,48 @@ export class SpaceUiStore {
       minimapEnabled: minimap?.isEnabled?.() ?? this.snapshot.minimapEnabled,
       shadowsEnabled: sceneRenderer?.getShadowsEnabled?.() ?? this.snapshot.shadowsEnabled,
       ...resolution,
-      isMuted
+      musicEnabled,
+      effectsEnabled
     });
   }
 
-  setMuted(muted: boolean, persist = true): void {
-    const value = Boolean(muted);
-    this.snapshot.controller?.sound?.setMuted?.(value);
+  private applySoundSetting(method: 'setMusicEnabled' | 'setEffectsEnabled', value: boolean): void {
     const game = typeof window !== 'undefined' ? (window as any).game : (globalThis as any).game;
-    if (game?.soundManager?.setMuted) {
-      game.soundManager.setMuted(value);
-    }
-    this.patch({ isMuted: value });
-    if (persist) {
-      try { localStorage.setItem('space_setting_muted', String(value)); } catch { }
-      this.showToast(value ? 'Audio Muted' : 'Audio Unmuted');
+    const targets = new Set<any>([
+      this.snapshot.controller?.sound,
+      game?.soundManager
+    ].filter(Boolean));
+    for (const sound of targets) {
+      sound?.[method]?.(value);
     }
   }
 
-  toggleMute(): void {
-    this.setMuted(!this.snapshot.isMuted);
+  setMusicEnabled(enabled: boolean, persist = true): void {
+    const value = Boolean(enabled);
+    this.applySoundSetting('setMusicEnabled', value);
+    this.patch({ musicEnabled: value });
+    if (persist) {
+      try { localStorage.setItem(MUSIC_ENABLED_SETTING_KEY, String(value)); } catch { }
+      this.showToast(value ? 'Background Music On' : 'Background Music Off');
+    }
+  }
+
+  toggleMusic(): void {
+    this.setMusicEnabled(!this.snapshot.musicEnabled);
+  }
+
+  setEffectsEnabled(enabled: boolean, persist = true): void {
+    const value = Boolean(enabled);
+    this.applySoundSetting('setEffectsEnabled', value);
+    this.patch({ effectsEnabled: value });
+    if (persist) {
+      try { localStorage.setItem(EFFECTS_ENABLED_SETTING_KEY, String(value)); } catch { }
+      this.showToast(value ? 'Sound Effects On' : 'Sound Effects Off');
+    }
+  }
+
+  toggleEffects(): void {
+    this.setEffectsEnabled(!this.snapshot.effectsEnabled);
   }
 
   setFov(fov: number, persist = true): void {
@@ -1725,7 +1797,7 @@ export class SpaceUiStore {
       entities.push({ id, name, pos: { x: position.x, y: position.y, z: position.z }, dist: Math.hypot(dx, position.y - playerPos.y, dz), type });
     };
     for (const contraption of contraptions?.contraptions || []) {
-      if (contraption?.position) addEntity(contraption.id, contraption.name || `Entity #${contraption.id}`, contraption.position, contraption.bodyType || 'dynamic');
+      if (contraption?.position) addEntity(contraption.id, contraption.getComponentName?.() || contraption.rootComponentId || `Entity #${contraption.id}`, contraption.position, contraption.bodyType || 'dynamic');
     }
     for (const player of this.remotePlayers) {
       if (!player.is_self) addEntity(String(player.user_id || player.player_entity_id), `Player: ${player.username || 'Player'}`, player, 'player');

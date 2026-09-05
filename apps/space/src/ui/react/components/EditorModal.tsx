@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SPACE_HOSTING_UI_ENABLED } from '../../../bootstrap/SpaceFeatures.ts';
 import { apiDocsBodyMarkup } from '../apiDocsMarkup.ts';
 import {
   DEFAULT_AGENT_CONTEXT_K_TOKENS,
   DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS
 } from '../../../engine/contraption/AgentConfig.ts';
-import { compareComponentIds } from '../../../engine/contraption/Contraption.ts';
+import { compareComponentIds } from '@entropydrop/space-engine/contraption/Contraption.ts';
 import { spaceUiStore, type AgentMessage } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
 import { AgentApiKeySecurityNotice } from './AgentApiKeySecurityNotice.tsx';
@@ -29,7 +30,7 @@ function HierarchyNode({ node, depth, selected }: { node: any; depth: number; se
         <span className="node-left">
           <span className="node-indent">{depth > 0 ? '└ ' : ''}</span>
           <span className="node-icon">{nodeIcon(node)}</span>
-          <span className="node-name">{node.id}{node.parentId === null ? ' (body)' : ''}</span>
+          <span className="node-name" title={node.id}>{node.name || node.id}{node.parentId === null ? ' (body)' : ''}</span>
         </span>
         <span className="node-right"><span className="node-kind-tag">{node.bodyType}</span><span className="node-count-badge">{node.blockCount} blk</span></span>
       </button>
@@ -60,8 +61,10 @@ function ComponentInspector() {
   const { editingContraption, selectedComponentNodeId } = useSpaceUi(state => state);
   const properties = editingContraption?.getNodeProperties?.(selectedComponentNodeId);
   const [name, setName] = useState(selectedComponentNodeId);
+  const [displayName, setDisplayName] = useState(properties?.name || '');
   const [tab, setTab] = useState<InspectorTab>('defaults');
   useEffect(() => setName(properties?.id || selectedComponentNodeId), [properties?.id, selectedComponentNodeId]);
+  useEffect(() => setDisplayName(properties?.name || ''), [properties?.name, selectedComponentNodeId]);
   if (!properties) return <div id="component-inspector-panel" className="component-inspector-panel"><div className="text-muted">No component selected</div></div>;
   const runtime = properties.runtimeBody;
   const runtimeDiffers = bodyConfigDiffers(properties, runtime);
@@ -75,6 +78,7 @@ function ComponentInspector() {
         : 'disabled';
   return (
     <div id="component-inspector-panel" className="component-inspector-panel">
+      <div className="inspector-field"><label className="inspector-label" htmlFor="prop-component-name">Name</label><div className="inspector-input-row"><input id="prop-component-name" className="inspector-input" placeholder={properties.id} value={displayName} onChange={event => setDisplayName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') spaceUiStore.setSelectedComponentName(displayName); }} /><button tabIndex={-1} className="small-action-btn" title="Set display name; duplicate and empty names are allowed" onClick={() => spaceUiStore.setSelectedComponentName(displayName)}>Save</button></div></div>
       <div className="inspector-field"><label className="inspector-label">ID</label><div className="inspector-input-row"><input id="prop-node-name" className="inspector-input" value={name} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') spaceUiStore.renameSelectedComponent(name); }} /><button id="prop-rename-btn" tabIndex={-1} className="small-action-btn" title="Rename component id (unique across the whole entity)" onClick={() => spaceUiStore.renameSelectedComponent(name)}>Rename</button></div></div>
       <div className="inspector-grid">
         <div className="inspector-field has-tooltip"><label className="inspector-sublabel" title="Derived hierarchy role: root body is the main rigid body, child is an attached sub-assembly">Role ⓘ</label><span id="prop-node-kind" className="inspector-val">{properties.kind === 'root' ? 'root body' : properties.kind}</span><div className="tooltip-text">Derived from the tree:<br /><b>root body</b> is the entity&apos;s main rigid body;<br /><b>child</b> is an attached sub-assembly.</div></div>
@@ -259,6 +263,10 @@ export function CodeEditorModal() {
     : 'local owner';
   const executorLabel = !backendManaged
     ? 'this browser'
+    : contraption.serverExecutionMode === 'hosted'
+      ? SPACE_HOSTING_UI_ENABLED
+        ? contraption.serverHostingEnabled ? 'server hosting · 1 credit/hour' : 'server hosting · paused'
+        : 'server managed'
     : contraption.serverDesiredRunState === 'stopped'
       ? 'stopped'
       : contraption.serverExecutesLocally === true

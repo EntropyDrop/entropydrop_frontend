@@ -15,7 +15,7 @@ import {
   DEFAULT_AGENT_CONTEXT_K_TOKENS,
   DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS
 } from '../src/engine/contraption/AgentChat.ts';
-import { renderAgentApiReference } from '../src/engine/contraption/ScriptApiContract.ts';
+import { renderAgentApiReference } from '@entropydrop/space-engine/contraption/ScriptApiContract.ts';
 
 test('extractCodeBlock extracts a fenced JavaScript block', () => {
   const content = 'Here is the controller:\n```js\nself.applyForce([0, 100, 0]);\n```\nDone.';

@@ -25,48 +25,105 @@ type ActiveBlockBreakVoice = {
 export class SoundManager {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
+  private effectsGain: GainNode | null = null;
   private musicGain: GainNode | null = null;
+  private musicBuffer: AudioBuffer | null = null;
   private musicSource: AudioBufferSourceNode | null = null;
   private musicStartPromise: Promise<void> | null = null;
   private blockBreakSerial = 0;
   private blockBreakBuffers = new Map<string, AudioBuffer>();
   private activeBlockBreakVoices = new Set<ActiveBlockBreakVoice>();
-  private isMuted = false;
+  private musicEnabled = false;
+  private effectsEnabled = true;
 
   constructor() {
     this.ctx = null;
     this.masterGain = null;
-    this.isMuted = false;
   }
 
   init() {
-    // requestLock calls init on every user gesture.  Re-entering here lets a
-    // transient download/decode failure retry without constructing a second
-    // AudioContext or a second music source.
+    // requestLock calls init on every user gesture. Re-entering lets an enabled
+    // soundtrack retry a transient load failure without duplicating its source.
     if (this.ctx) {
-      void this.startBackgroundMusic();
+      if (this.musicEnabled) void this.startBackgroundMusic();
       return;
     }
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       this.ctx = new AudioCtx();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.3, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(0.3, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
+
+      this.effectsGain = this.ctx.createGain();
+      this.effectsGain.gain.setValueAtTime(this.effectsEnabled ? 1 : 0, this.ctx.currentTime);
+      this.effectsGain.connect(this.masterGain);
 
       this.musicGain = this.ctx.createGain();
       this.musicGain.gain.setValueAtTime(0, this.ctx.currentTime);
       this.musicGain.connect(this.masterGain);
-      void this.startBackgroundMusic();
+      if (this.musicEnabled) void this.startBackgroundMusic();
     } catch (e) {
       console.warn('Web Audio API not supported:', e);
+    }
+  }
+
+  private rampBus(gain: GainNode, target: number, duration: number, from?: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const param = gain.gain;
+    const now = ctx.currentTime;
+    try {
+      if (from !== undefined) {
+        param.cancelScheduledValues(now);
+        param.setValueAtTime(from, now);
+      } else if (typeof param.cancelAndHoldAtTime === 'function') {
+        param.cancelAndHoldAtTime(now);
+      } else {
+        const current = Number.isFinite(param.value) ? param.value : target;
+        param.cancelScheduledValues(now);
+        param.setValueAtTime(current, now);
+      }
+      param.linearRampToValueAtTime(target, now + duration);
+    } catch {
+      try { param.setValueAtTime(target, now); } catch { }
+    }
+  }
+
+  private startDecodedMusic(ctx: AudioContext, musicGain: GainNode): void {
+    if (!this.musicEnabled || this.musicSource || !this.musicBuffer || this.ctx !== ctx) return;
+
+    const source = ctx.createBufferSource();
+    source.buffer = this.musicBuffer;
+    source.loop = true;
+    source.loopStart = MUSIC_CODEC_PREROLL_SECONDS;
+    source.loopEnd = this.musicBuffer.duration;
+    source.connect(musicGain);
+
+    const now = ctx.currentTime;
+    try {
+      source.start(now, MUSIC_CODEC_PREROLL_SECONDS);
+      this.musicSource = source;
+      this.rampBus(musicGain, BACKGROUND_MUSIC_GAIN, 1.5, 0);
+    } catch (error) {
+      try { source.disconnect(); } catch { }
+      console.warn('Space background music could not start:', error);
     }
   }
 
   private startBackgroundMusic(): void {
     const ctx = this.ctx;
     const musicGain = this.musicGain;
-    if (!ctx || !musicGain || this.musicSource || this.musicStartPromise) return;
+    if (!ctx || !musicGain || !this.musicEnabled) return;
+    if (this.musicSource) {
+      this.rampBus(musicGain, BACKGROUND_MUSIC_GAIN, 0.35);
+      return;
+    }
+    if (this.musicBuffer) {
+      this.startDecodedMusic(ctx, musicGain);
+      return;
+    }
+    if (this.musicStartPromise) return;
 
     const musicUrl = new URL('../../assets/audio/bwv1043-ii-8bit.ogg', import.meta.url).href;
     this.musicStartPromise = (async () => {
@@ -74,23 +131,11 @@ export class SoundManager {
       if (!response.ok) throw new Error(`Background music request failed: ${response.status}`);
       const buffer = await ctx.decodeAudioData(await response.arrayBuffer());
 
-      // The page may have been replaced while the asset decoded.  Never attach
-      // the old work to another context or duplicate a source after a retry.
-      if (this.ctx !== ctx || this.musicSource) return;
-
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.loop = true;
-      source.loopStart = MUSIC_CODEC_PREROLL_SECONDS;
-      source.loopEnd = buffer.duration;
-      source.connect(musicGain);
-
-      const now = ctx.currentTime;
-      musicGain.gain.cancelScheduledValues(now);
-      musicGain.gain.setValueAtTime(0, now);
-      musicGain.gain.linearRampToValueAtTime(BACKGROUND_MUSIC_GAIN, now + 1.5);
-      source.start(now, MUSIC_CODEC_PREROLL_SECONDS);
-      this.musicSource = source;
+      // A toggle may have changed while decoding. Keep the decoded buffer, but
+      // only create the one looping source when music is still enabled.
+      if (this.ctx !== ctx) return;
+      this.musicBuffer = buffer;
+      this.startDecodedMusic(ctx, musicGain);
     })()
       .catch(error => {
         console.warn('Space background music is temporarily unavailable:', error);
@@ -107,28 +152,63 @@ export class SoundManager {
     }
   }
 
-  setMuted(muted: boolean) {
-    this.isMuted = Boolean(muted);
-    if (this.masterGain && this.ctx) {
-      try {
-        this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.3, this.ctx.currentTime);
-      } catch { }
+  setMusicEnabled(enabled: boolean): void {
+    this.musicEnabled = Boolean(enabled);
+    if (!this.musicEnabled) {
+      if (this.musicGain) this.rampBus(this.musicGain, 0, 0.2);
+      return;
     }
+    // This setter is normally reached from a settings click, so use that
+    // gesture to create or resume Web Audio and start playback immediately.
+    // Keeping this inside the enabled branch preserves default-off lazy load.
+    if (typeof window !== 'undefined') this.ensureContext();
+    if (this.ctx) void this.startBackgroundMusic();
+  }
+
+  getMusicEnabled(): boolean {
+    return this.musicEnabled;
+  }
+
+  toggleMusic(): boolean {
+    this.setMusicEnabled(!this.musicEnabled);
+    return this.musicEnabled;
+  }
+
+  setEffectsEnabled(enabled: boolean): void {
+    this.effectsEnabled = Boolean(enabled);
+    if (this.effectsGain) this.rampBus(this.effectsGain, this.effectsEnabled ? 1 : 0, 0.02);
+  }
+
+  getEffectsEnabled(): boolean {
+    return this.effectsEnabled;
+  }
+
+  toggleEffects(): boolean {
+    this.setEffectsEnabled(!this.effectsEnabled);
+    return this.effectsEnabled;
+  }
+
+  /** Legacy all-audio master mute retained for older callers. */
+  setMuted(muted: boolean) {
+    const enabled = !Boolean(muted);
+    this.setMusicEnabled(enabled);
+    this.setEffectsEnabled(enabled);
   }
 
   getMuted(): boolean {
-    return this.isMuted;
+    return !this.musicEnabled && !this.effectsEnabled;
   }
 
   toggleMute(): boolean {
-    this.setMuted(!this.isMuted);
-    return this.isMuted;
+    const muted = !this.getMuted();
+    this.setMuted(muted);
+    return muted;
   }
 
   // Wrench ratchet sound
   playWrenchClick() {
     this.ensureContext();
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ctx || !this.effectsGain || !this.effectsEnabled) return;
 
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -142,7 +222,7 @@ export class SoundManager {
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
 
     osc.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.effectsGain);
 
     osc.start(t);
     osc.stop(t + 0.07);
@@ -151,7 +231,7 @@ export class SoundManager {
   // Super glue apply sound
   playGlueApply() {
     this.ensureContext();
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ctx || !this.effectsGain || !this.effectsEnabled) return;
 
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -165,7 +245,7 @@ export class SoundManager {
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
 
     osc.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.effectsGain);
 
     osc.start(t);
     osc.stop(t + 0.13);
@@ -174,7 +254,7 @@ export class SoundManager {
   // Mechanical Assembly: "Ka-Chink! Clack-clack!"
   playAssemblyClack() {
     this.ensureContext();
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ctx || !this.effectsGain || !this.effectsEnabled) return;
 
     const t = this.ctx.currentTime;
 
@@ -187,7 +267,7 @@ export class SoundManager {
     gain1.gain.setValueAtTime(0.4, t);
     gain1.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
     osc1.connect(gain1);
-    gain1.connect(this.masterGain);
+    gain1.connect(this.effectsGain);
     osc1.start(t);
     osc1.stop(t + 0.16);
 
@@ -200,7 +280,7 @@ export class SoundManager {
     gain2.gain.setValueAtTime(0.3, t + 0.06);
     gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.22);
     osc2.connect(gain2);
-    gain2.connect(this.masterGain);
+    gain2.connect(this.effectsGain);
     osc2.start(t + 0.06);
     osc2.stop(t + 0.23);
   }
@@ -208,7 +288,7 @@ export class SoundManager {
   // Disassembly uncouple sound
   playDisassemblySound() {
     this.ensureContext();
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ctx || !this.effectsGain || !this.effectsEnabled) return;
 
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -222,7 +302,7 @@ export class SoundManager {
     gain.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
 
     osc.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.effectsGain);
 
     osc.start(t);
     osc.stop(t + 0.19);
@@ -231,7 +311,7 @@ export class SoundManager {
   // Steam hiss (filtered white noise)
   playSteamHiss() {
     this.ensureContext();
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ctx || !this.effectsGain || !this.effectsEnabled) return;
 
     const bufferSize = this.ctx.sampleRate * 0.25;
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
@@ -255,7 +335,7 @@ export class SoundManager {
 
     noise.connect(filter);
     filter.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.effectsGain);
 
     noise.start(t);
     noise.stop(t + 0.26);
@@ -264,7 +344,7 @@ export class SoundManager {
   // Physics Impact Thud
   playImpact() {
     this.ensureContext();
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ctx || !this.effectsGain || !this.effectsEnabled) return;
 
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -278,7 +358,7 @@ export class SoundManager {
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
 
     osc.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.effectsGain);
 
     osc.start(t);
     osc.stop(t + 0.19);
@@ -287,7 +367,7 @@ export class SoundManager {
   // Block place / break
   playBlockPlace() {
     this.ensureContext();
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ctx || !this.effectsGain || !this.effectsEnabled) return;
 
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -301,7 +381,7 @@ export class SoundManager {
     gain.gain.exponentialRampToValueAtTime(0.01, t + BLOCK_PLACE_GLIDE_SECONDS);
 
     osc.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.effectsGain);
 
     osc.start(t);
     osc.stop(t + 0.09);
@@ -412,7 +492,7 @@ export class SoundManager {
 
   playBlockBreak(options: BlockBreakOptions = {}) {
     this.ensureContext();
-    if (!this.ctx || !this.masterGain || this.isMuted) return;
+    if (!this.ctx || !this.effectsGain || !this.effectsEnabled) return;
 
     const t = this.ctx.currentTime;
     const kind: BlockBreakKind = options.kind === 'micro' || options.kind === 'bulk'
@@ -434,7 +514,7 @@ export class SoundManager {
     source.buffer = buffer;
     gain.gain.setValueAtTime(level, startAt);
     source.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.effectsGain);
 
     const voice: ActiveBlockBreakVoice = { source, gain, level, startedAt: startAt };
     this.activeBlockBreakVoices.add(voice);

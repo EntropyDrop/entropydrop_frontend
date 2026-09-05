@@ -1,10 +1,11 @@
+import { DEFAULT_PLAYER_SKIN_URL } from './bootstrap/SpaceBootstrap.ts';
 import * as THREE from 'three';
 import { SceneRenderer } from './engine/render/SceneRenderer.ts';
-import { World } from './engine/voxel/World.ts';
-import { PlayerPhysics } from './engine/physics/PlayerPhysics.ts';
-import { ContraptionPhysics } from './engine/physics/ContraptionPhysics.ts';
-import { ContraptionManager } from './engine/contraption/ContraptionManager.ts';
-import { EntitySimulationClock } from './engine/simulation/EntitySimulationClock.ts';
+import { World } from '@entropydrop/space-engine/voxel/World.ts';
+import { PlayerPhysics } from '@entropydrop/space-engine/physics/PlayerPhysics.ts';
+import { ContraptionPhysics } from '@entropydrop/space-engine/physics/ContraptionPhysics.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
+import { EntitySimulationClock } from '@entropydrop/space-engine/simulation/EntitySimulationClock.ts';
 import { PlayerController } from './engine/controls/PlayerController.ts';
 import { SpaceBuilder } from './engine/building/SpaceBuilder.ts';
 import { SoundManager } from './engine/audio/SoundManager.ts';
@@ -141,9 +142,14 @@ class Game {
     this.uiStore.setAuthenticatedSession(
       session.api_origin,
       session.mode === 'online' ? session.token : '',
-      session.mode === 'online' && session.player.is_admin === true
+      session.mode === 'online' && session.player.is_admin === true,
+      session.world.id
     );
     this.uiStore.setSkinWarning(session.entry_warning);
+    this.uiStore.setCurrentSkin(
+      session.entry_warning || session.skin_object_url === DEFAULT_PLAYER_SKIN_URL ? null : session.skin_object_url,
+      session.player.skin_type
+    );
     this.minimap = new Minimap(this.world, this.contraptionManager);
 
     // 2. Player Controller

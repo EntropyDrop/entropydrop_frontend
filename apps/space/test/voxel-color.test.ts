@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { World } from '../src/engine/voxel/World.ts';
-import { BlockTypes, normalizeColor, colorToHex, DEFAULT_BLOCK_COLOR, PRESET_COLORS } from '../src/engine/voxel/BlockTypes.ts';
+import { World } from '@entropydrop/space-engine/voxel/World.ts';
+import { BlockTypes, normalizeColor, colorToHex, DEFAULT_BLOCK_COLOR, PRESET_COLORS } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import { SpecialTool } from '../src/engine/controls/PlayerController.ts';
 
 test('normalizeColor handles hex strings and integer colors correctly', () => {
@@ -65,7 +65,7 @@ test('SpecialTool has BRUSH, legacy PIPETTE, SELECTOR, WRENCH and HAMMER and omi
 });
 
 test('ContraptionManager 3-point selection with Super Glue determines correct bounding box', async () => {
-  const { ContraptionManager } = await import('../src/engine/contraption/ContraptionManager.ts');
+  const { ContraptionManager } = await import('@entropydrop/space-engine/contraption/ContraptionManager.ts');
   const world = new World(new THREE.Scene());
   const manager = new ContraptionManager(new THREE.Scene(), world, null, null);
 

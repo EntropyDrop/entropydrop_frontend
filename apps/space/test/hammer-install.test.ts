@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { BodyType, ContraptionMode } from '../src/engine/contraption/Contraption.ts';
-import { ContraptionManager } from '../src/engine/contraption/ContraptionManager.ts';
+import { BodyType, ContraptionMode } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
-import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 
 function block(x: number, entityId = 'root', color = 0xf2a93b) {
   return {
@@ -82,20 +82,21 @@ test('Hammer entity installation merges a reusable subtree and keeps the target 
 
   assert.equal(result.ok, true);
   assert.equal(manager.contraptions.length, 1, 'installation must not register a nested Contraption');
-  assert.equal(result.rootId, 'Motor');
+  assert.equal(result.rootId, 'root_2');
+  assert.equal(target.getComponentName(result.rootId), 'Motor');
   assert.equal(result.skippedExternalConstraints, 1, 'external constraints do not leak into an installed module');
-  assert.equal(target.getEntityNode('Motor').parentId, 'root');
-  assert.equal(target.getNodeBodyType('Motor'), BodyType.KINEMATIC, 'the installed root is rigidly attached');
-  assert.equal(target.getEntityNode('Motor_arm').parentId, 'Motor', 'conflicting ids are namespaced');
-  assert.equal(target.getNodeBodyType('Motor_arm'), BodyType.DYNAMIC, 'internal body configuration is preserved');
-  assert.equal(target.getComponentSeats('Motor').length, 1);
-  assert.equal(target.getComponentSeats('Motor_arm').length, 1);
-  assert.match(target.getNodeScript('Motor'), /child\("Motor_arm"\)/, 'literal child lookups follow remapped ids');
+  assert.equal(target.getEntityNode('root_2').parentId, 'root');
+  assert.equal(target.getNodeBodyType('root_2'), BodyType.KINEMATIC, 'the installed root is rigidly attached');
+  assert.equal(target.getEntityNode('root_2_arm').parentId, 'root_2', 'conflicting ids are namespaced');
+  assert.equal(target.getNodeBodyType('root_2_arm'), BodyType.DYNAMIC, 'internal body configuration is preserved');
+  assert.equal(target.getComponentSeats('root_2').length, 1);
+  assert.equal(target.getComponentSeats('root_2_arm').length, 1);
+  assert.match(target.getNodeScript('root_2'), /child\("root_2_arm"\)/, 'literal child lookups follow remapped ids');
   assert.equal(target.scriptStatus, 'stopped', 'installing scripts cannot start a stopped target');
-  assert.equal(target.isNodeScriptEnabled('Motor'), false);
+  assert.equal(target.isNodeScriptEnabled('root_2'), false);
 
-  const installedRootBlock = target.blocks.find(item => item.entityId === 'Motor');
-  const installedArmBlock = target.blocks.find(item => item.entityId === 'Motor_arm');
+  const installedRootBlock = target.blocks.find(item => item.entityId === 'root_2');
+  const installedArmBlock = target.blocks.find(item => item.entityId === 'root_2_arm');
   assert.ok(installedRootBlock);
   assert.ok(installedArmBlock);
   assert.ok(target.getBlockWorldCenter(installedRootBlock).distanceTo(placement.clone().addScalar(0.5)) < 1e-9);
@@ -103,9 +104,9 @@ test('Hammer entity installation merges a reusable subtree and keeps the target 
     placement.clone().add(new THREE.Vector3(1.5, 0.5, 0.5))
   ) < 1e-9);
 
-  const hinge = [...target.constraintDefinitions.values()].find(item => item.bodyB === 'Motor_arm');
+  const hinge = [...target.constraintDefinitions.values()].find(item => item.bodyB === 'root_2_arm');
   assert.ok(hinge);
-  assert.equal(hinge.bodyA, 'Motor');
+  assert.equal(hinge.bodyA, 'root_2');
 });
 
 test('the same entity module can be installed repeatedly with stable remapped scripts', () => {
@@ -118,9 +119,10 @@ test('the same entity module can be installed repeatedly with stable remapped sc
 
   assert.equal(first.ok, true);
   assert.equal(second.ok, true);
-  assert.equal(second.rootId, 'Motor_2');
-  assert.ok(target.getEntityNode('Motor_2_arm'));
-  assert.match(target.getNodeScript('Motor_2'), /child\("Motor_2_arm"\)/);
+  assert.equal(second.rootId, 'root_3');
+  assert.equal(target.getComponentName(second.rootId), 'Motor');
+  assert.ok(target.getEntityNode('root_3_arm'));
+  assert.match(target.getNodeScript('root_3'), /child\("root_3_arm"\)/);
   assert.equal(target.entityNodes.size, 6);
   assert.equal(target.blocks.length, 6);
 });
@@ -227,8 +229,9 @@ test('plain Hammer placement on an entity installs under the hit component autom
   assert.equal(controller.pasteInventorySlot(false), true);
 
   assert.equal(manager.contraptions.length, 1, 'entity-on-entity placement must not spawn a second Contraption');
-  assert.equal(target.getEntityNode('Sensor').parentId, 'arm');
-  const installedBlock = target.blocks.find(item => item.entityId === 'Sensor');
+  assert.equal(target.getEntityNode('root_2').parentId, 'arm');
+  assert.equal(target.getComponentName('root_2'), 'Sensor');
+  const installedBlock = target.blocks.find(item => item.entityId === 'root_2');
   assert.ok(installedBlock);
   assert.ok(target.getBlockWorldCenter(installedBlock).distanceTo(expectedCenter) < 1e-8,
     'the installed child must use the exact preview position and outward rotation');
@@ -283,14 +286,15 @@ test('entity anchor frame and Hammer roll compose into the installed localRotati
     'Hammer roll must preserve the anchor outward direction');
 
   assert.equal(controller.pasteInventorySlot(false), true);
-  const installed = target.getEntityNode('Rotor');
+  const installed = target.getEntityNode('root_2');
   const placedAnchor = new THREE.Quaternion().fromArray(placedSlot.anchorRotation);
   assert.ok(installed);
-  assert.ok(target.getEntityNodeWorldQuaternion('Rotor').angleTo(pose.quaternion) < 1e-8);
+  assert.ok(target.getEntityNodeWorldQuaternion('root_2').angleTo(pose.quaternion) < 1e-8);
+  assert.equal(target.getComponentName('root_2'), 'Rotor');
   assert.ok(installed.anchorQuaternion.angleTo(placedAnchor) < 1e-8,
     'the installed component retains the right-clicked anchor roll');
 
-  const copied = target.serializeSubtree('Rotor');
+  const copied = target.serializeSubtree('root_2');
   assert.ok(new THREE.Quaternion().fromArray(copied.anchorRotation).angleTo(placedAnchor) < 1e-8,
     'copying the installed module must retain its authored anchor frame');
 });

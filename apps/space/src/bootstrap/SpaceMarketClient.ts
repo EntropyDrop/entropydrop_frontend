@@ -7,7 +7,8 @@ import {
 import {
   decodeInventoryResource,
   encodeInventoryResource,
-} from '../engine/storage/InventoryProtobuf.ts';
+  inventoryResourceName,
+} from '@entropydrop/space-engine/storage/InventoryProtobuf.ts';
 
 export type SpaceMarketCategory = 'blockset' | 'entity' | 'colorset';
 export type SpaceMarketSort = 'downloads' | 'likes' | 'latest';
@@ -24,7 +25,7 @@ export interface SpaceMarketQuota {
 export interface SpaceMarketResource {
   id: string;
   kind: SpaceMarketCategory;
-  schema_version: 4;
+  schema_version: 5;
   name: string;
   license: 'AGPL-3.0-only';
   digest: string;
@@ -255,22 +256,20 @@ export class SpaceMarketClient {
           null
         );
       }
-      if (portable.name !== expected.name) {
+      const actualName = inventoryResourceName(expected.kind, portable);
+      if (actualName !== expected.name) {
         throw new SpaceMarketError(
           0,
           'MARKET_RESOURCE_NAME_MISMATCH',
           'The downloaded market resource name does not match the market API.',
-          { expected: expected.name, actual: portable.name }
+          { expected: expected.name, actual: actualName }
         );
       }
 
       // The market digest is a semantic identity used for global duplicate
-      // detection. Its backend contract intentionally omits the display name,
+      // detection. Its backend contract recursively omits all display names,
       // so hashing the named CDN blob itself rejects every real publication.
-      const digestPayload = encodeInventoryResource(expected.kind, {
-        ...portable,
-        name: '',
-      });
+      const digestPayload = encodeInventoryResource(expected.kind, portable, { includeNames: false });
       const actualDigest = await sha256Hex(digestPayload);
       if (actualDigest !== normalizedDigest) {
         throw new SpaceMarketError(

@@ -29,12 +29,12 @@ import {
   extractModelArchive,
   MAX_MODEL_ARCHIVE_BYTES,
 } from '../../../engine/voxel/ModelImportArchive.ts';
-import { colorToHex, normalizeColor } from '../../../engine/voxel/BlockTypes.ts';
+import { colorToHex, normalizeColor } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import {
   decodeInventoryResource,
   inventoryResourcePreviewItem,
   MAX_BACKPACK_SLOTS_PER_CATEGORY,
-} from '../../../engine/storage/InventoryProtobuf.ts';
+} from '@entropydrop/space-engine/storage/InventoryProtobuf.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
 import {
@@ -513,7 +513,7 @@ function InventoryItemCard({
 }) {
   const controller = useSpaceUi(state => state.controller);
   const fallback = category === 'blockset' ? `Block set ${index + 1}` : `Entity ${index + 1}`;
-  const name = typeof item?.name === 'string' ? item.name : (controller?.inventoryItemName?.(category, item, index) || fallback);
+  const name = controller?.inventoryItemName?.(category, item, index) || item?.name || item?.rootComponentId || fallback;
   const count = item ? (item.blockCount || item.blocks?.length || 0) : 0;
   const thumbnail = item ? InventoryThumbnailRenderer.getInstance().getThumbnail(item, isHotbar ? 144 : 96) : null;
   const isDragging = draggedIndex === index;
@@ -574,7 +574,7 @@ function InventoryItemCard({
               title="Export Protobuf"
               aria-label="Export Protobuf"
               onClick={() => spaceUiStore.downloadProtobuf(
-                spaceUiStore.inventoryProtobufFilename(item.name || fallback, fallback),
+                spaceUiStore.inventoryProtobufFilename(name, fallback),
                 controller?.encodeInventoryItem?.(category, item)
               )}
             >
@@ -607,9 +607,8 @@ function InventoryItemCard({
           <input
             type="text"
             className="backpack-item-name-input"
-            maxLength={60}
-            value={name}
-            placeholder={fallback}
+            value={item.name ?? ''}
+            placeholder={category === 'entity' ? item.rootComponentId || fallback : fallback}
             aria-label={`${category} slot ${index + 1} name`}
             draggable={false}
             onMouseDown={e => e.stopPropagation()}
