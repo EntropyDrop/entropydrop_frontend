@@ -201,7 +201,7 @@ test('aim refresh uses the latest entity transform rather than a previous-frame 
   const manager = new ContraptionManager(scene, {}, null, null) as any;
   const contraption = new Contraption(
     6,
-    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }],
     new THREE.Vector3(TORUS_SPAWN_X, 18, TORUS_SPAWN_Z - 5),
     scene
   );
@@ -241,7 +241,7 @@ test('wrench keeps entity picking active without showing hover wireframes', () =
   const manager = new ContraptionManager(scene, {}, null, null) as any;
   const contraption = new Contraption(
     8,
-    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }],
     new THREE.Vector3(TORUS_SPAWN_X, 18, TORUS_SPAWN_Z - 5),
     scene
   );

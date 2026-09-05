@@ -4,6 +4,7 @@ import {
   BodyType,
   ContraptionMode,
   isValidComponentId,
+  isValidConstraintId,
   MAX_ENTITY_BOUNDS,
   MAX_ENTITY_COMPONENTS
 } from '../contraption/Contraption.ts';
@@ -51,8 +52,23 @@ export type PlayerPerspective = 'first_person' | 'third_person' | 'third_person_
 
 const HEX_COLOR = /^#?[0-9a-f]{6}$/i;
 const MAX_INVENTORY_NAME_LENGTH = 80;
+const PYTHON_LEADING_WHITESPACE = /^[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/;
+const PYTHON_TRAILING_WHITESPACE = /[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/;
+
+function trimInventoryName(value: string): string {
+  return value.replace(PYTHON_LEADING_WHITESPACE, '').replace(PYTHON_TRAILING_WHITESPACE, '');
+}
+
+function inventoryNameLength(value: string): number {
+  return Array.from(value).length;
+}
+
+function truncateInventoryName(value: string): string {
+  return Array.from(value).slice(0, MAX_INVENTORY_NAME_LENGTH).join('');
+}
+
 const MICRO_DIVISIONS = 5;
-const INVENTORY_STORAGE_KEY = 'space.backpack.v3.pb';
+const INVENTORY_STORAGE_KEY = 'space.backpack.v5.pb';
 const INVENTORY_CATEGORIES = ['blockset', 'entity', 'colorset'];
 const DEFAULT_COLOR_SET_NAME = 'Default palette';
 export const MAX_INVENTORY_IMPORT_BYTES = 8 * 1024 * 1024;
@@ -82,6 +98,37 @@ const WRENCH_GRAB_RESPONSE = 8;
 const WRENCH_GRAB_MAX_ACCELERATION = 36;
 const WRENCH_GRAB_MAX_TARGET_SPEED = 10;
 const WRENCH_GRAB_MAX_SPEED = 14;
+
+function contraptionRootId(contraption: any): string {
+  const explicit = contraption?.rootComponentId;
+  if (typeof explicit === 'string' && explicit.length > 0) return explicit;
+  for (const node of contraption?.entityNodes?.values?.() || []) {
+    if (node?.parentId === null && typeof node.id === 'string' && node.id.length > 0) return node.id;
+  }
+  return '';
+}
+
+function contraptionBlockOwnerId(contraption: any, block: any): string {
+  return block?.entityId === undefined || block?.entityId === null
+    ? contraptionRootId(contraption)
+    : String(block.entityId);
+}
+
+function inventoryEntityRootId(item: any): string {
+  if (typeof item?.rootComponentId === 'string' && item.rootComponentId) return item.rootComponentId;
+  const definitions = Array.isArray(item?.childEntities) ? item.childEntities : [];
+  const childIds = new Set(definitions.map(definition => String(definition?.id ?? '')));
+  const candidates = new Set<string>();
+  for (const block of item?.blocks || []) {
+    const owner = block?.entityId;
+    if (typeof owner === 'string' && owner && !childIds.has(owner)) candidates.add(owner);
+  }
+  for (const definition of definitions) {
+    const parentId = definition?.parentId;
+    if (typeof parentId === 'string' && parentId && !childIds.has(parentId)) candidates.add(parentId);
+  }
+  return candidates.size === 1 ? [...candidates][0] : '';
+}
 
 type EntityPlacementEntry = { center: THREE.Vector3; size: number };
 type EntityPlacementObb = {
@@ -535,8 +582,10 @@ export class PlayerController {
 
       if (e.button === 0) {
         this.handleLeftClick(e);
+        this.refreshAimAfterPointerAction();
       } else if (e.button === 2) {
         this.handleRightClick(e);
+        this.refreshAimAfterPointerAction();
       } else if (e.button === 1) {
         // Middle Click: Sample color from targeted voxel if pointing at one
         if (this.currentRaycast && this.currentRaycast.hit && this.currentRaycast.color !== undefined && this.currentRaycast.color !== null) {
@@ -828,11 +877,12 @@ export class PlayerController {
       if (this.hoveredContraptionHit) {
         const hit = this.hoveredContraptionHit;
         const c = hit.contraption;
-        const targetNodeId = hit.entityId || 'root';
+        const targetNodeId = hit.entityId ?? contraptionRootId(c);
         const hitCell = hit.cell;
+        let result;
 
         if (hit.kind === 'micro') {
-          const result = this.performBasicAction({
+          result = this.performBasicAction({
             domain: ActionDomain.ENTITY,
             action: 'clear-cell',
             target: { contraption: c },
@@ -849,7 +899,7 @@ export class PlayerController {
             }
           }
         } else {
-          const result = this.performBasicAction({
+          result = this.performBasicAction({
             domain: ActionDomain.ENTITY,
             action: 'remove-standard',
             target: { contraption: c },
@@ -865,18 +915,21 @@ export class PlayerController {
             }
           }
         }
-        this.particles.emitBlockBreak(hit.point, hit.color || this.selectedColor, 12);
-        this.sound.playBlockBreak();
+        if ((result?.removed || 0) > 0) {
+          this.particles.emitBlockBreak(hit.point, hit.color || this.selectedColor, 12);
+          this.sound.playBlockBreak({ kind: 'standard', count: result.removed });
+        }
         return;
       }
 
       if (!this.currentRaycast.hit) return;
+      let result;
       if (this.currentRaycast.kind === 'micro') {
         const mp = this.currentRaycast.microPos;
         const wx = Math.floor(mp.x / 5);
         const wy = Math.floor(mp.y / 5);
         const wz = Math.floor(mp.z / 5);
-        const result = this.performBasicAction({
+        result = this.performBasicAction({
           domain: ActionDomain.WORLD,
           action: 'clear-cell',
           cell: { x: wx, y: wy, z: wz },
@@ -885,10 +938,14 @@ export class PlayerController {
         if (result.removed && this.ui) this.ui.showToast(`Shovel removed ${result.removed} micro voxels (1 standard cell)`);
       } else {
         const hp = this.currentRaycast.hitPos;
-        this.performBasicAction({ domain: ActionDomain.WORLD, action: 'remove-standard', cell: hp });
-        this.particles.emitBlockBreak(hp, this.currentRaycast.color || this.selectedColor, 12);
+        result = this.performBasicAction({ domain: ActionDomain.WORLD, action: 'remove-standard', cell: hp });
+        if ((result.removed || 0) > 0) {
+          this.particles.emitBlockBreak(hp, this.currentRaycast.color || this.selectedColor, 12);
+        }
       }
-      this.sound.playBlockBreak();
+      if ((result?.removed || 0) > 0) {
+        this.sound.playBlockBreak({ kind: 'standard', count: result.removed });
+      }
       return;
     }
 
@@ -897,11 +954,12 @@ export class PlayerController {
       if (this.hoveredContraptionHit) {
         const hit = this.hoveredContraptionHit;
         const c = hit.contraption;
-        const targetNodeId = hit.entityId || 'root';
+        const targetNodeId = hit.entityId ?? contraptionRootId(c);
         const hitCell = hit.cell;
+        let result;
 
         if (hit.kind === 'micro' && hit.block) {
-          const result = this.performBasicAction({
+          result = this.performBasicAction({
             domain: ActionDomain.ENTITY,
             action: 'remove-micro',
             target: { contraption: c },
@@ -926,7 +984,7 @@ export class PlayerController {
             Math.round((hit.placeMicroPos.localY - hit.normal.y * 0.2) * 5),
             Math.round((hit.placeMicroPos.localZ - hit.normal.z * 0.2) * 5)
           ];
-          const result = this.performBasicAction({
+          result = this.performBasicAction({
             domain: ActionDomain.ENTITY,
             action: 'subdivide-standard',
             target: { contraption: c },
@@ -941,45 +999,89 @@ export class PlayerController {
             }
           }
         }
-        this.particles.emitBlockBreak(hit.point, hit.color || this.selectedColor, 4);
-        this.sound.playBlockBreak();
+        if ((result?.removed || 0) > 0) {
+          this.particles.emitBlockBreak(hit.point, hit.color || this.selectedColor, 4);
+          this.sound.playBlockBreak({ kind: 'micro', count: result.removed });
+        }
         return;
       }
 
       if (!this.currentRaycast.hit) return;
-      if (this.currentRaycast.kind === 'micro') {
-        const mp = this.currentRaycast.microPos;
-        this.performBasicAction({ domain: ActionDomain.WORLD, action: 'remove-micro', micro: mp });
-        this.particles.emitBlockBreak(this.currentRaycast.hitPos, this.currentRaycast.color, 4);
-      } else {
-        const hp = this.currentRaycast.hitPos;
-        let carveMicro = null;
-        // Direct carve uses the exact rendered entry point, clamped to the hit standard cell.
-        {
-          // Direct carve: immediately remove the micro cell under the crosshair (ray entry
-          // point converted to 5× micro-coordinates).
-          const normal = this.currentRaycast.normal;
-          const entry = this.currentRaycast.entry
-            ? new THREE.Vector3(this.currentRaycast.entry.x, this.currentRaycast.entry.y, this.currentRaycast.entry.z)
-            : this.physics.getEyePosition();
-          const clamp = (value, base) => Math.max(base * 5, Math.min(base * 5 + 4, value));
-          carveMicro = [
-            clamp(Math.floor((entry.x + normal.x * 0.02) * 5), hp.x),
-            clamp(Math.floor((entry.y + normal.y * 0.02) * 5), hp.y),
-            clamp(Math.floor((entry.z + normal.z * 0.02) * 5), hp.z)
-          ];
+      const publishedHit = this.currentRaycast;
+      const publishedCell = publishedHit.kind === 'micro'
+        ? {
+            x: Math.floor(publishedHit.microPos.x / MICRO_DIVISIONS),
+            y: Math.floor(publishedHit.microPos.y / MICRO_DIVISIONS),
+            z: Math.floor(publishedHit.microPos.z / MICRO_DIVISIONS),
+          }
+        : publishedHit.hitPos;
+
+      const carve = hit => {
+        if (hit.kind === 'micro') {
+          return this.performBasicAction({
+            domain: ActionDomain.WORLD,
+            action: 'remove-micro',
+            micro: hit.microPos,
+          });
         }
-        const result = this.performBasicAction({
+
+        const hp = hit.hitPos;
+        // Direct carve uses the exact rendered entry point, clamped to the hit standard cell.
+        const normal = hit.normal;
+        const entry = hit.entry
+          ? new THREE.Vector3(hit.entry.x, hit.entry.y, hit.entry.z)
+          : this.physics.getEyePosition();
+        const clamp = (value, base) => Math.max(base * MICRO_DIVISIONS, Math.min(
+          base * MICRO_DIVISIONS + MICRO_DIVISIONS - 1,
+          value,
+        ));
+        const carveMicro = [
+          clamp(Math.floor((entry.x + normal.x * 0.02) * MICRO_DIVISIONS), hp.x),
+          clamp(Math.floor((entry.y + normal.y * 0.02) * MICRO_DIVISIONS), hp.y),
+          clamp(Math.floor((entry.z + normal.z * 0.02) * MICRO_DIVISIONS), hp.z),
+        ];
+        return this.performBasicAction({
           domain: ActionDomain.WORLD,
           action: 'subdivide-standard',
           cell: hp,
-          micro: carveMicro
+          micro: carveMicro,
         });
-        if (result.ok) {
-          if (this.ui) this.ui.showToast(`Carved 1 micro voxel out of ${result.subdivided} (124 left)`);
+      };
+
+      let carvedHit = publishedHit;
+      let result = carve(carvedHit);
+      if (!result.ok && result.reason === 'not_found') {
+        // The mesh currently on screen can outlive the cell consumed by the
+        // preceding click. Keep hover tied to that published mesh, but let this
+        // destructive retry advance through live microcells in the same 1 m
+        // cell so a burst of clicks is never swallowed.
+        const liveQuery = this.performAimRaycast('all', false);
+        const liveHit = liveQuery.kind === 'world' ? liveQuery.worldHit : null;
+        const liveCell = liveHit?.kind === 'micro' && liveHit.microPos
+          ? {
+              x: Math.floor(liveHit.microPos.x / MICRO_DIVISIONS),
+              y: Math.floor(liveHit.microPos.y / MICRO_DIVISIONS),
+              z: Math.floor(liveHit.microPos.z / MICRO_DIVISIONS),
+            }
+          : null;
+        if (
+          liveCell
+          && liveCell.x === publishedCell.x
+          && liveCell.y === publishedCell.y
+          && liveCell.z === publishedCell.z
+        ) {
+          carvedHit = liveHit;
+          result = carve(carvedHit);
         }
       }
-      this.sound.playBlockBreak();
+
+      if ((result.removed || 0) > 0) {
+        if (carvedHit.kind === 'standard' && this.ui) {
+          this.ui.showToast(`Carved 1 micro voxel out of ${result.subdivided} (124 left)`);
+        }
+        this.particles.emitBlockBreak(carvedHit.hitPos, carvedHit.color, 4);
+        this.sound.playBlockBreak({ kind: 'micro', count: result.removed });
+      }
       return;
     }
 
@@ -1175,7 +1277,7 @@ export class PlayerController {
    */
   selectorOnEntityClick(hit, e = null) {
     const contraption = hit.contraption;
-    const hitNodeId = hit.entityId || 'root';
+    const hitNodeId = hit.entityId ?? contraptionRootId(contraption);
     const shiftHeld = !!(e?.shiftKey || this.keys?.crouch);
 
     // World 2-point box in progress (cornerA set, cornerB not yet set): clicking an entity
@@ -1209,7 +1311,7 @@ export class PlayerController {
 
     // Non-stopped entities allow only whole-entity selection, never their internals.
     if (!this.canEditEntityInternals(contraption)) {
-      this.startSubtreeSelection(contraption, 'root', { wholeOnly: true });
+      this.startSubtreeSelection(contraption, contraptionRootId(contraption), { wholeOnly: true });
       return;
     }
 
@@ -1340,7 +1442,7 @@ export class PlayerController {
       this.selectorRange = { contraption, nodeId: hitNodeId, pointA: null, pointB: null };
     }
 
-    const blockCount = contraption.blocks.filter(b => nodeIds.has(b.entityId || 'root')).length;
+    const blockCount = contraption.blocks.filter(b => nodeIds.has(contraptionBlockOwnerId(contraption, b))).length;
     if (this.ui) {
       if (opts.wholeOnly) {
         this.ui.showToast(`Entity #${contraption.id} is not stopped — whole entity selected (${blockCount} blocks) · Del delete entity · R copy · use Wrench right-click to stop it before selecting internal blocks`);
@@ -1394,7 +1496,7 @@ export class PlayerController {
     const node = range.contraption.entityNodes.get(range.nodeId);
     if (!node) return null;
     const blocks = range.contraption.blocks.filter(block => (
-      (block.entityId || 'root') === range.nodeId
+      contraptionBlockOwnerId(range.contraption, block) === range.nodeId
       && (!this.selectorMicroMode || (block.size || 1) < 1)
     ));
     if (blocks.length === 0) return null;
@@ -1469,7 +1571,7 @@ export class PlayerController {
       if (result.reason === 'entity_not_stopped') {
         this.selectorLevel = null;
         this.selectorRange = null;
-        this.startSubtreeSelection(contraption, 'root', { wholeOnly: true });
+        this.startSubtreeSelection(contraption, contraptionRootId(contraption), { wholeOnly: true });
         if (this.ui) this.ui.showToast(`Entity #${contraption.id} changed state — stop it before selecting internal blocks`);
         return;
       }
@@ -1477,8 +1579,8 @@ export class PlayerController {
       if (componentsInRange.length === 1) {
         this.startSubtreeSelection(contraption, componentsInRange[0]);
         if (this.ui) {
-          const label = componentsInRange[0] === 'root'
-            ? 'root'
+          const label = componentsInRange[0] === contraptionRootId(contraption)
+            ? 'entity root'
             : `child level [${componentsInRange[0]}]`;
           this.ui.showToast(`Selection belongs to ${label} - switched automatically · click twice to box its own blocks`);
         }
@@ -1573,7 +1675,7 @@ export class PlayerController {
       detail: 'Preparing component blocks',
       step: index => {
         const block = source[index];
-        if ((block.entityId || 'root') !== nodeId) return 0;
+        if (contraptionBlockOwnerId(contraption, block) !== nodeId) return 0;
         if (selectedCells) {
           const key = `${Math.floor(block.localX + 1e-6)},${Math.floor(block.localY + 1e-6)},${Math.floor(block.localZ + 1e-6)}`;
           if (!selectedCells.has(key)) return 0;
@@ -1692,18 +1794,19 @@ export class PlayerController {
         return null;
       }
       const slot = contraption.serializeSubtree(nodeId);
+      const slotRootId = inventoryEntityRootId(slot);
       slot.blocks = this.stripCopiedBottomGap(
-        blocks.map(b => ({ ...b, entityId: 'root' })),
+        blocks.map(b => ({ ...b, entityId: slotRootId })),
         'localY'
       );
       slot.blockCount = blocks.length;
       // A block selection copies only the level's own blocks (children excluded), so
       // descendants must be pruned to avoid empty ghost components and orphaned scripts.
       slot.childEntities = [];
-      slot.scripts = (slot.scripts || []).filter(s => s.id === 'root');
-      slot.enabled = (slot.enabled || []).filter(e => e.id === 'root');
+      slot.scripts = (slot.scripts || []).filter(s => s.id === slotRootId);
+      slot.enabled = (slot.enabled || []).filter(e => e.id === slotRootId);
       slot.constraints = (slot.constraints || []).filter(constraint => (
-        constraint.bodyA === 'world' && constraint.bodyB === 'root'
+        constraint.bodyA === null && constraint.bodyB === slotRootId
       ));
       slot.nodeCount = 1;
       const index = this.addInventoryItem('entity', slot);
@@ -1956,13 +2059,13 @@ export class PlayerController {
     // 2. Subtree selection (first-click level): every block owned by the subtree.
     if (!rawBlocks && this.selectedSubtree && this.selectedSubtree.contraption) {
       const { contraption, rootId } = this.selectedSubtree;
-      if (rootId !== 'root' && !this.canEditEntityInternals(contraption)) {
+      if (rootId !== contraptionRootId(contraption) && !this.canEditEntityInternals(contraption)) {
         this.clearSelection();
         this.ui?.showToast?.('Stop the entity before copying one of its internal components');
         return null;
       }
       const nodeIds = this.selectedSubtree.nodeIds || this.collectSubtreeIds(contraption, rootId);
-      const blocks = contraption.blocks.filter(b => nodeIds.has(b.entityId || 'root'));
+      const blocks = contraption.blocks.filter(b => nodeIds.has(contraptionBlockOwnerId(contraption, b)));
       if (blocks.length > 0) {
         if (blocks.length > BULK_EDIT_THRESHOLD) {
           const started = this.startLargeEntityBlockSetCopy(blocks, `subtree [${rootId}] (${blocks.length} blocks)`);
@@ -2227,7 +2330,7 @@ export class PlayerController {
         entry: entityHit.point,
         kind: entityHit.kind,
         targetContraption: entityHit.contraption || this.hoveredContraption || null,
-        targetNodeId: entityHit.entityId || entityHit.entityNode?.id || 'root',
+        targetNodeId: entityHit.entityId ?? entityHit.entityNode?.id ?? contraptionRootId(entityHit.contraption),
         targetLocalNormal: entityHit.normal || entityHit.worldNormal || { x: 0, y: 1, z: 0 }
       };
     }
@@ -2609,7 +2712,7 @@ export class PlayerController {
 
     const quaternionByNode = new Map<string, THREE.Quaternion>();
     const quaternionFor = nodeId => {
-      const id = String(nodeId || 'root');
+      const id = nodeId === undefined || nodeId === null ? contraptionRootId(target) : String(nodeId);
       let quaternion = quaternionByNode.get(id);
       if (!quaternion) {
         quaternion = this.getTargetEntityWorldQuaternion(target, id);
@@ -2620,7 +2723,7 @@ export class PlayerController {
     const boxes: EntityPlacementObb[] = [];
     if (entries) {
       for (const entry of entries) {
-        const nodeId = String(entry.entityId || 'root');
+        const nodeId = contraptionBlockOwnerId(target, entry);
         const size = Number(entry.span) / MICRO_DIVISIONS;
         if (!(size > 0)) continue;
         const center = this.targetEntityLocalToWorld(target, nodeId, new THREE.Vector3(
@@ -2632,7 +2735,7 @@ export class PlayerController {
       }
     } else {
       for (const block of target.blocks || []) {
-        const nodeId = String(block.entityId || 'root');
+        const nodeId = contraptionBlockOwnerId(target, block);
         const size = Number(block.size) || 1;
         const center = target.getBlockWorldCenter?.(block)
           || this.targetEntityLocalToWorld(target, nodeId, new THREE.Vector3(
@@ -2699,7 +2802,7 @@ export class PlayerController {
   /** Centre on the hit face, align to its component grid, then move only outward to clear occupied voxels. */
   private resolveEntityTargetPlacement(slot, shape: EntityPlacementShape, surface: THREE.Vector3, placementHit) {
     const target = placementHit.targetContraption;
-    const nodeId = placementHit.targetNodeId || 'root';
+    const nodeId = placementHit.targetNodeId ?? contraptionRootId(placementHit.targetContraption);
     const targetWorldRotation = this.getTargetEntityWorldQuaternion(target, nodeId);
     const localNormal = this.axisAlignedEntityFaceNormal(placementHit.targetLocalNormal);
     const faceRotation = new THREE.Quaternion().setFromUnitVectors(
@@ -3006,7 +3109,7 @@ export class PlayerController {
   private finishWorldSelectionDelete(standard, micro) {
     const removed = standard + micro;
     if (removed > 0) {
-      this.sound?.playBlockBreak?.();
+      this.sound?.playBlockBreak?.({ kind: 'bulk', count: removed });
       const parts = [];
       if (standard > 0) parts.push(`${standard} blocks`);
       if (micro > 0) parts.push(`${micro} micro voxels`);
@@ -3155,7 +3258,10 @@ export class PlayerController {
       this.selectorRange = null;
       if (result.ok) {
         if (!result.empty) this.ui?.notifyContraptionStructureChanged(contraption);
-        this.sound?.playBlockBreak();
+        const kind = result.removed > 1
+          ? 'bulk'
+          : (blocks[0]?.size || 1) < 1 ? 'micro' : 'standard';
+        this.sound?.playBlockBreak({ kind, count: result.removed });
         if (this.ui) this.ui.showToast(`Deleted ${result.removed} blocks from [${nodeId}]`);
       } else if (this.ui) {
         this.ui.showToast(result.reason === 'entity_not_stopped'
@@ -3183,7 +3289,10 @@ export class PlayerController {
       if (this.hoveredContraptionHit?.contraption === contraption) this.hoveredContraptionHit = null;
 
       if (result.ok) {
-        this.sound?.playBlockBreak();
+        if ((result.removed || 0) > 0) {
+          const kind = result.removed > 1 ? 'bulk' : result.micro > 0 ? 'micro' : 'standard';
+          this.sound?.playBlockBreak({ kind, count: result.removed });
+        }
         if (result.entities > 0) {
           this.ui?.notifyContraptionRemoved?.(contraption);
           this.ui?.showToast(`Deleted entity ${result.entityId || `#${contraption.id}`} (${result.removed} voxels)`);
@@ -3280,7 +3389,9 @@ export class PlayerController {
     const removedBlocks = result.standard || 0;
     const removedMicros = result.micro || 0;
     if (result.ok) {
-      this.sound?.playBlockBreak();
+      const removed = removedBlocks + removedMicros;
+      const kind = removed > 1 ? 'bulk' : removedMicros > 0 ? 'micro' : 'standard';
+      this.sound?.playBlockBreak({ kind, count: removed });
       if (this.ui) {
         const parts = [];
         if (removedBlocks > 0) parts.push(`${removedBlocks} blocks`);
@@ -3310,7 +3421,7 @@ export class PlayerController {
       if (this.hoveredContraptionHit) {
         const hit = this.hoveredContraptionHit;
         const c = hit.contraption;
-        const targetNodeId = hit.entityId || 'root';
+        const targetNodeId = hit.entityId ?? contraptionRootId(c);
         // When targeting micro voxels, treat the carved cell as one 1x1x1
         // block: the placement target is its neighbor along the normal; the
         // carved cell itself is never overwritten.
@@ -3385,7 +3496,7 @@ export class PlayerController {
       if (this.hoveredContraptionHit) {
         const hit = this.hoveredContraptionHit;
         const c = hit.contraption;
-        const targetNodeId = hit.entityId || 'root';
+        const targetNodeId = hit.entityId ?? contraptionRootId(c);
         const placePos = hit.placeMicroPos;
         const mx = Math.round(placePos.localX * 5) / 5;
         const my = Math.round(placePos.localY * 5) / 5;
@@ -3708,7 +3819,7 @@ export class PlayerController {
       this.sceneRenderer?.clearWrenchPivotGizmo?.();
       return null;
     }
-    const nodeId = String(entityHit.entityId || 'root');
+    const nodeId = String(entityHit.entityId ?? contraptionRootId(entityHit.contraption));
     if (
       this.wrenchPivotTarget?.contraption !== entityHit.contraption
       || this.wrenchPivotTarget?.nodeId !== nodeId
@@ -3730,8 +3841,8 @@ export class PlayerController {
     this.sceneRenderer?.clearWrenchPivotGizmo?.();
   }
 
-  getWrenchGrabBodyId(contraption, nodeId = 'root') {
-    let currentId = String(nodeId || 'root');
+  getWrenchGrabBodyId(contraption, nodeId = contraptionRootId(contraption)) {
+    let currentId = String(nodeId ?? contraptionRootId(contraption));
     while (currentId) {
       const body = contraption.getRigidBody?.(currentId);
       if (body?.type === BodyType.DYNAMIC) return currentId;
@@ -3770,7 +3881,7 @@ export class PlayerController {
     }
     const bodyId = this.getWrenchGrabBodyId(
       contraption,
-      this.hoveredContraptionHit?.entityId || 'root'
+      this.hoveredContraptionHit?.entityId ?? contraptionRootId(contraption)
     );
     if (!bodyId) {
       this.ui?.showToast?.('Wrench: this entity has no dynamic body to grab');
@@ -3916,7 +4027,7 @@ export class PlayerController {
       const hit = this.hoveredContraptionHit;
       const c = hit.contraption;
       if (hit.block) {
-        const nodeId = hit.entityId || 'root';
+        const nodeId = hit.entityId ?? contraptionRootId(c);
         const isMicro = (hit.block.size || 1) < 1;
 
         if (this.brushMicroMode) {
@@ -4115,7 +4226,7 @@ export class PlayerController {
       return null;
     }
     const { contraption, rootId } = this.selectedSubtree;
-    const containsInternalRoot = rootId !== 'root';
+    const containsInternalRoot = rootId !== contraptionRootId(contraption);
     if (containsInternalRoot && !this.canEditEntityInternals(contraption)) {
       this.clearSelection();
       this.ui?.showToast?.('Stop the entity before copying one of its internal components');
@@ -4337,8 +4448,8 @@ export class PlayerController {
 
   /** Display name for a backpack item. Names are intentionally not unique. */
   inventoryItemName(category, item, index = 0) {
-    const explicitName = typeof item?.name === 'string' ? item.name.trim() : '';
-    if (explicitName) return explicitName.slice(0, MAX_INVENTORY_NAME_LENGTH);
+    const explicitName = typeof item?.name === 'string' ? trimInventoryName(item.name) : '';
+    if (explicitName) return truncateInventoryName(explicitName);
     if (category === 'blockset') {
       return `Block set ${index + 1}`;
     }
@@ -4353,7 +4464,7 @@ export class PlayerController {
     if (!this.inventories) this.inventoryCategory();
     const group = this.inventories?.[category];
     if (!group || !Number.isInteger(index) || !group.items[index]) return null;
-    const cleanName = typeof name === 'string' ? name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH) : '';
+    const cleanName = typeof name === 'string' ? truncateInventoryName(trimInventoryName(name)) : '';
     group.items[index].name = cleanName;
     this.saveInventoriesToLocalStorage();
     return cleanName;
@@ -4482,8 +4593,7 @@ export class PlayerController {
     let changed = false;
 
     try {
-      const storedBytes = storage?.getBytes?.(INVENTORY_STORAGE_KEY);
-      const raw = storedBytes || storage?.getItem(INVENTORY_STORAGE_KEY);
+      const raw = storage?.getBytes?.(INVENTORY_STORAGE_KEY) ?? storage?.getItem(INVENTORY_STORAGE_KEY);
       if (raw) {
         const data = decodeBackpack(typeof raw === 'string' ? protobufFromBase64(raw) : raw);
         for (const category of INVENTORY_CATEGORIES) {
@@ -4512,7 +4622,9 @@ export class PlayerController {
     this.inventories = inventories;
     this.activeInventoryCategory = activeCategory;
     if (this.ensureDefaultColorSet()) changed = true;
-    if (storage && (!loaded || changed)) this.saveInventoriesToLocalStorage(storage);
+    if (storage && (!loaded || changed)) {
+      this.saveInventoriesToLocalStorage(storage);
+    }
     return loaded;
   }
 
@@ -4524,7 +4636,7 @@ export class PlayerController {
     if (category === 'blockset') {
       return {
         type: 'space-blockset',
-        version: 3,
+        version: 4,
         name: this.inventoryItemName('blockset', item),
         blocks: (item.blocks || []).map(b => {
           const shared = {
@@ -4560,6 +4672,7 @@ export class PlayerController {
       };
     }
     if (category === 'entity') {
+      const rootComponentId = inventoryEntityRootId(item);
       const vector3 = value => Array.isArray(value) && value.length >= 3
         && value.slice(0, 3).every(component => Number.isFinite(Number(component)))
         ? value.slice(0, 3).map(Number)
@@ -4574,8 +4687,7 @@ export class PlayerController {
         : undefined;
       const childEntities = (item.childEntities || []).map(definition => ({
         id: String(definition.id || ''),
-        parentId: String(definition.parentId || definition.parent || 'root'),
-        ...(definition.kind === 'child' ? { kind: 'child' } : {}),
+        parentId: String(definition.parentId ?? ''),
         ...(definition.collisionEnabled === false ? { collisionEnabled: false } : {}),
         ...(typeof definition.useGravity === 'boolean' ? { useGravity: definition.useGravity } : {}),
         ...(vector3(definition.pivot) ? { pivot: vector3(definition.pivot) } : {}),
@@ -4594,7 +4706,7 @@ export class PlayerController {
       const constraints = (item.constraints || []).map(constraint => ({
         id: String(constraint.id || ''),
         type: ['point', 'hinge', 'weld'].includes(constraint.type) ? constraint.type : 'point',
-        bodyA: String(constraint.bodyA || constraint.other || 'world'),
+        bodyA: constraint.bodyA == null ? null : String(constraint.bodyA),
         bodyB: String(constraint.bodyB || constraint.nodeId || ''),
         ...(vector3(constraint.anchorA) ? { anchorA: vector3(constraint.anchorA) } : {}),
         ...(vector3(constraint.anchorB) ? { anchorB: vector3(constraint.anchorB) } : {}),
@@ -4609,13 +4721,17 @@ export class PlayerController {
         stiffness: Number.isFinite(Number(constraint.stiffness)) ? Number(constraint.stiffness) : 0.9,
         collideConnected: constraint.collideConnected === true
       }));
+      const rootPivotOverride = vector3(item.rootPivotOverride ?? item.pivot);
       return runtimeEntityToPortable({
         name: this.inventoryItemName('entity', item),
+        rootComponentId,
         blocks: (item.blocks || []).map(b => {
           const shared = {
             block: BlockTypes.COLOR_BLOCK,
             color: normalizeColor(b.color ?? 0xf2a93b),
-            entityId: String(b.entityId || 'root')
+            entityId: b.entityId === undefined || b.entityId === null
+              ? rootComponentId
+              : String(b.entityId)
           };
           const x = Number(b.localX ?? b.dx);
           const y = Number(b.localY ?? b.dy);
@@ -4648,6 +4764,7 @@ export class PlayerController {
         scripts: (item.scripts || []).map(script => ({ id: String(script.id || ''), code: String(script.code || '') })),
         enabled: (item.enabled || []).map(entry => ({ id: String(entry.id || ''), enabled: entry.enabled === true })),
         constraints,
+        ...(rootPivotOverride ? { rootPivotOverride } : {}),
         ...(quaternion4(item.anchorRotation) ? { anchorRotation: quaternion4(item.anchorRotation) } : {}),
         bodyType: item.bodyType,
         mass: item.mass,
@@ -4664,7 +4781,7 @@ export class PlayerController {
     if (category === 'colorset') {
       return {
         type: 'space-colorset',
-        version: 3,
+        version: 4,
         name: item.name || 'color set',
         colors: item.colors
       };
@@ -4714,7 +4831,11 @@ export class PlayerController {
       if (!Array.isArray(value) || value.length !== 4) return null;
       const components = value.map(Number);
       const lengthSq = components.reduce((sum, component) => sum + component * component, 0);
-      if (!components.every(Number.isFinite) || lengthSq <= 1e-12) return null;
+      const unitTolerance = Math.max(1e-6, 1e-6 * Math.max(Math.abs(lengthSq), 1));
+      if (!components.every(Number.isFinite)
+        || components.some(component => component < -1 || component > 1)
+        || !Number.isFinite(lengthSq)
+        || Math.abs(lengthSq - 1) > unitTolerance) return null;
       const normalized = new THREE.Quaternion(
         components[0], components[1], components[2], components[3]
       ).normalize().toArray();
@@ -4723,7 +4844,7 @@ export class PlayerController {
     const withinEntityBounds = (blocks, keys, ownerKey = null) => {
       const groups = new Map();
       for (const block of blocks) {
-        const owner = ownerKey ? String(block[ownerKey] || 'root') : 'resource';
+        const owner = ownerKey ? String(block[ownerKey] ?? '') : 'resource';
         if (!groups.has(owner)) groups.set(owner, []);
         groups.get(owner).push(block);
       }
@@ -4746,7 +4867,7 @@ export class PlayerController {
       const microCells = new Set();
       const microParents = new Set();
       for (const block of blocks) {
-        const owner = ownerKey ? String(block[ownerKey] || 'root') : 'resource';
+        const owner = ownerKey ? String(block[ownerKey] ?? '') : 'resource';
         const coordinates = coordinateKeys.map(key => Number(block[key]));
         const base = coordinates.map(value => Math.floor(value + 1e-6));
         const isMicro = Number(block.size) < 1;
@@ -4766,7 +4887,11 @@ export class PlayerController {
     };
     const runtimeVoxel = (block, ownerId = null) => {
       if (block?.block !== undefined && block.block !== BlockTypes.COLOR_BLOCK) {
-        throw new Error('Inventory v3 supports only color block id 1');
+        throw new Error('Inventory v4 supports only color block id 1');
+      }
+      const color = Number(block?.color ?? 0xf2a93b);
+      if (!Number.isSafeInteger(color) || color < 0 || color > 0xffffff) {
+        throw new Error('Voxel color must be an unsigned 24-bit value');
       }
       const base = [block?.dx, block?.dy, block?.dz].map(Number);
       if (!validBaseCoordinates(base)) throw new Error('Voxel coordinates must be bounded safe integers');
@@ -4785,7 +4910,7 @@ export class PlayerController {
       const result = {
         size: hasMicro ? 1 / MICRO_DIVISIONS : 1,
         block: BlockTypes.COLOR_BLOCK,
-        color: normalizeColor(block?.color ?? 0xf2a93b)
+        color
       };
       if (ownerId !== null) {
         return {
@@ -4800,10 +4925,13 @@ export class PlayerController {
     };
 
     if (category === 'blockset') {
-      if (data?.type !== 'space-blockset' || data?.version !== 3) {
-        return fail('Expected a space-blockset v3 Protobuf file');
+      if (data?.type !== 'space-blockset' || data?.version !== 4) {
+        return fail('Expected a space-blockset v4 Protobuf file');
       }
-      if (typeof data.name !== 'string' || !data.name.trim()) return fail('A block set must have a name');
+      if (typeof data.name !== 'string' || !trimInventoryName(data.name)) return fail('A block set must have a name');
+      if (inventoryNameLength(data.name) > MAX_INVENTORY_NAME_LENGTH) {
+        return fail(`A block set name may contain at most ${MAX_INVENTORY_NAME_LENGTH} characters`);
+      }
       if (!Array.isArray(data.blocks) || data.blocks.length === 0) return fail('A block set must contain voxels');
       if (data.blocks.length > MAX_INVENTORY_BLOCKS) {
         return fail(`A block set may contain at most ${MAX_INVENTORY_BLOCKS} voxels`);
@@ -4824,7 +4952,7 @@ export class PlayerController {
         ok: true,
         item: {
           kind: 'blockset',
-          name: data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH),
+          name: truncateInventoryName(trimInventoryName(data.name)),
           blocks,
           blockCount: blocks.length
         }
@@ -4832,10 +4960,13 @@ export class PlayerController {
     }
 
     if (category === 'entity') {
-      if (data?.type !== 'space-entity' || data?.version !== 3 || !data.root) {
-        return fail('Expected a recursive space-entity v3 Protobuf file');
+      if (data?.type !== 'space-entity' || data?.version !== 4 || !data.root) {
+        return fail('Expected a recursive space-entity v4 Protobuf file');
       }
-      if (typeof data.name !== 'string' || !data.name.trim()) return fail('An entity must have a name');
+      if (typeof data.name !== 'string' || !trimInventoryName(data.name)) return fail('An entity must have a name');
+      if (inventoryNameLength(data.name) > MAX_INVENTORY_NAME_LENGTH) {
+        return fail(`An entity name may contain at most ${MAX_INVENTORY_NAME_LENGTH} characters`);
+      }
 
       const ids = new Set();
       let componentCount = 0;
@@ -4870,11 +5001,9 @@ export class PlayerController {
           throw new Error('Component hierarchy is malformed or exceeds depth 16');
         }
         const id = component.id;
-        if (!isValidComponentId(id, parentId === null) || ids.has(id)) {
+        if (!isValidComponentId(id) || ids.has(id)) {
           throw new Error('Component ids must be unique portable identifiers');
         }
-        if (parentId === null && id !== 'root') throw new Error('The only entity root must use id root');
-        if (parentId !== null && id === 'root') throw new Error('A child component cannot use id root');
         ids.add(id);
         componentCount += 1;
         if (componentCount > MAX_ENTITY_COMPONENTS) {
@@ -4884,6 +5013,9 @@ export class PlayerController {
         if (pivot === null) throw new Error(`Component ${id} has an invalid pivot`);
         const localPosition = portableVector(component.localPosition, MAX_IMPORT_COORDINATE);
         if (localPosition === null) throw new Error(`Component ${id} has an invalid local position`);
+        if (parentId === null && (component.localPosition !== undefined || component.localRotation !== undefined)) {
+          throw new Error('The entity root may not have a parent-relative transform');
+        }
         for (const [label, value] of [
           ['local rotation', component.localRotation],
           ['anchor rotation', component.anchorRotation]
@@ -4950,12 +5082,12 @@ export class PlayerController {
       const constraints = [];
       for (const constraint of data.constraints) {
         const id = constraint?.id;
-        const bodyA = String(constraint?.bodyA || (constraint?.bodyA === '' ? '' : 'world'));
+        const bodyA = constraint?.bodyA === null ? null : String(constraint?.bodyA ?? '');
         const bodyB = String(constraint?.bodyB || '');
-        if (!isValidComponentId(id, false) || constraintIds.has(id)) {
+        if (!isValidConstraintId(id) || constraintIds.has(id)) {
           return fail('Constraint ids must be unique portable identifiers');
         }
-        if ((bodyA !== 'world' && !ids.has(bodyA)) || !ids.has(bodyB) || bodyA === bodyB) {
+        if ((bodyA !== null && !ids.has(bodyA)) || !ids.has(bodyB) || bodyA === bodyB) {
           return fail(`Constraint ${id} references an invalid component`);
         }
         const vectors = {};
@@ -4977,7 +5109,9 @@ export class PlayerController {
           limits = { min: Math.min(min, max), max: Math.max(min, max) };
         }
         const stiffness = Number(constraint.stiffness ?? 0.9);
-        if (!Number.isFinite(stiffness)) return fail(`Constraint ${id} has invalid stiffness`);
+        if (!Number.isFinite(stiffness) || stiffness < 0 || stiffness > 1) {
+          return fail(`Constraint ${id} has invalid stiffness`);
+        }
         constraintIds.add(id);
         constraints.push({
           id,
@@ -4986,11 +5120,11 @@ export class PlayerController {
           bodyB,
           ...vectors,
           ...(limits ? { limits } : {}),
-          stiffness: Math.max(0, Math.min(1, stiffness)),
+          stiffness,
           collideConnected: constraint.collideConnected === true
         });
       }
-      runtime.name = data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH);
+      runtime.name = truncateInventoryName(trimInventoryName(data.name));
       runtime.kind = 'entity';
       runtime.constraints = constraints;
       runtime.blockCount = runtime.blocks.length;
@@ -4999,10 +5133,13 @@ export class PlayerController {
     }
 
     if (category === 'colorset') {
-      if (data?.type !== 'space-colorset' || data?.version !== 3) {
-        return fail('Expected a space-colorset v3 Protobuf file');
+      if (data?.type !== 'space-colorset' || data?.version !== 4) {
+        return fail('Expected a space-colorset v4 Protobuf file');
       }
-      if (typeof data.name !== 'string' || !data.name.trim()) return fail('A color set must have a name');
+      if (typeof data.name !== 'string' || !trimInventoryName(data.name)) return fail('A color set must have a name');
+      if (inventoryNameLength(data.name) > MAX_INVENTORY_NAME_LENGTH) {
+        return fail(`A color set name may contain at most ${MAX_INVENTORY_NAME_LENGTH} characters`);
+      }
       if (!Array.isArray(data.colors) || data.colors.length !== 9) {
         return fail('A color set must contain exactly 9 hex colors');
       }
@@ -5012,7 +5149,7 @@ export class PlayerController {
       }
       return {
         ok: true,
-        item: { name: data.name.trim().slice(0, MAX_INVENTORY_NAME_LENGTH), colors }
+        item: { name: truncateInventoryName(trimInventoryName(data.name)), colors }
       };
     }
 
@@ -5076,7 +5213,7 @@ export class PlayerController {
 
   private finishEntitySlotInstall(slot, pose, preparedBlocks = null) {
     const target = pose?.targetContraption;
-    const parentId = pose?.targetNodeId || 'root';
+    const parentId = pose?.targetNodeId ?? contraptionRootId(target);
     const placementRotation = pose?.quaternion?.isQuaternion
       ? pose.quaternion
       : new THREE.Quaternion();
@@ -5100,8 +5237,8 @@ export class PlayerController {
     this.sound?.playAssemblyClack?.();
     this.sound?.playBlockPlace?.();
     this.ui?.notifyContraptionStructureChanged?.(target);
-    const skipped = result.skippedWorldConstraints > 0
-      ? ` · ignored ${result.skippedWorldConstraints} world constraint(s)`
+    const skipped = result.skippedExternalConstraints > 0
+      ? ` · ignored ${result.skippedExternalConstraints} external constraint(s)`
       : '';
     this.ui?.showToast?.(
       `Installed [${slot.name || 'entity'}] as [${result.rootId}] on [${parentId}]${skipped}`
@@ -5128,7 +5265,7 @@ export class PlayerController {
           color: block.color,
           block: block.block,
           part: block.part,
-          entityId: block.entityId || 'root'
+          entityId: block.entityId ?? inventoryEntityRootId(slot)
         });
         return 1;
       },
@@ -5155,7 +5292,7 @@ export class PlayerController {
           color: block.color,
           block: block.block,
           part: block.part,
-          entityId: block.entityId || 'root'
+          entityId: block.entityId ?? inventoryEntityRootId(slot)
         });
         return 1;
       },
@@ -5755,26 +5892,7 @@ export class PlayerController {
     // point in the frame where the mounted body's final physics pose exists.
     this.syncDrivenVehiclePose();
     this.updateCameraPosition();
-    const eyePos = this.physics.getEyePosition();
-
-    // Torus aiming bends the flat camera forward vector through the local frame,
-    // raycasts in visible bent space, and maps hits back to flat block coordinates.
-    const eyeBent = PlayerController._bentEye.copy(eyePos);
-    bendPoint(eyePos.x, eyePos.y, eyePos.z, eyeBent);
-    const forwardFlat = PlayerController._forwardFlat
-      .set(0, 0, -1)
-      .applyQuaternion(this.camera.quaternion);
-    const forwardBent = bendDirection(eyePos.x, eyePos.y, eyePos.z, forwardFlat, PlayerController._forwardBent);
-    const query = this.performBasicAction({
-      domain: ActionDomain.QUERY,
-      action: 'raycast',
-      origin: eyeBent,
-      direction: forwardBent,
-      maxDistance: 8,
-      space: 'bent',
-      include: 'all',
-      voxelKinds: ['standard', 'micro']
-    });
+    const query = this.performAimRaycast('all');
     this.currentRaycast = query.worldHit || { hit: false };
 
     // Entity and terrain candidates are resolved by the shared raycast query,
@@ -5801,8 +5919,8 @@ export class PlayerController {
         this.hoveredContraption.setHighlighted(true);
         if (this.hoveredContraptionHit) {
           const hitNodeId = this.canEditEntityInternals(this.hoveredContraption)
-            ? this.hoveredContraptionHit.entityId || 'root'
-            : 'root';
+            ? this.hoveredContraptionHit.entityId ?? contraptionRootId(this.hoveredContraption)
+            : contraptionRootId(this.hoveredContraption);
           if (!this.contraptions.hasChildSelection() || this.contraptions.childSelection?.contraption !== this.hoveredContraption) {
             this.hoveredContraption.setFocusHighlight(hitNodeId);
           }
@@ -5812,6 +5930,48 @@ export class PlayerController {
 
     this.updateMicroCarvePreview();
     this.updateInventoryPlacementPreview();
+  }
+
+  /** Query along the current crosshair without changing hover presentation. */
+  performAimRaycast(include = 'all', usePublishedCollision: boolean | undefined = undefined) {
+    const eyePos = this.physics.getEyePosition();
+    const eyeBent = PlayerController._bentEye.copy(eyePos);
+    bendPoint(eyePos.x, eyePos.y, eyePos.z, eyeBent);
+    const forwardFlat = PlayerController._forwardFlat
+      .set(0, 0, -1)
+      .applyQuaternion(this.camera.quaternion);
+    const forwardBent = bendDirection(
+      eyePos.x,
+      eyePos.y,
+      eyePos.z,
+      forwardFlat,
+      PlayerController._forwardBent,
+    );
+    return this.performBasicAction({
+      domain: ActionDomain.QUERY,
+      action: 'raycast',
+      origin: eyeBent,
+      direction: forwardBent,
+      maxDistance: 8,
+      space: 'bent',
+      include,
+      voxelKinds: ['standard', 'micro'],
+      usePublishedCollision,
+    });
+  }
+
+  /**
+   * Mouse actions can synchronously change the micro-voxel data under the
+   * crosshair between animation frames. Re-pick the currently published view
+   * once the action has finished, then update the aim-dependent overlays. If a
+   * replacement mesh is still building, the cursor deliberately stays on its
+   * old visible cell instead of tunnelling into live-but-unpublished data.
+   */
+  refreshAimAfterPointerAction() {
+    this.updateAimRaycast();
+    const cursor = this.getCursorHighlight();
+    this.sceneRenderer?.setCursor?.(cursor ? cursor.pos : null, cursor?.size ?? 1);
+    this.sceneRenderer?.setMicroCarvePreview?.(this.microCarvePreview);
   }
 
   /**
@@ -5891,7 +6051,7 @@ export class PlayerController {
     if (this.hoveredContraptionHit) {
       const hit = this.hoveredContraptionHit;
       const contraption = hit.contraption;
-      const nodeId = hit.entityId || 'root';
+      const nodeId = hit.entityId ?? contraptionRootId(contraption);
       const cellOrigin = contraption.entityLocalToWorld(
         nodeId,
         new THREE.Vector3(hit.cell.x, hit.cell.y, hit.cell.z)

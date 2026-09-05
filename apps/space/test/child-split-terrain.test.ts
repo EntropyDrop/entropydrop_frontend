@@ -37,7 +37,7 @@ function makeFloorWorld() {
 function makeCubeBlocks() {
   const blocks = [];
   for (let x = 0; x < 2; x++) for (let y = 0; y < 2; y++) for (let z = 0; z < 2; z++) {
-    blocks.push({ localX: x, localY: y, localZ: z, block: BlockTypes.COLOR_BLOCK });
+    blocks.push({ localX: x, localY: y, localZ: z, block: BlockTypes.COLOR_BLOCK, entityId: 'root' });
   }
   return blocks;
 }
@@ -145,4 +145,3 @@ test('getAttachedNodeIds includes kinematic descendants but not dynamic ones', (
   assert.ok(roofAttached.has(roof.id));
   assert.equal(roofAttached.size, 1, 'the dynamic roof has no attached parts of its own');
 });
-

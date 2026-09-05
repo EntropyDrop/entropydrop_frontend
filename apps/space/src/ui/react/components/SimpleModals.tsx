@@ -414,7 +414,7 @@ export function GlobalSettingsModal() {
         <div className="settings-section">
           <div className="settings-section-title">AUDIO &amp; SOUND</div>
           <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">Mute Audio</span><span className="settings-desc">Disable all procedural sound effects and mechanical audio</span></div>
+            <div className="settings-label-group"><span className="settings-label">Mute Audio</span><span className="settings-desc">Disable background music, procedural sound effects, and mechanical audio</span></div>
             <div className="settings-segmented-control" id="setting-mute-group">
               {([
                 [false, 'Sound ON'],

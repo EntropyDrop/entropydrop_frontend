@@ -9,7 +9,7 @@ Use only the API below. API facts in this section are generated from the same co
 
 - Coordinates are right-handed and Y-up: +X right, +Y up, -Z forward. Euler angles use YXZ order; quaternions are `[x,y,z,w]`.
 - A component pivot starts at its own block AABB centroid and never moves automatically after block edits. Use `getBounds()` then `setPivot(bounds.center)` to recenter a kinematic body without moving its blocks.
-- Component IDs are unique across the entire entity; `root` is reserved. A child's local position is its pivot offset in the parent pivot frame.
+- Component IDs are unique across the entire entity; no string is reserved. The root is identified structurally by `parentId:null`, and a child's local position is its pivot offset in the parent pivot frame.
 - All scripts start enabled. Pause preserves active physics, state, and runtime BodyConfig values; Stop disables entity physics, clears state/time/tick/motion, resets child transforms, and restores persisted BodyConfig defaults. Play re-enables physics from the stopped construction pose.
 - BodyConfig defaults are type, mass, restitution, friction, gravity, and collision. Script setters are runtime-only; serialization always writes defaults.
 - Collision defaults to enabled. A disabled component remains rendered/editable but has no terrain, player, entity, or raycast shapes.
@@ -65,9 +65,9 @@ Every root and child receives the same top-level API. Namespaces target the curr
 #### Universal component surface
 
 - `self.apiVersion` — Current component API version: `2`.
-- `self.id / self.parentId` — Component ID and direct parent ID; root is `{id:'root',parentId:null}`.
+- `self.id / self.parentId` — Component ID and direct parent ID; the root has an ordinary ID and `parentId:null`.
 - `self.state` — Mutable persistent state scoped to this component and retained across completed ticks and streaming.
-- `self.child(id)` — Look up a direct child; returns `null` when missing. `child('root')` returns the root API.
+- `self.child(id)` — Look up a direct child by its ordinary ID; returns `null` when missing.
 - `self.children()` — Return a frozen array of direct children. Recurse from `ctx.root` to traverse the tree.
 - `self.applyThrust([x,y,z])` — Apply root-local force at this component. A child mounting offset produces torque; dynamic root only and subject to `ctx.limits`.
 - `self.applyLocalThrust([x,y,z])` — Apply component-local force at this component. Installed anchor orientation controls its direction and an offset produces torque.
@@ -119,7 +119,7 @@ Only kinematic bodies accept direct pose commands; dynamic bodies are solver-dri
 - `self.body.applyLocalForce(force)` — Apply body-local force to this dynamic component body; returns boolean.
 - `self.body.applyTorque(torque)` — Apply world torque to this dynamic component body; returns boolean.
 - `self.constraints.all()` — Return a frozen snapshot of constraints connected to this component.
-- `self.constraints.create({id?,type,other,anchorA?,anchorB?,axisA?,axisB?,limits?,stiffness?,collideConnected?})` — Queue a `point`, `hinge`, or `weld` to a component or `'world'`; immediate Worker success is provisional `{ok:true,id:null,reason:'queued'}`. Supply an explicit ID for later lookup. Stiffness defaults to 0.9, `collideConnected` to false, omitted anchors use pivots, and hinge limits are radians.
+- `self.constraints.create({id?,type,bodyA?,anchorA?,anchorB?,axisA?,axisB?,limits?,stiffness?,collideConnected?})` — Queue a `point`, `hinge`, or `weld`; `bodyA:null` denotes the external world and an omitted `bodyA` uses the structural parent (or external world for the root). Immediate Worker success is provisional `{ok:true,id:null,reason:'queued'}`. Supply an explicit ID for later lookup. Stiffness defaults to 0.9, `collideConnected` to false, omitted anchors use pivots, and hinge limits are radians.
 - `self.constraints.remove(id)` — Queue removal of one constraint; returns boolean.
 - `self.stop()` — Root-only global Stop: disable entity physics and scripts, clear state/time/tick/motion, reset child poses, and restore persisted BodyConfig defaults. Collision and selection shapes remain active. Child code must call `ctx.root.stop()`.
 

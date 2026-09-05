@@ -381,7 +381,8 @@ test('entity 2-point box in micro mode keeps only 0.2 m blocks', () => {
       { localX: 1.2, localY: 0.4, localZ: 0.4, size: 0.2, block: BlockTypes.COLOR_BLOCK, color: 0x00ff00 }
     ],
     new THREE.Vector3(0, 10, 0),
-    scene
+    scene,
+    { rootComponentId: 'root' }
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.registerContraption(contraption);
@@ -414,7 +415,8 @@ test('copying an entity micro selection removes empty layers below its lowest vo
       { localX: 0.2, localY: 0.8, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK, color: 0x333333 }
     ],
     new THREE.Vector3(0, 10, 0),
-    scene
+    scene,
+    { rootComponentId: 'root' }
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.registerContraption(contraption);
@@ -494,7 +496,8 @@ test('entity focus guide hugs 0.2 m blocks in micro mode instead of their 1 m ce
       { localX: 4, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }
     ],
     new THREE.Vector3(0, 10, 0),
-    scene
+    scene,
+    { rootComponentId: 'root' }
   );
   const controller = makeMicroController();
   controller.selectorRange = { contraption, nodeId: 'root', pointA: null, pointB: null };
@@ -535,7 +538,8 @@ function makeEntityWithTopMicroLayer(scene) {
       { localX: 0, localY: 2.6, localZ: 0.4, size: 0.2, block: BlockTypes.COLOR_BLOCK, color: 0x00ff00 }
     ],
     new THREE.Vector3(0, 10, 0),
-    scene
+    scene,
+    { rootComponentId: 'root' }
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.registerContraption(contraption);
@@ -693,7 +697,8 @@ test('create-child from microblock selection isolates selected microblocks and c
       { localX: 0, localY: 2.8, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK, color: 0x555555 }
     ],
     new THREE.Vector3(0, 10, 0),
-    scene
+    scene,
+    { rootComponentId: 'root' }
   );
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.registerContraption(contraption);

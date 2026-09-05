@@ -683,6 +683,64 @@ test('a local micro edit made during remote replacement survives incremental cle
     'the local override must be replayed after the old detached index finishes clearing');
 });
 
+test('deleting a published micro cell during remote replacement cannot be lost', () => {
+  const world = new World(new THREE.Scene(), 12345) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+  world.pendingStreamChunks = [];
+  world.dirtyChunks.clear();
+  world.terrainWorker = { postMessage() {} };
+
+  const target = { mx: 1, my: 1_000, mz: 1 };
+  const shovelTarget = { mx: 6, my: 1_000, mz: 1 };
+  world.setMicroBlock(target.mx, target.my, target.mz, 0x112233);
+  world.setMicroBlock(shovelTarget.mx, shovelTarget.my, shovelTarget.mz, 0x334455);
+  for (let index = 0; index < 500; index++) {
+    world.setMicroBlock(2 + index % 78, target.my, 2 + Math.floor(index / 78), 0x445566);
+  }
+  world.microVoxels.updateMesh();
+  world.queueRemoteChunkUpdates([{
+    chunk_x: 0,
+    chunk_z: 0,
+    revision: 1,
+    standard: [],
+    micro: [
+      [target.mx, target.my, target.mz, 0xabcdef],
+      [shovelTarget.mx, shovelTarget.my, shovelTarget.mz, 0xfedcba],
+    ],
+  }]);
+
+  world.updateChunksAround(0, 0, true, 50, true);
+  assert.ok(world.pendingRemoteChunkApply, 'the old live data should clear incrementally');
+  assert.equal(world.getMicroBlock(target.mx, target.my, target.mz), null,
+    'the staging view has already cleared the old target');
+  assert.equal(
+    world.microVoxels.getPublishedCollisionColor(target.mx, target.my, target.mz),
+    0x112233,
+    'the old target remains visible until the replacement publishes',
+  );
+  assert.equal(world.removeMicroBlock(target.mx, target.my, target.mz), true,
+    'clicking the visible old target should record a delete intent');
+  assert.equal(world.removeMicroBlock(target.mx, target.my, target.mz), false,
+    'the same published target must not report a second successful local delete');
+  world.microVoxels.set(target.mx, target.my, target.mz, 0xabcdef);
+  assert.equal(world.removeMicroBlock(target.mx, target.my, target.mz), false,
+    'reappearing remote staging data must not consume another click for the queued delete');
+  assert.equal(world.pendingRemoteChunkApply.localMicroOverrides.length, 1,
+    'the already queued delete intent should not be duplicated');
+  assert.ok(world.clearMicroStandardCell(1, 200, 0) >= 1,
+    'a shovel clear should also accept visible published micro cells');
+
+  for (let frame = 0; frame < 20 && world.pendingRemoteChunkApply; frame++) {
+    world.updateChunksAround(0, 0, true, 50, true);
+  }
+  assert.equal(world.pendingRemoteChunkApply, null);
+  assert.equal(world.getMicroBlock(target.mx, target.my, target.mz), null,
+    'the delete override must replay after the incoming snapshot adds the cell');
+  assert.equal(world.getMicroBlock(shovelTarget.mx, shovelTarget.my, shovelTarget.mz), null,
+    'the clear-cell override must replay after the incoming snapshot adds the cell');
+});
+
 test('large queued micro snapshots are installed over multiple frame budgets', () => {
   const world = new World(new THREE.Scene(), 12345) as any;
   const micro = Array.from({ length: 5_000 }, (_, index) => [

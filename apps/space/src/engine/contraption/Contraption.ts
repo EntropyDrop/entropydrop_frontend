@@ -121,22 +121,39 @@ const MAX_ENTITY_BLOCKS = 65_536;
 const MAX_ENTITY_CONSTRAINTS = 256;
 const MAX_ENTITY_TOTAL_SCRIPT_BYTES = 512 * 1024;
 
-function installedComponentIdBase(value: unknown, fallback = 'component'): string {
+function installedIdCandidate(value: unknown, fallback: string): string {
   const normalized = String(value || '')
     .normalize('NFKD')
     .replace(/[^A-Za-z0-9_-]+/g, '_')
     .replace(/^_+|_+$/g, '');
-  const candidate = (normalized || fallback).slice(0, MAX_COMPONENT_ID_LENGTH);
-  return candidate === 'root' || !isValidComponentId(candidate, false) ? fallback : candidate;
+  return (normalized || fallback).slice(0, MAX_COMPONENT_ID_LENGTH);
+}
+
+function installedComponentIdBase(value: unknown, fallback = 'component'): string {
+  const candidate = installedIdCandidate(value, fallback);
+  return !isValidComponentId(candidate) ? fallback : candidate;
 }
 
 function uniqueInstalledComponentId(preferred: string, reserved: Set<string>): string {
   const cleanPreferred = installedComponentIdBase(preferred);
   let candidate = cleanPreferred;
   let suffix = 2;
-  while (reserved.has(candidate) || candidate === 'root') {
+  while (reserved.has(candidate) || !isValidComponentId(candidate)) {
     const tail = `_${suffix++}`;
     candidate = `${cleanPreferred.slice(0, MAX_COMPONENT_ID_LENGTH - tail.length)}${tail}`;
+  }
+  reserved.add(candidate);
+  return candidate;
+}
+
+function uniqueInstalledConstraintId(preferred: string, reserved: Set<string>): string {
+  const cleanPreferred = installedIdCandidate(preferred, 'constraint');
+  const base = isValidConstraintId(cleanPreferred) ? cleanPreferred : 'constraint';
+  let candidate = base;
+  let suffix = 2;
+  while (reserved.has(candidate) || !isValidConstraintId(candidate)) {
+    const tail = `_${suffix++}`;
+    candidate = `${base.slice(0, MAX_COMPONENT_ID_LENGTH - tail.length)}${tail}`;
   }
   reserved.add(candidate);
   return candidate;
@@ -237,12 +254,60 @@ export const MAX_ENTITY_COMPONENTS = 64;
 export const MAX_COMPONENT_ID_LENGTH = 64;
 const COMPONENT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-/** Component ids are used in script maps and UI datasets, so keep them small
- * and portable instead of accepting arbitrary imported strings. */
-export function isValidComponentId(value: unknown, allowRoot = true): boolean {
+/** Shared format for component and constraint ids. */
+export function isValidPortableId(value: unknown): boolean {
   if (typeof value !== 'string' || value.length < 1 || value.length > MAX_COMPONENT_ID_LENGTH) return false;
-  if (!COMPONENT_ID_PATTERN.test(value)) return false;
-  return allowRoot || value !== 'root';
+  return COMPONENT_ID_PATTERN.test(value);
+}
+
+/** Constraint ids live in their own namespace. */
+export function isValidConstraintId(value: unknown): boolean {
+  return isValidPortableId(value);
+}
+
+/** Component ids are portable identities. Hierarchy and external constraint
+ * endpoints are represented structurally, so no string is reserved. */
+export function isValidComponentId(value: unknown): boolean {
+  return isValidPortableId(value);
+}
+
+/** Infer the structurally unique flat-tree root when callers already provide
+ * component ownership/parent references. Ambiguous or bare block lists receive
+ * an ordinary generated-model default; no particular ID has root semantics. */
+function resolveRootComponentId(blocks: any[], options: any): string {
+  if (isValidComponentId(options?.rootComponentId)) return options.rootComponentId;
+  const children = Array.isArray(options?.childEntities) ? options.childEntities : [];
+  const childIds = new Set<string>(
+    children
+      .map(definition => definition?.id)
+      .filter((id): id is string => isValidComponentId(id))
+  );
+  const candidates = new Set<string>();
+  const addCandidate = (value: unknown) => {
+    if (isValidComponentId(value) && !childIds.has(value as string)) candidates.add(value as string);
+  };
+  for (const definition of children) addCandidate(definition?.parentId);
+  for (const block of blocks || []) addCandidate(block?.entityId);
+  for (const constraint of options?.constraints || []) {
+    addCandidate(constraint?.bodyA);
+    addCandidate(constraint?.bodyB);
+  }
+  return candidates.size === 1
+    ? [...candidates][0]
+    : uniqueInstalledComponentId('component', new Set(childIds));
+}
+
+/** Portable ids are ASCII, so ordinal comparison is deterministic across
+ * browsers and matches the backend's string ordering. */
+function compareIds(left: unknown, right: unknown): number {
+  const a = String(left || '');
+  const b = String(right || '');
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+export function compareComponentIds(left: unknown, right: unknown): number {
+  return compareIds(left, right);
 }
 
 /** World voxels are the only static collision layer. Entity bodies are either
@@ -291,7 +356,6 @@ export interface EntityNode {
   initialLocalQuaternion?: THREE.Quaternion;
   group: THREE.Group;
   children: Set<string>;
-  kind?: string;
   previousWorldMatrix?: THREE.Matrix4;
   previousLocalPosition?: THREE.Vector3;
   previousLocalQuaternion?: THREE.Quaternion;
@@ -327,6 +391,8 @@ export class Contraption {
   // --- Identity & data ---
   id: string;
   publicId: string;
+  /** The structurally distinguished root node's ordinary component id. */
+  rootComponentId: string;
   blocks: any[];
   scene: any;
   originWorldPos: THREE.Vector3;
@@ -471,9 +537,10 @@ export class Contraption {
     this.publicId = typeof options.publicId === 'string' && options.publicId.trim()
       ? options.publicId.trim()
       : createEntityPublicId();
+    this.rootComponentId = resolveRootComponentId(blocks, options);
     this.blocks = blocks; // [{ localX, localY, localZ, size, color, block, entityId }]
     for (const block of this.blocks) {
-      block.entityId = block.entityId || 'root';
+      block.entityId = block.entityId || this.rootComponentId;
     }
     this.scene = scene;
     this.originWorldPos = originWorldPos.clone();
@@ -518,12 +585,7 @@ export class Contraption {
     this.friction = clampUnit(options.friction, 0.7);
     this.linearDamping = 0.98;
     this.angularDamping = 0.92;
-    // `fixed` is accepted only while loading old data. Its previous behavior
-    // allowed scripted transforms, so kinematic is the lossless migration.
-    this.bodyType = normalizeBodyType(
-      options.bodyType,
-      options.fixed ? BodyType.KINEMATIC : BodyType.DYNAMIC
-    );
+    this.bodyType = normalizeBodyType(options.bodyType, BodyType.DYNAMIC);
     this.useGravity = options.useGravity !== undefined
       ? !!options.useGravity
       : this.bodyType === BodyType.DYNAMIC;
@@ -557,7 +619,7 @@ export class Contraption {
     this.compiledNodeScripts = new Map();
     this.nodeScriptErrors = new Map();
     this.nodeScriptEnabled = new Map();
-    this.componentVariables = new Map([['root', {}]]);
+    this.componentVariables = new Map([[this.rootComponentId, {}]]);
     this.slowScriptFrames = new Map();
     this.blocksChangedThisFrame = false;
     this.lastBlocksChangedEvent = null;
@@ -613,7 +675,7 @@ export class Contraption {
     // Every component (root included) receives the same unified `self` API
     // (script signature `(self, ctx)`). State is read from ctx; motion writes
     // are forces or per-component kinematics, depending on the node type.
-    this.scriptApi = this.getComponentApi('root');
+    this.scriptApi = this.getComponentApi(this.rootComponentId);
 
     // Add to Scene
     this.scene.add(this.rootGroup);
@@ -644,43 +706,43 @@ export class Contraption {
     return diff.add(this.position);
   }
 
-  getEntityNode(nodeId = 'root') {
-    return this.entityNodes.get(nodeId) || null;
+  getEntityNode(nodeId = this.rootComponentId) {
+    return this.entityNodes.get(nodeId || this.rootComponentId) || null;
   }
 
   entityLocalToWorld(nodeId, localPos) {
-    const node = this.getEntityNode(nodeId) || this.getEntityNode('root');
+    const node = this.getEntityNode(nodeId) || this.getEntityNode(this.rootComponentId);
     if (!node?.group) return this.localToWorld(localPos);
     node.group.updateWorldMatrix(true, false);
     return node.group.localToWorld(localPos.clone().sub(node.pivotLocal));
   }
 
   worldToEntityLocal(nodeId, worldPos) {
-    const node = this.getEntityNode(nodeId) || this.getEntityNode('root');
+    const node = this.getEntityNode(nodeId) || this.getEntityNode(this.rootComponentId);
     if (!node?.group) return this.worldToLocal(worldPos);
     node.group.updateWorldMatrix(true, false);
     return node.group.worldToLocal(worldPos.clone()).add(node.pivotLocal);
   }
 
   getEntityNodeWorldQuaternion(nodeId) {
-    const node = this.getEntityNode(nodeId) || this.getEntityNode('root');
+    const node = this.getEntityNode(nodeId) || this.getEntityNode(this.rootComponentId);
     return node?.group?.getWorldQuaternion(new THREE.Quaternion()) || this.quaternion.clone();
   }
 
   getEntityNodeWorldPosition(nodeId) {
-    const node = this.getEntityNode(nodeId) || this.getEntityNode('root');
+    const node = this.getEntityNode(nodeId) || this.getEntityNode(this.rootComponentId);
     return node?.group?.getWorldPosition(new THREE.Vector3()) || this.position.clone();
   }
 
   /** V2 persistent state is scoped to one component instead of shared by the entity. */
   getComponentState(nodeId) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || this.rootComponentId);
     if (!this.componentVariables.has(id)) this.componentVariables.set(id, {});
     return this.componentVariables.get(id);
   }
 
   resolveComponentBlockColor(nodeId, options = null) {
-    const ownBlocks = this.blocks.filter(blk => (blk.entityId || 'root') === nodeId);
+    const ownBlocks = this.blocks.filter(blk => (blk.entityId || this.rootComponentId) === nodeId);
     const inherited = ownBlocks.length > 0 ? ownBlocks[0].color : DEFAULT_BLOCK_COLOR;
     if (options === null || options === undefined) return inherited;
     if (Number.isFinite(Number(options?.color))) return Number(options.color) & 0xffffff;
@@ -776,16 +838,79 @@ export class Contraption {
     });
   }
 
-  getComponentSeats(nodeId = 'root') {
-    const id = String(nodeId || 'root');
-    const source = id === 'root' ? this.seats : this.childDefinitions.get(id)?.seats;
+  /** Keep the runtime hierarchy schema closed. Inputs may originate outside
+   * protobuf decoding, so only fields represented by the current Component
+   * contract are retained; ownership-only blockKeys are consumed separately. */
+  normalizeChildDefinition(definition, id: string, parentId: string) {
+    const normalized: any = {
+      id,
+      parentId,
+      bodyType: normalizeBodyType(definition?.bodyType, BodyType.KINEMATIC),
+      restitution: clampUnit(definition?.restitution, this.restitution),
+      friction: clampUnit(definition?.friction, this.friction),
+      useGravity: definition?.useGravity !== false,
+      collisionEnabled: definition?.collisionEnabled !== false,
+      seats: this.normalizeSeats(definition?.seats)
+    };
+    if (isFiniteVector3Array(definition?.pivot)) {
+      normalized.pivot = definition.pivot.slice(0, 3).map(Number);
+    }
+    if (isFiniteVector3Array(definition?.localPosition)) {
+      normalized.localPosition = definition.localPosition.slice(0, 3).map(Number);
+    }
+    const hasLocalRotation = Array.isArray(definition?.localRotation)
+      && definition.localRotation.length >= 3
+      && definition.localRotation.slice(0, 4).every(value => Number.isFinite(Number(value)));
+    if (hasLocalRotation || definition?.localRotation?.isQuaternion) {
+      normalized.localRotation = asQuaternion(definition.localRotation).toArray();
+    }
+    const hasAnchorRotation = Array.isArray(definition?.anchorRotation)
+      && definition.anchorRotation.length >= 3
+      && definition.anchorRotation.slice(0, 4).every(value => Number.isFinite(Number(value)));
+    if (hasAnchorRotation || definition?.anchorRotation?.isQuaternion) {
+      normalized.anchorRotation = asQuaternion(definition.anchorRotation).toArray();
+    }
+    const mass = normalizeBodyMass(definition?.mass);
+    if (mass !== null) normalized.mass = mass;
+    return normalized;
+  }
+
+  /** Serialize only current flat-slot Component fields. Runtime-only or
+   * unknown input metadata must never be echoed into inventory/persistence. */
+  serializeChildDefinition(definition, parentId = definition.parentId) {
+    const defaults = this.getNodeDefaultBodyConfig(definition.id);
+    const serialized = this.normalizeChildDefinition({
+      id: definition.id,
+      parentId,
+      pivot: definition.pivot,
+      localPosition: definition.localPosition,
+      localRotation: definition.localRotation,
+      anchorRotation: this.entityNodes.get(definition.id)?.anchorQuaternion.toArray()
+        || asQuaternion(definition.anchorRotation).toArray(),
+      bodyType: defaults?.bodyType || definition.bodyType,
+      mass: defaults?.mass,
+      restitution: defaults?.restitution ?? definition.restitution,
+      friction: defaults?.friction ?? definition.friction,
+      useGravity: defaults?.useGravity ?? (definition.useGravity !== false),
+      collisionEnabled: defaults?.collisionEnabled ?? (definition.collisionEnabled !== false),
+      seats: definition.seats
+    }, definition.id, parentId);
+    const configuredMass = normalizeBodyMass(defaults?.mass);
+    if (configuredMass === null) delete serialized.mass;
+    else serialized.mass = configuredMass;
+    return serialized;
+  }
+
+  getComponentSeats(nodeId = this.rootComponentId) {
+    const id = String(nodeId || this.rootComponentId);
+    const source = id === this.rootComponentId ? this.seats : this.childDefinitions.get(id)?.seats;
     return this.normalizeSeats(source);
   }
 
   setComponentSeats(nodeId, seats) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || this.rootComponentId);
     const normalized = this.normalizeSeats(seats);
-    if (id === 'root') this.seats = normalized;
+    if (id === this.rootComponentId) this.seats = normalized;
     else {
       const definition = this.childDefinitions.get(id);
       if (!definition) return false;
@@ -795,8 +920,8 @@ export class Contraption {
   }
 
   /** Resolve one component-relative seat through the current articulated pose. */
-  getSeatWorldPosition(componentId = 'root', seatIndex = 0) {
-    const id = String(componentId || 'root');
+  getSeatWorldPosition(componentId = this.rootComponentId, seatIndex = 0) {
+    const id = String(componentId || this.rootComponentId);
     const node = this.entityNodes.get(id);
     const seat = this.getComponentSeats(id)[Number(seatIndex)];
     if (!node || !seat) return null;
@@ -812,7 +937,9 @@ export class Contraption {
   getNearestSeat(worldFocus) {
     if (!worldFocus?.isVector3) return null;
     let nearest = null;
-    for (const node of this.entityNodes.values()) {
+    const nodes = [...this.entityNodes.values()]
+      .sort((left, right) => compareComponentIds(left.id, right.id));
+    for (const node of nodes) {
       const seats = this.getComponentSeats(node.id);
       for (let index = 0; index < seats.length; index++) {
         const worldPosition = this.getSeatWorldPosition(node.id, index);
@@ -834,10 +961,10 @@ export class Contraption {
    * - C Rigid body: every component exposes its own body/material/constraint API.
    */
   getComponentApi(nodeId) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || this.rootComponentId);
     const node = this.entityNodes.get(id);
     if (!node) return null;
-    const isRoot = id === 'root';
+    const isRoot = node.parentId === null;
     const noop = () => {};
 
     const api: any = {
@@ -1031,11 +1158,10 @@ export class Contraption {
       getSeats: () => Object.freeze(this.getComponentSeats(id).map(seat => Object.freeze([...seat.position]))),
       /**
        * Find a direct child from any component, with chaining such as
-       * root.child('arm').child('hand'). child('root') returns the root component.
+       * ctx.root.child('arm').child('hand').
        */
       child: childId => {
         const targetId = String(childId || '');
-        if (targetId === 'root') return this.scriptApi;
         const childNode = node.children.has(targetId) ? this.entityNodes.get(targetId) : null;
         return childNode ? this.getChildScriptApi(targetId) : null;
       }
@@ -1045,6 +1171,7 @@ export class Contraption {
     api.state = this.getComponentState(id);
     api.children = () => Object.freeze(
       [...node.children]
+        .sort(compareComponentIds)
         .map(childId => this.getChildScriptApi(childId))
         .filter(Boolean)
     );
@@ -1227,10 +1354,10 @@ export class Contraption {
     return Object.freeze(api);
   }
 
-  /** Component API entry point; child('id') looks up a child and child('root') returns root. */
+  /** Component API entry point. */
   getChildScriptApi(childId) {
     const id = String(childId || '');
-    if (id === 'root') return this.scriptApi;
+    if (id === this.rootComponentId) return this.scriptApi;
     if (this.childScriptApis.has(id)) return this.childScriptApis.get(id);
     const api = this.getComponentApi(id);
     if (api) this.childScriptApis.set(id, api);
@@ -1258,20 +1385,20 @@ export class Contraption {
   // =========================================================================
 
   setNodeScript(nodeId, code) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || this.rootComponentId);
     this.latchedScriptCommands = [];
     this.nodeScripts.set(id, code || '');
     this.nodeScriptErrors.delete(id);
     this.slowScriptFrames.delete(id);
 
-    if (id === 'root') {
+    if (id === this.rootComponentId) {
       this.scriptCode = code || '';
     }
 
     if (!code || code.trim() === '') {
       this.compiledNodeScripts.delete(id);
       this.scriptRuntimeClient.setScript(id, '');
-      if (id === 'root') {
+      if (id === this.rootComponentId) {
         this.compiledScript = null;
         if (this.compiledNodeScripts.size === 0) {
           this.scriptStatus = 'stopped';
@@ -1286,9 +1413,9 @@ export class Contraption {
       if (compileResult && compileResult.ok === false) {
         return this.handleWorkerCompileResult(compileResult);
       }
-      if (id === 'root') {
+      if (id === this.rootComponentId) {
         this.compiledScript = COMPILED_SCRIPT_SENTINEL;
-        this.compiledNodeScripts.set('root', COMPILED_SCRIPT_SENTINEL);
+        this.compiledNodeScripts.set(this.rootComponentId, COMPILED_SCRIPT_SENTINEL);
       } else {
         this.compiledNodeScripts.set(id, COMPILED_SCRIPT_SENTINEL);
       }
@@ -1304,7 +1431,7 @@ export class Contraption {
     // A failed recompile must not keep the previous version running in either realm.
     this.scriptRuntimeClient.setScript(id, '');
     this.nodeScriptErrors.set(id, syntaxError);
-    if (id === 'root') {
+    if (id === this.rootComponentId) {
       this.compiledScript = null;
       this.scriptError = syntaxError;
     }
@@ -1316,11 +1443,11 @@ export class Contraption {
 
   handleWorkerCompileResult(result) {
     if (!result || result.ok !== false) return true;
-    const id = String(result.nodeId || 'root');
+    const id = String(result.nodeId || this.rootComponentId);
     const message = result.error || 'QuickJS compile failed';
     this.compiledNodeScripts.delete(id);
     this.nodeScriptErrors.set(id, message);
-    if (id === 'root') {
+    if (id === this.rootComponentId) {
       this.compiledScript = null;
       this.scriptError = message;
     }
@@ -1329,38 +1456,38 @@ export class Contraption {
     return false;
   }
 
-  getNodeScript(nodeId = 'root') {
-    const id = String(nodeId || 'root');
+  getNodeScript(nodeId = this.rootComponentId) {
+    const id = String(nodeId || this.rootComponentId);
     if (this.nodeScripts.has(id)) {
       return this.nodeScripts.get(id);
     }
-    if (id === 'root') {
+    if (id === this.rootComponentId) {
       return this.scriptCode || '';
     }
     return '';
   }
 
-  setScript(code, nodeId = 'root') {
+  setScript(code, nodeId = this.rootComponentId) {
     return this.setNodeScript(nodeId, code);
   }
 
-  isNodeScriptEnabled(nodeId = 'root') {
-    const id = String(nodeId || 'root');
+  isNodeScriptEnabled(nodeId = this.rootComponentId) {
+    const id = String(nodeId || this.rootComponentId);
     if (this.nodeScriptEnabled.has(id)) {
       return !!this.nodeScriptEnabled.get(id);
     }
     return true; // Default enabled
   }
 
-  setNodeScriptEnabled(nodeId = 'root', enabled = true) {
-    const id = String(nodeId || 'root');
+  setNodeScriptEnabled(nodeId = this.rootComponentId, enabled = true) {
+    const id = String(nodeId || this.rootComponentId);
     const state = !!enabled;
     this.nodeScriptEnabled.set(id, state);
     this.latchedScriptCommands = [];
 
     if (!state) {
       const node = this.entityNodes.get(id);
-      if (node && id !== 'root') {
+      if (node && node.parentId !== null) {
         node.localAngularVelocity.set(0, 0, 0);
       }
     }
@@ -1375,7 +1502,7 @@ export class Contraption {
   }
 
   enableAllNodeScripts() {
-    this.nodeScriptEnabled.set('root', true);
+    this.nodeScriptEnabled.set(this.rootComponentId, true);
     for (const id of this.entityNodes.keys()) {
       this.nodeScriptEnabled.set(id, true);
     }
@@ -1389,11 +1516,11 @@ export class Contraption {
 
   disableAllNodeScripts() {
     this.latchedScriptCommands = [];
-    this.nodeScriptEnabled.set('root', false);
+    this.nodeScriptEnabled.set(this.rootComponentId, false);
     for (const id of this.entityNodes.keys()) {
       this.nodeScriptEnabled.set(id, false);
       const node = this.entityNodes.get(id);
-      if (node && id !== 'root') {
+      if (node && node.parentId !== null) {
         node.localAngularVelocity.set(0, 0, 0);
       }
     }
@@ -1418,7 +1545,7 @@ export class Contraption {
     for (const node of this.entityNodes.values()) {
       node.localAngularVelocity.set(0, 0, 0);
       node.commandedThisFrame = false;
-      if (node.id === 'root') continue;
+      if (node.parentId === null) continue;
       node.localPosition.copy(node.initialLocalPosition);
       node.localQuaternion.copy(node.initialLocalQuaternion);
       node.group.position.copy(node.localPosition);
@@ -1428,7 +1555,7 @@ export class Contraption {
     for (const body of this.rigidBodies.values()) {
       body.appliedForces.set(0, 0, 0);
       body.appliedTorques.set(0, 0, 0);
-      if (body.id === 'root') continue;
+      if (body.id === this.rootComponentId) continue;
       const node = this.entityNodes.get(body.id);
       if (!node) continue;
       body.position.copy(node.group.localToWorld(body.centerOfMassLocal.clone()));
@@ -1557,12 +1684,13 @@ export class Contraption {
    * may also edit a dynamic body's pivot, while the script surface keeps its
    * existing kinematic-only rule.
    */
-  setComponentPivot(nodeId = 'root', value, options: any = {}) {
-    const id = String(nodeId || 'root');
+  setComponentPivot(nodeId = this.rootComponentId, value, options: any = {}) {
+    const id = String(nodeId || this.rootComponentId);
     const node = this.entityNodes.get(id);
     if (!node) return { ok: false, reason: 'component_not_found' };
-    const definition = id === 'root' ? null : this.childDefinitions.get(id);
-    if (id !== 'root' && !definition) return { ok: false, reason: 'component_not_found' };
+    const isRoot = node.parentId === null;
+    const definition = isRoot ? null : this.childDefinitions.get(id);
+    if (!isRoot && !definition) return { ok: false, reason: 'component_not_found' };
     if (options.requireStopped !== false && !this.canEditInternalSelection()) {
       return { ok: false, reason: 'target_not_stopped' };
     }
@@ -1591,7 +1719,7 @@ export class Contraption {
       if (childDefinition) childDefinition.localPosition = child.localPosition.toArray();
     }
 
-    if (id === 'root') {
+    if (isRoot) {
       this.rootPivotOverride = target.clone();
       // Root position is world-space; rotate the node-local pivot delta first.
       this.position.add(delta.clone().applyQuaternion(this.quaternion));
@@ -1612,15 +1740,15 @@ export class Contraption {
    * microblocks, colors, child definitions, scripts, and enabled state. The result can
    * be passed directly to ContraptionManager.buildFromSlot to create an independent entity.
    */
-  serializeSubtree(rootNodeId = 'root') {
-    const sourceRootId = String(rootNodeId || 'root');
+  serializeSubtree(rootNodeId = this.rootComponentId) {
+    const sourceRootId = String(rootNodeId || this.rootComponentId);
+    if (!this.entityNodes.has(sourceRootId)) return null;
     const nodeIds = this.collectSubtreeNodeIds(sourceRootId);
-    const mapId = id => id === sourceRootId ? 'root' : id;
     const rootBodyDefaults = this.getNodeDefaultBodyConfig(sourceRootId);
     const massOverride = normalizeBodyMass(rootBodyDefaults?.mass);
 
     const blocks = this.blocks
-      .filter(b => nodeIds.has(b.entityId || 'root'))
+      .filter(b => nodeIds.has(b.entityId || this.rootComponentId))
       .map(b => ({
         localX: b.localX,
         localY: b.localY,
@@ -1628,50 +1756,40 @@ export class Contraption {
         size: b.size || 1,
         color: b.color,
         block: b.block,
-        entityId: mapId(b.entityId || 'root')
+        entityId: b.entityId || this.rootComponentId
       }));
 
     const childEntities = [...this.childDefinitions.values()]
       .filter(d => nodeIds.has(d.id) && d.id !== sourceRootId)
-      .map(d => {
-        const defaults = this.getNodeDefaultBodyConfig(d.id);
-        const serialized = {
-          ...d,
-          anchorRotation: this.entityNodes.get(d.id)?.anchorQuaternion.toArray()
-            || asQuaternion(d.anchorRotation).toArray(),
-          id: mapId(d.id),
-          parentId: mapId(d.parentId),
-          bodyType: defaults?.bodyType || d.bodyType,
-          restitution: defaults?.restitution ?? d.restitution,
-          friction: defaults?.friction ?? d.friction,
-          useGravity: defaults?.useGravity ?? (d.useGravity !== false),
-          collisionEnabled: defaults?.collisionEnabled ?? (d.collisionEnabled !== false)
-        };
-        const configuredMass = normalizeBodyMass(defaults?.mass);
-        if (configuredMass === null) delete serialized.mass;
-        else serialized.mass = configuredMass;
-        return serialized;
-      });
+      .sort((left, right) => compareComponentIds(left.id, right.id))
+      .map(d => this.serializeChildDefinition(d));
 
     const scripts = [...this.nodeScripts.entries()]
       .filter(([id]) => nodeIds.has(id))
-      .map(([id, code]) => ({ id: mapId(id), code }));
+      .sort(([left], [right]) => compareComponentIds(left, right))
+      .map(([id, code]) => ({ id, code }));
 
     const enabled = [...this.entityNodes.keys()]
       .filter(id => nodeIds.has(id))
-      .map(id => ({ id: mapId(id), enabled: this.isNodeScriptEnabled(id) }));
+      .sort(compareComponentIds)
+      .map(id => ({ id, enabled: this.isNodeScriptEnabled(id) }));
     const constraints = [...this.constraintDefinitions.values()]
-      .filter(constraint => nodeIds.has(constraint.bodyB) && (constraint.bodyA === 'world' || nodeIds.has(constraint.bodyA)))
+      .filter(constraint => nodeIds.has(constraint.bodyB)
+        && (constraint.bodyA === null || nodeIds.has(constraint.bodyA)))
+      .sort((left, right) => compareIds(left.id, right.id))
       .map(constraint => ({
         ...constraint,
-        bodyA: constraint.bodyA === 'world' ? 'world' : mapId(constraint.bodyA),
-        bodyB: mapId(constraint.bodyB),
+        bodyA: constraint.bodyA,
+        bodyB: constraint.bodyB,
         limits: constraint.limits ? { ...constraint.limits } : null
       }));
+    const rootPivotOverride = sourceRootId === this.rootComponentId
+      ? this.rootPivotOverride?.toArray?.()
+      : undefined;
 
     return {
       name: `Entity ${sourceRootId}`,
-      rootId: 'root',
+      rootComponentId: sourceRootId,
       nodeCount: 1 + childEntities.length,
       blockCount: blocks.length,
       blocks,
@@ -1679,6 +1797,7 @@ export class Contraption {
       scripts,
       enabled,
       constraints,
+      ...(Array.isArray(rootPivotOverride) ? { rootPivotOverride: [...rootPivotOverride] } : {}),
       anchorRotation: this.entityNodes.get(sourceRootId)?.anchorQuaternion.toArray()
         || new THREE.Quaternion().toArray(),
       bodyType: rootBodyDefaults?.bodyType || this.getNodeBodyType(sourceRootId),
@@ -1698,11 +1817,11 @@ export class Contraption {
   serializeSubtrees(rootIds) {
     const normalizedRoots: string[] = (rootIds || []).map(id => String(id || '')).filter(Boolean);
     const requestedRoots = [...new Set<string>(normalizedRoots)];
-    if (requestedRoots.includes('root')) return this.serializeSubtree('root');
+    if (requestedRoots.includes(this.rootComponentId)) return this.serializeSubtree(this.rootComponentId);
     const requestedSet = new Set(requestedRoots);
     const roots = requestedRoots.filter(id => {
       let parentId = this.childDefinitions.get(id)?.parentId;
-      while (parentId && parentId !== 'root') {
+      while (parentId && parentId !== this.rootComponentId) {
         if (requestedSet.has(parentId)) return false;
         parentId = this.childDefinitions.get(parentId)?.parentId;
       }
@@ -1711,13 +1830,14 @@ export class Contraption {
     if (roots.length === 0) return null;
     if (roots.length === 1) return this.serializeSubtree(roots[0]);
 
-    const nodeIds = new Set();
+    const nodeIds = new Set<string>();
     for (const id of roots) {
       for (const sub of this.collectSubtreeNodeIds(id)) nodeIds.add(sub);
     }
+    const syntheticRootId = uniqueInstalledComponentId('selection', new Set(nodeIds));
 
     const blocks = this.blocks
-      .filter(b => nodeIds.has(b.entityId || 'root'))
+      .filter(b => nodeIds.has(b.entityId || this.rootComponentId))
       .map(b => ({
         localX: b.localX,
         localY: b.localY,
@@ -1725,44 +1845,35 @@ export class Contraption {
         size: b.size || 1,
         color: b.color,
         block: b.block,
-        entityId: b.entityId || 'root'
+        entityId: b.entityId || this.rootComponentId
       }));
 
     const childEntities = [...this.childDefinitions.values()]
       .filter(d => nodeIds.has(d.id))
-      .map(d => {
-        const defaults = this.getNodeDefaultBodyConfig(d.id);
-        const serialized = {
-          ...d,
-          anchorRotation: this.entityNodes.get(d.id)?.anchorQuaternion.toArray()
-            || asQuaternion(d.anchorRotation).toArray(),
-          parentId: roots.includes(d.id) || !nodeIds.has(d.parentId) ? 'root' : d.parentId,
-          bodyType: defaults?.bodyType || d.bodyType,
-          restitution: defaults?.restitution ?? d.restitution,
-          friction: defaults?.friction ?? d.friction,
-          useGravity: defaults?.useGravity ?? (d.useGravity !== false),
-          collisionEnabled: defaults?.collisionEnabled ?? (d.collisionEnabled !== false)
-        };
-        const configuredMass = normalizeBodyMass(defaults?.mass);
-        if (configuredMass === null) delete serialized.mass;
-        else serialized.mass = configuredMass;
-        return serialized;
-      });
+      .sort((left, right) => compareIds(left.id, right.id))
+      .map(d => this.serializeChildDefinition(
+        d,
+        roots.includes(d.id) || !nodeIds.has(d.parentId) ? syntheticRootId : d.parentId
+      ));
 
     const scripts = [...this.nodeScripts.entries()]
       .filter(([id]) => nodeIds.has(id))
+      .sort(([left], [right]) => compareComponentIds(left, right))
       .map(([id, code]) => ({ id, code }));
 
     const enabled = [...this.entityNodes.keys()]
       .filter(id => nodeIds.has(id))
+      .sort(compareComponentIds)
       .map(id => ({ id, enabled: this.isNodeScriptEnabled(id) }));
     const constraints = [...this.constraintDefinitions.values()]
-      .filter(constraint => nodeIds.has(constraint.bodyB) && (constraint.bodyA === 'world' || nodeIds.has(constraint.bodyA)))
+      .filter(constraint => nodeIds.has(constraint.bodyB)
+        && (constraint.bodyA === null || nodeIds.has(constraint.bodyA)))
+      .sort((left, right) => compareIds(left.id, right.id))
       .map(constraint => ({ ...constraint, limits: constraint.limits ? { ...constraint.limits } : null }));
 
     return {
       name: `Entity ${roots.length} components`,
-      rootId: 'root',
+      rootComponentId: syntheticRootId,
       nodeCount: 1 + childEntities.length,
       blockCount: blocks.length,
       blocks,
@@ -1771,11 +1882,11 @@ export class Contraption {
       enabled,
       constraints,
       anchorRotation: new THREE.Quaternion().toArray(),
-      bodyType: this.getNodeDefaultBodyConfig('root')?.bodyType || this.bodyType,
-      restitution: this.getNodeDefaultBodyConfig('root')?.restitution ?? this.restitution,
-      friction: this.getNodeDefaultBodyConfig('root')?.friction ?? this.friction,
-      useGravity: this.getNodeDefaultBodyConfig('root')?.useGravity ?? this.useGravity,
-      collisionEnabled: this.getNodeDefaultBodyConfig('root')?.collisionEnabled ?? this.collisionEnabled,
+      bodyType: this.getNodeDefaultBodyConfig(this.rootComponentId)?.bodyType || this.bodyType,
+      restitution: this.getNodeDefaultBodyConfig(this.rootComponentId)?.restitution ?? this.restitution,
+      friction: this.getNodeDefaultBodyConfig(this.rootComponentId)?.friction ?? this.friction,
+      useGravity: this.getNodeDefaultBodyConfig(this.rootComponentId)?.useGravity ?? this.useGravity,
+      collisionEnabled: this.getNodeDefaultBodyConfig(this.rootComponentId)?.collisionEnabled ?? this.collisionEnabled,
       seats: []
     };
   }
@@ -1786,7 +1897,9 @@ export class Contraption {
     const walk = (id: string) => {
       if (ids.has(id)) return;
       ids.add(id);
-      for (const node of this.entityNodes.values()) {
+      const nodes = [...this.entityNodes.values()]
+        .sort((left, right) => compareComponentIds(left.id, right.id));
+      for (const node of nodes) {
         if (node.parentId === id) walk(node.id);
       }
     };
@@ -1802,13 +1915,13 @@ export class Contraption {
    */
   installEntitySlot(
     slot,
-    parentNodeId = 'root',
+    parentNodeId = this.rootComponentId,
     placementOrigin = new THREE.Vector3(),
     preparedBlocks = null,
     placementRotation = null
   ) {
     const fail = (reason: string) => Object.freeze({ ok: false, reason });
-    const parentId = String(parentNodeId || 'root');
+    const parentId = String(parentNodeId || this.rootComponentId);
     const parentNode = this.entityNodes.get(parentId);
     if (!parentNode) return fail('target_component_missing');
     if (!this.canEditInternalSelection()) return fail('target_not_stopped');
@@ -1826,23 +1939,25 @@ export class Contraption {
     if (![origin.x, origin.y, origin.z].every(Number.isFinite)) return fail('invalid_placement');
     const worldRotation = asQuaternion(placementRotation);
 
+    const sourceRootId = String(slot.rootComponentId || '');
+    if (!isValidComponentId(sourceRootId)) return fail('invalid_root_component_id');
     const sourceDefinitions = Array.isArray(slot.childEntities) ? slot.childEntities : [];
-    const sourceIds = new Set<string>(['root']);
-    const sourceParents = new Map<string, string | null>([['root', null]]);
+    const sourceIds = new Set<string>([sourceRootId]);
+    const sourceParents = new Map<string, string | null>([[sourceRootId, null]]);
     for (const definition of sourceDefinitions) {
       const id = String(definition?.id || '');
-      const sourceParentId = String(definition?.parentId || definition?.parent || 'root');
-      if (!isValidComponentId(id, false) || sourceIds.has(id)) return fail('invalid_component_ids');
+      const sourceParentId = String(definition?.parentId || '');
+      if (!isValidComponentId(id) || sourceIds.has(id)) return fail('invalid_component_ids');
       sourceIds.add(id);
       sourceParents.set(id, sourceParentId);
     }
     for (const [id, sourceParentId] of sourceParents) {
-      if (id !== 'root' && (!sourceIds.has(String(sourceParentId)) || sourceParentId === id)) {
+      if (id !== sourceRootId && (!sourceIds.has(String(sourceParentId)) || sourceParentId === id)) {
         return fail('invalid_component_hierarchy');
       }
     }
 
-    const sourceDepths = new Map<string, number>([['root', 0]]);
+    const sourceDepths = new Map<string, number>([[sourceRootId, 0]]);
     const sourceDepth = (id: string, visiting = new Set<string>()): number => {
       if (sourceDepths.has(id)) return sourceDepths.get(id)!;
       if (visiting.has(id)) return Number.POSITIVE_INFINITY;
@@ -1877,7 +1992,7 @@ export class Contraption {
       color: block?.color,
       block: block?.block,
       part: block?.part,
-      entityId: String(block?.entityId || 'root')
+      entityId: String(block?.entityId || '')
     }));
     if (this.blocks.length + sourceBlocks.length > MAX_ENTITY_BLOCKS) return fail('too_many_blocks');
     if (sourceBlocks.some(block => (
@@ -1936,7 +2051,7 @@ export class Contraption {
       installedComponentIdBase(slot.name || 'component'),
       reservedIds
     );
-    idMap.set('root', installedRootId);
+    idMap.set(sourceRootId, installedRootId);
     for (const definition of sourceDefinitions) {
       const sourceId = String(definition.id);
       const preferred = reservedIds.has(sourceId) ? `${installedRootId}_${sourceId}` : sourceId;
@@ -1963,7 +2078,6 @@ export class Contraption {
     const installedDefinitions = [{
       id: installedRootId,
       parentId,
-      kind: 'child',
       pivot: installedRootPivot.toArray(),
       localPosition: installedLocalPosition.toArray(),
       localRotation: installedLocalRotation.toArray(),
@@ -1980,17 +2094,21 @@ export class Contraption {
       const pivot = isFiniteVector3Array(definition.pivot)
         ? new THREE.Vector3().fromArray(definition.pivot).add(coordinateOffset).toArray()
         : installedRootPivot.toArray();
-      installedDefinitions.push({
-        ...cloneScriptData(definition, {}),
-        id: idMap.get(String(definition.id)),
-        parentId: idMap.get(String(definition.parentId || definition.parent || 'root')),
-        pivot
-      });
+      const installedId = idMap.get(String(definition.id));
+      const installedParentId = idMap.get(String(definition.parentId || ''));
+      if (!installedId || !installedParentId) return fail('invalid_component_hierarchy');
+      const installedDefinition = this.normalizeChildDefinition(
+        definition,
+        installedId,
+        installedParentId
+      );
+      installedDefinition.pivot = pivot;
+      installedDefinitions.push(installedDefinition);
     }
 
     const changedChildIds = new Map<string, string>();
     for (const [sourceId, installedId] of idMap) {
-      if (sourceId !== 'root' && sourceId !== installedId) changedChildIds.set(sourceId, installedId);
+      if (sourceId !== sourceRootId && sourceId !== installedId) changedChildIds.set(sourceId, installedId);
     }
     const scriptIds = new Set<string>();
     const installedScripts: Array<{ id: string; code: string; enabled: boolean }> = [];
@@ -2011,18 +2129,21 @@ export class Contraption {
     if (currentScriptBytes + addedScriptBytes > MAX_ENTITY_TOTAL_SCRIPT_BYTES) return fail('scripts_too_large');
 
     const installedConstraints = [];
-    let skippedWorldConstraints = 0;
+    let skippedExternalConstraints = 0;
     const reservedConstraintIds = new Set(this.constraintDefinitions.keys());
     for (const source of slot.constraints || []) {
-      const bodyA = String(source?.bodyA || 'world');
+      const bodyA = source?.bodyA === null ? null : String(source?.bodyA || '');
       const bodyB = String(source?.bodyB || '');
-      if (bodyA === 'world') {
-        skippedWorldConstraints += 1;
+      if (bodyA === null) {
+        skippedExternalConstraints += 1;
         continue;
       }
       if (!idMap.has(bodyA) || !idMap.has(bodyB) || bodyA === bodyB) return fail('invalid_constraints');
-      const preferredId = installedComponentIdBase(source?.id || `${source?.type || 'point'}_${bodyA}_${bodyB}`, 'constraint');
-      const id = uniqueInstalledComponentId(preferredId, reservedConstraintIds);
+      const preferredId = installedIdCandidate(
+        source?.id || `${source?.type || 'point'}_${bodyA}_${bodyB}`,
+        'constraint'
+      );
+      const id = uniqueInstalledConstraintId(preferredId, reservedConstraintIds);
       installedConstraints.push({
         ...cloneScriptData(source, {}),
         id,
@@ -2075,7 +2196,7 @@ export class Contraption {
         parentId,
         componentCount: installedDefinitions.length,
         blockCount: remappedBlocks.length,
-        skippedWorldConstraints
+        skippedExternalConstraints
       });
     } catch (error) {
       for (const id of idMap.values()) this.scriptRuntimeClient.setScript(id, '');
@@ -2105,10 +2226,11 @@ export class Contraption {
    */
   removeComponentSubtree(rootNodeId) {
     const rootId = String(rootNodeId || '');
-    if (!rootId || rootId === 'root' || !this.entityNodes.has(rootId)) return null;
+    const subtreeRoot = this.entityNodes.get(rootId);
+    if (!subtreeRoot || subtreeRoot.parentId === null) return null;
 
     const nodeIds = this.collectSubtreeNodeIds(rootId);
-    const removedBlocks = this.blocks.filter(block => nodeIds.has(block.entityId || 'root'));
+    const removedBlocks = this.blocks.filter(block => nodeIds.has(block.entityId || this.rootComponentId));
     const standard = removedBlocks.filter(block => (block.size || 1) >= 1).length;
     const micro = removedBlocks.length - standard;
 
@@ -2116,7 +2238,7 @@ export class Contraption {
     if (this.selectedNodeId && nodeIds.has(this.selectedNodeId)) this.setHighlightedNode(null);
     if (this.focusedHighlightNodeId && nodeIds.has(this.focusedHighlightNodeId)) this.clearGlueSelection();
 
-    this.blocks = this.blocks.filter(block => !nodeIds.has(block.entityId || 'root'));
+    this.blocks = this.blocks.filter(block => !nodeIds.has(block.entityId || this.rootComponentId));
     for (const id of nodeIds) {
       this.scriptRuntimeClient.setScript(id, '');
       this.childDefinitions.delete(id);
@@ -2150,12 +2272,12 @@ export class Contraption {
    * Entity Editor's "Defaults" tab edits and Stop restores. `runtimeBody` is the
    * live rigid-body snapshot for the read-only "Runtime" tab.
    */
-  getNodeProperties(nodeId = 'root') {
-    const id = String(nodeId || 'root');
+  getNodeProperties(nodeId = this.rootComponentId) {
+    const id = String(nodeId || this.rootComponentId);
     const node = this.entityNodes.get(id);
     if (!node) return null;
-    const isRoot = id === 'root';
-    const blocks = this.blocks.filter(b => (b.entityId || 'root') === id);
+    const isRoot = node.parentId === null;
+    const blocks = this.blocks.filter(b => (b.entityId || this.rootComponentId) === id);
     const volume = blocks.reduce((sum, b) => sum + Math.pow(b.size || 1, 3), 0);
     this.rootGroup.updateMatrixWorld(true);
     const localPosition = isRoot ? new THREE.Vector3() : node.localPosition.clone();
@@ -2203,7 +2325,7 @@ export class Contraption {
     return {
       id: node.id,
       parentId: node.parentId,
-      kind: node.kind || (node.id === 'root' ? 'root' : 'child'),
+      kind: node.parentId === null ? 'root' : 'child',
       bodyType: defaults?.bodyType || this.getNodeBodyType(id),
       mass: normalizeBodyMass(defaults?.mass) ?? defaultBodyMass(blocks),
       restitution: defaults?.restitution ?? this.restitution,
@@ -2235,17 +2357,17 @@ export class Contraption {
     };
   }
 
-  /** Rename a globally unique component id; the root id is fixed as 'root'. */
+  /** Rename a globally unique non-root component id. */
   renameChildEntity(oldId, newId) {
-    if (!oldId || !newId || oldId === newId || oldId === 'root') return false;
+    if (!oldId || !newId || oldId === newId) return false;
     const cleanNewId = String(newId).trim();
-    if (!isValidComponentId(cleanNewId, false)
+    if (!isValidComponentId(cleanNewId)
       || this.entityNodes.has(cleanNewId)
       || this.childDefinitions.has(cleanNewId)) return false;
 
     const node = this.entityNodes.get(oldId);
     const def = this.childDefinitions.get(oldId);
-    if (!node) return false;
+    if (!node || node.parentId === null) return false;
 
     // Update blocks
     for (const block of this.blocks) {
@@ -2414,7 +2536,7 @@ export class Contraption {
       const x = Math.floor(block.localX / MICRO_SIZE + 1e-6);
       const y = Math.floor(block.localY / MICRO_SIZE + 1e-6);
       const z = Math.floor(block.localZ / MICRO_SIZE + 1e-6);
-      const entityId = block.entityId || 'root';
+      const entityId = block.entityId || this.rootComponentId;
       // Whole voxels fill their 1x1 cell, micro voxels only their 0.2 cell.
       const cellKey = span > 1
         ? `s:${Math.floor(x / MICRO_DIVISIONS)},${Math.floor(y / MICRO_DIVISIONS)},${Math.floor(z / MICRO_DIVISIONS)}`
@@ -2497,33 +2619,25 @@ export class Contraption {
 
   initializeEntityHierarchy(childEntities = []) {
     const definitions = Array.isArray(childEntities)
-      ? childEntities.slice(0, MAX_ENTITY_COMPONENTS - 1)
+      ? childEntities
+        .slice(0, MAX_ENTITY_COMPONENTS - 1)
+        .sort((left, right) => compareComponentIds(left?.id, right?.id))
       : [];
     for (const definition of definitions) {
       const id = typeof definition?.id === 'string' ? definition.id : '';
-      if (!isValidComponentId(id, false) || this.childDefinitions.has(id)) continue;
-      const requestedParent = String(definition.parentId || definition.parent || 'root');
+      if (!isValidComponentId(id) || id === this.rootComponentId || this.childDefinitions.has(id)) continue;
+      const requestedParent = String(definition.parentId || this.rootComponentId);
       const parentId = isValidComponentId(requestedParent) && requestedParent !== id
         ? requestedParent
-        : 'root';
-      this.childDefinitions.set(id, {
-        ...definition,
-        id,
-        parentId,
-        bodyType: normalizeBodyType(definition.bodyType, BodyType.KINEMATIC),
-        useGravity: definition.useGravity !== false,
-        restitution: clampUnit(definition.restitution, this.restitution),
-        friction: clampUnit(definition.friction, this.friction),
-        seats: this.normalizeSeats(definition.seats)
-      });
-    }
+        : this.rootComponentId;
+      this.childDefinitions.set(id, this.normalizeChildDefinition(definition, id, parentId));
 
-    // Explicit definitions may claim whole 1x1 collision cells.
-    for (const definition of this.childDefinitions.values()) {
+      // blockKeys is a constructor-only ownership selector, not runtime or
+      // serialized component metadata.
       if (!Array.isArray(definition.blockKeys)) continue;
       const ownedCells = new Set(definition.blockKeys.map(key => Array.isArray(key) ? key.join(',') : String(key)));
       for (const block of this.blocks) {
-        if (ownedCells.has(collisionCellKey(block))) block.entityId = definition.id;
+        if (ownedCells.has(collisionCellKey(block))) block.entityId = id;
       }
     }
 
@@ -2559,7 +2673,7 @@ export class Contraption {
     this.childScriptApis.clear();
 
     const rootNode = {
-      id: 'root',
+      id: this.rootComponentId,
       parentId: null,
       // Rotation center defaults to entity-local COM; kinematic-root scripts may override it with setPivot.
       pivotLocal: (this.rootPivotOverride || this.localCenter).clone(),
@@ -2576,16 +2690,20 @@ export class Contraption {
       children: new Set<string>(),
       bodyType: this.bodyType
     };
-    this.entityNodes.set('root', rootNode);
+    this.entityNodes.set(this.rootComponentId, rootNode);
 
-    const pending = [...this.childDefinitions.values()];
+    const pending = [...this.childDefinitions.values()]
+      .sort((left, right) => compareComponentIds(left.id, right.id));
     let guard = pending.length + 1;
     while (pending.length > 0 && guard-- > 0) {
       let progressed = false;
-      for (let index = pending.length - 1; index >= 0; index--) {
+      for (let index = 0; index < pending.length;) {
         const definition = pending[index];
-        const parent = this.entityNodes.get(definition.parentId || 'root');
-        if (!parent) continue;
+        const parent = this.entityNodes.get(definition.parentId || this.rootComponentId);
+        if (!parent) {
+          index += 1;
+          continue;
+        }
 
         const pivotLocal = asVector3(definition.pivot, this.localCenter);
         const defaultPosition = pivotLocal.clone().sub(parent.pivotLocal);
@@ -2620,7 +2738,6 @@ export class Contraption {
           previousLocalQuaternion: localQuaternion.clone(),
           group,
           children: new Set<string>(),
-          kind: definition.kind || 'child',
           bodyType: normalizeBodyType(definition.bodyType, BodyType.KINEMATIC)
         };
         this.entityNodes.set(node.id, node);
@@ -2635,7 +2752,7 @@ export class Contraption {
     // blocks disappear. The editor never creates cycles, but imported data
     // should remain inspectable.
     for (const definition of pending) {
-      definition.parentId = 'root';
+      definition.parentId = this.rootComponentId;
       const pivotLocal = asVector3(definition.pivot, this.localCenter);
       const group = new THREE.Group();
       group.name = `Entity_${definition.id}`;
@@ -2643,7 +2760,7 @@ export class Contraption {
       this.meshGroup.add(group);
       const node = {
         id: definition.id,
-        parentId: 'root',
+        parentId: this.rootComponentId,
         pivotLocal,
         localPosition: group.position.clone(),
         localQuaternion: new THREE.Quaternion(),
@@ -2655,7 +2772,6 @@ export class Contraption {
         previousLocalQuaternion: group.quaternion.clone(),
         group,
         children: new Set<string>(),
-        kind: definition.kind || 'child',
         bodyType: normalizeBodyType(definition.bodyType, BodyType.KINEMATIC)
       };
       this.entityNodes.set(node.id, node);
@@ -2663,7 +2779,7 @@ export class Contraption {
     }
 
     for (const node of this.entityNodes.values()) {
-      const nodeBlocks = this.blocks.filter(block => (block.entityId || 'root') === node.id);
+      const nodeBlocks = this.blocks.filter(block => (block.entityId || this.rootComponentId) === node.id);
       this.createVoxelMesh(nodeBlocks, node.pivotLocal, node.group);
     }
 
@@ -2675,7 +2791,7 @@ export class Contraption {
       node.previousWorldMatrix = node.group.matrixWorld.clone();
     }
     // Refresh the root self API after rebuilding nodes because old node closures are stale.
-    this.scriptApi = this.getComponentApi('root');
+    this.scriptApi = this.getComponentApi(this.rootComponentId);
   }
 
   rebuildRigidBodies(previousBodies = new Map()) {
@@ -2684,8 +2800,9 @@ export class Contraption {
 
     for (const node of this.entityNodes.values()) {
       const previous = previousBodies.get(node.id);
-      const definition = node.id === 'root' ? null : this.childDefinitions.get(node.id);
-      const ownedBlocks = this.blocks.filter(block => (block.entityId || 'root') === node.id);
+      const isRoot = node.parentId === null;
+      const definition = isRoot ? null : this.childDefinitions.get(node.id);
+      const ownedBlocks = this.blocks.filter(block => (block.entityId || this.rootComponentId) === node.id);
       let volume = 0;
       const weightedCenter = new THREE.Vector3();
       let maxRadiusSq = 0;
@@ -2703,7 +2820,7 @@ export class Contraption {
       const centerEntity = volume > 0
         ? weightedCenter.divideScalar(volume)
         : node.pivotLocal.clone();
-      const centerOfMassLocal = node.id === 'root'
+      const centerOfMassLocal = isRoot
         ? new THREE.Vector3()
         : centerEntity.sub(node.pivotLocal);
       for (const block of ownedBlocks) {
@@ -2716,18 +2833,18 @@ export class Contraption {
         maxRadiusSq = Math.max(maxRadiusSq, localCenter.lengthSq() + size * size * 0.75);
       }
 
-      const type = node.id === 'root'
+      const type = isRoot
         ? this.bodyType
         : normalizeBodyType(definition?.bodyType, BodyType.KINEMATIC);
       node.bodyType = type;
       node.group.updateWorldMatrix(true, false);
-      const authoredPosition = node.id === 'root'
+      const authoredPosition = isRoot
         ? this.position
         : node.group.localToWorld(centerOfMassLocal.clone());
-      const authoredQuaternion = node.id === 'root'
+      const authoredQuaternion = isRoot
         ? this.quaternion
         : node.group.getWorldQuaternion(new THREE.Quaternion());
-      const configuredMass = node.id === 'root'
+      const configuredMass = isRoot
         ? this.massOverride
         : normalizeBodyMass(definition?.mass);
       const mass = configuredMass ?? defaultBodyMass(ownedBlocks);
@@ -2737,32 +2854,32 @@ export class Contraption {
         id: node.id,
         nodeId: node.id,
         type,
-        position: node.id === 'root'
+        position: isRoot
           ? this.position
           : (previous?.type === BodyType.DYNAMIC ? previous.position.clone() : authoredPosition.clone()),
-        quaternion: node.id === 'root'
+        quaternion: isRoot
           ? this.quaternion
           : (previous?.type === BodyType.DYNAMIC ? previous.quaternion.clone() : authoredQuaternion.clone()),
-        velocity: node.id === 'root' ? this.velocity : (previous?.velocity?.clone() || new THREE.Vector3()),
-        angularVelocity: node.id === 'root'
+        velocity: isRoot ? this.velocity : (previous?.velocity?.clone() || new THREE.Vector3()),
+        angularVelocity: isRoot
           ? this.angularVelocity
           : (previous?.angularVelocity?.clone() || new THREE.Vector3()),
-        appliedForces: node.id === 'root'
+        appliedForces: isRoot
           ? this.appliedForces
           : (previous?.appliedForces?.clone() || new THREE.Vector3()),
-        appliedTorques: node.id === 'root'
+        appliedTorques: isRoot
           ? this.appliedTorques
           : (previous?.appliedTorques?.clone() || new THREE.Vector3()),
         mass,
         inverseInertia: inertia > 1e-9 ? 1 / inertia : 0,
-        restitution: node.id === 'root'
+        restitution: isRoot
           ? this.restitution
           : clampUnit(definition?.restitution, this.restitution),
-        friction: node.id === 'root'
+        friction: isRoot
           ? this.friction
           : clampUnit(definition?.friction, this.friction),
-        linearDamping: node.id === 'root' ? this.linearDamping : 0.98,
-        angularDamping: node.id === 'root' ? this.angularDamping : 0.92,
+        linearDamping: isRoot ? this.linearDamping : 0.98,
+        angularDamping: isRoot ? this.angularDamping : 0.92,
         centerOfMassLocal,
         previousKinematicPosition: previous?.previousKinematicPosition?.clone() || authoredPosition.clone(),
         previousKinematicQuaternion: previous?.previousKinematicQuaternion?.clone() || authoredQuaternion.clone(),
@@ -2773,28 +2890,28 @@ export class Contraption {
     }
 
     this.rigidBodies = nextBodies;
-    const rootBody = this.rigidBodies.get('root');
+    const rootBody = this.rigidBodies.get(this.rootComponentId);
     if (rootBody) {
       this.mass = rootBody.mass;
       this.maxForce = Math.max(80, this.mass * 65);
       this.maxTorque = Math.max(40, this.maxForce * Math.max(0.75, this.boundingRadius));
     }
     for (const body of this.rigidBodies.values()) {
-      if (body.id !== 'root' && body.type === BodyType.DYNAMIC) this.syncBodyToNode(body);
+      if (body.id !== this.rootComponentId && body.type === BodyType.DYNAMIC) this.syncBodyToNode(body);
     }
 
     // Imported or edited hierarchies can drop a body while retaining an old
     // joint definition. Keep the solver input self-consistent after every
     // hierarchy rebuild instead of leaving a permanently dangling constraint.
     for (const [id, constraint] of this.constraintDefinitions) {
-      const hasBodyA = constraint.bodyA === 'world' || this.rigidBodies.has(constraint.bodyA);
+      const hasBodyA = constraint.bodyA === null || this.rigidBodies.has(constraint.bodyA);
       const hasBodyB = this.rigidBodies.has(constraint.bodyB);
       if (!hasBodyA || !hasBodyB) this.constraintDefinitions.delete(id);
     }
   }
 
-  getRigidBody(nodeId = 'root') {
-    return this.rigidBodies.get(String(nodeId || 'root')) || null;
+  getRigidBody(nodeId = this.rootComponentId) {
+    return this.rigidBodies.get(String(nodeId || this.rootComponentId)) || null;
   }
 
   getRigidBodies() {
@@ -2803,29 +2920,30 @@ export class Contraption {
 
   /** Current authored/runtime BodyConfig. A snapshot of this value becomes the
    * PB default the first time a script mutates one of its fields. */
-  getCurrentNodeBodyConfig(nodeId = 'root') {
-    const id = String(nodeId || 'root');
+  getCurrentNodeBodyConfig(nodeId = this.rootComponentId) {
+    const id = String(nodeId || this.rootComponentId);
     const body = this.getRigidBody(id);
     if (!body) return null;
-    const definition = id === 'root' ? null : this.childDefinitions.get(id);
+    const isRoot = this.entityNodes.get(id)?.parentId === null;
+    const definition = isRoot ? null : this.childDefinitions.get(id);
     return {
       bodyType: body.type,
-      mass: id === 'root' ? this.massOverride : normalizeBodyMass(definition?.mass),
+      mass: isRoot ? this.massOverride : normalizeBodyMass(definition?.mass),
       restitution: body.restitution,
       friction: body.friction,
-      useGravity: id === 'root' ? this.useGravity : definition?.useGravity !== false,
-      collisionEnabled: id === 'root' ? this.collisionEnabled : definition?.collisionEnabled !== false
+      useGravity: isRoot ? this.useGravity : definition?.useGravity !== false,
+      collisionEnabled: isRoot ? this.collisionEnabled : definition?.collisionEnabled !== false
     };
   }
 
-  getNodeDefaultBodyConfig(nodeId = 'root') {
-    const id = String(nodeId || 'root');
+  getNodeDefaultBodyConfig(nodeId = this.rootComponentId) {
+    const id = String(nodeId || this.rootComponentId);
     const source = this.runtimeBodyConfigDefaults.get(id) || this.getCurrentNodeBodyConfig(id);
     return source ? { ...source } : null;
   }
 
-  captureRuntimeBodyConfigDefault(nodeId = 'root') {
-    const id = String(nodeId || 'root');
+  captureRuntimeBodyConfigDefault(nodeId = this.rootComponentId) {
+    const id = String(nodeId || this.rootComponentId);
     if (!this.runtimeBodyConfigDefaults.has(id)) {
       const current = this.getCurrentNodeBodyConfig(id);
       if (current) this.runtimeBodyConfigDefaults.set(id, current);
@@ -2833,16 +2951,16 @@ export class Contraption {
   }
 
   updateCapturedBodyConfigDefault(nodeId, patch) {
-    const saved = this.runtimeBodyConfigDefaults.get(String(nodeId || 'root'));
+    const saved = this.runtimeBodyConfigDefaults.get(String(nodeId || this.rootComponentId));
     if (saved) Object.assign(saved, patch);
   }
 
-  getNodeBodyType(nodeId = 'root') {
+  getNodeBodyType(nodeId = this.rootComponentId) {
     return this.getRigidBody(nodeId)?.type || null;
   }
 
   setNodeBodyType(nodeId, value, options: any = {}) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || this.rootComponentId);
     const body = this.getRigidBody(id);
     const type = normalizeBodyType(value, null);
     if (!body || !type) return false;
@@ -2853,7 +2971,7 @@ export class Contraption {
     }
     if (body.type === type) return true;
 
-    if (body.id !== 'root' && body.type === BodyType.KINEMATIC && type === BodyType.DYNAMIC) {
+    if (body.id !== this.rootComponentId && body.type === BodyType.KINEMATIC && type === BodyType.DYNAMIC) {
       const node = this.entityNodes.get(id);
       node?.group?.updateWorldMatrix(true, false);
       if (node?.group) {
@@ -2870,7 +2988,7 @@ export class Contraption {
     body.previousKinematicQuaternion.copy(body.quaternion);
     const node = this.entityNodes.get(id);
     if (node) node.bodyType = type;
-    if (id === 'root') {
+    if (id === this.rootComponentId) {
       this.bodyType = type;
     } else {
       const definition = this.childDefinitions.get(id);
@@ -2880,15 +2998,15 @@ export class Contraption {
   }
 
   setBodyType(value) {
-    return this.setNodeBodyType('root', value) ? this.bodyType : null;
+    return this.setNodeBodyType(this.rootComponentId, value) ? this.bodyType : null;
   }
 
-  getNodeBodyMass(nodeId = 'root') {
+  getNodeBodyMass(nodeId = this.rootComponentId) {
     return this.getRigidBody(nodeId)?.mass ?? null;
   }
 
   setNodeBodyMass(nodeId, value, options: any = {}) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || this.rootComponentId);
     const body = this.getRigidBody(id);
     const mass = normalizeBodyMass(value);
     if (!body || mass === null) return null;
@@ -2905,7 +3023,7 @@ export class Contraption {
       body.inverseInertia *= previousMass / mass;
     }
 
-    if (id === 'root') {
+    if (id === this.rootComponentId) {
       this.massOverride = mass;
       this.mass = mass;
       this.maxForce = Math.max(80, this.mass * 65);
@@ -2917,13 +3035,13 @@ export class Contraption {
     return mass;
   }
 
-  getNodeBodyMaterial(nodeId = 'root') {
+  getNodeBodyMaterial(nodeId = this.rootComponentId) {
     const body = this.getRigidBody(nodeId);
     return body ? Object.freeze({ restitution: body.restitution, friction: body.friction }) : null;
   }
 
   setNodeBodyMaterial(nodeId, material: any = {}, options: any = {}) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || this.rootComponentId);
     const body = this.getRigidBody(id);
     if (!body) return null;
     if (options.runtimeOnly) {
@@ -2936,7 +3054,7 @@ export class Contraption {
     }
     if (material.restitution !== undefined) body.restitution = clampUnit(material.restitution, body.restitution);
     if (material.friction !== undefined) body.friction = clampUnit(material.friction, body.friction);
-    if (id === 'root') {
+    if (id === this.rootComponentId) {
       this.restitution = body.restitution;
       this.friction = body.friction;
     } else {
@@ -2949,23 +3067,23 @@ export class Contraption {
     return this.getNodeBodyMaterial(id);
   }
 
-  getNodeGravityEnabled(nodeId = 'root') {
-    const id = String(nodeId || 'root');
+  getNodeGravityEnabled(nodeId = this.rootComponentId) {
+    const id = String(nodeId || this.rootComponentId);
     if (!this.getRigidBody(id)) return null;
-    return id === 'root'
+    return id === this.rootComponentId
       ? this.useGravity
       : this.childDefinitions.get(id)?.useGravity !== false;
   }
 
   setNodeGravityEnabled(nodeId, enabled, options: any = {}) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || this.rootComponentId);
     if (!this.getRigidBody(id) || typeof enabled !== 'boolean') return null;
     if (options.runtimeOnly) {
       if (options.captureDefault !== false) this.captureRuntimeBodyConfigDefault(id);
     } else {
       this.updateCapturedBodyConfigDefault(id, { useGravity: enabled });
     }
-    if (id === 'root') this.useGravity = enabled;
+    if (id === this.rootComponentId) this.useGravity = enabled;
     else {
       const definition = this.childDefinitions.get(id);
       if (!definition) return null;
@@ -2974,16 +3092,16 @@ export class Contraption {
     return enabled;
   }
 
-  getNodeCollisionEnabled(nodeId = 'root') {
-    const id = String(nodeId || 'root');
+  getNodeCollisionEnabled(nodeId = this.rootComponentId) {
+    const id = String(nodeId || this.rootComponentId);
     if (!this.getRigidBody(id)) return null;
-    return id === 'root'
+    return id === this.rootComponentId
       ? this.collisionEnabled
       : this.childDefinitions.get(id)?.collisionEnabled !== false;
   }
 
   setNodeCollisionEnabled(nodeId, enabled, options: any = {}) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || this.rootComponentId);
     if (!this.getRigidBody(id) || typeof enabled !== 'boolean') return null;
     if (options.runtimeOnly) {
       if (options.captureDefault !== false) this.captureRuntimeBodyConfigDefault(id);
@@ -2991,7 +3109,7 @@ export class Contraption {
       this.updateCapturedBodyConfigDefault(id, { collisionEnabled: enabled });
     }
     const previous = this.getNodeCollisionEnabled(id);
-    if (id === 'root') this.collisionEnabled = enabled;
+    if (id === this.rootComponentId) this.collisionEnabled = enabled;
     else {
       const definition = this.childDefinitions.get(id);
       if (!definition) return null;
@@ -3006,11 +3124,11 @@ export class Contraption {
       if (!this.getRigidBody(id)) continue;
       this.setNodeBodyType(id, defaults.bodyType, { runtimeOnly: true, captureDefault: false });
 
-      const ownedBlocks = this.blocks.filter(block => (block.entityId || 'root') === id);
+      const ownedBlocks = this.blocks.filter(block => (block.entityId || this.rootComponentId) === id);
       const configuredMass = normalizeBodyMass(defaults.mass);
       const mass = configuredMass ?? defaultBodyMass(ownedBlocks);
       this.setNodeBodyMass(id, mass, { runtimeOnly: true, captureDefault: false });
-      if (id === 'root') this.massOverride = configuredMass;
+      if (id === this.rootComponentId) this.massOverride = configuredMass;
       else {
         const definition = this.childDefinitions.get(id);
         if (definition) {
@@ -3060,10 +3178,10 @@ export class Contraption {
         }
         if (!hasDynamicParent) continue;
       }
-      const position = body.id === 'root'
+      const position = body.id === this.rootComponentId
         ? this.position.clone()
         : node.group.localToWorld(body.centerOfMassLocal.clone());
-      const quaternion = body.id === 'root'
+      const quaternion = body.id === this.rootComponentId
         ? this.quaternion.clone()
         : node.group.getWorldQuaternion(new THREE.Quaternion());
       if (dt > 0) {
@@ -3073,7 +3191,7 @@ export class Contraption {
         body.velocity.set(0, 0, 0);
         body.angularVelocity.set(0, 0, 0);
       }
-      if (body.id !== 'root') {
+      if (body.id !== this.rootComponentId) {
         body.position.copy(position);
         body.quaternion.copy(quaternion);
       }
@@ -3086,12 +3204,12 @@ export class Contraption {
 
   syncBodyToNode(body) {
     if (!body) return;
-    if (body.id === 'root') {
+    if (body.id === this.rootComponentId) {
       this.updateTransform();
       return;
     }
     const node = this.entityNodes.get(body.nodeId);
-    const parent = node && this.entityNodes.get(node.parentId || 'root');
+    const parent = node && this.entityNodes.get(node.parentId || this.rootComponentId);
     if (!node || !parent) return;
     parent.group.updateWorldMatrix(true, false);
     const parentQuaternion = parent.group.getWorldQuaternion(new THREE.Quaternion());
@@ -3109,7 +3227,7 @@ export class Contraption {
   syncAllBodyTransforms() {
     this.updateTransform();
     for (const body of this.rigidBodies.values()) {
-      if (body.id !== 'root' && body.type === BodyType.DYNAMIC) this.syncBodyToNode(body);
+      if (body.id !== this.rootComponentId && body.type === BodyType.DYNAMIC) this.syncBodyToNode(body);
     }
   }
 
@@ -3121,13 +3239,21 @@ export class Contraption {
   createConstraint(definition: any = {}) {
     const bodyBId = String(definition.bodyB || definition.nodeId || '');
     const bodyB = this.getRigidBody(bodyBId);
-    const bodyAId = String(definition.bodyA || definition.other || definition.parentId || this.entityNodes.get(bodyBId)?.parentId || 'world');
-    const bodyA = bodyAId === 'world' ? null : this.getRigidBody(bodyAId);
-    if (!bodyB || (bodyAId !== 'world' && !bodyA) || bodyAId === bodyBId) return null;
+    const requestedBodyA = definition.bodyA !== undefined
+      ? definition.bodyA
+      : definition.parentId !== undefined
+        ? definition.parentId
+        : this.entityNodes.get(bodyBId)?.parentId ?? null;
+    const bodyAId = requestedBodyA === null ? null : String(requestedBodyA || '');
+    const bodyA = bodyAId === null ? null : this.getRigidBody(bodyAId);
+    if (!bodyB || (bodyAId !== null && !bodyA) || bodyAId === bodyBId) return null;
     const type = ['point', 'hinge', 'weld'].includes(definition.type) ? definition.type : 'point';
-    let id = String(definition.id || `${type}_${bodyAId}_${bodyBId}`);
-    let suffix = 2;
-    while (this.constraintDefinitions.has(id)) id = `${definition.id || `${type}_${bodyAId}_${bodyBId}`}_${suffix++}`;
+    const hasExplicitId = definition.id !== undefined;
+    if (hasExplicitId && !isValidConstraintId(definition.id)) return null;
+    const preferredId = hasExplicitId
+      ? String(definition.id)
+      : `${type}_${bodyAId ?? 'external'}_${bodyBId}`;
+    const id = uniqueInstalledConstraintId(preferredId, new Set(this.constraintDefinitions.keys()));
 
     const nodeB = this.entityNodes.get(bodyBId);
     const pivotWorld = nodeB?.group?.getWorldPosition(new THREE.Vector3()) || bodyB.position.clone();
@@ -3183,6 +3309,7 @@ export class Contraption {
   getConstraints(nodeId = null) {
     const constraints = [...this.constraintDefinitions.values()]
       .filter(constraint => !nodeId || constraint.bodyA === nodeId || constraint.bodyB === nodeId)
+      .sort((left, right) => compareIds(left.id, right.id))
       .map(constraint => ({ ...constraint, limits: constraint.limits ? { ...constraint.limits } : null }));
     return Object.freeze(constraints.map(constraint => Object.freeze(constraint)));
   }
@@ -3196,7 +3323,7 @@ export class Contraption {
       this.appliedForces.set(0, 0, 0);
       this.appliedTorques.set(0, 0, 0);
       for (const node of this.entityNodes.values()) {
-        if (node.id !== 'root') node.localAngularVelocity.set(0, 0, 0);
+        if (node.parentId !== null) node.localAngularVelocity.set(0, 0, 0);
       }
     }
     this.createHighlightBox();
@@ -3226,8 +3353,8 @@ export class Contraption {
 
   /** Entity-local block bounds for a component, or null when it has no blocks. */
   getNodeBlocksBounds(nodeId) {
-    const id = String(nodeId || 'root');
-    const nodeBlocks = this.blocks.filter(b => (b.entityId || 'root') === id);
+    const id = String(nodeId || this.rootComponentId);
+    const nodeBlocks = this.blocks.filter(b => (b.entityId || this.rootComponentId) === id);
     if (nodeBlocks.length === 0) return null;
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
@@ -3249,11 +3376,11 @@ export class Contraption {
    * center, while a child returns to the center of the voxels it directly
    * owns. Empty components keep their current pivot.
    */
-  getDefaultComponentPivot(nodeId = 'root') {
-    const id = String(nodeId || 'root');
+  getDefaultComponentPivot(nodeId = this.rootComponentId) {
+    const id = String(nodeId || this.rootComponentId);
     const node = this.entityNodes.get(id);
     if (!node) return null;
-    if (id === 'root') return this.localCenter.clone();
+    if (node.parentId === null) return this.localCenter.clone();
     const bounds = this.getNodeBlocksBounds(id);
     return bounds?.center
       ? new THREE.Vector3().fromArray(bounds.center as [number, number, number])
@@ -3261,14 +3388,15 @@ export class Contraption {
   }
 
   /** Restore a component pivot to its default center without moving its subtree. */
-  resetComponentPivot(nodeId = 'root', options: any = {}) {
-    const id = String(nodeId || 'root');
+  resetComponentPivot(nodeId = this.rootComponentId, options: any = {}) {
+    const id = String(nodeId || this.rootComponentId);
     const target = this.getDefaultComponentPivot(id);
     if (!target) return { ok: false, reason: 'component_not_found' };
-    const hadRootOverride = id === 'root' && this.rootPivotOverride !== null;
+    const isRoot = this.entityNodes.get(id)?.parentId === null;
+    const hadRootOverride = isRoot && this.rootPivotOverride !== null;
     const result: any = this.setComponentPivot(id, target, options);
     if (!result.ok) return result;
-    if (id === 'root') this.rootPivotOverride = null;
+    if (isRoot) this.rootPivotOverride = null;
     return hadRootOverride && !result.changed
       ? { ...result, changed: true, pivot: target.toArray() }
       : result;
@@ -3277,23 +3405,23 @@ export class Contraption {
   createChildEntity(parentId, cellKeysOrBlocks, requestedId = null) {
     const parent = this.entityNodes.get(parentId);
     if (!parent || !cellKeysOrBlocks || this.childDefinitions.size >= MAX_ENTITY_COMPONENTS - 1) return null;
-    if (requestedId !== null && !isValidComponentId(String(requestedId), false)) return null;
+    if (requestedId !== null && !isValidComponentId(String(requestedId))) return null;
 
     let selectedBlocks = [];
     if (Array.isArray(cellKeysOrBlocks) && cellKeysOrBlocks.length > 0 && typeof cellKeysOrBlocks[0] === 'object' && cellKeysOrBlocks[0] !== null && 'localX' in cellKeysOrBlocks[0]) {
       const blockSet = new Set(cellKeysOrBlocks);
       selectedBlocks = this.blocks.filter(block => (
-        (block.entityId || 'root') === parentId && blockSet.has(block)
+        (block.entityId || this.rootComponentId) === parentId && blockSet.has(block)
       ));
     } else if (cellKeysOrBlocks instanceof Set && cellKeysOrBlocks.size > 0 && typeof [...cellKeysOrBlocks][0] === 'object' && [...cellKeysOrBlocks][0] !== null && 'localX' in ([...cellKeysOrBlocks][0] as any)) {
       const blockSet = cellKeysOrBlocks as Set<any>;
       selectedBlocks = this.blocks.filter(block => (
-        (block.entityId || 'root') === parentId && blockSet.has(block)
+        (block.entityId || this.rootComponentId) === parentId && blockSet.has(block)
       ));
     } else {
       const selectedCells = new Set([...cellKeysOrBlocks].map(String));
       selectedBlocks = this.blocks.filter(block => (
-        (block.entityId || 'root') === parentId && selectedCells.has(collisionCellKey(block))
+        (block.entityId || this.rootComponentId) === parentId && selectedCells.has(collisionCellKey(block))
       ));
     }
     if (selectedBlocks.length === 0) return null;
@@ -3322,7 +3450,7 @@ export class Contraption {
     const parent = this.entityNodes.get(parentId);
     if (!parent || !Array.isArray(selectedBlocks) || selectedBlocks.length === 0
       || this.childDefinitions.size >= MAX_ENTITY_COMPONENTS - 1) return null;
-    if (requestedId !== null && !isValidComponentId(String(requestedId), false)) return null;
+    if (requestedId !== null && !isValidComponentId(String(requestedId))) return null;
     if (!bounds || !Number.isFinite(bounds.minX) || !Number.isFinite(bounds.maxX)) return null;
     // Ownership and bounds were checked incrementally by BulkEditJob. The
     // entity remains stopped until this atomic hierarchy mutation completes.
@@ -3343,7 +3471,6 @@ export class Contraption {
       id,
       parentId,
       pivot: pivot.toArray(),
-      kind: 'child',
       bodyType: BodyType.KINEMATIC,
       restitution: this.restitution,
       friction: this.friction
@@ -3357,7 +3484,7 @@ export class Contraption {
   getEntityCollisionCellKeys(nodeId, bounds = null) {
     const keys = new Set();
     for (const block of this.blocks) {
-      if ((block.entityId || 'root') !== nodeId) continue;
+      if ((block.entityId || this.rootComponentId) !== nodeId) continue;
       const x = Math.floor(block.localX + 1e-6);
       const y = Math.floor(block.localY + 1e-6);
       const z = Math.floor(block.localZ + 1e-6);
@@ -3435,7 +3562,7 @@ export class Contraption {
     };
 
     // 1. Focused node bounding box (non-descendant blocks of this node)
-    const focusedBlocks = this.blocks.filter(b => (b.entityId || 'root') === nodeId);
+    const focusedBlocks = this.blocks.filter(b => (b.entityId || this.rootComponentId) === nodeId);
     createBoxForBlocks(node, focusedBlocks, false);
 
     // 2. Direct child components (ONLY 1 layer below - node.children) with green breathing light
@@ -3443,7 +3570,7 @@ export class Contraption {
       for (const childId of node.children) {
         const childNode = this.entityNodes.get(childId);
         if (!childNode) continue;
-        const childBlocks = this.blocks.filter(b => (b.entityId || 'root') === childId);
+        const childBlocks = this.blocks.filter(b => (b.entityId || this.rootComponentId) === childId);
         createBoxForBlocks(childNode, childBlocks, true);
       }
     }
@@ -3673,11 +3800,11 @@ export class Contraption {
     const buildNode = (id) => {
       const node = this.entityNodes.get(id);
       if (!node) return null;
-      const blocks = this.blocks.filter(b => (b.entityId || 'root') === id);
+      const blocks = this.blocks.filter(b => (b.entityId || this.rootComponentId) === id);
       const voxelVolume = blocks.reduce((sum, b) => sum + Math.pow(b.size || 1, 3), 0);
       const childArray = [];
       if (node.children) {
-        for (const childId of node.children) {
+        for (const childId of [...node.children].sort(compareComponentIds)) {
           const childTree = buildNode(childId);
           if (childTree) childArray.push(childTree);
         }
@@ -3685,7 +3812,7 @@ export class Contraption {
       return {
         id: node.id,
         parentId: node.parentId,
-        kind: node.kind || (id === 'root' ? 'root' : 'child'),
+        kind: node.parentId === null ? 'root' : 'child',
         bodyType: this.getNodeDefaultBodyConfig(id)?.bodyType || this.getNodeBodyType(id),
         blockCount: blocks.length,
         volume: Number(voxelVolume.toFixed(2)),
@@ -3695,7 +3822,7 @@ export class Contraption {
       };
     };
 
-    return buildNode('root');
+    return buildNode(this.rootComponentId);
   }
 
   setHighlightedNode(nodeId) {
@@ -3758,7 +3885,7 @@ export class Contraption {
 
     const nodeMap = new Map<string, any[]>();
     for (const b of blockList) {
-      const nodeId = b.entityId || 'root';
+      const nodeId = b.entityId || this.rootComponentId;
       let list = nodeMap.get(nodeId);
       if (!list) {
         list = [];
@@ -3768,7 +3895,7 @@ export class Contraption {
     }
 
     for (const [nodeId, blocks] of nodeMap) {
-      const node = this.entityNodes.get(nodeId) || this.entityNodes.get('root');
+      const node = this.entityNodes.get(nodeId) || this.entityNodes.get(this.rootComponentId);
       if (!node) continue;
 
       let minX = Infinity, minY = Infinity, minZ = Infinity;
@@ -3842,7 +3969,7 @@ export class Contraption {
     geometries.pivotGeo = pivotGeo;
     materials.pivotMat = pivotMat;
 
-    const nodeBlocks = this.blocks.filter(b => (b.entityId || 'root') === nodeId);
+    const nodeBlocks = this.blocks.filter(b => (b.entityId || this.rootComponentId) === nodeId);
     if (nodeBlocks.length > 0) {
       let minX = Infinity, minY = Infinity, minZ = Infinity;
       let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
@@ -3942,7 +4069,7 @@ export class Contraption {
     // Kinematic-root spin integrates directly into entity orientation and,
     // like child kinematics, advances only on frames where the script commands it.
     if (this.bodyType === BodyType.KINEMATIC) {
-      const rootNode = this.entityNodes.get('root');
+      const rootNode = this.entityNodes.get(this.rootComponentId);
       if (rootNode?.commandedThisFrame) {
         const spinSpeed = rootNode.localAngularVelocity.length();
         if (spinSpeed > 1e-8) {
@@ -3976,7 +4103,7 @@ export class Contraption {
 
   updateChildEntities(dt) {
     for (const node of this.entityNodes.values()) {
-      if (node.id === 'root') continue;
+      if (node.parentId === null) continue;
       if (node.bodyType !== BodyType.KINEMATIC) {
         node.localAngularVelocity.set(0, 0, 0);
         continue;
@@ -4017,7 +4144,9 @@ export class Contraption {
 
   getSerializableComponentStates() {
     const states = {};
-    for (const [id, state] of this.componentVariables) {
+    const entries = [...this.componentVariables.entries()]
+      .sort(([left], [right]) => compareComponentIds(left, right));
+    for (const [id, state] of entries) {
       states[id] = cloneScriptData(state, {});
     }
     return states;
@@ -4056,31 +4185,37 @@ export class Contraption {
           : PLAYER_MASS_KG
       };
     });
-    const components = [...this.entityNodes.values()].map(node => {
-      const body = this.getRigidBody(node.id);
-      return {
-        id: node.id,
-        parentId: node.parentId,
-        children: [...node.children],
-        worldPosition: this.getEntityNodeWorldPosition(node.id).toArray(),
-        worldRotation: this.getEntityNodeWorldQuaternion(node.id).toArray(),
-        localPosition: node.id === 'root' ? [0, 0, 0] : node.localPosition.toArray(),
-        localRotation: node.id === 'root' ? this.quaternion.toArray() : node.localQuaternion.toArray(),
-        pivot: node.pivotLocal.toArray(),
-        seats: this.getComponentSeats(node.id).map(seat => [...seat.position]),
-        bounds: this.getNodeBlocksBounds(node.id),
-        constraints: this.getConstraints(node.id),
-        body: {
-          type: this.getNodeBodyType(node.id),
-          mass: this.getNodeBodyMass(node.id),
-          material: this.getNodeBodyMaterial(node.id),
-          useGravity: this.getNodeGravityEnabled(node.id),
-          collisionEnabled: this.getNodeCollisionEnabled(node.id),
-          velocity: body?.velocity.toArray() || [0, 0, 0],
-          angularVelocity: body?.angularVelocity.toArray() || [0, 0, 0]
-        }
-      };
-    });
+    const components = [...this.entityNodes.values()]
+      .sort((left, right) => {
+        if (left.parentId === null) return right.parentId === null ? 0 : -1;
+        if (right.parentId === null) return 1;
+        return compareComponentIds(left.id, right.id);
+      })
+      .map(node => {
+        const body = this.getRigidBody(node.id);
+        return {
+          id: node.id,
+          parentId: node.parentId,
+          children: [...node.children].sort(compareComponentIds),
+          worldPosition: this.getEntityNodeWorldPosition(node.id).toArray(),
+          worldRotation: this.getEntityNodeWorldQuaternion(node.id).toArray(),
+          localPosition: node.parentId === null ? [0, 0, 0] : node.localPosition.toArray(),
+          localRotation: node.parentId === null ? this.quaternion.toArray() : node.localQuaternion.toArray(),
+          pivot: node.pivotLocal.toArray(),
+          seats: this.getComponentSeats(node.id).map(seat => [...seat.position]),
+          bounds: this.getNodeBlocksBounds(node.id),
+          constraints: this.getConstraints(node.id),
+          body: {
+            type: this.getNodeBodyType(node.id),
+            mass: this.getNodeBodyMass(node.id),
+            material: this.getNodeBodyMaterial(node.id),
+            useGravity: this.getNodeGravityEnabled(node.id),
+            collisionEnabled: this.getNodeCollisionEnabled(node.id),
+            velocity: body?.velocity.toArray() || [0, 0, 0],
+            angularVelocity: body?.angularVelocity.toArray() || [0, 0, 0]
+          }
+        };
+      });
     let nearbyEntities = [];
     try {
       if ([...this.nodeScripts.values()].some(code => code?.includes('ctx.world'))) {
@@ -4093,8 +4228,14 @@ export class Contraption {
         selection = runtimeContext?.selection?.get?.() || null;
       }
     } catch (_) {}
+    const scriptOrder = [...this.compiledNodeScripts.keys()].sort((left, right) => {
+      if (left === this.rootComponentId) return right === this.rootComponentId ? 0 : -1;
+      if (right === this.rootComponentId) return 1;
+      return compareComponentIds(left, right);
+    });
     return cloneScriptData({
       entityId: this.publicId,
+      rootComponentId: this.rootComponentId,
       time,
       deltaTime: dt,
       tick,
@@ -4121,7 +4262,7 @@ export class Contraption {
       driver: runtimeContext?.driver?.entityId === this.publicId
         ? {
             playerId: String(runtimeContext.driver.playerId || 'local'),
-            componentId: String(runtimeContext.driver.componentId || 'root'),
+            componentId: String(runtimeContext.driver.componentId || this.rootComponentId),
             seatIndex: Math.max(0, Math.floor(Number(runtimeContext.driver.seatIndex) || 0))
           }
         : null,
@@ -4132,8 +4273,11 @@ export class Contraption {
       commandResults: this.pendingScriptCommandResults,
       components,
       states: this.getSerializableComponentStates(),
-      enabled: Object.fromEntries([...this.compiledNodeScripts.keys()].map(id => [id, this.isNodeScriptEnabled(id)])),
-      scriptOrder: [...this.compiledNodeScripts.keys()],
+      enabled: Object.fromEntries(
+        scriptOrder
+          .map(id => [id, this.isNodeScriptEnabled(id)])
+      ),
+      scriptOrder,
       world: {
         entities: nearbyEntities,
         size: [TORUS_SIZE_X, TORUS_SIZE_Z]
@@ -4204,7 +4348,9 @@ export class Contraption {
       status: rejected ? 'rejected' : 'committed',
       scope: String(command.scope || ''),
       path: String(command.path || ''),
-      nodeId: String(command.nodeId || 'root')
+      nodeId: command.nodeId === null || command.nodeId === undefined
+        ? null
+        : String(command.nodeId)
     };
     if (detail && typeof detail === 'object') Object.assign(receipt, detail);
     if (error) receipt.reason = String(error?.message || error).slice(0, 500);
@@ -4239,8 +4385,8 @@ export class Contraption {
   applyLatchedScriptCommands(runtimeContext) {
     if (this.scriptStatus === 'stopped') return;
     for (const command of this.latchedScriptCommands) {
-      if (!this.isNodeScriptEnabled(String(command.nodeId || 'root'))) continue;
-      const api = this.getChildScriptApi(String(command.nodeId || 'root'));
+      if (!this.isNodeScriptEnabled(String(command.nodeId || this.rootComponentId))) continue;
+      const api = this.getChildScriptApi(String(command.nodeId || this.rootComponentId));
       const resolved = this.resolveScriptCommandTarget(api, command.path);
       const args = Array.isArray(command.args) ? command.args : [];
       try { resolved?.method.apply(resolved.target, args); } catch (_) {}
@@ -4268,13 +4414,13 @@ export class Contraption {
     }
 
     for (const entry of result.errors || []) {
-      const nodeId = String(entry?.nodeId || 'root');
+      const nodeId = String(entry?.nodeId || this.rootComponentId);
       const message = String(entry?.error || 'QuickJS runtime error');
       this.nodeScriptErrors.set(nodeId, message);
       this.nodeScriptEnabled.set(nodeId, false);
-      if (nodeId === 'root') this.scriptError = message;
+      if (nodeId === this.rootComponentId) this.scriptError = message;
       const node = this.entityNodes.get(nodeId);
-      if (node && nodeId !== 'root') node.localAngularVelocity.set(0, 0, 0);
+      if (node && node.parentId !== null) node.localAngularVelocity.set(0, 0, 0);
       this.scriptStatus = 'error';
       this.log(`[ERR] [${nodeId}] Runtime error: ${message}`);
     }
@@ -4311,7 +4457,7 @@ export class Contraption {
         break;
       }
       if (command?.scope === 'component' && SCRIPT_COMPONENT_COMMANDS.has(command.path)) {
-        const api = this.getChildScriptApi(String(command.nodeId || 'root'));
+        const api = this.getChildScriptApi(String(command.nodeId || this.rootComponentId));
         const resolved = this.resolveScriptCommandTarget(api, command.path);
         executeResolved(resolved);
         continue;
@@ -4386,7 +4532,7 @@ export class Contraption {
   }
 
   recordScriptExecutionTime(nodeId, elapsedMs) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || this.rootComponentId);
     if (!(elapsedMs > SLOW_SCRIPT_THRESHOLD_MS)) {
       this.slowScriptFrames.delete(id);
       return false;
@@ -4403,9 +4549,9 @@ export class Contraption {
     this.nodeScriptEnabled.set(id, false);
     this.nodeScriptErrors.set(id, message);
     this.slowScriptFrames.delete(id);
-    if (id === 'root') this.scriptError = message;
+    if (id === this.rootComponentId) this.scriptError = message;
     const node = this.entityNodes.get(id);
-    if (node && id !== 'root') node.localAngularVelocity.set(0, 0, 0);
+    if (node && node.parentId !== null) node.localAngularVelocity.set(0, 0, 0);
     this.scriptStatus = 'error';
     this.log(`[ERR] [${id}] ${message}`);
     return true;
@@ -4456,7 +4602,7 @@ export class Contraption {
     const transformFor = entityId => {
       let transform = nodeTransforms.get(entityId);
       if (transform) return transform;
-      const node = this.entityNodes.get(entityId) || this.entityNodes.get('root');
+      const node = this.entityNodes.get(entityId) || this.entityNodes.get(this.rootComponentId);
       node?.group?.updateWorldMatrix?.(true, false);
       transform = node?.group
         ? { matrix: node.group.matrixWorld, pivot: node.pivotLocal }
@@ -4536,7 +4682,7 @@ export class Contraption {
       : this.collisionEntries;
     for (const cell of entries) {
       if (!this.isNodeCollisionEnabled(cell.entityId)) continue;
-      const node = this.entityNodes.get(cell.entityId) || this.entityNodes.get('root');
+      const node = this.entityNodes.get(cell.entityId) || this.entityNodes.get(this.rootComponentId);
       let transform = nodeTransforms.get(cell.entityId);
       if (!transform) {
         node?.group?.updateWorldMatrix?.(true, false);
@@ -4627,8 +4773,8 @@ export class Contraption {
     const nodeRays = new Map();
 
     for (const block of this.blocks) {
-      const entityId = block.entityId || 'root';
-      const node = this.entityNodes.get(entityId) || this.entityNodes.get('root');
+      const entityId = block.entityId || this.rootComponentId;
+      const node = this.entityNodes.get(entityId) || this.entityNodes.get(this.rootComponentId);
       if (!node) continue;
 
       let nodeRay = nodeRays.get(node.id);
@@ -4691,7 +4837,8 @@ export class Contraption {
     let closestDistance = maxDistance;
 
     for (const block of this.blocks) {
-      const node = this.entityNodes.get(block.entityId || 'root') || this.entityNodes.get('root');
+      const node = this.entityNodes.get(block.entityId || this.rootComponentId)
+        || this.entityNodes.get(this.rootComponentId);
       if (!node) continue;
       if (!updatedNodes.has(node)) {
         node.group.updateWorldMatrix(true, false);
@@ -4811,7 +4958,7 @@ export class Contraption {
 
   getBlockWorldCenter(block) {
     const size = block.size || 1;
-    return this.entityLocalToWorld(block.entityId || 'root', new THREE.Vector3(
+    return this.entityLocalToWorld(block.entityId || this.rootComponentId, new THREE.Vector3(
       block.localX + size / 2,
       block.localY + size / 2,
       block.localZ + size / 2
@@ -4829,8 +4976,8 @@ export class Contraption {
    */
   getBlockWorldBounds(block, target = new THREE.Box3()) {
     target.makeEmpty();
-    const entityId = block.entityId || 'root';
-    const node = this.entityNodes.get(entityId) || this.entityNodes.get('root');
+    const entityId = block.entityId || this.rootComponentId;
+    const node = this.entityNodes.get(entityId) || this.entityNodes.get(this.rootComponentId);
     if (!node) return target;
 
     node.group.updateWorldMatrix(true, false);
@@ -4877,7 +5024,7 @@ export class Contraption {
       amount
     );
     for (const node of this.entityNodes.values()) {
-      if (node.id === 'root') continue;
+      if (node.parentId === null) continue;
       node.group.position.lerpVectors(
         node.previousLocalPosition || node.localPosition,
         node.localPosition,
@@ -4898,7 +5045,7 @@ export class Contraption {
     this.rootGroup.position.copy(this.renderSimulationPosition);
     this.rootGroup.quaternion.copy(this.renderSimulationQuaternion);
     for (const node of this.entityNodes.values()) {
-      if (node.id === 'root') continue;
+      if (node.parentId === null) continue;
       node.group.position.copy(node.localPosition);
       node.group.quaternion.copy(node.localQuaternion);
     }
@@ -4948,9 +5095,9 @@ export class Contraption {
       }
     }
     for (const constraint of this.constraintDefinitions.values()) {
-      // A 'world' anchor is an absolute point; keep it in the same periodic
+      // An external anchor is an absolute point; keep it in the same periodic
       // window as the entity it holds so the constraint stays consistent.
-      if (constraint.bodyA === 'world' && Array.isArray(constraint.anchorA)) {
+      if (constraint.bodyA === null && Array.isArray(constraint.anchorA)) {
         constraint.anchorA[0] += dx;
         constraint.anchorA[2] += dz;
       }

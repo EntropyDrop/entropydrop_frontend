@@ -22,7 +22,7 @@ function moduleSlot() {
   return {
     name: 'Motor',
     kind: 'entity',
-    rootId: 'root',
+    rootComponentId: 'root',
     mode: ContraptionMode.PROGRAMMABLE,
     bodyType: BodyType.DYNAMIC,
     blockCount: 2,
@@ -41,7 +41,7 @@ function moduleSlot() {
     enabled: [{ id: 'root', enabled: true }],
     constraints: [
       { id: 'motor_hinge', type: 'hinge', bodyA: 'root', bodyB: 'arm', stiffness: 0.8 },
-      { id: 'display_anchor', type: 'weld', bodyA: 'world', bodyB: 'root', stiffness: 1 }
+      { id: 'display_anchor', type: 'weld', bodyA: null, bodyB: 'root', stiffness: 1 }
     ],
     restitution: 0.2,
     friction: 0.6,
@@ -55,7 +55,7 @@ function targetSlot() {
   return {
     name: 'Vehicle',
     kind: 'entity',
-    rootId: 'root',
+    rootComponentId: 'root',
     mode: ContraptionMode.PROGRAMMABLE,
     bodyType: BodyType.DYNAMIC,
     blockCount: 2,
@@ -83,7 +83,7 @@ test('Hammer entity installation merges a reusable subtree and keeps the target 
   assert.equal(result.ok, true);
   assert.equal(manager.contraptions.length, 1, 'installation must not register a nested Contraption');
   assert.equal(result.rootId, 'Motor');
-  assert.equal(result.skippedWorldConstraints, 1, 'world constraints do not leak into an installed module');
+  assert.equal(result.skippedExternalConstraints, 1, 'external constraints do not leak into an installed module');
   assert.equal(target.getEntityNode('Motor').parentId, 'root');
   assert.equal(target.getNodeBodyType('Motor'), BodyType.KINEMATIC, 'the installed root is rigidly attached');
   assert.equal(target.getEntityNode('Motor_arm').parentId, 'Motor', 'conflicting ids are namespaced');
@@ -193,7 +193,7 @@ test('plain Hammer placement on an entity installs under the hit component autom
   const sensorSlot = {
     name: 'Sensor',
     kind: 'entity',
-    rootId: 'root',
+    rootComponentId: 'root',
     blockCount: 1,
     blocks: [block(0)],
     childEntities: [],
@@ -245,7 +245,7 @@ test('entity anchor frame and Hammer roll compose into the installed localRotati
   const rotorSlot = {
     name: 'Rotor',
     kind: 'entity',
-    rootId: 'root',
+    rootComponentId: 'root',
     anchorRotation: anchor.toArray(),
     blockCount: 1,
     blocks: [block(0)],

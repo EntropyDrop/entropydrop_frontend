@@ -16,7 +16,7 @@ export interface SpaceWorldEntityRecord {
   world_id: string;
   owner_user_id: string;
   name: string;
-  schema_version: 3;
+  schema_version: 4;
   definition_digest: string;
   definition_size_bytes: number;
   definition_url: string;
@@ -86,7 +86,7 @@ function parseEntity(value: any): SpaceWorldEntityRecord {
     || typeof value?.world_id !== 'string'
     || typeof value?.owner_user_id !== 'string'
     || typeof value?.name !== 'string'
-    || value?.schema_version !== 3
+    || value?.schema_version !== 4
     || !/^[0-9a-f]{64}$/i.test(value?.definition_digest || '')
     || !isInteger(value?.definition_size_bytes)
     || value.definition_size_bytes < 1

@@ -14,7 +14,7 @@ function entity(id: number, children: any[] = []) {
     ],
     new THREE.Vector3(),
     new THREE.Scene(),
-    { childEntities: children }
+    { rootComponentId: 'root', childEntities: children }
   ) as any;
 }
 
@@ -195,7 +195,7 @@ if (!self.state.commandId) {
     status: 'committed',
     scope: 'world',
     path: 'voxels.set',
-    nodeId: 'root',
+    nodeId: null,
     ok: true,
     placed: 1,
     reason: 'placed'

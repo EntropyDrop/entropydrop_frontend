@@ -185,7 +185,7 @@ test('V mounts the seat nearest the aimed entity block', () => {
 test('entity program queries down, pressed and released by KeyboardEvent.code', () => {
   const contraption = new Contraption(
     1,
-    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }],
     new THREE.Vector3(0, 3, 0),
     new THREE.Scene(),
     {

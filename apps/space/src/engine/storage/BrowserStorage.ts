@@ -26,7 +26,7 @@ export interface AsyncKeyValueBackend {
 type SpaceStoredValue = string | Uint8Array;
 
 export function isLargeSpaceStorageKey(key: string) {
-  return key === 'space.backpack.v3.pb'
+  return key === 'space.backpack.v5.pb'
     || key.startsWith('space.world-edits.v1.')
     || key.startsWith('space.world-edits.v2.')
     || key.startsWith('entropydrop_space_entities.');

@@ -14,9 +14,131 @@ function standardBlock(x, y = 0, z = 0) {
     localZ: z,
     size: 1,
     block: BlockTypes.COLOR_BLOCK,
-    color: 0xf2a93b
+    color: 0xf2a93b,
+    entityId: 'root'
   };
 }
+
+test('root and world are ordinary component IDs', () => {
+  const contraption = new Contraption(
+    1001,
+    [standardBlock(0), standardBlock(1), standardBlock(2)],
+    new THREE.Vector3(),
+    new THREE.Scene(),
+    {
+      childEntities: [{
+        id: 'arm',
+        parentId: 'root',
+        blockKeys: [['1', '0', '0']],
+        kind: 'child',
+        index: 17,
+        obsoleteMetadata: { shouldNotEscape: true }
+      }]
+    }
+  ) as any;
+
+  const world = contraption.createChildEntity('root', new Set(['2,0,0']), 'world');
+  assert.equal(world.id, 'world');
+
+  const serialized = contraption.serializeSubtree('root');
+  assert.ok(serialized.childEntities.some(component => component.id === 'world'));
+  const serializedArm = serialized.childEntities.find(component => component.id === 'arm');
+  assert.ok(serializedArm);
+  assert.equal('kind' in serializedArm, false);
+  assert.equal('index' in serializedArm, false);
+  assert.equal('blockKeys' in serializedArm, false);
+  assert.equal('obsoleteMetadata' in serializedArm, false);
+
+  const combined = contraption.serializeSubtrees(['arm', 'world']);
+  assert.ok(combined);
+  for (const component of combined.childEntities) {
+    assert.equal('kind' in component, false);
+    assert.equal('index' in component, false);
+    assert.equal('blockKeys' in component, false);
+    assert.equal('obsoleteMetadata' in component, false);
+  }
+});
+
+test('dynamic root IDs keep world/root components distinct across scripts, constraints, physics, and slots', () => {
+  const scene = new THREE.Scene();
+  const entity = new Contraption(
+    1002,
+    [
+      { ...standardBlock(0), entityId: 'world' },
+      { ...standardBlock(1), entityId: 'root' }
+    ],
+    new THREE.Vector3(0, 8, 0),
+    scene,
+    {
+      rootComponentId: 'world',
+      bodyType: BodyType.KINEMATIC,
+      childEntities: [{
+        id: 'root',
+        parentId: 'world',
+        pivot: [1.5, 0.5, 0.5],
+        bodyType: BodyType.DYNAMIC,
+        blockKeys: [[1, 0, 0]]
+      }],
+      constraints: [
+        { id: 'internal', type: 'point', bodyA: 'world', bodyB: 'root' },
+        { id: 'external', type: 'point', bodyA: null, bodyB: 'world' }
+      ]
+    }
+  ) as any;
+
+  assert.equal(entity.rootComponentId, 'world');
+  assert.equal(entity.getEntityNode('world').parentId, null);
+  assert.equal(entity.getEntityNode('root').parentId, 'world');
+  assert.equal(entity.constraintDefinitions.get('internal').bodyA, 'world');
+  assert.equal(entity.constraintDefinitions.get('external').bodyA, null);
+
+  entity.setScript(`
+self.state.id = self.id;
+self.state.child = self.child('root').id;
+`);
+  entity.setNodeScript('root', `
+self.state.id = self.id;
+self.state.ctxRoot = ctx.root.id;
+self.state.sameNamedChild = self.child('root') !== null;
+`);
+  entity.update(0.05, null, { gravity: [0, -18, 0] });
+  assert.deepEqual(entity.getComponentState('world'), { id: 'world', child: 'root' });
+  assert.deepEqual(entity.getComponentState('root'), {
+    id: 'root',
+    ctxRoot: 'world',
+    sameNamedChild: false
+  });
+
+  const physics = new ContraptionPhysics({
+    raycast: () => ({ hit: false }),
+    raycastMicro: () => ({ hit: false }),
+    getBlock: () => BlockTypes.AIR
+  });
+  physics.update(entity, 0.05);
+  assert.equal(entity.getRigidBody('world').nodeId, 'world');
+  assert.equal(entity.getRigidBody('root').nodeId, 'root');
+
+  const slot = entity.serializeSubtree('world');
+  assert.equal(slot.rootComponentId, 'world');
+  assert.deepEqual(new Set(slot.blocks.map(block => block.entityId)), new Set(['world', 'root']));
+  assert.equal(slot.constraints.find(constraint => constraint.id === 'internal').bodyA, 'world');
+  assert.equal(slot.constraints.find(constraint => constraint.id === 'external').bodyA, null);
+  assert.equal(entity.serializeSubtree('root').rootComponentId, 'root');
+
+  const host = new Contraption(
+    1003,
+    [{ ...standardBlock(0), entityId: 'host' }],
+    new THREE.Vector3(),
+    scene,
+    { rootComponentId: 'host' }
+  ) as any;
+  host.setPhysicsSimulationEnabled(false);
+  const installed = host.installEntitySlot(slot, 'host', new THREE.Vector3(3, 0, 0));
+  assert.equal(installed.ok, true);
+  assert.ok(host.getEntityNode(installed.rootId));
+  assert.ok(host.getEntityNode('root'), 'the source child named root remains an ordinary child');
+  assert.equal(installed.skippedExternalConstraints, 1);
+});
 
 test('child entities can recursively own blocks and move relative to their parent', () => {
   const contraption = new Contraption(
@@ -618,6 +740,11 @@ self.state.legacyChildren = ctx.children;
   const state = contraption.scriptApi.state;
   assert.equal(state.rootIsSelf, true, 'ctx.root should equal self in a root script');
   assert.equal(state.legacyChildren, undefined, 'ctx.children should be removed');
+  assert.deepEqual(
+    state.nodes.map(node => node.id),
+    ['root', 'arm', 'blade', 'tip'],
+    'component traversal should use stable id order rather than authored sibling order'
+  );
   assert.deepEqual(Object.fromEntries(state.nodes.map(node => [node.id, node.parentId])), {
     root: null,
     blade: 'root',
@@ -865,8 +992,8 @@ test('self.child is universal: any component can look up its direct children (ch
   assert.equal(armApi.child('wing'), null, 'wing is not a direct child of arm');
   assert.equal(handApi.child('arm'), null, 'hand has no arm child');
 
-  // child('root') is global and returns root from any component.
-  assert.equal(handApi.child('root'), rootApi, "child('root') should return the root component");
+  // IDs have no global meaning: a non-direct lookup returns null.
+  assert.equal(handApi.child('root'), null);
 });
 
 test('V2 component voxel namespaces separate standard/micro edits and return structured results', () => {
@@ -1118,7 +1245,7 @@ test('world API supports color reads, raycast metadata, nearby entities, and bui
   });
   assert.equal(entityHit.kind, 'entity');
   assert.equal(entityHit.entityId, c1.publicId);
-  assert.equal(entityHit.nodeId, 'root');
+  assert.equal(entityHit.nodeId, c1.rootComponentId);
   assert.equal(entityHit.voxelKind, 'standard');
 
   const seamEntity = new Contraption(

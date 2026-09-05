@@ -20,7 +20,7 @@ function makeEntity(id) {
   const scene = new THREE.Scene();
   const entity = new Contraption(
     id,
-    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }],
     new THREE.Vector3(),
     scene
   ) as any;

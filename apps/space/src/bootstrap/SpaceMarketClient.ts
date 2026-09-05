@@ -4,6 +4,10 @@ import {
   resolveSafeHttpUrl,
   sha256Hex,
 } from './NetworkSafety.ts';
+import {
+  decodeInventoryResource,
+  encodeInventoryResource,
+} from '../engine/storage/InventoryProtobuf.ts';
 
 export type SpaceMarketCategory = 'blockset' | 'entity' | 'colorset';
 export type SpaceMarketSort = 'downloads' | 'likes' | 'latest';
@@ -20,7 +24,7 @@ export interface SpaceMarketQuota {
 export interface SpaceMarketResource {
   id: string;
   kind: SpaceMarketCategory;
-  schema_version: 3;
+  schema_version: 4;
   name: string;
   license: 'AGPL-3.0-only';
   digest: string;
@@ -57,6 +61,15 @@ export interface SpaceMarketDownload {
 }
 
 type SpaceMarketDownloadDescriptor = Omit<SpaceMarketDownload, 'payload'>;
+type SpaceMarketContentIdentity = Pick<SpaceMarketDownload, 'kind' | 'name' | 'digest'>;
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index++) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
 
 export class SpaceMarketError extends Error {
   readonly status: number;
@@ -158,7 +171,7 @@ export class SpaceMarketClient {
   async loadResourceContent(
     contentUrl: string,
     signal?: AbortSignal,
-    expectedDigest?: string
+    expected?: SpaceMarketContentIdentity
   ): Promise<Uint8Array> {
     let safeUrl: URL;
     try {
@@ -211,17 +224,54 @@ export class SpaceMarketClient {
         payload
       );
     }
-    if (expectedDigest !== undefined) {
-      const normalizedDigest = expectedDigest.trim().toLowerCase();
+    if (expected !== undefined) {
+      const normalizedDigest = expected.digest.trim().toLowerCase();
       if (!/^[0-9a-f]{64}$/.test(normalizedDigest)) {
         throw new SpaceMarketError(
           0,
           'MARKET_DIGEST_INVALID',
           'The market API returned an invalid resource digest.',
-          expectedDigest
+          expected.digest
         );
       }
-      const actualDigest = await sha256Hex(payload);
+
+      let portable: any;
+      try {
+        portable = decodeInventoryResource(payload, expected.kind).portable;
+      } catch (error) {
+        throw new SpaceMarketError(
+          0,
+          'MARKET_RESOURCE_INVALID',
+          'The downloaded market resource is not valid inventory Protobuf.',
+          error
+        );
+      }
+      const canonicalPayload = encodeInventoryResource(expected.kind, portable);
+      if (!bytesEqual(payload, canonicalPayload)) {
+        throw new SpaceMarketError(
+          0,
+          'MARKET_RESOURCE_NON_CANONICAL',
+          'The downloaded market resource is not the canonical inventory encoding.',
+          null
+        );
+      }
+      if (portable.name !== expected.name) {
+        throw new SpaceMarketError(
+          0,
+          'MARKET_RESOURCE_NAME_MISMATCH',
+          'The downloaded market resource name does not match the market API.',
+          { expected: expected.name, actual: portable.name }
+        );
+      }
+
+      // The market digest is a semantic identity used for global duplicate
+      // detection. Its backend contract intentionally omits the display name,
+      // so hashing the named CDN blob itself rejects every real publication.
+      const digestPayload = encodeInventoryResource(expected.kind, {
+        ...portable,
+        name: '',
+      });
+      const actualDigest = await sha256Hex(digestPayload);
       if (actualDigest !== normalizedDigest) {
         throw new SpaceMarketError(
           0,
@@ -241,7 +291,7 @@ export class SpaceMarketClient {
     const payload = await this.loadResourceContent(
       descriptor.download_url,
       undefined,
-      descriptor.digest
+      descriptor
     );
     return { ...descriptor, payload };
   }

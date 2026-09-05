@@ -14,12 +14,12 @@ Schema:
   "kind": "structure" | "entity",
   "name": "short name",
   "anchor": "crosshair",
-  "blocks": [{"x":0,"y":0,"z":0,"size":1,"color":"#f2a93b","componentId":"root"}],
+  "blocks": [{"x":0,"y":0,"z":0,"size":1,"color":"#f2a93b","componentId":"body"}],
   "primitives": [
-    {"type":"box","from":[0,0,0],"to":[6,4,6],"hollow":true,"size":1,"color":"#f2a93b","componentId":"root"},
-    {"type":"line","from":[0,0,0],"to":[0,5,0],"size":1,"color":"#48dbfb","componentId":"root"}
+    {"type":"box","from":[0,0,0],"to":[6,4,6],"hollow":true,"size":1,"color":"#f2a93b","componentId":"body"},
+    {"type":"line","from":[0,0,0],"to":[0,5,0],"size":1,"color":"#48dbfb","componentId":"body"}
   ],
-  "components": [{"id":"root","parentId":null,"bodyType":"dynamic","useGravity":true}],
+  "components": [{"id":"body","parentId":null,"bodyType":"dynamic","useGravity":true}],
   "constraints": [],
   "bodyType":"dynamic",
   "useGravity":true,
@@ -32,7 +32,8 @@ Rules:
 - Use only color block material. Colors are #RRGGBB.
 - Keep each axis within 64 metres and the expanded result within 65,536 voxels.
 - A structure becomes terrain. An entity becomes an independent physics object.
-- Entity component ids are unique identifiers. Every entity has root; child blocks set componentId and every child names an existing parentId.
+- Entity component ids are unique identifiers with no reserved values. Exactly one component has parentId null; that structural root may use any id. Every other component names an existing parentId.
+- In constraints, bodyA null means the external world anchor; every string in bodyA/bodyB is always a component id.
 - Only add components, constraints, seats, or scripts when the player explicitly requests an articulated or programmable entity.
 - Never include delete, replace, HTTP, text-chat, audio, filesystem, or arbitrary code-execution instructions.
 - If revising a previous plan, return the complete replacement plan, not a patch.`;

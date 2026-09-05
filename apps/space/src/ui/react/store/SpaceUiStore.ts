@@ -8,7 +8,7 @@ import {
   normalizeAgentConfig,
   saveAgentConfig
 } from '../../../engine/contraption/AgentConfig.ts';
-import { ContraptionMode } from '../../../engine/contraption/Contraption.ts';
+import { compareComponentIds, ContraptionMode } from '../../../engine/contraption/Contraption.ts';
 import {
   MAX_INVENTORY_IMPORT_BYTES,
   SpecialTool,
@@ -251,7 +251,7 @@ const EMPTY_WORLD_EDIT_SYNC: WorldEditSyncView = {
 };
 
 function defaultCode(nodeId: string, node: any): string {
-  if (nodeId === 'root') {
+  if (node?.parentId === null) {
     return `// [root component controller]
 // Unified API: self (every component has the same surface)
 // Rigid body: self.applyForce([fx, fy, fz]), self.applyTorque([...])
@@ -261,13 +261,22 @@ function defaultCode(nodeId: string, node: any): string {
 
 `;
   }
-  const kind = node?.kind ? ` (${node.kind})` : '';
-  return `// [${nodeId}${kind} child component controller]
+  return `// [${nodeId} child component controller]
 // Unified API: self (every component has the same surface)
 // Kinematics: self.setLocalPosition([x, y, z]), self.setLocalSpin(axis, rpm)
 // Thrust: self.applyThrust([fx, fy, fz]) — direction decoupled from spin
 // self.setLocalPosition([0, Math.sin(ctx.time * 2) * 0.5, 0]);
 `;
+}
+
+function entityRootId(contraption: any): string {
+  if (typeof contraption?.rootComponentId === 'string' && contraption.rootComponentId) {
+    return contraption.rootComponentId;
+  }
+  for (const node of contraption?.entityNodes?.values?.() || []) {
+    if (node?.parentId === null && typeof node.id === 'string') return node.id;
+  }
+  return '';
 }
 
 /**
@@ -309,7 +318,7 @@ export class SpaceUiStore {
     activeInventoryCategory: 'blockset',
     selectedInventoryIndex: 0,
     editingContraption: null,
-    selectedComponentNodeId: 'root',
+    selectedComponentNodeId: '',
     scriptDraft: '',
     globalPlaybackState: 'play',
     agentMessages: [],
@@ -1010,10 +1019,11 @@ export class SpaceUiStore {
 
   openCodeEditor(contraption: any): void {
     if (!contraption) return;
-    const selectedComponentNodeId = 'root';
-    const existing = contraption.getNodeScript?.('root');
-    const scriptDraft = existing || defaultCode('root', contraption.getEntityNode?.('root'));
-    contraption.setHighlightedNode?.('root');
+    const selectedComponentNodeId = entityRootId(contraption);
+    const rootNode = contraption.getEntityNode?.(selectedComponentNodeId);
+    const existing = contraption.getNodeScript?.(selectedComponentNodeId);
+    const scriptDraft = existing || defaultCode(selectedComponentNodeId, rootNode);
+    contraption.setHighlightedNode?.(selectedComponentNodeId);
     this.snapshot.sceneRenderer?.setEntityPreviewTarget?.(contraption);
     this.patch({
       editingContraption: contraption,
@@ -1032,16 +1042,16 @@ export class SpaceUiStore {
     const { editingContraption, selectedComponentNodeId } = this.snapshot;
     if (editingContraption) {
       editingContraption.nodeScripts?.set?.(selectedComponentNodeId, scriptDraft);
-      if (selectedComponentNodeId === 'root') editingContraption.scriptCode = scriptDraft;
+      if (selectedComponentNodeId === entityRootId(editingContraption)) editingContraption.scriptCode = scriptDraft;
     }
     this.patch({ scriptDraft });
   }
 
   selectComponentTreeNode(nodeId: string): void {
-    const targetId = String(nodeId || 'root');
-    this.saveCurrentDraft();
     const contraption = this.snapshot.editingContraption;
     if (!contraption) return;
+    const targetId = String(nodeId || entityRootId(contraption));
+    this.saveCurrentDraft();
     contraption.setHighlightedNode?.(targetId);
     const existing = contraption.getNodeScript?.(targetId);
     const scriptDraft = existing || defaultCode(targetId, contraption.getEntityNode?.(targetId));
@@ -1098,8 +1108,8 @@ export class SpaceUiStore {
   renameSelectedComponent(newId: string): boolean {
     const { editingContraption, selectedComponentNodeId } = this.snapshot;
     if (!editingContraption) return false;
-    if (selectedComponentNodeId === 'root') {
-      this.showToast('The root component id is fixed to root');
+    if (selectedComponentNodeId === entityRootId(editingContraption)) {
+      this.showToast('Renaming the entity root is not supported while it is in use');
       return false;
     }
     const normalized = newId.trim();
@@ -1200,7 +1210,7 @@ export class SpaceUiStore {
   notifyContraptionStructureChanged(contraption: any): void {
     if (!contraption || this.snapshot.editingContraption !== contraption) return;
     let selectedComponentNodeId = this.snapshot.selectedComponentNodeId;
-    if (!contraption.entityNodes?.has?.(selectedComponentNodeId)) selectedComponentNodeId = 'root';
+    if (!contraption.entityNodes?.has?.(selectedComponentNodeId)) selectedComponentNodeId = entityRootId(contraption);
     const scriptDraft = contraption.getNodeScript?.(selectedComponentNodeId)
       || defaultCode(selectedComponentNodeId, contraption.getEntityNode?.(selectedComponentNodeId));
     this.patch({ selectedComponentNodeId, scriptDraft });
@@ -1210,7 +1220,7 @@ export class SpaceUiStore {
   notifyContraptionRemoved(contraption: any): void {
     if (!contraption || this.snapshot.editingContraption !== contraption) return;
     this.snapshot.sceneRenderer?.setEntityPreviewTarget?.(null);
-    this.patch({ editingContraption: null, selectedComponentNodeId: 'root', scriptDraft: '', activeModal: null });
+    this.patch({ editingContraption: null, selectedComponentNodeId: '', scriptDraft: '', activeModal: null });
   }
 
   renderComponentTree(): void { this.refresh(); }
@@ -1403,7 +1413,7 @@ export class SpaceUiStore {
     const prompt = promptValue.trim();
     const state = this.snapshot;
     if (!prompt || state.agentBusy || !state.editingContraption) return;
-    const targetId = state.selectedComponentNodeId || 'root';
+    const targetId = state.selectedComponentNodeId || entityRootId(state.editingContraption);
     const targetNode = state.editingContraption.entityNodes?.get?.(targetId);
     const messages: AgentMessage[] = [...state.agentMessages, { role: 'user', content: prompt }];
     const assistantIndex = messages.length;
@@ -1418,9 +1428,9 @@ export class SpaceUiStore {
       parentId: targetNode?.parentId ?? null,
       entityId: state.editingContraption.publicId || `Entity #${state.editingContraption.id}`,
       runtimeId: state.editingContraption.id,
-      allComponents: [...(state.editingContraption.entityNodes?.keys?.() || [])],
+      allComponents: [...(state.editingContraption.entityNodes?.keys?.() || [])].sort(compareComponentIds),
       mode: state.editingContraption.mode,
-      blockCount: state.editingContraption.blocks?.filter?.((block: any) => String(block.entityId || 'root') === targetId).length || 0,
+      blockCount: state.editingContraption.blocks?.filter?.((block: any) => String(block.entityId ?? entityRootId(state.editingContraption)) === targetId).length || 0,
       totalBlockCount: state.editingContraption.blocks?.length || 0
     };
 
@@ -1455,11 +1465,11 @@ export class SpaceUiStore {
     }
   }
 
-  applyAgentCode(code: string, targetNodeId = 'root', silent = false): void {
+  applyAgentCode(code: string, targetNodeId?: string, silent = false): void {
     const contraption = this.snapshot.editingContraption;
     if (!contraption) return;
     this.saveCurrentDraft();
-    const targetId = String(targetNodeId || 'root');
+    const targetId = String(targetNodeId || entityRootId(contraption));
     contraption.mode = ContraptionMode.PROGRAMMABLE;
     const success = contraption.setNodeScript(targetId, code);
     contraption.setHighlightedNode?.(targetId);
@@ -1631,7 +1641,7 @@ export class SpaceUiStore {
       const { contraption, rootId } = controller.selectedSubtree;
       return {
         micro,
-        title: rootId === 'root' ? 'Entity Selected' : 'Component Selected',
+        title: rootId === entityRootId(contraption) ? 'Entity Selected' : 'Component Selected',
         details: `Entity #${contraption.id} [${rootId}] · Del delete · R copy`,
         canAssemble: false,
         assembleLabel: 'Assemble (G)',

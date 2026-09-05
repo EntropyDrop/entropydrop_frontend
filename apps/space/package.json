@@ -9,12 +9,13 @@
     "npm": ">=10"
   },
   "scripts": {
-    "generate:protobuf": "protoc --plugin=protoc-gen-ts_proto=../../node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=src/generated --ts_proto_opt=esModuleInterop=true,forceLong=number,useOptionals=all,outputJsonMethods=false,outputClientImpl=false,enumsAsLiterals=true -I proto proto/inventory.proto",
+    "generate:protobuf": "node tools/generate-protobuf.mjs",
+    "check:protobuf": "node tools/generate-protobuf.mjs --check",
     "docs:generate": "node tools/generate-api-docs.ts",
     "docs:check": "node tools/generate-api-docs.ts --check",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "check": "npm run docs:check && npm run typecheck && npm test && npm run build",
+    "check": "npm run check:protobuf && npm run docs:check && npm run typecheck && npm test && npm run build",
     "audit:deps": "npm audit --audit-level=high",
     "preview": "vite preview",
     "test": "node --import ./test/setup.ts --test --test-concurrency=1 \"test/*.test.ts\""

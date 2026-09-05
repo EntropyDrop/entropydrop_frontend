@@ -30,7 +30,8 @@ function makeContactFixture() {
       localZ: 0,
       size: 1,
       block: BlockTypes.COLOR_BLOCK,
-      color: 0xffffff
+      color: 0xffffff,
+      entityId: 'root'
     }],
     new THREE.Vector3(),
     new THREE.Scene()

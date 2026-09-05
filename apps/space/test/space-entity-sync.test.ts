@@ -4,8 +4,8 @@ import * as THREE from 'three';
 import { SpaceEntitySync } from '../src/engine/network/SpaceEntitySync.ts';
 
 
-const definition = Uint8Array.from([8, 3, 26, 0]);
-const definitionDigest = '754164027d40c7b9dafdccea89a044ddd7265be5cc6d497cb6976f0777e43b78';
+const definition = Uint8Array.from([8, 4, 26, 0]);
+const definitionDigest = '0caed08c0cdfe078464c77fbc4032b985d9757db85e8fac65733d57ee7fb5917';
 
 function record() {
   return {
@@ -13,7 +13,7 @@ function record() {
     world_id: 'world-1',
     owner_user_id: 'owner-1',
     name: 'Walker',
-    schema_version: 3,
+    schema_version: 4,
     definition_digest: definitionDigest,
     definition_size_bytes: definition.byteLength,
     definition_url: '/definition',

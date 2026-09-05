@@ -117,8 +117,8 @@ export class MicroVoxelLayer {
   private packedColors: Map<number, number>;
   private dirtyMeshChunks: Set<string>;
   private meshChunkRevisions: Map<string, number>;
-  /** Old published occupancy retained while a remote partition is rebuilt. */
-  private publishedCollisionSnapshots: Map<string, Set<number>>;
+  /** Old published values for cells changed while a partition is rebuilt. */
+  private publishedCollisionSnapshots: Map<string, Map<number, number | null>>;
   private activeMeshBuild: MicroMeshBuildJob | null;
   private deferredPublicationChunkKeys: Set<string> | null;
   private deferredMeshPublications: Map<string, DeferredMeshPublication>;
@@ -176,18 +176,60 @@ export class MicroVoxelLayer {
   }
 
   private markMeshChunkDirty(mx, mz) {
+    for (const chunkKey of this.affectedMeshChunkKeys(mx, mz)) {
+      this.invalidateMeshChunk(chunkKey);
+    }
+  }
+
+  private affectedMeshChunkKeys(mx: number, mz: number) {
     const wrappedX = wrapMicroX(mx);
     const wrappedZ = wrapMicroZ(mz);
-    this.invalidateMeshChunk(meshChunkKey(wrappedX, wrappedZ));
+    const affected = [meshChunkKey(wrappedX, wrappedZ)];
     const localX = wrappedX % MICRO_MESH_CHUNK_SIZE;
     const localZ = wrappedZ % MICRO_MESH_CHUNK_SIZE;
-    if (localX === 0) this.invalidateMeshChunk(meshChunkKey(wrappedX - 1, wrappedZ));
+    if (localX === 0) affected.push(meshChunkKey(wrappedX - 1, wrappedZ));
     if (localX === MICRO_MESH_CHUNK_SIZE - 1) {
-      this.invalidateMeshChunk(meshChunkKey(wrappedX + 1, wrappedZ));
+      affected.push(meshChunkKey(wrappedX + 1, wrappedZ));
     }
-    if (localZ === 0) this.invalidateMeshChunk(meshChunkKey(wrappedX, wrappedZ - 1));
+    if (localZ === 0) affected.push(meshChunkKey(wrappedX, wrappedZ - 1));
     if (localZ === MICRO_MESH_CHUNK_SIZE - 1) {
-      this.invalidateMeshChunk(meshChunkKey(wrappedX, wrappedZ + 1));
+      affected.push(meshChunkKey(wrappedX, wrappedZ + 1));
+    }
+    return affected;
+  }
+
+  /** Promote a local edit and its boundary companions ahead of background work. */
+  prioritizeMeshAt(mx: number, mz: number) {
+    const prioritized = this.affectedMeshChunkKeys(mx, mz)
+      .filter(chunkKey => this.dirtyMeshChunks.has(chunkKey));
+    if (prioritized.length === 0) return;
+
+    // A resumable background build is no longer the highest-priority work once
+    // direct input dirties another partition. Put it back in the queue before
+    // reordering so the clicked partition can use the very next frame slice.
+    if (
+      this.activeMeshBuild
+      && !prioritized.includes(this.activeMeshBuild.chunkKey)
+    ) {
+      this.dirtyMeshChunks.add(this.activeMeshBuild.chunkKey);
+      this.activeMeshBuild = null;
+    }
+
+    // Reorder the one authoritative dirty queue instead of maintaining a
+    // second eligibility set that can drift out of sync after invalidation.
+    const reordered = new Set(prioritized);
+    for (const chunkKey of this.dirtyMeshChunks) reordered.add(chunkKey);
+    this.dirtyMeshChunks = reordered;
+  }
+
+  /** A standard cell can touch two micro partitions on either horizontal axis. */
+  prioritizeStandardCell(wx: number, wz: number) {
+    const baseMx = wx * MICRO_DIVISIONS;
+    const baseMz = wz * MICRO_DIVISIONS;
+    for (const mx of [baseMx, baseMx + MICRO_DIVISIONS - 1]) {
+      for (const mz of [baseMz, baseMz + MICRO_DIVISIONS - 1]) {
+        this.prioritizeMeshAt(mx, mz);
+      }
     }
   }
 
@@ -208,6 +250,25 @@ export class MicroVoxelLayer {
     if (cells?.size === 0) this.chunkCells.delete(chunkKey);
   }
 
+  /** Journal one cell before mutation so picking stays on the rendered mesh. */
+  private preservePublishedCollisionCell(mx: number, my: number, mz: number) {
+    const chunkKey = meshChunkKey(mx, mz);
+    // No mesh means this partition currently presents empty space. New live
+    // cells remain unpickable through getPublishedCollisionColor until their
+    // first mesh publication.
+    if (!this.meshChunks.has(chunkKey)) return;
+    let snapshot = this.publishedCollisionSnapshots.get(chunkKey);
+    if (!snapshot) {
+      snapshot = new Map();
+      this.publishedCollisionSnapshots.set(chunkKey, snapshot);
+    }
+
+    const packedKey = packedMicroKey(mx, my, mz);
+    if (!snapshot.has(packedKey)) {
+      snapshot.set(packedKey, this.packedColors.get(packedKey) ?? null);
+    }
+  }
+
   set(mx, my, mz, color = DEFAULT_BLOCK_COLOR, part = null) {
     mx = wrapMicroX(mx);
     mz = wrapMicroZ(mz);
@@ -217,6 +278,7 @@ export class MicroVoxelLayer {
     const isNew = !this.cells.has(cellKey);
     const currentPart = this.parts.get(cellKey) ?? null;
     if (this.cells.get(cellKey) === normalized && currentPart === part) return false;
+    this.preservePublishedCollisionCell(mx, my, mz);
     this.cells.set(cellKey, normalized);
     this.packedColors.set(packedKey, normalized);
     if (isNew) this.addChunkCell(packedKey, mx, mz);
@@ -231,6 +293,7 @@ export class MicroVoxelLayer {
     mz = wrapMicroZ(mz);
     const cellKey = key(mx, my, mz);
     const packedKey = packedMicroKey(mx, my, mz);
+    if (this.cells.has(cellKey)) this.preservePublishedCollisionCell(mx, my, mz);
     const removed = this.cells.delete(cellKey);
     this.parts.delete(cellKey);
     if (removed) {
@@ -308,12 +371,6 @@ export class MicroVoxelLayer {
         const targetKey = meshChunkKey(targetMx, targetMz);
         targetMeshChunks.push(targetKey);
         const cellKeys = this.chunkCells.get(targetKey);
-        // Keep the exact occupancy represented by the currently published
-        // mesh. Once detached from chunkCells this Set is immutable, while
-        // incoming snapshot cells are written into a fresh Set.
-        if (!this.publishedCollisionSnapshots.has(targetKey)) {
-          this.publishedCollisionSnapshots.set(targetKey, cellKeys ?? new Set<number>());
-        }
         if (cellKeys?.size) cellIterators.push(cellKeys.values());
         this.chunkCells.delete(targetKey);
       }
@@ -346,6 +403,7 @@ export class MicroVoxelLayer {
       const packedKey = next.value;
       const [mx, my, mz] = unpackMicroKey(packedKey);
       const cellKey = `${mx},${my},${mz}`;
+      this.preservePublishedCollisionCell(mx, my, mz);
       if (this.cells.delete(cellKey)) cursor.removed++;
       this.packedColors.delete(packedKey);
       this.parts.delete(cellKey);
@@ -389,6 +447,7 @@ export class MicroVoxelLayer {
       if (extractedMx < minMx || extractedMx > maxMx || my < minMy || my > maxMy
         || extractedMz < minMz || extractedMz > maxMz) continue;
       extracted.push({ mx: extractedMx, my, mz: extractedMz, color, part: this.parts.get(cellKey) ?? null });
+      this.preservePublishedCollisionCell(mx, my, mz);
       this.cells.delete(cellKey);
       const packedKey = packedMicroKey(mx, my, mz);
       this.packedColors.delete(packedKey);
@@ -418,6 +477,7 @@ export class MicroVoxelLayer {
       if (extractedMx < minMx || extractedMx > maxMx || my < minMy || my > maxMy
         || extractedMz < minMz || extractedMz > maxMz) continue;
       extracted.push({ mx: extractedMx, my, mz: extractedMz, color, part: this.parts.get(cellKey) ?? null });
+      this.preservePublishedCollisionCell(mx, my, mz);
       this.cells.delete(cellKey);
       const packedKey = packedMicroKey(mx, my, mz);
       this.packedColors.delete(packedKey);
@@ -488,9 +548,15 @@ export class MicroVoxelLayer {
   }
 
   getPublishedCollisionColor(mx: number, my: number, mz: number) {
-    const snapshot = this.publishedCollisionSnapshots.get(meshChunkKey(mx, mz));
-    if (!snapshot) return this.get(mx, my, mz);
-    return snapshot.has(packedMicroKey(mx, my, mz)) ? DEFAULT_BLOCK_COLOR : null;
+    const chunkKey = meshChunkKey(mx, mz);
+    const snapshot = this.publishedCollisionSnapshots.get(chunkKey);
+    if (!snapshot) {
+      return this.meshChunks.has(chunkKey) ? this.get(mx, my, mz) : null;
+    }
+    const packedKey = packedMicroKey(mx, my, mz);
+    return snapshot.has(packedKey)
+      ? (snapshot.get(packedKey) ?? null)
+      : (this.packedColors.get(packedKey) ?? null);
   }
 
   /** Drop empty no-op snapshots; dirty ones retire when their mesh publishes. */
@@ -1035,6 +1101,23 @@ export class MicroVoxelLayer {
       }
     }
     return true;
+  }
+
+  /** Whether any micro mesh belonging to the supplied standard-chunk AOI has
+   * not reached its final published state yet. Dirty meshes outside the AOI do
+   * not hold initial entry open. */
+  hasPendingMeshWork(activeChunkKeys: Set<string>) {
+    if (
+      this.activeMeshBuild
+      && activeChunkKeys.has(this.activeMeshBuild.standardChunkKey)
+    ) return true;
+    for (const chunkKey of this.dirtyMeshChunks) {
+      if (activeChunkKeys.has(standardChunkKeyForMeshChunk(chunkKey))) return true;
+    }
+    for (const publication of this.deferredMeshPublications.values()) {
+      if (activeChunkKeys.has(publication.barrierKey)) return true;
+    }
+    return false;
   }
 
   publishDeferredForStandardChunk(

@@ -31,7 +31,7 @@ test('render frames feed one immutable 20 Hz entity simulation clock', () => {
 test('one entity update always contains three 60 Hz physics substeps', () => {
   const contraption = new Contraption(
     1,
-    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }],
     new THREE.Vector3(0, 10, 0),
     new THREE.Scene()
   ) as any;
@@ -50,7 +50,7 @@ test('one entity update always contains three 60 Hz physics substeps', () => {
 test('render interpolation is temporary and never changes the solved entity pose', () => {
   const contraption = new Contraption(
     2,
-    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }],
     new THREE.Vector3(),
     new THREE.Scene()
   ) as any;

@@ -2,13 +2,19 @@
 
 ## Local verification
 
-Use Node.js 20.19 or newer and npm 10 or newer:
+Use Node.js 20.19 or newer, npm 10 or newer, and a `protoc` release with
+proto3 optional-field support:
 
 ```bash
 npm ci
 npm run check
 npm run audit:deps
 ```
+
+`proto/inventory.proto` is the shared frontend/backend resource contract, while
+`proto/backpack.proto` is browser-local state. After either schema changes, run
+`npm run generate:protobuf` and commit the regenerated TypeScript descriptor and
+bindings; shared resource changes must also regenerate the backend Python binding.
 
 Add a regression test for behavior changes. Browser-facing changes should also
 be checked manually in a current WebGL 2 browser with the developer console open.

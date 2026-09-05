@@ -1,8 +1,39 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { SpaceMarketClient, SpaceMarketError } from '../src/bootstrap/SpaceMarketClient.ts';
+import { encodeInventoryResource } from '../src/engine/storage/InventoryProtobuf.ts';
 
-const PROTOBUF_DIGEST = '754164027d40c7b9dafdccea89a044ddd7265be5cc6d497cb6976f0777e43b78';
+const COLORSET = {
+  type: 'space-colorset',
+  version: 4,
+  name: 'Sunset',
+  colors: [
+    '#111111', '#222222', '#333333',
+    '#444444', '#555555', '#666666',
+    '#777777', '#888888', '#999999',
+  ],
+};
+const COLORSET_PROTOBUF = encodeInventoryResource('colorset', COLORSET);
+const COLORSET_DIGEST = createHash('sha256')
+  .update(encodeInventoryResource('colorset', { ...COLORSET, name: '' }))
+  .digest('hex');
+
+const BLOCKSET = {
+  type: 'space-blockset',
+  version: 4,
+  name: 'Signal tower',
+  blocks: [{ dx: 1, dy: 2, dz: 3, block: 1, color: 0xf2a93b }],
+};
+const BLOCKSET_PROTOBUF = encodeInventoryResource('blockset', BLOCKSET);
+// Cross-language fixture for the backend's deterministic, name-omitting digest.
+const BLOCKSET_DIGEST = '337f5cc6c96e8e5e62a4da9558a806b44a080a0a9b8043ee884e51d676ffedbb';
+
+function responseBody(bytes: Uint8Array): ArrayBuffer {
+  const body = new Uint8Array(bytes.byteLength);
+  body.set(bytes);
+  return body.buffer;
+}
 
 test('SpaceMarketClient sends authenticated market list, publish, download, like, and delete requests', async () => {
   const calls: Array<{ url: string; options: RequestInit }> = [];
@@ -10,13 +41,14 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
     calls.push({ url: String(url), options });
     const value = String(url);
     if (value === 'https://cdn.example.test/space-market/resources/r1/content.pb') {
-      return new Response(Uint8Array.from([8, 3, 26, 0]), { status: 200 });
+      return new Response(responseBody(COLORSET_PROTOBUF), { status: 200 });
     }
     if (value.endsWith('/download')) {
       return new Response(JSON.stringify({
         id: 'r1',
         kind: 'colorset',
-        digest: PROTOBUF_DIGEST,
+        name: COLORSET.name,
+        digest: COLORSET_DIGEST,
         download_url: 'https://cdn.example.test/space-market/resources/r1/content.pb'
       }), { status: 200 });
     }
@@ -34,7 +66,7 @@ test('SpaceMarketClient sends authenticated market list, publish, download, like
   const client = new SpaceMarketClient('https://api.entropydrop.com/', 'token-1', fetchImpl as typeof fetch);
 
   await client.listResources('entity', 'downloads', 24, 0, true);
-  const protobuf = Uint8Array.from([8, 3, 26, 0]);
+  const protobuf = COLORSET_PROTOBUF;
   await client.publishResource('colorset', protobuf);
   const downloaded = await client.downloadResource('r1');
   await client.toggleLike('r1');
@@ -81,24 +113,39 @@ test('SpaceMarketClient reports invalid CDN responses separately from API errors
 
 test('SpaceMarketClient loads previews directly from the CDN without calling the counted download endpoint', async () => {
   const calls: Array<{ url: string; options: RequestInit }> = [];
-  const protobuf = Uint8Array.from([8, 3, 26, 0]);
   const contentUrl = 'https://cdn.example.test/space-market/resources/r1/content.pb';
   const fetchImpl = async (url: string | URL | Request, options: RequestInit = {}) => {
     calls.push({ url: String(url), options });
-    return new Response(protobuf, { status: 200 });
+    return new Response(responseBody(BLOCKSET_PROTOBUF), { status: 200 });
   };
   const client = new SpaceMarketClient('https://api.example.test', 'token', fetchImpl as typeof fetch);
 
-  const preview = await client.loadResourceContent(contentUrl, undefined, PROTOBUF_DIGEST);
+  const preview = await client.loadResourceContent(contentUrl, undefined, {
+    kind: 'blockset',
+    name: BLOCKSET.name,
+    digest: BLOCKSET_DIGEST,
+  });
 
-  assert.deepEqual(preview, protobuf);
+  assert.deepEqual(preview, BLOCKSET_PROTOBUF);
   assert.deepEqual(calls.map(call => call.url), [contentUrl]);
   assert.equal((calls[0].options.headers as any).Authorization, undefined);
   assert.equal(calls.some(call => call.url.endsWith('/download')), false);
+  assert.notEqual(
+    createHash('sha256').update(BLOCKSET_PROTOBUF).digest('hex'),
+    BLOCKSET_DIGEST,
+    'the API digest omits the display name and is not the raw CDN blob digest'
+  );
+  assert.equal(
+    createHash('sha256')
+      .update(encodeInventoryResource('blockset', { ...BLOCKSET, name: '' }))
+      .digest('hex'),
+    BLOCKSET_DIGEST,
+    'the frontend must reproduce the backend canonical content digest'
+  );
 });
 
 test('SpaceMarketClient rejects unsafe, oversized, and digest-mismatched CDN content', async () => {
-  const fetchImpl = async () => new Response(Uint8Array.from([8, 3, 26, 0]), {
+  const fetchImpl = async () => new Response(Uint8Array.from([8, 4, 26, 0]), {
     status: 200,
     headers: { 'Content-Length': String(8 * 1024 * 1024 + 1) }
   });
@@ -116,11 +163,40 @@ test('SpaceMarketClient rejects unsafe, oversized, and digest-mismatched CDN con
   const digestClient = new SpaceMarketClient(
     'https://api.example.test',
     'token',
-    (async () => new Response(Uint8Array.from([8, 3, 26, 0]), { status: 200 })) as typeof fetch
+    (async () => new Response(responseBody(BLOCKSET_PROTOBUF), { status: 200 })) as typeof fetch
   );
   await assert.rejects(
-    () => digestClient.loadResourceContent('https://cdn.example.test/content.pb', undefined, '0'.repeat(64)),
+    () => digestClient.loadResourceContent('https://cdn.example.test/content.pb', undefined, {
+      kind: 'blockset',
+      name: BLOCKSET.name,
+      digest: '0'.repeat(64),
+    }),
     (error: any) => error instanceof SpaceMarketError && error.code === 'MARKET_DIGEST_MISMATCH'
+  );
+  await assert.rejects(
+    () => digestClient.loadResourceContent('https://cdn.example.test/content.pb', undefined, {
+      kind: 'blockset',
+      name: 'Tampered name',
+      digest: BLOCKSET_DIGEST,
+    }),
+    (error: any) => error instanceof SpaceMarketError && error.code === 'MARKET_RESOURCE_NAME_MISMATCH'
+  );
+
+  const protobufWithUnknownField = new Uint8Array(BLOCKSET_PROTOBUF.byteLength + 3);
+  protobufWithUnknownField.set(BLOCKSET_PROTOBUF);
+  protobufWithUnknownField.set([0xf8, 0x07, 0x01], BLOCKSET_PROTOBUF.byteLength);
+  const nonCanonicalClient = new SpaceMarketClient(
+    'https://api.example.test',
+    'token',
+    (async () => new Response(responseBody(protobufWithUnknownField), { status: 200 })) as typeof fetch
+  );
+  await assert.rejects(
+    () => nonCanonicalClient.loadResourceContent('https://cdn.example.test/content.pb', undefined, {
+      kind: 'blockset',
+      name: BLOCKSET.name,
+      digest: BLOCKSET_DIGEST,
+    }),
+    (error: any) => error instanceof SpaceMarketError && error.code === 'MARKET_RESOURCE_NON_CANONICAL'
   );
 });
 
@@ -131,7 +207,7 @@ test('SpaceMarketClient exposes structured backend errors', async () => {
   const client = new SpaceMarketClient('http://localhost:8000', 'token', fetchImpl as typeof fetch);
 
   await assert.rejects(
-    () => client.publishResource('blockset', Uint8Array.from([8, 3, 18, 0])),
+    () => client.publishResource('blockset', Uint8Array.from([8, 4, 18, 0])),
     (error: any) => {
       assert.ok(error instanceof SpaceMarketError);
       assert.equal(error.status, 409);

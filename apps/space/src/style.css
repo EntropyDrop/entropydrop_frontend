@@ -4939,95 +4939,6 @@ button.palette-title:hover {
   font: 11px 'JetBrains Mono', monospace;
 }
 
-.quick-start-toggle {
-  position: fixed;
-  top: 16px;
-  right: 142px;
-  z-index: 360;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-panel);
-  color: var(--accent-light);
-  font: 800 15px 'JetBrains Mono', monospace;
-  cursor: pointer;
-}
-
-.quick-start-guide {
-  position: fixed;
-  top: 56px;
-  right: 16px;
-  z-index: 350;
-  width: min(360px, calc(100vw - 32px));
-  padding: 14px;
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--accent-base);
-  background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  color: var(--text-primary);
-}
-
-.quick-start-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.quick-start-kicker {
-  color: var(--accent-light);
-  font: 800 9px 'JetBrains Mono', monospace;
-  letter-spacing: 0.14em;
-}
-
-.quick-start-heading h2 {
-  margin: 3px 0 0;
-  font-size: 15px;
-}
-
-.quick-start-close {
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 20px;
-  cursor: pointer;
-}
-
-.quick-start-guide ol {
-  display: grid;
-  gap: 7px;
-  margin: 12px 0;
-  padding-left: 22px;
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.quick-start-guide kbd {
-  padding: 1px 4px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-input);
-  color: var(--accent-light);
-  font: 800 9px 'JetBrains Mono', monospace;
-}
-
-.quick-start-footer {
-  padding-top: 8px;
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font-size: 9.5px;
-}
-
-@media (max-width: 640px) {
-  .quick-start-toggle {
-    right: 96px;
-  }
-
-  .quick-start-guide {
-    right: 8px;
-    width: min(360px, calc(100vw - 16px));
-  }
-}
-
 .agent-model-field {
   min-width: 0;
 }
@@ -6893,6 +6804,10 @@ button.palette-title:hover {
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
+}
+
+.space-entry-action[hidden] {
+  display: none;
 }
 
 .space-entry-actions {

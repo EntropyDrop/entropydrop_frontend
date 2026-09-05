@@ -22,7 +22,8 @@ test('entities only exist and run while their chunk is loaded', () => {
     41,
     [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
     new THREE.Vector3(2, 4, 2),
-    scene
+    scene,
+    { rootComponentId: 'root' }
   ) as any;
   original.velocity.set(1, 2, 3);
   original.angularVelocity.set(0.1, 0.2, 0.3);

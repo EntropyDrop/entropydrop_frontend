@@ -113,6 +113,7 @@ test('an owned server entity remains locally editable regardless of creation pat
   const target: any = {
     serverManaged: true,
     serverCanEdit: true,
+    rootComponentId: 'root',
     scriptStatus: 'stopped',
     blocks: [{ localX: 0, localY: 0, localZ: 0, size: 1, color: 0x112233 }],
     rebuildAfterBlockChange() {},

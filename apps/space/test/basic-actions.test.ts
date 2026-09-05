@@ -47,6 +47,68 @@ test('script voxel adapters and engine input use the same canonical action dispa
   assert.doesNotMatch(controllerSource, /this\.world\.(?:setBlock|setMicroBlock|removeMicroBlock|subdivideBlock|setBlockColor)/);
 });
 
+test('player queries pick published terrain while scripts read the live terrain state', () => {
+  const calls: Array<[string, boolean]> = [];
+  const miss = { hit: false };
+  const world = {
+    raycastBent(_origin, _direction, _distance, published) {
+      calls.push(['standard-bent', published]);
+      return miss;
+    },
+    raycastMicroBent(_origin, _direction, _distance, published) {
+      calls.push(['micro-bent', published]);
+      return miss;
+    },
+    raycastMicro(_origin, _direction, _distance, published) {
+      calls.push(['micro-flat', published]);
+      return miss;
+    },
+  };
+  const query = {
+    domain: ActionDomain.QUERY,
+    action: 'raycast',
+    origin: [0, 0, 0],
+    direction: [1, 0, 0],
+    include: 'world',
+  };
+
+  executeBasicAction({ world }, {
+    ...query,
+    space: 'bent',
+    voxelKinds: ['standard', 'micro'],
+    actor: { source: 'player' },
+  });
+  executeBasicAction({ world }, {
+    ...query,
+    space: 'bent',
+    voxelKinds: ['standard', 'micro'],
+    actor: { source: 'script' },
+  });
+  executeBasicAction({ world }, {
+    ...query,
+    space: 'world',
+    voxelKinds: ['micro'],
+    actor: { source: 'script' },
+  });
+  executeBasicAction({ world }, {
+    ...query,
+    space: 'bent',
+    voxelKinds: ['standard', 'micro'],
+    actor: { source: 'player' },
+    usePublishedCollision: false,
+  });
+
+  assert.deepEqual(calls, [
+    ['standard-bent', true],
+    ['micro-bent', true],
+    ['standard-bent', false],
+    ['micro-bent', false],
+    ['micro-flat', false],
+    ['standard-bent', false],
+    ['micro-bent', false],
+  ]);
+});
+
 test('entity start and stop use the canonical entity action dispatcher', () => {
   const contraption = new Contraption(
     99,

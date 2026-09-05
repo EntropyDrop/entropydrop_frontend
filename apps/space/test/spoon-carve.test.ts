@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
+import { World } from '../src/engine/voxel/World.ts';
+import {
+  getWorldShapeMode,
+  setWorldShapeMode,
+  TORUS_SPAWN_X,
+  TORUS_SPAWN_Z,
+} from '../src/engine/torus/TorusWorld.ts';
 
 /**
  * Direct spoon carving subdivides a standard block into 5x5x5 and immediately removes
@@ -11,14 +18,16 @@ import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 
 function makeSpoonController(overrides = {}) {
   const controller = Object.create(PlayerController.prototype);
+  const breakSounds = [];
   controller.activeTool = SpecialTool.SPOON;
   controller.hoveredContraptionHit = null;
   controller.currentRaycast = { hit: false };
   controller.selectedColor = 0xff0000;
   controller.particles = { emitBlockBreak() {} };
-  controller.sound = { playBlockBreak() {} };
+  controller.sound = { playBlockBreak(options) { breakSounds.push(options); } };
   controller.ui = { showToast() {}, notifyContraptionStructureChanged() {} };
   Object.assign(controller, overrides);
+  controller.__breakSounds = breakSounds;
   return controller;
 }
 
@@ -58,6 +67,7 @@ test('world: clicking a standard block subdivides it and removes the hit microce
   assert.ok(removed, 'one microcell should be removed immediately');
   // Entry (2.4,2.3,2.1) maps to microcell (12,11,10), inside [10..14].
   assert.deepEqual(removed, { mx: 12, my: 11, mz: 10 });
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'micro', count: 1 }]);
 });
 
 test('world: a boundary entry point clamps the removed microcell inside the hit cell', () => {
@@ -87,6 +97,151 @@ test('world: a boundary entry point clamps the removed microcell inside the hit 
   assert.ok(removed.mx >= 0 && removed.mx <= 4, 'mx must stay inside [0..4]');
   assert.ok(removed.my >= 0 && removed.my <= 4);
   assert.ok(removed.mz >= 0 && removed.mz <= 4);
+});
+
+test('world: three rapid spoon clicks consume three micro layers before remesh publication', () => {
+  const previousMode = getWorldShapeMode();
+  setWorldShapeMode('torus');
+  try {
+    const world = new World(new THREE.Scene()) as any;
+    const mx = TORUS_SPAWN_X * 5;
+    const mz = TORUS_SPAWN_Z * 5;
+    const ys = [100, 101, 102];
+    for (const my of ys) world.setMicroBlock(mx, my, mz, 0x123456);
+    world.microVoxels.updateMesh();
+
+    const camera = new THREE.PerspectiveCamera();
+    camera.rotation.set(-Math.PI / 2, 0, 0);
+    camera.updateMatrixWorld(true);
+    const eye = new THREE.Vector3(mx / 5 + 0.1, 25, mz / 5 + 0.1);
+    const controller = makeSpoonController({
+      camera,
+      physics: { getEyePosition: () => eye },
+      world,
+      contraptions: null,
+      sceneRenderer: { setCursor() {}, setMicroCarvePreview() {} },
+      perspective: 'first_person',
+      pitch: -Math.PI / 2,
+      yaw: 0,
+      hoveredContraption: null,
+    }) as any;
+    controller.syncDrivenVehiclePose = () => {};
+    controller.updateCameraPosition = () => {};
+    controller.updateWrenchPivotGizmo = () => {};
+    controller.updateMicroCarvePreview = () => {};
+    controller.updateInventoryPlacementPreview = () => {};
+
+    for (let click = 0; click < 3; click++) {
+      controller.updateAimRaycast();
+      controller.handleLeftClick();
+      controller.refreshAimAfterPointerAction();
+      // Preserve the stale published mesh just as an exhausted frame budget
+      // does while the user clicks faster than the partition can rebuild.
+      world.microVoxels.updateMesh(1, null, null, 0);
+    }
+
+    assert.deepEqual(
+      ys.map(my => world.getMicroBlock(mx, my, mz)),
+      [null, null, null],
+    );
+    assert.equal(controller.currentRaycast.microPos.y, 102,
+      'hover remains tied to the old published mesh until its replacement is ready');
+    assert.deepEqual(controller.__breakSounds, [
+      { kind: 'micro', count: 1 },
+      { kind: 'micro', count: 1 },
+      { kind: 'micro', count: 1 },
+    ]);
+  } finally {
+    setWorldShapeMode(previousMode);
+  }
+});
+
+test('world: rapid spoon clicks continue while standard-to-micro publication is pending', () => {
+  const previousMode = getWorldShapeMode();
+  setWorldShapeMode('torus');
+  try {
+    const world = new World(new THREE.Scene()) as any;
+    const wx = TORUS_SPAWN_X;
+    const wy = 200;
+    const wz = TORUS_SPAWN_Z;
+    world.setRenderDistance(3);
+    world.updateChunksAround(wx, wz);
+    world.setBlock(wx, wy, wz, BlockTypes.COLOR_BLOCK, true, 0x123456);
+    world.updateChunksAround(wx, wz);
+
+    const camera = new THREE.PerspectiveCamera();
+    camera.rotation.set(-Math.PI / 2, 0, 0);
+    camera.updateMatrixWorld(true);
+    const eye = new THREE.Vector3(wx + 0.1, wy + 5, wz + 0.1);
+    const controller = makeSpoonController({
+      camera,
+      physics: { getEyePosition: () => eye },
+      world,
+      contraptions: null,
+      sceneRenderer: { setCursor() {}, setMicroCarvePreview() {} },
+      perspective: 'first_person',
+      pitch: -Math.PI / 2,
+      yaw: 0,
+      hoveredContraption: null,
+    }) as any;
+    controller.syncDrivenVehiclePose = () => {};
+    controller.updateCameraPosition = () => {};
+    controller.updateWrenchPivotGizmo = () => {};
+    controller.updateMicroCarvePreview = () => {};
+    controller.updateInventoryPlacementPreview = () => {};
+
+    for (let click = 0; click < 3; click++) {
+      controller.updateAimRaycast();
+      controller.handleLeftClick();
+      controller.refreshAimAfterPointerAction();
+      world.microVoxels.updateMesh(1, null, null, 0, world.crossLayerPublicationChunks);
+    }
+
+    assert.equal(world.getBlock(wx, wy, wz), BlockTypes.AIR);
+    assert.equal(world.microVoxels.cells.size, 122,
+      'the subdivision plus two immediate follow-up clicks should consume three microcells');
+    assert.equal(controller.currentRaycast.kind, 'standard',
+      'hover remains on the visible standard mesh until the atomic replacement publishes');
+  } finally {
+    setWorldShapeMode(previousMode);
+  }
+});
+
+test('world: a live retry cannot carve terrain hidden behind an entity', () => {
+  const removeCalls = [];
+  const controller = makeSpoonController({
+    currentRaycast: {
+      hit: true,
+      kind: 'micro',
+      microPos: { x: 10, y: 12, z: 10 },
+      hitPos: { x: 2, y: 2.4, z: 2 },
+      color: 0x123456,
+    },
+    world: {
+      removeMicroBlock(mx, my, mz) {
+        removeCalls.push([mx, my, mz]);
+        return false;
+      },
+    },
+  });
+  controller.performAimRaycast = () => ({
+    kind: 'entity',
+    entityHit: { distance: 2 },
+    worldHit: {
+      hit: true,
+      kind: 'micro',
+      microPos: { x: 10, y: 11, z: 10 },
+      hitPos: { x: 2, y: 2.2, z: 2 },
+      color: 0x654321,
+      distance: 3,
+    },
+  });
+
+  controller.handleLeftClick();
+
+  assert.deepEqual(removeCalls, [[10, 12, 10]],
+    'the failed published target is not retried through the nearer entity');
+  assert.deepEqual(controller.__breakSounds, [], 'a failed carve must stay silent');
 });
 
 test('entity: clicking a standard block subdivides 125 cells and removes one', () => {
@@ -123,6 +278,7 @@ test('entity: clicking a standard block subdivides 125 cells and removes one', (
   assert.equal(carvedAway, false, 'hit microcell (0.8,0.2,0.2) must be removed');
   const kept = contraption.blocks.filter(b => (b.size || 1) < 1 && Math.abs(b.localX - 0.0) < 1e-3);
   assert.equal(kept.length, 25, 'the other 25 microcells in the ix=0 plane should remain');
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'micro', count: 1 }]);
 });
 
 test('entity: a -X hit removes the opposite boundary microcell', () => {

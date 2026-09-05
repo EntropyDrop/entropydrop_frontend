@@ -74,6 +74,7 @@ class Game {
   terrainAreaCandidateSince: number;
   terrainAreaLoadInFlight: boolean;
   terrainAreaRetryAt: number;
+  started: boolean;
 
   constructor(
     session: ReadySpaceSession,
@@ -212,7 +213,7 @@ class Game {
         driver: driven ? {
           entityId: driven.publicId,
           playerId: 'local',
-          componentId: this.controller.drivenSeat?.componentId || 'root',
+          componentId: this.controller.drivenSeat?.componentId || driven.rootComponentId,
           seatIndex: this.controller.drivenSeat?.seatIndex || 0
         } : null
       };
@@ -250,6 +251,7 @@ class Game {
     this.terrainAreaCandidateSince = 0;
     this.terrainAreaLoadInFlight = false;
     this.terrainAreaRetryAt = 0;
+    this.started = false;
 
     // 5. Initial Spawn & Worldgen
     const spawnAdjusted = this.initializeSpawn(session);
@@ -306,9 +308,9 @@ class Game {
       this.entitySync.start();
     }
 
-    // 6. Start Loop
+    // The entry gate owns when gameplay starts. It waits for preloadTerrainAoi
+    // to publish the complete initial detailed window first.
     this.animate = this.animate.bind(this);
-    requestAnimationFrame(this.animate);
   }
 
   initializeSpawn(session: ReadySpaceSession) {
@@ -328,6 +330,36 @@ class Game {
     this.sceneRenderer.camera.rotation.set(this.controller.pitch, this.controller.yaw, 0, 'YXZ');
 
     return spawnAdjusted;
+  }
+
+  async preloadInitialTerrain(
+    reportProgress?: (value: number, message: string) => void,
+  ) {
+    return this.world.preloadTerrainAoi(
+      this.playerPhysics.position.x,
+      this.playerPhysics.position.z,
+      progress => {
+        const ratio = progress.totalChunks > 0
+          ? progress.readyChunks / progress.totalChunks
+          : 0;
+        const value = Math.min(99, 92 + Math.floor(ratio * 7));
+        const count = `${progress.readyChunks}/${progress.totalChunks}`;
+        reportProgress?.(
+          value,
+          document.documentElement.lang.toLowerCase().startsWith('zh')
+            ? `正在加载 AOI 全部地形（${count}）…`
+            : `Loading all AOI terrain (${count})…`,
+        );
+      },
+    );
+  }
+
+  start() {
+    if (this.started) return;
+    this.started = true;
+    this.frameCount = 0;
+    this.lastFpsTime = performance.now();
+    requestAnimationFrame(this.animate);
   }
 
   currentPlayerPosition() {
@@ -473,6 +505,11 @@ class Game {
     this.world.updateChunksAround(playerPos.x, playerPos.z, false);
     this.ensureTerrainArea(playerPos.x, playerPos.z);
 
+    // Publish/dispatch direct terrain edits before picking. Raycasts, cursor
+    // overlays and the draw submitted below must all observe the same latest
+    // terrain publication for this frame.
+    this.world.processInteractiveTerrainWork();
+
     // Pick only after programmable child motion and rigid-body physics have
     // finished, before presentation-only interpolation changes the scene graph.
     this.controller.updateAimRaycast();
@@ -555,10 +592,7 @@ class Game {
 
     // 7c. Autopilot Navigation System is updated in controller.updateSimulation()
 
-    // 8. Publish/dispatch direct terrain edits before drawing. This path is
-    // intentionally independent from idle-budgeted background chunk streaming
-    // so walking cannot starve newly placed blocks of visual feedback.
-    this.world.processInteractiveTerrainWork();
+    // 8. Draw, then request idle-budgeted background chunk streaming.
     this.sceneRenderer.render();
     this.world.scheduleStreamingWork();
     this.playerPhysics.endRenderInterpolation();
@@ -569,9 +603,11 @@ class Game {
 // Start Game on page load
 window.addEventListener('DOMContentLoaded', () => {
   void enterSpace(
-    async session => {
+    async (session, reportProgress) => {
       const persistentStorage = await createSpacePersistentStorage();
       const game = new Game(session, persistentStorage);
+      await game.preloadInitialTerrain(reportProgress);
+      game.start();
       if (session.entry_warning) {
         requestAnimationFrame(() => {
           spaceUiStore.showToast(session.entry_warning, {

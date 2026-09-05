@@ -39,6 +39,7 @@ const MAX_REMOTE_EDITS_PER_FRAME = 1_024;
 const MAX_BACKGROUND_REMOTE_EDITS_PER_FRAME = 128;
 const REMOTE_EDIT_TIME_CHECK_INTERVAL = 32;
 const MAX_MICRO_MESH_CHUNKS_PER_FRAME = 1;
+const INTERACTIVE_MICRO_WORK_BUDGET_MS = 1.25;
 const MAX_CHUNK_EVICTIONS_PER_FRAME = 8;
 const MAX_RECYCLED_PROCEDURAL_CHUNKS = 64;
 export const DEFAULT_RENDER_DISTANCE = 8;
@@ -123,6 +124,17 @@ type CompletedTerrainWorkerJob = {
   result: TerrainWorkerResult;
 };
 
+type PublishedStandardCell = {
+  block: number;
+  color: number;
+};
+
+export type TerrainAoiLoadProgress = {
+  readyChunks: number;
+  totalChunks: number;
+  ready: boolean;
+};
+
 function intersectTriangleInclusive(ray, a, b, c, point, barycentric) {
   const plane = new THREE.Plane().setFromCoplanarPoints(a, b, c);
   if (!ray.intersectPlane(plane, point)) return false;
@@ -166,6 +178,8 @@ export class World {
   private microMeshBuildBlockedChunks: Set<string>;
   private crossLayerPublicationChunks: Set<string>;
   private suspendedCrossLayerPublicationChunks: Set<string>;
+  /** Standard values still represented by a visible standard/micro conversion mesh. */
+  private crossLayerPublishedStandardCells: Map<string, Map<number, PublishedStandardCell>>;
   private remoteChunkRevisions: Map<string, number>;
   private rayBentPoint: THREE.Vector3;
   private rayFlatPoint: THREE.Vector3;
@@ -232,6 +246,7 @@ export class World {
     this.microMeshBuildBlockedChunks = new Set();
     this.crossLayerPublicationChunks = new Set();
     this.suspendedCrossLayerPublicationChunks = new Set();
+    this.crossLayerPublishedStandardCells = new Map();
     this.remoteChunkRevisions = new Map();
     for (const chunk of persistenceOptions?.remote?.chunks ?? []) {
       const key = World.getChunkKey(wrapChunkX(chunk.chunk_x), wrapChunkZ(chunk.chunk_z));
@@ -377,12 +392,41 @@ export class World {
     return chunk ? chunk.getLocalColor(lx, wy, lz) : DEFAULT_BLOCK_COLOR;
   }
 
+  private preserveCrossLayerStandardCell(wx: number, wy: number, wz: number) {
+    const { cx, cz, lx, lz } = this.worldToChunkCoords(wx, wz);
+    const chunk = this.getChunk(cx, cz);
+    if (!chunk?.mesh) return;
+    const chunkKey = World.getChunkKey(cx, cz);
+    let snapshot = this.crossLayerPublishedStandardCells.get(chunkKey);
+    if (!snapshot) {
+      snapshot = new Map();
+      this.crossLayerPublishedStandardCells.set(chunkKey, snapshot);
+    }
+    const index = Chunk.getIndex(lx, wy, lz);
+    if (!snapshot.has(index)) {
+      snapshot.set(index, {
+        block: chunk.getLocalBlock(lx, wy, lz),
+        color: chunk.getLocalColor(lx, wy, lz),
+      });
+    }
+  }
+
+  private getPublishedStandardCell(wx: number, wy: number, wz: number) {
+    if (wy < 0 || wy >= CHUNK_SIZE_Y) return null;
+    const { cx, cz, lx, lz } = this.worldToChunkCoords(wx, wz);
+    const snapshot = this.crossLayerPublishedStandardCells.get(World.getChunkKey(cx, cz));
+    return snapshot?.get(Chunk.getIndex(lx, wy, lz)) ?? null;
+  }
+
   setBlock(wx, wy, wz, blockType, updateMesh = true, color = DEFAULT_BLOCK_COLOR) {
     if (wy < 0 || wy >= CHUNK_SIZE_Y) return false;
     const { cx, cz, lx, lz } = this.worldToChunkCoords(wx, wz);
     const chunk = this.getOrCreateChunk(cx, cz);
     let clearedMicro = 0;
     if (blockType !== BlockTypes.AIR && this.microVoxels.cells.size > 0) {
+      if (this.microVoxels.hasAnyInStandardCell(wrapX(wx), wy, wrapZ(wz))) {
+        this.preserveCrossLayerStandardCell(wx, wy, wz);
+      }
       clearedMicro = this.microVoxels.clearStandardCell(wrapX(wx), wy, wrapZ(wz));
     }
     const normalizedColor = normalizeColor(color);
@@ -407,6 +451,7 @@ export class World {
       );
     }
     if (clearedMicro > 0) {
+      this.microVoxels.prioritizeStandardCell(wrapX(wx), wrapZ(wz));
       this.editPersistence?.removeMicroStandardCell(wx, wy, wz);
       if (changed) this.crossLayerPublicationChunks.add(World.getChunkKey(cx, cz));
       this.trackPendingRemoteMicroOverride({
@@ -478,9 +523,11 @@ export class World {
     const block = this.getBlock(wx, wy, wz);
     if (block === BlockTypes.AIR) return 0;
     const color = this.getBlockColor(wx, wy, wz);
+    this.preserveCrossLayerStandardCell(wx, wy, wz);
     this.setBlock(wx, wy, wz, BlockTypes.AIR, true);
     const n = this.microVoxels.subdivide(wx, wy, wz, color);
     if (n > 0) {
+      this.microVoxels.prioritizeStandardCell(wx, wz);
       const { cx, cz } = this.worldToChunkCoords(wx, wz);
       this.crossLayerPublicationChunks.add(World.getChunkKey(cx, cz));
       this.trackPendingRemoteMicroOverride({ type: 'subdivide', wx, wy, wz, color });
@@ -509,6 +556,7 @@ export class World {
     if (this.getBlock(wx, wy, wz) !== BlockTypes.AIR) return false;
     const ok = this.microVoxels.set(mx, my, mz, color, part);
     if (ok) {
+      this.microVoxels.prioritizeMeshAt(mx, mz);
       const persistedColor = this.microVoxels.get(mx, my, mz);
       this.editPersistence?.recordMicro(mx, my, mz, persistedColor, part);
       this.trackPendingRemoteMicroOverride({
@@ -544,28 +592,85 @@ export class World {
   removeMicroBlock(mx, my, mz) {
     mx = wrapMicroX(mx);
     mz = wrapMicroZ(mz);
+    const publishedColor = this.microVoxels.getPublishedCollisionColor(mx, my, mz);
+    const applying = this.pendingRemoteChunkApply;
+    const { cx, cz } = this.worldToChunkCoords(
+      mx / MICRO_DIVISIONS,
+      mz / MICRO_DIVISIONS,
+    );
+    const pendingSameChunk = Boolean(applying?.key === World.getChunkKey(cx, cz));
+    const alreadyPendingDelete = Boolean(
+      applying
+      && pendingSameChunk
+      && this.pendingRemoteOverridesDeleteMicroCell(applying, mx, my, mz)
+    );
     const removed = this.microVoxels.delete(mx, my, mz);
-    if (removed) {
-      this.editPersistence?.removeMicro(mx, my, mz);
+    // During incremental remote replacement the visible old cell may already
+    // be absent from the live staging data. Still accept that visible delete
+    // and replay it after the incoming snapshot, otherwise the block can pop
+    // back after publication.
+    const acceptedPublishedDelete = Boolean(
+      !removed
+      && applying
+      && pendingSameChunk
+      && publishedColor !== null
+      && !alreadyPendingDelete
+    );
+    const acceptedLiveDelete = removed && !alreadyPendingDelete;
+    if (acceptedLiveDelete || acceptedPublishedDelete) {
+      if (removed) this.microVoxels.prioritizeMeshAt(mx, mz);
+      this.editPersistence?.removeMicro(mx, my, mz, pendingSameChunk);
       this.trackPendingRemoteMicroOverride({ type: 'delete', mx, my, mz });
       this.terrainVersion++;
     }
-    return removed;
+    return acceptedLiveDelete || acceptedPublishedDelete;
   }
 
   clearMicroStandardCell(wx, wy, wz) {
-    const removed = this.microVoxels.clearStandardCell(wrapX(wx), wy, wrapZ(wz));
-    if (removed) {
-      this.editPersistence?.removeMicroStandardCell(wx, wy, wz);
+    wx = wrapX(wx);
+    wz = wrapZ(wz);
+    const { cx, cz } = this.worldToChunkCoords(wx, wz);
+    const pendingSameChunk = Boolean(
+      this.pendingRemoteChunkApply?.key === World.getChunkKey(cx, cz),
+    );
+    let publishedCount = 0;
+    if (pendingSameChunk) {
+      const baseX = wx * MICRO_DIVISIONS;
+      const baseY = wy * MICRO_DIVISIONS;
+      const baseZ = wz * MICRO_DIVISIONS;
+      for (let dx = 0; dx < MICRO_DIVISIONS; dx++) {
+        for (let dy = 0; dy < MICRO_DIVISIONS; dy++) {
+          for (let dz = 0; dz < MICRO_DIVISIONS; dz++) {
+            if (this.microVoxels.getPublishedCollisionColor(
+              baseX + dx,
+              baseY + dy,
+              baseZ + dz,
+            ) !== null) publishedCount++;
+          }
+        }
+      }
+    }
+
+    const removed = this.microVoxels.clearStandardCell(wx, wy, wz);
+    const acceptedPublishedClear = removed === 0 && publishedCount > 0;
+    if (removed || acceptedPublishedClear) {
+      if (removed) this.microVoxels.prioritizeStandardCell(wx, wz);
+      this.editPersistence?.removeMicroStandardCell(
+        wx,
+        wy,
+        wz,
+        true,
+        pendingSameChunk,
+      );
       this.trackPendingRemoteMicroOverride({
         type: 'clear-standard',
-        wx: wrapX(wx),
+        wx,
         wy,
-        wz: wrapZ(wz),
+        wz,
       });
       this.terrainVersion++;
     }
-    return removed;
+    return Math.max(removed, publishedCount);
   }
 
   private trackPendingRemoteMicroOverride(override: PendingMicroOverride) {
@@ -581,14 +686,42 @@ export class World {
     if (World.getChunkKey(cx, cz) === applying.key) applying.localMicroOverrides.push(override);
   }
 
+  /** Whether the latest queued local intent already leaves this microcell empty. */
+  private pendingRemoteOverridesDeleteMicroCell(
+    applying: PendingRemoteChunkApplyJob,
+    mx: number,
+    my: number,
+    mz: number,
+  ) {
+    const wx = Math.floor(mx / MICRO_DIVISIONS);
+    const wy = Math.floor(my / MICRO_DIVISIONS);
+    const wz = Math.floor(mz / MICRO_DIVISIONS);
+    for (let index = applying.localMicroOverrides.length - 1; index >= 0; index--) {
+      const override = applying.localMicroOverrides[index];
+      if (override.type === 'set' || override.type === 'delete') {
+        if (override.mx !== mx || override.my !== my || override.mz !== mz) continue;
+        return override.type === 'delete';
+      }
+      if (override.wx !== wx || override.wy !== wy || override.wz !== wz) continue;
+      return override.type === 'clear-standard';
+    }
+    return false;
+  }
+
   hasMicroInStandardCell(wx, wy, wz) {
     return this.microVoxels.hasAnyInStandardCell(wrapX(wx), wy, wrapZ(wz));
   }
 
-  raycastMicro(origin, direction, maxDistance = 10) {
-    // Tool targeting should follow the same published view the player sees
-    // while an authoritative micro snapshot is staged.
-    return this.microVoxels.raycast(origin, direction, maxDistance, null, true);
+  raycastMicro(origin, direction, maxDistance = 10, usePublishedCollision = true) {
+    // Interactive targeting follows the published view by default. Script
+    // queries can opt into the immediate logical state instead.
+    return this.microVoxels.raycast(
+      origin,
+      direction,
+      maxDistance,
+      null,
+      usePublishedCollision,
+    );
   }
 
   raycastMicroCollision(origin, direction, maxDistance = 10) {
@@ -627,13 +760,15 @@ export class World {
    * occupied candidates; the final result comes from an exact intersection with
    * the same bent face triangles that LowPolyMesher sends to the GPU.
    */
-  raycastBent(originBent, dirBent, maxDistance = 8) {
+  raycastBent(originBent, dirBent, maxDistance = 8, usePublishedCollision = true) {
     const result = this.raycastBentVoxelFaces(
       originBent,
       dirBent,
       maxDistance,
       1,
-      (x, y, z) => this.getBlock(x, y, z),
+      (x, y, z) => usePublishedCollision
+        ? (this.getPublishedStandardCell(x, y, z)?.block ?? this.getBlock(x, y, z))
+        : this.getBlock(x, y, z),
       value => value !== BlockTypes.AIR
     );
     if (!result) return { hit: false };
@@ -647,7 +782,9 @@ export class World {
       placePos: { x: x + normal.x, y: y + normal.y, z: z + normal.z },
       normal,
       block: result.value,
-      color: this.getBlockColor(x, y, z),
+      color: usePublishedCollision
+        ? (this.getPublishedStandardCell(x, y, z)?.color ?? this.getBlockColor(x, y, z))
+        : this.getBlockColor(x, y, z),
       size: 1,
       distance: result.distance,
       entry: result.entry
@@ -657,13 +794,18 @@ export class World {
   /**
    * Exact bent-face raycast for 0.2 m micro voxels.
    */
-  raycastMicroBent(originBent, dirBent, maxDistance = 8) {
+  raycastMicroBent(originBent, dirBent, maxDistance = 8, usePublishedCollision = true) {
     const result = this.raycastBentVoxelFaces(
       originBent,
       dirBent,
       maxDistance,
       MICRO_DIVISIONS,
-      (mx, my, mz) => this.microVoxels.get(mx, my, mz),
+      // The old mesh remains visible while a local edit or remote snapshot is
+      // rebuilt. Pick the matching published occupancy so rapid clicks cannot
+      // tunnel through that visible surface into live cells behind it.
+      (mx, my, mz) => usePublishedCollision
+        ? this.microVoxels.getPublishedCollisionColor(mx, my, mz)
+        : this.microVoxels.get(mx, my, mz),
       value => value !== null && value !== undefined
     );
     if (!result) return { hit: false };
@@ -997,6 +1139,71 @@ export class World {
       updates++;
     }
 
+  }
+
+  /** Current publication progress for the detailed terrain AOI. */
+  getTerrainAoiLoadProgress(): TerrainAoiLoadProgress {
+    const totalChunks = this.activeChunkKeys.size;
+    let readyChunks = 0;
+    for (const key of this.activeChunkKeys) {
+      const chunk = this.chunks.get(key);
+      if (
+        chunk?.mesh
+        && !chunk.isDirty
+        && !this.dirtyChunks.has(chunk)
+        && !this.crossLayerPublicationChunks.has(key)
+        && !this.pendingRemoteChunkUpdates.has(key)
+        && this.pendingRemoteChunkApply?.key !== key
+        && !this.pendingTerrainSnapshots.has(key)
+      ) readyChunks++;
+    }
+    const microReady = !this.microVoxels.hasPendingMeshWork(this.activeChunkKeys);
+    return {
+      readyChunks,
+      totalChunks,
+      ready: totalChunks > 0 && readyChunks === totalChunks && microReady,
+    };
+  }
+
+  /**
+   * Build and publish every detailed chunk in the initial active AOI before
+   * gameplay begins. Browser generation stays in the terrain worker and this
+   * loop yields every frame so the entry screen can repaint its progress.
+   */
+  async preloadTerrainAoi(
+    playerX: number,
+    playerZ: number,
+    onProgress?: (progress: TerrainAoiLoadProgress) => void,
+  ) {
+    this.updateChunksAround(playerX, playerZ, false);
+    let lastReadyChunks = -1;
+
+    while (true) {
+      const progress = this.getTerrainAoiLoadProgress();
+      if (progress.readyChunks !== lastReadyChunks || progress.ready) {
+        onProgress?.(progress);
+        lastReadyChunks = progress.readyChunks;
+      }
+      if (progress.ready) return progress;
+
+      if (this.requireOffThreadTerrainStreaming && !this.terrainWorker) {
+        throw new Error('The terrain worker stopped before the initial AOI finished loading.');
+      }
+      this.updateChunksAround(
+        playerX,
+        playerZ,
+        true,
+        STREAM_WORK_BUDGET_MS,
+        this.requireOffThreadTerrainStreaming,
+      );
+      await new Promise<void>(resolve => {
+        if (typeof globalThis.requestAnimationFrame === 'function') {
+          globalThis.requestAnimationFrame(() => resolve());
+        } else {
+          globalThis.setTimeout(resolve, 0);
+        }
+      });
+    }
   }
 
   private publishChunkMesh(
@@ -1375,21 +1582,39 @@ export class World {
    * too busy to grant requestIdleCallback time.
    */
   processInteractiveTerrainWork() {
-    if (!this.terrainWorker || this.interactiveDirtyChunks.size === 0) return false;
+    // The layer's dirty queue is the single source of truth. Priority markers
+    // only reorder work; losing or invalidating one can never make a dirty
+    // partition ineligible for these guaranteed foreground slices.
+    const microUpdated = this.microVoxels.updateMesh(
+      MAX_MICRO_MESH_CHUNKS_PER_FRAME,
+      this.activeChunkKeys,
+      this.microMeshBuildBlockedChunks,
+      INTERACTIVE_MICRO_WORK_BUDGET_MS,
+      this.crossLayerPublicationChunks,
+    );
+    for (const mesh of this.microVoxels.takeRecentlyRebuiltMeshes()) {
+      hookSceneMaterials(mesh);
+    }
+
+    if (!this.terrainWorker || this.interactiveDirtyChunks.size === 0) return microUpdated;
     const published = this.publishCompletedTerrainWorkerJob();
     const dispatched = this.dispatchTerrainWorkerJob();
-    return published || dispatched;
+    return microUpdated || published || dispatched;
   }
 
   private commitCrossLayerPublication(key: string) {
     if (!this.crossLayerPublicationChunks.has(key)) return;
     this.microVoxels.publishDeferredForStandardChunk(key, mesh => hookSceneMaterials(mesh));
     this.crossLayerPublicationChunks.delete(key);
+    this.crossLayerPublishedStandardCells.delete(key);
   }
 
   private abortCrossLayerPublication(key: string) {
     if (!this.crossLayerPublicationChunks.delete(key)) return;
     this.microVoxels.abortDeferredForStandardChunk(key);
+    if (!this.suspendedCrossLayerPublicationChunks.has(key)) {
+      this.crossLayerPublishedStandardCells.delete(key);
+    }
   }
 
   private suspendCrossLayerPublication(key: string) {
@@ -1668,6 +1893,7 @@ export class World {
     const extracted = this.microVoxels.extractRegion(minX, minY, minZ, maxX, maxY, maxZ);
     if (extracted.length > 0) {
       for (const cell of extracted) {
+        this.microVoxels.prioritizeMeshAt(cell.mx, cell.mz);
         this.editPersistence?.removeMicro(cell.mx, cell.my, cell.mz);
         this.trackPendingRemoteMicroOverride({
           type: 'delete',
@@ -1690,6 +1916,7 @@ export class World {
     const extracted = this.microVoxels.extractCellsInBox(minMx, minMy, minMz, maxMx, maxMy, maxMz);
     if (extracted.length > 0) {
       for (const cell of extracted) {
+        this.microVoxels.prioritizeMeshAt(cell.mx, cell.mz);
         this.editPersistence?.removeMicro(cell.mx, cell.my, cell.mz);
         this.trackPendingRemoteMicroOverride({
           type: 'delete',

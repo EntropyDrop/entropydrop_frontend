@@ -172,6 +172,7 @@ test('torus world raycastMicroBent hits a known microcell', () => {
     }
   }
   world.setMicroBlock(50, 25, 50, 0x12abef);
+  world.microVoxels.updateMesh();
   const origin = bendPoint(10, 30, 10);
   const target = bendPoint(10, 5, 10);
   const dir = target.clone().sub(origin).normalize();
@@ -185,12 +186,74 @@ test('torus world raycastMicroBent hits a known microcell', () => {
   assert.deepEqual(hit.normal, { x: 0, y: 1, z: 0 }, 'microcell top-face normal should point toward air');
 });
 
+test('bent micro raycast cannot tunnel through the published mesh during a rebuild', () => {
+  const world = new World(new THREE.Scene()) as any;
+  const mx = TORUS_SPAWN_X * 5;
+  const topMy = 101;
+  const mz = TORUS_SPAWN_Z * 5;
+  world.setMicroBlock(mx, topMy - 1, mz, 0x00ff00);
+  world.setMicroBlock(mx, topMy, mz, 0xff0000);
+  world.microVoxels.updateMesh();
+
+  const publishedMesh = world.microVoxels.meshChunks.values().next().value;
+  const origin = bendPoint(mx / 5 + 0.1, 30, mz / 5 + 0.1);
+  const target = bendPoint(mx / 5 + 0.1, (topMy - 1) / 5 + 0.1, mz / 5 + 0.1);
+  const direction = target.clone().sub(origin).normalize();
+  assert.equal(world.raycastMicroBent(origin, direction, 20).microPos.y, topMy);
+
+  world.removeMicroBlock(mx, topMy, mz);
+  world.microVoxels.updateMesh(1, null, null, 0);
+
+  assert.equal(world.microVoxels.meshChunks.values().next().value, publishedMesh,
+    'the previous complete mesh stays visible while the replacement is pending');
+  const pendingHit = world.raycastMicroBent(origin, direction, 20);
+  assert.equal(pendingHit.microPos.y, topMy,
+    'picking must stay on the same visible surface until mesh publication');
+  assert.equal(pendingHit.color, 0xff0000,
+    'the pending pick should retain the published voxel color');
+  assert.equal(world.raycastMicroBent(origin, direction, 20, false).microPos.y, topMy - 1,
+    'a scoped live destructive query may advance without changing the published hover surface');
+
+  while (world.microVoxels.dirty) world.microVoxels.updateMesh();
+  assert.equal(world.raycastMicroBent(origin, direction, 20).microPos.y, topMy - 1,
+    'picking may advance to the voxel behind only after the replacement mesh publishes');
+});
+
+test('standard-to-micro conversion keeps picking on the visible standard mesh', () => {
+  const world = new World(new THREE.Scene()) as any;
+  const wx = TORUS_SPAWN_X;
+  const wy = 200;
+  const wz = TORUS_SPAWN_Z;
+  world.setRenderDistance(3);
+  world.updateChunksAround(wx, wz);
+  world.setBlock(wx, wy, wz, BlockTypes.COLOR_BLOCK, true, 0x12abef);
+  world.updateChunksAround(wx, wz);
+
+  const chunk = world.getChunk(Math.floor(wx / 16), Math.floor(wz / 16));
+  const publishedMesh = chunk.mesh;
+  const origin = bendPoint(wx + 0.5, wy + 5, wz + 0.5);
+  const target = bendPoint(wx + 0.5, wy + 0.5, wz + 0.5);
+  const direction = target.clone().sub(origin).normalize();
+  assert.deepEqual(world.raycastBent(origin, direction, 8).hitPos, { x: wx, y: wy, z: wz });
+
+  assert.equal(world.subdivideBlock(wx, wy, wz), 125);
+  assert.equal(chunk.mesh, publishedMesh,
+    'the standard mesh remains visible until the micro replacement is ready');
+  const pendingStandardHit = world.raycastBent(origin, direction, 8);
+  assert.deepEqual(pendingStandardHit.hitPos, { x: wx, y: wy, z: wz },
+    'rapid follow-up picking must not pass through the visible standard voxel');
+  assert.equal(pendingStandardHit.color, 0x12abef);
+  assert.equal(world.raycastMicroBent(origin, direction, 8).hit, false,
+    'the new micro cells stay unpickable until their mesh is published');
+});
+
 test('bent micro ray returns the exact rendered face point near an edge', () => {
   const world = new World(new THREE.Scene()) as any;
   const mx = TORUS_SPAWN_X * 5;
   const my = 80 * 5;
   const mz = (TORUS_SPAWN_Z + 6.4) * 5;
   world.setMicroBlock(mx, my, mz, 0xff44aa);
+  world.microVoxels.updateMesh();
 
   const visibleTarget = new THREE.Vector3(mx / 5 + 0.1, my / 5 + 0.01, mz / 5);
   const eyeFlat = new THREE.Vector3(visibleTarget.x, visibleTarget.y, TORUS_SPAWN_Z);
@@ -271,6 +334,26 @@ test('simulation refreshes the active window without spending another mesh budge
 
   world.updateChunksAround(TORUS_SPAWN_X, TORUS_SPAWN_Z);
   assert.ok(world.chunks.size > 0, 'the render-frame budget should still progress chunk streaming');
+});
+
+test('initial AOI preload waits until every active terrain chunk is published', async () => {
+  const world = new World(new THREE.Scene()) as any;
+  // Keep the focused test to a 3x3 AOI without changing the production clamp.
+  world.renderDistance = 1;
+  const progress: any[] = [];
+
+  const complete = await world.preloadTerrainAoi(
+    TORUS_SPAWN_X,
+    TORUS_SPAWN_Z,
+    (value: any) => progress.push(value),
+  );
+
+  assert.deepEqual(complete, { readyChunks: 9, totalChunks: 9, ready: true });
+  assert.equal(progress.at(0).readyChunks < 9, true);
+  assert.equal(progress.at(-1).ready, true);
+  for (const key of world.activeChunkKeys) {
+    assert.ok(world.chunks.get(key)?.mesh, `AOI chunk ${key} must be published before entry`);
+  }
 });
 
 test('off-thread streaming leaves unfinished chunks empty and non-colliding', () => {
@@ -404,7 +487,11 @@ test('a dirty micro mesh keeps its already-published collision live', () => {
   }, true);
   assert.equal(collision.length, 1,
     'marking the 4 m render partition dirty must not disable its collision');
-  assert.equal(world.getMicroCollisionBlock(5, 1_000, 5)?.color, 0x445566);
+  assert.equal(world.getMicroCollisionBlock(5, 1_000, 5)?.color, 0x112233,
+    'collision and picking should retain the color represented by the published mesh');
+  world.microVoxels.updateMesh();
+  assert.equal(world.getMicroCollisionBlock(5, 1_000, 5)?.color, 0x445566,
+    'the new color becomes visible atomically with its replacement mesh');
 });
 
 test('a standard remesh swaps detailed geometry without clearing its ownership mask', () => {

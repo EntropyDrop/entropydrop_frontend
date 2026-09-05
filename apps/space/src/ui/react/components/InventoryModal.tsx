@@ -940,7 +940,11 @@ function MarketResourceCard({
     void marketClient.loadResourceContent(
       resource.content_url,
       abortController.signal,
-      resource.digest
+      {
+        kind: resource.kind,
+        name: resource.name,
+        digest: resource.digest,
+      }
     )
       .then(payload => decodeInventoryResource(payload, resource.kind).portable)
       .then(portable => {
@@ -952,7 +956,7 @@ function MarketResourceCard({
         if (!abortController.signal.aborted) setPreviewFailed(true);
       });
     return () => abortController.abort();
-  }, [marketClient, resource.content_url, resource.digest, resource.kind]);
+  }, [marketClient, resource.content_url, resource.digest, resource.kind, resource.name]);
 
   const thumbnail = resource.kind === 'colorset'
     ? null

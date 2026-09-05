@@ -4,6 +4,7 @@ import {
   DEFAULT_AGENT_CONTEXT_K_TOKENS,
   DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS
 } from '../../../engine/contraption/AgentConfig.ts';
+import { compareComponentIds } from '../../../engine/contraption/Contraption.ts';
 import { spaceUiStore, type AgentMessage } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
 import { AgentApiKeySecurityNotice } from './AgentApiKeySecurityNotice.tsx';
@@ -11,9 +12,7 @@ import { AgentModelField } from './AgentModelField.tsx';
 import { ThoughtBox } from './ThoughtBox.tsx';
 
 function nodeIcon(node: any): string {
-  if (node?.id === 'root') return '★';
-  if (node?.kind === 'bearing') return '↻';
-  if (node?.kind === 'piston') return '↕';
+  if (node?.parentId === null) return '★';
   return '•';
 }
 
@@ -30,8 +29,7 @@ function HierarchyNode({ node, depth, selected }: { node: any; depth: number; se
         <span className="node-left">
           <span className="node-indent">{depth > 0 ? '└ ' : ''}</span>
           <span className="node-icon">{nodeIcon(node)}</span>
-          <span className="node-name">{node.id === 'root' ? 'root (body)' : node.id}</span>
-          {node.kind && node.kind !== 'child' && node.kind !== 'root' ? <span className="node-kind-tag">{node.kind}</span> : null}
+          <span className="node-name">{node.id}{node.parentId === null ? ' (body)' : ''}</span>
         </span>
         <span className="node-right"><span className="node-kind-tag">{node.bodyType}</span><span className="node-count-badge">{node.blockCount} blk</span></span>
       </button>
@@ -79,7 +77,7 @@ function ComponentInspector() {
     <div id="component-inspector-panel" className="component-inspector-panel">
       <div className="inspector-field"><label className="inspector-label">ID</label><div className="inspector-input-row"><input id="prop-node-name" className="inspector-input" value={name} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') spaceUiStore.renameSelectedComponent(name); }} /><button id="prop-rename-btn" tabIndex={-1} className="small-action-btn" title="Rename component id (unique across the whole entity)" onClick={() => spaceUiStore.renameSelectedComponent(name)}>Rename</button></div></div>
       <div className="inspector-grid">
-        <div className="inspector-field has-tooltip"><label className="inspector-sublabel" title="Component role in the hierarchy: root body is the main rigid body, child is an attached sub-assembly">Type ⓘ</label><span id="prop-node-kind" className="inspector-val">{properties.kind === 'root' ? 'root body' : properties.kind}</span><div className="tooltip-text">Role in hierarchy:<br /><b>root body</b> is the entity&apos;s main rigid body;<br /><b>child</b> is an attached sub-assembly.</div></div>
+        <div className="inspector-field has-tooltip"><label className="inspector-sublabel" title="Derived hierarchy role: root body is the main rigid body, child is an attached sub-assembly">Role ⓘ</label><span id="prop-node-kind" className="inspector-val">{properties.kind === 'root' ? 'root body' : properties.kind}</span><div className="tooltip-text">Derived from the tree:<br /><b>root body</b> is the entity&apos;s main rigid body;<br /><b>child</b> is an attached sub-assembly.</div></div>
         <div className="inspector-field"><label className="inspector-sublabel">Parent</label><span id="prop-node-parent" className="inspector-val">{properties.parentId || 'None'}</span></div>
       </div>
       <div className="inspector-grid inspector-grid-three">
@@ -200,7 +198,7 @@ function AgentChat() {
         <ThoughtBox reasoning={message.reasoning} isStreaming={message.isStreaming} title="Thought" />
         {message.content ? <div className="agent-msg-text">{message.content}</div> : message.isStreaming ? <div className="agent-msg-text text-muted">Generating... ▌</div> : null}
       </div>
-      {message.role === 'assistant' && message.code && !message.isStreaming ? <button tabIndex={-1} className="agent-apply-btn" onClick={() => spaceUiStore.applyAgentCode(message.code!, message.targetId || 'root')}>Apply to {message.targetId || 'root'} component</button> : null}
+      {message.role === 'assistant' && message.code && !message.isStreaming ? <button tabIndex={-1} className="agent-apply-btn" onClick={() => spaceUiStore.applyAgentCode(message.code!, message.targetId || state.editingContraption?.rootComponentId)}>Apply to {message.targetId || state.editingContraption?.rootComponentId} component</button> : null}
     </React.Fragment>
   );
   return (
@@ -239,10 +237,16 @@ export function CodeEditorModal() {
   const open = state.activeModal === 'code' && !!state.editingContraption;
   const contraption = state.editingContraption;
   const tree = useMemo(() => contraption?.getHierarchyTree?.(), [contraption, state.revision]);
-  const nodes = contraption ? [...(contraption.entityNodes?.values?.() || [])] : [];
+  const nodes = contraption
+    ? [...(contraption.entityNodes?.values?.() || [])]
+      .sort((left: any, right: any) => compareComponentIds(left.id, right.id))
+    : [];
   const playback = spaceUiStore.getGlobalPlayback();
   if (!open) return null;
-  const childIds = [...(contraption.entityNodes?.keys?.() || [])].filter(id => id !== 'root');
+  const childIds = nodes
+    .filter((node: any) => node.parentId !== null)
+    .map((node: any) => node.id)
+    .sort(compareComponentIds);
   const runtimeTitle = `Runtime: #${contraption.id} (${contraption.blocks.length} blocks) · ${String(contraption.bodyType).toUpperCase()}${childIds.length ? ` · children: ${childIds.join(', ')}` : ' · no children'}`;
   const status = state.telemetry.status;
   const backendManaged = contraption.serverManaged === true;
@@ -288,7 +292,7 @@ export function CodeEditorModal() {
               return <button type="button" tabIndex={-1} key={node.id} className={`code-tab ${state.selectedComponentNodeId === node.id ? 'active' : ''} ${code?.trim?.() ? 'has-script' : ''} ${enabled ? 'enabled' : 'disabled'}`} onClick={() => spaceUiStore.selectComponentTreeNode(node.id)}><span className={`code-tab-dot ${enabled ? 'on' : 'off'}`} /><span>{nodeIcon(node)} {node.id}.js</span></button>;
             })}</div>
             <div className="code-editor-main"><div className="code-gutter" id="code-gutter" /><textarea id="script-textarea" className="code-textarea" spellCheck={false} placeholder="// Write your controller code here..." value={state.scriptDraft} onChange={event => spaceUiStore.setScriptDraft(event.target.value)} /></div>
-            <div className="code-footer-hint" id="code-footer-hint"><span id="code-target-hint">Editing: {nodeIcon(contraption.getEntityNode?.(state.selectedComponentNodeId))} {state.selectedComponentNodeId}{state.selectedComponentNodeId === 'root' ? ' (body)' : ''}</span><span id="code-api-hint" className="code-api-hint">API: self · ctx</span></div>
+            <div className="code-footer-hint" id="code-footer-hint"><span id="code-target-hint">Editing: {nodeIcon(contraption.getEntityNode?.(state.selectedComponentNodeId))} {state.selectedComponentNodeId}{contraption.getEntityNode?.(state.selectedComponentNodeId)?.parentId === null ? ' (body)' : ''}</span><span id="code-api-hint" className="code-api-hint">API: self · ctx</span></div>
           </div>
           <div className="telemetry-panel">
             <div className="telemetry-section-title">3D VIEW</div><div className="entity-preview-frame"><canvas id="entity-preview-canvas" aria-label="Interactive preview of the entity in the current world" ref={attachPreviewCanvas} /></div>

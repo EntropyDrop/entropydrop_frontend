@@ -34,6 +34,7 @@ function makeContraptionWithChildren() {
     new THREE.Vector3(10, 20, 10),
     scene,
     {
+      rootComponentId: 'root',
       childEntities: [
         { id: 'arm', parentId: 'root', kind: 'child', pivot: [0.5, 0.5, 0.5], blockKeys: [['0', '1', '0']] },
         { id: 'hand', parentId: 'arm', kind: 'child', pivot: [0.5, 1.5, 0.5], blockKeys: [['2', '0', '0']] }
@@ -71,7 +72,7 @@ test('serializing the root subtree rebuilds identical structure, scripts, and to
   assert.equal(manager.contraptions.includes(copy), true, 'the new entity should be registered');
 });
 
-test('rebuilding a serialized child subtree remaps its root to the new root', () => {
+test('rebuilding a serialized child subtree preserves its component id as the new root', () => {
   const scene = new THREE.Scene();
   const manager = new ContraptionManager(scene, {}, null, null);
   const original = makeContraptionWithChildren();
@@ -79,20 +80,19 @@ test('rebuilding a serialized child subtree remaps its root to the new root', ()
   const slot = original.serializeSubtree('arm');
   assert.equal(slot.blockCount, 2, 'arm and hand should contribute two blocks');
   assert.equal(slot.nodeCount, 2);
-  assert.equal(slot.rootId, 'root');
-  assert.equal('rootIds' in slot, false, 'inventory entities always have one explicit root');
+  assert.equal(slot.rootComponentId, 'arm', 'the independent subtree keeps its original root id');
   assert.deepEqual(slot.childEntities.map(child => child.id), ['hand']);
 
   const copy = manager.buildFromSlot(slot, new THREE.Vector3(0, 0, 0));
   assert.ok(copy);
   assert.equal(copy.blocks.length, 2);
-  const armBlocks = copy.blocks.filter(b => b.entityId === 'root');
-  assert.equal(armBlocks.length, 1, 'the original arm block should belong to the new root');
+  const armBlocks = copy.blocks.filter(b => b.entityId === 'arm');
+  assert.equal(armBlocks.length, 1, 'the original arm block should remain owned by arm');
   const handBlocks = copy.blocks.filter(b => b.entityId === 'hand');
   assert.equal(handBlocks.length, 1, 'the hand component should remain');
-  assert.equal(copy.getEntityNode('hand').parentId, 'root', 'hand should attach to the new root');
-  assert.equal(copy.getNodeScript('root'), 'self.setLocalSpin([0, 1, 0], 60);', 'arm script should map to root');
-  assert.equal(copy.isNodeScriptEnabled('root'), false, 'arm enabled state should map to root');
+  assert.equal(copy.getEntityNode('hand').parentId, 'arm', 'hand should attach to the preserved subtree root');
+  assert.equal(copy.getNodeScript('arm'), 'self.setLocalSpin([0, 1, 0], 60);', 'arm script should keep its id');
+  assert.equal(copy.isNodeScriptEnabled('arm'), false, 'arm enabled state should keep its id');
 });
 
 test('serializing several subtrees attaches them below one explicit root', () => {
@@ -107,6 +107,7 @@ test('serializing several subtrees attaches them below one explicit root', () =>
     new THREE.Vector3(),
     scene,
     {
+      rootComponentId: 'root',
       childEntities: [
         { id: 'arm', parentId: 'root', collisionEnabled: false },
         { id: 'wing', parentId: 'root' }
@@ -116,17 +117,16 @@ test('serializing several subtrees attaches them below one explicit root', () =>
 
   const slot = original.serializeSubtrees(['arm', 'wing']);
 
-  assert.equal(slot.rootId, 'root');
-  assert.equal('rootIds' in slot, false);
+  assert.equal(slot.rootComponentId, 'selection', 'the merged selection has one explicit synthetic root');
   assert.equal(slot.nodeCount, 3);
   assert.deepEqual(slot.childEntities.map(child => [child.id, child.parentId]), [
-    ['arm', 'root'],
-    ['wing', 'root']
+    ['arm', 'selection'],
+    ['wing', 'selection']
   ]);
   const copy = manager.buildFromSlot(slot, new THREE.Vector3());
   assert.ok(copy);
-  assert.equal(copy.getEntityNode('arm').parentId, 'root');
-  assert.equal(copy.getEntityNode('wing').parentId, 'root');
+  assert.equal(copy.getEntityNode('arm').parentId, 'selection');
+  assert.equal(copy.getEntityNode('wing').parentId, 'selection');
   assert.equal(copy.isNodeCollisionEnabled('arm'), false);
 });
 
@@ -570,7 +570,7 @@ test('Wrench grab holds a stationary target without pushing and follows player m
     [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
     new THREE.Vector3(0, 0, -5),
     scene,
-    { bodyType: 'dynamic', friction: 0 }
+    { rootComponentId: 'root', bodyType: 'dynamic', friction: 0 }
   );
   entity.useGravity = false;
   manager.registerContraption(entity);
@@ -632,7 +632,7 @@ test('Wrench grab approaches a moved target without rapid overshoot oscillation'
     [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
     new THREE.Vector3(0, 0, -5),
     scene,
-    { bodyType: 'dynamic', friction: 0 }
+    { rootComponentId: 'root', bodyType: 'dynamic', friction: 0 }
   );
   entity.useGravity = false;
   manager.registerContraption(entity);
@@ -704,7 +704,7 @@ test('Wrench grab compensates entity gravity without vertical snapping', () => {
     [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
     new THREE.Vector3(0, 4, -5),
     scene,
-    { bodyType: 'dynamic', friction: 0 }
+    { rootComponentId: 'root', bodyType: 'dynamic', friction: 0 }
   );
   manager.registerContraption(entity);
 
@@ -768,7 +768,7 @@ test('Wrench grab is mass independent for extremely heavy entities', () => {
     [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
     new THREE.Vector3(0, 0, -5),
     scene,
-    { bodyType: 'dynamic', friction: 0 }
+    { rootComponentId: 'root', bodyType: 'dynamic', friction: 0 }
   );
   entity.useGravity = false;
   entity.setNodeBodyMass('root', 1_000_000_000);
@@ -832,7 +832,7 @@ test('Wrench cannot repeatedly drive a grabbed entity through terrain', () => {
     [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
     new THREE.Vector3(0, 0, -5),
     scene,
-    { bodyType: 'dynamic', friction: 0, restitution: 0 }
+    { rootComponentId: 'root', bodyType: 'dynamic', friction: 0, restitution: 0 }
   );
   entity.useGravity = false;
   manager.registerContraption(entity);
@@ -889,7 +889,7 @@ test('Wrench cannot drive a grabbed entity through another entity', () => {
     [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
     new THREE.Vector3(0, 0, -5),
     scene,
-    { bodyType: 'dynamic', friction: 0, restitution: 0 }
+    { rootComponentId: 'root', bodyType: 'dynamic', friction: 0, restitution: 0 }
   );
   grabbed.useGravity = false;
   const obstacle = new Contraption(
@@ -953,7 +953,7 @@ test('Wrench can pull apart rotated entity boxes whose broadphase bounds overlap
     [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
     new THREE.Vector3(0, 10, 0),
     scene,
-    { bodyType: 'dynamic', friction: 0, restitution: 0 }
+    { rootComponentId: 'root', bodyType: 'dynamic', friction: 0, restitution: 0 }
   );
   const obstacle = new Contraption(
     8,

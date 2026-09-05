@@ -6,8 +6,8 @@ import {
 } from '../src/bootstrap/SpaceEntityClient.ts';
 
 
-const definition = Uint8Array.from([8, 3, 26, 0]);
-const definitionDigest = '754164027d40c7b9dafdccea89a044ddd7265be5cc6d497cb6976f0777e43b78';
+const definition = Uint8Array.from([8, 4, 26, 0]);
+const definitionDigest = '0caed08c0cdfe078464c77fbc4032b985d9757db85e8fac65733d57ee7fb5917';
 const snapshot = new TextEncoder().encode('{"position":[1,32,2]}');
 const snapshotDigest = '8ac8c3d59ef8d0cb5704fde86de4e635578b7f9fa8f32536d2fdf9572e3df2c2';
 
@@ -17,7 +17,7 @@ function entity(overrides: Record<string, unknown> = {}) {
     world_id: 'world-1',
     owner_user_id: 'owner-1',
     name: 'Walker',
-    schema_version: 3,
+    schema_version: 4,
     definition_digest: definitionDigest,
     definition_size_bytes: definition.byteLength,
     definition_url: '/ignored/untrusted/path',
@@ -121,11 +121,11 @@ test('SpaceEntityClient lists, verifies definitions, creates, and changes run st
   assert.equal((calls[0].options.headers as any).Authorization, 'Bearer space-token');
   assert.equal(calls[1].url, `https://api.example.test/space/api/v2/worlds/world-1/entities/3cd7daba-d196-44e8-a433-cf139258f617/definition?digest=${definitionDigest}`);
   assert.equal((calls[1].options.headers as any).Authorization, 'Bearer space-token');
-  assert.equal(JSON.parse(String(calls[2].options.body)).definition_base64, 'CAMaAA==');
+  assert.equal(JSON.parse(String(calls[2].options.body)).definition_base64, 'CAQaAA==');
   assert.equal(JSON.parse(String(calls[2].options.body)).definition, undefined);
   assert.match(JSON.parse(String(calls[2].options.body)).operation_id, /^[0-9a-f-]{36}$/i);
   assert.match(calls[3].url, /\/browser$/);
-  assert.equal(JSON.parse(String(calls[3].options.body)).definition_base64, 'CAMaAA==');
+  assert.equal(JSON.parse(String(calls[3].options.body)).definition_base64, 'CAQaAA==');
   assert.match(calls[4].url, /\/snapshot$/);
   assert.match(calls[5].url, /\/checkpoint$/);
   assert.equal(calls[6].options.method, 'DELETE');

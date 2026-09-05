@@ -138,7 +138,7 @@ export class ContraptionPhysics {
   finishContraptionFrame(frame) {
     if (!frame) return;
     const contraption = frame.contraption;
-    contraption.isOnGround = contraption.getRigidBody?.('root')?.isOnGround || false;
+    contraption.isOnGround = contraption.getRigidBody?.(contraption.rootComponentId)?.isOnGround || false;
   }
 
   inverseMass(body) {
@@ -270,9 +270,9 @@ export class ContraptionPhysics {
     const list = [...constraints];
     for (let iteration = 0; iteration < iterations; iteration++) {
       for (const constraint of list) {
-        const bodyA = constraint.bodyA === 'world' ? null : contraption.getRigidBody?.(constraint.bodyA);
+        const bodyA = constraint.bodyA === null ? null : contraption.getRigidBody?.(constraint.bodyA);
         const bodyB = contraption.getRigidBody?.(constraint.bodyB);
-        if (!bodyB || (constraint.bodyA !== 'world' && !bodyA)) continue;
+        if (!bodyB || (constraint.bodyA !== null && !bodyA)) continue;
         if (this.inverseMass(bodyA) + this.inverseMass(bodyB) <= 0) continue;
         this.solvePointConstraint(bodyA, bodyB, constraint);
         if (constraint.type === 'hinge') this.solveHingeOrientation(bodyA, bodyB, constraint, false);
@@ -566,7 +566,7 @@ export class ContraptionPhysics {
     const contraption = box?.contraption;
     if (!cell || !contraption) return null;
     const node = contraption.getEntityNode?.(cell.entityId)
-      || contraption.getEntityNode?.('root');
+      || contraption.getEntityNode?.();
     if (!node) return null;
     const quaternion = node.group.getWorldQuaternion(new THREE.Quaternion());
     const size = cell.span * 0.2;
@@ -859,7 +859,7 @@ export class ContraptionPhysics {
     contraption.syncAllBodyTransforms?.();
     for (const body of bodies) {
       if (body.type !== BodyType.KINEMATIC || body.simulationEnabled === false) continue;
-      if (body.id !== 'root') contraption.syncBodyToNode?.(body);
+      if (body.id !== contraption.rootComponentId) contraption.syncBodyToNode?.(body);
       body.previousKinematicPosition?.copy(body.position);
       body.previousKinematicQuaternion?.copy(body.quaternion);
     }
@@ -913,8 +913,8 @@ export class ContraptionPhysics {
           || ba.maxY < bb.minY || ba.minY > bb.maxY
           || ba.maxZ < bb.minZ || ba.minZ > bb.maxZ
         ) continue;
-        const ownerA = a.getRigidBody?.(ba.bodyId || ba.entityId || 'root');
-        const ownerB = b.getRigidBody?.(bb.bodyId || bb.entityId || 'root');
+        const ownerA = a.getRigidBody?.(ba.bodyId || ba.entityId || a.rootComponentId);
+        const ownerB = b.getRigidBody?.(bb.bodyId || bb.entityId || b.rootComponentId);
         if (!ownerA || !ownerB) continue;
         // Kinematic components resolve through their nearest dynamic
         // ancestor: they are scene-graph children of it, so a hit on the
@@ -1115,11 +1115,11 @@ export class ContraptionPhysics {
   markEntitySupport(a, b, bodyA, bodyB, normal) {
     if (normal.y < -0.5 && this.isSimulatedDynamicBody(bodyA)) {
       bodyA.isOnGround = true;
-      if (bodyA.id === 'root') a.isOnGround = true;
+      if (bodyA.id === a.rootComponentId) a.isOnGround = true;
     }
     if (normal.y > 0.5 && this.isSimulatedDynamicBody(bodyB)) {
       bodyB.isOnGround = true;
-      if (bodyB.id === 'root') b.isOnGround = true;
+      if (bodyB.id === b.rootComponentId) b.isOnGround = true;
     }
   }
 
@@ -1166,7 +1166,7 @@ export class ContraptionPhysics {
     for (const cell of contraption.collisionSurfaceEntries || contraption.collisionEntries || []) {
       if (!attached.has(cell.entityId)) continue;
       if (contraption.isNodeCollisionEnabled?.(cell.entityId) === false) continue;
-      const node = contraption.getEntityNode?.(cell.entityId) || contraption.getEntityNode?.('root');
+      const node = contraption.getEntityNode?.(cell.entityId) || contraption.getEntityNode?.();
       let transform = nodeTransforms.get(cell.entityId);
       if (!transform) {
         node?.group?.updateWorldMatrix?.(true, false);
@@ -1878,7 +1878,7 @@ export class ContraptionPhysics {
     }
   }
 
-  applyImpulse(contraption, impulse, worldPoint = null, nodeId = 'root') {
+  applyImpulse(contraption, impulse, worldPoint = null, nodeId = contraption?.rootComponentId) {
     const body = contraption.getRigidBody?.(nodeId);
     if (!this.isSimulatedDynamicBody(body)) return;
     body.velocity.addScaledVector(impulse, 1 / body.mass);

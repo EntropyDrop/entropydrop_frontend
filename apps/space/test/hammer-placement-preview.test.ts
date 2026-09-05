@@ -133,6 +133,7 @@ test('Hammer keeps block sets containing standard voxels on the 1 m grid', () =>
 test('Hammer centres entity geometry on the hit and settles its bottom onto terrain', () => {
   const slot = {
     kind: 'entity',
+    rootComponentId: 'root',
     blocks: [
       { localX: 4, localY: 3, localZ: -2, size: 1, entityId: 'root' },
       { localX: 5, localY: 3, localZ: -2, size: 1, entityId: 'root' }
@@ -168,6 +169,7 @@ test('standalone entity build keeps the rotated Hammer ghost pose exactly', () =
   const slot = {
     name: 'Asymmetric entity',
     kind: 'entity',
+    rootComponentId: 'root',
     blockCount: 2,
     blocks: [
       { localX: 0, localY: 0, localZ: 0, size: 1, color: 0x48dbfb, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
@@ -205,6 +207,7 @@ test('standalone entity build keeps the rotated Hammer ghost pose exactly', () =
 test('Hammer keeps an entity outside a side face while centring it along the tangent axis', () => {
   const slot = {
     kind: 'entity',
+    rootComponentId: 'root',
     blocks: [
       { localX: 4, localY: 0, localZ: -2, size: 1, entityId: 'root' },
       { localX: 5, localY: 0, localZ: -2, size: 1, entityId: 'root' }
@@ -232,6 +235,7 @@ test('Hammer keeps an entity outside a side face while centring it along the tan
 test('Hammer drops a ceiling placement without treating the hit ceiling as floor support', () => {
   const slot = {
     kind: 'entity',
+    rootComponentId: 'root',
     blocks: [{ localX: 0, localY: 0, localZ: 0, size: 1, entityId: 'root' }]
   };
   const controller = makeController(slot);
@@ -263,6 +267,7 @@ test('Hammer drops a ceiling placement without treating the hit ceiling as floor
 test('Hammer uses the highest sampled terrain support instead of embedding a wide entity', () => {
   const slot = {
     kind: 'entity',
+    rootComponentId: 'root',
     blocks: [
       { localX: 0, localY: 0, localZ: 0, size: 1, entityId: 'root' },
       { localX: 1, localY: 0, localZ: 0, size: 1, entityId: 'root' }
@@ -287,6 +292,7 @@ test('Hammer uses the highest sampled terrain support instead of embedding a wid
 test('Hammer keeps terrain placement centred even when it overlaps the player', () => {
   const slot = {
     kind: 'entity',
+    rootComponentId: 'root',
     blocks: [{ localX: 0, localY: 0, localZ: 0, size: 1, entityId: 'root' }]
   };
   const controller = makeController(slot);
@@ -321,6 +327,7 @@ test('Hammer keeps terrain placement centred even when it overlaps the player', 
 test('top-facing component installation keeps the target entity surface as support', () => {
   const slot = {
     kind: 'entity',
+    rootComponentId: 'root',
     blocks: [{ localX: 2, localY: 3, localZ: 4, size: 1, entityId: 'root' }]
   };
   const controller = makeController(slot);
@@ -343,6 +350,7 @@ test('top-facing component installation keeps the target entity surface as suppo
 test('entity-on-entity placement snaps to the targeted component micro grid without terrain correction', () => {
   const slot = {
     kind: 'entity',
+    rootComponentId: 'root',
     blocks: [{ localX: 0, localY: 0, localZ: 0, size: 0.2, entityId: 'root' }]
   };
   const controller = makeController(slot);
@@ -397,6 +405,7 @@ test('entity-on-entity placement snaps to the targeted component micro grid with
 test('entity side placement rotates its authored up axis outward and stays tangent-centred', () => {
   const slot = {
     kind: 'entity',
+    rootComponentId: 'root',
     blocks: [
       { localX: 0, localY: 0, localZ: 0, size: 1, entityId: 'root' },
       { localX: 0, localY: 1, localZ: 0, size: 1, entityId: 'root' }
@@ -440,13 +449,14 @@ test('entity side placement rotates its authored up axis outward and stays tange
 test('entity-on-entity placement moves outward on the micro grid until target voxels no longer overlap', () => {
   const slot = {
     kind: 'entity',
+    rootComponentId: 'root',
     blocks: [{ localX: 0, localY: 0, localZ: 0, size: 1, entityId: 'root' }]
   };
   const scene = new THREE.Scene();
   const manager = new ContraptionManager(scene, {}, null, null) as any;
   const target = manager.buildFromSlot({
     kind: 'entity',
-    rootId: 'root',
+    rootComponentId: 'root',
     blocks: [
       { localX: 0, localY: 0, localZ: 0, size: 1, color: 0xffffff, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
       { localX: 1, localY: 0, localZ: 0, size: 1, color: 0xffffff, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }
@@ -499,7 +509,7 @@ test('Hammer ghost hides without a hovered surface, on an empty slot, or in anot
 
 test('entity preview blocks reproduce the hierarchy pose built from the same slot', () => {
   const slot = {
-    rootId: 'root',
+    rootComponentId: 'root',
     blockCount: 2,
     blocks: [
       { localX: 0, localY: 0, localZ: 0, size: 1, color: 0xf2a93b, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },

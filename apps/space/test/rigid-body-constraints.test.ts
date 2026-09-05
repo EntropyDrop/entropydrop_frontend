@@ -12,7 +12,8 @@ const block = (x) => ({
   localZ: 0,
   size: 1,
   block: BlockTypes.COLOR_BLOCK,
-  color: 0xf2a93b
+  color: 0xf2a93b,
+  entityId: 'root'
 });
 
 function makePhysics() {
@@ -161,21 +162,21 @@ test('an editor physics action updates the PB default even after a runtime overr
   assert.equal(contraption.getNodeGravityEnabled('root'), false);
 });
 
-test('legacy fixed input migrates to kinematic without exposing fixed runtime state', () => {
-  const legacy = new Contraption(
+test('removed fixed input has no runtime meaning', () => {
+  const entity = new Contraption(
     10,
     [block(0)],
     new THREE.Vector3(),
     new THREE.Scene(),
     { fixed: true }
   ) as any;
-  assert.equal(legacy.bodyType, BodyType.KINEMATIC);
-  assert.equal(legacy.fixed, undefined);
-  assert.equal(legacy.scriptApi.setFixed, undefined);
-  assert.equal('fixed' in legacy.serializeSubtree('root'), false);
+  assert.equal(entity.bodyType, BodyType.DYNAMIC);
+  assert.equal(entity.fixed, undefined);
+  assert.equal(entity.scriptApi.setFixed, undefined);
+  assert.equal('fixed' in entity.serializeSubtree('root'), false);
 });
 
-test('constraint API supports a named world anchor and structured lifecycle results', () => {
+test('constraint API supports an external anchor and structured lifecycle results', () => {
   const contraption = new Contraption(
     11,
     [block(0)],
@@ -186,22 +187,72 @@ test('constraint API supports a named world anchor and structured lifecycle resu
 
   const created = contraption.scriptApi.constraints.create({
     type: 'hinge',
-    other: 'world',
+    bodyA: null,
     axisA: [0, 0, 1],
     axisB: [0, 0, 1],
     stiffness: 2,
     collideConnected: true
   });
-  assert.deepEqual(created, { ok: true, id: 'hinge_world_root', reason: 'created' });
+  assert.deepEqual(created, { ok: true, id: 'hinge_external_root', reason: 'created' });
 
   const [definition] = contraption.scriptApi.constraints.all();
   assert.equal(definition.id, created.id);
-  assert.equal(definition.bodyA, 'world');
+  assert.equal(definition.bodyA, null);
   assert.equal(definition.bodyB, 'root');
   assert.equal(definition.stiffness, 1, 'stiffness should clamp to [0,1]');
   assert.equal(definition.collideConnected, true);
   assert.equal(contraption.scriptApi.constraints.remove(created.id), true);
   assert.equal(contraption.scriptApi.constraints.remove(created.id), false);
+});
+
+test('constraint API keeps root and world valid in the separate constraint namespace', () => {
+  const contraption = new Contraption(
+    12,
+    [block(0)],
+    new THREE.Vector3(4, 8, 4),
+    new THREE.Scene(),
+    { bodyType: BodyType.DYNAMIC }
+  ) as any;
+
+  assert.deepEqual(contraption.scriptApi.constraints.create({
+    id: 'root',
+    type: 'point',
+    bodyA: null
+  }), { ok: true, id: 'root', reason: 'created' });
+  assert.deepEqual(contraption.scriptApi.constraints.create({
+    id: 'world',
+    type: 'point',
+    bodyA: null
+  }), { ok: true, id: 'world', reason: 'created' });
+});
+
+test('constraint API truncates and deduplicates automatically generated ids', () => {
+  const childId = 'a'.repeat(64);
+  const contraption = new Contraption(
+    13,
+    [block(0), { ...block(1), entityId: childId }],
+    new THREE.Vector3(4, 8, 4),
+    new THREE.Scene(),
+    {
+      bodyType: BodyType.KINEMATIC,
+      childEntities: [{
+        id: childId,
+        parentId: 'root',
+        pivot: [1.5, 0.5, 0.5],
+        bodyType: BodyType.DYNAMIC,
+        blockKeys: [[1, 0, 0]]
+      }]
+    }
+  ) as any;
+  const child = contraption.getChildScriptApi(childId);
+
+  const first = child.constraints.create({ type: 'point', bodyA: null });
+  const second = child.constraints.create({ type: 'point', bodyA: null });
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.ok(first.id.length <= 64);
+  assert.ok(second.id.length <= 64);
+  assert.notEqual(second.id, first.id);
 });
 
 test('point constraint keeps a dynamic child attached to a kinematic parent', () => {

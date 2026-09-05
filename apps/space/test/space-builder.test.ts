@@ -173,6 +173,77 @@ test('SpaceBuilder creates and removes a validated component entity', () => {
   assert.equal(manager.contraptions.length, 0);
 });
 
+test('BuildPlan keeps constraint ids in a namespace separate from component ids', () => {
+  const entityPlan = {
+    version: 1,
+    kind: 'entity',
+    name: 'Anchored body',
+    blocks: [{ x: 0, y: 0, z: 0, componentId: 'root' }],
+    components: [{ id: 'root', parentId: null, bodyType: 'dynamic' }],
+    constraints: [{
+      id: 'world',
+      type: 'point',
+      bodyA: null,
+      bodyB: 'root',
+    }],
+  };
+
+  assert.equal(validateSpaceBuildPlan(entityPlan).ok, true);
+  const rootNamedConstraint = validateSpaceBuildPlan({
+    ...entityPlan,
+    constraints: [{ ...entityPlan.constraints[0], id: 'root' }],
+  });
+  assert.equal(rootNamedConstraint.ok, true, rootNamedConstraint.errors.join(' '));
+
+  const closedConstraint = validateSpaceBuildPlan({
+    ...entityPlan,
+    components: [{
+      ...entityPlan.components[0],
+      index: 3,
+      kind: 'root',
+      unknown: 'discard me',
+    }],
+    constraints: [{
+      ...entityPlan.constraints[0],
+      index: 7,
+      kind: 'child',
+      rootId: 'root',
+      bodyAIsWorld: true,
+      unknown: 'discard me',
+    }],
+  });
+  assert.equal(closedConstraint.ok, true, closedConstraint.errors.join(' '));
+  assert.deepEqual(Object.keys(closedConstraint.plan!.components[0]).sort(), [
+    'bodyType', 'id', 'parentId'
+  ]);
+  for (const constraint of [closedConstraint.plan!.constraints[0], closedConstraint.slot.constraints[0]]) {
+    assert.deepEqual(Object.keys(constraint).sort(), [
+      'bodyA', 'bodyB', 'collideConnected', 'id', 'stiffness', 'type'
+    ]);
+  }
+
+  const portableLeadingCharacters = validateSpaceBuildPlan({
+    version: 1,
+    kind: 'entity',
+    name: 'Portable ids',
+    blocks: [
+      { x: 0, y: 0, z: 0, componentId: 'root' },
+      { x: 1, y: 0, z: 0, componentId: '1arm' },
+    ],
+    components: [
+      { id: 'root', parentId: null, bodyType: 'dynamic' },
+      { id: '1arm', parentId: 'root', bodyType: 'kinematic' },
+    ],
+    constraints: [{
+      id: '-joint',
+      type: 'point',
+      bodyA: null,
+      bodyB: '1arm',
+    }],
+  });
+  assert.equal(portableLeadingCharacters.ok, true, portableLeadingCharacters.errors.join(' '));
+});
+
 test('SpaceBuilder cancellation rolls back already placed structure voxels', () => {
   const { builder, standard } = createHarness();
   builder.preview({

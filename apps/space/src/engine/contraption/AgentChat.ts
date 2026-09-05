@@ -384,7 +384,7 @@ export async function runAgentTurn(
   let targetNote = '';
   if (targetContext) {
     const entId = targetContext.entityId ?? (targetContext.runtimeId !== null ? `Entity #${targetContext.runtimeId}` : 'unknown');
-    const compId = String(targetContext.id || 'root');
+    const compId = String(targetContext.id ?? '');
     const parentComp = targetContext.parentId ?? 'none';
     const compBlocks = Number(targetContext.blockCount) || 0;
     const totalBlocks = Number(targetContext.totalBlockCount) || compBlocks;

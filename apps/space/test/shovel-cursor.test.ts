@@ -50,3 +50,35 @@ test('no hit produces no cursor', () => {
   controller.currentRaycast = { hit: false };
   assert.equal(controller.getCursorHighlight(), null);
 });
+
+test('a pointer action immediately re-picks and publishes the updated micro cursor', () => {
+  const controller = makeController(SpecialTool.SPOON);
+  const calls = [];
+  controller.sceneRenderer = {
+    setCursor(pos, size) {
+      calls.push(['cursor', pos, size]);
+    },
+    setMicroCarvePreview(preview) {
+      calls.push(['micro-preview', preview]);
+    }
+  };
+  controller.updateAimRaycast = () => {
+    controller.currentRaycast = {
+      hit: true,
+      kind: 'micro',
+      microPos: { x: 13, y: 4, z: 8 },
+      hitPos: { x: 2.6, y: 0.8, z: 1.6 },
+      size: 0.2
+    };
+    controller.microCarvePreview = { cellOrigin: { x: 2, y: 0, z: 1 } };
+    calls.push(['raycast']);
+  };
+
+  controller.refreshAimAfterPointerAction();
+
+  assert.deepEqual(calls, [
+    ['raycast'],
+    ['cursor', { x: 2.6, y: 0.8, z: 1.6 }, 0.2],
+    ['micro-preview', { cellOrigin: { x: 2, y: 0, z: 1 } }]
+  ]);
+});

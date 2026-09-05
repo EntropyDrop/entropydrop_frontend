@@ -96,8 +96,25 @@ function blockInCell(block: any, cell: any) {
   return own.x === cell.x && own.y === cell.y && own.z === cell.z;
 }
 
+function entityRootId(contraption: any): string {
+  const explicit = contraption?.rootComponentId;
+  if (typeof explicit === 'string' && explicit.length > 0) return explicit;
+  const structural = [...(contraption?.entityNodes?.values?.() || [])]
+    .find((node: any) => node?.parentId === null)?.id;
+  return typeof structural === 'string' ? structural : '';
+}
+
+function blockOwnerId(contraption: any, block: any): string {
+  return String(block?.entityId ?? entityRootId(contraption));
+}
+
+function requestedNodeId(contraption: any, ...values: any[]): string {
+  const selected = values.find(value => value !== undefined && value !== null);
+  return String(selected ?? entityRootId(contraption));
+}
+
 function entityNodeColor(contraption: any, nodeId: string, options: any) {
-  const inherited = contraption.blocks?.find(block => (block.entityId || 'root') === nodeId)?.color
+  const inherited = contraption.blocks?.find(block => blockOwnerId(contraption, block) === nodeId)?.color
     ?? DEFAULT_BLOCK_COLOR;
   return resolveColor(options, inherited);
 }
@@ -266,7 +283,10 @@ function executeEntityAction(context: any, command: any) {
   ) {
     return actionResult(command.action, 0, 'server_entity_read_only');
   }
-  const nodeId = String(command.nodeId || command.target?.nodeId || 'root');
+  const nodeId = requestedNodeId(contraption, command.nodeId, command.target?.nodeId);
+  if (contraption.entityNodes?.has && !contraption.entityNodes.has(nodeId)) {
+    return actionResult(command.action, 0, 'component_not_found');
+  }
   const cell = finiteCell(command.cell ?? command.position);
   const micro = finiteMicro(command.micro);
 
@@ -300,7 +320,7 @@ function executeEntityAction(context: any, command: any) {
     case 'remove-standard': {
       if (!cell) return actionResult(command.action, 0, 'invalid_position', { removed: 0 });
       const index = contraption.blocks.findIndex(block => (
-        (block.entityId || 'root') === nodeId
+        blockOwnerId(contraption, block) === nodeId
         && (block.size || 1) >= 1
         && blockInCell(block, cell)
       ));
@@ -318,7 +338,7 @@ function executeEntityAction(context: any, command: any) {
     case 'paint-standard': {
       if (!cell) return actionResult(command.action, 0, 'invalid_position', { painted: 0 });
       const block = contraption.blocks.find(item => (
-        (item.entityId || 'root') === nodeId
+        blockOwnerId(contraption, item) === nodeId
         && (item.size || 1) >= 1
         && blockInCell(item, cell)
       ));
@@ -386,7 +406,7 @@ function executeEntityAction(context: any, command: any) {
       const localY = micro.y / 5;
       const localZ = micro.z / 5;
       const index = contraption.blocks.findIndex(block => (
-        (block.entityId || 'root') === nodeId
+        blockOwnerId(contraption, block) === nodeId
         && (block.size || 1) < 1
         && Math.abs(block.localX - localX) < 1e-3
         && Math.abs(block.localY - localY) < 1e-3
@@ -430,13 +450,13 @@ function executeEntityAction(context: any, command: any) {
     case 'clear-cell': {
       if (!cell) return actionResult(command.action, 0, 'invalid_position', { removed: 0 });
       const removedBlocks = contraption.blocks.filter(block => (
-        (block.entityId || 'root') === nodeId
+        blockOwnerId(contraption, block) === nodeId
         && blockInCell(block, cell)
         && (!command.microOnly || (block.size || 1) < 1)
       ));
       const before = contraption.blocks.length;
       contraption.blocks = contraption.blocks.filter(block => {
-        if ((block.entityId || 'root') !== nodeId || !blockInCell(block, cell)) return true;
+        if (blockOwnerId(contraption, block) !== nodeId || !blockInCell(block, cell)) return true;
         if (command.microOnly && (block.size || 1) >= 1) return true;
         return false;
       });
@@ -452,7 +472,7 @@ function executeEntityAction(context: any, command: any) {
     case 'subdivide-standard': {
       if (!cell) return actionResult(command.action, 0, 'invalid_position', { subdivided: 0, removed: 0 });
       const index = contraption.blocks.findIndex(block => (
-        (block.entityId || 'root') === nodeId
+        blockOwnerId(contraption, block) === nodeId
         && (block.size || 1) >= 1
         && blockInCell(block, cell)
       ));
@@ -469,7 +489,7 @@ function executeEntityAction(context: any, command: any) {
               size: 0.2,
               color: original.color ?? DEFAULT_BLOCK_COLOR,
               block: original.block || BlockTypes.COLOR_BLOCK,
-              entityId: original.entityId || nodeId,
+              entityId: original.entityId ?? nodeId,
               ...(original.part ? { part: original.part } : {})
             });
           }
@@ -481,7 +501,7 @@ function executeEntityAction(context: any, command: any) {
         const localY = micro.y / 5;
         const localZ = micro.z / 5;
         const carveIndex = contraption.blocks.findIndex(block => (
-          (block.entityId || 'root') === (original.entityId || nodeId)
+          blockOwnerId(contraption, block) === String(original.entityId ?? nodeId)
           && (block.size || 1) < 1
           && Math.abs(block.localX - localX) < 1e-3
           && Math.abs(block.localY - localY) < 1e-3
@@ -492,7 +512,7 @@ function executeEntityAction(context: any, command: any) {
           removed = 1;
         }
       }
-      finishEntityMutation(context, contraption, 'subdivide', original.entityId || nodeId, entityMutationEvent(command, {
+      finishEntityMutation(context, contraption, 'subdivide', String(original.entityId ?? nodeId), entityMutationEvent(command, {
         cell: [cell.x, cell.y, cell.z],
         microOffset: micro ? [
           ((micro.x % 5) + 5) % 5,
@@ -530,11 +550,11 @@ function executeEntityAction(context: any, command: any) {
         });
       }
       const nodeIds = contraption.collectSubtreeNodeIds?.(nodeId) || new Set([nodeId]);
-      const removedBlocks = contraption.blocks.filter(block => nodeIds.has(block.entityId || 'root'));
+      const removedBlocks = contraption.blocks.filter(block => nodeIds.has(blockOwnerId(contraption, block)));
       const standard = removedBlocks.filter(block => (block.size || 1) >= 1).length;
       const micro = removedBlocks.length - standard;
       const manager = context?.manager || contraption.actionContext?.manager;
-      const removesWholeEntity = nodeId === 'root' || removedBlocks.length === contraption.blocks.length;
+      const removesWholeEntity = nodeId === entityRootId(contraption) || removedBlocks.length === contraption.blocks.length;
 
       if (removesWholeEntity) {
         if (!manager?.contraptions?.includes(contraption)) {
@@ -663,18 +683,24 @@ function executeQueryAction(context: any, command: any) {
   const includeWorld = command.include !== 'entities';
   const includeEntities = command.include === 'all' || command.include === 'entities';
   const kinds = Array.isArray(command.voxelKinds) ? command.voxelKinds : ['standard', 'micro'];
+  // Player hover normally agrees with the mesh currently on screen while an
+  // update is being built. A destructive interaction may explicitly inspect
+  // the live view after its published target has already been consumed.
+  const usePublishedCollision = typeof command.usePublishedCollision === 'boolean'
+    ? command.usePublishedCollision
+    : command.actor?.source !== 'script';
 
   let standardHit = null;
   let microHit = null;
   if (includeWorld && kinds.includes('standard')) {
     standardHit = space === 'bent'
-      ? world?.raycastBent?.(origin, direction, maxDistance)
+      ? world?.raycastBent?.(origin, direction, maxDistance, usePublishedCollision)
       : world?.raycast?.(origin, direction, maxDistance);
   }
   if (includeWorld && kinds.includes('micro')) {
     microHit = space === 'bent'
-      ? world?.raycastMicroBent?.(origin, direction, maxDistance)
-      : world?.raycastMicro?.(origin, direction, maxDistance);
+      ? world?.raycastMicroBent?.(origin, direction, maxDistance, usePublishedCollision)
+      : world?.raycastMicro?.(origin, direction, maxDistance, usePublishedCollision);
   }
   const standardDistance = standardHit?.hit && Number.isFinite(Number(standardHit.distance))
     ? Number(standardHit.distance)
@@ -727,7 +753,7 @@ function canEditInternalSelection(contraption: any) {
 function isInternalEntitySelection(selection: any, contraption: any) {
   if (!selection || selection.contraption !== contraption) return false;
   if (selection.kind === 'entity-blocks' || Array.isArray(selection.blocks)) return true;
-  return String(selection.nodeId || selection.rootId || 'root') !== 'root';
+  return requestedNodeId(contraption, selection.nodeId, selection.rootId) !== entityRootId(contraption);
 }
 
 /**
@@ -746,7 +772,7 @@ function invalidateInternalEntitySelections(context: any, contraption: any) {
       || owner.childSelection?.contraption === contraption
       || owner.selectedBlockSelection?.contraption === contraption
       || (owner.selectedSubtree?.contraption === contraption
-        && String(owner.selectedSubtree.rootId || 'root') !== 'root')
+        && requestedNodeId(contraption, owner.selectedSubtree.rootId) !== entityRootId(contraption))
       || owner.selectorLevel?.contraption === contraption
       || owner.selectorRange?.contraption === contraption;
     if (!hasInternalSelection) continue;
@@ -778,7 +804,7 @@ function entityBoxMatches(contraption: any, nodeId: string, pointA: any, pointB:
   const pivot = node.pivotLocal;
   const blockBounds = new THREE.Box3();
   const selected = contraption.blocks.filter(block => {
-    if ((block.entityId || 'root') !== nodeId) return false;
+    if (blockOwnerId(contraption, block) !== nodeId) return false;
     if (microOnly && !isMicroBlock(block)) return false;
     const size = block.size || 1;
     blockBounds.set(
@@ -802,7 +828,7 @@ function entityBoxMatches(contraption: any, nodeId: string, pointA: any, pointB:
       ).expandByScalar(1e-6);
       const otherPivot = other.pivotLocal;
       const found = contraption.blocks.some(block => {
-        if ((block.entityId || 'root') !== other.id) return false;
+        if (blockOwnerId(contraption, block) !== other.id) return false;
         if (microOnly && !isMicroBlock(block)) return false;
         const size = block.size || 1;
         blockBounds.set(
@@ -829,7 +855,7 @@ function selectionSnapshot(manager: any) {
       kind: entity.kind,
       entityId: entity.contraption?.publicId ?? null,
       runtimeId: entity.contraption?.id ?? null,
-      nodeId: entity.nodeId || entity.rootId || 'root',
+      nodeId: requestedNodeId(entity.contraption, entity.nodeId, entity.rootId),
       count: entity.kind === 'entity-blocks' ? entity.blocks.length : entity.nodeIds?.size || 0,
       ready: true
     };
@@ -902,9 +928,9 @@ function executeSelectionAction(context: any, command: any) {
     }
     case 'entity-subtree': {
       const contraption = resolveContraption(context, command.target || { entityId: command.entityId });
-      const nodeId = String(command.nodeId || 'root');
+      const nodeId = requestedNodeId(contraption, command.nodeId);
       if (!contraption?.entityNodes?.has(nodeId)) return actionResult(command.action, 0, 'entity_not_found', { selected: 0 });
-      if (nodeId !== 'root' && !canEditInternalSelection(contraption)) {
+      if (nodeId !== entityRootId(contraption) && !canEditInternalSelection(contraption)) {
         invalidateInternalEntitySelections(context, contraption);
         return actionResult(command.action, 0, 'entity_not_stopped', { selected: 0 });
       }
@@ -914,12 +940,12 @@ function executeSelectionAction(context: any, command: any) {
       contraption.clearSubtreeHighlight?.();
       contraption.highlightSubtree?.([...nodeIds]);
       owner.entitySelection = { kind: 'entity-subtree', contraption, rootId: nodeId, nodeId, nodeIds };
-      const selected = contraption.blocks.filter(block => nodeIds.has(block.entityId || 'root')).length;
+      const selected = contraption.blocks.filter(block => nodeIds.has(blockOwnerId(contraption, block))).length;
       return actionResult(command.action, selected || 1, 'selected', { selected, selection: owner.entitySelection });
     }
     case 'entity-box': {
       const contraption = resolveContraption(context, command.target || { entityId: command.entityId });
-      const nodeId = String(command.nodeId || 'root');
+      const nodeId = requestedNodeId(contraption, command.nodeId);
       if (!contraption) return actionResult(command.action, 0, 'entity_not_found', { selected: 0, components: [] });
       if (!canEditInternalSelection(contraption)) {
         invalidateInternalEntitySelections(context, contraption);
@@ -942,7 +968,7 @@ function executeSelectionAction(context: any, command: any) {
     }
     case 'toggle-entity-block': {
       const contraption = resolveContraption(context, command.target || { entityId: command.entityId });
-      const nodeId = String(command.nodeId || 'root');
+      const nodeId = requestedNodeId(contraption, command.nodeId);
       const block = command.block;
       if (!contraption) return actionResult(command.action, 0, 'entity_not_found', { selected: 0 });
       if (!canEditInternalSelection(contraption)) {
@@ -969,8 +995,8 @@ function executeSelectionAction(context: any, command: any) {
 
       const isSameBlock = (b1: any, b2: any) => {
         if (b1 === b2) return true;
-        const e1 = b1.entityId || 'root';
-        const e2 = b2.entityId || 'root';
+        const e1 = blockOwnerId(contraption, b1);
+        const e2 = blockOwnerId(contraption, b2);
         return e1 === e2
           && Math.abs(b1.localX - b2.localX) < 1e-4
           && Math.abs(b1.localY - b2.localY) < 1e-4
@@ -1002,8 +1028,8 @@ function executeSelectionAction(context: any, command: any) {
     case 'delete': {
       const selected = command.selection || owner.entitySelection;
       if (selected?.kind === 'entity-subtree' && selected?.contraption) {
-        const nodeId = String(selected.nodeId || selected.rootId || 'root');
-        if (nodeId !== 'root' && !canEditInternalSelection(selected.contraption)) {
+        const nodeId = requestedNodeId(selected.contraption, selected.nodeId, selected.rootId);
+        if (nodeId !== entityRootId(selected.contraption) && !canEditInternalSelection(selected.contraption)) {
           invalidateInternalEntitySelections(context, selected.contraption);
           return actionResult(command.action, 0, 'entity_not_stopped', {
             removed: 0,
@@ -1157,12 +1183,16 @@ function executeSelectionAction(context: any, command: any) {
       }
       const child = selected.preparedBounds
         ? selected.contraption.createChildEntityFromPrepared?.(
-            selected.nodeId || 'root',
+            requestedNodeId(selected.contraption, selected.nodeId),
             selected.blocks,
             selected.preparedBounds,
             command.id || null
           )
-        : selected.contraption.createChildEntity?.(selected.nodeId || 'root', selected.blocks, command.id || null);
+        : selected.contraption.createChildEntity?.(
+            requestedNodeId(selected.contraption, selected.nodeId),
+            selected.blocks,
+            command.id || null
+          );
       if (child) {
         selected.contraption.clearSubtreeHighlight?.();
         owner.entitySelection = null;
@@ -1177,7 +1207,7 @@ function executeSelectionAction(context: any, command: any) {
 function executePhysicsAction(context: any, command: any) {
   const contraption = resolveContraption(context, command.target);
   if (!contraption) return actionResult(command.action, 0, 'entity_unavailable');
-  const nodeId = String(command.nodeId || 'root');
+  const nodeId = requestedNodeId(contraption, command.nodeId);
 
   switch (command.action) {
     case 'get-body': {

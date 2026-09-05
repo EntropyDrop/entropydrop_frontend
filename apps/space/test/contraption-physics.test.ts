@@ -16,7 +16,7 @@ function makeContraption() {
     ],
     new THREE.Vector3(0, 8, 0),
     new THREE.Scene(),
-    { mode: ContraptionMode.PROGRAMMABLE }
+    { mode: ContraptionMode.PROGRAMMABLE, rootComponentId: 'root' }
   ) as any;
 }
 
@@ -58,7 +58,7 @@ test('unified self API: every component exposes the same surface (root/child)', 
   armApi.setLocalSpin([0, 1, 0], 60);
   assert.ok(contraption.getEntityNode('arm').localAngularVelocity.length() > 0, 'child setLocalSpin should work');
 
-  // child('root') returns the root component API.
+  // Direct component lookup also accepts the root's ordinary ID.
   assert.equal(contraption.getChildScriptApi('root'), contraption.scriptApi);
 });
 

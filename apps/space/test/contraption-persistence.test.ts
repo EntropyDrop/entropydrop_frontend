@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { ContraptionManager, worldEntitiesStorageKey } from '../src/engine/contraption/ContraptionManager.ts';
+import {
+  ContraptionManager,
+  ENTITY_STORAGE_VERSION,
+  worldEntitiesStorageKey
+} from '../src/engine/contraption/ContraptionManager.ts';
 import { ContraptionMode } from '../src/engine/contraption/Contraption.ts';
 import { ContraptionPhysics } from '../src/engine/physics/ContraptionPhysics.ts';
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
@@ -22,9 +26,26 @@ class MockStorage {
   }
 }
 
+test('offline entity persistence rejects the obsolete v1 frontend shape', () => {
+  const storage = new MockStorage();
+  const worldId = 'obsolete-world-entities';
+  storage.setItem(worldEntitiesStorageKey(worldId), JSON.stringify({
+    type: 'space-entities',
+    version: 1,
+    worldId,
+    entities: [{ slot: { blocks: [{ localX: 0, localY: 0, localZ: 0 }] } }]
+  }));
+  const manager = new ContraptionManager(new THREE.Scene(), null, null, null, storage);
+  manager.setWorldId(worldId);
+
+  assert.equal(ENTITY_STORAGE_VERSION, 2);
+  assert.equal(manager.loadEntitiesFromStorage(), 0);
+  assert.equal(manager.contraptions.length, 0);
+});
+
 test('streaming preserves runtime BodyConfig overrides without replacing PB defaults', () => {
   const slot = {
-    rootId: 'root',
+    rootComponentId: 'root',
     mode: ContraptionMode.PROGRAMMABLE,
     blocks: [{
       localX: 0,
@@ -100,7 +121,7 @@ test('contraption manager saves assembled entity and restores it after simulated
 
   // Directly build an entity in managerA
   const slot = {
-    rootId: 'root',
+    rootComponentId: 'root',
     mode: ContraptionMode.PROGRAMMABLE,
     blocks: [
       { localX: 0, localY: 0, localZ: 0, size: 1, color: 0xff0000, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
@@ -141,6 +162,7 @@ test('contraption manager saves assembled entity and restores it after simulated
   const raw = storage.getItem(worldEntitiesStorageKey(worldId));
   assert.ok(raw);
   const parsed = JSON.parse(raw);
+  assert.equal(parsed.version, ENTITY_STORAGE_VERSION);
   assert.equal(parsed.entities.length, 1);
   assert.equal(parsed.worldId, worldId);
   assert.equal(parsed.entities[0].bodies[0].mass, 987_654.5);
@@ -204,7 +226,7 @@ test('refresh preserves the root pivot after live block edits change the bounds'
   const manager = new ContraptionManager(new THREE.Scene(), null, null, null);
   manager.setWorldId(worldId);
   const entity = manager.buildFromSlot({
-    rootId: 'root',
+    rootComponentId: 'root',
     mode: ContraptionMode.PROGRAMMABLE,
     bodyType: 'kinematic',
     blocks: [
@@ -256,7 +278,7 @@ test('refresh applies an explicit root pivot before rebuilding the hierarchy', (
   const manager = new ContraptionManager(new THREE.Scene(), null, null, null);
   manager.setWorldId(worldId);
   const entity = manager.buildFromSlot({
-    rootId: 'root',
+    rootComponentId: 'root',
     mode: ContraptionMode.PROGRAMMABLE,
     bodyType: 'kinematic',
     blocks: [
@@ -291,7 +313,7 @@ test('refresh persistence restores dynamic child body parameters and motion', ()
   const manager = new ContraptionManager(new THREE.Scene(), null, null, null);
   manager.setWorldId(worldId);
   const entity = manager.buildFromSlot({
-    rootId: 'root',
+    rootComponentId: 'root',
     mode: ContraptionMode.PROGRAMMABLE,
     bodyType: 'kinematic',
     blocks: [
@@ -351,7 +373,7 @@ test('disassembling or removing contraption updates storage so it stays removed 
   manager.setWorldId(worldId);
 
   const slot = {
-    rootId: 'root',
+    rootComponentId: 'root',
     mode: ContraptionMode.PROGRAMMABLE,
     blocks: [
       { localX: 0, localY: 0, localZ: 0, size: 1, color: 0xff0000, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }
@@ -384,7 +406,7 @@ test('server-managed entities stay out of browser persistence and preserve a rot
   manager.setWorldId('shared-world');
   const origin = new THREE.Vector3(25, 10, 40);
   const entity = manager.buildFromSlot({
-    rootId: 'root',
+    rootComponentId: 'root',
     mode: ContraptionMode.PROGRAMMABLE,
     blocks: [
       { localX: 0, localY: 0, localZ: 0, size: 1, color: 0xff0000, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
@@ -427,7 +449,7 @@ test('online entity persistence never reads or writes browser storage and delega
   assert.equal(storage.getItem(worldEntitiesStorageKey(worldId)), null);
   assert.equal(manager.loadEntitiesFromStorage(), 0);
   const entity = manager.buildFromSlot({
-    rootId: 'root',
+    rootComponentId: 'root',
     mode: ContraptionMode.PROGRAMMABLE,
     blocks: [{
       localX: 0, localY: 0, localZ: 0, size: 1,

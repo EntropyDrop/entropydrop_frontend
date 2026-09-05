@@ -6,22 +6,162 @@ import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerCont
 import { BlockTypes } from '../src/engine/voxel/BlockTypes.ts';
 
 /**
- * Shovel placement never overwrites a subdivided standard cell. A focused microblock
- * targets the adjacent standard cell along the hit normal; subdivided targets reject placement.
+ * Shovel destruction reports successful standard-cell removals to the sound layer.
+ * Placement never overwrites a subdivided cell and still targets the adjacent cell.
  */
 
 function makeShovelController(overrides = {}) {
   const controller = Object.create(PlayerController.prototype);
+  const breakSounds = [];
   controller.activeTool = SpecialTool.SHOVEL;
   controller.hoveredContraptionHit = null;
   controller.currentRaycast = { hit: false };
   controller.canPlaceStandardAt = () => true;
   controller.selectedColor = 0xff0000;
-  controller.sound = { playBlockPlace() {} };
+  controller.particles = { emitBlockBreak() {} };
+  controller.sound = {
+    playBlockPlace() {},
+    playBlockBreak(options) { breakSounds.push(options); }
+  };
   controller.ui = { showToast() {}, notifyContraptionStructureChanged() {} };
   Object.assign(controller, overrides);
+  controller.__breakSounds = breakSounds;
   return controller;
 }
+
+test('world shovel break plays one standard fracture only after a successful removal', () => {
+  const writes = [];
+  const controller = makeShovelController({
+    currentRaycast: {
+      hit: true,
+      kind: 'standard',
+      hitPos: { x: 2, y: 3, z: 4 },
+      color: 0x123456
+    },
+    world: {
+      getBlock: () => BlockTypes.COLOR_BLOCK,
+      setBlock: (...args) => {
+        writes.push(args);
+        return true;
+      }
+    }
+  });
+
+  controller.handleLeftClick();
+
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][3], BlockTypes.AIR);
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'standard', count: 1 }]);
+});
+
+test('world shovel break stays silent when a stale hit removes nothing', () => {
+  const controller = makeShovelController({
+    currentRaycast: {
+      hit: true,
+      kind: 'standard',
+      hitPos: { x: 2, y: 3, z: 4 },
+      color: 0x123456
+    },
+    world: {
+      getBlock: () => BlockTypes.AIR,
+      setBlock: () => {
+        assert.fail('an empty target must not be written');
+      }
+    }
+  });
+
+  controller.handleLeftClick();
+
+  assert.deepEqual(controller.__breakSounds, []);
+});
+
+test('world shovel micro-cell clear reports its debris count as one standard fracture', () => {
+  const cleared = [];
+  const controller = makeShovelController({
+    currentRaycast: {
+      hit: true,
+      kind: 'micro',
+      microPos: { x: 12, y: 16, z: 24 },
+      color: 0x123456
+    },
+    world: {
+      clearMicroStandardCell: (...args) => {
+        cleared.push(args);
+        return 3;
+      }
+    }
+  });
+
+  controller.handleLeftClick();
+
+  assert.deepEqual(cleared, [[2, 3, 4]]);
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'standard', count: 3 }]);
+});
+
+test('entity shovel break sounds once for a removed block and not for a stale hit', () => {
+  const standardBlock = {
+    localX: 1,
+    localY: 2,
+    localZ: 3,
+    size: 1,
+    block: BlockTypes.COLOR_BLOCK,
+    color: 0x123456,
+    entityId: 'root'
+  };
+  const contraption = {
+    id: 7,
+    blocks: [standardBlock],
+    rebuildAfterBlockChange() {}
+  };
+  const controller = makeShovelController({
+    hoveredContraptionHit: {
+      contraption,
+      entityId: 'root',
+      kind: 'standard',
+      cell: { x: 1, y: 2, z: 3 },
+      point: { x: 1, y: 2, z: 3 },
+      color: 0x123456
+    }
+  });
+
+  controller.handleLeftClick();
+  assert.equal(contraption.blocks.length, 0);
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'standard', count: 1 }]);
+
+  controller.handleLeftClick();
+  assert.deepEqual(
+    controller.__breakSounds,
+    [{ kind: 'standard', count: 1 }],
+    'a stale entity hit must not add another sound'
+  );
+});
+
+test('entity shovel micro-cell clear reports all removed debris in one sound', () => {
+  const contraption = {
+    id: 8,
+    blocks: [
+      { localX: 0, localY: 0, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
+      { localX: 0.2, localY: 0, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
+      { localX: 2, localY: 0, localZ: 0, size: 1, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }
+    ],
+    rebuildAfterBlockChange() {}
+  };
+  const controller = makeShovelController({
+    hoveredContraptionHit: {
+      contraption,
+      entityId: 'root',
+      kind: 'micro',
+      cell: { x: 0, y: 0, z: 0 },
+      point: { x: 0, y: 0, z: 0 },
+      color: 0x123456
+    }
+  });
+
+  controller.handleLeftClick();
+
+  assert.equal(contraption.blocks.length, 1);
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'standard', count: 2 }]);
+});
 
 test('world placement beside a focused microblock targets the adjacent standard cell', () => {
   let placed = null;

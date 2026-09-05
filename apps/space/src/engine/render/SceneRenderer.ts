@@ -185,17 +185,19 @@ export function getInventoryPreviewBlocks(slot) {
   }
 
   if (slot.blocks.length === 0) return [];
+  const rootComponentId = String(slot.rootComponentId || '');
+  if (!rootComponentId) return [];
   const sourceChildIds = new Set((slot.childEntities || []).map(definition => definition.id));
   const blocks = slot.blocks.map(block => ({
     ...block,
-    entityId: block.entityId || 'root'
+    entityId: block.entityId ?? rootComponentId
   }));
   const definitions = (slot.childEntities || []).map(definition => ({
     ...definition,
     parentId: sourceChildIds.has(definition.parentId)
       ? definition.parentId
-      : 'root'
-  })).filter(definition => definition.id !== 'root');
+      : rootComponentId
+  })).filter(definition => definition.id !== rootComponentId);
 
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
@@ -207,20 +209,21 @@ export function getInventoryPreviewBlocks(slot) {
     minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
     maxX = Math.max(maxX, x + size); maxY = Math.max(maxY, y + size); maxZ = Math.max(maxZ, z + size);
   }
-  const rootPivot = new THREE.Vector3(
+  const defaultRootPivot = new THREE.Vector3(
     (minX + maxX) / 2,
     (minY + maxY) / 2,
     (minZ + maxZ) / 2
   );
+  const rootPivot = previewVector3(slot.rootPivotOverride, defaultRootPivot);
   const rootMatrix = new THREE.Matrix4().makeTranslation(rootPivot.x, rootPivot.y, rootPivot.z);
-  const nodes = new Map([['root', { pivot: rootPivot, matrix: rootMatrix }]]);
+  const nodes = new Map([[rootComponentId, { pivot: rootPivot, matrix: rootMatrix }]]);
   const pending = [...definitions];
   let guard = pending.length + 1;
   while (pending.length > 0 && guard-- > 0) {
     let progressed = false;
     for (let index = pending.length - 1; index >= 0; index--) {
       const definition = pending[index];
-      const parent = nodes.get(definition.parentId || 'root');
+      const parent = nodes.get(definition.parentId);
       if (!parent) continue;
       const pivot = previewVector3(definition.pivot, rootPivot);
       const defaultPosition = pivot.clone().sub(parent.pivot);
@@ -255,7 +258,7 @@ export function getInventoryPreviewBlocks(slot) {
   }
 
   return blocks.flatMap(block => {
-    const node = nodes.get(block.entityId || 'root');
+    const node = nodes.get(block.entityId ?? rootComponentId);
     if (!node) return [];
     const size = Number(block.size) || 1;
     const center = new THREE.Vector3(
@@ -1290,7 +1293,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     if (targetHits.length > 0) {
       const hit = targetHits[0];
       let currentObj = hit.object;
-      let hitNodeId = 'root';
+      let hitNodeId = this.previewTarget.rootComponentId;
       while (currentObj && currentObj !== this.previewTarget.rootGroup) {
         if (currentObj.name?.startsWith('Entity_')) {
           hitNodeId = currentObj.name.replace('Entity_', '');

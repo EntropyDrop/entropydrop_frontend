@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { BodyType, Contraption, ContraptionMode, MAX_ENTITY_BOUNDS, createEntityPublicId } from './Contraption.ts';
+import {
+  BodyType,
+  Contraption,
+  ContraptionMode,
+  MAX_ENTITY_BOUNDS,
+  createEntityPublicId,
+  isValidComponentId
+} from './Contraption.ts';
 import { BlockTypes } from '../voxel/BlockTypes.ts';
 import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../voxel/Chunk.ts';
 import {
@@ -18,7 +25,7 @@ import { ActionDomain, executeBasicAction } from '../actions/BasicActions.ts';
 import type { SpaceStorage } from '../storage/BrowserStorage.ts';
 
 export const ENTITY_STORAGE_PREFIX = 'entropydrop_space_entities';
-export const ENTITY_STORAGE_VERSION = 1;
+export const ENTITY_STORAGE_VERSION = 2;
 
 export function worldEntitiesStorageKey(worldId: string) {
   return `${ENTITY_STORAGE_PREFIX}.${encodeURIComponent(worldId || 'default')}`;
@@ -318,7 +325,7 @@ export class ContraptionManager {
             voxelKind: hit?.kind || null,
             entityId: hit?.contraption?.publicId ?? null,
             runtimeId: hit?.contraption?.id ?? null,
-            nodeId: hit?.entityId ?? hit?.entityNode?.id ?? 'root',
+            nodeId: hit?.entityId ?? hit?.entityNode?.id ?? hit?.contraption?.rootComponentId ?? null,
             block: hit?.block?.block ?? BlockTypes.COLOR_BLOCK,
             color: Number(hit?.color) || 0,
             normal: Object.freeze([
@@ -387,7 +394,7 @@ export class ContraptionManager {
           reason: result.reason
         });
       },
-      entity: (entityId, nodeId = 'root') => {
+      entity: (entityId, nodeId = null) => {
         const result = runSelection('entity-subtree', { entityId, nodeId });
         return Object.freeze({ ok: result.ok, selected: result.selected || 0, reason: result.reason });
       },
@@ -561,7 +568,7 @@ export class ContraptionManager {
       id: contraption.id,
       publicId: contraption.publicId,
       chunkId: chunk.id,
-      slot: contraption.serializeSubtree('root'),
+      slot: contraption.serializeSubtree(contraption.rootComponentId),
       constructorOrigin: constructorOrigin.toArray(),
       position: contraption.position.toArray(),
       quaternion: contraption.quaternion.toArray(),
@@ -662,7 +669,9 @@ export class ContraptionManager {
       if (!body) continue;
       const savedUseGravity = typeof saved.useGravity === 'boolean'
         ? saved.useGravity
-        : (body.id === 'root' && typeof record.useGravity === 'boolean' ? record.useGravity : undefined);
+        : (body.id === contraption.rootComponentId && typeof record.useGravity === 'boolean'
+            ? record.useGravity
+            : undefined);
       const restoresRuntimeMass = Number.isFinite(Number(saved.mass)) && Number(saved.mass) !== body.mass;
       const restoresRuntimeOverride = saved.type !== body.type
         || restoresRuntimeMass
@@ -707,7 +716,7 @@ export class ContraptionManager {
       body.appliedTorques.set(0, 0, 0);
       body.isOnGround = !!saved.isOnGround;
 
-      if (body.id === 'root') {
+      if (body.id === contraption.rootComponentId) {
         contraption.bodyType = body.type;
         if (restoresRuntimeMass) contraption.massOverride = body.mass;
         contraption.mass = body.mass;
@@ -1504,7 +1513,7 @@ export class ContraptionManager {
       if (this.childSelection?.contraption === hit.contraption) this.clearChildSelection();
       return null;
     }
-    const parentId = hit.entityId || hit.entityNode?.id || 'root';
+    const parentId = hit.entityId || hit.entityNode?.id || hit.contraption.rootComponentId;
     const key = `${hit.cell.x},${hit.cell.y},${hit.cell.z}`;
     const selectableKeys = hit.contraption.getEntityCollisionCellKeys(parentId);
     if (!selectableKeys.has(key)) return null;
@@ -1865,7 +1874,10 @@ export class ContraptionManager {
   buildFromSlot(slot, position, restoreState = null, autoSave = true, preparedBlocks = null) {
     if (!slot || !Array.isArray(slot.blocks) || slot.blocks.length === 0) return null;
 
+    const rootComponentId = String(slot.rootComponentId || '');
+    if (!isValidComponentId(rootComponentId)) return null;
     const subtreeChildIds = new Set((slot.childEntities || []).map(d => d.id));
+    if (subtreeChildIds.has(rootComponentId)) return null;
 
     const blocks = Array.isArray(preparedBlocks) ? preparedBlocks : slot.blocks.map(b => ({
       localX: b.localX,
@@ -1874,21 +1886,22 @@ export class ContraptionManager {
       size: b.size || 1,
       color: b.color,
       block: b.block,
-      entityId: b.entityId || 'root'
+      entityId: b.entityId
     }));
+
+    if (blocks.some(block => !block.entityId)) return null;
 
     // Keep only the explicit single-root tree carried by the slot.
     const childEntities = (slot.childEntities || [])
       .filter(d => subtreeChildIds.has(d.id))
-      .map(d => ({
-        ...d,
-        parentId: subtreeChildIds.has(d.parentId) ? d.parentId : 'root'
-      }));
+      .map(d => ({ ...d }));
     const constraints = (slot.constraints || [])
       .filter(constraint => (
-        constraint.bodyB === 'root' || subtreeChildIds.has(constraint.bodyB)
+        constraint.bodyB === rootComponentId || subtreeChildIds.has(constraint.bodyB)
       ) && (
-        constraint.bodyA === 'world' || constraint.bodyA === 'root' || subtreeChildIds.has(constraint.bodyA)
+        constraint.bodyA === null
+        || constraint.bodyA === rootComponentId
+        || subtreeChildIds.has(constraint.bodyA)
       ));
 
     const restoredId = Number(restoreState?.id);
@@ -1900,9 +1913,10 @@ export class ContraptionManager {
       position.clone(),
       this.scene,
       {
+        rootComponentId,
         publicId: restoreState?.publicId,
         mode: slot.mode || ContraptionMode.FREE_PHYSICS,
-        bodyType: slot.bodyType || (slot.fixed ? BodyType.KINEMATIC : BodyType.DYNAMIC),
+        bodyType: slot.bodyType || BodyType.DYNAMIC,
         mass: slot.mass,
         restitution: slot.restitution,
         friction: slot.friction,
@@ -1912,7 +1926,9 @@ export class ContraptionManager {
         behaviorPrompt: restoreState?.behaviorPrompt,
         agentInterpretation: restoreState?.agentInterpretation,
         localCenter: restoreState?.localCenter,
-        rootPivotOverride: restoreState?.rootPivotOverride,
+        rootPivotOverride: Array.isArray(restoreState?.rootPivotOverride)
+          ? restoreState.rootPivotOverride
+          : slot.rootPivotOverride,
         anchorRotation: slot.anchorRotation,
         childEntities,
         constraints

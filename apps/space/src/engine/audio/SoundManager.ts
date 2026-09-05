@@ -1,8 +1,36 @@
-// Procedural Web Audio sound generator for Space.
+// Procedural Web Audio sound generator and music player for Space.
+
+const MUSIC_CODEC_PREROLL_SECONDS = 8_192 / 48_000;
+const BACKGROUND_MUSIC_GAIN = 0.5;
+const BLOCK_BREAK_VARIANT_COUNT = 6;
+const MAX_BLOCK_BREAK_VOICES = 5;
+const BLOCK_TONE_START_HZ = 280;
+const BLOCK_TONE_END_HZ = 120;
+const BLOCK_PLACE_GLIDE_SECONDS = 0.08;
+
+type BlockBreakKind = 'micro' | 'standard' | 'bulk';
+
+type BlockBreakOptions = {
+  kind?: BlockBreakKind;
+  count?: number;
+};
+
+type ActiveBlockBreakVoice = {
+  source: AudioBufferSourceNode;
+  gain: GainNode;
+  level: number;
+  startedAt: number;
+};
 
 export class SoundManager {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
+  private musicGain: GainNode | null = null;
+  private musicSource: AudioBufferSourceNode | null = null;
+  private musicStartPromise: Promise<void> | null = null;
+  private blockBreakSerial = 0;
+  private blockBreakBuffers = new Map<string, AudioBuffer>();
+  private activeBlockBreakVoices = new Set<ActiveBlockBreakVoice>();
   private isMuted = false;
 
   constructor() {
@@ -12,16 +40,64 @@ export class SoundManager {
   }
 
   init() {
-    if (this.ctx) return;
+    // requestLock calls init on every user gesture.  Re-entering here lets a
+    // transient download/decode failure retry without constructing a second
+    // AudioContext or a second music source.
+    if (this.ctx) {
+      void this.startBackgroundMusic();
+      return;
+    }
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       this.ctx = new AudioCtx();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.3, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
+
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      this.musicGain.connect(this.masterGain);
+      void this.startBackgroundMusic();
     } catch (e) {
       console.warn('Web Audio API not supported:', e);
     }
+  }
+
+  private startBackgroundMusic(): void {
+    const ctx = this.ctx;
+    const musicGain = this.musicGain;
+    if (!ctx || !musicGain || this.musicSource || this.musicStartPromise) return;
+
+    const musicUrl = new URL('../../assets/audio/bwv1043-ii-8bit.ogg', import.meta.url).href;
+    this.musicStartPromise = (async () => {
+      const response = await fetch(musicUrl);
+      if (!response.ok) throw new Error(`Background music request failed: ${response.status}`);
+      const buffer = await ctx.decodeAudioData(await response.arrayBuffer());
+
+      // The page may have been replaced while the asset decoded.  Never attach
+      // the old work to another context or duplicate a source after a retry.
+      if (this.ctx !== ctx || this.musicSource) return;
+
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      source.loopStart = MUSIC_CODEC_PREROLL_SECONDS;
+      source.loopEnd = buffer.duration;
+      source.connect(musicGain);
+
+      const now = ctx.currentTime;
+      musicGain.gain.cancelScheduledValues(now);
+      musicGain.gain.setValueAtTime(0, now);
+      musicGain.gain.linearRampToValueAtTime(BACKGROUND_MUSIC_GAIN, now + 1.5);
+      source.start(now, MUSIC_CODEC_PREROLL_SECONDS);
+      this.musicSource = source;
+    })()
+      .catch(error => {
+        console.warn('Space background music is temporarily unavailable:', error);
+      })
+      .finally(() => {
+        this.musicStartPromise = null;
+      });
   }
 
   ensureContext() {
@@ -218,11 +294,11 @@ export class SoundManager {
     const gain = this.ctx.createGain();
 
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(280, t);
-    osc.frequency.exponentialRampToValueAtTime(120, t + 0.08);
+    osc.frequency.setValueAtTime(BLOCK_TONE_START_HZ, t);
+    osc.frequency.exponentialRampToValueAtTime(BLOCK_TONE_END_HZ, t + BLOCK_PLACE_GLIDE_SECONDS);
 
     gain.gain.setValueAtTime(0.2, t);
-    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + BLOCK_PLACE_GLIDE_SECONDS);
 
     osc.connect(gain);
     gain.connect(this.masterGain);
@@ -231,25 +307,143 @@ export class SoundManager {
     osc.stop(t + 0.09);
   }
 
-  playBlockBreak() {
+  private getBlockBreakBuffer(kind: BlockBreakKind, variant: number): AudioBuffer {
+    const key = `${kind}:${variant}`;
+    const cached = this.blockBreakBuffers.get(key);
+    if (cached) return cached;
+
+    const ctx = this.ctx!;
+    const settings = kind === 'micro'
+      ? {
+          duration: 0.064,
+          taps: [
+            { start: 0, duration: 0.045, pitchScale: 1.22, level: 1 },
+            { start: 0.018, duration: 0.038, pitchScale: 0.92, level: 0.44 }
+          ]
+        }
+      : kind === 'bulk'
+        ? {
+            duration: 0.18,
+            taps: [
+              { start: 0, duration: 0.1, pitchScale: 0.78, level: 1 },
+              { start: 0.045, duration: 0.1, pitchScale: 0.58, level: 0.68 },
+              { start: 0.095, duration: 0.07, pitchScale: 0.86, level: 0.38 }
+            ]
+          }
+        : {
+            duration: 0.115,
+            taps: [
+              { start: 0, duration: BLOCK_PLACE_GLIDE_SECONDS, pitchScale: 1, level: 1 },
+              { start: 0.031, duration: 0.068, pitchScale: 0.72, level: 0.56 }
+            ]
+          };
+    const frameCount = Math.ceil(ctx.sampleRate * settings.duration);
+    const buffer = ctx.createBuffer(1, frameCount, ctx.sampleRate);
+    const samples = buffer.getChannelData(0);
+    const pitchRatios = [0.96, 1, 1.035, 0.98, 1.02, 0.985];
+    const timingOffsets = [-0.003, 0, 0.003, -0.001, 0.002, -0.002];
+    const secondaryLevels = [0.97, 1, 1.04, 0.98, 1.02, 0.96];
+
+    // Break keeps the exact triangle/glide language of block placement. A
+    // second soft tap makes standard blocks read as splitting in two; bulk
+    // deletion adds one more low tap. No noise, pulse wave, clicks, or bitcrush.
+    settings.taps.forEach((tap, tapIndex) => {
+      const startSeconds = tap.start + (tapIndex === 0 ? 0 : timingOffsets[variant]);
+      const startFrame = Math.max(0, Math.round(startSeconds * ctx.sampleRate));
+      const durationFrames = Math.max(2, Math.round(tap.duration * ctx.sampleRate));
+      const attackFrames = Math.max(1, Math.round(ctx.sampleRate * 0.0015));
+      const releaseFrames = Math.max(2, Math.round(ctx.sampleRate * 0.007));
+      const pitchRatio = pitchRatios[variant] * tap.pitchScale;
+      const level = tap.level * (tapIndex === 0 ? 1 : secondaryLevels[variant]);
+      let phase = 0;
+
+      for (let localFrame = 0; localFrame < durationFrames; localFrame++) {
+        const frame = startFrame + localFrame;
+        if (frame >= frameCount) break;
+        const progress = localFrame / (durationFrames - 1);
+        const frequency = BLOCK_TONE_START_HZ * pitchRatio
+          * (BLOCK_TONE_END_HZ / BLOCK_TONE_START_HZ) ** progress;
+        phase = (phase + frequency / ctx.sampleRate) % 1;
+        const triangle = 1 - 4 * Math.abs(phase - 0.5);
+        const attackProgress = Math.min(1, localFrame / attackFrames);
+        const attack = 0.5 - 0.5 * Math.cos(Math.PI * attackProgress);
+        const releaseStart = durationFrames - releaseFrames;
+        const releaseProgress = localFrame <= releaseStart
+          ? 0
+          : Math.min(1, (localFrame - releaseStart) / (durationFrames - 1 - releaseStart));
+        const release = 0.5 + 0.5 * Math.cos(Math.PI * releaseProgress);
+        const decay = 20 ** (-progress);
+        samples[frame] += triangle * attack * decay * release * level;
+      }
+    });
+
+    let peak = 0;
+    for (let frame = 0; frame < frameCount; frame++) {
+      peak = Math.max(peak, Math.abs(samples[frame]));
+    }
+
+    const normalization = 0.88 / Math.max(peak, 1e-6);
+    for (let frame = 0; frame < frameCount; frame++) {
+      samples[frame] *= normalization;
+    }
+    samples[0] = 0;
+    samples[frameCount - 1] = 0;
+
+    this.blockBreakBuffers.set(key, buffer);
+    return buffer;
+  }
+
+  private makeRoomForBlockBreak(now: number): number {
+    if (this.activeBlockBreakVoices.size < MAX_BLOCK_BREAK_VOICES) return now;
+    const oldest = [...this.activeBlockBreakVoices]
+      .sort((left, right) => left.startedAt - right.startedAt)[0];
+    this.activeBlockBreakVoices.delete(oldest);
+    const handoffAt = now + 0.007;
+    oldest.gain.gain.cancelScheduledValues(now);
+    oldest.gain.gain.setValueAtTime(oldest.level, now);
+    oldest.gain.gain.linearRampToValueAtTime(0.001, now + 0.006);
+    try {
+      oldest.source.stop(handoffAt);
+    } catch { }
+    // Start the replacement as the faded voice stops. The tiny handoff keeps
+    // the hard five-voice ceiling without introducing a discontinuity click.
+    return handoffAt;
+  }
+
+  playBlockBreak(options: BlockBreakOptions = {}) {
     this.ensureContext();
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ctx || !this.masterGain || this.isMuted) return;
 
     const t = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
+    const kind: BlockBreakKind = options.kind === 'micro' || options.kind === 'bulk'
+      ? options.kind
+      : 'standard';
+    const count = Math.max(1, Math.floor(Number(options.count) || 1));
+    const variant = this.blockBreakSerial++ % BLOCK_BREAK_VARIANT_COUNT;
+    const buffer = this.getBlockBreakBuffer(kind, variant);
+    const source = this.ctx.createBufferSource();
     const gain = this.ctx.createGain();
+    const baseGain = kind === 'micro' ? 0.14 : kind === 'bulk' ? 0.21 : 0.2;
+    const countGain = kind === 'bulk'
+      ? Math.min(1.18, 1 + 0.05 * Math.log2(count))
+      : 1;
+    const variationGain = [0.97, 1, 0.99, 1.03, 0.98, 1.01][variant];
+    const level = baseGain * countGain * variationGain;
 
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(190, t);
-    osc.frequency.exponentialRampToValueAtTime(70, t + 0.1);
-
-    gain.gain.setValueAtTime(0.22, t);
-    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
-
-    osc.connect(gain);
+    const startAt = this.makeRoomForBlockBreak(t);
+    source.buffer = buffer;
+    gain.gain.setValueAtTime(level, startAt);
+    source.connect(gain);
     gain.connect(this.masterGain);
 
-    osc.start(t);
-    osc.stop(t + 0.11);
+    const voice: ActiveBlockBreakVoice = { source, gain, level, startedAt: startAt };
+    this.activeBlockBreakVoices.add(voice);
+    source.onended = () => {
+      this.activeBlockBreakVoices.delete(voice);
+      source.disconnect();
+      gain.disconnect();
+    };
+    source.start(startAt);
+    source.stop(startAt + buffer.duration + 0.005);
   }
 }

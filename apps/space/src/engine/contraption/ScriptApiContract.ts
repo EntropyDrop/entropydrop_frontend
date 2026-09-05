@@ -65,9 +65,9 @@ const ctxEntries: ApiEntry[] = [
 
 const selfUniversalEntries: ApiEntry[] = [
   { signature: 'self.apiVersion', description: 'Current component API version: `2`.' },
-  { signature: 'self.id / self.parentId', description: "Component ID and direct parent ID; root is `{id:'root',parentId:null}`." },
+  { signature: 'self.id / self.parentId', description: 'Component ID and direct parent ID; the root has an ordinary ID and `parentId:null`.' },
   { signature: 'self.state', description: 'Mutable persistent state scoped to this component and retained across completed ticks and streaming.' },
-  { signature: 'self.child(id)', description: "Look up a direct child; returns `null` when missing. `child('root')` returns the root API." },
+  { signature: 'self.child(id)', description: 'Look up a direct child by its ordinary ID; returns `null` when missing.' },
   { signature: 'self.children()', description: 'Return a frozen array of direct children. Recurse from `ctx.root` to traverse the tree.' },
   { signature: 'self.applyThrust([x,y,z])', description: 'Apply root-local force at this component. A child mounting offset produces torque; dynamic root only and subject to `ctx.limits`.' },
   { signature: 'self.applyLocalThrust([x,y,z])', description: 'Apply component-local force at this component. Installed anchor orientation controls its direction and an offset produces torque.' },
@@ -113,7 +113,7 @@ const bodyEntries: ApiEntry[] = [
   { signature: 'self.body.applyLocalForce(force)', description: 'Apply body-local force to this dynamic component body; returns boolean.' },
   { signature: 'self.body.applyTorque(torque)', description: 'Apply world torque to this dynamic component body; returns boolean.' },
   { signature: 'self.constraints.all()', description: 'Return a frozen snapshot of constraints connected to this component.' },
-  { signature: 'self.constraints.create({id?,type,other,anchorA?,anchorB?,axisA?,axisB?,limits?,stiffness?,collideConnected?})', description: "Queue a `point`, `hinge`, or `weld` to a component or `'world'`; immediate Worker success is provisional `{ok:true,id:null,reason:'queued'}`. Supply an explicit ID for later lookup. Stiffness defaults to 0.9, `collideConnected` to false, omitted anchors use pivots, and hinge limits are radians." },
+  { signature: 'self.constraints.create({id?,type,bodyA?,anchorA?,anchorB?,axisA?,axisB?,limits?,stiffness?,collideConnected?})', description: "Queue a `point`, `hinge`, or `weld`; `bodyA:null` denotes the external world and an omitted `bodyA` uses the structural parent (or external world for the root). Immediate Worker success is provisional `{ok:true,id:null,reason:'queued'}`. Supply an explicit ID for later lookup. Stiffness defaults to 0.9, `collideConnected` to false, omitted anchors use pivots, and hinge limits are radians." },
   { signature: 'self.constraints.remove(id)', description: 'Queue removal of one constraint; returns boolean.' },
   { signature: 'self.stop()', description: 'Root-only global Stop: disable entity physics and scripts, clear state/time/tick/motion, reset child poses, and restore persisted BodyConfig defaults. Collision and selection shapes remain active. Child code must call `ctx.root.stop()`.' }
 ];
@@ -161,7 +161,7 @@ export const SPACE_SCRIPT_API_V2: ScriptApiContract = {
       facts: [
         'Coordinates are right-handed and Y-up: +X right, +Y up, -Z forward. Euler angles use YXZ order; quaternions are `[x,y,z,w]`.',
         "A component pivot starts at its own block AABB centroid and never moves automatically after block edits. Use `getBounds()` then `setPivot(bounds.center)` to recenter a kinematic body without moving its blocks.",
-        "Component IDs are unique across the entire entity; `root` is reserved. A child's local position is its pivot offset in the parent pivot frame.",
+        "Component IDs are unique across the entire entity; no string is reserved. The root is identified structurally by `parentId:null`, and a child's local position is its pivot offset in the parent pivot frame.",
         'All scripts start enabled. Pause preserves active physics, state, and runtime BodyConfig values; Stop disables entity physics, clears state/time/tick/motion, resets child transforms, and restores persisted BodyConfig defaults. Play re-enables physics from the stopped construction pose.',
         'BodyConfig defaults are type, mass, restitution, friction, gravity, and collision. Script setters are runtime-only; serialization always writes defaults.',
         'Collision defaults to enabled. A disabled component remains rendered/editable but has no terrain, player, entity, or raycast shapes.'

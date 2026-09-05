@@ -1211,8 +1211,8 @@ test('an entity assembled across the torus seam still collides with the vehicle'
     { mode: ContraptionMode.FREE_PHYSICS, bodyType: BodyType.DYNAMIC, mass: 400, restitution: 0, friction: 0.5 }
   );
   vehicle.useGravity = false;
-  vehicle.getRigidBody('root').linearDamping = 1;
-  vehicle.getRigidBody('root').angularDamping = 1;
+  vehicle.getRigidBody(vehicle.rootComponentId).linearDamping = 1;
+  vehicle.getRigidBody(vehicle.rootComponentId).angularDamping = 1;
 
   // The freshly assembled block is on the OTHER side of the seam (flat 2),
   // torus-adjacent to the vehicle but a full period away in flat space.
@@ -1224,8 +1224,8 @@ test('an entity assembled across the torus seam still collides with the vehicle'
     { mode: ContraptionMode.FREE_PHYSICS, bodyType: BodyType.DYNAMIC, restitution: 0, friction: 0.4 }
   );
   block.useGravity = false;
-  block.getRigidBody('root').linearDamping = 1;
-  block.getRigidBody('root').angularDamping = 1;
+  block.getRigidBody(block.rootComponentId).linearDamping = 1;
+  block.getRigidBody(block.rootComponentId).angularDamping = 1;
   block.velocity.set(-4, 0, 0); // moving -x, i.e. toward the vehicle across the seam
 
   manager.registerContraption(vehicle);

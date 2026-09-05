@@ -7,7 +7,7 @@
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
 
-export const protobufPackage = "entropydrop.space.inventory.v3";
+export const protobufPackage = "entropydrop.space.inventory.v4";
 
 export const BodyType = { BODY_TYPE_DYNAMIC: 0, BODY_TYPE_KINEMATIC: 1, UNRECOGNIZED: -1 } as const;
 
@@ -35,32 +35,21 @@ export namespace ConstraintType {
   export type UNRECOGNIZED = typeof ConstraintType.UNRECOGNIZED;
 }
 
-export const InventoryCategory = {
-  INVENTORY_CATEGORY_BLOCK_SET: 0,
-  INVENTORY_CATEGORY_ENTITY: 1,
-  INVENTORY_CATEGORY_COLOR_SET: 2,
-  UNRECOGNIZED: -1,
-} as const;
-
-export type InventoryCategory = typeof InventoryCategory[keyof typeof InventoryCategory];
-
-export namespace InventoryCategory {
-  export type INVENTORY_CATEGORY_BLOCK_SET = typeof InventoryCategory.INVENTORY_CATEGORY_BLOCK_SET;
-  export type INVENTORY_CATEGORY_ENTITY = typeof InventoryCategory.INVENTORY_CATEGORY_ENTITY;
-  export type INVENTORY_CATEGORY_COLOR_SET = typeof InventoryCategory.INVENTORY_CATEGORY_COLOR_SET;
-  export type UNRECOGNIZED = typeof InventoryCategory.UNRECOGNIZED;
-}
-
 /**
- * Canonical binary contract for browser backpacks, portable files, market
- * uploads, and immutable CDN objects. Derived counts and the constant block id
+ * Canonical binary contract for portable files, market uploads, and immutable
+ * CDN objects. Derived counts and the constant block id
  * are intentionally omitted.
+ * Canonical encoders normalize every double -0.0 to +0.0; sort BlockSet.blocks
+ * and Component.blocks by (dx,dy,dz,micro coordinates,color); and sort
+ * Component.children and Entity.constraints by Unicode code-point id order.
+ * Color and seat order remains significant and is preserved.
  */
 export interface InventoryResource {
   schemaVersion?: number | undefined;
-  blockSet?: BlockSet | undefined;
-  entity?: Entity | undefined;
-  colorSet?: ColorSet | undefined;
+  content?: { $case: "blockSet"; value: BlockSet } | { $case: "entity"; value: Entity } | {
+    $case: "colorSet";
+    value: ColorSet;
+  } | undefined;
 }
 
 export interface Voxel {
@@ -111,8 +100,11 @@ export interface Seat {
 }
 
 /**
- * The entity owns exactly one root Component. Children recursively own their
- * voxels and configuration, so per-voxel component indexes are unnecessary.
+ * Entity.root and Component.children alone determine root/child hierarchy;
+ * do not add a hierarchy kind or index. Component ids are opaque identifiers:
+ * no spelling has special root, child, or world semantics. Children recursively
+ * own their voxels and configuration, so per-voxel component indexes are
+ * unnecessary.
  */
 export interface Component {
   id?: string | undefined;
@@ -121,18 +113,26 @@ export interface Component {
   blocks?: Voxel[] | undefined;
   script?: string | undefined;
   scriptDisabled?: boolean | undefined;
-  seats?: Seat[] | undefined;
+  seats?:
+    | Seat[]
+    | undefined;
+  /** Sibling order is non-semantic; canonical encoders and decoders sort by id. */
   children?:
     | Component[]
     | undefined;
-  /** Parent-relative authored transform. The root omits these fields. */
+  /**
+   * Parent-relative authored transform. The root omits these fields.
+   * local_rotation is restricted to the 24 axis-aligned cube orientations so
+   * Stop restores every owned voxel to one shared 0.2-unit construction grid.
+   */
   localPosition?: Vector3 | undefined;
   localRotation?:
     | Quaternion
     | undefined;
   /**
    * Orientation of the mounting frame in component-local coordinates.
-   * Identity means +Y points away from the surface and -Z points forward.
+   * Identity means +Y points away from the surface and -Z points forward; this
+   * is also restricted to the 24 axis-aligned cube orientations.
    */
   anchorRotation?: Quaternion | undefined;
 }
@@ -144,10 +144,15 @@ export interface ConstraintLimits {
 
 export interface EntityConstraint {
   id?: string | undefined;
-  type?: ConstraintType | undefined;
-  bodyAIsWorld?: boolean | undefined;
-  bodyA?: string | undefined;
-  bodyB?: string | undefined;
+  type?:
+    | ConstraintType
+    | undefined;
+  /**
+   * Absence means that side A is attached to the external world. Presence is
+   * always an exact component id; no id spelling has sentinel semantics.
+   */
+  bodyAComponentId?: string | undefined;
+  bodyBComponentId?: string | undefined;
   anchorA?: Vector3 | undefined;
   anchorB?: Vector3 | undefined;
   axisA?: Vector3 | undefined;
@@ -165,26 +170,8 @@ export interface Entity {
   constraints?: EntityConstraint[] | undefined;
 }
 
-export interface InventorySlot {
-  index?: number | undefined;
-  resource?: InventoryResource | undefined;
-}
-
-export interface InventoryGroup {
-  selected?: number | undefined;
-  slots?: InventorySlot[] | undefined;
-}
-
-export interface Backpack {
-  schemaVersion?: number | undefined;
-  activeCategory?: InventoryCategory | undefined;
-  blockSets?: InventoryGroup | undefined;
-  entities?: InventoryGroup | undefined;
-  colorSets?: InventoryGroup | undefined;
-}
-
 function createBaseInventoryResource(): InventoryResource {
-  return { schemaVersion: 0, blockSet: undefined, entity: undefined, colorSet: undefined };
+  return { schemaVersion: 0, content: undefined };
 }
 
 export const InventoryResource: MessageFns<InventoryResource> = {
@@ -192,14 +179,16 @@ export const InventoryResource: MessageFns<InventoryResource> = {
     if (message.schemaVersion !== undefined && message.schemaVersion !== 0) {
       writer.uint32(8).uint32(message.schemaVersion);
     }
-    if (message.blockSet !== undefined) {
-      BlockSet.encode(message.blockSet, writer.uint32(82).fork()).join();
-    }
-    if (message.entity !== undefined) {
-      Entity.encode(message.entity, writer.uint32(90).fork()).join();
-    }
-    if (message.colorSet !== undefined) {
-      ColorSet.encode(message.colorSet, writer.uint32(98).fork()).join();
+    switch (message.content?.$case) {
+      case "blockSet":
+        BlockSet.encode(message.content.value, writer.uint32(82).fork()).join();
+        break;
+      case "entity":
+        Entity.encode(message.content.value, writer.uint32(90).fork()).join();
+        break;
+      case "colorSet":
+        ColorSet.encode(message.content.value, writer.uint32(98).fork()).join();
+        break;
     }
     return writer;
   },
@@ -230,7 +219,7 @@ export const InventoryResource: MessageFns<InventoryResource> = {
               break;
             }
 
-            message.blockSet = BlockSet.decode(reader, reader.uint32());
+            message.content = { $case: "blockSet", value: BlockSet.decode(reader, reader.uint32()) };
             continue;
           }
           case 11: {
@@ -238,7 +227,7 @@ export const InventoryResource: MessageFns<InventoryResource> = {
               break;
             }
 
-            message.entity = Entity.decode(reader, reader.uint32());
+            message.content = { $case: "entity", value: Entity.decode(reader, reader.uint32()) };
             continue;
           }
           case 12: {
@@ -246,7 +235,7 @@ export const InventoryResource: MessageFns<InventoryResource> = {
               break;
             }
 
-            message.colorSet = ColorSet.decode(reader, reader.uint32());
+            message.content = { $case: "colorSet", value: ColorSet.decode(reader, reader.uint32()) };
             continue;
           }
         }
@@ -267,15 +256,26 @@ export const InventoryResource: MessageFns<InventoryResource> = {
   fromPartial<I extends Exact<DeepPartial<InventoryResource>, I>>(object: I): InventoryResource {
     const message = createBaseInventoryResource();
     message.schemaVersion = object.schemaVersion ?? 0;
-    message.blockSet = (object.blockSet !== undefined && object.blockSet !== null)
-      ? BlockSet.fromPartial(object.blockSet)
-      : undefined;
-    message.entity = (object.entity !== undefined && object.entity !== null)
-      ? Entity.fromPartial(object.entity)
-      : undefined;
-    message.colorSet = (object.colorSet !== undefined && object.colorSet !== null)
-      ? ColorSet.fromPartial(object.colorSet)
-      : undefined;
+    switch (object.content?.$case) {
+      case "blockSet": {
+        if (object.content?.value !== undefined && object.content?.value !== null) {
+          message.content = { $case: "blockSet", value: BlockSet.fromPartial(object.content.value) };
+        }
+        break;
+      }
+      case "entity": {
+        if (object.content?.value !== undefined && object.content?.value !== null) {
+          message.content = { $case: "entity", value: Entity.fromPartial(object.content.value) };
+        }
+        break;
+      }
+      case "colorSet": {
+        if (object.content?.value !== undefined && object.content?.value !== null) {
+          message.content = { $case: "colorSet", value: ColorSet.fromPartial(object.content.value) };
+        }
+        break;
+      }
+    }
     return message;
   },
 };
@@ -1168,9 +1168,8 @@ function createBaseEntityConstraint(): EntityConstraint {
   return {
     id: "",
     type: 0,
-    bodyAIsWorld: false,
-    bodyA: "",
-    bodyB: "",
+    bodyAComponentId: undefined,
+    bodyBComponentId: "",
     anchorA: undefined,
     anchorB: undefined,
     axisA: undefined,
@@ -1191,41 +1190,38 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
     if (message.type !== undefined && message.type !== 0) {
       writer.uint32(16).int32(message.type);
     }
-    if (message.bodyAIsWorld !== undefined && message.bodyAIsWorld !== false) {
-      writer.uint32(24).bool(message.bodyAIsWorld);
+    if (message.bodyAComponentId !== undefined) {
+      writer.uint32(26).string(message.bodyAComponentId);
     }
-    if (message.bodyA !== undefined && message.bodyA !== "") {
-      writer.uint32(34).string(message.bodyA);
-    }
-    if (message.bodyB !== undefined && message.bodyB !== "") {
-      writer.uint32(42).string(message.bodyB);
+    if (message.bodyBComponentId !== undefined && message.bodyBComponentId !== "") {
+      writer.uint32(34).string(message.bodyBComponentId);
     }
     if (message.anchorA !== undefined) {
-      Vector3.encode(message.anchorA, writer.uint32(50).fork()).join();
+      Vector3.encode(message.anchorA, writer.uint32(42).fork()).join();
     }
     if (message.anchorB !== undefined) {
-      Vector3.encode(message.anchorB, writer.uint32(58).fork()).join();
+      Vector3.encode(message.anchorB, writer.uint32(50).fork()).join();
     }
     if (message.axisA !== undefined) {
-      Vector3.encode(message.axisA, writer.uint32(66).fork()).join();
+      Vector3.encode(message.axisA, writer.uint32(58).fork()).join();
     }
     if (message.axisB !== undefined) {
-      Vector3.encode(message.axisB, writer.uint32(74).fork()).join();
+      Vector3.encode(message.axisB, writer.uint32(66).fork()).join();
     }
     if (message.referenceA !== undefined) {
-      Vector3.encode(message.referenceA, writer.uint32(82).fork()).join();
+      Vector3.encode(message.referenceA, writer.uint32(74).fork()).join();
     }
     if (message.referenceB !== undefined) {
-      Vector3.encode(message.referenceB, writer.uint32(90).fork()).join();
+      Vector3.encode(message.referenceB, writer.uint32(82).fork()).join();
     }
     if (message.limits !== undefined) {
-      ConstraintLimits.encode(message.limits, writer.uint32(98).fork()).join();
+      ConstraintLimits.encode(message.limits, writer.uint32(90).fork()).join();
     }
     if (message.stiffness !== undefined && message.stiffness !== 0) {
-      writer.uint32(105).double(message.stiffness);
+      writer.uint32(97).double(message.stiffness);
     }
     if (message.collideConnected !== undefined && message.collideConnected !== false) {
-      writer.uint32(112).bool(message.collideConnected);
+      writer.uint32(104).bool(message.collideConnected);
     }
     return writer;
   },
@@ -1260,11 +1256,11 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
             continue;
           }
           case 3: {
-            if (tag !== 24) {
+            if (tag !== 26) {
               break;
             }
 
-            message.bodyAIsWorld = reader.bool();
+            message.bodyAComponentId = reader.string();
             continue;
           }
           case 4: {
@@ -1272,7 +1268,7 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
               break;
             }
 
-            message.bodyA = reader.string();
+            message.bodyBComponentId = reader.string();
             continue;
           }
           case 5: {
@@ -1280,7 +1276,7 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
               break;
             }
 
-            message.bodyB = reader.string();
+            message.anchorA = Vector3.decode(reader, reader.uint32());
             continue;
           }
           case 6: {
@@ -1288,7 +1284,7 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
               break;
             }
 
-            message.anchorA = Vector3.decode(reader, reader.uint32());
+            message.anchorB = Vector3.decode(reader, reader.uint32());
             continue;
           }
           case 7: {
@@ -1296,7 +1292,7 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
               break;
             }
 
-            message.anchorB = Vector3.decode(reader, reader.uint32());
+            message.axisA = Vector3.decode(reader, reader.uint32());
             continue;
           }
           case 8: {
@@ -1304,7 +1300,7 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
               break;
             }
 
-            message.axisA = Vector3.decode(reader, reader.uint32());
+            message.axisB = Vector3.decode(reader, reader.uint32());
             continue;
           }
           case 9: {
@@ -1312,7 +1308,7 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
               break;
             }
 
-            message.axisB = Vector3.decode(reader, reader.uint32());
+            message.referenceA = Vector3.decode(reader, reader.uint32());
             continue;
           }
           case 10: {
@@ -1320,7 +1316,7 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
               break;
             }
 
-            message.referenceA = Vector3.decode(reader, reader.uint32());
+            message.referenceB = Vector3.decode(reader, reader.uint32());
             continue;
           }
           case 11: {
@@ -1328,27 +1324,19 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
               break;
             }
 
-            message.referenceB = Vector3.decode(reader, reader.uint32());
-            continue;
-          }
-          case 12: {
-            if (tag !== 98) {
-              break;
-            }
-
             message.limits = ConstraintLimits.decode(reader, reader.uint32());
             continue;
           }
-          case 13: {
-            if (tag !== 105) {
+          case 12: {
+            if (tag !== 97) {
               break;
             }
 
             message.stiffness = reader.double();
             continue;
           }
-          case 14: {
-            if (tag !== 112) {
+          case 13: {
+            if (tag !== 104) {
               break;
             }
 
@@ -1374,9 +1362,8 @@ export const EntityConstraint: MessageFns<EntityConstraint> = {
     const message = createBaseEntityConstraint();
     message.id = object.id ?? "";
     message.type = object.type ?? 0;
-    message.bodyAIsWorld = object.bodyAIsWorld ?? false;
-    message.bodyA = object.bodyA ?? "";
-    message.bodyB = object.bodyB ?? "";
+    message.bodyAComponentId = object.bodyAComponentId ?? undefined;
+    message.bodyBComponentId = object.bodyBComponentId ?? "";
     message.anchorA = (object.anchorA !== undefined && object.anchorA !== null)
       ? Vector3.fromPartial(object.anchorA)
       : undefined;
@@ -1488,261 +1475,12 @@ export const Entity: MessageFns<Entity> = {
   },
 };
 
-function createBaseInventorySlot(): InventorySlot {
-  return { index: 0, resource: undefined };
-}
-
-export const InventorySlot: MessageFns<InventorySlot> = {
-  encode(message: InventorySlot, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.index !== undefined && message.index !== 0) {
-      writer.uint32(8).uint32(message.index);
-    }
-    if (message.resource !== undefined) {
-      InventoryResource.encode(message.resource, writer.uint32(18).fork()).join();
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): InventorySlot {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseInventorySlot();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 8) {
-              break;
-            }
-
-            message.index = reader.uint32();
-            continue;
-          }
-          case 2: {
-            if (tag !== 18) {
-              break;
-            }
-
-            message.resource = InventoryResource.decode(reader, reader.uint32());
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  create<I extends Exact<DeepPartial<InventorySlot>, I>>(base?: I): InventorySlot {
-    return InventorySlot.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<InventorySlot>, I>>(object: I): InventorySlot {
-    const message = createBaseInventorySlot();
-    message.index = object.index ?? 0;
-    message.resource = (object.resource !== undefined && object.resource !== null)
-      ? InventoryResource.fromPartial(object.resource)
-      : undefined;
-    return message;
-  },
-};
-
-function createBaseInventoryGroup(): InventoryGroup {
-  return { selected: 0, slots: [] };
-}
-
-export const InventoryGroup: MessageFns<InventoryGroup> = {
-  encode(message: InventoryGroup, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.selected !== undefined && message.selected !== 0) {
-      writer.uint32(8).uint32(message.selected);
-    }
-    if (message.slots !== undefined && message.slots.length !== 0) {
-      for (const v of message.slots) {
-        InventorySlot.encode(v!, writer.uint32(18).fork()).join();
-      }
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): InventoryGroup {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseInventoryGroup();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 8) {
-              break;
-            }
-
-            message.selected = reader.uint32();
-            continue;
-          }
-          case 2: {
-            if (tag !== 18) {
-              break;
-            }
-
-            const el = InventorySlot.decode(reader, reader.uint32());
-            if (el !== undefined) {
-              message.slots!.push(el);
-            }
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  create<I extends Exact<DeepPartial<InventoryGroup>, I>>(base?: I): InventoryGroup {
-    return InventoryGroup.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<InventoryGroup>, I>>(object: I): InventoryGroup {
-    const message = createBaseInventoryGroup();
-    message.selected = object.selected ?? 0;
-    message.slots = object.slots?.map((e) => InventorySlot.fromPartial(e)) || [];
-    return message;
-  },
-};
-
-function createBaseBackpack(): Backpack {
-  return { schemaVersion: 0, activeCategory: 0, blockSets: undefined, entities: undefined, colorSets: undefined };
-}
-
-export const Backpack: MessageFns<Backpack> = {
-  encode(message: Backpack, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.schemaVersion !== undefined && message.schemaVersion !== 0) {
-      writer.uint32(8).uint32(message.schemaVersion);
-    }
-    if (message.activeCategory !== undefined && message.activeCategory !== 0) {
-      writer.uint32(16).int32(message.activeCategory);
-    }
-    if (message.blockSets !== undefined) {
-      InventoryGroup.encode(message.blockSets, writer.uint32(26).fork()).join();
-    }
-    if (message.entities !== undefined) {
-      InventoryGroup.encode(message.entities, writer.uint32(34).fork()).join();
-    }
-    if (message.colorSets !== undefined) {
-      InventoryGroup.encode(message.colorSets, writer.uint32(42).fork()).join();
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): Backpack {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseBackpack();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 8) {
-              break;
-            }
-
-            message.schemaVersion = reader.uint32();
-            continue;
-          }
-          case 2: {
-            if (tag !== 16) {
-              break;
-            }
-
-            message.activeCategory = reader.int32() as any;
-            continue;
-          }
-          case 3: {
-            if (tag !== 26) {
-              break;
-            }
-
-            message.blockSets = InventoryGroup.decode(reader, reader.uint32());
-            continue;
-          }
-          case 4: {
-            if (tag !== 34) {
-              break;
-            }
-
-            message.entities = InventoryGroup.decode(reader, reader.uint32());
-            continue;
-          }
-          case 5: {
-            if (tag !== 42) {
-              break;
-            }
-
-            message.colorSets = InventoryGroup.decode(reader, reader.uint32());
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  create<I extends Exact<DeepPartial<Backpack>, I>>(base?: I): Backpack {
-    return Backpack.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<Backpack>, I>>(object: I): Backpack {
-    const message = createBaseBackpack();
-    message.schemaVersion = object.schemaVersion ?? 0;
-    message.activeCategory = object.activeCategory ?? 0;
-    message.blockSets = (object.blockSets !== undefined && object.blockSets !== null)
-      ? InventoryGroup.fromPartial(object.blockSets)
-      : undefined;
-    message.entities = (object.entities !== undefined && object.entities !== null)
-      ? InventoryGroup.fromPartial(object.entities)
-      : undefined;
-    message.colorSets = (object.colorSets !== undefined && object.colorSets !== null)
-      ? InventoryGroup.fromPartial(object.colorSets)
-      : undefined;
-    return message;
-  },
-};
-
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
 
 export type DeepPartial<T> = T extends Builtin ? T
   : T extends globalThis.Array<infer U> ? globalThis.Array<DeepPartial<U>>
   : T extends ReadonlyArray<infer U> ? ReadonlyArray<DeepPartial<U>>
+  : T extends { $case: string; value: unknown } ? { $case: T["$case"]; value?: DeepPartial<T["value"]> }
   : T extends {} ? { [K in keyof T]?: DeepPartial<T[K]> }
   : Partial<T>;
 

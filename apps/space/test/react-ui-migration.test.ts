@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
+import { compareComponentIds } from '../src/engine/contraption/Contraption.ts';
 
 const COMPONENT_FILES = [
   '../src/ui/react/SpaceRoot.tsx',
@@ -58,11 +59,14 @@ test('index.html contains only the auth gate and React host', () => {
 
 test('Space entry progress follows real bootstrap stages and exposes percentage state', () => {
   const bootstrapSource = readFileSync(new URL('../src/bootstrap/SpaceBootstrap.ts', import.meta.url), 'utf8');
+  const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
   const styleSource = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
   assert.match(bootstrapSource, /prepareOnlineSpace\(reportProgress\)/);
   assert.match(bootstrapSource, /completeOnlineSpace\(prepared, reportProgress\)/);
   assert.match(bootstrapSource, /progress\.setAttribute\('aria-valuenow'/);
   assert.match(bootstrapSource, /progressFill\.style\.width/);
+  assert.match(mainSource, /await game\.preloadInitialTerrain\(reportProgress\)/);
+  assert.match(mainSource, /game\.start\(\)/);
   assert.match(styleSource, /\.space-entry-progress-fill/);
   assert.match(styleSource, /prefers-reduced-motion/);
 });
@@ -90,4 +94,35 @@ test('React mounts synchronously before Game construction', () => {
   const mountIndex = mainSource.indexOf('mountSpaceUi();');
   const gameClassIndex = mainSource.indexOf('class Game');
   assert.ok(mountIndex >= 0 && mountIndex < gameClassIndex);
+});
+
+test('component-facing UI uses the shared ASCII id order', () => {
+  assert.deepEqual(
+    ['z', 'root', 'a', 'B'].sort(compareComponentIds),
+    ['B', 'a', 'root', 'z']
+  );
+
+  const editorSource = readFileSync(
+    new URL('../src/ui/react/components/EditorModal.tsx', import.meta.url),
+    'utf8'
+  );
+  const storeSource = readFileSync(
+    new URL('../src/ui/react/store/SpaceUiStore.ts', import.meta.url),
+    'utf8'
+  );
+  assert.match(
+    editorSource,
+    /const nodes =[\s\S]{0,240}compareComponentIds/,
+    'code tabs must sort entity node values explicitly'
+  );
+  assert.match(
+    editorSource,
+    /const childIds = nodes[\s\S]{0,320}\.sort\(compareComponentIds\)/,
+    'the runtime title must sort child ids explicitly'
+  );
+  assert.match(
+    storeSource,
+    /allComponents:[^\n]*\.sort\(compareComponentIds\)/,
+    'Agent component context must not expose Map insertion order'
+  );
 });

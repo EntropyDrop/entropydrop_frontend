@@ -348,7 +348,7 @@ test('Hammer refuses to build when the crosshair is on open sky', () => {
   // An entity slot refuses the same way without ever reaching buildFromSlot.
   controller.activeInventoryCategory = 'entity';
   controller.inventorySlots[0] = {
-    rootId: 'root',
+    rootComponentId: 'root',
     blockCount: 1,
     blocks: [{ localX: 0, localY: 0, localZ: 0, size: 1, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }]
   };

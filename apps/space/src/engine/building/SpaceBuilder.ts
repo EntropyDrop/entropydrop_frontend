@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { ActionDomain } from '../actions/BasicActions.ts';
 import {
   ContraptionMode,
-  MAX_COMPONENT_ID_LENGTH,
+  isValidComponentId,
+  isValidConstraintId,
   MAX_ENTITY_BOUNDS,
   MAX_ENTITY_COMPONENTS
 } from '../contraption/Contraption.ts';
@@ -18,8 +19,6 @@ export const BUILD_OPERATIONS_PER_FRAME = 128;
 export const BUILD_FRAME_BUDGET_MS = 5;
 
 const MICRO_DIVISIONS = 5;
-const COMPONENT_ID = /^[A-Za-z_][A-Za-z0-9_-]*$/;
-
 export type SpaceBuildKind = 'structure' | 'entity';
 export type SpaceBuildAnchor = 'crosshair' | [number, number, number];
 
@@ -60,7 +59,8 @@ export interface SpaceBuildComponentInput {
 export interface SpaceBuildConstraintInput {
   id: string;
   type: 'point' | 'hinge' | 'weld';
-  bodyA: string;
+  /** Null selects the external world anchor; strings always name components. */
+  bodyA: string | null;
   bodyB: string;
   anchorA?: [number, number, number];
   anchorB?: [number, number, number];
@@ -191,6 +191,60 @@ function clampedUnit(value: any, fallback: number): number {
   return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : fallback;
 }
 
+function closedBuildComponent(raw: any): SpaceBuildComponentInput {
+  const component: any = {
+    id: raw?.id,
+    parentId: raw?.parentId,
+  };
+  for (const field of [
+    'pivot',
+    'bodyType',
+    'mass',
+    'restitution',
+    'friction',
+    'useGravity',
+    'collisionEnabled',
+    'seats',
+    'script',
+    'scriptEnabled',
+  ] as const) {
+    if (raw?.[field] !== undefined) component[field] = raw[field];
+  }
+  return component;
+}
+
+function closedBuildConstraint(raw: any): SpaceBuildConstraintInput {
+  const constraint: any = {
+    id: String(raw?.id || ''),
+    type: raw?.type,
+    bodyA: raw?.bodyA == null ? null : String(raw.bodyA),
+    bodyB: String(raw?.bodyB || ''),
+  };
+  for (const field of ['anchorA', 'anchorB', 'axisA', 'axisB'] as const) {
+    if (raw?.[field] !== undefined) constraint[field] = raw[field];
+  }
+  if (raw?.limits !== undefined) constraint.limits = raw.limits;
+  if (raw?.stiffness !== undefined) constraint.stiffness = raw.stiffness;
+  if (raw?.collideConnected !== undefined) constraint.collideConnected = raw.collideConnected;
+  return constraint;
+}
+
+function runtimeConstraint(constraint: SpaceBuildConstraintInput): SpaceBuildConstraintInput {
+  const output: any = {
+    id: constraint.id,
+    type: constraint.type,
+    bodyA: constraint.bodyA,
+    bodyB: constraint.bodyB,
+    stiffness: constraint.stiffness,
+    collideConnected: constraint.collideConnected === true,
+  };
+  for (const field of ['anchorA', 'anchorB', 'axisA', 'axisB'] as const) {
+    if (constraint[field] !== undefined) output[field] = [...constraint[field]!];
+  }
+  if (constraint.limits !== undefined) output.limits = { ...constraint.limits };
+  return output;
+}
+
 function normalizedGridCoordinate(value: any, size: 1 | 0.2): number | null {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
@@ -318,13 +372,14 @@ function componentDepth(id: string, parents: Map<string, string | null>): number
   const visited = new Set<string>();
   let current: string | null | undefined = id;
   let depth = 0;
-  while (current && current !== 'root') {
+  while (current !== null) {
+    if (current === undefined || !parents.has(current)) return Infinity;
     if (visited.has(current)) return Infinity;
     visited.add(current);
     current = parents.get(current);
-    depth++;
+    if (current !== null) depth++;
   }
-  return current === 'root' ? depth : Infinity;
+  return depth;
 }
 
 function runtimeSlot(plan: NormalizedSpaceBuildPlan): any {
@@ -343,14 +398,16 @@ function runtimeSlot(plan: NormalizedSpaceBuildPlan): any {
       }))
     });
   }
-  const root = plan.components.find(component => component.id === 'root') || { id: 'root' };
-  const children = plan.components.filter(component => component.id !== 'root');
+  const root = plan.components.find(component => component.parentId === null)!;
+  const rootComponentId = root.id;
+  const children = plan.components.filter(component => component.parentId !== null);
   const scripts = plan.components
     .filter(component => typeof component.script === 'string' && component.script.length > 0)
     .map(component => ({ id: component.id, code: component.script }));
   return Object.freeze({
     kind: 'entity',
     name: plan.name,
+    rootComponentId,
     mode: scripts.length > 0 ? ContraptionMode.PROGRAMMABLE : ContraptionMode.FREE_PHYSICS,
     blockCount: plan.blocks.length,
     nodeCount: plan.components.length,
@@ -365,8 +422,7 @@ function runtimeSlot(plan: NormalizedSpaceBuildPlan): any {
     })),
     childEntities: children.map(component => ({
       id: component.id,
-      parentId: component.parentId || 'root',
-      kind: 'child',
+      parentId: component.parentId,
       ...(component.pivot ? { pivot: [...component.pivot] } : {}),
       bodyType: component.bodyType || 'kinematic',
       ...(component.mass !== undefined ? { mass: component.mass } : {}),
@@ -383,7 +439,7 @@ function runtimeSlot(plan: NormalizedSpaceBuildPlan): any {
       id: script.id,
       enabled: plan.components.find(component => component.id === script.id)?.scriptEnabled !== false
     })),
-    constraints: plan.constraints.map(constraint => ({ ...constraint })),
+    constraints: plan.constraints.map(runtimeConstraint),
     bodyType: root.bodyType || plan.bodyType,
     mass: root.mass ?? plan.mass,
     restitution: root.restitution ?? plan.restitution,
@@ -431,9 +487,9 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
 
   const components: SpaceBuildComponentInput[] = kind === 'entity'
     ? (Array.isArray(input?.components) && input.components.length > 0
-        ? input.components.map(component => ({ ...component }))
-        : [{ id: 'root', parentId: null, bodyType: input?.bodyType || 'dynamic' }])
-    : [{ id: 'root', parentId: null }];
+        ? input.components.map(closedBuildComponent)
+        : [{ id: 'component', parentId: null, bodyType: input?.bodyType || 'dynamic' }])
+    : [];
   if (components.length > MAX_ENTITY_COMPONENTS) {
     errors.push(`Entity may contain at most ${MAX_ENTITY_COMPONENTS} components.`);
   }
@@ -449,14 +505,16 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
   }
   for (const component of components) {
     const id = String(component?.id || '');
-    if (!id || id.length > MAX_COMPONENT_ID_LENGTH || !COMPONENT_ID.test(id)) {
+    if (!isValidComponentId(id)) {
       errors.push(`Invalid component id '${id || '(empty)'}'.`);
       continue;
     }
     if (componentIds.has(id)) errors.push(`Duplicate component id '${id}'.`);
     component.id = id;
     componentIds.add(id);
-    const parentId = id === 'root' ? null : String(component.parentId || 'root');
+    const parentId = component.parentId === null
+      ? null
+      : String(component.parentId ?? '');
     component.parentId = parentId;
     parents.set(id, parentId);
     if (component.pivot !== undefined && !finiteVector(component.pivot)) {
@@ -489,10 +547,14 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
       }
     }
   }
-  if (!componentIds.has('root')) errors.push("Entity components must contain exactly one 'root'.");
+  const roots = components.filter(component => component.parentId === null);
+  if (kind === 'entity' && roots.length !== 1) {
+    errors.push('Entity components must contain exactly one structural root (parentId: null).');
+  }
+  const rootComponentId = roots.length === 1 ? roots[0].id : null;
   if (totalScriptBytes > MAX_BUILD_TOTAL_SCRIPT_BYTES) errors.push('Entity scripts exceed 512 KiB in total.');
   for (const component of components) {
-    if (component.id !== 'root' && !componentIds.has(String(component.parentId))) {
+    if (component.parentId !== null && !componentIds.has(String(component.parentId))) {
       errors.push(`Component '${component.id}' references missing parent '${component.parentId}'.`);
     }
     if (componentDepth(component.id, parents) > 16) {
@@ -517,8 +579,10 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
       errors.push('Every voxel coordinate must lie on its 1 m or 0.2 m grid.');
       continue;
     }
-    const componentId = kind === 'entity' ? String(raw?.componentId || 'root') : 'root';
-    if (!componentIds.has(componentId)) {
+    const componentId = kind === 'entity'
+      ? String(raw?.componentId ?? rootComponentId ?? '')
+      : '';
+    if (kind === 'entity' && !componentIds.has(componentId)) {
       errors.push(`Voxel references missing component '${componentId}'.`);
       continue;
     }
@@ -543,7 +607,7 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
   }
 
   const constraints: SpaceBuildConstraintInput[] = Array.isArray(input?.constraints)
-    ? input.constraints.map(constraint => ({ ...constraint }))
+    ? input.constraints.map(closedBuildConstraint)
     : [];
   if (constraints.length > MAX_BUILD_PLAN_CONSTRAINTS) {
     errors.push(`Entity may contain at most ${MAX_BUILD_PLAN_CONSTRAINTS} constraints.`);
@@ -551,22 +615,27 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
   const constraintIds = new Set<string>();
   for (const constraint of constraints.slice(0, MAX_BUILD_PLAN_CONSTRAINTS)) {
     constraint.id = String(constraint?.id || '');
-    constraint.bodyA = String(constraint?.bodyA || 'world');
+    constraint.bodyA = constraint?.bodyA === null || constraint?.bodyA === undefined
+      ? null
+      : String(constraint.bodyA);
     constraint.bodyB = String(constraint?.bodyB || '');
-    if (!COMPONENT_ID.test(constraint.id) || constraintIds.has(constraint.id)) {
+    if (!isValidConstraintId(constraint.id) || constraintIds.has(constraint.id)) {
       errors.push(`Invalid or duplicate constraint id '${constraint.id}'.`);
     }
     constraintIds.add(constraint.id);
     if (!['point', 'hinge', 'weld'].includes(constraint.type)) {
       errors.push(`Constraint '${constraint.id}' has an invalid type.`);
     }
-    if ((constraint.bodyA !== 'world' && !componentIds.has(constraint.bodyA))
-      || !componentIds.has(constraint.bodyB) || constraint.bodyA === constraint.bodyB) {
+    if ((constraint.bodyA !== null && !componentIds.has(constraint.bodyA))
+      || !componentIds.has(constraint.bodyB)
+      || (constraint.bodyA !== null && constraint.bodyA === constraint.bodyB)) {
       errors.push(`Constraint '${constraint.id}' references an invalid component.`);
     }
     for (const field of ['anchorA', 'anchorB', 'axisA', 'axisB'] as const) {
-      if (constraint[field] !== undefined && !finiteVector(constraint[field])) {
-        errors.push(`Constraint '${constraint.id}' has an invalid ${field}.`);
+      if (constraint[field] !== undefined) {
+        const normalized = finiteVector(constraint[field]);
+        if (!normalized) errors.push(`Constraint '${constraint.id}' has an invalid ${field}.`);
+        else constraint[field] = normalized;
       }
     }
     if (constraint.limits !== undefined) {
@@ -579,6 +648,7 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
       }
     }
     constraint.stiffness = clampedUnit(constraint.stiffness, 0.9);
+    constraint.collideConnected = constraint.collideConnected === true;
   }
 
   const plan: NormalizedSpaceBuildPlan | null = kind && anchor && errors.length === 0
@@ -603,7 +673,9 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
   if (plan && planSummary(plan).bounds?.size.some(size => size > MAX_ENTITY_BOUNDS)) {
     errors.push(`Build bounds may not exceed ${MAX_ENTITY_BOUNDS} m per axis.`);
   }
-  if (kind === 'structure' && components.length > 1) warnings.push('Structure plans ignore component definitions.');
+  if (kind === 'structure' && Array.isArray(input?.components) && input.components.length > 0) {
+    warnings.push('Structure plans ignore component definitions.');
+  }
   const finalPlan = errors.length === 0 ? plan : null;
   return {
     ok: errors.length === 0 && !!finalPlan,

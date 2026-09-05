@@ -14,7 +14,8 @@ character skin. An invalid or temporarily unavailable configured skin falls back
 the same way instead of blocking entry. The first random position is checkpointed
 immediately; later wrapped position/yaw updates are saved every five seconds,
 on realtime disconnect, and before page suspension. Backpack data remains browser-local under
-`space.backpack.v3.pb` and is never uploaded by this app. Player-authored standard
+`space.backpack.v5.pb` and is never uploaded by this app. Older backpack schemas are
+intentionally ignored. Player-authored standard
 and micro-voxel terrain overlays are loaded from the authenticated Space API and
 sent back in idempotent batches of at most 256 mutations. A durable browser
 outbox under `space.world-edits.v2.*` preserves unacknowledged batches across a
@@ -164,7 +165,8 @@ writes `entropydrop_space_entities.*`; entering an online world removes that wor
 browser entity value. Creating or editing an entity uploads its canonical Protobuf definition
 and a bounded runtime snapshot, and active owned entities checkpoint changed
 state every six seconds. Removing one performs a backend hard delete. Offline mode keeps the
-existing browser persistence and never calls these entity endpoints. This boundary applies
+version-2 browser persistence and never calls these entity endpoints; obsolete version-1
+entity data is intentionally ignored. This boundary applies
 only to world entities: the backpack deliberately remains local.
 
 External agents can submit canonical entity definitions directly with an account-level,

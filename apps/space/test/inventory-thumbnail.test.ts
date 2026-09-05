@@ -29,7 +29,7 @@ test('getInventoryPreviewBlocks converts a resting entity hierarchy into stopped
   const entitySlot = {
     kind: 'entity',
     name: 'Articulated Robot',
-    rootId: 'root',
+    rootComponentId: 'root',
     blocks: [
       { entityId: 'root', localX: 0, localY: 0, localZ: 0, size: 1, color: 0x112233 },
       { entityId: 'arm_1', localX: 5, localY: 0, localZ: 0, size: 1, color: 0x445566 }

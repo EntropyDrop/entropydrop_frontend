@@ -12,6 +12,15 @@ const STAND_TOLERANCE = 0.4;
 export const PLAYER_MASS_KG = 50;
 export const PLAYER_GRAVITY_MPS2 = -24;
 
+function entityBodyId(contraption: any, value?: unknown): string {
+  if (value !== undefined && value !== null) return String(value);
+  if (typeof contraption?.rootComponentId === 'string') return contraption.rootComponentId;
+  for (const node of contraption?.entityNodes?.values?.() || []) {
+    if (node?.parentId === null) return String(node.id);
+  }
+  return '';
+}
+
 export class PlayerPhysics {
   world: World;
   contraptionManager: any;
@@ -187,7 +196,7 @@ export class PlayerPhysics {
       if (this.contraptionManager && this.contraptionManager.contraptions.includes(this.ridingContraption)) {
         const platVel = this.getContraptionBodyPointVelocity(
           this.ridingContraption,
-          this.ridingBodyId || 'root',
+          entityBodyId(this.ridingContraption, this.ridingBodyId),
           this.position
         );
         this.position.x += platVel.x * dt;
@@ -253,7 +262,7 @@ export class PlayerPhysics {
         const jumpDeltaVelocity = Math.max(0, this.jumpForce - this.velocity.y);
         this.applyContraptionImpulse(
           this.ridingContraption,
-          this.ridingBodyId || 'root',
+          entityBodyId(this.ridingContraption, this.ridingBodyId),
           new THREE.Vector3(0, -this.mass * jumpDeltaVelocity, 0),
           this.position.clone()
         );
@@ -355,8 +364,8 @@ export class PlayerPhysics {
     return boxes;
   }
 
-  getContraptionBodyPointVelocity(contraption, bodyId = 'root', worldPoint = this.position) {
-    const body = contraption?.getRigidBody?.(bodyId);
+  getContraptionBodyPointVelocity(contraption, bodyId = entityBodyId(contraption), worldPoint = this.position) {
+    const body = contraption?.getRigidBody?.(entityBodyId(contraption, bodyId));
     if (!body) return contraption?.getVelocityAtPoint?.(worldPoint) || new THREE.Vector3();
     const lever = worldPoint.clone().sub(body.position);
     return body.velocity.clone().add(body.angularVelocity.clone().cross(lever));
@@ -368,7 +377,7 @@ export class PlayerPhysics {
    * entity must still react when its arm is hit. */
   applyContraptionImpulse(contraption, bodyId, impulse, worldPoint) {
     if (!contraption || !impulse || impulse.lengthSq() <= 1e-12) return false;
-    const owner = contraption.getRigidBody?.(bodyId || 'root');
+    const owner = contraption.getRigidBody?.(entityBodyId(contraption, bodyId));
     if (!owner) return false;
     const physics = this.contraptionManager?.physics;
     if (typeof physics?.applyImpulse !== 'function') return false;
@@ -390,7 +399,7 @@ export class PlayerPhysics {
     const normal = direction.clone().normalize();
     box.contraption?.recordScriptContact?.({
       kind: 'player',
-      selfNodeId: box.entityId || box.bodyId || 'root',
+      selfNodeId: entityBodyId(box.contraption, box.entityId ?? box.bodyId),
       otherEntityId: null,
       otherNodeId: null,
       playerId: 'local',
@@ -402,7 +411,7 @@ export class PlayerPhysics {
     if (!(relativeClosingSpeed > 0)) return false;
     return this.applyContraptionImpulse(
       box.contraption,
-      box.bodyId || box.entityId || 'root',
+      entityBodyId(box.contraption, box.bodyId ?? box.entityId),
       normal.multiplyScalar(this.mass * relativeClosingSpeed),
       worldPoint
     );
@@ -527,7 +536,7 @@ export class PlayerPhysics {
     const contactPoint = new THREE.Vector3(this.position.x, hit.surface, this.position.z);
     const bodyVelocity = this.getContraptionBodyPointVelocity(
       hit.contraption,
-      hit.box.bodyId || hit.box.entityId || 'root',
+      entityBodyId(hit.contraption, hit.box.bodyId ?? hit.box.entityId),
       contactPoint
     );
     const impulseDirection = new THREE.Vector3(0, dy < 0 ? -1 : 1, 0);
@@ -538,7 +547,7 @@ export class PlayerPhysics {
       this.position.y = hit.surface;
       this.isOnGround = true;
       this.ridingContraption = hit.contraption;
-      this.ridingBodyId = hit.box.bodyId || hit.box.entityId || 'root';
+      this.ridingBodyId = entityBodyId(hit.contraption, hit.box.bodyId ?? hit.box.entityId);
     } else {
       const h = this.isCrouching ? 1.45 : this.height;
       this.position.y = hit.surface - h;
@@ -588,7 +597,7 @@ export class PlayerPhysics {
     );
     const bodyVelocity = this.getContraptionBodyPointVelocity(
       hit.box.contraption,
-      hit.box.bodyId || hit.box.entityId || 'root',
+      entityBodyId(hit.box.contraption, hit.box.bodyId ?? hit.box.entityId),
       contactPoint
     );
     const relativeClosingSpeed = this.velocity.clone().sub(bodyVelocity).dot(direction);
@@ -668,7 +677,7 @@ export class PlayerPhysics {
       for (const box of overlaps) {
         const bodyVelocity = this.getContraptionBodyPointVelocity(
           box.contraption,
-          box.bodyId || box.entityId || 'root',
+          entityBodyId(box.contraption, box.bodyId ?? box.entityId),
           contactPoint
         );
         const closingSpeed = bodyVelocity.clone().sub(this.velocity).dot(playerNormal);

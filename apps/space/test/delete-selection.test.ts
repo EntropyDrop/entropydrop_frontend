@@ -18,6 +18,7 @@ import { World } from '../src/engine/voxel/World.ts';
 
 function makeController(overrides: any = {}) {
   const controller: any = Object.create(PlayerController.prototype);
+  const breakSounds: any[] = [];
   controller.activeTool = SpecialTool.SELECTOR;
   controller.selectedSubtree = null;
   controller.selectedBlockSelection = null;
@@ -28,7 +29,7 @@ function makeController(overrides: any = {}) {
   controller.contraptions = overrides.manager || null;
   controller.world = overrides.world || null;
   controller.keys = {};
-  controller.sound = { playBlockBreak() {} };
+  controller.sound = { playBlockBreak(options) { breakSounds.push(options); } };
   const toasts: string[] = [];
   controller.ui = {
     showToast: m => toasts.push(m),
@@ -37,6 +38,7 @@ function makeController(overrides: any = {}) {
   };
   Object.assign(controller, overrides);
   controller.__toasts = toasts;
+  controller.__breakSounds = breakSounds;
   return controller;
 }
 
@@ -73,6 +75,7 @@ test('Delete removes blocks inside a world box, preserves outside blocks, and re
   assert.equal(manager.selectionCornerA, null, 'selection should reset');
   assert.equal(manager.selectionCornerB, null);
   assert.ok(controller.__toasts.some(m => m.includes('Deleted 3 blocks')));
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'bulk', count: 3 }]);
 });
 
 test('Delete also removes 5x5x5 microblocks inside a world box', () => {
@@ -91,6 +94,7 @@ test('Delete also removes 5x5x5 microblocks inside a world box', () => {
   assert.equal(world.getBlock(4, 10, 4), BlockTypes.AIR);
   assert.equal(world.getMicroBlock(22, 50, 27), null, 'the microblock should be deleted');
   assert.ok(controller.__toasts.some(m => m.includes('1 blocks + 1 micro voxels')));
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'bulk', count: 2 }]);
 });
 
 test('Delete removes only selected cells in Shift single-cell mode', () => {
@@ -110,6 +114,7 @@ test('Delete removes only selected cells in Shift single-cell mode', () => {
   assert.equal(world.getBlock(1, 1, 1), BlockTypes.AIR, 'the selected cell should be deleted');
   assert.equal(world.getBlock(9, 9, 9), BlockTypes.COLOR_BLOCK, 'the unselected cell should remain');
   assert.equal(manager.connectedSelection, null, 'single-cell selection should reset');
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'standard', count: 1 }]);
 });
 
 test('Delete removes selected entity-component blocks and preserves the rest', () => {
@@ -143,6 +148,7 @@ test('Delete removes selected entity-component blocks and preserves the rest', (
   assert.equal(controller.selectorLevel, null);
   assert.equal(contraption.subtreeHighlightBoxes.length, 0, 'selection highlights should clear');
   assert.ok(controller.__toasts.some(m => m.includes('Deleted 1 blocks from [root]')));
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'standard', count: 1 }]);
 });
 
 test('deleting every selected component block removes the empty component', () => {
@@ -163,6 +169,34 @@ test('deleting every selected component block removes the empty component', () =
 
   assert.equal(contraption.blocks.length, 0);
   assert.equal(manager.contraptions.includes(contraption), false, 'the empty component should leave the entity list');
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'standard', count: 1 }]);
+});
+
+test('deleting an empty entity component stays silent', () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null);
+  const controller = makeController({ manager });
+  const contraption = {
+    id: 9,
+    clearSubtreeHighlight() {}
+  };
+  controller.selectedSubtree = {
+    contraption,
+    rootId: 'empty-child',
+    nodeIds: new Set(['empty-child'])
+  };
+  controller.performBasicAction = () => ({
+    ok: true,
+    removed: 0,
+    standard: 0,
+    micro: 0,
+    entities: 0,
+    components: 1
+  });
+
+  controller.deleteSelectionBlocks();
+
+  assert.deepEqual(controller.__breakSounds, []);
 });
 
 test('Delete removes the selected root entity through the shared selection API', () => {
@@ -195,6 +229,7 @@ test('Delete removes the selected root entity through the shared selection API',
   assert.equal(controller.selectorLevel, null);
   assert.equal(controller.selectorRange, null);
   assert.ok(controller.__toasts.some(message => message.includes('Deleted entity')));
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'bulk', count: 2 }]);
 });
 
 test('Delete with no selection reports a message without crashing', () => {
@@ -203,6 +238,7 @@ test('Delete with no selection reports a message without crashing', () => {
   const controller = makeController({ manager });
   controller.deleteSelectionBlocks();
   assert.ok(controller.__toasts.some(m => m.includes('Nothing selected')));
+  assert.deepEqual(controller.__breakSounds, []);
 });
 
 test('Delete reports an empty world-box selection', () => {
@@ -217,6 +253,7 @@ test('Delete reports an empty world-box selection', () => {
   controller.deleteSelectionBlocks();
   assert.ok(controller.__toasts.some(m => m.includes('empty')), 'the toast should report no blocks');
   assert.equal(manager.selectionCornerA, null, 'selection should still reset');
+  assert.deepEqual(controller.__breakSounds, []);
 });
 
 test('large Selector boxes delete incrementally and clear the captured selection', () => {
@@ -241,6 +278,7 @@ test('large Selector boxes delete incrementally and clear the captured selection
 
   controller.deleteSelectionBlocks();
   assert.ok(controller.bulkEditJob, 'large deletion should be scheduled');
+  assert.deepEqual(controller.__breakSounds, [], 'bulk deletion stays silent until completion');
   assert.equal(manager.selectionCornerA, null, 'captured selection should clear immediately');
   assert.equal(world.getBlock(20, 80, 20), BlockTypes.COLOR_BLOCK, 'work starts on the next frame');
 
@@ -253,4 +291,5 @@ test('large Selector boxes delete incrementally and clear the captured selection
   assert.equal(world.getBlock(27, 87, 24), BlockTypes.AIR);
   assert.equal(progress.at(-1).phase, 'complete');
   assert.ok(controller.__toasts.some(message => message.includes('Deleted 2 blocks')));
+  assert.deepEqual(controller.__breakSounds, [{ kind: 'bulk', count: 2 }]);
 });

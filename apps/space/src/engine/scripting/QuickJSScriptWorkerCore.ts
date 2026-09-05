@@ -43,6 +43,7 @@ const QUICKJS_BOOTSTRAP = String.raw`
   const scripts = new Map();
   let states = Object.create(null);
   let frame = null;
+  let rootComponentId = '';
   let componentMap = new Map();
   let selfCache = new Map();
   let commands = [];
@@ -84,7 +85,13 @@ const QUICKJS_BOOTSTRAP = String.raw`
   const emit = (scope, nodeId, path, args) => {
     if (commands.length >= MAX_COMMANDS) return null;
     const commandId = 'cmd-' + nextCommandId++;
-    commands.push({ commandId, scope, nodeId: String(nodeId || 'root'), path, args: clone(args) || [] });
+    commands.push({
+      commandId,
+      scope,
+      nodeId: nodeId === null || nodeId === undefined ? null : String(nodeId),
+      path,
+      args: clone(args) || []
+    });
     return commandId;
   };
   const queuedEdit = (field, commandId, amount = 1) => Object.freeze({
@@ -148,12 +155,12 @@ const QUICKJS_BOOTSTRAP = String.raw`
   }
 
   function getSelf(nodeId) {
-    const id = String(nodeId || 'root');
+    const id = String(nodeId || rootComponentId);
     if (selfCache.has(id)) return selfCache.get(id);
     const node = componentMap.get(id);
     if (!node) return null;
     if (!states[id] || typeof states[id] !== 'object' || Array.isArray(states[id])) states[id] = {};
-    const isRoot = id === 'root';
+    const isRoot = node.parentId === null || node.parentId === undefined;
     const api = {
       apiVersion: 2,
       id,
@@ -187,7 +194,6 @@ const QUICKJS_BOOTSTRAP = String.raw`
       },
       child: childId => {
         const target = String(childId || '');
-        if (target === 'root') return getSelf('root');
         return (node.children || []).includes(target) ? getSelf(target) : null;
       },
       children: () => Object.freeze((node.children || []).map(getSelf).filter(Boolean))
@@ -303,17 +309,17 @@ const QUICKJS_BOOTSTRAP = String.raw`
           : hostWorldRead('standard', position);
       },
       set(position, options) {
-        const accepted = emit('world', 'root', 'voxels.set', [position, options]);
+        const accepted = emit('world', null, 'voxels.set', [position, options]);
         if (accepted) worldVoxelOverlays.set(positionKey(position), { block: 1, color: finite(options?.color) });
         return queuedEdit('placed', accepted);
       },
       clear(position) {
-        const accepted = emit('world', 'root', 'voxels.clear', [position]);
+        const accepted = emit('world', null, 'voxels.clear', [position]);
         if (accepted) worldVoxelOverlays.set(positionKey(position), { block: 0, color: 0 });
         return queuedEdit('removed', accepted);
       },
       paint(position, options) {
-        const accepted = emit('world', 'root', 'voxels.paint', [position, options]);
+        const accepted = emit('world', null, 'voxels.paint', [position, options]);
         if (accepted) {
           const current = voxels.get(position);
           if (current?.block) worldVoxelOverlays.set(positionKey(position), { ...current, color: finite(options?.color) });
@@ -321,12 +327,12 @@ const QUICKJS_BOOTSTRAP = String.raw`
         return queuedEdit('painted', accepted);
       },
       clearCell(position) {
-        const accepted = emit('world', 'root', 'voxels.clearCell', [position]);
+        const accepted = emit('world', null, 'voxels.clearCell', [position]);
         if (accepted) worldVoxelOverlays.set(positionKey(position), { block: 0, color: 0 });
         return queuedEdit('removed', accepted);
       },
       subdivide(position, offset) {
-        const accepted = emit('world', 'root', 'voxels.subdivide', [position, offset]);
+        const accepted = emit('world', null, 'voxels.subdivide', [position, offset]);
         return queuedResult(accepted, { subdivided: 1, removed: 0 }, { subdivided: 0, removed: 0 });
       }
     });
@@ -338,7 +344,7 @@ const QUICKJS_BOOTSTRAP = String.raw`
           : hostWorldRead('micro', cell, offset);
       },
       set(cell, offset, options) {
-        const accepted = emit('world', 'root', 'microVoxels.set', [cell, offset, options]);
+        const accepted = emit('world', null, 'microVoxels.set', [cell, offset, options]);
         if (accepted) worldMicroVoxelOverlays.set(
           microPositionKey(cell, offset),
           { block: 1, color: finite(options?.color) }
@@ -346,12 +352,12 @@ const QUICKJS_BOOTSTRAP = String.raw`
         return queuedEdit('placed', accepted);
       },
       clear(cell, offset) {
-        const accepted = emit('world', 'root', 'microVoxels.clear', [cell, offset]);
+        const accepted = emit('world', null, 'microVoxels.clear', [cell, offset]);
         if (accepted) worldMicroVoxelOverlays.set(microPositionKey(cell, offset), { block: 0, color: 0 });
         return queuedEdit('removed', accepted);
       },
       paint(cell, offset, options) {
-        const accepted = emit('world', 'root', 'microVoxels.paint', [cell, offset, options]);
+        const accepted = emit('world', null, 'microVoxels.paint', [cell, offset, options]);
         if (accepted) {
           const current = microVoxels.get(cell, offset);
           if (current?.block) worldMicroVoxelOverlays.set(
@@ -411,14 +417,14 @@ const QUICKJS_BOOTSTRAP = String.raw`
   function makeSelectionApi() {
     let current = clone(frame.selection) || { kind: 'none', count: 0 };
     const run = (path, args, next) => {
-      const accepted = emit('selection', 'root', path, args);
+      const accepted = emit('selection', null, path, args);
       if (accepted && next) current = next;
       return queuedEdit('selected', accepted, Number(current.count) || 0);
     };
     return Object.freeze({
       get: () => frozenClone(current),
       clear: () => {
-        const accepted = emit('selection', 'root', 'clear', []);
+        const accepted = emit('selection', null, 'clear', []);
         const count = Number(current.count) || 0;
         if (accepted) current = { kind: 'none', count: 0 };
         return queuedEdit('cleared', accepted, count);
@@ -428,10 +434,10 @@ const QUICKJS_BOOTSTRAP = String.raw`
       box: (...args) => run('box', args),
       cells: cells => run('cells', [cells], { kind: 'world-cells', count: Array.isArray(cells) ? cells.length : 0 }),
       toggle: (...args) => run('toggle', args),
-      entity: (entityId, nodeId = 'root') => run('entity', [entityId, nodeId], { kind: 'entity-subtree', entityId, nodeId, count: 1 }),
+      entity: (entityId, nodeId = null) => run('entity', [entityId, nodeId], { kind: 'entity-subtree', entityId, nodeId, count: 1 }),
       entityBox: (...args) => run('entityBox', args),
       delete: () => {
-        const accepted = emit('selection', 'root', 'delete', []);
+        const accepted = emit('selection', null, 'delete', []);
         const removed = Number(current.count) || 0;
         return queuedResult(
           accepted,
@@ -440,7 +446,7 @@ const QUICKJS_BOOTSTRAP = String.raw`
         );
       },
       assemble: (...args) => {
-        const accepted = emit('selection', 'root', 'assemble', args);
+        const accepted = emit('selection', null, 'assemble', args);
         return queuedResult(
           accepted,
           { assembled: 1, entityId: null, runtimeId: null },
@@ -448,7 +454,7 @@ const QUICKJS_BOOTSTRAP = String.raw`
         );
       },
       createChild: (...args) => {
-        const accepted = emit('selection', 'root', 'createChild', args);
+        const accepted = emit('selection', null, 'createChild', args);
         return queuedResult(accepted, { childId: null }, { childId: null });
       }
     });
@@ -482,6 +488,11 @@ const QUICKJS_BOOTSTRAP = String.raw`
     frame = JSON.parse(snapshotJson);
     states = clone(frame.states) || Object.create(null);
     componentMap = new Map((frame.components || []).map(node => [String(node.id), node]));
+    rootComponentId = String(
+      frame.rootComponentId
+      || (frame.components || []).find(node => node.parentId === null)?.id
+      || ''
+    );
     selfCache = new Map();
     commands = [];
     errors = [];
@@ -515,7 +526,7 @@ const QUICKJS_BOOTSTRAP = String.raw`
       bodyType: frame.bodyType || 'dynamic',
       gravity: frozenClone(frame.gravity || [0, -18, 0]),
       limits: frozenClone(frame.limits || { maxForce: 0, maxTorque: 0 }),
-      root: getSelf('root'),
+      root: getSelf(rootComponentId),
       blocks: Object.freeze({
         pressed: type => !!blocks.changed && (type === undefined || type === null || blocks.event?.type === type),
         event: () => frozenClone(blocks.event || null)
@@ -740,7 +751,7 @@ export function createQuickJSScriptRuntimeService() {
 
       const entity = getEntity(entityRuntimeId);
       if (type === 'set-script') {
-        const nodeId = String(message.nodeId || 'root');
+        const nodeId = String(message.nodeId || '');
         const code = String(message.code || '');
         entity.scripts.set(nodeId, code);
         const result = evaluate(entity, jsonExpression('__spaceSetScript', nodeId, code));

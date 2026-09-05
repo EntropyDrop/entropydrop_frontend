@@ -185,7 +185,7 @@ export interface SpaceEntryHooks {
   onStateChange?: (state: SpaceEntryState) => void;
 }
 
-type SpaceEntryProgressReporter = (value: number, message: string) => void;
+export type SpaceEntryProgressReporter = (value: number, message: string) => void;
 
 export interface PreparedOnlineSpace {
   payload: SpaceBootstrapPayload;
@@ -679,17 +679,12 @@ export function createPlayerPositionRemote(
 async function prepareOnlineSpace(
   reportProgress?: SpaceEntryProgressReporter
 ): Promise<PreparedOnlineSpace> {
-  const apiOrigin = resolveApiOrigin(import.meta.env.VITE_API_BASE_URL, window.location.origin);
+  const apiOrigin = resolveApiOrigin(import.meta.env?.VITE_API_BASE_URL, window.location.origin);
   installSpaceAuthFetchInterceptor(apiOrigin);
   reportProgress?.(14, isZhLang() ? '正在验证 EntropyDrop 账号…' : 'Verifying EntropyDrop account…');
   const token = await ensureSpaceAccessToken(apiOrigin);
   if (!token) {
-    throw new SpaceEntryError(
-      'LOGIN_REQUIRED',
-      'Please log in to EntropyDrop before entering Space.',
-      '/skin/',
-      'Log In'
-    );
+    throw entryErrorFromResponse(401, null);
   }
 
   const latencyMonitor = new LatencyMonitor({ apiOrigin });
@@ -980,7 +975,10 @@ function renderEntryError(error: unknown) {
 }
 
 export async function enterSpace(
-  startGame: (session: ReadySpaceSession) => void | Promise<void>,
+  startGame: (
+    session: ReadySpaceSession,
+    reportProgress: SpaceEntryProgressReporter,
+  ) => void | Promise<void>,
   hooks: SpaceEntryHooks = {}
 ) {
   const gate = document.getElementById('space-entry-gate');
@@ -1046,7 +1044,7 @@ export async function enterSpace(
         enterOnline: null
       });
       reportProgress(88, isZhLang() ? '正在初始化离线世界…' : 'Initializing offline world…');
-      await startGame(session);
+      await startGame(session, reportProgress);
       reportProgress(100, isZhLang() ? '离线世界已就绪' : 'Offline world ready');
       if (gate) gate.hidden = true;
       return;
@@ -1069,7 +1067,7 @@ export async function enterSpace(
         enterOnline: null
       });
       reportProgress(92, isZhLang() ? '正在初始化地球模式场景…' : 'Initializing Earth-mode scene…');
-      await startGame(session);
+      await startGame(session, reportProgress);
       reportProgress(100, isZhLang() ? 'Space 世界已就绪' : 'Space world ready');
       if (gate) gate.hidden = true;
       return;
@@ -1128,7 +1126,7 @@ export async function enterSpace(
         ? `在线队列 #${admission.position}，正在进入离线世界…`
         : `Space Queue #${admission.position}, entering offline world…`
     );
-    await startGame(createOfflineSpaceSession(prepared));
+    await startGame(createOfflineSpaceSession(prepared), reportProgress);
     reportProgress(100, isZhLang() ? '离线世界已就绪' : 'Offline world ready');
     if (gate) gate.hidden = true;
 

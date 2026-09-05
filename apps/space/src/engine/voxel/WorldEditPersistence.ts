@@ -422,23 +422,29 @@ export class WorldEditPersistence {
     });
   }
 
-  removeMicro(mx: number, my: number, mz: number) {
+  removeMicro(mx: number, my: number, mz: number, enqueueIfMissing = false) {
     const normalizedX = Math.floor(wrapMicroX(mx));
     const normalizedY = Math.floor(my);
     const normalizedZ = Math.floor(wrapMicroZ(mz));
     const removed = this.deleteMicroEdit(normalizedX, normalizedY, normalizedZ);
-    if (removed) {
+    if (removed || enqueueIfMissing) {
       this.enqueueMutation({ kind: 'remove_micro', mx: normalizedX, my: normalizedY, mz: normalizedZ });
     }
     return removed;
   }
 
-  removeMicroStandardCell(wx: number, wy: number, wz: number, enqueue = true) {
+  removeMicroStandardCell(
+    wx: number,
+    wy: number,
+    wz: number,
+    enqueue = true,
+    enqueueIfEmpty = false,
+  ) {
     const normalizedX = Math.floor(wrapX(wx));
     const normalizedY = Math.floor(wy);
     const normalizedZ = Math.floor(wrapZ(wz));
     const removed = this.removeMicroStandardCellLocal(normalizedX, normalizedY, normalizedZ);
-    if (removed > 0 && enqueue) {
+    if ((removed > 0 || enqueueIfEmpty) && enqueue) {
       this.enqueueMutation({
         kind: 'clear_micro_cell',
         x: normalizedX,

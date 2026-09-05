@@ -75,7 +75,8 @@ export class InventoryThumbnailRenderer {
    */
   private getItemCacheKey(item: any, size: number): string {
     if (!item) return '';
-    const kind = item.kind || (item.rootId || item.childEntities ? 'entity' : 'blockset');
+    const kind = item.kind
+      || (item.type === 'space-entity' || Array.isArray(item.childEntities) ? 'entity' : 'blockset');
     const blockCount = item.blockCount || item.blocks?.length || 0;
     const name = item.name || '';
     const childCount = item.childEntities?.length || 0;

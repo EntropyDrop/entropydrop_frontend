@@ -11,7 +11,7 @@ function makeGrid(sizeX: number, sizeY: number, sizeZ: number) {
   for (let x = 0; x < sizeX; x++) {
     for (let y = 0; y < sizeY; y++) {
       for (let z = 0; z < sizeZ; z++) {
-        blocks.push({ localX: x, localY: y, localZ: z, block: BlockTypes.COLOR_BLOCK });
+        blocks.push({ localX: x, localY: y, localZ: z, block: BlockTypes.COLOR_BLOCK, entityId: 'root' });
       }
     }
   }

@@ -20,6 +20,7 @@ test('spoon subdivision replaces one standard voxel with exactly 5x5x5 cells', (
   assert.equal(world.getBlock(2, 20, 2), BlockTypes.AIR);
   assert.equal(world.microVoxels.cells.size, 125);
   assert.equal(world.microVoxels.get(10, 100, 10), 0xff3366);
+  world.microVoxels.updateMesh();
 
   const hit = world.raycastMicro(
     new THREE.Vector3(2.5, 20.5, 1),
@@ -129,6 +130,67 @@ test('micro mesh work is deferred until its standard chunk is active', () => {
   assert.equal(layer.meshChunks.has('4,0'), true);
 });
 
+test('interactive micro edits are selected before ordinary queued mesh partitions', () => {
+  const layer = new MicroVoxelLayer();
+  layer.set(1, 10, 1, 0xff0000);
+  layer.set(101, 10, 1, 0x00ff00);
+  layer.prioritizeMeshAt(101, 1);
+
+  assert.equal(
+    layer.updateMesh(1, new Set(['0,0', '1,0'])),
+    true,
+  );
+  assert.equal(layer.meshChunks.has('5,0'), true,
+    'the partition touched by direct input should publish first');
+  assert.equal(layer.meshChunks.has('0,0'), false,
+    'ordinary background work should remain queued for the idle path');
+});
+
+test('interactive micro edits preempt an already active background mesh build', () => {
+  const layer = new MicroVoxelLayer() as any;
+  for (let mx = 1; mx < 19; mx++) {
+    for (let mz = 1; mz < 19; mz++) layer.set(mx, 10, mz, 0xff0000);
+  }
+
+  assert.equal(layer.updateMesh(1, null, null, 0), false);
+  assert.equal(layer.activeMeshBuild?.chunkKey, '0,0',
+    'the ordinary partition should be paused mid-build');
+
+  layer.set(101, 10, 1, 0x00ff00);
+  layer.prioritizeMeshAt(101, 1);
+  assert.equal(layer.activeMeshBuild, null,
+    'direct input should return unrelated active work to the queue');
+
+  assert.equal(layer.updateMesh(1), true);
+  assert.equal(layer.meshChunks.has('5,0'), true,
+    'the clicked partition should publish in the next available slice');
+  assert.equal(layer.meshChunks.has('0,0'), false,
+    'the preempted background partition should remain resumable');
+});
+
+test('world publishes local micro placement and destruction before idle streaming', () => {
+  const world = new World(new THREE.Scene()) as any;
+  world.setRenderDistance(3);
+  world.updateChunksAround(0, 0);
+
+  assert.equal(world.setMicroBlock(5, 1_000, 5, 0x48dbfb), true);
+  assert.equal(world.microVoxels.meshChunks.size, 0);
+  let placementFrames = 0;
+  while (!world.microVoxels.meshChunks.has('0,0') && placementFrames < 8) {
+    world.processInteractiveTerrainWork();
+    placementFrames++;
+  }
+  assert.equal(world.microVoxels.meshChunks.has('0,0'), true,
+    'placing a micro voxel should publish without requestIdleCallback');
+  assert.ok(placementFrames < 8,
+    'a sparse interactive partition should finish within a few foreground budgets');
+
+  assert.equal(world.removeMicroBlock(5, 1_000, 5), true);
+  assert.equal(world.processInteractiveTerrainWork(), true);
+  assert.equal(world.microVoxels.meshChunks.has('0,0'), false,
+    'destroying the last micro voxel should retire its mesh without idle time');
+});
+
 test('micro mesh chunks cull shared faces across their boundary', () => {
   const layer = new MicroVoxelLayer();
   layer.set(19, 10, 1, 0xff0000);
@@ -175,7 +237,7 @@ test('remote micro replacement retains published collision until its mesh swaps'
   layer.finalizeCollisionSnapshots(cursor.targetMeshChunks);
 
   assert.equal(layer.get(1, 10, 1), null, 'the incoming data view may already have removed the old cell');
-  assert.notEqual(layer.getPublishedCollisionColor(1, 10, 1), null,
+  assert.equal(layer.getPublishedCollisionColor(1, 10, 1), 0xff0000,
     'physics must retain occupancy represented by the old mesh');
   assert.equal(layer.getPublishedCollisionColor(2, 10, 1), null,
     'new occupancy must wait for the matching mesh publication');

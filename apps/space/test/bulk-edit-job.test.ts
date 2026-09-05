@@ -102,7 +102,7 @@ test('large entity Hammer placement prepares blocks in BulkEditJob before atomic
   const controller = makeController(manager);
   const total = BULK_EDIT_THRESHOLD + 44;
   const slot = {
-    rootId: 'root',
+    rootComponentId: 'root',
     blockCount: total,
     blocks: entityBlocks(total)
   };
@@ -128,7 +128,7 @@ test('large Hammer component installation prepares blocks before one atomic tree
   const manager = new ContraptionManager(scene, {}, null, null) as any;
   const target = manager.buildFromSlot({
     name: 'Target',
-    rootId: 'root',
+    rootComponentId: 'root',
     blockCount: 1,
     blocks: entityBlocks(1),
     childEntities: [],
@@ -142,7 +142,7 @@ test('large Hammer component installation prepares blocks before one atomic tree
   const slot = {
     name: 'Cargo',
     kind: 'entity',
-    rootId: 'root',
+    rootComponentId: 'root',
     blockCount: total,
     blocks: entityBlocks(total),
     childEntities: [],

@@ -193,7 +193,8 @@ test('R copies a block selection and pastes it as an independent entity', () => 
   const pasted = manager.buildFromSlot(slot, new THREE.Vector3(20, 0, 20));
   assert.ok(pasted);
   assert.equal(pasted.blocks.length, 1);
-  assert.equal(pasted.blocks[0].entityId, 'root', 'pasted block selection should become an independent root entity');
+  assert.equal(pasted.rootComponentId, 'arm');
+  assert.equal(pasted.blocks[0].entityId, 'arm', 'the selected component keeps its ID as the independent root');
 });
 
 test('world two-point selection builds a box from cornerA and cornerB', () => {
@@ -780,17 +781,18 @@ test('inventory copy prunes empty ghost children and scripts from a block select
   const slot = controller.inventorySlots[0];
   assert.ok(slot);
   assert.equal(slot.blockCount, 1);
-  assert.deepEqual([...new Set(slot.blocks.map(b => b.entityId || 'root'))], ['root']);
+  assert.equal(slot.rootComponentId, 'arm');
+  assert.deepEqual([...new Set(slot.blocks.map(b => b.entityId))], ['arm']);
   assert.equal(slot.childEntities.length, 0, 'hand definition should be pruned because its blocks are not selected');
-  assert.deepEqual(slot.scripts.map(s => s.id), ['root'], 'the copied level script should move to the canonical root');
-  assert.deepEqual(slot.enabled.map(e => e.id), ['root']);
+  assert.deepEqual(slot.scripts.map(s => s.id), ['arm'], 'the copied level script stays attached to the selected component ID');
+  assert.deepEqual(slot.enabled.map(e => e.id), ['arm']);
 
   // Pasting should not create ghost children.
   const scene = new THREE.Scene();
   const manager = new ContraptionManager(scene, {}, null, null);
   const pasted = manager.buildFromSlot(slot, new THREE.Vector3(30, 0, 30));
   assert.equal(pasted.blocks.length, 1);
-  const ghost = [...pasted.entityNodes.keys()].filter(id => id !== 'root');
+  const ghost = [...pasted.entityNodes.keys()].filter(id => id !== pasted.rootComponentId);
   assert.equal(ghost.length, 0, 'pasted entity should contain no ghost components');
 });
 
