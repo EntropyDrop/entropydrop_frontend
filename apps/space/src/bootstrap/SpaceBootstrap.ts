@@ -158,6 +158,7 @@ export interface PlayerPositionRemote {
 export interface ReadySpaceSession extends SpaceBootstrapPayload {
   mode: SpaceSessionMode;
   api_origin: string;
+  account_api_origin?: string;
   token: string;
   skin_object_url: string;
   entry_warning: string | null;
@@ -679,10 +680,11 @@ export function createPlayerPositionRemote(
 async function prepareOnlineSpace(
   reportProgress?: SpaceEntryProgressReporter
 ): Promise<PreparedOnlineSpace> {
-  const apiOrigin = resolveApiOrigin(import.meta.env?.VITE_API_BASE_URL, window.location.origin);
-  installSpaceAuthFetchInterceptor(apiOrigin);
+  const accountOrigin = resolveApiOrigin(import.meta.env?.VITE_API_BASE_URL, window.location.origin);
+  const apiOrigin = resolveApiOrigin(import.meta.env?.VITE_SPACE_API_BASE_URL || accountOrigin, window.location.origin);
+  installSpaceAuthFetchInterceptor(accountOrigin, apiOrigin);
   reportProgress?.(14, isZhLang() ? '正在验证 EntropyDrop 账号…' : 'Verifying EntropyDrop account…');
-  const token = await ensureSpaceAccessToken(apiOrigin);
+  const token = await ensureSpaceAccessToken(accountOrigin);
   if (!token) {
     throw entryErrorFromResponse(401, null);
   }
@@ -812,6 +814,7 @@ async function completeOnlineSpace(
     ...payload,
     mode: 'online',
     api_origin: apiOrigin,
+    account_api_origin: resolveApiOrigin(import.meta.env?.VITE_API_BASE_URL, typeof window === "undefined" ? "http://localhost" : window.location.origin),
     token,
     skin_object_url: skinObjectUrl,
     entry_warning: entryWarning,
@@ -871,7 +874,7 @@ export function createOfflineSpaceSession(
   const pageOrigin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
   const configuredApiBase = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined;
   const apiOrigin = prepared?.apiOrigin
-    || resolveApiOrigin(configuredApiBase, pageOrigin);
+    || resolveApiOrigin(import.meta.env?.VITE_SPACE_API_BASE_URL || configuredApiBase, pageOrigin);
   return {
     protocol_version: 2,
     max_online_players: 32,
@@ -900,6 +903,7 @@ export function createOfflineSpaceSession(
     },
     mode: 'offline',
     api_origin: apiOrigin,
+    account_api_origin: resolveApiOrigin(import.meta.env?.VITE_API_BASE_URL, typeof window === "undefined" ? "http://localhost" : window.location.origin),
     token: prepared?.token || '',
     skin_object_url: prepared?.skinObjectUrl || DEFAULT_PLAYER_SKIN_URL,
     entry_warning: prepared?.entryWarning || null,

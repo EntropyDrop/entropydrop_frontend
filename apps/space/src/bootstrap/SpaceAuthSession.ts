@@ -11,6 +11,7 @@ export interface SpaceSessionRefreshResult {
 
 let installed = false;
 let installedApiOrigin = '';
+let installedSpaceOrigin = '';
 let browserFetch: typeof fetch | null = null;
 let refreshInFlight: Promise<SpaceSessionRefreshResult> | null = null;
 
@@ -29,8 +30,9 @@ function absoluteUrl(input: RequestInfo | URL): URL | null {
 
 function isEntropyDropApi(url: URL | null, apiOrigin: string): boolean {
   return !!url
-    && url.origin === normalizedOrigin(apiOrigin)
-    && (/^\/space\/api(?:\/|$)/.test(url.pathname) || /^\/skin\/api(?:\/|$)/.test(url.pathname));
+    && ((url.origin === normalizedOrigin(apiOrigin)
+      && (/^\/space\/api(?:\/|$)/.test(url.pathname) || /^\/skin\/api(?:\/|$)/.test(url.pathname)))
+      || (url.origin === installedSpaceOrigin && /^\/space\/api(?:\/|$)/.test(url.pathname)));
 }
 
 function isSessionControlRequest(url: URL | null): boolean {
@@ -140,9 +142,10 @@ function prepareRequest(
   return { input, init: preparedInit, retryInput: input, retryInit: preparedInit };
 }
 
-export function installSpaceAuthFetchInterceptor(apiOrigin: string): void {
+export function installSpaceAuthFetchInterceptor(apiOrigin: string, spaceOrigin: string = apiOrigin): void {
   if (typeof window === 'undefined') return;
   installedApiOrigin = normalizedOrigin(apiOrigin);
+  installedSpaceOrigin = normalizedOrigin(spaceOrigin);
   if (installed) return;
 
   installed = true;

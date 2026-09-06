@@ -17,4 +17,9 @@ if (!fs.existsSync(source)) {
 fs.rmSync(spaceRoot, { recursive: true, force: true })
 fs.cpSync(source, destination, { recursive: true })
 fs.copyFileSync(siteIndex, spaceIndex)
+for (const route of ['intro', 'apikeys']) {
+  const directory = path.join(spaceRoot, route)
+  fs.mkdirSync(directory, { recursive: true })
+  fs.copyFileSync(siteIndex, path.join(directory, 'index.html'))
+}
 console.log(`Merged Space into frontend artifact: ${destination}`)

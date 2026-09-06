@@ -310,7 +310,7 @@ test('loadAgentConfig migrates legacy unconfirmed localStorage keys into this ta
 
 test('AGENT_SYSTEM_PROMPT contains the core API and generation rules', () => {
   assert.ok(AGENT_SYSTEM_PROMPT.includes(renderAgentApiReference()), 'prompt must embed the generated canonical API reference');
-  assert.ok(AGENT_SYSTEM_PROMPT.includes('Canonical Space Script API V2 contract'));
+  assert.ok(AGENT_SYSTEM_PROMPT.includes('Canonical entityAPI V2 contract'));
   assert.ok(AGENT_SYSTEM_PROMPT.includes('applyForce'));
   assert.ok(AGENT_SYSTEM_PROMPT.includes('setLocalSpin'));
   assert.ok(AGENT_SYSTEM_PROMPT.includes('groundDistance'));

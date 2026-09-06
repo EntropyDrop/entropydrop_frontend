@@ -1,9 +1,10 @@
 import { readJsonResponse } from './NetworkSafety.ts';
+import { spaceAgentConnection } from './SpaceAgentGuide.ts';
 
 
 const MAX_API_KEY_RESPONSE_BYTES = 256 * 1024;
 
-export type SpaceApiKeyScope = 'space:entity:create' | 'space:entity:run' | 'space:blockset:build';
+export type SpaceApiKeyScope = 'space:entity:create' | 'space:entity:run' | 'space:entity:edit' | 'space:blockset:build';
 
 export interface SpaceApiKeyRecord {
   id: string;
@@ -42,6 +43,7 @@ function parseApiKey(value: any): SpaceApiKeyRecord {
     || value.scopes.some((scope: unknown) => ![
       'space:entity:create',
       'space:entity:run',
+      'space:entity:edit',
       'space:blockset:build',
     ].includes(String(scope)))
     || !value.scopes.includes('space:entity:create')
@@ -61,16 +63,22 @@ function parseApiKey(value: any): SpaceApiKeyRecord {
 export class SpaceApiKeyClient {
   private readonly baseUrl: string;
   private readonly token: string;
+  private readonly usageOrigin: string;
   private readonly fetchImpl: typeof fetch;
 
-  constructor(apiOrigin: string, token: string, fetchImpl: typeof fetch = fetch) {
+  constructor(apiOrigin: string, token: string, fetchImpl: typeof fetch = fetch, spaceOrigin: string = apiOrigin) {
     this.baseUrl = `${apiOrigin.replace(/\/+$/, '')}/space/api/v2/api-keys`;
     this.token = token;
+    this.usageOrigin = spaceOrigin.replace(/\/+$/, "");
     this.fetchImpl = fetchImpl.bind(globalThis);
   }
 
-  private async request(path: string, options: RequestInit = {}): Promise<any> {
-    const response = await this.fetchImpl(new URL(`${this.baseUrl}${path}`).href, {
+  getAgentConnection() {
+    return spaceAgentConnection(this.usageOrigin);
+  }
+
+  private async request(path: string, options: RequestInit = {}, origin?: string): Promise<any> {
+    const response = await this.fetchImpl(new URL(origin ? `${origin}${path}` : `${this.baseUrl}${path}`).href, {
       ...options,
       headers: {
         Authorization: `Bearer ${this.token}`,
@@ -115,17 +123,10 @@ export class SpaceApiKeyClient {
     return body.items.map(parseApiKey);
   }
 
-  async create(name: string, allowRun: boolean, allowBuild = false): Promise<CreatedSpaceApiKey> {
+  async create(name: string): Promise<CreatedSpaceApiKey> {
     const body = await this.request('', {
       method: 'POST',
-      body: JSON.stringify({
-        name,
-        scopes: [
-          'space:entity:create',
-          ...(allowRun ? ['space:entity:run'] : []),
-          ...(allowBuild ? ['space:blockset:build'] : []),
-        ],
-      }),
+      body: JSON.stringify({ name }),
     });
     const record = parseApiKey(body);
     if (typeof body?.api_key !== 'string' || !body.api_key.startsWith(record.key_prefix)) {
@@ -140,7 +141,7 @@ export class SpaceApiKeyClient {
   }
 
   async usage(worldId: string): Promise<SpaceApiUsage> {
-    const body = await this.request(`/../worlds/${encodeURIComponent(worldId)}/api-usage`);
+    const body = await this.request(`/space/api/v2/worlds/${encodeURIComponent(worldId)}/api-usage`, {}, this.usageOrigin);
     const nonnegative = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;
     const allowance = (value: any) => value && ['used', 'limit', 'remaining'].every(key => nonnegative(value[key]));
     if (body?.world_id !== worldId || !nonnegative(body?.credits)

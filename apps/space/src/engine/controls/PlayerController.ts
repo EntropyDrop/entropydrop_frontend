@@ -296,6 +296,7 @@ export class PlayerController {
 
   // --- Selected item / cursor state ---
   _activeTool: string;
+  toolUseSequence = 0;
   get activeTool(): string {
     return this._activeTool;
   }
@@ -843,6 +844,9 @@ export class PlayerController {
       this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
       return false;
     }
+    // Count accepted game clicks, including swings into empty space. DOM/UI
+    // clicks never reach this method unless the game owns pointer lock.
+    this.toolUseSequence = (this.toolUseSequence || 0) + 1;
     // Hammer owns inventory construction. Selection never places inventory
     // contents, so copying and building remain distinct tool modes.
     if (this.activeTool === SpecialTool.HAMMER) {
@@ -1257,7 +1261,7 @@ export class PlayerController {
    * - **Shift+click**: immediately switch / re-select the component level without entering box
    *   mode.
    *
-   * Only stopped entities expose their construction grid. Running, paused, and
+   * Only stopped entities expose their construction grid. Running and
    * errored entities allow whole-entity selection only; box mode and Shift-click
    * level switching remain disabled.
    */
@@ -5161,7 +5165,7 @@ export class PlayerController {
       // Placing an independent entity is a completed spawn operation, so it
       // has the same result as pressing global Play: physics is active and all
       // runnable component scripts start, even if the backpack copy was saved
-      // with its script switches paused. Component installation intentionally
+      // with its component code disabled. Component installation intentionally
       // keeps its target stopped and does not pass through this path.
       this.performBasicAction({
         domain: ActionDomain.ENTITY,

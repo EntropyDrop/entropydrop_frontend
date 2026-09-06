@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '@iconify/react'
+import { Link } from 'react-router-dom'
 
 import { PageContainer } from '../components/PageContainer'
 import { SEO } from '../components/SEO'
@@ -103,6 +104,12 @@ export function SpacePage({ current }: SpacePageProps) {
         SPACE_STATUS_PATH,
         new URL(API_BASE_URL, window.location.href),
     ).toString()
+    const agentOrigin = new URL(import.meta.env.VITE_SPACE_API_BASE_URL || API_BASE_URL, window.location.href).origin
+    const agentGuideUrl = `${agentOrigin}/space/agent/SKILL.md`
+    const spaceApiGuideUrl = `${agentOrigin}/space/agent/spaceAPI.md`
+    const entityApiGuideUrl = `${agentOrigin}/space/agent/entityAPI.md`
+    const agentPrompt = data.agentSetup.prompt.replace('{guide}', agentGuideUrl).replace('{backend}', agentOrigin)
+    const [agentCopyMessage, setAgentCopyMessage] = useState('')
     const [population, setPopulation] = useState<SpacePopulation | null>(null)
     const [populationStatus, setPopulationStatus] = useState<SpacePopulationStatus>('loading')
 
@@ -199,7 +206,7 @@ export function SpacePage({ current }: SpacePageProps) {
             gap="gap-10 sm:gap-14"
             className="relative"
         >
-            <SEO title={data.title} description={data.description} />
+            <SEO title={data.title} description={data.description} canonicalUrl="https://entropydrop.com/space/intro" />
 
             {/* ===================== HERO SECTION ===================== */}
             <section className="flex flex-col gap-6 border-b border-white/10 pb-10 sm:pb-14 shrink-0 w-full">
@@ -279,6 +286,11 @@ export function SpacePage({ current }: SpacePageProps) {
                     >
                         <Icon icon="pixelarticons:cloud-off" className="text-lg" />
                         <span>{data.offlineCta}</span>
+                    </a>
+                    <a href={spaceApiGuideUrl} target="_blank" rel="noopener noreferrer"
+                        className={`inline-flex min-h-12 items-center justify-center gap-2 border border-purple-400/35 bg-purple-500/10 px-5 py-3 text-sm text-purple-200 hover:bg-purple-500/20 no-underline ${current.fontClass}`}>
+                        <Icon icon="pixelarticons:script" className="text-lg" />
+                        <span>{data.agentSetup.guide}</span>
                     </a>
                     <a
                         href="#space-features"
@@ -370,7 +382,7 @@ export function SpacePage({ current }: SpacePageProps) {
 
 
             {/* ===================== AI AGENT & DEVELOPER PROTOCOL ===================== */}
-            <section className="flex flex-col gap-6 shrink-0 w-full border-t border-white/10 pt-10">
+            <section id="space-agents" className="flex flex-col gap-6 shrink-0 w-full border-t border-white/10 pt-10 scroll-mt-24">
                 <div className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-2 text-purple-400">
                         <Icon icon="pixelarticons:script" className="text-xl" />
@@ -380,11 +392,82 @@ export function SpacePage({ current }: SpacePageProps) {
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
                         <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${current.fontClass}`}>
-                            {data.agentDevTitle}
+                            {data.agentModes.title}
                         </h2>
                         <span className={`text-xs text-white/50 ${current.fontClass}`}>
-                            {data.agentDevSubtitle}
+                            {data.agentModes.subtitle}
                         </span>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {data.agentModes.cards.map((card, index) => (
+                        <article key={card.id} id={`space-agent-${card.id}`}
+                            className="min-w-0 flex flex-col gap-4 border border-purple-400/25 bg-black/40 p-5 sm:p-6">
+                            <div className="flex items-center justify-between gap-3 text-purple-300">
+                                <Icon icon={card.icon} className="text-2xl" />
+                                <span className="font-mono text-xs text-white/40">0{index + 1}</span>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <h3 className={`m-0 text-xl font-bold text-white ${current.fontClass}`}>{card.title}</h3>
+                                <span className="self-start border border-green-400/25 bg-green-400/5 px-2 py-1 text-xs leading-relaxed text-green-300">{card.status}</span>
+                            </div>
+                            <p className={`m-0 text-sm leading-relaxed text-white/80 ${current.fontClass}`}>{card.description}</p>
+                            <dl className="m-0 flex flex-col gap-3 text-sm leading-relaxed">
+                                <div><dt className="text-purple-300">{data.agentModes.scopeLabel}</dt><dd className="m-0 mt-1 text-white/80">{card.scope}</dd></div>
+                                <div><dt className="text-purple-300">{data.agentModes.entryLabel}</dt><dd className="m-0 mt-1 text-white/80">{card.entry}</dd></div>
+                            </dl>
+                            <div className="border-l-2 border-purple-400/40 bg-purple-950/20 p-3 text-sm leading-relaxed">
+                                <p className="m-0 mb-1 text-purple-300">{data.agentModes.exampleLabel}</p>
+                                <p className="m-0 text-white/85">{card.example}</p>
+                            </div>
+                            <div className="mt-auto border-t border-white/10 pt-4 text-sm leading-relaxed">
+                                <p className="m-0 mb-1 font-semibold text-white/85">{data.agentModes.availabilityLabel}</p>
+                                <p className="m-0 text-white/65">{card.availability}</p>
+                            </div>
+                        </article>
+                    ))}
+                </div>
+
+                <div className="border-l-2 border-purple-400/40 pl-4 sm:pl-5 flex flex-col gap-2">
+                    <h3 className={`m-0 text-lg font-bold text-white ${current.fontClass}`}>{data.agentModes.sharedTitle}</h3>
+                    <p className={`m-0 max-w-5xl text-sm leading-relaxed text-white/75 ${current.fontClass}`}>{data.agentModes.sharedDescription}</p>
+                    <p className={`m-0 max-w-5xl text-sm leading-relaxed text-white/60 ${current.fontClass}`}>{data.agentModes.authNote}</p>
+                </div>
+
+                <div className="border border-purple-400/30 bg-purple-950/20 p-5 sm:p-6 flex flex-col gap-4">
+                    <h3 className={`m-0 text-xl font-bold text-white ${current.fontClass}`}>{data.agentSetup.title}</h3>
+                    <p className={`m-0 text-base leading-relaxed text-white/80 ${current.fontClass}`}>{data.agentSetup.description}</p>
+                    <div className="text-sm text-white/75 break-all">
+                        <span>{data.agentSetup.backend}: </span><code className="text-purple-200">{agentOrigin}</code>
+                    </div>
+                    <p className={`m-0 text-sm leading-relaxed text-white/65 ${current.fontClass}`}>{data.agentSetup.note}</p>
+                    <details className="text-sm text-white/80">
+                        <summary className="cursor-pointer text-purple-200">{data.agentSetup.example}</summary>
+                        <pre className="mt-3 whitespace-pre-wrap break-words font-mono text-sm leading-relaxed">{agentPrompt}</pre>
+                    </details>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <a href={spaceApiGuideUrl} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex min-h-11 items-center border border-purple-400/40 px-4 py-2 text-sm text-purple-200 hover:bg-purple-500/15 no-underline">
+                            {data.agentSetup.guide}
+                        </a>
+                        <a href={entityApiGuideUrl} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex min-h-11 items-center border border-purple-400/40 px-4 py-2 text-sm text-purple-200 hover:bg-purple-500/15 no-underline">
+                            {data.agentSetup.entityGuide}
+                        </a>
+                        <button type="button" className="min-h-11 border border-white/20 px-4 py-2 text-sm text-white/85 hover:bg-white/10"
+                            onClick={() => {
+                                if (!navigator.clipboard?.writeText) {
+                                    setAgentCopyMessage(data.agentSetup.copyFailed)
+                                    return
+                                }
+                                void navigator.clipboard.writeText(agentPrompt).then(
+                                    () => setAgentCopyMessage(data.agentSetup.copied),
+                                    () => setAgentCopyMessage(data.agentSetup.copyFailed),
+                                )
+                            }}>{data.agentSetup.copy}</button>
+                        <Link to="/space/apikeys" className="border border-green-400/30 px-4 py-2 text-sm text-green-300 hover:bg-green-500/10">{current.nav.apiKeys}</Link>
+                        {agentCopyMessage ? <span role="status" className="text-sm text-green-300">{agentCopyMessage}</span> : null}
                     </div>
                 </div>
 

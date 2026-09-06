@@ -20,6 +20,12 @@ import {
 } from './RemotePlayerMotion.ts';
 import { AdaptiveResolutionController } from './AdaptiveResolution.ts';
 import type { AdaptiveEffectsQuality } from './AdaptiveResolution.ts';
+import { CinematicEffects } from './CinematicEffects.ts';
+import { CINEMATIC_SKY_GLSL } from './CinematicSky.ts';
+import {
+  DEFAULT_LIGHTING_QUALITY, LIGHTING_PRESETS, normalizeLightingQuality,
+  type LightingQuality,
+} from './LightingQuality.ts';
 
 export const ENTITY_PREVIEW_LAYER = 1;
 export const ENTITY_PREVIEW_FORCE_LIMIT_RATIO = 0.72;
@@ -611,6 +617,8 @@ export class SceneRenderer {
   declare adaptiveResolution: AdaptiveResolutionController;
   declare adaptiveEffectsQuality: AdaptiveEffectsQuality;
   declare shadowsEnabled: boolean;
+  declare lightingQuality: LightingQuality;
+  declare cinematicEffects: CinematicEffects | null;
   declare resolutionScale: number;
   declare onResolutionScaleChange: ((state: any) => void) | null;
   declare previewRenderer: any;
@@ -631,6 +639,7 @@ export class SceneRenderer {
   declare onEntityPreviewNodeSelect: any;
   declare hemiLight: THREE.HemisphereLight;
   declare sunLight: THREE.DirectionalLight;
+  declare fillLight: THREE.DirectionalLight;
   declare cursorMesh: THREE.LineSegments;
   declare microCarveGroup: THREE.Group;
   declare microCarveFocusCell: THREE.LineSegments;
@@ -672,6 +681,8 @@ export class SceneRenderer {
   declare flatCameraQuaternion: THREE.Quaternion;
   declare bentLightTarget: THREE.Vector3;
   declare bentLightDirection: THREE.Vector3;
+  declare bentSurfaceUp: THREE.Vector3;
+  declare bentFillDirection: THREE.Vector3;
   declare materialScanCountdown: number;
   declare skyDome: THREE.Mesh;
   declare skyDomeUniforms: Record<string, { value: any }>;
@@ -687,10 +698,14 @@ export class SceneRenderer {
     this.flatCameraQuaternion = new THREE.Quaternion();
     this.bentLightTarget = new THREE.Vector3();
     this.bentLightDirection = new THREE.Vector3();
+    this.bentSurfaceUp = new THREE.Vector3();
+    this.bentFillDirection = new THREE.Vector3();
     this.materialScanCountdown = 0;
     this.adaptiveResolution = new AdaptiveResolutionController();
     this.adaptiveEffectsQuality = 'full';
     this.shadowsEnabled = true;
+    this.lightingQuality = DEFAULT_LIGHTING_QUALITY;
+    this.cinematicEffects = null;
     this.resolutionScale = this.adaptiveResolution.currentScale;
     this.onResolutionScaleChange = null;
 
@@ -719,7 +734,7 @@ export class SceneRenderer {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(this.cappedDevicePixelRatio() * this.resolutionScale);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     this.container.appendChild(this.renderer.domElement);
@@ -744,6 +759,7 @@ export class SceneRenderer {
     // 4. Lighting & Environment
     this.setupLighting();
     this.setupSkyDome();
+    this.applyLightingQuality();
     this.setupCursorHighlight();
     this.setupMicroCarvePreview();
     this.setupFocusBlockGuide();
@@ -770,20 +786,16 @@ export class SceneRenderer {
     // Sun Light
     this.sunLight = new THREE.DirectionalLight(0xfffaed, 1.4);
     this.sunLight.castShadow = true;
-    // A 1024² local shadow map retains soft contact shadows around the player
-    // at one quarter of the texel work and memory of the previous 2048² map.
-    this.sunLight.shadow.mapSize.width = 1024;
-    this.sunLight.shadow.mapSize.height = 1024;
     this.sunLight.shadow.camera.near = 0.5;
-    this.sunLight.shadow.camera.far = 150;
-    const d = 45;
-    this.sunLight.shadow.camera.left = -d;
-    this.sunLight.shadow.camera.right = d;
-    this.sunLight.shadow.camera.top = d;
-    this.sunLight.shadow.camera.bottom = -d;
-    this.sunLight.shadow.bias = -0.0005;
     this.sunLight.layers.enable(ENTITY_PREVIEW_LAYER);
     this.scene.add(this.sunLight);
+
+    // A shadow-free cool bounce light lifts faces turned away from the sun.
+    // It is omitted from rendering at Low/Medium and during adaptive fallback.
+    this.fillLight = new THREE.DirectionalLight(0xc7dfff, 0);
+    this.fillLight.visible = false;
+    this.fillLight.layers.enable(ENTITY_PREVIEW_LAYER);
+    this.scene.add(this.fillLight);
   }
 
   /**
@@ -809,7 +821,13 @@ export class SceneRenderer {
       uLimbColor: { value: new THREE.Color('#bfe3ff') },
       uHoleDir: { value: new THREE.Vector3(1, 0, 0) },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-      uGradientStrength: { value: 0.55 }
+      uGradientStrength: { value: 0.55 },
+      uSunGlow: { value: 0 },
+      uCinematic: { value: 0 },
+      uSurfaceUp: { value: new THREE.Vector3(0, 1, 0) },
+      uEast: { value: new THREE.Vector3(1, 0, 0) },
+      uNorth: { value: new THREE.Vector3(0, 0, 1) },
+      uTime: { value: 0 },
     };
 
     const material = new THREE.ShaderMaterial({
@@ -831,7 +849,14 @@ export class SceneRenderer {
         uniform vec3 uHoleDir;
         uniform vec3 uSunDir;
         uniform float uGradientStrength;
+        uniform float uSunGlow;
+        uniform float uCinematic;
+        uniform vec3 uSurfaceUp;
+        uniform vec3 uEast;
+        uniform vec3 uNorth;
+        uniform float uTime;
         varying vec3 vDir;
+        ${CINEMATIC_SKY_GLSL}
         void main() {
           vec3 dir = normalize(vDir);
           // Toward the central hole: deeper space blue.
@@ -841,6 +866,11 @@ export class SceneRenderer {
           vec3 col = uSkyColor;
           col = mix( col, uHoleColor, holeAmt * uGradientStrength );
           col = mix( col, uLimbColor, limbAmt * uGradientStrength * 0.5 );
+          // Sky-only sun haze is naturally occluded by world geometry.
+          float sunAlignment = max( 0.0, dot( dir, uSunDir ) );
+          float sunHalo = pow( sunAlignment, 32.0 ) + pow( sunAlignment, 256.0 );
+          col += vec3( 1.0, 0.78, 0.48 ) * sunHalo * uSunGlow;
+          if (uCinematic > 0.5) col = cinematicSky(dir, uSurfaceUp, uEast, uNorth, uSunDir, uTime);
           gl_FragColor = vec4( col, 1.0 );
           // Run the same ACES + sRGB pipeline as the lit terrain so the dome's
           // base color matches fully-fogged terrain exactly (no horizon seam).
@@ -1204,8 +1234,8 @@ export class SceneRenderer {
     });
     this.previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
     this.previewRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.previewRenderer.toneMappingExposure = 1.15;
-    // The main renderer already pays for the 2048px world shadow map. A second
+    this.previewRenderer.toneMappingExposure = this.renderer.toneMappingExposure;
+    // The main renderer already pays for the world shadow map. A second
     // shadow pass caused large GPU spikes and adds little at 340x240.
     this.previewRenderer.shadowMap.enabled = false;
     this.previewLastRenderedAt = 0;
@@ -2044,6 +2074,78 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     return this.shadowsEnabled;
   }
 
+  setLightingQuality(quality: LightingQuality) {
+    this.lightingQuality = normalizeLightingQuality(quality);
+    if (this.adaptiveResolution) {
+      this.adaptiveResolution.setTargetFps(this.lightingQuality === 'ultra' ? 60 : 120);
+      this.adaptiveEffectsQuality = this.adaptiveResolution.getState().effectsQuality;
+    }
+    this.applyLightingQuality();
+    if (this.adaptiveResolution) this.notifyResolutionScaleChange();
+    return this.lightingQuality;
+  }
+
+  getLightingQuality(): LightingQuality {
+    return this.lightingQuality;
+  }
+
+  private applyLightingQuality() {
+    const preset = LIGHTING_PRESETS[this.lightingQuality];
+    const fullEffects = this.adaptiveEffectsQuality === 'full';
+    const cinematic = this.lightingQuality === 'ultra';
+    this.sunLight.color.setHex(preset.sunColor);
+    this.sunLight.intensity = preset.sunIntensity;
+    this.hemiLight.color.setHex(preset.hemisphereSkyColor);
+    this.hemiLight.groundColor.setHex(preset.hemisphereGroundColor);
+    this.hemiLight.intensity = preset.hemisphereIntensity;
+    this.fillLight.intensity = preset.fillIntensity;
+    this.fillLight.visible = fullEffects && preset.fillIntensity > 0;
+    this.renderer.toneMappingExposure = preset.exposure;
+    this.renderer.toneMapping = cinematic ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping;
+    if (this.previewRenderer) this.previewRenderer.toneMappingExposure = preset.exposure;
+    this.skyDomeUniforms.uGradientStrength.value = preset.skyGradient;
+    this.skyDomeUniforms.uSunGlow.value = fullEffects ? preset.sunGlow : 0;
+    this.skyDomeUniforms.uCinematic.value = cinematic ? 1 : 0;
+    // Targets are allocated lazily on the next Ultra frame and released when
+    // leaving the preset. Adaptive fallback keeps the sky/grade/haze visible.
+    if (!cinematic && this.cinematicEffects) {
+      this.cinematicEffects.dispose();
+      this.cinematicEffects = null;
+    }
+
+    const shadow = this.sunLight.shadow;
+    // Low keeps a valid size without allocating a map; the shadow pass is off.
+    const mapSize = Math.min(preset.shadowMapSize || 1024, this.renderer.capabilities.maxTextureSize);
+    if (shadow.mapSize.x !== mapSize || shadow.mapSize.y !== mapSize) {
+      this.releaseSunShadowMap();
+      shadow.mapSize.set(mapSize, mapSize);
+    }
+    const extent = preset.shadowExtent;
+    shadow.camera.left = shadow.camera.bottom = -extent;
+    shadow.camera.right = shadow.camera.top = extent;
+    shadow.camera.far = 80 + extent * 2;
+    shadow.camera.updateProjectionMatrix();
+    // Keep the receiver offset and filter footprint stable in world units.
+    // Reducing the bias with map resolution exposes curved-face self-shadowing.
+    shadow.bias = -(cinematic ? 0.12 : 0.075) / (shadow.camera.far - shadow.camera.near);
+    shadow.radius = (mapSize / 1024) * (45 / extent);
+    shadow.normalBias = cinematic ? 0.05 : (getWorldShapeMode() === 'earth' ? 0.025 : 0);
+    shadow.needsUpdate = true;
+    this.applyShadowState();
+  }
+
+  private releaseSunShadowMap() {
+    const shadow = this.sunLight?.shadow;
+    if (!shadow) return;
+    if (shadow.map?.depthTexture) {
+      shadow.map.depthTexture.dispose();
+      shadow.map.depthTexture = null;
+    }
+    shadow.dispose();
+    shadow.map = null;
+    shadow.mapPass = null;
+  }
+
   private updateAdaptiveResolution() {
     const visible = typeof document === 'undefined' || document.visibilityState !== 'hidden';
     const scale = this.adaptiveResolution.sampleFrame(performance.now(), visible);
@@ -2056,12 +2158,19 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   private applyAdaptiveEffects(quality: AdaptiveEffectsQuality) {
     if (quality === this.adaptiveEffectsQuality) return;
     this.adaptiveEffectsQuality = quality;
-    this.applyShadowState();
+    this.applyLightingQuality();
     this.notifyResolutionScaleChange();
   }
 
   private applyShadowState() {
-    const enabled = this.shadowsEnabled && this.adaptiveEffectsQuality === 'full';
+    const enabled = this.shadowsEnabled
+      && this.lightingQuality !== 'low'
+      && this.adaptiveEffectsQuality === 'full';
+    // Changing only shadowMap.enabled does not invalidate Three's cached light
+    // programs. Change the light's shadow count as well, so no material samples
+    // a disposed shadow texture after a user toggle or adaptive fallback.
+    if (this.sunLight) this.sunLight.castShadow = enabled;
+    if (!enabled) this.releaseSunShadowMap();
     if (this.renderer.shadowMap.enabled === enabled) return;
     this.renderer.shadowMap.enabled = enabled;
     this.renderer.shadowMap.needsUpdate = true;
@@ -2393,6 +2502,10 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       this.playerAvatar.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), playerYaw);
     }
     if (this.playerAvatarCharacter) {
+      if (this.playerAvatarCharacter.setHeldTool(playerMotion?.activeTool)) {
+        // Newly selected world meshes must receive the torus shader immediately.
+        hookSceneMaterials(this.playerAvatarCharacter.object3d);
+      }
       const velocity = playerMotion?.velocity;
       const speed = velocity ? Math.hypot(velocity.x, velocity.z) : 0;
       const forwardX = -Math.sin(playerYaw);
@@ -2407,7 +2520,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         maxSpeed: playerMotion?.maxSpeed,
         grounded: playerMotion?.grounded,
         flying: playerMotion?.flying,
-        lookPitch: playerMotion?.lookPitch
+        lookPitch: playerMotion?.lookPitch,
+        toolUseSequence: playerMotion?.toolUseSequence
       });
       this.playerAvatarCharacter.updateFirstPersonProjection(this.camera);
     }
@@ -2419,8 +2533,9 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     // Update player avatar when in third-person view
     this.updatePlayerAvatar(playerPos, playerYaw, dt, playerMotion);
 
-    // Fixed daytime: sun stays at 10:00 AM (no day/night cycle).
-    const sunAngle = ((10 - 6) / 24) * Math.PI * 2;
+    // Ultra's lower morning sun creates long shadows and warm grazing light.
+    const sunHour = this.lightingQuality === 'ultra' ? 8.2 : 10;
+    const sunAngle = ((sunHour - 6) / 24) * Math.PI * 2;
     const sunDist = 80;
     bendPoint(playerPos.x, playerPos.y, playerPos.z, this.bentLightTarget);
     const flatSunDirection = this.bentLightDirection.set(
@@ -2437,6 +2552,24 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     this.sunLight.position.copy(this.bentLightTarget).addScaledVector(this.bentLightDirection, sunDist);
     this.sunLight.target.updateMatrixWorld();
 
+    // Hemisphere and bounce lighting must follow the same local surface as
+    // the sun; global +Y points sideways on parts of the sphere/ring.
+    this.bentSurfaceUp.set(0, 1, 0);
+    bendDirection(playerPos.x, playerPos.y, playerPos.z, this.bentSurfaceUp, this.bentSurfaceUp);
+    this.hemiLight.position.copy(this.bentSurfaceUp);
+    this.skyDomeUniforms.uSurfaceUp.value.copy(this.bentSurfaceUp);
+    const east = this.skyDomeUniforms.uEast.value.set(1, 0, 0);
+    const north = this.skyDomeUniforms.uNorth.value.set(0, 0, 1);
+    bendDirection(playerPos.x, playerPos.y, playerPos.z, east, east);
+    bendDirection(playerPos.x, playerPos.y, playerPos.z, north, north);
+    this.skyDomeUniforms.uTime.value += Math.min(Math.max(dt, 0), 0.1);
+    this.sunLight.shadow.camera.up.copy(this.bentSurfaceUp);
+    this.bentFillDirection.set(-0.6, 0.5, -0.65).normalize();
+    bendDirection(playerPos.x, playerPos.y, playerPos.z, this.bentFillDirection, this.bentFillDirection);
+    this.fillLight.target.position.copy(this.bentLightTarget);
+    this.fillLight.position.copy(this.bentLightTarget).addScaledVector(this.bentFillDirection, sunDist);
+    this.fillLight.target.updateMatrixWorld();
+
     // Fixed daylight fog. The sky dome renders the background gradient; keep
     // its base and the fog color identical so far terrain fades into the sky.
     this.scene.fog.color.copy(this.skyColorDay);
@@ -2445,8 +2578,6 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     }
     this.skyDomeUniforms.uSkyColor.value.copy(this.skyColorDay);
 
-    this.sunLight.intensity = 1.5;
-    this.hemiLight.intensity = 0.8;
   }
 
   setWorld(world) {
@@ -2459,7 +2590,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     this.world?.setDistantSurfaceEnabled?.(value !== 'earth');
     // Curved interpolated normals need a small receiver offset to avoid
     // self-shadow striping. Donut mode keeps its established bias unchanged.
-    this.sunLight.shadow.normalBias = value === 'earth' ? 0.025 : 0;
+    this.sunLight.shadow.normalBias = this.lightingQuality === 'ultra' ? 0.05 : (value === 'earth' ? 0.025 : 0);
     this.sunLight.shadow.needsUpdate = true;
     return value;
   }
@@ -2468,10 +2599,32 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     return getWorldShapeMode();
   }
 
+  private renderWorld() {
+    const cinematic = this.lightingQuality === 'ultra'
+      && this.renderer.extensions.has('EXT_color_buffer_float');
+    if (cinematic) {
+      this.cinematicEffects ??= new CinematicEffects();
+      // The HDR atmosphere pass owns distance haze, including adaptive fallback.
+      // Stacking material fog on top bleaches the kilometre-scale opposite ring.
+      // Keep the fog object/program intact and restore it for non-HDR rendering.
+      const fog = this.scene.fog instanceof THREE.FogExp2 ? this.scene.fog : null;
+      const density = fog?.density ?? 0;
+      try {
+        if (fog) fog.density = 0;
+        this.cinematicEffects.render(this.renderer, this.scene, this.camera,
+          this.bentLightDirection, this.bentSurfaceUp, this.adaptiveEffectsQuality === 'full');
+      } finally {
+        if (fog) fog.density = density;
+      }
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
+  }
+
   render() {
     this.updateAdaptiveResolution();
     if (!this.world) {
-      this.renderer.render(this.scene, this.camera);
+      this.renderWorld();
       this.renderEntityPreviewIfDue();
       return;
     }
@@ -2495,7 +2648,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       applyCameraBend(this.camera);
       cullChunks(this.camera, this.world);
       this.updateSkyDome(this.camera.position);
-      this.renderer.render(this.scene, this.camera);
+      this.renderWorld();
     } finally {
       this.camera.position.copy(this.flatCameraPosition);
       this.camera.quaternion.copy(this.flatCameraQuaternion);

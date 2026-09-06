@@ -1,6 +1,8 @@
 import React from 'react';
+import { SpaceAgentInstructions } from './SpaceAgentInstructions.tsx';
 import { SPACE_HOSTING_UI_ENABLED } from '../../../bootstrap/SpaceFeatures.ts';
 import { CharacterSkinPreview } from './CharacterSkinPreview.tsx';
+import { LIGHTING_PRESETS, LIGHTING_QUALITY_LEVELS } from '../../../engine/render/LightingQuality.ts';
 import type { SpaceApiKeyRecord, SpaceApiUsage } from '../../../bootstrap/SpaceApiKeyClient.ts';
 import {
   DISTANT_SURFACE_SETTING_LIMITS,
@@ -41,8 +43,6 @@ function SpaceApiKeysSettings() {
   const [usage, setUsage] = React.useState<SpaceApiUsage | null>(null);
   const [usageError, setUsageError] = React.useState('');
   const hostingAvailable = SPACE_HOSTING_UI_ENABLED && usage?.features?.entity_hosting === true;
-  const [allowBuild, setAllowBuild] = React.useState(false);
-  const [allowRun, setAllowRun] = React.useState(false);
   const [secret, setSecret] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [message, setMessage] = React.useState('');
@@ -86,11 +86,9 @@ function SpaceApiKeysSettings() {
     setBusy(true);
     setMessage('');
     try {
-      const created = await client.create(name.trim(), allowRun, allowBuild);
+      const created = await client.create(name.trim());
       setSecret(created.api_key);
       setName('My external agent');
-      setAllowRun(false);
-      setAllowBuild(false);
       await Promise.all([load(), loadUsage()]);
     } catch (error: any) {
       setMessage(error?.message || 'Could not create API key.');
@@ -115,11 +113,12 @@ function SpaceApiKeysSettings() {
   };
 
   if (!client) {
-    return <div className="settings-api-empty">Sign in and enter online Space to manage API keys.</div>;
+    return <><SpaceAgentInstructions /><div className="settings-api-empty">Sign in and enter online Space to manage API keys.</div></>;
   }
 
   return (
     <div className="settings-api-keys">
+      <SpaceAgentInstructions />
       {usage ? <>
         <div className="settings-api-pricing">
           <div><strong>{usage.credits.toLocaleString()}</strong><span>Credit balance</span></div>
@@ -156,14 +155,7 @@ function SpaceApiKeysSettings() {
           onChange={event => setName(event.target.value)}
           placeholder="Key name"
         />
-        <label className="settings-api-scope">
-          <input type="checkbox" checked={allowBuild} onChange={event => setAllowBuild(event.target.checked)} />
-          Allow building blocksets
-        </label>
-        <label className="settings-api-scope">
-          <input type="checkbox" checked={allowRun} onChange={event => setAllowRun(event.target.checked)} />
-          {hostingAvailable ? 'Allow entity execution and paid hosting' : 'Allow created entities to run'}
-        </label>
+        <span className="settings-desc">All Space permissions included</span>
         <button className="small-btn primary" disabled={busy || !name.trim()} onClick={() => void create()}>
           {busy ? 'Working…' : 'Create key'}
         </button>
@@ -172,7 +164,7 @@ function SpaceApiKeysSettings() {
         <div className="settings-api-secret">
           <strong>Copy this key now. It will not be shown again.</strong>
           <div className="settings-api-secret-row">
-            <input readOnly value={secret} aria-label="New Space API key" onFocus={event => event.currentTarget.select()} />
+            <input readOnly value={secret} aria-label="New spaceAPI key" onFocus={event => event.currentTarget.select()} />
             <button className="small-btn" onClick={() => {
               if (!navigator.clipboard?.writeText) {
                 setMessage('Clipboard access is unavailable. Select the key and copy it manually.');
@@ -194,7 +186,7 @@ function SpaceApiKeysSettings() {
               <div className="settings-api-key-name">{apiKey.name}</div>
               <div className="settings-api-key-meta">
                 <code>{apiKey.key_prefix}…</code>
-                <span>{['create', ...(apiKey.scopes.includes('space:blockset:build') ? ['build'] : []), ...(apiKey.scopes.includes('space:entity:run') ? [hostingAvailable ? 'run + hosting' : 'run'] : [])].join(' · ')}</span>
+                <span>All Space permissions</span>
                 <span>Last used: {apiKey.last_used_at ? new Date(apiKey.last_used_at).toLocaleString() : 'never'}</span>
               </div>
             </div>
@@ -332,10 +324,44 @@ export function GlobalSettingsModal() {
         </div>
         <div className="settings-section">
           <div className="settings-section-title">PERFORMANCE</div>
+          <div className="settings-row settings-lighting-row">
+            <div className="settings-label-group">
+              <span className="settings-label" id="setting-lighting-label">Lighting Quality</span>
+              <span className="settings-desc" id="setting-lighting-description" aria-live="polite">
+                {LIGHTING_PRESETS[state.lightingQuality].description}
+                {state.lightingQuality !== 'low' && state.resolutionEffectsQuality === 'reduced'
+                  ? (state.lightingQuality === 'ultra'
+                    ? ' · Auto has paused bloom, sun rays and contact shadows; cinematic sky and color remain'
+                    : ' · Auto resolution has temporarily reduced effects; your selected quality is saved')
+                  : ''}
+              </span>
+            </div>
+            <div
+              className="settings-segmented-control settings-lighting-control"
+              id="setting-lighting-quality-group"
+              role="group"
+              aria-labelledby="setting-lighting-label"
+              aria-describedby="setting-lighting-description"
+            >
+              {LIGHTING_QUALITY_LEVELS.map(quality => (
+                <button
+                  key={quality}
+                  className={`segment-btn ${state.lightingQuality === quality ? 'active' : ''}`}
+                  aria-pressed={state.lightingQuality === quality}
+                  title={LIGHTING_PRESETS[quality].description}
+                  onClick={() => spaceUiStore.setLightingQuality(quality)}
+                >
+                  {LIGHTING_PRESETS[quality].label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="settings-row">
             <div className="settings-label-group">
               <span className="settings-label">Shadows</span>
-              <span className="settings-desc">Render real-time sunlight shadows{state.shadowsEnabled && state.resolutionEffectsQuality === 'reduced' ? ' · temporarily paused by Auto resolution' : ''}</span>
+              <span className="settings-desc">{state.lightingQuality === 'low'
+                ? 'Paused at Low lighting quality · select Medium or higher to use shadows'
+                : `Render real-time sunlight shadows${state.shadowsEnabled && state.resolutionEffectsQuality === 'reduced' ? ' · temporarily paused by Auto resolution' : ''}`}</span>
             </div>
             <div className="settings-segmented-control" id="setting-shadows-group">
               {([
@@ -346,6 +372,7 @@ export function GlobalSettingsModal() {
                   key={String(value)}
                   tabIndex={-1}
                   className={`segment-btn ${state.shadowsEnabled === value ? 'active' : ''}`}
+                  disabled={state.lightingQuality === 'low'}
                   aria-pressed={state.shadowsEnabled === value}
                   onClick={() => spaceUiStore.setShadowsEnabled(value)}
                 >
@@ -357,7 +384,7 @@ export function GlobalSettingsModal() {
           <div className="settings-row settings-resolution-row">
             <div className="settings-label-group">
               <span className="settings-label">Render Resolution</span>
-              <span className="settings-desc">Auto targets 120 FPS · currently {Math.round(state.resolutionScale * 100)}% ({state.resolutionPixelRatio.toFixed(2)}× pixel ratio){state.resolutionEffectsQuality === 'reduced' ? ' · effects reduced' : ''}</span>
+              <span className="settings-desc">Auto targets {state.resolutionTargetFps} FPS{state.lightingQuality === 'ultra' ? ' for cinematic lighting' : ''} · currently {Math.round(state.resolutionScale * 100)}% ({state.resolutionPixelRatio.toFixed(2)}× pixel ratio){state.resolutionEffectsQuality === 'reduced' ? ' · effects reduced' : ''}</span>
             </div>
             <div className="settings-segmented-control settings-resolution-control" id="setting-resolution-group">
               {([
@@ -540,8 +567,8 @@ export function GlobalSettingsModal() {
         </div>
         : null}
         {tab === 'api' ? <div className="settings-section">
-          <div className="settings-section-title">EXTERNAL AGENT API</div>
-          <div className="settings-desc">Account keys can create entities and build blocksets at specified coordinates in worlds you can access.{SPACE_HOSTING_UI_ENABLED ? ' Hosted entity execution is also available.' : ''} Enable only the permissions your agent needs. Keep them secret and revoke unused keys.</div>
+          <div className="settings-section-title">spaceAPI · AGENT ACCESS</div>
+          <div className="settings-desc">All API keys include full Space permissions: read your position, create and edit your entities, start/stop them, and build blocksets in worlds you can access.{SPACE_HOSTING_UI_ENABLED ? ' Hosted entity execution is also available.' : ''} Existing keys have the same full access. Keep them secret and revoke unused keys.</div>
           <SpaceApiKeysSettings />
         </div> : null}
         </div>

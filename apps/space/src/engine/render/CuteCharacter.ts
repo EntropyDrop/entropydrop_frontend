@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createHeldVoxelTool, normalizeHeldTool, type HeldTool, type HeldVoxelToolMesh } from './HeldVoxelTool.ts';
 
 export type CuteCharacterAction = 'idle' | 'walk';
 export type SkinModel = 'strong' | 'slim';
@@ -26,6 +27,7 @@ export type CuteCharacterMotion = {
   grounded?: boolean;
   flying?: boolean;
   lookPitch?: number;
+  toolUseSequence?: number;
 };
 
 type RigParts = {
@@ -44,13 +46,26 @@ const CUTE_TARGET_SIDE_HEIGHT = CUTE_SOURCE_SIDE_ROWS * 0.55;
 const CUTE_SIDE_ROWS = Math.round(CUTE_TARGET_SIDE_HEIGHT / CUTE_X_SCALE);
 const CUTE_Y_CELL_SCALE = CUTE_X_SCALE;
 const CUTE_HALF_SIDE_HEIGHT = CUTE_SIDE_ROWS * CUTE_Y_CELL_SCALE / 2;
-const FIRST_PERSON_REFERENCE_FOV = 75;
+const FIRST_PERSON_REFERENCE_FOV = 70;
 const FIRST_PERSON_REFERENCE_ASPECT = 16 / 9;
 const FIRST_PERSON_REFERENCE_TAN = Math.tan(THREE.MathUtils.degToRad(FIRST_PERSON_REFERENCE_FOV * 0.5));
-const FIRST_PERSON_DEPTH = 0.8;
-const FIRST_PERSON_ROOT_NDC_X = 1.2;
-const FIRST_PERSON_ROOT_NDC_Y = -1.4;
-const FIRST_PERSON_SCALE = 0.09;
+// Mojang's player_firstperson.animation.json, first_person.empty_hand:
+// position [13.5, -10, 12], rotation [95, -45, 115] in model pixels/degrees.
+// Use camera-forward -Z and the bone's Z-Y-X rotation order in Three.js.
+const FIRST_PERSON_REST_POSITION = new THREE.Vector3(13.5, -10, -12).multiplyScalar(1 / 16);
+const FIRST_PERSON_REST_ROTATION = new THREE.Euler(
+  THREE.MathUtils.degToRad(95), THREE.MathUtils.degToRad(-45), THREE.MathUtils.degToRad(115), 'ZYX'
+);
+const FIRST_PERSON_SCALE = 0.08;
+const FIRST_PERSON_TOOL_DEPTH = 0.62;
+// Equipped items use their own camera anchor. The heel extends below the
+// viewport, with the working end leaning back into view from the right edge.
+const FIRST_PERSON_TOOL_POSITION = new THREE.Vector3(
+  1.02 * FIRST_PERSON_TOOL_DEPTH * FIRST_PERSON_REFERENCE_TAN * FIRST_PERSON_REFERENCE_ASPECT,
+  -1.12 * FIRST_PERSON_TOOL_DEPTH * FIRST_PERSON_REFERENCE_TAN,
+  -FIRST_PERSON_TOOL_DEPTH
+);
+const TOOL_USE_DURATION = 0.36;
 
 function damp(current: number, target: number, responsiveness: number, dt: number) {
   return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-responsiveness * dt));
@@ -465,9 +480,20 @@ function addSkinnedPart(parent: THREE.Object3D, geometry: THREE.BufferGeometry, 
 
 export class CuteCharacter {
   readonly object3d = new THREE.Group();
-  /** Camera-local, projection-compensated right arm used by the first-person view. */
+  /** Camera-local, projection-compensated empty hand or equipped tool. */
   readonly firstPersonHand = new THREE.Group();
   private readonly firstPersonHandPose = new THREE.Group();
+  private readonly firstPersonToolPose = new THREE.Group();
+  private readonly rightHandGrip = new THREE.Group();
+  private readonly firstPersonGrip = new THREE.Group();
+  private heldTool: HeldTool | null = null;
+  private lastToolUseSequence: number | null = null;
+  private toolUseTime = TOOL_USE_DURATION;
+  private queuedToolUse = false;
+  private readonly heldToolMeshes = new Map<HeldTool, {
+    world: HeldVoxelToolMesh;
+    view: HeldVoxelToolMesh | null;
+  }>();
   readonly billboard: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null;
   readonly model: SkinModel;
   action: CuteCharacterAction = 'idle';
@@ -573,6 +599,10 @@ export class CuteCharacter {
       -shoulderX, CUTE_HALF_SIDE_HEIGHT, armScale,
       new THREE.BoxGeometry(uv.armWidth, CUTE_SIDE_ROWS, 4), materials.rightArm, overlays?.rightArm ?? null
     );
+    this.rightHandGrip.name = 'CuteRightHandGrip';
+    this.rightHandGrip.position.set(0, -CUTE_SIDE_ROWS + 1.3, 0);
+    this.rightHandGrip.scale.set(1 / armScale[0], 1 / armScale[1], 1);
+    rightArm.add(this.rightHandGrip);
     const legScale: [number, number, number] = [CUTE_X_SCALE, CUTE_Y_CELL_SCALE, 1];
     const leftLeg = addLimb(
       1.7, -CUTE_HALF_SIDE_HEIGHT, legScale,
@@ -588,9 +618,20 @@ export class CuteCharacter {
     if (options.createFirstPersonHand !== false) {
       const firstPersonArm = new THREE.Group();
       firstPersonArm.scale.set(...armScale);
+      this.firstPersonGrip.name = 'CuteFirstPersonGrip';
+      // Empty hand and equipped item are separate viewmodels, as in MC.
+      // The first-person item is not attached to the visible empty-hand arm.
+      this.firstPersonToolPose.name = 'CuteFirstPersonToolPose';
+      this.firstPersonToolPose.scale.setScalar(FIRST_PERSON_SCALE);
+      this.firstPersonToolPose.visible = false;
+      this.firstPersonToolPose.add(this.firstPersonGrip);
       this.firstPersonHandPose.add(firstPersonArm);
-      this.firstPersonHand.add(this.firstPersonHandPose);
+      this.firstPersonHand.add(this.firstPersonHandPose, this.firstPersonToolPose);
       const firstPersonArmCenter = new THREE.Group();
+      firstPersonArmCenter.name = 'CuteFirstPersonArmSurface';
+      // Slim the empty hand and sleeve without changing tool dimensions.
+      firstPersonArmCenter.scale.set(0.58, 1, 0.58);
+      // Keep the empty-hand wrist in line with the forearm.
       firstPersonArmCenter.position.y = -CUTE_SIDE_ROWS / 2;
       firstPersonArm.add(firstPersonArmCenter);
       addSkinnedPart(
@@ -659,6 +700,61 @@ export class CuteCharacter {
     for (const overlay of this.overlayGroups) overlay.visible = visible;
   }
 
+  /** Cached meshes switch together in both perspectives, without per-frame allocations. */
+  setHeldTool(value: string | null | undefined): boolean {
+    const tool = normalizeHeldTool(value);
+    if (tool === this.heldTool) return false;
+    this.heldTool = tool;
+    this.firstPersonHandPose.visible = !tool;
+    this.firstPersonToolPose.visible = !!tool;
+    this.toolUseTime = TOOL_USE_DURATION;
+    this.queuedToolUse = false;
+    if (tool && !this.heldToolMeshes.has(tool)) {
+      const world = createHeldVoxelTool(tool);
+      world.castShadow = this.shadowsEnabled;
+      // Apply orientation after cancelling the arm's nonuniform skin scale,
+      // preserving cubic cells. Hold the hammer's handle upright, with the
+      // striking face (-X in the tool model) toward the character's front.
+      if (tool === 'hammer') {
+        // Cancel both the arm's resting pitch and its outward lean before
+        // facing the hammer forward, so the handle does not tilt sideways.
+        world.quaternion.setFromEuler(new THREE.Euler(-0.85, 0, -0.2)).invert();
+        world.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2));
+        // Match the other shafts' exit at the palm's +Z face. Rotating about
+        // the internal grip alone makes the upright shaft emerge at the wrist.
+        // Put its grip band at that opening, keeping the heel inside the fist.
+        world.position.set(0, 0, 2).sub(new THREE.Vector3(0, 0.65, 0).applyQuaternion(world.quaternion));
+      } else world.rotation.x = Math.PI / 2;
+      let view: typeof world | null = null;
+      if (this.firstPersonGrip.parent) {
+        view = new THREE.Mesh(world.geometry, world.material.map(material => material.clone()));
+        view.name = world.name;
+        for (const material of view.material) material.fog = false;
+        view.frustumCulled = false;
+        view.renderOrder = 1000;
+        view.userData.torusPreBent = true;
+        view.rotation.copy(tool === 'hammer'
+          ? new THREE.Euler(-0.1, -Math.PI / 2 + 0.18, 0.14)
+          : new THREE.Euler(-0.16, -0.5, 0.34));
+        this.firstPersonGrip.add(view);
+      }
+      this.rightHandGrip.add(world);
+      this.heldToolMeshes.set(tool, { world, view });
+    }
+    for (const [key, { world, view }] of this.heldToolMeshes) {
+      world.visible = key === tool;
+      if (view) view.visible = key === tool;
+    }
+    return true;
+  }
+
+  playToolUseAnimation() {
+    // Finish the current stroke before the next one, so rapid clicks never
+    // snap the hand back to its resting pose or build an unbounded queue.
+    if (this.toolUseTime < TOOL_USE_DURATION) this.queuedToolUse = true;
+    else this.toolUseTime = 0;
+  }
+
   setCastShadow(enabled: boolean) {
     if (enabled === this.shadowsEnabled) return;
     this.shadowsEnabled = enabled;
@@ -687,6 +783,21 @@ export class CuteCharacter {
   update(deltaSeconds: number, motion: CuteCharacterMotion = {}) {
     const dt = THREE.MathUtils.clamp(Number(deltaSeconds) || 0, 0, 0.1);
     this.animationTime += dt;
+    if (Number.isFinite(motion.toolUseSequence)) {
+      if (this.lastToolUseSequence !== null && motion.toolUseSequence !== this.lastToolUseSequence) {
+        this.playToolUseAnimation();
+      }
+      this.lastToolUseSequence = motion.toolUseSequence;
+    }
+    this.toolUseTime = Math.min(TOOL_USE_DURATION, this.toolUseTime + dt);
+    if (this.toolUseTime >= TOOL_USE_DURATION && this.queuedToolUse) {
+      this.toolUseTime = 0;
+      this.queuedToolUse = false;
+    }
+    const useProgress = this.toolUseTime / TOOL_USE_DURATION;
+    const windup = Math.sin(Math.PI * Math.min(1, useProgress / 0.2));
+    const strike = Math.sin(Math.PI * Math.max(0, (useProgress - 0.2) / 0.8));
+    const useSwing = strike - windup * 0.28;
 
     const speed = Math.max(0, Number(motion.speed) || 0);
     const maxSpeed = Math.max(1, Number(motion.maxSpeed) || 5);
@@ -806,7 +917,9 @@ export class CuteCharacter {
     }
 
     setRotation(this.parts.leftArm, leftArmX, 0, armZ);
-    setRotation(this.parts.rightArm, rightArmX, 0, -armZ);
+    setRotation(this.parts.rightArm,
+      (this.heldTool ? -0.85 + rightArmX * 0.22 : rightArmX) + useSwing * 0.65,
+      -useSwing * 0.08, -armZ - useSwing * 0.12);
     setRotation(this.parts.leftLeg, leftLegX, slim ? 0.04 : 0, 0);
     setRotation(this.parts.rightLeg, rightLegX, slim ? -0.04 : 0, 0);
     setRotation(this.parts.body, bodyPitch, bodyYaw, bodyRoll);
@@ -819,16 +932,26 @@ export class CuteCharacter {
     const handGait = Math.sin(this.gaitPhase) * handGround;
     const handFlight = air * this.flightBlend;
     this.firstPersonHandPose.position.set(
-      FIRST_PERSON_ROOT_NDC_X * FIRST_PERSON_DEPTH * FIRST_PERSON_REFERENCE_TAN * FIRST_PERSON_REFERENCE_ASPECT
-        + this.smoothedSide * 0.008 * handGround,
-      FIRST_PERSON_ROOT_NDC_Y * FIRST_PERSON_DEPTH * FIRST_PERSON_REFERENCE_TAN
-        - Math.abs(handGait) * 0.01 + handFlight * 0.015,
-      -FIRST_PERSON_DEPTH - Math.abs(handGait) * 0.008 - handFlight * 0.04
+      FIRST_PERSON_REST_POSITION.x + this.smoothedSide * 0.008 * handGround - useSwing * 0.04,
+      FIRST_PERSON_REST_POSITION.y - Math.abs(handGait) * 0.01 + handFlight * 0.015 - useSwing * 0.015,
+      FIRST_PERSON_REST_POSITION.z - Math.abs(handGait) * 0.008 - handFlight * 0.04 - useSwing * 0.06
     );
     this.firstPersonHandPose.rotation.set(
-      2.1 + handGait * 0.025 - handFlight * 0.04,
-      0.05 - this.smoothedSide * 0.015 * handGround,
-      -0.45 + handGait * 0.02
+      FIRST_PERSON_REST_ROTATION.x + handGait * 0.025 - handFlight * 0.04 - useSwing * 0.42,
+      FIRST_PERSON_REST_ROTATION.y - this.smoothedSide * 0.015 * handGround,
+      FIRST_PERSON_REST_ROTATION.z + handGait * 0.02 + useSwing * 0.12,
+      FIRST_PERSON_REST_ROTATION.order
+    );
+    this.firstPersonToolPose.position.set(
+      FIRST_PERSON_TOOL_POSITION.x + this.smoothedSide * 0.008 * handGround - useSwing * 0.1,
+      FIRST_PERSON_TOOL_POSITION.y - (this.heldTool === 'shovel' ? 0.08 : 0)
+        - Math.abs(handGait) * 0.01 + handFlight * 0.015 + useSwing * 0.025,
+      FIRST_PERSON_TOOL_POSITION.z - Math.abs(handGait) * 0.008 - handFlight * 0.04 - useSwing * 0.07
+    );
+    this.firstPersonToolPose.rotation.set(
+      handGait * 0.025 - useSwing * 0.65,
+      -this.smoothedSide * 0.015 * handGround - useSwing * 0.1,
+      handGait * 0.02 + useSwing * 0.12
     );
   }
 
@@ -846,12 +969,15 @@ export class CuteCharacter {
           materials.add(material);
           const map = (material as THREE.MeshBasicMaterial).map;
           if (map) textures.add(map);
+          const envMap = (material as THREE.MeshStandardMaterial).envMap;
+          if (envMap) textures.add(envMap);
         }
       });
     }
     geometries.forEach(geometry => geometry.dispose());
     materials.forEach(material => material.dispose());
     textures.forEach(texture => texture.dispose());
+    this.heldToolMeshes.clear();
     this.object3d.removeFromParent();
     this.firstPersonHand.removeFromParent();
     this.billboard?.removeFromParent();

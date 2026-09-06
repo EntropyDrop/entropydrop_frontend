@@ -7,7 +7,7 @@ const metadata = {
   id: 'AbCdEfGhJkMnPqRs',
   name: 'Builder agent',
   key_prefix: 'edapi_AbCdEfGhJkMnPqRs_',
-  scopes: ['space:entity:create', 'space:entity:run'],
+  scopes: ['space:entity:create', 'space:entity:run', 'space:blockset:build', 'space:entity:edit'],
   created_at: '2026-09-03T00:00:00+00:00',
   last_used_at: null,
 };
@@ -34,30 +34,19 @@ test('SpaceApiKeyClient creates, lists, and revokes account-level keys with logi
   );
 
   const listed = await client.list();
-  const created = await client.create('Builder agent', true);
+  const created = await client.create('Builder agent');
   await client.revoke(metadata.id);
 
   assert.equal(listed[0].key_prefix, metadata.key_prefix);
+  assert.deepEqual(created.scopes, metadata.scopes);
   assert.equal(created.api_key, `${metadata.key_prefix}one-time-secret`);
   assert.equal((calls[0].options.headers as any).Authorization, 'Bearer login-token');
   assert.equal(calls[0].url, 'https://api.example.test/space/api/v2/api-keys');
   assert.deepEqual(JSON.parse(String(calls[1].options.body)), {
     name: 'Builder agent',
-    scopes: ['space:entity:create', 'space:entity:run'],
   });
   assert.equal(calls[2].options.method, 'DELETE');
   assert.match(calls[2].url, new RegExp(`/${metadata.id}$`));
-});
-
-test('build access is opt-in and does not grant paid hosting', async () => {
-  let sent: any;
-  const client = new SpaceApiKeyClient('https://api.example.test', 'login-token', (async (_url, options) => {
-    sent = JSON.parse(String(options?.body));
-    return Response.json({ ...metadata, scopes: sent.scopes, api_key: `${metadata.key_prefix}secret` });
-  }) as typeof fetch);
-  const created = await client.create('Terrain agent', false, true);
-  assert.deepEqual(sent.scopes, ['space:entity:create', 'space:blockset:build']);
-  assert.deepEqual(created.scopes, sent.scopes);
 });
 
 test('invalid usage fails with a service error instead of breaking Settings', async () => {

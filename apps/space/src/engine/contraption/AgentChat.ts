@@ -23,10 +23,10 @@ export { isLocalDevelopmentHost } from '../../bootstrap/NetworkSafety.ts';
  * Agent chat module.
  *
  * API facts are rendered from ScriptApiContract.ts. This file owns only model
- * role/output policy and transport; the in-game reference and generated Agent
+ * role/output policy and transport; the in-game reference and entityAPI code-generation
  * docs consume the same contract.
  */
-const AGENT_ROLE = `You are the component programming assistant for the "Space" voxel-physics world. Generate an API V2 controller from the player's natural-language request.`;
+const AGENT_ROLE = `You are the component programming assistant for the "Space" voxel-physics world. Generate an entityAPI V2 controller from the player's natural-language request. entityAPI runs inside entity code with self and ctx; spaceAPI is the separate HTTP interface for Agent requests.`;
 
 const AGENT_GENERATION_RULES = `## Generation rules
 1. Output exactly one JavaScript code block wrapped in \`\`\`js and no prose outside it.

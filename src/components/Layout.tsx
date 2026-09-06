@@ -9,7 +9,7 @@ import { LoadingPlaceholder } from './LoadingPlaceholder'
 import { type LangKey, type LangData } from '../constants/lang'
 import type { GenerationLogItem, GenerationLogItemBrief } from '../types/log'
 
-import { SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS, TOP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from '../constants/nav'
+import { SPACE_NAV_ITEMS, SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS, TOP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from '../constants/nav'
 
 // Lazy load heavy components
 const DiscoveryScene = lazy(() => import('./DiscoveryScene').then(m => ({ default: m.DiscoveryScene })))
@@ -34,11 +34,14 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
     const [searchParams] = useSearchParams()
     const is3DMode = searchParams.get('view') !== 'list'
 
+    const isSpaceSection = location.pathname === '/space' || location.pathname.startsWith('/space/')
     const isFigureSection = location.pathname.startsWith('/figure')
     const isSkinSection = location.pathname.startsWith('/skin') || location.pathname === '/'
     const isPublicSection = location.pathname.startsWith('/public')
 
-    const activeSubNavItems = isFigureSection
+    const activeSubNavItems = isSpaceSection
+        ? SPACE_NAV_ITEMS
+        : isFigureSection
         ? FIGURE_NAV_ITEMS
         : isSkinSection
             ? SKIN_NAV_ITEMS
@@ -90,7 +93,9 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                 {/* First-Level Navigation Switcher */}
                                 <div className="hidden lg:flex border border-white/10 p-0.5 bg-black/40 backdrop-blur-md gap-0.5">
                                     {TOP_NAV_ITEMS.map((item) => {
-                                        const isCurrentSection = item.key === 'skin'
+                                        const isCurrentSection = item.key === 'space'
+                                            ? isSpaceSection
+                                            : item.key === 'skin'
                                             ? isSkinSection
                                             : location.pathname.startsWith(item.path)
                                         return (
@@ -129,6 +134,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                         <Link
                                             key={item.key}
                                             to={item.path}
+                                            aria-current={isActive ? 'page' : undefined}
                                             className={`group flex items-center gap-2 text-white transition-all no-underline transform hover:scale-105 active:scale-95 ${isActive ? 'opacity-100' : 'opacity-65 hover:opacity-100'
                                                 }`}
                                         >

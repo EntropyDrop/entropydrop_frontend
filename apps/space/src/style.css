@@ -3890,12 +3890,6 @@ button.palette-title:hover {
   opacity: 1;
 }
 
-.pb-radio-group input[type="radio"]:checked + .pb-option.pause {
-  background: rgba(217, 119, 6, 0.3);
-  color: #fbbf24;
-  opacity: 1;
-}
-
 .pb-radio-group input[type="radio"]:checked + .pb-option.stop {
   background: rgba(153, 27, 27, 0.3);
   color: #f87171;
@@ -6505,6 +6499,23 @@ button.palette-title:hover {
   gap: 4px;
 }
 
+.settings-agent-guide {
+  padding: 16px;
+  border: 1px solid rgba(98, 182, 82, 0.4);
+  background: rgba(43, 73, 37, 0.16);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.settings-agent-guide p { margin: 10px 0; }
+.settings-agent-guide dl { margin: 12px 0; }
+.settings-agent-guide dl > div { margin: 8px 0; }
+.settings-agent-guide dt { color: #b6c7af; }
+.settings-agent-guide dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+.settings-agent-guide a { color: #abdf9f; text-decoration: underline; }
+.settings-agent-guide details { margin: 12px 0; }
+.settings-agent-guide summary { cursor: pointer; }
+.settings-agent-guide pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+
 .settings-api-keys,
 .settings-api-list {
   display: flex;
@@ -6605,6 +6616,17 @@ button.palette-title:hover {
   padding-inline: 7px;
 }
 
+.settings-lighting-row {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-lighting-control .segment-btn {
+  flex: 1;
+  min-width: 0;
+}
+
 .segment-btn {
   background: #27272a;
   border: 1px solid var(--border-subtle);
@@ -6626,6 +6648,16 @@ button.palette-title:hover {
   border-color: #000;
   color: #fff;
   box-shadow: var(--btn-shadow);
+}
+
+.segment-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.segment-btn:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
 }
 
 @media (max-width: 560px) {
@@ -6950,4 +6982,18 @@ button.palette-title:hover {
   .settings-api-pricing { grid-template-columns: 1fr; }
   .settings-row { flex-wrap: wrap; gap: 10px; }
   .settings-segmented-control { flex-wrap: wrap; }
+}
+.api-docs-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.api-docs-links a {
+  color: #b2e69a;
+  font-size: 14px;
+  line-height: 1.6;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
 }

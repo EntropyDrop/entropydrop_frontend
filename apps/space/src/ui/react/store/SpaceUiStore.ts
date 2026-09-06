@@ -36,6 +36,10 @@ import { colorToHex, normalizeColor, PRESET_COLORS } from '@entropydrop/space-en
 import { SpaceApiKeyClient } from '../../../bootstrap/SpaceApiKeyClient.ts';
 import { SpaceMarketClient } from '../../../bootstrap/SpaceMarketClient.ts';
 import { MAX_BACKPACK_SLOTS_PER_CATEGORY } from '@entropydrop/space-engine/storage/InventoryProtobuf.ts';
+import {
+  DEFAULT_LIGHTING_QUALITY, LIGHTING_PRESETS, LIGHTING_QUALITY_SETTING_KEY,
+  normalizeLightingQuality, type LightingQuality,
+} from '../../../engine/render/LightingQuality.ts';
 
 export type SpaceModal = 'inventory' | 'code' | 'settings' | 'builder' | null;
 export type ResolutionScaleSetting = 'auto' | '1' | '0.8' | '0.67' | '0.5';
@@ -63,7 +67,7 @@ function normalizeResolutionScaleSetting(value: unknown): ResolutionScaleSetting
 
 function resolutionSnapshot(state: any): Pick<
   SpaceUiSnapshot,
-  'resolutionScaleMode' | 'resolutionScale' | 'resolutionPixelRatio' | 'resolutionEffectsQuality'
+  'resolutionScaleMode' | 'resolutionScale' | 'resolutionPixelRatio' | 'resolutionEffectsQuality' | 'resolutionTargetFps'
 > {
   return {
     resolutionScaleMode: state?.mode === 'fixed'
@@ -71,7 +75,8 @@ function resolutionSnapshot(state: any): Pick<
       : 'auto' as ResolutionScaleSetting,
     resolutionScale: Number(state?.scale) || 1,
     resolutionPixelRatio: Number(state?.effectivePixelRatio) || 1,
-    resolutionEffectsQuality: state?.effectsQuality === 'reduced' ? 'reduced' : 'full'
+    resolutionEffectsQuality: state?.effectsQuality === 'reduced' ? 'reduced' : 'full',
+    resolutionTargetFps: state?.targetFps === 60 ? 60 : 120
   };
 }
 
@@ -172,7 +177,7 @@ export interface SpaceUiSnapshot {
   editingContraption: any;
   selectedComponentNodeId: string;
   scriptDraft: string;
-  globalPlaybackState: 'play' | 'pause' | 'stop';
+  globalPlaybackState: 'play' | 'stop';
   agentMessages: AgentMessage[];
   agentBusy: boolean;
   agentConfig: any;
@@ -204,7 +209,9 @@ export interface SpaceUiSnapshot {
   resolutionScale: number;
   resolutionPixelRatio: number;
   resolutionEffectsQuality: 'full' | 'reduced';
+  resolutionTargetFps: number;
   shadowsEnabled: boolean;
+  lightingQuality: LightingQuality;
   skinWarning: string | null;
   currentSkin: { url: string; model: 'strong' | 'slim' } | null;
   apiWorldId: string | null;
@@ -364,7 +371,9 @@ export class SpaceUiStore {
     resolutionScale: 1,
     resolutionPixelRatio: 1,
     resolutionEffectsQuality: 'full',
+    resolutionTargetFps: 120,
     shadowsEnabled: true,
+    lightingQuality: DEFAULT_LIGHTING_QUALITY,
     skinWarning: null,
     currentSkin: null,
     apiWorldId: null,
@@ -445,7 +454,7 @@ export class SpaceUiStore {
     } catch { }
   }
 
-  setAuthenticatedSession(apiOrigin: string, token: string, isAdmin = false, worldId: string | null = null): void {
+  setAuthenticatedSession(apiOrigin: string, token: string, isAdmin = false, worldId: string | null = null, accountOrigin: string = apiOrigin): void {
     if (!token) {
       this.marketClient = null;
       this.apiKeyClient = null;
@@ -453,7 +462,7 @@ export class SpaceUiStore {
       return;
     }
     this.marketClient = new SpaceMarketClient(apiOrigin, token);
-    this.apiKeyClient = new SpaceApiKeyClient(apiOrigin, token);
+    this.apiKeyClient = new SpaceApiKeyClient(accountOrigin, token, fetch, apiOrigin);
     this.patch({ isAdmin: !!isAdmin, apiWorldId: worldId });
   }
 
@@ -546,10 +555,12 @@ export class SpaceUiStore {
     let setting: ResolutionScaleSetting = 'auto';
     let worldShapeMode = getWorldShapeMode();
     let shadowsEnabled = true;
+    let lightingQuality = DEFAULT_LIGHTING_QUALITY;
     try {
       setting = normalizeResolutionScaleSetting(localStorage.getItem('space_setting_resolution_scale'));
       worldShapeMode = normalizeWorldShapeMode(localStorage.getItem('space_setting_world_shape'));
       shadowsEnabled = localStorage.getItem('space_setting_shadows') !== 'false';
+      lightingQuality = normalizeLightingQuality(localStorage.getItem(LIGHTING_QUALITY_SETTING_KEY));
     } catch { }
     setGlobalWorldShapeMode(worldShapeMode);
     sceneRenderer?.setWorldShapeMode?.(worldShapeMode);
@@ -558,7 +569,9 @@ export class SpaceUiStore {
       setting === 'auto' ? 'auto' : Number(setting)
     ) || sceneRenderer?.getResolutionScaleState?.();
     shadowsEnabled = sceneRenderer?.setShadowsEnabled?.(shadowsEnabled) ?? shadowsEnabled;
-    this.patch({ sceneRenderer, worldShapeMode, shadowsEnabled, ...resolutionSnapshot(state) });
+    lightingQuality = sceneRenderer?.setLightingQuality?.(lightingQuality) ?? lightingQuality;
+    this.patch({ sceneRenderer, worldShapeMode, shadowsEnabled, lightingQuality,
+      ...resolutionSnapshot(sceneRenderer?.getResolutionScaleState?.() || state) });
   }
 
   setNavigationSystem(navigationSystem: any): void {
@@ -1111,10 +1124,15 @@ export class SpaceUiStore {
     return success;
   }
 
-  setGlobalPlayback(value: 'play' | 'pause' | 'stop'): void {
+  async setGlobalPlayback(value: 'play' | 'stop'): Promise<void> {
     const contraption = this.snapshot.editingContraption;
     if (!contraption) return;
-    const action = value === 'play' ? 'start-scripts' : value === 'pause' ? 'pause-scripts' : 'stop-scripts';
+    if (contraption.serverManaged === true) {
+      await this.snapshot.controller?.requestServerEntityRunState?.(contraption, value === 'play' ? 'running' : 'stopped');
+      this.refresh();
+      return;
+    }
+    const action = value === 'play' ? 'start-scripts' : 'stop-scripts';
     this.snapshot.contraptions?.performBasicAction?.({
       domain: ActionDomain.ENTITY,
       action,
@@ -1123,23 +1141,18 @@ export class SpaceUiStore {
     this.patch({ globalPlaybackState: value });
     this.snapshot.sceneRenderer?.renderEntityPreview?.(contraption);
     const message = value === 'play'
-      ? '> PLAY: entity physics active; component scripts running'
-      : value === 'pause'
-        ? 'PAUSED: scripts paused; entity physics remains active'
-        : 'STOPPED: physics disabled; PB defaults and construction pose restored';
+      ? 'STARTED: entity physics active; component scripts running'
+      : 'STOPPED: physics disabled; PB defaults and construction pose restored';
     this.showToast(message);
   }
 
-  getGlobalPlayback(): 'play' | 'pause' | 'stop' | null {
+  getGlobalPlayback(): 'play' | 'stop' | null {
     const contraption = this.snapshot.editingContraption;
     if (!contraption) return null;
-    const nodeIds = [...(contraption.entityNodes?.keys?.() || [])];
-    const allEnabled = nodeIds.length > 0 && nodeIds.every(id => contraption.isNodeScriptEnabled(id));
-    const allDisabled = nodeIds.length > 0 && nodeIds.every(id => !contraption.isNodeScriptEnabled(id));
-    if (contraption.isPhysicsSimulationEnabled?.() === false) return 'stop';
-    if (allEnabled) return 'play';
-    if (allDisabled) return this.snapshot.globalPlaybackState === 'stop' ? 'pause' : this.snapshot.globalPlaybackState;
-    return null;
+    if (contraption.serverManaged && !contraption.serverExecutesLocally) {
+      return contraption.serverDesiredRunState === 'running' ? 'play' : 'stop';
+    }
+    return contraption.isPhysicsSimulationEnabled?.() === false ? 'stop' : 'play';
   }
 
   setSelectedComponentName(name: string): boolean {
@@ -1549,6 +1562,7 @@ export class SpaceUiStore {
       ),
       minimapEnabled: minimap?.isEnabled?.() ?? this.snapshot.minimapEnabled,
       shadowsEnabled: sceneRenderer?.getShadowsEnabled?.() ?? this.snapshot.shadowsEnabled,
+      lightingQuality: sceneRenderer?.getLightingQuality?.() ?? this.snapshot.lightingQuality,
       ...resolution,
       musicEnabled,
       effectsEnabled
@@ -1687,6 +1701,16 @@ export class SpaceUiStore {
     if (persist) {
       try { localStorage.setItem('space_setting_shadows', String(value)); } catch { }
       this.showToast(value ? 'Shadows enabled' : 'Shadows disabled');
+    }
+  }
+
+  setLightingQuality(quality: LightingQuality, persist = true): void {
+    const normalized = normalizeLightingQuality(quality);
+    const value = this.snapshot.sceneRenderer?.setLightingQuality?.(normalized) ?? normalized;
+    this.patch({ lightingQuality: value });
+    if (persist) {
+      try { localStorage.setItem(LIGHTING_QUALITY_SETTING_KEY, value); } catch { }
+      this.showToast(`Lighting quality: ${LIGHTING_PRESETS[value].label}`);
     }
   }
 

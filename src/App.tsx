@@ -23,6 +23,7 @@ const LedgerPage = lazy(() => import('./pages/LedgerPage').then(m => ({ default:
 const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage').then(m => ({ default: m.DiscoveryPage })))
 const FigurePage = lazy(() => import('./pages/FigurePage').then(m => ({ default: m.FigurePage })))
 const CreditsPage = lazy(() => import('./pages/CreditsPage').then(m => ({ default: m.CreditsPage })))
+const SpaceApiKeysPage = lazy(() => import('./pages/SpaceApiKeysPage').then(m => ({ default: m.SpaceApiKeysPage })))
 const SpacePage = lazy(() => import('./pages/SpacePage').then(m => ({ default: m.SpacePage })))
 
 
@@ -50,6 +51,11 @@ function LegacyOpenRedirect() {
   const location = useLocation()
   const target = `${location.pathname.replace(/^\/skin\/open/, '/public')}${location.search}${location.hash}`
   return <Navigate to={target} replace />
+}
+
+function SpaceIntroRedirect() {
+  const location = useLocation()
+  return <Navigate to={`/space/intro${location.search}${location.hash}`} replace />
 }
 
 function SpaceAppRedirect() {
@@ -128,8 +134,10 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/figure/:category" element={<FigurePage current={currentLangData} />} />
         <Route path="/space/app" element={<SpaceAppRedirect />} />
         <Route path="/space/app/*" element={<SpaceAppRedirect />} />
-        <Route path="/space" element={<SpacePage current={currentLangData} />} />
-        <Route path="/space/*" element={<SpacePage current={currentLangData} />} />
+        <Route path="/space/intro" element={<SpacePage current={currentLangData} />} />
+        <Route path="/space/apikeys" element={<SpaceApiKeysPage current={currentLangData} />} />
+        <Route path="/space" element={<SpaceIntroRedirect />} />
+        <Route path="/space/*" element={<SpaceIntroRedirect />} />
       </Routes>
     </RouteTransition>
   )

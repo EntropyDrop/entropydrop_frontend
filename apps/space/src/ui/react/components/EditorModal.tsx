@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SPACE_HOSTING_UI_ENABLED } from '../../../bootstrap/SpaceFeatures.ts';
 import { apiDocsBodyMarkup } from '../apiDocsMarkup.ts';
+import { resolveApiOrigin } from '../../../bootstrap/SpaceBootstrap.ts';
 import {
   DEFAULT_AGENT_CONTEXT_K_TOKENS,
   DEFAULT_AGENT_MAX_OUTPUT_K_TOKENS
@@ -150,7 +151,7 @@ function ComponentInspector() {
                 <div className="inspector-transform-row"><span className="inspector-sublabel">Angular XYZ</span><span id="runtime-angular-velocity" className="inspector-val mono">{formatTuple(runtime.angularVelocity, ' rad/s')}</span></div>
                 <div className="inspector-transform-row"><span className="inspector-sublabel">Spin</span><span id="runtime-spin" className="inspector-val mono">{runtimeNumber(runtime.rpm, 1)} rpm</span></div>
               </div>
-              <div className="inspector-note">Live values — <b>read-only</b>. Change them from component code (<code>self.body.*</code> setters, kinematic pose commands). <b>Pause</b> freezes them; <b>Stop</b> resets child poses and restores the Defaults.</div>
+              <div className="inspector-note">Live values — <b>read-only</b>. Change them from component code (<code>self.body.*</code> setters, kinematic pose commands). <b>Stop</b> resets child poses and restores the Defaults.</div>
             </>
           ) : <div className="text-muted">No live body data</div>}
         </div>
@@ -252,7 +253,7 @@ export function CodeEditorModal() {
     .map((node: any) => node.id)
     .sort(compareComponentIds);
   const runtimeTitle = `Runtime: #${contraption.id} (${contraption.blocks.length} blocks) · ${String(contraption.bodyType).toUpperCase()}${childIds.length ? ` · children: ${childIds.join(', ')}` : ' · no children'}`;
-  const status = state.telemetry.status;
+  const status = playback === 'play' ? 'running' : 'stopped';
   const backendManaged = contraption.serverManaged === true;
   const persistenceLabel = backendManaged ? 'backend' : 'offline browser';
   const sourceLabel = backendManaged ? 'world entity' : 'local';
@@ -265,7 +266,7 @@ export function CodeEditorModal() {
     ? 'this browser'
     : contraption.serverExecutionMode === 'hosted'
       ? SPACE_HOSTING_UI_ENABLED
-        ? contraption.serverHostingEnabled ? 'server hosting · 1 credit/hour' : 'server hosting · paused'
+        ? contraption.serverHostingEnabled ? 'server hosting · 1 credit/hour' : 'server hosting · disabled'
         : 'server managed'
     : contraption.serverDesiredRunState === 'stopped'
       ? 'stopped'
@@ -276,13 +277,13 @@ export function CodeEditorModal() {
     <div id="code-editor-modal" className="custom-modal open" onMouseDown={event => { if (event.target === event.currentTarget) spaceUiStore.toggleCodeEditorModal(false); }}>
       <div className="modal-content code-editor-container">
         <div className="editor-header">
-          <div className="editor-title-group"><div className="editor-title">Entity Editor</div><button id="editor-entity-id" tabIndex={-1} className="editor-tag" title={runtimeTitle} onClick={() => { void navigator.clipboard?.writeText?.(String(contraption.publicId)); spaceUiStore.showToast(`Entity ID copied: ${contraption.publicId}`); }}>ID: {contraption.publicId}</button><div id="editor-status-badge" className={`status-badge ${status}`}>{status.toUpperCase()}</div><div id="editor-exec-time" className="exec-time">{state.telemetry.executionTime}</div></div>
+          <div className="editor-title-group"><div className="editor-title">Entity Editor</div><button id="editor-entity-id" tabIndex={-1} className="editor-tag" title={runtimeTitle} onClick={() => { void navigator.clipboard?.writeText?.(String(contraption.publicId)); spaceUiStore.showToast(`Entity ID copied: ${contraption.publicId}`); }}>ID: {contraption.publicId}</button><div id="editor-status-badge" title={`Component scripts: ${state.telemetry.status}`} className={`status-badge ${status}`}>{status.toUpperCase()}</div><div id="editor-exec-time" className="exec-time">{state.telemetry.executionTime}</div></div>
           <div className="editor-actions">
             <div className="pb-radio-group" id="global-playback-group" title="Entity physics and script control">
-              {([['play', '▶', 'Play: enable entity physics and all component scripts'], ['pause', '⏸', 'Pause: disable scripts, keep physics active, and preserve runtime values'], ['stop', '⏹', 'Stop: disable entity physics and scripts, then restore PB BodyConfig defaults, state, clock, transforms, and forces']] as const).map(([value, label, title]) => <React.Fragment key={value}><input type="radio" id={`pb-global-${value}`} name="pb-global" value={value} checked={playback === value} onChange={() => spaceUiStore.setGlobalPlayback(value)} /><label htmlFor={`pb-global-${value}`} className={`pb-option ${value}`} title={title}>{label}</label></React.Fragment>)}
+              {([['play', '▶', 'Start: enable entity physics and all component scripts'], ['stop', '⏹', 'Stop: disable entity physics and scripts, then restore PB BodyConfig defaults, state, clock, transforms, and forces']] as const).map(([value, label, title]) => <React.Fragment key={value}><input type="radio" id={`pb-global-${value}`} name="pb-global" value={value} checked={playback === value} onChange={() => { void spaceUiStore.setGlobalPlayback(value); }} /><label htmlFor={`pb-global-${value}`} className={`pb-option ${value}`} title={title}>{label}</label></React.Fragment>)}
             </div>
             <button id="run-script-btn" tabIndex={-1} className="editor-btn run-btn" onClick={() => spaceUiStore.applyAndRunScript()}>Apply Code</button>
-            <button id="api-docs-btn" tabIndex={-1} className="editor-btn" title="Open the script API reference (documentation)" onClick={() => spaceUiStore.toggleApiDocs(true)}>📖 Docs</button>
+            <button id="api-docs-btn" tabIndex={-1} className="editor-btn" title="Open entityAPI docs for entity code, with links to spaceAPI for Agent HTTP requests" onClick={() => spaceUiStore.toggleApiDocs(true)}>📖 entityAPI Docs</button>
             <button id="close-code-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close terminal (ESC)" onClick={() => spaceUiStore.toggleCodeEditorModal(false)}>✕</button>
           </div>
         </div>
@@ -300,7 +301,7 @@ export function CodeEditorModal() {
               return <button type="button" tabIndex={-1} key={node.id} className={`code-tab ${state.selectedComponentNodeId === node.id ? 'active' : ''} ${code?.trim?.() ? 'has-script' : ''} ${enabled ? 'enabled' : 'disabled'}`} onClick={() => spaceUiStore.selectComponentTreeNode(node.id)}><span className={`code-tab-dot ${enabled ? 'on' : 'off'}`} /><span>{nodeIcon(node)} {node.id}.js</span></button>;
             })}</div>
             <div className="code-editor-main"><div className="code-gutter" id="code-gutter" /><textarea id="script-textarea" className="code-textarea" spellCheck={false} placeholder="// Write your controller code here..." value={state.scriptDraft} onChange={event => spaceUiStore.setScriptDraft(event.target.value)} /></div>
-            <div className="code-footer-hint" id="code-footer-hint"><span id="code-target-hint">Editing: {nodeIcon(contraption.getEntityNode?.(state.selectedComponentNodeId))} {state.selectedComponentNodeId}{contraption.getEntityNode?.(state.selectedComponentNodeId)?.parentId === null ? ' (body)' : ''}</span><span id="code-api-hint" className="code-api-hint">API: self · ctx</span></div>
+            <div className="code-footer-hint" id="code-footer-hint"><span id="code-target-hint">Editing: {nodeIcon(contraption.getEntityNode?.(state.selectedComponentNodeId))} {state.selectedComponentNodeId}{contraption.getEntityNode?.(state.selectedComponentNodeId)?.parentId === null ? ' (body)' : ''}</span><span id="code-api-hint" className="code-api-hint">entityAPI: self · ctx</span></div>
           </div>
           <div className="telemetry-panel">
             <div className="telemetry-section-title">3D VIEW</div><div className="entity-preview-frame"><canvas id="entity-preview-canvas" aria-label="Interactive preview of the entity in the current world" ref={attachPreviewCanvas} /></div>
@@ -312,7 +313,7 @@ export function CodeEditorModal() {
               <div className="telemetry-item"><span className="tele-label">Executor</span><span id="tele-entity-executor" className="tele-val">{executorLabel}</span></div>
               {backendManaged ? <div className="telemetry-item telemetry-item-wide"><span className="tele-label">Backend Revision</span><span id="tele-entity-revision" className="tele-val mono">definition {Number(contraption.serverRevision) || 0} · playback {Number(contraption.serverPlaybackRevision) || 0}</span></div> : null}
             </div>
-            <div className="telemetry-section-title">ENTITY STATE API</div>
+            <div className="telemetry-section-title">entityAPI STATE</div>
             <div className="telemetry-grid">
               <div className="telemetry-item"><span className="tele-label">Ground Dist</span><span id="tele-ground-dist" className="tele-val highlight">{state.telemetry.groundDistance}</span></div>
               <div className="telemetry-item"><span className="tele-label">Altitude</span><span id="tele-altitude" className="tele-val">{state.telemetry.altitude}</span></div>
@@ -332,12 +333,15 @@ export function CodeEditorModal() {
 export function ApiDocsModal() {
   const open = useSpaceUi(state => state.apiDocsOpen);
   if (!open) return null;
+  const apiOrigin = spaceUiStore.getApiKeyClient()?.getAgentConnection().origin || resolveApiOrigin(
+    import.meta.env.VITE_SPACE_API_BASE_URL || import.meta.env.VITE_API_BASE_URL, window.location.origin,
+  );
   return (
     <div id="api-docs-modal" className="custom-modal open" onMouseDown={event => { if (event.target === event.currentTarget) spaceUiStore.toggleApiDocs(false); }}>
       <div className="modal-content api-docs-container">
-        <div className="modal-header"><h2>📖 ENTITY SCRIPT API V2 REFERENCE</h2><button id="close-api-docs-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close docs (ESC)" onClick={() => spaceUiStore.toggleApiDocs(false)}>✕</button></div>
-        <div className="modal-sub">Entity behavior script reference · isolated QuickJS per loaded entity · one script per component · press C to open the editor</div>
-        <div className="api-docs-body" id="api-docs-body" dangerouslySetInnerHTML={{ __html: apiDocsBodyMarkup }} />
+        <div className="modal-header"><h2>📖 entityAPI V2 REFERENCE</h2><button id="close-api-docs-btn" tabIndex={-1} className="icon-btn" style={{ width: 28, height: 28, fontSize: 13 }} title="Close docs (ESC)" onClick={() => spaceUiStore.toggleApiDocs(false)}>✕</button></div>
+        <div className="modal-sub">Entity code → entityAPI (self / ctx) · Agent HTTP requests → spaceAPI · one script per component</div>
+        <div className="api-docs-body" id="api-docs-body" dangerouslySetInnerHTML={{ __html: apiDocsBodyMarkup(apiOrigin) }} />
       </div>
     </div>
   );

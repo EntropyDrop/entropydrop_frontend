@@ -7,6 +7,28 @@ import {
 } from '@entropydrop/space-engine/render/DistantSurfaceLayer.ts';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
 
+test('restoring Ultra publishes the final 60 FPS target after initial resolution setup', t => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: (key: string) => key === 'space_setting_lighting_quality' ? 'ultra' : null,
+  } });
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original);
+    else delete (globalThis as any).localStorage;
+  });
+  let targetFps = 120;
+  const state = () => ({ mode: 'auto', scale: 1, effectsQuality: 'full', targetFps });
+  const renderer = {
+    setResolutionScale: state,
+    setLightingQuality: (quality: string) => { targetFps = quality === 'ultra' ? 60 : 120; return quality; },
+    getResolutionScaleState: state,
+  };
+  const store = new SpaceUiStore();
+  store.setSceneRenderer(renderer);
+  assert.equal(store.getSnapshot().lightingQuality, 'ultra');
+  assert.equal(store.getSnapshot().resolutionTargetFps, 60);
+});
+
 test('resolution setting is applied to the renderer and follows automatic updates', () => {
   const applied: Array<'auto' | number> = [];
   const renderer: any = {

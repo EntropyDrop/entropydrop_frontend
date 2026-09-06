@@ -21,6 +21,7 @@ export type ResolutionScaleMode = 'auto' | 'fixed';
 export type AdaptiveEffectsQuality = 'full' | 'reduced';
 
 export interface AdaptiveResolutionState {
+  targetFps: number;
   mode: ResolutionScaleMode;
   scale: number;
   fixedScale: number;
@@ -65,6 +66,7 @@ export class AdaptiveResolutionController {
   private validSamples = 0;
   private sampledDurationMs = 0;
   private lastAdjustmentAt = -Infinity;
+  private targetFps = 120;
 
   get currentScale(): number {
     return this.scale;
@@ -72,12 +74,20 @@ export class AdaptiveResolutionController {
 
   getState(): AdaptiveResolutionState {
     return {
+      targetFps: this.targetFps,
       mode: this.mode,
       scale: this.scale,
       fixedScale: this.fixedScale,
       averageFrameMs: this.averageFrameMs,
       effectsQuality: this.effectsQuality,
     };
+  }
+
+  setTargetFps(fps: 60 | 120): void {
+    if (fps === this.targetFps) return;
+    this.targetFps = fps;
+    this.effectsQuality = 'full';
+    this.resetMeasurements();
   }
 
   setSetting(setting: 'auto' | number): number {
@@ -115,13 +125,15 @@ export class AdaptiveResolutionController {
     // Keep truly slow visible frames useful to the policy, while limiting how
     // much any one scheduling or GC stall can distort the moving average.
     const sampledFrameMs = Math.min(frameMs, MAX_SAMPLED_FRAME_MS);
+    const cadenceRatio = 120 / this.targetFps;
+    const slowFrameMs = SLOW_FRAME_MS * cadenceRatio;
 
     if (this.validSamples === 0) {
       this.averageFrameMs = sampledFrameMs;
-      this.slowFrameRatio = sampledFrameMs > SLOW_FRAME_MS ? 1 : 0;
+      this.slowFrameRatio = sampledFrameMs > slowFrameMs ? 1 : 0;
     } else {
       this.averageFrameMs += (sampledFrameMs - this.averageFrameMs) * FRAME_TIME_WEIGHT;
-      const slow = sampledFrameMs > SLOW_FRAME_MS ? 1 : 0;
+      const slow = sampledFrameMs > slowFrameMs ? 1 : 0;
       this.slowFrameRatio += (slow - this.slowFrameRatio) * SLOW_FRAME_WEIGHT;
     }
     this.validSamples++;
@@ -132,18 +144,18 @@ export class AdaptiveResolutionController {
       && this.validSamples >= DOWNSCALE_SAMPLE_COUNT
       && this.sampledDurationMs >= DOWNSCALE_OBSERVATION_MS
       && now - this.lastAdjustmentAt >= DOWNSCALE_COOLDOWN_MS
-      && this.averageFrameMs > SLOW_FRAME_MS
+      && this.averageFrameMs > slowFrameMs
       && this.slowFrameRatio > 0.3
     ) {
       if (this.scale > MIN_RESOLUTION_SCALE) {
         // Pixel-bound frame time is approximately proportional to scale squared.
         // Jump near the estimated sustainable level instead of stepping down for
         // several seconds on a clearly underpowered GPU.
-        const recommended = this.scale * Math.sqrt(TARGET_FRAME_MS / this.averageFrameMs);
+        const recommended = this.scale * Math.sqrt((1000 / this.targetFps) / this.averageFrameMs);
         this.scale = lowerAdaptiveStep(this.scale, recommended);
       } else {
         // Resolution is already at its legibility floor. Let the renderer drop
-        // expensive secondary effects rather than accepting a sub-120 cadence.
+        // expensive secondary effects when still below the preset's target.
         this.effectsQuality = 'reduced';
       }
       this.lastAdjustmentAt = now;
@@ -155,7 +167,7 @@ export class AdaptiveResolutionController {
       (this.scale < MAX_RESOLUTION_SCALE || this.effectsQuality === 'reduced')
       && this.validSamples >= UPSCALE_SAMPLE_COUNT
       && now - this.lastAdjustmentAt >= UPSCALE_COOLDOWN_MS
-      && this.averageFrameMs <= HEALTHY_FRAME_MS
+      && this.averageFrameMs <= HEALTHY_FRAME_MS * cadenceRatio
       && this.slowFrameRatio < 0.08
     ) {
       if (this.effectsQuality === 'reduced') {
@@ -176,7 +188,7 @@ export class AdaptiveResolutionController {
 
   private resetMeasurements(now: number | null = null, resetAdjustment = true): void {
     this.lastFrameAt = now;
-    this.averageFrameMs = TARGET_FRAME_MS;
+    this.averageFrameMs = 1000 / this.targetFps;
     this.slowFrameRatio = 0;
     this.validSamples = 0;
     this.sampledDurationMs = 0;

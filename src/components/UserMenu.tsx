@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { type LangData, type LangKey, SUPPORTED_LANGUAGES } from '../constants/lang'
 import { apiFetch } from '../utils/api'
 import { revokeAuthSession } from '../utils/fetchInterceptor'
-import { SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS } from "../constants/nav"
+import { SPACE_NAV_ITEMS, SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS } from "../constants/nav"
 import { SkinAvatarImage } from './SkinAvatarImage'
 
 const GoogleSignInButton = lazy(() => import('./GoogleSignInButton').then(m => ({ default: m.GoogleSignInButton })))
@@ -281,6 +281,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             if (res.ok) {
                 const data = await res.json()
                 localStorage.setItem('token', data.access_token)
+                window.dispatchEvent(new Event('auth-token-updated'))
                 setUser(data.user)
             } else {
                 console.error('Login failed')
@@ -506,7 +507,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             ) : (
                 <>
                     {/* Mobile Nav Toggle when not logged in */}
-                    <button
+                    <button aria-label={current.nav.menu} aria-expanded={isOpen}
                         onClick={() => setIsOpen(!isOpen)}
                         className="lg:hidden flex items-center justify-center bg-black/40 border border-white/10 w-10 h-10 transition-all cursor-pointer"
                     >
@@ -527,7 +528,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                     <div className="lg:hidden border-b border-black/10 pb-1 pt-1 bg-black/10 flex flex-col gap-1">
                         {/* Global Platform Links: Pro & Public */}
                         <button
-                            onClick={() => { setIsOpen(false); navigate('/space'); }}
+                            onClick={() => { setIsOpen(false); navigate('/space/intro'); }}
                             className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
                         >
                             <Icon icon="pixelarticons:zap" className="text-sm shrink-0" /> {current.nav.space}
@@ -545,6 +546,16 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             <Icon icon="pixelarticons:binary" className="text-sm shrink-0" /> {current.nav.public}
                         </button>
 
+                        <div className="h-px bg-white/5 my-1 mx-4" />
+
+                        {/* Space Sub-Navigation */}
+                        <span className={`text-white/40 text-[9px] uppercase px-4 pt-1 block ${current.fontClass}`}>{current.nav.space}</span>
+                        {SPACE_NAV_ITEMS.map((item) => (
+                            <button key={item.key} onClick={() => { setIsOpen(false); navigate(item.path); }}
+                                className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 pl-6 ${current.fontClass}`}>
+                                <Icon icon={item.icon} className="text-sm shrink-0" /> {current.nav[item.key]}
+                            </button>
+                        ))}
                         <div className="h-px bg-white/5 my-1 mx-4" />
 
                         {/* Skins Sub-Navigation */}

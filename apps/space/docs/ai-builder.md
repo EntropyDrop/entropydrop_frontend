@@ -1,6 +1,10 @@
 # HUD AI Builder
 
-The HUD AI Builder is separate from the Entity Script API. A model produces a declarative `SpaceBuildPlan`; the engine validates it, renders a hologram, and waits for explicit player confirmation before changing the world.
+[spaceAPI](../../../../entropydrop_backend/space/agent/spaceAPI.md) · [entityAPI](../../../../entropydrop_space_engine/docs/generated/api-v2.md)
+
+entityAPI 是实体代码中通过 `self` / `ctx` 调用的运行时接口；spaceAPI 是 Agent 和客户端使用的 HTTP 接口。
+
+The HUD AI Builder currently generates declarative plans; its planned HTTP tool integration uses spaceAPI. Entity scripts use entityAPI. A model produces a declarative `SpaceBuildPlan`; the engine validates it, renders a hologram, and waits for explicit player confirmation before changing the world.
 
 ## Flow
 

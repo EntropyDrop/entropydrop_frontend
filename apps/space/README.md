@@ -1,7 +1,11 @@
 # EntropyDrop Space
 
+[spaceAPI](../../../entropydrop_backend/space/agent/spaceAPI.md) · [entityAPI](../../../entropydrop_space_engine/docs/generated/api-v2.md)
+
+entityAPI 是实体代码中通过 `self` / `ctx` 调用的运行时接口；spaceAPI 是 Agent 和客户端使用的 HTTP 接口。
+
 This app lives in the `entropydrop_frontend` npm workspace and is built as the
-independent `/space/app/` document. The main `/space` route is the product
+independent `/space/app/` document. The main `/space/intro` route is the product
 introduction page. The app shares the repository's Three.js version and
 the main site's `localStorage` login token. It does not own an account system.
 
@@ -16,7 +20,7 @@ immediately; later wrapped position/yaw updates are saved every five seconds,
 on realtime disconnect, and before page suspension. Backpack data remains browser-local under
 `space.backpack.v6.pb` and is never uploaded by this app. Older backpack schemas are
 intentionally ignored. Player-authored standard
-and micro-voxel terrain overlays are loaded from the authenticated Space API and
+and micro-voxel terrain overlays are loaded from the authenticated spaceAPI and
 sent back in idempotent batches of at most 256 mutations. A durable browser
 outbox under `space.world-edits.v2.*` preserves unacknowledged batches across a
 refresh; the earlier `space.world-edits.v1.*` local-only overlay is migrated and
@@ -33,11 +37,30 @@ Samples through 4000m add merged side faces only where neighboring
 heights actually differ, keeping nearby LOD boundaries continuous without the
 overdraw of four full skirts per cell; farther tiers draw only their top faces.
 Empty summaries render nothing and terrain edits dirty only their zone.
-Automatic render resolution targets 120 FPS, reducing drawing-buffer scale
+Automatic render resolution targets 120 FPS (60 FPS with Ultra lighting), reducing drawing-buffer scale
 quickly below that cadence and restoring clarity only after a sustained healthy interval.
 If 50% resolution is still insufficient, Auto temporarily pauses real-time
-shadows before accepting a sub-120 cadence. The local sun shadow is 1024², and
-streaming work is capped at 3 ms per frame. Far topology follows a 64 m anchor
+shadows and secondary lighting before accepting a sub-120 cadence. Settings →
+Graphics → Performance → Lighting Quality offers four immediately applied,
+locally saved presets: Low uses simple shadow-free daylight; Medium (default)
+keeps the original 1024² soft shadows; High adds 2048² shadows, warmer sun,
+cool bounce light and sun haze; Ultra adds a shader-pack-style HDR pipeline with
+4096² long morning shadows, animated layered clouds, a bright solar disc,
+depth-aware contact occlusion and sunlight shafts, distance/height haze,
+multi-scale bloom, filmic color grading and FXAA. Post effects read depth from the
+actual bent scene, so they support Earth and Donut projections, edited terrain
+and entities. Near-camera viewmodels are excluded from haze and contact occlusion.
+HDR buffers follow render resolution up to 2560 pixels on the longest side and
+are released when leaving Ultra. GPUs without float color targets retain the
+cinematic sky and daylight without the HDR chain.
+Shadow maps are capped to GPU limits and released when disabled
+or resized. The separate Shadows preference is retained at Low and during Auto
+fallback, and restored when the selected quality permits it. Auto preserves the
+selected preset while temporarily pausing shadows and secondary effects. In Ultra,
+fallback pauses bloom, contact occlusion and sun shafts while retaining the
+cinematic sky, color grading and atmospheric haze. Ultra targets 60 FPS to keep
+its effects at ordinary display refresh rates; other presets still target 120 FPS.
+Streaming work is capped at 3 ms per frame. Far topology follows a 64 m anchor
 and rebuilds in 2 ms batches while the previous complete surface remains visible.
 A 128 KiB GPU readiness mask hands each 16m chunk from the far snapshot to the
 detailed mesh only after that mesh is attached, preventing streaming holes and
@@ -114,13 +137,22 @@ npm ci
 npm run dev
 ```
 
-Open <http://localhost:5173/space/> for the introduction, then enter the app at
+Open <http://localhost:5173/space/intro> for the introduction, manage account API keys at
+<http://localhost:5173/space/apikeys>, then enter the app at
 <http://localhost:5173/space/app/>. The main Vite process mounts Space directly
 at that path, preserving the main site's origin and login token without a second
 frontend server or proxy. API requests are sent by the browser directly to the
 backend configured by `VITE_API_BASE_URL` (default: `http://localhost:8000`).
 
 ## Core loop
+
+The selected toolbar tool appears as a voxel model, with movement sway and a
+left-click stroke. In first person, an equipped tool replaces the visible arm
+and enters from the lower-right edge with its handle partially offscreen;
+clearing the tool restores the empty hand. Third person shows the tool held in
+the right hand. Tools use silver metal; the brush has a wooden handle, metal
+ferrule and matte natural bristles. The hammer's handle stays upright with its
+striking face forward.
 
 1. Choose any color, then use the shovel for standard construction or the spoon
    for micro-voxel sculpting.
@@ -140,7 +172,7 @@ orbit, launch, spin, attitude-stabilization, and stop intents.
 Its result contract is intentionally small so it can later be replaced by a
 remote LLM without changing the controller runtime.
 
-Detailed component script and controller API documentation is available directly in-game via the Code Editor terminal (press `C` → API Reference) and in the generated [Script API V2 reference](../../../entropydrop_space_engine/docs/generated/api-v2.md). The [Agent API reference](../../../entropydrop_space_engine/docs/generated/agent-api-v2.md), in-game reference, and runtime Agent prompt are all rendered from `entropydrop_space_engine/src/contraption/ScriptApiContract.ts`; edit that contract instead of these generated views.
+Detailed component script and controller API documentation is available directly in-game via the Code Editor terminal (press `C` → entityAPI Docs) and in the generated [entityAPI V2 reference](../../../entropydrop_space_engine/docs/generated/api-v2.md). The [entityAPI code-generation reference](../../../entropydrop_space_engine/docs/generated/agent-api-v2.md), in-game reference, and runtime Agent prompt are all rendered from `entropydrop_space_engine/src/contraption/ScriptApiContract.ts`; edit that contract instead of these generated views.
 
 The Entity Editor inspector separates authored values from live simulation data. **Defaults**
 shows the pivot (`XYZ`), saved mounting-frame quaternion (`XYZW`), and, for child
@@ -178,7 +210,7 @@ omit all component names; database list names are derived metadata. Browser back
 use Protobuf v6, and old resource, backpack, and offline entity versions are not migrated.
 
 External agents can submit canonical entity definitions directly with an account-level,
-long-lived Space API key; market publication is not required. The browser polls the nearby
+long-lived spaceAPI key with full Space permissions (including existing keys); market publication is not required. They can read owned entities with `GET /entities/{id}/configuration`, edit component code/name/body defaults with `PATCH /entities/{id}/configuration`, and start/stop with `PUT /entities/{id}/run-state`, under the world API prefix. Edits require Stop and `expected_revision`; operation IDs make delayed retries safe. Entity playback has only running/stopped states. The browser polls the nearby
 wrapped AOI, verifies the canonical Protobuf definition and optional
 snapshot, then restores the exact construction/runtime pose, including its quaternion. For browser-executed entities, only
 the owner's browser holding the current eight-second execution lease advances physics/scripts;

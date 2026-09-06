@@ -1,9 +1,14 @@
 export const TOP_NAV_ITEMS = [
-    { key: 'space', icon: 'pixelarticons:react', path: '/space' },
+    { key: 'space', icon: 'pixelarticons:react', path: '/space/intro' },
     { key: 'skin', icon: 'pixelarticons:avatar', path: '/skin/' },
     { key: 'figure', icon: 'pixelarticons:box', path: '/figure' },
     { key: 'pro', icon: 'pixelarticons:zap', path: '/pro' },
     { key: 'public', icon: 'pixelarticons:binary', path: '/public' },
+] as const
+
+export const SPACE_NAV_ITEMS = [
+    { key: 'spaceIntro', icon: 'pixelarticons:book-open', path: '/space/intro' },
+    { key: 'apiKeys', icon: 'pixelarticons:lock', path: '/space/apikeys' },
 ] as const
 
 export const SKIN_NAV_ITEMS = [
@@ -26,6 +31,7 @@ export const PUBLIC_NAV_ITEMS = [
 ] as const
 
 export type TopNavKey = typeof TOP_NAV_ITEMS[number]['key']
+export type SpaceNavKey = typeof SPACE_NAV_ITEMS[number]['key']
 export type SkinNavKey = typeof SKIN_NAV_ITEMS[number]['key']
 export type FigureNavKey = typeof FIGURE_NAV_ITEMS[number]['key']
 export type PublicNavKey = typeof PUBLIC_NAV_ITEMS[number]['key']

@@ -328,7 +328,7 @@ test('flight banks toward lateral travel and uses distinct forward/backward pose
   assert.ok(Math.abs(right.pitch) < 0.1 && Math.abs(left.pitch) < 0.1, 'pure strafing should stay upright');
 });
 
-test('the first-person arm enters from the near lower-right shoulder toward the far visible hand', () => {
+test('the MC first-person arm rises from below the right side toward the visible hand', () => {
   const character = createTestCharacter();
   const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 100);
   camera.add(character.firstPersonHand);
@@ -344,8 +344,10 @@ test('the first-person arm enters from the near lower-right shoulder toward the 
   assert.ok(hand.z < shoulder.z, 'hand end should be farther from the camera');
   assert.ok(handScreen.x < shoulderScreen.x, 'hand should extend in from the right edge');
   assert.ok(handScreen.y > shoulderScreen.y, 'hand should extend up from the bottom edge');
-  assert.ok(shoulderScreen.x > 1 && shoulderScreen.y < -1, 'the shoulder joint should stay outside the viewport');
-  assert.ok(handScreen.x < 0.75 && handScreen.y > -0.75, 'hand end should remain clearly visible');
+  assert.ok(shoulderScreen.x > 0.7 && shoulderScreen.x < 1 && shoulderScreen.y < -1,
+    'the MC shoulder anchor should sit below the bottom edge, in the right side of the view');
+  assert.ok(handScreen.x > 0.35 && handScreen.x < 0.6 && handScreen.y > -0.55 && handScreen.y < -0.25,
+    'the fist should rise into the MC hand region, instead of remaining tucked against the bottom-right corner');
   character.dispose();
 });
 
@@ -370,7 +372,7 @@ test('the first-person hand keeps the same safe framing across camera FOVs and a
     const arm = character.firstPersonHand.children[0].children[0];
     const shoulder = new THREE.Vector3(0, 0, 0).applyMatrix4(arm.matrixWorld).project(camera);
     const hand = new THREE.Vector3(0, -8, 0).applyMatrix4(arm.matrixWorld).project(camera);
-    assert.ok(shoulder.x > 1 && shoulder.y < -1, `shoulder leaked into view at ${fov} degrees`);
+    assert.ok(shoulder.y < -1, `shoulder leaked above the bottom edge at ${fov} degrees`);
     assert.ok(hand.x > -1 && hand.x < 1 && hand.y > -1 && hand.y < 1, `hand left view at ${fov} degrees`);
 
     if (reference) {

@@ -2,9 +2,49 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  installSpaceAuthFetchInterceptor,
   jwtExpiresAt,
   refreshSpaceAuthSession,
 } from '../src/bootstrap/SpaceAuthSession.ts';
+
+test('split Space origin refreshes through cloud accounts and never authorizes other hosts', async () => {
+  const priorWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const priorStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const storage = new MemoryStorage();
+  storage.setItem('token', 'old-token');
+  const calls: Array<{ url: string; token: string | null }> = [];
+  let rejectSpace = true;
+  const fakeWindow = {
+    location: { href: 'https://entropydrop.com/space/' },
+    dispatchEvent() {},
+    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, token: new Headers(init?.headers).get('Authorization') });
+      if (url.endsWith('/auth/refresh')) return new Response(JSON.stringify({ access_token: 'fresh-token' }));
+      if (url.startsWith('https://space-api.entropydrop.com/space/api/') && rejectSpace) {
+        rejectSpace = false;
+        return new Response(null, { status: 401 });
+      }
+      return new Response('{}');
+    },
+  };
+  Object.defineProperty(globalThis, 'window', { value: fakeWindow, configurable: true });
+  Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true });
+  try {
+    installSpaceAuthFetchInterceptor('https://api.entropydrop.com', 'https://space-api.entropydrop.com');
+    await fakeWindow.fetch('https://space-api.entropydrop.com/space/api/v2/bootstrap');
+    await fakeWindow.fetch('https://api.entropydrop.com/space/api/v2/api-keys');
+    await fakeWindow.fetch('https://cdn.entropydrop.com/space/api/v2/untrusted');
+    await fakeWindow.fetch('https://space-api.entropydrop.com/skin/api/auth/me');
+    assert.deepEqual(calls.map(c => c.token), ['Bearer old-token', null, 'Bearer fresh-token', 'Bearer fresh-token', null, null]);
+    assert.equal(calls[1].url, 'https://api.entropydrop.com/skin/api/auth/refresh');
+  } finally {
+    if (priorWindow) Object.defineProperty(globalThis, 'window', priorWindow);
+    else delete (globalThis as any).window;
+    if (priorStorage) Object.defineProperty(globalThis, 'localStorage', priorStorage);
+    else delete (globalThis as any).localStorage;
+  }
+});
 
 class MemoryStorage {
   values = new Map<string, string>();

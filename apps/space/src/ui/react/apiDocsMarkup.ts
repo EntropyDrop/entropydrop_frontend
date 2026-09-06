@@ -1,5 +1,8 @@
 import { renderApiReferenceHtml } from '@entropydrop/space-engine/contraption/ScriptApiContract.ts';
+import { spaceAgentConnection } from '../../bootstrap/SpaceAgentGuide.ts';
 
-// Trusted static documentation generated from the canonical Script API V2
-// contract. React owns the modal lifecycle and surrounding UI.
-export const apiDocsBodyMarkup = renderApiReferenceHtml();
+// Canonical entityAPI documentation with links to the configured Space backend.
+// React owns the modal lifecycle and surrounding UI.
+export function apiDocsBodyMarkup(apiOrigin: string): string {
+  return renderApiReferenceHtml(undefined, spaceAgentConnection(apiOrigin));
+}

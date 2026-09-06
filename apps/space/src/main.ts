@@ -143,7 +143,8 @@ class Game {
       session.api_origin,
       session.mode === 'online' ? session.token : '',
       session.mode === 'online' && session.player.is_admin === true,
-      session.world.id
+      session.world.id,
+      session.account_api_origin || session.api_origin
     );
     this.uiStore.setSkinWarning(session.entry_warning);
     this.uiStore.setCurrentSkin(
@@ -538,7 +539,9 @@ class Game {
       maxSpeed: this.playerPhysics.isFlying
         ? this.playerPhysics.flySpeed
         : (this.playerPhysics.isSprinting ? this.playerPhysics.sprintSpeed : this.playerPhysics.walkSpeed),
-      lookPitch: this.controller.pitch
+      lookPitch: this.controller.pitch,
+      activeTool: this.controller.activeTool,
+      toolUseSequence: this.controller.toolUseSequence
     });
     this.sceneRenderer.updateRemotePlayers(this.remotePlayers || [], dt);
 
