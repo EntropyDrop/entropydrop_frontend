@@ -24,7 +24,7 @@ function visibleTools(root: THREE.Object3D): ToolMesh[] {
   return result;
 }
 
-test('tools stay compact and the hammer is upright and strikes forward', () => {
+test('tools stay compact and share the standard hand grip posture', () => {
   for (const tool of tools) {
     const mesh = createHeldVoxelTool(normalizeHeldTool(tool)!);
     const size = mesh.geometry.boundingBox!.getSize(new THREE.Vector3());
@@ -57,14 +57,16 @@ test('tools stay compact and the hammer is upright and strikes forward', () => {
     const grip = mesh.localToWorld(new THREE.Vector3());
     const head = mesh.localToWorld(new THREE.Vector3(0, 4, 0));
     assert.ok(head.y > grip.y + 0.1, 'the hammer handle must point up from the grip');
-    assert.ok(head.clone().sub(grip).normalize().y > 0.95, 'the handle must be nearly vertical');
-    const strikingDirection = new THREE.Vector3(-1, 0, 0).transformDirection(mesh.matrixWorld);
-    assert.ok(strikingDirection.z < -0.9, 'the striking face must point toward the player front');
   }
+  const worldHammer = visibleTools(rig.object3d)[0];
+  assert.equal(worldHammer.rotation.x, Math.PI / 2, 'hammer must share standard grip rotation');
+  assert.equal(worldHammer.position.x, 0);
+  assert.equal(worldHammer.position.y, 0);
+  assert.equal(worldHammer.position.z, 0);
   rig.dispose();
 });
 
-test('the upright hammer shaft exits at the same palm opening as other tools with its heel inside the fist', () => {
+test('held tools exit at the same palm opening with their heel inside the fist', () => {
   for (const model of ['strong', 'slim'] as const) {
     const rig = character(model);
     const armWidth = model === 'strong' ? 4 : 3;

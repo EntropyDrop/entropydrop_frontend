@@ -712,19 +712,8 @@ export class CuteCharacter {
     if (tool && !this.heldToolMeshes.has(tool)) {
       const world = createHeldVoxelTool(tool);
       world.castShadow = this.shadowsEnabled;
-      // Apply orientation after cancelling the arm's nonuniform skin scale,
-      // preserving cubic cells. Hold the hammer's handle upright, with the
-      // striking face (-X in the tool model) toward the character's front.
-      if (tool === 'hammer') {
-        // Cancel both the arm's resting pitch and its outward lean before
-        // facing the hammer forward, so the handle does not tilt sideways.
-        world.quaternion.setFromEuler(new THREE.Euler(-0.85, 0, -0.2)).invert();
-        world.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2));
-        // Match the other shafts' exit at the palm's +Z face. Rotating about
-        // the internal grip alone makes the upright shaft emerge at the wrist.
-        // Put its grip band at that opening, keeping the heel inside the fist.
-        world.position.set(0, 0, 2).sub(new THREE.Vector3(0, 0.65, 0).applyQuaternion(world.quaternion));
-      } else world.rotation.x = Math.PI / 2;
+      world.rotation.x = Math.PI / 2;
+      if (tool === 'hammer') world.rotateY(Math.PI / 2);
       let view: typeof world | null = null;
       if (this.firstPersonGrip.parent) {
         view = new THREE.Mesh(world.geometry, world.material.map(material => material.clone()));
@@ -733,9 +722,8 @@ export class CuteCharacter {
         view.frustumCulled = false;
         view.renderOrder = 1000;
         view.userData.torusPreBent = true;
-        view.rotation.copy(tool === 'hammer'
-          ? new THREE.Euler(-0.1, -Math.PI / 2 + 0.18, 0.14)
-          : new THREE.Euler(-0.16, -0.5, 0.34));
+        view.rotation.copy(new THREE.Euler(-0.16, -0.5, 0.34));
+        if (tool === 'hammer') view.rotateY(-Math.PI / 2);
         this.firstPersonGrip.add(view);
       }
       this.rightHandGrip.add(world);
