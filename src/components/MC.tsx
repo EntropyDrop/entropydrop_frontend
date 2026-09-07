@@ -580,7 +580,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
         if (e.object?.userData?.cell && actualIsOverlay) {
             const cell = e.object.userData.cell;
-            const faceIndex = e.face ? Math.floor(e.faceIndex / 2) : 0;
+            const faceIndex = (e.face && typeof e.face.materialIndex === 'number')
+                ? e.face.materialIndex
+                : (e.face ? Math.floor(e.faceIndex / 2) : 0);
             const faces = ['left', 'right', 'top', 'bottom', 'front', 'back'];
             const faceName = faces[faceIndex];
             const u_px = cell[`${faceName}_u`];
@@ -588,7 +590,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             if (u_px !== undefined && v_px !== undefined) return [u_px, v_px];
         }
 
-        const faceIndex = e.face ? Math.floor(e.faceIndex / 2) : 0;
+        const faceIndex = (e.face && typeof e.face.materialIndex === 'number')
+            ? e.face.materialIndex
+            : (e.face ? Math.floor(e.faceIndex / 2) : 0);
         const faces = ['left', 'right', 'top', 'bottom', 'front', 'back'];
         const faceName = faces[faceIndex] as FaceName;
         const uvConfig = (charData.uvMaps as any)[part];
@@ -864,7 +868,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
     const bodyGeometry = useMemo(() => {
         const h = isCute ? 8 : 12;
-        const geo = new THREE.BoxGeometry(8, h, 4, 8, h, 4);
+        const geo = isCute
+            ? new THREE.BoxGeometry(8, h, 4, 8, h, 4)
+            : new THREE.BoxGeometry(8, h, 4);
         if (isCute) {
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
@@ -881,7 +887,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
     const bodyOverlayGeometry = useMemo(() => {
         const h = isCute ? 8.5 : 12.5;
-        const geo = new THREE.BoxGeometry(8.5, h, 4.5, 8, isCute ? 8 : 12, 4);
+        const geo = isCute
+            ? new THREE.BoxGeometry(8.5, h, 4.5, 8, isCute ? 8 : 12, 4)
+            : new THREE.BoxGeometry(8.5, h, 4.5);
         if (isCute) {
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
