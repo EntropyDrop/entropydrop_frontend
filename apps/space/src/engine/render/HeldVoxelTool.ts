@@ -72,25 +72,22 @@ function toolVoxels(tool: HeldTool) {
 
   switch (tool) {
     case 'shovel': {
-      handle(15);
-      // Long shaft, a narrow socket and folded foot treads separate the blade
-      // from the handle. The digging end tapers all the way to a single point.
-      box(-2, 2, 13, 16, -1, 1, 3);
-      const widths = [6, 6, 6, 6, 6, 6, 5, 5, 5, 4, 4, 3, 3, 2, 1, 0];
+      handle(9);
+      // Low-resolution spade blade with socket collar, foot treads, dished
+      // raised edges, central reinforcing spine, and 45-degree digging tip.
+      const widths = [4, 4, 4, 4, 4, 4, 3, 3, 2, 1, 0];
       for (let row = 0; row < widths.length; row++) {
         const width = widths[row];
-        const y = row + 16;
+        const y = row + 10;
+        box(-width, width, y, y, -1, 0, 0);
         for (let x = -width; x <= width; x++) {
-          // Dish the shovel across its width: thin raised edges, a recessed
-          // silver face, and a low central spine leading out of the socket.
-          const edge = Math.abs(x) === width;
-          const z = Math.abs(x) >= 4 ? 0 : -1;
-          box(x, x, y, y, -1, z, edge ? 4 : 0);
-          if (x === 0 && row < 11) box(x, x, y, y, 0, 0, 1);
+          if (Math.abs(x) === width && row <= 5) box(x, x, y, y, 1, 1, 4);
+          if (x === 0 && row <= 5) box(0, 0, y, y, 1, 1, 1);
         }
       }
-      box(-6, -3, 15, 16, -1, 1, 1);
-      box(3, 6, 15, 16, -1, 1, 1);
+      box(-1, 1, 8, 11, -1, 1, 3);
+      box(-4, -2, 10, 10, -1, 1, 1);
+      box(2, 4, 10, 10, -1, 1, 1);
       break;
     }
     case 'spoon': {
@@ -223,9 +220,7 @@ export function createHeldVoxelTool(tool: HeldTool): HeldVoxelToolMesh {
   geometry.setIndex(indices);
   geometry.computeBoundingBox();
   const size = geometry.boundingBox!.getSize(new THREE.Vector3());
-  // Keep the shovel's original cell scale: extending the blade must not
-  // renormalize (and therefore shorten or narrow) its existing shaft.
-  const referenceLength = tool === 'shovel' ? 31 * CELL : Math.max(size.x, size.y, size.z);
+  const referenceLength = Math.max(size.x, size.y, size.z);
   const scale = HELD_TOOL_LENGTH / referenceLength;
   geometry.scale(scale, scale, scale);
   // Grip near the handle's heel so a smaller tool still shows its shaft above

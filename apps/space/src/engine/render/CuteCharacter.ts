@@ -944,8 +944,7 @@ export class CuteCharacter {
     );
     this.firstPersonToolPose.position.set(
       FIRST_PERSON_TOOL_POSITION.x + this.smoothedSide * 0.008 * handGround - useSwing * 0.1,
-      FIRST_PERSON_TOOL_POSITION.y - (this.heldTool === 'shovel' ? 0.08 : 0)
-        - Math.abs(handGait) * 0.01 + handFlight * 0.015 + useSwing * 0.025,
+      FIRST_PERSON_TOOL_POSITION.y - Math.abs(handGait) * 0.01 + handFlight * 0.015 + useSwing * 0.025,
       FIRST_PERSON_TOOL_POSITION.z - Math.abs(handGait) * 0.008 - handFlight * 0.04 - useSwing * 0.07
     );
     this.firstPersonToolPose.rotation.set(

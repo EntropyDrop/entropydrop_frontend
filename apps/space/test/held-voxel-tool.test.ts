@@ -24,22 +24,22 @@ function visibleTools(root: THREE.Object3D): ToolMesh[] {
   return result;
 }
 
-test('tools stay compact, only the shovel blade extends, and the hammer is upright and strikes forward', () => {
+test('tools stay compact and the hammer is upright and strikes forward', () => {
   for (const tool of tools) {
     const mesh = createHeldVoxelTool(normalizeHeldTool(tool)!);
     const size = mesh.geometry.boundingBox!.getSize(new THREE.Vector3());
-    const expectedLength = tool === 'shovel' ? 6.4 * 36 / 31 : 6.4;
+    const expectedLength = 6.4;
     assert.ok(Math.abs(Math.max(size.x, size.y, size.z) - expectedLength) < 1e-5,
-      `${tool}: only the shovel's five extra blade rows may change the overall size`);
+      `${tool}: tools must stay compact at 6.4`);
     if (tool === 'shovel') {
-      assert.ok(Math.abs(mesh.geometry.boundingBox!.min.y - (-4.5 * 6.4 / 31 + 0.65)) < 1e-5,
+      assert.ok(Math.abs(mesh.geometry.boundingBox!.min.y - (-4.5 * 6.4 / 25 + 0.65)) < 1e-5,
         'the shaft heel must remain in its original position');
       const positions = mesh.geometry.getAttribute('position');
       let shaftWidth = 0;
       for (let i = 0; i < positions.count; i++) {
         if (positions.getY(i) < 2) shaftWidth = Math.max(shaftWidth, Math.abs(positions.getX(i)) * 2);
       }
-      assert.ok(Math.abs(shaftWidth - 3 * 6.4 / 31) < 1e-5, 'the shaft width must remain unchanged');
+      assert.ok(Math.abs(shaftWidth - 3 * 6.4 / 25) < 1e-5, 'the shaft width must match spoon');
     }
     mesh.geometry.dispose();
     for (const material of mesh.material) {
