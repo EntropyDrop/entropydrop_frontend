@@ -310,6 +310,12 @@ export class PlayerController {
         (tool !== SpecialTool.SELECTOR && tool !== SpecialTool.SUPER_GLUE)) {
       this.clearSelection();
     }
+    if (tool === SpecialTool.BRUSH) {
+      this.hoveredContraption?.clearFocusHighlight?.();
+    }
+    if (prev === SpecialTool.BRUSH && tool !== SpecialTool.BRUSH) {
+      this.clearBrushSelection();
+    }
     if (prev === SpecialTool.WRENCH && tool !== SpecialTool.WRENCH) {
       this.releaseWrenchGrab();
       this.clearWrenchPivotDisplay();
@@ -335,6 +341,7 @@ export class PlayerController {
   selectorRange: any;
   selectorMicroMode: boolean;
   brushMicroMode: boolean;
+  brushSelection: any;
   inventories: any;
   activeInventoryCategory: string;
   hammerRotationTurns: number;
@@ -435,6 +442,7 @@ export class PlayerController {
     // voxels).
     this.selectorMicroMode = false;
     this.brushMicroMode = false;
+    this.brushSelection = null;
     // The backpack holds three categories of at most 9 items each:
     // - blockset: plain voxel stamps (T copy, STL import), built with the Hammer
     // - entity: full component trees with scripts (R copy), built with the Hammer
@@ -638,6 +646,13 @@ export class PlayerController {
           this.physics.isSprinting = true;
           break;
 
+        case 'Escape':
+          if (this.brushSelection) {
+            this.clearBrushSelection();
+            if (this.ui) this.ui.showToast('Brush selection cancelled');
+          }
+          break;
+
         case 'KeyR': // R key: unified smart copy selection (entity or world blocks)
           if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
             this.copySelectionSmart();
@@ -779,6 +794,7 @@ export class PlayerController {
     this.selectedBlockSelection = null;
     this.selectorLevel = null;
     this.selectorRange = null;
+    this.clearBrushSelection();
     this.boxSelectionPreview = null;
     this.focusBlockPreview = null;
     this.sceneRenderer?.clearBoxSelectionPreview?.();
@@ -787,6 +803,15 @@ export class PlayerController {
       this.sceneRenderer.updateSelectionHologram(null, null, null);
     }
     return result;
+  }
+
+  clearBrushSelection() {
+    this.brushSelection = null;
+    if (this.activeTool === SpecialTool.BRUSH) {
+      this.boxSelectionPreview = null;
+      this.sceneRenderer?.clearBoxSelectionPreview?.();
+      this.hoveredContraption?.clearFocusHighlight?.();
+    }
   }
 
   recordEntityKeyDown(code) {
@@ -1075,8 +1100,14 @@ export class PlayerController {
       return;
     }
 
-    // 3. Brush -> Paint / Override block color directly
+    // 3. Brush -> Paint / Override block color directly, or cancel pending 2-point selection
     if (this.activeTool === SpecialTool.BRUSH) {
+      if (this.brushSelection) {
+        this.clearBrushSelection();
+        this.sound?.playWrenchClick?.();
+        if (this.ui) this.ui.showToast('Brush selection cancelled');
+        return;
+      }
       this.paintTargetedBlock();
       return;
     }
@@ -3540,10 +3571,9 @@ export class PlayerController {
       return;
     }
 
-    // 3. Brush -> Left-click paints (see handleLeftClick); right-click samples
-    //    the targeted color (pipette merged into the brush).
+    // 3. Brush -> Right-click 2-point box selection and dye region
     if (this.activeTool === SpecialTool.BRUSH) {
-      this.sampleTargetedColor();
+      this.handleBrushRightClick();
       return;
     }
 
@@ -4186,6 +4216,125 @@ export class PlayerController {
       }
       this.sound.playWrenchClick();
     }
+  }
+
+  handleBrushRightClick() {
+    const hitEntity = this.hoveredContraptionHit;
+
+    if (this.brushSelection === null) {
+      if (!hitEntity) {
+        return;
+      }
+      const c = hitEntity.contraption;
+      if (!this.canEditEntityInternals(c)) {
+        if (this.ui) {
+          this.ui.showToast('Brush right-click only works on stopped entities');
+        }
+        return;
+      }
+      const nodeId = hitEntity.entityId ?? contraptionRootId(c);
+      const targetPoint = this.brushMicroMode
+        ? (hitEntity.placeMicroPos
+            ? new THREE.Vector3(
+                hitEntity.placeMicroPos.localX - (hitEntity.normal?.x || 0) * 0.1,
+                hitEntity.placeMicroPos.localY - (hitEntity.normal?.y || 0) * 0.1,
+                hitEntity.placeMicroPos.localZ - (hitEntity.normal?.z || 0) * 0.1
+              )
+            : hitEntity.point)
+        : hitEntity.point;
+      const localPoint = this.rangePointToLocal({ contraption: c, nodeId }, targetPoint);
+      this.brushSelection = {
+        contraption: c,
+        nodeId,
+        pointA: localPoint,
+        rawWorldA: hitEntity.point.clone(),
+        micro: this.brushMicroMode === true
+      };
+      c.clearFocusHighlight?.();
+      this.sound?.playWrenchClick?.();
+      if (this.ui) {
+        this.ui.showToast(`Brush [1/2] picked corner on [${nodeId}], right-click opposite corner in same component to dye region`);
+      }
+      return;
+    }
+
+    this.applyBrushRegionDye(hitEntity);
+  }
+
+  applyBrushRegionDye(hitEntity: any = null) {
+    if (!this.brushSelection) return;
+
+    const selection = this.brushSelection;
+    const c = selection.contraption;
+    if (!c || !this.canEditEntityInternals(c)) {
+      this.clearBrushSelection();
+      this.sound?.playWrenchClick?.();
+      if (this.ui) {
+        this.ui.showToast('Brush selection cancelled (entity not editable)');
+      }
+      return;
+    }
+
+    const hitNodeId = hitEntity?.entityId ?? (hitEntity?.contraption ? contraptionRootId(hitEntity.contraption) : null);
+    const sameComponent = hitEntity
+      && hitEntity.contraption === c
+      && hitNodeId === selection.nodeId;
+
+    if (!sameComponent) {
+      this.clearBrushSelection();
+      this.sound?.playWrenchClick?.();
+      if (this.ui) {
+        this.ui.showToast('Brush selection cancelled (outside component)');
+      }
+      return;
+    }
+
+    const nodeId = selection.nodeId;
+    const localPointB = this.rangePointToLocal(selection, hitEntity.point);
+    if (!localPointB || !selection.pointA) {
+      this.clearBrushSelection();
+      return;
+    }
+
+    const boxResult = this.performBasicAction({
+      domain: ActionDomain.SELECTION,
+      action: 'entity-box',
+      target: { contraption: c },
+      nodeId,
+      a: selection.pointA,
+      b: localPointB,
+      space: 'node-local',
+      micro: selection.micro === true
+    });
+
+    const blocks = boxResult.selection?.blocks || [];
+    if (blocks.length > 0) {
+      const paintResult = this.performBasicAction({
+        domain: ActionDomain.ENTITY,
+        action: 'paint-blocks',
+        target: { contraption: c },
+        nodeId,
+        blocks,
+        color: this.selectedColor
+      });
+      this.performBasicAction({ domain: ActionDomain.SELECTION, action: 'clear' });
+      c.clearSubtreeHighlight?.();
+      c.clearFocusHighlight?.();
+      const count = paintResult.painted || blocks.length;
+      this.sound?.playBlockPlace?.();
+      this.particles?.emitBlockBreak?.(hitEntity.point, this.selectedColor, 8);
+      if (this.ui) {
+        this.ui.showToast(`Brush [2/2]: dyed ${count} blocks on [${nodeId}] with ${colorToHex(this.selectedColor)}`);
+      }
+    } else {
+      this.performBasicAction({ domain: ActionDomain.SELECTION, action: 'clear' });
+      c.clearSubtreeHighlight?.();
+      c.clearFocusHighlight?.();
+      if (this.ui) {
+        this.ui.showToast('Brush: region contains no blocks to dye');
+      }
+    }
+    this.clearBrushSelection();
   }
 
   // =========================================================================
@@ -5907,6 +6056,9 @@ export class PlayerController {
       if (this.activeTool === SpecialTool.WRENCH) {
         this.hoveredContraption.setHighlighted(false);
         this.hoveredContraption.clearFocusHighlight();
+      } else if (this.activeTool === SpecialTool.BRUSH) {
+        this.hoveredContraption.setHighlighted(true);
+        this.hoveredContraption.clearFocusHighlight();
       } else {
         this.hoveredContraption.setHighlighted(true);
         if (this.hoveredContraptionHit) {
@@ -6036,18 +6188,90 @@ export class PlayerController {
       !!this.contraptions &&
       this.contraptions.selectionCornerA !== null &&
       this.contraptions.selectionCornerB === null;
+    const isBrush = this.activeTool === SpecialTool.BRUSH;
+    const brushBoxPending = isBrush && !!this.brushSelection;
     this.focusBlockPreview = null;
     this.boxSelectionPreview = null;
-    if (!isSpoon && !selectorActive && !worldBoxPending) return;
+    if (!isSpoon && !selectorActive && !worldBoxPending && !brushBoxPending && !isBrush) return;
 
     if (this.hoveredContraptionHit) {
       const hit = this.hoveredContraptionHit;
       const contraption = hit.contraption;
       const nodeId = hit.entityId ?? contraptionRootId(contraption);
-      const cellOrigin = contraption.entityLocalToWorld(
-        nodeId,
-        new THREE.Vector3(hit.cell.x, hit.cell.y, hit.cell.z)
-      );
+      const cellOrigin = hit.cell && typeof contraption.entityLocalToWorld === 'function'
+        ? contraption.entityLocalToWorld(
+            nodeId,
+            new THREE.Vector3(hit.cell.x, hit.cell.y, hit.cell.z)
+          )
+        : null;
+      // Brush on stopped entity: show crosshair cell guide (focusBlockPreview), sized by mode (0.2m micro or 1m standard)
+      if (isBrush) {
+        if (this.canEditEntityInternals(contraption)) {
+          const focusNode = contraption.entityNodes?.get?.(nodeId);
+          focusNode?.group?.updateWorldMatrix?.(true, false);
+          const focusQuaternion = focusNode?.group
+            ?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
+
+          let center: THREE.Vector3 | null = null;
+          let cellSize = 1;
+
+          if (this.brushMicroMode) {
+            cellSize = 0.2;
+            if (hit.block && (hit.block.size || 1) < 1 && typeof contraption.getBlockWorldCenter === 'function') {
+              center = contraption.getBlockWorldCenter(hit.block);
+            } else if (hit.placeMicroPos && hit.normal && typeof contraption.entityLocalToWorld === 'function') {
+              const localX = (Math.floor((hit.placeMicroPos.localX - (hit.normal.x || 0) * 0.1) * 5) + 0.5) / 5;
+              const localY = (Math.floor((hit.placeMicroPos.localY - (hit.normal.y || 0) * 0.1) * 5) + 0.5) / 5;
+              const localZ = (Math.floor((hit.placeMicroPos.localZ - (hit.normal.z || 0) * 0.1) * 5) + 0.5) / 5;
+              center = contraption.entityLocalToWorld(nodeId, new THREE.Vector3(localX, localY, localZ));
+            } else if (hit.point) {
+              center = hit.point.clone();
+            }
+          } else {
+            cellSize = 1;
+            if (hit.cell && typeof contraption.entityLocalToWorld === 'function') {
+              center = contraption.entityLocalToWorld(
+                nodeId,
+                new THREE.Vector3(hit.cell.x + 0.5, hit.cell.y + 0.5, hit.cell.z + 0.5)
+              );
+            } else if (hit.block && typeof contraption.getBlockWorldCenter === 'function') {
+              center = contraption.getBlockWorldCenter(hit.block);
+            } else if (hit.point) {
+              center = hit.point.clone();
+            }
+          }
+
+          if (center) {
+            this.focusBlockPreview = {
+              center,
+              cellSize,
+              active: brushBoxPending,
+              quaternion: focusQuaternion
+            };
+          }
+
+          // Brush 2-point box in progress: hovering an entity shows live preview if in same component
+          if (brushBoxPending) {
+            if (hit.point && this.brushSelection.contraption === contraption && this.brushSelection.nodeId === nodeId) {
+              const pointA = this.rangePointToPreviewGrid(this.brushSelection, this.brushSelection.pointA);
+              const cursor = this.worldPointToRangePreviewGrid(this.brushSelection, hit.point);
+              const frame = this.rangePreviewFrame(this.brushSelection);
+              if (pointA && cursor && frame) {
+                this.boxSelectionPreview = {
+                  pointA,
+                  cursor,
+                  micro: this.brushSelection.micro === true,
+                  frame
+                };
+                return;
+              }
+            }
+            this.boxSelectionPreview = null;
+            this.sceneRenderer?.clearBoxSelectionPreview?.();
+          }
+        }
+        return;
+      }
       // Selector: once a level is active, hovering inside the entity shows the 1×1×1 focus
       // outline. After corner 1 is set (box-selection in progress) the outline turns orange and
       // a live AABB preview is drawn. Range corners are stored in node-local space and converted
@@ -6162,6 +6386,12 @@ export class PlayerController {
           : { x: Math.floor(hp.x), y: Math.floor(hp.y), z: Math.floor(hp.z) },
         micro: this.selectorMicroMode === true
       };
+      return;
+    }
+    // Brush 2-point box is entity-component only; hovering world terrain clears preview
+    if (brushBoxPending) {
+      this.boxSelectionPreview = null;
+      this.sceneRenderer?.clearBoxSelectionPreview?.();
       return;
     }
     // World hit: only the Spoon shows the micro-voxel grid. The Selector already has its own

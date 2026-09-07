@@ -594,7 +594,7 @@ export function PauseScreen() {
           <span><kbd className="key-badge">3</kbd> Selector: box select (max 64×64×64) · Tab standard/micro blocks · R copy</span>
           <span><kbd className="key-badge">4</kbd> Hammer: LMB build / attach to entity · RMB rotate 90°</span>
           <span><kbd className="key-badge">5</kbd> Wrench: show pivot XYZ axes · hold LMB to grab · RMB start/stop</span>
-          <span><kbd className="key-badge">6</kbd> Brush: paint / right-click sample · Tab micro/standard</span>
+          <span><kbd className="key-badge">6</kbd> Brush: paint / right-click 2-point dye · Tab micro/standard</span>
           <span><kbd className="key-badge">Shift+Click</kbd> Multi-select component blocks</span>
           <span><kbd className="key-badge">C</kbd> Entity editor</span>
           <span><kbd className="key-badge">G</kbd> Assemble physics entity</span>

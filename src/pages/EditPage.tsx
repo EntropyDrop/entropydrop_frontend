@@ -10,6 +10,20 @@ import { showAlert, showError } from '../utils/alert'
 import { apiFetch } from '../utils/api'
 import type { SkinLicense } from '../types/log'
 
+function isOverlayPixel(x: number, y: number): boolean {
+    return (
+        (x >= 32 && x < 64 && y >= 0 && y < 16) || // Head overlay
+        ((y >= 32 && y < 48) && (
+            (x >= 0 && x < 16) ||    // Right leg overlay
+            (x >= 16 && x < 40) ||   // Torso overlay
+            (x >= 40 && x < 56)      // Right arm overlay
+        )) ||
+        ((y >= 48 && y < 64) && (
+            (x >= 0 && x < 16) ||    // Left leg overlay
+            (x >= 48 && x < 64)      // Left arm overlay
+        ))
+    );
+}
 
 interface KMeansResult {
     imageData: ImageData;
@@ -564,6 +578,17 @@ export function EditPage({ current }: EditPageProps) {
                 hoverRef.current = null;
             }
 
+            const isOverlay = isOverlayPixel(x, y);
+
+            // When overlay is checked, pencil and eraser can ONLY act on outer layer skin (overlay)
+            if (showOverlay && !isOverlay && tool !== 'picker') {
+                return;
+            }
+            // When overlay is unchecked, pencil can only act on inner layer
+            if (!showOverlay && isOverlay && tool !== 'picker') {
+                return;
+            }
+
             if (tool === 'picker') {
                 let pixel = ctx.getImageData(x, y, 1, 1).data;
 
@@ -614,18 +639,6 @@ export function EditPage({ current }: EditPageProps) {
                     return [currentColor, ...filtered].slice(0, 10);
                 });
             } else if (tool === 'eraser') {
-                const isOverlay =
-                    (x >= 32 && x < 64 && y >= 0 && y < 16) || // Head overlay
-                    ((y >= 32 && y < 48) && (
-                        (x >= 0 && x < 16) ||    // Right leg overlay
-                        (x >= 16 && x < 40) ||   // Torso overlay
-                        (x >= 40 && x < 56)      // Right arm overlay
-                    )) ||
-                    ((y >= 48 && y < 64) && (
-                        (x >= 0 && x < 16) ||    // Left leg overlay
-                        (x >= 48 && x < 64)      // Left arm overlay
-                    ));
-
                 if (isOverlay) {
                     ctx.clearRect(x, y, 1, 1);
                     changed = true;
@@ -714,6 +727,33 @@ export function EditPage({ current }: EditPageProps) {
         // Restore previous hover pixel
         if (hoverRef.current) {
             ctx.putImageData(hoverRef.current.savedData, hoverRef.current.x, hoverRef.current.y);
+            hoverRef.current = null;
+        }
+
+        const isOverlay = isOverlayPixel(x, y);
+
+        // When overlay is checked, pencil and eraser can ONLY act on outer layer skin (overlay)
+        if (showOverlay && !isOverlay) {
+            if (texture) {
+                texture.needsUpdate = true;
+                setUpdateTrigger(prev => prev + 1);
+            }
+            return;
+        }
+        if (!showOverlay && isOverlay) {
+            if (texture) {
+                texture.needsUpdate = true;
+                setUpdateTrigger(prev => prev + 1);
+            }
+            return;
+        }
+
+        if (tool === 'eraser' && !isOverlay) {
+            if (texture) {
+                texture.needsUpdate = true;
+                setUpdateTrigger(prev => prev + 1);
+            }
+            return;
         }
 
         // Save current pixel

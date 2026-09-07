@@ -620,6 +620,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         const basePart = part.replace('Low', '') as keyof VisibleParts;
         if (visibleParts[basePart] === false) return;
         if (isOverlay && !showOverlay) return;
+        if (!isOverlay && showOverlay) return;
 
         // Hover preview (no button pressed)
         if (e.buttons === 0 && onHover) {
@@ -1050,7 +1051,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                     {mode === 'voxel' || mode === 'cute' ? (
                         <primitive object={charData.voxels!.body} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('body', e, true, true)} onPointerMove={(e: any) => handle3DClick('body', e, true)} />
                     ) : (
-                        <mesh geometry={bodyOverlayGeometry} material={charData.mats.bodyOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('body', e, true, true)} onPointerMove={(e) => handle3DClick('body', e)} />
+                        <mesh geometry={bodyOverlayGeometry} material={charData.mats.bodyOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('body', e, true, true)} onPointerMove={(e) => handle3DClick('body', e, true)} />
                     )}
                 </group>
 
@@ -1068,7 +1069,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.head} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('head', e, true, true)} onPointerMove={(e: any) => handle3DClick('head', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.headOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('head', e, true, true)} onPointerMove={(e) => handle3DClick('head', e)}>
+                            <mesh material={charData.mats.headOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('head', e, true, true)} onPointerMove={(e) => handle3DClick('head', e, true)}>
                                 <boxGeometry args={[9, 9, 9]} />
                             </mesh>
                         )}
@@ -1089,7 +1090,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.leftArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArm', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.leftArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e) => handle3DClick('leftArm', e)}><boxGeometry args={[charData.armWidth + 0.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
+                            <mesh material={charData.mats.leftArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e) => handle3DClick('leftArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
                         )}
                     </group>
                     <group ref={setPartRef('left_low_arm')} position={[0, isCute ? -4 : -6, 0]}>
@@ -1105,7 +1106,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             {mode === 'voxel' || mode === 'cute' ? (
                                 <primitive object={charData.voxels!.leftArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArmLow', e, true)} />
                             ) : (
-                                <mesh material={charData.mats.leftArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftArmLow', e)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
+                                <mesh material={charData.mats.leftArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
                             )}
                         </group>
                     </group>
@@ -1125,7 +1126,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.rightArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArm', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.rightArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e) => handle3DClick('rightArm', e)}><boxGeometry args={[charData.armWidth + 0.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
+                            <mesh material={charData.mats.rightArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e) => handle3DClick('rightArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
                         )}
                     </group>
                     <group ref={setPartRef('right_low_arm')} position={[0, isCute ? -4 : -6, 0]}>
@@ -1141,7 +1142,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             {mode === 'voxel' || mode === 'cute' ? (
                                 <primitive object={charData.voxels!.rightArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArmLow', e, true)} />
                             ) : (
-                                <mesh material={charData.mats.rightArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightArmLow', e)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
+                                <mesh material={charData.mats.rightArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
                             )}
                         </group>
                     </group>
@@ -1161,7 +1162,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.leftLeg} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftLeg', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.leftLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e) => handle3DClick('leftLeg', e)}><boxGeometry args={[4.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
+                            <mesh material={charData.mats.leftLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e) => handle3DClick('leftLeg', e, true)}><boxGeometry args={[4.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
                         )}
                     </group>
                     <group ref={setPartRef('left_low_leg')} position={[0, isCute ? -4 : -6, 0]}>
@@ -1177,7 +1178,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             {mode === 'voxel' || mode === 'cute' ? (
                                 <primitive object={charData.voxels!.leftLegLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftLegLow', e, true)} />
                             ) : (
-                                <mesh material={charData.mats.leftLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftLegLow', e)}><boxGeometry args={[4.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
+                                <mesh material={charData.mats.leftLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftLegLow', e, true)}><boxGeometry args={[4.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
                             )}
                         </group>
                     </group>
@@ -1197,7 +1198,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.rightLeg} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightLeg', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.rightLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e) => handle3DClick('rightLeg', e)}><boxGeometry args={[4.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
+                            <mesh material={charData.mats.rightLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e) => handle3DClick('rightLeg', e, true)}><boxGeometry args={[4.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
                         )}
                     </group>
                     <group ref={setPartRef('right_low_leg')} position={[0, isCute ? -4 : -6, 0]}>
@@ -1213,7 +1214,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             {mode === 'voxel' || mode === 'cute' ? (
                                 <primitive object={charData.voxels!.rightLegLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightLegLow', e, true)} />
                             ) : (
-                                <mesh material={charData.mats.rightLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightLegLow', e)}><boxGeometry args={[4.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
+                                <mesh material={charData.mats.rightLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightLegLow', e, true)}><boxGeometry args={[4.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
                             )}
                         </group>
                     </group>
