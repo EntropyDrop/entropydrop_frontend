@@ -261,7 +261,8 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
     const [currentUser, setCurrentUser] = useState<any>(null);
     const isLoggedIn = !!localStorage.getItem('token');
-    const isOwner = Boolean(currentUser && item.creator?.id === currentUser.id);
+    const isOwner = Boolean(currentUser && item.creator?.id != null && String(item.creator.id) === String(currentUser.id));
+    const isAuthor = Boolean(!item.id || isOwner);
     const canSetMinecraftSkin = Boolean(isOwner && item.result && item.is_public === true);
     const licenseCode = item.license?.code || 'unknown';
     const publicLicense = item.license?.public_license;
@@ -418,8 +419,6 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     };
 
     const renderEditableName = (label: string, value: string, isItalic = false) => {
-        const isOwner = currentUser && item.creator?.id === currentUser.id;
-
         return (
             <div className="min-w-0">
                 <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-1">{label}</div>
@@ -1034,21 +1033,23 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                     <div className="w-[180px] h-[180px] bg-black/40 border border-white/10 overflow-hidden relative">
                                                                         <Skin2DImg src={textureUrl} className="w-full h-full object-contain" />
                                                                     </div>
-                                                                    <button
-                                                                        onClick={async () => {
-                                                                            try {
-                                                                                const canvas = await Skin2D(textureUrl);
-                                                                                handleEditImage(canvas.toDataURL());
-                                                                            } catch (e) {
-                                                                                console.error("Failed to render 2D image for edit", e);
-                                                                            }
-                                                                        }}
-                                                                        className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
-                                                                        title="AI Edit"
-                                                                    >
-                                                                        <Icon icon="pixelarticons:robot" className="text-[12px]" />
-                                                                        <span className="text-[10px] font-pixel-hans">AI Edit</span>
-                                                                    </button>
+                                                                    {isAuthor && onAiEdit && (
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                try {
+                                                                                    const canvas = await Skin2D(textureUrl);
+                                                                                    handleEditImage(canvas.toDataURL());
+                                                                                } catch (e) {
+                                                                                    console.error("Failed to render 2D image for edit", e);
+                                                                                }
+                                                                            }}
+                                                                            className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
+                                                                            title="AI Edit"
+                                                                        >
+                                                                            <Icon icon="pixelarticons:robot" className="text-[12px]" />
+                                                                            <span className="text-[10px] font-pixel-hans">AI Edit</span>
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1072,14 +1073,16 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                                 alt="Intermediate"
                                                                             />
                                                                         </div>
-                                                                        <button
-                                                                            onClick={() => handleEditImage(item.edited_image_url)}
-                                                                            className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
-                                                                            title="AI Edit"
-                                                                        >
-                                                                            <Icon icon="pixelarticons:robot" className="text-[12px]" />
-                                                                            <span className="text-[10px] font-pixel-hans">AI Edit</span>
-                                                                        </button>
+                                                                        {isAuthor && onAiEdit && (
+                                                                            <button
+                                                                                onClick={() => handleEditImage(item.edited_image_url)}
+                                                                                className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
+                                                                                title="AI Edit"
+                                                                            >
+                                                                                <Icon icon="pixelarticons:robot" className="text-[12px]" />
+                                                                                <span className="text-[10px] font-pixel-hans">AI Edit</span>
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1098,14 +1101,16 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                                 alt="Source"
                                                                             />
                                                                         </div>
-                                                                        <button
-                                                                            onClick={() => handleEditImage(item.source)}
-                                                                            className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
-                                                                            title="AI Edit"
-                                                                        >
-                                                                            <Icon icon="pixelarticons:robot" className="text-[12px]" />
-                                                                            <span className="text-[10px] font-pixel-hans">AI Edit</span>
-                                                                        </button>
+                                                                        {isAuthor && onAiEdit && (
+                                                                            <button
+                                                                                onClick={() => handleEditImage(item.source)}
+                                                                                className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
+                                                                                title="AI Edit"
+                                                                            >
+                                                                                <Icon icon="pixelarticons:robot" className="text-[12px]" />
+                                                                                <span className="text-[10px] font-pixel-hans">AI Edit</span>
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1145,14 +1150,16 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                                 alt="Intermediate"
                                                                             />
                                                                         </div>
-                                                                        <button
-                                                                            onClick={() => handleEditImage(item.edited_image_url)}
-                                                                            className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
-                                                                            title="AI Edit"
-                                                                        >
-                                                                            <Icon icon="pixelarticons:robot" className="text-[12px]" />
-                                                                            <span className="text-[10px] font-pixel-hans">AI Edit</span>
-                                                                        </button>
+                                                                        {isAuthor && onAiEdit && (
+                                                                            <button
+                                                                                onClick={() => handleEditImage(item.edited_image_url)}
+                                                                                className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
+                                                                                title="AI Edit"
+                                                                            >
+                                                                                <Icon icon="pixelarticons:robot" className="text-[12px]" />
+                                                                                <span className="text-[10px] font-pixel-hans">AI Edit</span>
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             )}
