@@ -599,7 +599,7 @@ class Game {
       this.controller.drivenContraption
     );
 
-    // 7c. Autopilot Navigation System is updated in controller.updateSimulation()
+    // 7c. Navigation System is updated in controller.updateSimulation()
 
     // 8. Draw, then request idle-budgeted background chunk streaming.
     this.sceneRenderer.render();

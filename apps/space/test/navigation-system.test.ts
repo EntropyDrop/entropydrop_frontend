@@ -57,7 +57,7 @@ test('NavigationSystem switches to flight mode and requests pointer lock', () =>
   assert.equal(physics.isFlying, true);
   assert.equal(controller.lockRequested, true);
   assert.ok(ui.refreshes > 0);
-  assert.ok(ui.toasts.some(message => message.includes('Auto Pilot Engaged')));
+  assert.ok(ui.toasts.some(message => message.includes('Navigation Engaged')));
 });
 
 test('NavigationSystem advances across the torus without changing camera yaw', () => {
@@ -97,5 +97,5 @@ test('NavigationSystem can be cancelled by the React keyboard lifecycle', () => 
 
   assert.equal(navigation.isNavigating, false);
   assert.equal(navigation.target, null);
-  assert.ok(ui.toasts.some(message => message.includes('Auto Pilot Disengaged')));
+  assert.ok(ui.toasts.some(message => message.includes('Navigation Disengaged')));
 });

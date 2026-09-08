@@ -13,7 +13,7 @@ export interface NavigationUiBridge {
   refresh(): void;
 }
 
-/** Pure autopilot controller. React owns its form and visual state. */
+/** Pure navigation controller. React owns its form and visual state. */
 export class NavigationSystem {
   physics: PlayerPhysics;
   controller: PlayerController;
@@ -61,7 +61,7 @@ export class NavigationSystem {
     this.physics.velocity.set(0, 0, 0);
     this.ui?.refresh();
     void this.controller?.requestLock?.();
-    this.ui?.showToast(`Auto Pilot Engaged: (${this.target.x.toFixed(0)}, ${targetY.toFixed(0)}, ${this.target.z.toFixed(0)})`);
+    this.ui?.showToast(`Navigation Engaged: (${this.target.x.toFixed(0)}, ${targetY.toFixed(0)}, ${this.target.z.toFixed(0)})`);
   }
 
   stopNavigation(reason: 'arrived' | 'cancelled' = 'cancelled'): void {
@@ -70,7 +70,7 @@ export class NavigationSystem {
     this.target = null;
     this.physics.velocity.set(0, 0, 0);
     this.ui?.refresh();
-    this.ui?.showToast(reason === 'arrived' ? 'Target Reached' : 'Auto Pilot Disengaged');
+    this.ui?.showToast(reason === 'arrived' ? 'Target Reached' : 'Navigation Disengaged');
   }
 
   update(dt: number): void {

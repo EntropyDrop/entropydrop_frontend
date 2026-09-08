@@ -102,7 +102,7 @@ function NearbyEntities() {
                 type="button"
                 tabIndex={-1}
                 className="hud-entity-nav-btn"
-                title={`Autopilot to ${item.name}`}
+                title={`Navigate to ${item.name}`}
                 onClick={() => navigationSystem?.startNavigation?.(item.pos.x, Math.max(item.pos.y + 1.5, 20), item.pos.z)}
               >NAV</button>
             </div>
