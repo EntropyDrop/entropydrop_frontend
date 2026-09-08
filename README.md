@@ -42,7 +42,7 @@ A high-performance, in-browser editor allowing developers and creators to refine
 ### 3. 🗂️ Personal & Public Collections (`/skin/collection`)
 A central workspace for managing, sorting, and sharing skins.
 - **Organization:** Categorize items into creations, custom collections, and liked shortcuts.
-- **Privacy Controls:** Toggle assets between **Public** (shared with the community and model training loops) and **Private** (restricted visibility).
+- **Visibility:** Choose **Public** or **Private** when creating a skin. Saved skins keep that visibility; conversion in either direction is unavailable.
 - **Direct Redirection:** Easily reload saved skins into the generator or editor for quick iterations.
 
 ### 4. 🔓 Public Startup & Real-time Ledger (`/public`)
@@ -105,7 +105,7 @@ npm install
 ### 2. Configure Environment Variables
 Create a `.env` file in the root directory and add the backend API endpoint and Google OAuth client ID:
 ```env
-VITE_API_URL=https://api.entropydrop.com
+VITE_API_BASE_URL=http://localhost:8000/skin
 VITE_GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
 VITE_GTAG_ID=abc
 ```

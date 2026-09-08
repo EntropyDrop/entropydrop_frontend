@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+import { API_BASE_URL } from './apiConfig';
 const originalFetch = window.fetch.bind(window);
 
 type ExtendedRequestInit = RequestInit & {
@@ -62,7 +62,7 @@ async function requestSessionRefresh(timeoutMs = 5000): Promise<RefreshResult> {
         }
         const data = await response.json().catch(() => null);
         const token = typeof data?.access_token === 'string' ? data.access_token : null;
-        if (!token) return { token: null, terminal: true };
+        if (!token) return { token: null, terminal: false };
         localStorage.setItem('token', token);
         window.dispatchEvent(new Event('auth-token-updated'));
         return { token, terminal: false };
@@ -89,6 +89,7 @@ export async function bootstrapAuthSession(): Promise<void> {
     const expiresAt = jwtExpiresAt(existingToken);
     if (result.terminal && (expiresAt === null || expiresAt <= Date.now())) {
         localStorage.removeItem('token');
+        window.dispatchEvent(new Event('auth-token-updated'));
     }
 }
 
@@ -104,6 +105,7 @@ export async function revokeAuthSession(): Promise<void> {
         // Local logout must still complete if the backend is temporarily unavailable.
     } finally {
         localStorage.removeItem('token');
+        window.dispatchEvent(new Event('auth-token-updated'));
     }
 }
 
@@ -181,15 +183,20 @@ window.fetch = async (input: RequestInfo | URL, init?: ExtendedRequestInit) => {
             if (refreshed.token) {
                 const retry = prepareRequest(prepared.retryInput, prepared.retryInit, refreshed.token);
                 response = await originalFetch(retry.input, retry.init);
+                if (response.status === 401) await expireLocalSession();
             } else if (refreshed.terminal) {
                 await expireLocalSession();
+            } else {
+                // A temporary refresh outage is not evidence of revocation.
+                // Return a retryable status so callers also retain session data.
+                response = new Response(JSON.stringify({ detail: 'Session refresh temporarily unavailable. Please retry.' }), {
+                    status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '5' }
+                });
             }
         }
 
         if (!response.ok && isApiRequest && !skipGlobalError) {
-            if (response.status === 401) {
-                await expireLocalSession();
-            } else {
+            if (response.status !== 401) {
                 const locale = await getCurrentLocale();
                 try {
                     const data = await response.clone().json();

@@ -17,7 +17,7 @@ function entity(overrides: Record<string, unknown> = {}) {
     world_id: 'world-1',
     owner_user_id: 'owner-1',
     name: 'Walker',
-    schema_version: 5,
+    schema_version: 6,
     definition_digest: definitionDigest,
     definition_size_bytes: definition.byteLength,
     definition_url: '/ignored/untrusted/path',
@@ -113,6 +113,7 @@ test('SpaceEntityClient lists, verifies definitions, creates, and changes run st
   );
 
   assert.equal(listed.items[0].name, 'Walker');
+  assert.equal(listed.items[0].schema_version, 6);
   assert.deepEqual(loadedSnapshot, { position: [1, 32, 2] });
   assert.equal(stopped.revision, 2);
   assert.equal(leases[0].granted, true);
@@ -132,6 +133,16 @@ test('SpaceEntityClient lists, verifies definitions, creates, and changes run st
   assert.deepEqual(JSON.parse(String(calls[7].options.body)).desired_run_state, 'stopped');
   assert.equal(JSON.parse(String(calls[7].options.body)).expected_revision, 1);
   assert.match(calls[8].url, /execution-leases$/);
+});
+
+test('SpaceEntityClient rejects entity records outside the supported inventory schema', async () => {
+  for (const schema_version of [5, 7]) {
+    const client = new SpaceEntityClient('https://api.example.test', 'token', 'world-1',
+      (async () => Response.json({
+        items: [entity({ schema_version })], truncated: false, limit: 256,
+      })) as typeof fetch);
+    await assert.rejects(client.list(100, 200, 16_000), /Invalid Space world entity response/);
+  }
 });
 
 test('SpaceEntityClient rejects a definition whose exact-byte digest does not match', async () => {

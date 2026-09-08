@@ -15,7 +15,8 @@
     "test:space": "npm test --workspace @entropydrop/space",
     "check:space": "npm run check --workspace @entropydrop/space",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:auth": "node --test test/auth-session.test.cjs"
   },
   "dependencies": {
     "@iconify-json/pixelarticons": "^1.2.5",
@@ -47,6 +48,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",
     "typescript": "~5.9.3",

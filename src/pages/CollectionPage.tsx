@@ -1,3 +1,4 @@
+import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { useState, useEffect, useRef } from 'react'
@@ -50,6 +51,7 @@ interface CollectionPageProps {
 }
 
 export function CollectionPage({ current }: CollectionPageProps) {
+    const authSession = useAuthSession();
     const navigate = useNavigate()
     const { userId, collectionId: pathCollectionId } = useParams()
     const [myUserId, setMyUserId] = useState<string | null>(null)
@@ -185,10 +187,16 @@ export function CollectionPage({ current }: CollectionPageProps) {
     }
 
     useEffect(() => {
-        if (localStorage.getItem('token')) {
+        setIsPro(false)
+        setMyUserId('')
+        setPublicCollections([])
+        setPrivateCollections([])
+        setOriginalCollections([])
+        setItems([])
+        if (authSession) {
             fetchUserStatus()
         }
-    }, [])
+    }, [authSession])
 
     useEffect(() => {
         if (!isUploadPickerOpen) return
@@ -253,7 +261,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
     ])
 
     useEffect(() => {
-        if (!localStorage.getItem('token')) return;
+        if (!authSession) return;
 
         // 1. Handle legacy ?id= shared links
         if (sharedId) {
@@ -299,14 +307,14 @@ export function CollectionPage({ current }: CollectionPageProps) {
                 }
             }
         }
-    }, [userId, pathCollectionId, myUserId, publicColPage, privateColPage, itemPage, filterName, filterMode]);
+    }, [authSession, userId, pathCollectionId, myUserId, publicColPage, privateColPage, itemPage, filterName, filterMode]);
 
     useEffect(() => {
-        if (sharedId && localStorage.getItem('token')) {
+        if (sharedId && authSession) {
             setCurrentCollection({ id: sharedId, name: current.collection.publicCollection, is_public: true, item_count: 0 } as any);
             fetchItems(sharedId, 1);
         }
-    }, [sharedId]);
+    }, [authSession, sharedId]);
 
     const renderPreviewStack = (previews?: any[]) => {
         if (!previews || previews.length === 0) return null;
@@ -669,44 +677,6 @@ export function CollectionPage({ current }: CollectionPageProps) {
         })
     }
 
-    const handleMakePrivate = async (e: React.MouseEvent, id: any) => {
-        e.stopPropagation();
-        const confirmMsg = current.collection.confirmMakePrivate;
-        
-        setConfirmModal({
-            isOpen: true,
-            title: current.collection.makePrivateTitle,
-            message: confirmMsg,
-            onConfirm: async () => {
-                try {
-                    const res = await apiFetch(`/api/logs/${id}/make_private`, {
-                        method: 'POST'
-                    });
-                    
-                    if (!res.ok) {
-                        if (res.status === 403) {
-                            alert(current.collection.privateQuotaExceeded);
-                            navigate('/pro');
-                        } else {
-                            const err = await res.json().catch(() => ({}));
-                            alert(err.detail || err.error || current.common.requestFailed);
-                        }
-                        return;
-                    }
-
-                    // Remove from current public view
-                    setItems(prev => prev.filter(item => item.id !== id));
-                    
-                    // Re-fetch collections to update counts
-                    fetchCollections();
-                } catch (e) {
-                    console.error('Failed to make private', e);
-                    alert('Failed to make private');
-                }
-            }
-        });
-    };
-
     const enterCollection = (col: Collection) => {
         const uid = userId || myUserId;
         if (uid) {
@@ -719,7 +689,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         }
     }
 
-    if (!localStorage.getItem('token')) {
+    if (!authSession) {
         return (
             <PageContainer className="items-center justify-center">
                 <SEO title={current.nav.collection} description={current.collection.loginPrompt} />
@@ -1210,15 +1180,6 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                     <Icon icon="pixelarticons:folder-minus" className="text-xs" />
                                                 </button>
                                             )}
-                                            {currentCollection && String(currentCollection.id) === 'creations_public' && (
-                                                <button
-                                                    onClick={(e) => handleMakePrivate(e, item.log_id || item.id)}
-                                                    className="absolute bottom-2 right-2 p-1 bg-yellow-900/40 hover:bg-yellow-600 text-white/60 hover:text-white border border-white/10 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
-                                                    title={current.collection.makePrivatePro}
-                                                >
-                                                    <Icon icon="pixelarticons:lock" className="text-xs" />
-                                                </button>
-                                            )}
                                             <div className="absolute inset-0 bg-green-500/0 group-hover:bg-green-500/5 transition-colors pointer-events-none" />
                                         </div>
                                         <div className="flex flex-col gap-0.5 px-1 pb-2">
@@ -1295,7 +1256,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                 </button>
                             )}
 
-                            {currentCollection && localStorage.getItem('token') && (
+                            {currentCollection && authSession && (
                                 ['creations_public', 'creations_private'].includes(String(currentCollection.id)) ||
                                 (!currentCollection.original_creation && myUserId && String(currentCollection.user_id) === String(myUserId))
                             ) && (

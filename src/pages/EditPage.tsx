@@ -1,3 +1,4 @@
+import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { useState, useEffect, useRef, type ChangeEvent } from 'react'
@@ -178,6 +179,7 @@ type SaveLicensePreview = SkinLicense['code'] | 'loading' | 'unavailable';
 type SelectableSaveLicense = 'cc-by-nc-4.0' | 'entropydrop-commercial-1.0';
 
 export function EditPage({ current }: EditPageProps) {
+    const authSession = useAuthSession();
     const location = useLocation();
     const navigate = useNavigate();
     const passedTextureUrl = location.state?.textureUrl;
@@ -225,6 +227,11 @@ export function EditPage({ current }: EditPageProps) {
 
     useEffect(() => {
         let cancelled = false;
+        if (!authSession) {
+            setIsProUser(false);
+            setSaveLicensePreview('unavailable');
+            return;
+        }
         setSaveLicensePreview('loading');
 
         const loadSaveLicensePreview = async () => {
@@ -294,7 +301,7 @@ export function EditPage({ current }: EditPageProps) {
         return () => {
             cancelled = true;
         };
-    }, [parentSkinId]);
+    }, [authSession, parentSkinId]);
 
     const handleHSBStart = () => {
         if (!ctx) return;

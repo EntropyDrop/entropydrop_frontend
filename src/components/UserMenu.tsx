@@ -1,3 +1,4 @@
+import { useAuthSession } from '../hooks/useAuthSession'
 import { Icon } from '@iconify/react'
 import { useState, useRef, useEffect, lazy, Suspense, useCallback } from 'react'
 import { createPortal } from 'react-dom'
@@ -25,6 +26,7 @@ const LANGUAGE_LABELS: Record<LangKey, string> = {
 }
 
 interface UserInfo {
+    id: string;
     username: string
     picture: string
     google_id: string
@@ -169,7 +171,9 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
     }
 
     // Load user on mount
+    const authSession = useAuthSession()
     useEffect(() => {
+        setUser(previous => previous?.id === authSession ? previous : null)
         const token = localStorage.getItem('token')
         if (token) {
             fetchUser()
@@ -201,7 +205,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             window.removeEventListener('user-updated', handleUserUpdate)
             window.removeEventListener('logout', handleLogoutEvent)
         }
-    }, [])
+    }, [authSession])
 
     const fetchNotifications = useCallback(async (page = notifPage) => {
         try {
@@ -263,8 +267,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             if (res.ok) {
                 const data = await res.json()
                 setUser(data)
-            } else {
-                localStorage.removeItem('token')
+            } else if (!localStorage.getItem('token')) {
                 setUser(null)
             }
         } catch (e) {

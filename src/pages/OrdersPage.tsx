@@ -1,3 +1,4 @@
+import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { useState, useEffect } from 'react'
@@ -44,6 +45,7 @@ interface Order {
 }
 
 export function OrdersPage({ current }: OrdersPageProps) {
+    const authSession = useAuthSession();
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
@@ -83,11 +85,13 @@ export function OrdersPage({ current }: OrdersPageProps) {
     });
 
     useEffect(() => {
-        fetchOrders();
-    }, []);
+        setOrders([]);
+        setPage(1);
+        if (authSession) fetchOrders();
+    }, [authSession]);
 
     const fetchOrders = async (pageNum = 1, append = false) => {
-        const token = localStorage.getItem('token');
+        const token = authSession;
         if (!token) {
             navigate('/skin/');
             return;

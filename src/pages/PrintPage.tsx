@@ -1,3 +1,4 @@
+import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { useState, useEffect } from 'react'
@@ -24,6 +25,7 @@ interface Address {
 }
 
 export function PrintPage({ current }: PrintPageProps) {
+    const authSession = useAuthSession();
     const location = useLocation();
     const navigate = useNavigate();
     const [displayTextureUrl, setDisplayTextureUrl] = useState<string | undefined>(location.state?.textureUrl);
@@ -52,11 +54,12 @@ export function PrintPage({ current }: PrintPageProps) {
     const [availableModels, setAvailableModels] = useState<{ model_type: string, available: boolean, price: number }[]>([]);
 
     useEffect(() => {
-        if (localStorage.getItem('token')) {
+        setSelectedAddress(null);
+        if (authSession) {
             fetchDefaultAddress();
             fetchStockInfo();
         }
-    }, []);
+    }, [authSession]);
 
     const fetchStockInfo = async () => {
         try {
@@ -99,7 +102,7 @@ export function PrintPage({ current }: PrintPageProps) {
         setVisibleParts(prev => ({ ...prev, [part]: !prev[part] }));
     };
 
-    if (!localStorage.getItem('token')) {
+    if (!authSession) {
         return (
             <PageContainer className="items-center justify-center">
                     <Icon icon="pixelarticons:lock" className="text-6xl opacity-30" />
@@ -366,7 +369,7 @@ export function PrintPage({ current }: PrintPageProps) {
 
 
     const handleCreateOrder = async () => {
-        const token = localStorage.getItem('token');
+        const token = authSession;
         if (!token) {
             alert(current.common.authRequired);
             return;

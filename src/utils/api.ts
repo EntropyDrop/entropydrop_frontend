@@ -1,4 +1,6 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+import { API_BASE_URL } from './apiConfig';
+import { getAuthSessionKey } from './authSession';
+export { API_BASE_URL } from './apiConfig';
 
 interface RequestOptions extends RequestInit {
     // Add any custom options here
@@ -20,11 +22,15 @@ export const apiFetch = async (path: string, options: RequestOptions = {}) => {
         headers.set('Content-Type', 'application/json');
     }
 
+    const session = getAuthSessionKey();
     const response = await fetch(url, {
         ...options,
         headers,
         credentials: options.credentials || 'include'
     });
 
+    if (!/\/api\/auth\/(google|refresh|logout)/.test(url) && session !== getAuthSessionKey()) {
+        throw new DOMException('Session changed while loading data', 'AbortError');
+    }
     return response;
 };

@@ -8,6 +8,7 @@ import {
   decodeInventoryResource,
   encodeInventoryResource,
   inventoryResourceName,
+  INVENTORY_PROTOBUF_SCHEMA_VERSION,
 } from '@entropydrop/space-engine/storage/InventoryProtobuf.ts';
 
 export type SpaceMarketCategory = 'blockset' | 'entity' | 'colorset';
@@ -25,7 +26,7 @@ export interface SpaceMarketQuota {
 export interface SpaceMarketResource {
   id: string;
   kind: SpaceMarketCategory;
-  schema_version: 5;
+  schema_version: typeof INVENTORY_PROTOBUF_SCHEMA_VERSION;
   name: string;
   license: 'AGPL-3.0-only';
   digest: string;

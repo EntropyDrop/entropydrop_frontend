@@ -1,3 +1,4 @@
+import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
@@ -67,6 +68,7 @@ async function encodeGenerationImage(
 
 type GenMode = 'aigc_image_to_skin' | 'aigc_text_to_skin' | 'aigc_image_edit_to_skin'
 export function GeneratePage({ current }: GeneratePageProps) {
+    const authSession = useAuthSession();
     const navigate = useNavigate()
     const location = useLocation()
     const [genMode, setGenMode] = useState<GenMode>('aigc_image_to_skin')
@@ -315,14 +317,16 @@ export function GeneratePage({ current }: GeneratePageProps) {
     }
 
     useEffect(() => {
-        if (localStorage.getItem('token')) {
+        setIsPro(false)
+        setHistory([])
+        if (authSession) {
             fetchModels()
             fetchUserStatus()
         }
-    }, [])
+    }, [authSession])
 
     useEffect(() => {
-        if (localStorage.getItem('token') && modelVersion && modelVersion !== 'unknown') {
+        if (authSession && modelVersion && modelVersion !== 'unknown') {
             if (modelCosts[modelVersion] !== undefined) {
                 setGenerationCreditCost(modelCosts[modelVersion])
             } else {
@@ -332,7 +336,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         } else {
             setGenerationCreditCost(null)
         }
-    }, [modelVersion, modelCosts])
+    }, [authSession, modelVersion, modelCosts])
 
     const fetchUserStatus = async () => {
         try {
@@ -406,20 +410,20 @@ export function GeneratePage({ current }: GeneratePageProps) {
     }
 
     useEffect(() => {
-        if (localStorage.getItem('token')) {
+        if (authSession) {
             fetchHistory(currentPage)
         }
-    }, [currentPage])
+    }, [authSession, currentPage])
 
     useEffect(() => {
         const hasActive = history.some(item => ['pending', 'processing', 'pending_skin', 'processing_skin'].includes(item.status || ''))
-        if (hasActive && localStorage.getItem('token')) {
+        if (hasActive && authSession) {
             const timer = setInterval(() => {
                 fetchHistory(currentPage)
             }, 3000)
             return () => clearInterval(timer)
         }
-    }, [history, currentPage])
+    }, [authSession, history, currentPage])
 
     useEffect(() => {
         if (lastSubmittedId && history.length > 0) {
@@ -626,7 +630,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
 
 
-    if (!localStorage.getItem('token')) {
+    if (!authSession) {
         return (
             <PageContainer
                 alignItems="items-start lg:items-center"

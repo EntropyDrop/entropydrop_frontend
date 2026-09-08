@@ -1,3 +1,4 @@
+import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
@@ -23,6 +24,7 @@ interface UserInfo {
 }
 
 export function CreditsPage({ current }: CreditsPageProps) {
+    const authSession = useAuthSession();
     const [user, setUser] = useState<UserInfo | null>(null)
     const [items, setItems] = useState<CreditLogEntry[]>([])
     const [page, setPage] = useState(1)
@@ -68,15 +70,21 @@ export function CreditsPage({ current }: CreditsPageProps) {
     }
 
     useEffect(() => {
+        setUser(null)
+        setItems([])
+    }, [authSession])
+
+    useEffect(() => {
         const params = new URLSearchParams(window.location.search)
         if (params.get('payment_redirect') === '1') {
             window.close()
             return
         }
 
+        if (!authSession) return
         fetchUser()
         fetchHistory(page)
-    }, [page])
+    }, [authSession, page])
 
     const handlePay = async () => {
         if (customAmount < 1 || isProcessing) return

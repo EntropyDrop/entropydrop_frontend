@@ -1,8 +1,12 @@
 # From Rendering to Reconstruction: A New Workflow for Image-to-Minecraft-Skin
 
 **Author: EntropyDrop Dev Team**
-**Date: 2026-07-25**
+**Published: July 25, 2026**
 
+**Updated: September 8, 2026 · SkingToolkit v104**
+
+
+> Updated against SkingToolkit `v104` commit [`43e676d`](https://github.com/EntropyDrop/SkingToolkit/commit/43e676d8231fd3417d86721edb4ef4cef3dda40d). v104 is a reviewed candidate with known limitations and has not replaced the global default model.
 
 ## Preface
 
@@ -12,7 +16,9 @@ The model often learned only visual approximations without genuinely comprehendi
 
 To temporarily bypass this bottleneck while continuing to validate the downstream UV recovery pipeline, we reluctantly introduced a closed-source image model as an auxiliary, splitting image-to-skin into two stages: Stage One converts an arbitrary character image into structurally fixed Minecraft front/back renders; Stage Two reconstructs the skin UV map from those renders. The closed-source model is not the final architecture we intend to depend on long-term. One of the key goals at this stage is to continuously collect screened and verified "original character image → normalized render → UV skin" triples, so that we can eventually train an image-to-skin model that does not depend on any closed-source model.
 
-The new end-to-end pipeline is as follows:
+The current pipeline is: normalized front/back views → learned foreground extraction → fixed-view geometry and semantic routing → initial UV and inner completion → final head UV decoding → material refitting → 64×64 RGBA skin.
+
+The images below are retained as illustrations of the earlier workflow and its intermediate artifacts. They are not v104 comparisons or test results; Sections 4 and 5 describe the added head decoder and material stages.
 
 
 Input arbitrary character reference image
@@ -43,7 +49,7 @@ Per-part, per-face inner-layer repair
 
 ![img24_uv|480](/articles/images/parser_pred_uv_simple_inpainting.png)
 
-Re-render
+Earlier workflow: re-render
 
 ![img24_final|480](/articles/images/img24_final.png)
 
@@ -66,103 +72,41 @@ Building on this prior work, our improvements focus on two directions:
 1. Increasing the stability of the Banana model's output—reducing variance in camera angle, character pose, scale, and screen position—so that inner and outer skin layers land as consistently as possible within the predetermined projection grids.
 2. Redesigning the UV recovery pipeline to directly reconstruct a 64×64 RGBA UV map from normalized renders, preserving both inner and outer layer structure.
 
-## Zero: Foundations — Differentiable Renderer and Training Pipeline
+## 0. Foundations: Renderer, Geometry, and Training Labels
 
-Before diving into each stage's technical details, we must first introduce the core infrastructure that underpins the entire Stage Two pipeline—the Differentiable Minecraft Renderer. It is the key dependency that enables SkingToolkit's "geometry-first" approach, responsible for generating precomputed UV projection mappings and training labels.
+### 0.1 Project Relationships and Rendering
 
-### 0.1 Project Relationships
+`differentiable_minecraft_renderer` and `mc_skin_utils` provide the Minecraft mesh and camera configuration. SkingToolkit loads precomputed mappings for differentiable rendering, geometric lookup, and UV reconstruction. The Steve model has 6 parts, 6 faces per part, and 2 layers: 72 rectangular faces in total.
 
-`differentiable_minecraft_renderer` is a standalone project independent of SkingToolkit. Together with `mc_skin_utils` (a Minecraft skin mesh processing library), it forms SkingToolkit's low-level dependencies.
+The offline `generate_mappings.py` script creates pixel-to-UV candidate mappings for each fixed view. The main data are:
 
-### 0.2 Two Core Responsibilities of the Differentiable Renderer
+| Mapping | Meaning |
+| :--- | :--- |
+| `inner_uv_map` / `inner_mask` | Inner-layer candidate UV coordinates and projected coverage |
+| `outer_uv_map` / `outer_mask` | Outer-layer candidate UV coordinates and projected coverage |
+| `outer_uv_layers` / `outer_masks` | Depth-sorted outer-layer candidates |
+| `composite_uv_layers` | Composite inner/outer candidates with layer identity |
+| `geometry_uv_layers` / `geometry_masks` | Geometric candidates for every rectangular face, supporting precise surface routing |
 
-**Responsibility One: Generating Precomputed UV Projection Mappings**
+`DifferentiableRenderer` in `SkingToolkit/renderer.py` loads these grids and masks, samples a 64×64 skin through `F.grid_sample`, and composites by depth and alpha. During training, it generates renders and supervision from known UVs. During inference, it provides geometric candidates and re-renders the final UV during head material fitting to measure color error against the input.
 
-The renderer precomputes per-pixel UV mappings for each view configuration offline via `generate_mappings.py`, saving them as `.pt` files under `mappings_{W}x{H}/` directories.
+### 0.2 Why Geometry Alone Cannot Determine the UV
 
-The generation method uses color-coded lookup: each 64×64 UV texel is assigned a unique high-contrast RGB color (via `code = ((idx * 2053 + 1381) & 0x0FFF)`, mapping 4096 texels to mutually distinct values in 12-bit color space), producing a 64×64 "palette skin". This palette skin is rendered by `mc_skin_utils` with the specified camera parameters, and the color of each output pixel is decoded to look up its source UV texel. This approach is more robust than parsing Minecraft model triangle meshes and UV coordinates—it inherently handles occlusion, depth ordering, and inner/outer alpha compositing.
+A screen pixel may correspond to directly visible inner skin, an outer layer covering it, or a secondary surface seen through an outer-layer opening. Geometry enumerates these candidates but cannot determine the layer of the observed color from position alone. Similar-colored face, beard, and headphone edges are particularly ambiguous.
 
-For each view configuration, the renderer generates the following mapping data:
+The renderer therefore answers “where could this pixel come from,” while the parser estimates its source from image evidence. For synthetic data, known ground-truth skins let the renderer provide foreground, part, face, layer, secondary-surface, and UV labels directly. For real generated images, the model still has to infer these assignments.
 
-| Mapping Tensor | Shape | Content |
-| :--- | :--- | :--- |
-| `inner_uv_map` | H×W×2 | UV coordinates (0–63) per screen pixel for the inner skin layer; `(-1,-1)` where no inner surface is covered |
-| `inner_mask` | H×W | Binary mask indicating inner layer coverage |
-| `outer_uv_map` | H×W×2 | UV coordinates per screen pixel for the outer skin layer |
-| `outer_mask` | H×W | Binary mask indicating outer layer coverage |
-| `outer_uv_layers` | L×H×W×2 | Depth-sorted per-layer UV coordinates for the outer render |
-| `outer_masks` | L×H×W | Corresponding per-layer masks |
-| `composite_uv_layers` | L×H×W×2 | Depth-sorted UV for inner+outer compositing, with `composite_is_decor_layers` marking whether each layer is outer |
-| `geometry_uv_layers` | 72×H×W×2 | Depth-sorted UV for all 72 rectangular faces of the Steve model (6 parts × 6 faces × 2 layers), ordered by `geometry_sort_indices` |
-| `geometry_masks` | 72×H×W | Corresponding per-face masks |
+### 0.3 Fixed Views and Semantic Features
 
-`DifferentiableRenderer` in `SkingToolkit/renderer.py` is the loader and execution engine for these mappings. It does not recompute projections; instead, it loads the precomputed grids and masks from `.pt` files, samples pixels directly from the skin atlas via `F.grid_sample`, and composites them according to alpha blending rules. Within SkingToolkit, `DifferentiableRenderer` serves two scenarios:
+v104 retains the ordered `front_left`, `back_left` input pair. Templates use orthographic projection, fixed scale, and a slight walking pose. A combined input is split into left and right images along its width; each view is then resized to its mapping dimensions. The original composite size and the individual view tensor size are separate concepts. View order, cameras, and mappings must match the checkpoint.
 
-- **Training**: render all configured views for each GT skin, producing per-pixel routing labels (part, face, layer, UV coordinates). In the differentiable training branch covered in later sections, the model's soft outputs are splatted into a provisional UV and re-rendered to compute multi-view consistency losses.
-- **Inference**: load the same mappings used during training, provide lookup data for geometry fitting (see Section 3), and generate grid overlays in diagnostic images.
+The base Dense UV Parser uses frozen SigLIP2 features (`google/siglip2-base-patch16-224`). `MultiViewSemanticFusion` integrates global front/back context into the U-Net, while `SpatialSemanticFusion` supplies local patch features. Base training can precompute FP16 mmap caches to avoid repeated backbone passes. v104 fine-tuning primarily uses cached automatic UVs and image evidence from the frozen parent pipeline, updating only the final head decoder.
 
-**Responsibility Two: Generating Training Labels**
+### 0.4 Automatic Labels and Real Local Annotations
 
-For each 64×64 GT skin in the training set, the renderer deterministically outputs the source information for every screen pixel. Because the renderer knows precisely which UV texel each pixel was sampled from, which body part and face that texel belongs to, and whether it came from the inner or outer layer, this information can directly serve as supervised labels for the downstream routing model, requiring zero manual annotation.
+Standard training inputs are 64×64 RGBA skins. Slim/Alex skins can be normalized to Steve through `alice_to_steve()`. Native skins supply ground-truth color and alpha; procedurally authored hair, beards, hats, glasses, and headphones also provide explicit semantic and material-relation labels.
 
-Specifically, for each configured view, the renderer produces the following labels per pixel:
-
-| Label | Value Space | Meaning |
-| :--- | :--- | :--- |
-| `foreground` | {0, 1} | Whether the pixel belongs to the character (foreground) |
-| `part` | {0,…,5} | Body part: head, torso, left arm, right arm, left leg, right leg |
-| `face` | {0,…,5} | Cube face direction: front, back, left, right, top, bottom |
-| `layer` | {0, 1} | Inner or outer layer |
-| `route_role` | {0, 1, 2} | Routing role: directly visible inner, directly visible outer, secondary/backface (seen through transparent outer-layer holes) |
-| `surface` | 0…N-1 | Exact surface slot (including composite mapping and geometry fallback faces) |
-| `uv` | [0,1]² | Normalized UV coordinates |
-
-The `route_role=2` (secondary surface) case is common with outer-layer skins: transparent regions in hats or jackets allow the renderer to "see through" the outer layer and sample deeper inner-layer surfaces or back-facing faces. These pixels are individually labeled and routed to precise `surface` slots rather than being discarded or forced into the nearest inner surface.
-
-### 0.3 Why the Renderer Cannot Directly Invert Stage-One Images
-
-A natural question arises: the differentiable renderer can already render a 2D image from a UV map with precision (`skin → render`). Could we simply use it to "reverse" the Stage-One output, recovering a UV map from normalized front/back views (`render → skin`)?
-
-The answer is no. The issue is routing ambiguity.
-
-The renderer's precomputed mapping files provide "possible" relationships—for each screen pixel, they list all potential sources: inner head front, outer head front, inner head back, and so on. The UV coordinates of these candidates are precise, but **which candidate to choose** cannot be determined by geometry alone. When a pixel lies in the overlapping region of inner and outer layers, it could originate from three different surfaces—a directly visible inner layer, a semi-transparent outer layer covering it, or a deeper surface seen through an outer-layer cutout. From the rendered result alone, these may be the exact same color.
-
-As an analogy: the mapping file is a detailed transit map listing all destinations reachable from each stop. But it cannot tell you which route a specific passenger should take right now—because the same platform serves inner, outer, and secondary-surface lines simultaneously, and the passengers' clothing (pixel colors) may be entirely identical.
-
-This is the core division of labor that runs through the second half of this article:
-
-- **Renderer** (Section 0.2, Section 3): provides geometric mapping—"where each pixel could come from";
-- **Dense UV Parser** (Section 4): performs semantic routing—"where each pixel actually comes from".
-
-Both are indispensable. The renderer frees the system from guessing UV mappings from scratch; the parser enables the system to make informed choices among multiple geometric candidates.
-
-### 0.4 View Configuration
-
-The view system for the renderer and Stage-Two routing model is based on fixed configurations in `differentiable_minecraft_renderer/config.py`. The default views used in production are:
-
-```text
-front_left    ← front view, slight walking pose, orthographic projection, inner + outer layers
-back_left     ← back view, same as above
-```
-
-Key parameters: orthographic projection (`ortho=True`), zoom=0.23, look_at_y=16, walking pose rotation angles (arms ±10°, legs ∓10°). These parameters remain consistent across training, validation, and inference. View names are encoded in checkpoint metadata, and the corresponding mapping files are automatically matched at inference time.
-
-### 0.5 Semantic Backbone and Feature Caching
-
-The semantic branch of the Stage-Two routing model depends on Google's SigLIP2 (`google/siglip2-base-patch16-224`) as a frozen vision backbone. SigLIP2 is not trained, but its outputs must be precomputed and cached before training to avoid running a full forward pass for every batch.
-
-The caching system (`cache_semantic_features.py`) renders front and back views for each skin in the dataset, then extracts two types of features via SigLIP2:
-
-- **Global features** (pooled embeddings): 768-dim vectors per view, consumed by the routing model's global semantic fusion module (see Section 4, MultiViewSemanticFusion);
-- **Spatial features** (patch-level features): 768×14×8 tensors per view (256×512 views after ViT patchification, cropped to non-padding regions), consumed by the spatial semantic fusion module (see Section 4, SpatialSemanticFusion).
-
-Both feature types are written in FP16 precision to memory-mapped files (`.bin`), with an index file (`.idx`) recording each sample's offset. For a dataset of 180,000 skins, the spatial feature cache is approximately 58 GiB and the global feature cache approximately 0.5 GiB. During training, only the current batch's slice is read into GPU memory; the full cache does not need to be loaded into RAM. The cache key is jointly determined by dataset path, view configuration, model ID, and sample count; changing any parameter requires rebuilding the cache.
-
-### 0.6 Training Dataset
-
-Training the Stage-Two routing model requires standard 64×64 RGBA skin PNG files. Slim/Alex models (3-pixel arm width) are normalized to the Steve layout (4-pixel arm width) at load time via `alice_to_steve()`. The dataset only requires the skins themselves—training needs no paired control images because all labels are automatically generated by the renderer.
-
-This stands in clear contrast to Stage One: Stage One (image-to-skin generative model) requires paired "real photo → target image" data, where data acquisition is the primary bottleneck; Stage Two (SkingToolkit) has fully automated labeling, where the bottleneck lies in model routing accuracy rather than data annotation.
+Rendered supervision remains the main source, but v104 also includes local annotations from three existing real identities. Confirmed regions have explicit targets; other regions use reviewed earlier outputs for consistency training. Unannotated native textures retain unknown semantics. Color alone does not establish a class, and teacher predictions are not human ground truth. Section 7 details the data splits and evaluation scope.
 
 ## 1. Stage One: Converting Arbitrary Reference Images into Normalized Front/Back Views
 
@@ -189,368 +133,191 @@ Templates do not benefit from gratuitous complexity—for instance, adding separ
 - Orthographic projection, no lighting—avoids perspective scaling and shading variations that would interfere with downstream color extraction;
 - 1:1 square canvas, front view on the left half and back view on the right half, with a random solid-color background;
 - A slight walking pose with small limb swings—provides adequate separation between limbs and torso while avoiding excessive pose variation;
-- Except for the undersides of each body part, the vast majority of skin regions are visible in either the front or back view.
+- Front/back views cover the main visible surfaces, but regions such as the head underside lack projection evidence; transparent outer layers and occlusion further limit actual observations.
 
 ![template41|240](/articles/images/template41.png)
 ![template42|240](/articles/images/template42.png)
 ![template43|240](/articles/images/template43.png)
 
-## 2. Foreground Extraction
+## 2. Foreground Extraction: Separate Silhouette from Color Sources
 
-Since Stage One uses templates and prompt guidance to produce characters against clean, high-contrast backgrounds, we can employ a simple strategy for foreground extraction: read the top-left pixel of the image as a background seed and use a flood-fill algorithm to remove regions connected to it whose color difference falls within a tolerance threshold.
+Early versions used flood fill from a top-left background seed. This works on clean solid backgrounds but struggles with enclosed holes, clothing close to the background color, and thin hat brims. The paired v104 pipeline uses a separate BiRefNet foreground model fine-tuned on Minecraft renders, freezing its pretrained backbone and training only the decoder. Its version is pinned separately from the UV parser.
 
-There are edge cases where background appears in non-contiguous regions, causing some background colors to leak into the foreground, but such errors are typically corrected in subsequent pipeline stages. If strong accuracy and generality requirements arise in the future, a dedicated segmentation model can be trained.
+Foreground training uses 4,096 training, 128 validation, and 128 test skin identities, separated by normalized RGBA content hashes. Synthetic backgrounds include near-foreground colors, gradients, noise, and checkerboards, alongside JPEG degradation and border-touching crops. Selection uses validation before evaluation on the held-out test set.
 
-The flood-fill mask and transparent cutout remain in the original input coordinates. Before geometric routing, the parser's predicted global affine transform aligns the image, dense logits, and foreground mask together into the fixed renderer's canonical coordinates. A binary mask cannot simply be resampled with nearest-neighbor interpolation here: even a small scale error can erase an entire one-pixel hat brim, hair tip, or raised outer-layer silhouette at the back of the head. The current implementation instead resamples the mask as bilinear coverage and preserves a canonical pixel whenever its coverage by the transformed source mask exceeds a very low threshold. Background-color edge checks, grid coverage, and the minimum of 15 valid source pixels per outer texel still reject invalid boundary pixels carried along by this more recall-oriented transform.
+Inference retains two masks with different purposes:
 
-Inference saves both coordinate-space views for diagnosis:
-
-- `foreground_cutout.png` and `foreground_mask.png`: the flood-fill result in the original input coordinates, before affine alignment;
-- `parser_debug_observed_canonical.png`: the foreground mask actually used after affine alignment and before routing.
-
-The log field `canonical_foreground_coverage_rescued_pixels` reports how many boundary pixels the new method preserves relative to nearest-neighbor resampling. This makes it possible to distinguish pixels that were already missed during foreground extraction from pixels that existed in the correct raw mask but were eroded during geometric alignment.
-
-## 3. Geometry Fitting: Precomputed UV Projection Mapping
-
-After foreground separation, the system performs no pose estimation or keypoint detection of any kind. Instead, it directly projects the known Minecraft Steve geometry onto the image plane using fixed camera parameters. The core data structure for this step is the precomputed UV projection mapping, generated offline by the differentiable Minecraft renderer and saved as `.pt` files.
-
-### 3.1 Mapping File Generation and Structure
-
-The renderer uses camera configurations identical to the Stage-One output—orthographic projection, fixed viewpoint, no lighting, no perspective scaling—to compute the following information for every pixel of the standard Steve model (6 body parts × 6 cube faces × 2 layers = 72 rectangular faces):
-
-- **`inner_uv_map`** (H×W×2): the (x, y) floating-point coordinates of each screen pixel on the inner-layer 64×64 UV atlas. Pixels not falling on any inner surface are `(-1, -1)`.
-- **`inner_mask`** (H×W): binary mask indicating whether the pixel is covered by inner-layer geometry.
-- **`outer_uv_map`** (H×W×2) and **`outer_mask`** (H×W): the corresponding outer-layer geometry projection, computed using outer cuboids (slightly larger than inner: 9/8× for head, 8.5/8 and 4.5/4× for torso and limbs).
-- **Depth-sorted composite mapping**: for pixels covered by both inner and outer layers, provides depth-ordered results from the camera's perspective, enabling the system to distinguish "directly visible inner," "directly visible outer," and "deeper surface seen through a transparent outer-layer hole."
-
-At inference time, these mapping files are loaded together with the Stage-Two routing model's checkpoint. Each view (default `front_left` and `back_left`) has its own set of mappings, and the system automatically matches the correct mapping file based on the view name recorded in the checkpoint.
-
-### 3.2 Projection Process
-
-For each pixel of the input image (front and/or back views), the system performs a table lookup to obtain:
-
-- **`body_part`** (uint8, 0–5): head, torso, right arm, left arm, right leg, left leg. Determined by which part's rectangle region the pixel's UV coordinates fall into within the atlas.
-- **`face`** (uint8, 0–5): front, back, left, right, top, bottom. On the UV atlas, the six faces of each part occupy fixed rectangular regions.
-- **`layer`** (0 or 1): inner or outer layer. Jointly determined by `inner_mask` and `outer_mask`. When a pixel is covered by both layers, the depth-sorted composite mapping provides the foremost surface's layer.
-- **`uv`** ([0,1]² normalized floating-point coordinates): the precise sub-pixel position of this pixel on the 64×64 UV atlas. For outer-layer pixels, UV coordinates are automatically offset to the outer layer's corresponding region.
-- **`secondary_surface_candidates`**: when an outer-layer pixel is marked as transparent, the list of deeper surfaces potentially exposed at that location (same inner face or back-facing face).
-
-This projection process is a pure table-lookup operation—it involves no neural network inference, no learnable parameters, and no iterative optimization. The input image resolution is fixed at 256×512 (left half 256×256 front view + right half 256×256 back view), and the mapping files' target dimensions match this. This directly constrains Stage One's output specification: the canvas must be 1:1 square, the front and back character views must occupy the left and right halves respectively, and the camera, pose, and scale must remain consistent with the mapping file's generation configuration.
-
-### 3.3 Boundaries of the Geometry Layer
-
-Geometry fitting determines "which UV texels each pixel could come from," but it cannot independently resolve the following:
-
-- Whether the pixel currently displays inner skin or outer clothing—when two layers overlap in screen space, geometry alone cannot adjudicate layer assignment;
-- Regions of uniform color crossing multiple body part boundaries—for example, when the face and neck share the same color, the color gradient provides no segmentation cue, requiring the geometric prior to narrow the candidate parts and semantic routing to make the final judgment;
-- Inner-layer pixels exposed through transparent outer-layer cutouts may have their precise UV texels coming from multiple candidate surfaces—resolving this requires exact surface slot classification.
-
-These are precisely the responsibilities of the next section, Dense UV Parser.
-
-## 4. Dense UV Parser: Model Architecture and Training for Semantic Routing
-
-The geometry layer provides part assignment, surface direction, and UV coordinate candidates for each screen pixel, but it cannot reliably resolve one critical question: whether the current pixel shows inner-layer skin, outer-layer clothing, or a deeper surface seen through a transparent outer-layer region (secondary surface). The Dense UV Parser is a supervised neural network specifically designed for this routing decision.
-
-### 4.1 Network Architecture
-
-The parser's backbone is a U-Net-style fully convolutional network (`DenseUVParserNet`) that accepts fixed-size RGB input and outputs dense per-pixel predictions. The architecture is as follows:
-
-**Encoder–Decoder Backbone**
-
-| Stage | Operation | Input Channels | Output Channels | Spatial Size (H×W) |
-| :--- | :--- | :--- | :--- | :--- |
-| Input concat | view one-hot concat | 3 + V | 3 + V | 256×512 |
-| stem | ConvBlock (3×3→3×3, GN+SiLU) | 3 + V | 32 | 256×512 |
-| down1 | Conv2d (k4s2) + ConvBlock | 32 | 64 | 128×256 |
-| down2 | Conv2d (k4s2) + ConvBlock | 64 | 128 | 64×128 |
-| down3 | Conv2d (k4s2) + ConvBlock | 128 | 256 | 32×64 |
-| mid | ConvBlock (3×3→3×3, GN+SiLU) | 256 | 256 | 32×64 |
-
-Where V is the number of view classes (default 2, corresponding to front and back views). Each view is encoded as a one-hot vector, broadcast to the same height and width as the input image, and concatenated with the RGB channels. This enables the parser to distinguish between pixels that look identical in RGB but have different spatial meanings in the front vs. back view—for instance, a solid-color skin's chest and back may be RGB-identical, but the view condition maps them to different UV regions.
-
-**Decoder (with skip connections)**
-
-| Stage | Operation | Input Channels | Skip Connection | Output Channels | Spatial Size |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| up2 | bilinear upsample + ConvBlock | 256 | s2 (128ch) | 128 | 64×128 |
-| up1 | bilinear upsample + ConvBlock | 128 | s1 (64ch) | 64 | 128×256 |
-| up0 | bilinear upsample + ConvBlock | 64 | s0 (32ch) | 32 | 256×512 |
-| features | Conv2d (3×3) + SiLU | 32 | — | 32 | 256×512 |
-
-All upsampling layers use bilinear interpolation (`align_corners=False`). Skip connections concatenate the encoder's corresponding feature maps with the upsampled result along the channel dimension before feeding into ConvBlock.
-
-**Semantic Fusion Modules**
-
-The parser integrates two optional semantic branches, both using frozen SigLIP2 (`google/siglip2-base-patch16-224`) as the vision backbone:
-
-1. **MultiViewSemanticFusion (global semantics)**: receives SigLIP2 pooled embeddings for the front/back views (768-dim each) and fuses them into the bottleneck features through the following pipeline:
-   - LayerNorm + Linear projection of each view's 768-dim embedding to 128-dim (GELU activation);
-   - Addition of a learnable view embedding (128-dim) per view;
-   - Passage through 1 TransformerEncoderLayer (`d_model=128, nhead=4, dim_feedforward=512, batch_first=True, norm_first=True`) for cross-view attention;
-   - Mean pooling over the sequence to obtain a global summary, concatenated with each view token into a 256-dim vector;
-   - FiLM modulation: the 256-dim vector passes through LayerNorm + Linear(256→256) + GELU + Linear(256→512), producing scale and shift vectors of 256-dim each, applied to the mid block's bottleneck feature map (`x = x * (1 + scale) + shift`).
-
-   A critical initialization strategy: the final Linear layer's weights and biases are initialized to zero, so that FiLM modulation contributes nothing at the start of training. The parser's initial output is driven entirely by geometric supervision. Semantic corrections must be learned from supervised routing errors during training, rather than interfering with the geometric solution at initialization.
-
-2. **SpatialSemanticFusion (spatial semantics)**: receives SigLIP2 patch-level spatial features for the front/back views (each 256×512 view is ViT-patchified to 14×8 patches, 768-dim per patch), fused through the following pipeline:
-   - LayerNorm normalization (over the channel dimension);
-   - 1×1 convolution (768→64) projection + GELU;
-   - 1×1 convolution (64→256) output as bottleneck residual, bilinearly upsampled to 32×64;
-   - The residual is added directly to the mid block output.
-
-   Also uses zero initialization: the second 1×1 convolution's weights and biases are zero, ensuring spatial semantic features contribute nothing to the geometric solution at the start of training.
-
-**Prediction Heads**
-
-From the 32-channel feature map, after `feature_dropout` (`Dropout2d, p=0.10`, enabled during training only, automatically disabled for preview and inference), the parser produces the following predictions in parallel:
-
-| Prediction Head | Output Channels | Meaning |
+| Purpose | Condition | Reason |
 | :--- | :--- | :--- |
-| `foreground` | 1 | Foreground logits (foreground probability after sigmoid) |
-| `layer` | 3 | Routing role logits: inner(0), outer(1), secondary/backface(2) |
-| `part` | 6 | Body part classification (non-`geometry_only` mode) |
-| `face` | 6 | Cube face classification |
-| `layer_face` | 12 | Layer × face joint classification |
-| `uv` | 2 | Normalized UV coordinate regression (sigmoid to [0,1]) |
-| `uv_x` / `uv_y` | 64 / 64 | Discrete UV coordinate classification (64 classes per axis, matching the 64×64 atlas) |
-| `surface` | variable | Exact surface slot classification (including composite and geometry fallback faces) |
-| `route_confidence` | 1 | Probability that the current routing decision is correct (after sigmoid) |
+| Character silhouette | Foreground probability ≥ 0.50 | Preserve thin brims, hair tips, and accessory geometry |
+| UV color sources | Foreground probability ≥ 0.98, with a 1-pixel inset at parser resolution | Keep background-contaminated boundary RGB out of the skin |
 
-Additionally, the global semantic summary (`semantic_summary`) outputs part-level attributes through two linear heads:
-- `outer_presence_logits` (6 classes): whether each body part has an outer layer;
-- `outer_coverage` (6 classes, after sigmoid): approximate outer-layer coverage ratio [0,1] per part.
+The stricter color mask does not directly erase thin silhouette geometry. It excludes unreliable samples; it does not guarantee physically separated foreground color at every boundary. Generic code still supports flood fill, but that path does not describe the complete paired v104 candidate.
 
-**Projected-feature outer-UV occupancy branch**
+## 3. Geometry Fitting: Fixed Candidates and Coordinate Alignment
 
-The per-pixel `layer` head answers whether an individual screen pixel looks more like the inner or outer layer. Crowns, glasses, headphones, and hat brims, however, normally form connected groups of outer texels and should not be decided as independent pixels. The occupancy branch therefore predicts outer alpha directly in the 64×64 UV atlas:
+With known cameras, Steve geometry, and front/back ordering, the system looks up each pixel's possible part, cube face, layer, and UV. It does not need to estimate a skeleton in an arbitrary pose, but it must still handle position and scale differences between generated templates and canonical projections.
 
-1. U-Net decoder features are compressed to 32 channels, concatenated with per-pixel `p_outer` and foreground coverage, then projected into outer UV texels through the fixed geometry mappings;
-2. Projected features are averaged across front and back views while retaining maximum `p_outer`, mean foreground, and view-support fraction, so single-view regions are not restricted to the tiny two-view intersection;
-3. A graph is built only for the 1,632 valid outer texels. Edges use same-part 3D texel-center distance, connecting both neighbors within a UV island and the correct neighbors across cube-face seams, without connecting atlas regions that merely touch in 2D;
-4. Each node receives part, cube-face, and local-face-coordinate embeddings, followed by three 64-channel graph message-passing blocks that output `outer_uv_occupancy_logits`.
+Input RGB, predicted logits, and foreground masks must enter canonical coordinates consistently. Mask transforms use coverage information to preserve thin silhouettes, while color extraction still requires confident foreground and enough source pixels. Rejecting background should not erase a real brim during alignment. Additional affine refinement is controlled by the paired pipeline; fixed geometry does not mean the entire inference process is free of learning or optimization.
 
-The occupancy branch receives detached backbone features and global context. It first learns an independent structural prior without letting sparse alpha loss disrupt the already stable per-pixel routing backbone. Later in training, a one-way route–occupancy agreement loss gradually transfers this structure back to the `layer` head.
+Candidates distinguish direct inner, direct outer, and secondary/back-facing surfaces. Transparent outer layers expose deeper faces. Forcing these pixels onto the nearest inner surface can put beard edges or the back of a hat in the wrong UV location. Geometry narrows the candidates; semantic evidence chooses among them.
 
-**Learned Fixed-View Route-Role Spatial Prior**
+## 4. From Base Routing to Final Head UV Decoding
 
-This is an independent learnable parameter tensor of shape `[view_classes=2, layer_classes=3, H=32, W=16]`. It encodes the statistical likelihood, learned from a large number of training samples, that each spatial region in the front and back views belongs to inner, outer, or secondary surface. At inference time, this prior is selected by view index, bilinearly upsampled to the same spatial size as the `layer` output, and added directly to the `layer` logits. During training, it is randomly dropped for 10% of samples (per-sample), with logit values capped to `[-1.5, 1.5]` via `tanh`, and regularized with L2 and total-variation penalties to maintain smoothness. This design makes the prior a soft statistical bias—providing gentle guidance for common structures (such as bangs at the top-front of the head, or outer-layer distribution around hat brims), while the image-conditioned CNN can override it for uncommon skins.
+### 4.1 The Base Dense UV Parser
 
-### 4.2 Training Supervision and Loss Functions
+`DenseUVParserNet` remains a U-Net with skip connections. RGB and view one-hot channels enter a 32 → 64 → 128 → 256-channel encoder, followed by upsampling to dense features. Frozen SigLIP2 global and spatial features provide context, while a learned fixed-view prior adds a soft bias to routing logits.
 
-Training labels are generated entirely automatically by the differentiable Minecraft renderer. For each GT skin, the renderer renders RGBA images for each configured view (front/back) and simultaneously records the source information for each screen pixel—part index, surface direction, layer (inner/outer/secondary), and exact UV coordinates. No manual per-pixel annotation is required.
+Base predictions cover foreground, part, cube face, inner/outer/secondary routing, UV coordinates, precise surface slots, and routing confidence. Training combines classification, UV regression, false-outer penalties, projected-texel consistency, and differentiable soft-UV and multi-view rendering losses. Inference uses geometric candidates, confidence, coverage, and source-pixel evidence to produce the initial UV.
 
-The loss function (`DenseUVParserLoss`) is composed of the following weighted components:
+Earlier experiments also include optional projected outer occupancy and component-rescue modules. Their activation cannot be inferred from class names or generic launcher defaults: reproducing a version requires its paired pipeline. The new v104 head topology module belongs to the final decoder and is distinct from the base parser's optional occupancy branch.
 
-**(1) Foreground Loss** (λ=1.0)
-- BCE with logits, with positive sample weight dynamically computed as `pos_weight = neg_count / pos_count`, capped at 20.0.
-- Dice loss: `1 - (2*|pred ∩ target| + 1) / (|pred| + |target| + 1)`.
+### 4.2 Joint Head Semantics: Face, Hair, and Accessories
 
-**(2) Route-Role Loss** (λ=1.0)
-- Balanced cross-entropy: class weights normalized by `1/sqrt(count)` of valid pixels per class, with inner class weight floor 0.75 and outer class weight cap 0.90 (preventing the rare outer class from dominating gradients).
+Starting with v102, one 14-class distribution represents abstention/unknown, face, inner/outer hair, inner/outer beard, glasses, headphones, inner/outer hat bodies and bands, brim, and crown. Joint attention combines the front and back head features of the same character.
 
-**(3) Outer False-Positive Loss** (λ=1.0, focal γ=3.0)
-```
-L_fp = E[ p_outer^γ * (-log(1 - p_outer)) ]   for pixels where target ≠ outer
-```
-Design intent: penalizing "inner pixels misclassified as outer" more heavily than "outer pixels missed." In UV reconstruction, a single wrong outer texel permanently occludes the correct inner texel, while a missed outer texel merely leaves a transparent gap (which can be filled later).
+This addresses the structural conflict in which independent classifiers can both confidently label a pixel as face and crown. The revised v103 further derives final UV semantics and outer occupancy from the same categorical distribution. For an outer query, inner-class probability counts as evidence of outer absence; recognizing inner hair must not imply that an outer texel should be added.
 
-**(4) Outer False-Negative Loss** (λ=0.75, focal γ=2.0)
-```
-L_fn = E[ (1 - p_outer)^γ * (-log(p_outer)) ]   for pixels where target = outer
-```
-Lower γ than false-positive loss, reflecting the asymmetric design principle of "prefer a missed detection over a false alarm."
+The latest candidate retains two reviewed adjustments: disabling whole-head geometry pruning that had deleted valid hair (`joint_head_geometry_mode=disabled`), and limiting learned face reassignment to beards (`head_surface_routing_scope=beard`) so hair retains its original geometric route. Hats, crowns, and headphones retain their semantic and material handling.
 
-**(5) Primary Route Swap Loss** (λ=1.0, focal γ=2.0)
-```
-L_swap = 0.5 * (L_inner + L_outer)
-L_role = E[ (1 - p_correct)^γ * (-log(p_correct)) ]   computed separately for role ∈ {0,1}, then averaged
-```
-This is a macro-averaged loss: compute the mean loss for inner and outer classes separately, then average the two. Unlike ordinary pixel-count-weighted cross-entropy, macro-averaging ensures the minority class (outer) is not drowned out by the gradient of the majority class (inner).
+### 4.3 FinalHeadUVDecoder: Supervise the Actual Output
 
-**(6) Projected Texel Consistency Loss** (λ=0.25)
-For multiple source pixels that project to the same GT UV texel, computes the variance of their routing probabilities, requiring consensus. Grouping key is `(batch_item, GT_role, flat_uv_index)`. Only computed for texels with multiple source pixels, avoiding vacuous loss on single observations.
+Better screen-pixel classification does not guarantee a final UV without holes, wrong layers, or color contamination. `FinalHeadUVDecoder` therefore reads the automatic UV and front/back image evidence directly, modeling 768 valid head texels: 6 faces × 8×8 × 2 layers.
 
-**(7) Visible Outer-Candidate Alpha Supervision and Cross-View Consistency** (λ=0.50)
+Each query includes current RGBA, its mirrored and cross-layer counterparts, cube coordinates, face, and layer identity. Candidate projections supply local RGB, foreground, semantics, and face probabilities from both head views. Even a currently empty outer texel can read potential image evidence. Attention supplies whole-head context, and local neighborhood inputs accommodate small shifts in generated images.
 
-Per-pixel route labels supervise only the surface that is ultimately visible; by themselves, they do not directly constrain a geometric candidate that should be transparent but is incorrectly classified as outer. Training therefore projects every view's outer candidates back into the 64×64 atlas and supervises `p_outer` with ground-truth outer alpha:
+The decoder learns three related decisions:
 
-- GT alpha=1 means that the outer texel exists and should be preserved;
-- GT alpha=0 means that the candidate should be transparent, penalizing inner skin, eyes, face pixels, or background that are incorrectly routed to the outer layer.
+1. **Preserve or edit:** explicitly decide whether each texel needs a change, correcting omissions and additions while penalizing damage to already-correct texels.
+2. **Occupancy and color:** directly supervise final outer alpha, color-edit gates, and RGB corrections. Body texels, invalid UV regions, and inner alpha are structurally preserved.
+3. **Material correspondence:** learn whether mirrored or cross-layer locations should share color, tying RGB only within predicted connected groups while allowing asymmetry, partial links, and genuine openings.
 
-Single-view visibility supervision and cross-view consistency have deliberately different coverage. For the current 256×512 `front_left + back_left` mappings, each view directly observes 607 outer texels. Their union contains 1,136 texels—69.6% of the full 1,632-texel outer atlas—while their intersection contains only 78, or 6.9% of the visible union (4.8% of the full outer atlas). Consequently:
+Inference reads images and automatic UVs, not training annotations, identities, or filenames for lookup corrections. This learned branch can edit outer head geometry, so the earlier claim that all outer texels must remain as initially sampled by the parser no longer describes the final output.
 
-- alpha supervision covers all 1,214 per-view candidate observations, corresponding to 1,136 unique visible outer texels;
-- only the probability-disagreement term is restricted to the 78 texels visible in both views;
-- a texel no longer needs to be shared by both views, so single-view regions such as the face, eyes, and back of the head receive positive and negative outer-layer supervision.
+### 4.4 v104: Learn Actual Neighbors Across Cube Faces
 
-To suppress the remaining high-confidence inner→outer mistakes, the highest-loss 20% of transparent outer candidates are mined as hard negatives and added with an internal weight of 0.75. Training logs report union coverage, intersection ratio, visible-negative count, and hard-negative count so that actual supervision coverage is visible rather than hidden behind a total loss.
+v104 adds `HeadTopologyContext` to the final decoder. It aggregates neighbors within the same cube face separately from neighbors across real seams, then passes both contexts and the original features through a learned residual module. It does not connect unrelated UV islands just because they happen to touch in the PNG atlas.
 
-**(7b) Projected occupancy, topology-component, and route-agreement losses**
+The new module's last layer is zero-initialized. Loading the revised v103 weights initially produces bit-identical predictions; cross-face relationships are then learned through training. Supervision adds:
 
-The projected occupancy branch is supervised against the complete ground-truth outer alpha. Its base terms are BCE (λ=0.50, with bounded square-root inverse-frequency positive weighting) and Dice (internal weight 0.25). Three additional constraints target small but connected outer components:
+- **A ground-truth boundary loss:** GT alpha identifies whether neighboring texels should connect or differ, teaching both continuous brims and real openings without forcing all neighbors to match.
+- **Connected-region perturbations:** missing or spurious outer patches grow along actual cube neighbors, teaching recovery of errors across seams rather than only isolated pixel noise.
 
-- **Hard positives**: the highest-loss 25% of positive outer texels per batch receive an internal weight of 0.50, preventing crown tips, thin glasses arms, and headphone connectors from being drowned out by large components;
-- **Component-balanced recall** (λ=0.25): ground-truth outer connected components are found on the physical UV graph, soft recall is computed per component, and the components are macro-averaged. A two-texel glasses arm therefore has the same component-level weight as a large jacket;
-- **Topology continuity** (λ=0.10): physically adjacent nodes within the same ground-truth positive component are encouraged to have similar occupancy probabilities, suppressing random inner/outer holes within one accessory.
+v104 also adds `mask_unknown_relations`. Unannotated material relationships without a color conflict are excluded from negative supervision. Two visible targets with different colors remain clear negatives, while positives require semantic annotation. This avoids teaching unknown relationships as disconnected or forcing beard links solely because colors match.
 
-A route–occupancy agreement term (λ=0.25) projects per-pixel `p_outer` into visible outer UV and fits the detached occupancy probability. It stays disabled for the first 20% of batches in each epoch and then ramps to full strength, preventing an uncalibrated early occupancy head from contaminating per-pixel routing.
+## 5. Color Recovery: Grid Sampling and Final Material Fitting
 
-**(8) Route Confidence Loss** (λ=0.25)
-BCE with logits, target = `(predicted_role == GT_role)`. For secondary pixels, surface classification must also be correct.
+The initial UV still uses `grid_mode`: count actual 8-bit RGB values among safe projected source pixels and choose the most supported color, using UV-center distance only to break ties. This avoids averaging foreground and background into an intermediate color absent from the input.
 
-**(9) Route Prior Regularization** (λ=0.001, TV weight=1.0)
-`L_prior = ||prior||₂² + 1.0 * TV(prior)`, where TV is total-variation over the spatial dimensions (mean squared first-order differences along horizontal and vertical axes).
+Final head geometry edits change visibility. Removing a wrongly added outer hair texel, for example, exposes an inner color that was previously hidden. Keeping its pre-edit color can leave a patch on the forehead even when alpha is correct.
 
-**(10) Auxiliary Losses**
-- `part` cross-entropy (λ=0.5)
-- `face` cross-entropy (λ=0.5)
-- `layer_face` balanced cross-entropy (λ=1.0)
-- `uv` smooth L1 regression (λ=0.25)
-- `uv_x / uv_y` discrete classification cross-entropy (λ=1.0)
-- `surface` balanced cross-entropy (λ=1.0)
-- `affine` translation / log-scale smooth L1 (λ=1.0, only when enabled)
+The paired v104 configuration therefore performs 64 steps of final head material fitting after all learned geometry edits:
 
-**Differentiable Soft-UV Splatting and Multi-View Rendering Losses**
+1. Recompute visibility from final alpha and fit head RGB to confident source pixels in both views.
+2. Apply learned color ownership and boundary exclusions with `final_head_material_protect_inner_footprints=True`. Project accessory conflicts back to the complete sampling footprint of each inner UV texel, preventing residual green headphone samples from recoloring inner hair after only some classified accessory pixels were excluded.
+3. Restore predicted mirror and cross-layer material links. Accept the fitted result only if source-image reconstruction error strictly decreases after color sharing.
 
-Beyond the supervised classification losses above, training includes a differentiable branch: the parser's routing and surface probabilities are soft-splatted onto a 64×64 UV atlas to produce a provisional skin texture, which is then re-rendered through the differentiable renderer back to the configured views. Soft-UV RGB error (λ=0.25), soft-UV alpha error (λ=0.35), inner/outer visible texel recall (λ=0.50 each, with 50% of the weight concentrated on the worst 10% of texels), multi-view rendering RGB error (λ=0.20), and multi-view rendering alpha error (λ=0.25) are all added as loss terms. Wrong routing decisions receive both color and silhouette gradients through these differentiable rendering losses, providing complementary signals to the classification supervision.
+This step preserves alpha and the body. It retains the original colors when confident head sources are absent or error fails to decrease. Final RGB can include learned corrections and optimization, so it is no longer valid to claim every output color is a byte-for-byte input mode. The process remains constrained by image evidence; a general generative completion model for arbitrary unseen textures has not been connected.
 
-All soft-UV and rendering loss λ values can be set to 0, in which case training reduces to pure classification supervision. Inference always uses hard routing (argmax + grid-based color extraction, see Section 5), involving no soft splatting or differentiable rendering.
+## 6. Where Deterministic Inner Completion Fits
 
-### 4.3 Training Configuration
+`simple_inpainting` still provides explainable inner-layer completion for the initial partial UV. It follows part and cube topology: front/back faces fill in rings from border to center, side faces advance inward by row, and top/bottom faces fill from their edges.
 
-| Item | Value |
+A missing texel first seeks a same-part mirrored source, then a nearby same-part color in 3D. Side faces prefer the same row, and newly filled texels can propagate further. With no same-part evidence, a texel remains transparent; color is never copied from head to torso or across other parts. Mirroring is a completion heuristic at this stage, not proof that the real texture is symmetric.
+
+This module itself never creates, deletes, or modifies outer texels. Confirmed outer colors may supply same-part inner vacancies, but its output is intermediate. The full candidate subsequently applies hidden head material handling, learned final head UV correction, and final RGB fitting. The final skin therefore no longer equals the output of `simple_inpainting` alone.
+
+Debugging should compare the initial observed UV, inner completion, final head alpha, and final material separately. A continuous-looking render does not establish correctness at every texel. A larger texel count also does not prove hair recovery: added texels may be on the wrong face.
+
+## 7. v104 Training, Selection, and Measured Results
+
+### 7.1 Training Scope and Identity Separation
+
+v104 starts from the reviewed revised v103, freezing the parent model and training only the final head decoder. It adds 448 training source identities: 384 retain native textures, and 64 supply matched no-accessory/glasses/headphone examples. Another 80 validation and 80 test identities are added. Matched examples change only accessories, preserving face, hair, and beard.
+
+The final synthetic cache is shown below. An “image” is one two-view sample, not necessarily a distinct identity:
+
+| Split | Synthetic images | Normalized UV source identities |
+| :--- | ---: | ---: |
+| Training | 1120 | 928 |
+| Validation | 248 | 200 |
+| Test | 112 | 80 |
+
+The splits are disjoint after normalized RGBA content deduplication. Separation applies to this decoder training; it does not establish that these identities never appeared in historical training of the frozen parent. Older caches replay parent-pipeline errors. New data use the current frozen parent pipeline, with geometry-preserving lighting, blur, and color perturbations on half of the added training identities.
+
+Three existing locally annotated real identities are sampled separately. The two latest eye/hair feedback images do not enter gradient training, but inform development decisions. They and the other real development images are not an independent blind test.
+
+### 7.2 Training Configuration and Checkpoint Selection
+
+| Item | v104 configuration |
 | :--- | :--- |
-| Optimizer | AdamW |
-| Learning rate | 2e-4, cosine decay to 5% (`min_lr_ratio=0.05`) |
-| LR schedule | Based on absolute epoch; safe to resume from any checkpoint |
-| Batch size | 32 skins, expanded into 64 256×512 view tensors before entering the parser |
-| Training epochs | 1 (sufficient convergence on large datasets) |
-| Regularization | `feature_dropout=0.10` (Dropout2d, training only); frozen SigLIP2 vision tower |
-| Semantic cache | SigLIP2 spatial features (768×14×8 per view) stored as FP16 mmap; ~58 GiB for 180K samples; only current batch read into GPU memory |
-| Outer-candidate supervision | Visible-union alpha supervision λ=0.50; shared-view disagreement weight 0.25; hardest 20% transparent candidates weighted 0.75 |
-| Projected occupancy | 32-channel projected features; 64-channel × 3-layer physical-topology graph; BCE λ=0.50, Dice 0.25, hardest 25% positives ×0.50, component recall λ=0.25, topology continuity λ=0.10 |
-| Route–occupancy agreement | λ=0.25; warmup over the first 20% of batches in each epoch |
-| Default random mode | `SEED=1234, REPRODUCIBLE=false, CUDNN_BENCHMARK=true`; initialization, split, shuffle, and augmentation follow the seed, but CUDA results are not guaranteed bitwise identical |
-| Strict reproducibility mode | `REPRODUCIBLE=true` disables cuDNN benchmark and Flash Attention and requests deterministic CUDA algorithms; `STRICT_DETERMINISM=true` aborts on an unsupported operation, at a substantial speed cost |
-| Checkpoint selection | Best by `loss_hard_uv_color_selection` (hard-routed inner/outer IoU + RGB MAE), preventing sparse or miscolored UVs from winning due to inflated occupancy precision |
+| Optimizer / initial learning rate | AdamW / 8e-5 |
+| Training length / batch | 6000 steps / 8 |
+| Trainable parameters | Final head decoder only; all parent weights frozen |
+| Native-texture sampling fraction parameter | 0.7 |
+| Paired and real local supervision | One matched accessory group every 4 steps; at most one existing real training identity every 2 steps |
+| Per-texel incorrect-edit risk weight | 5, normalized over all outer texels |
+| Boundary loss weight | 0.5 |
+| Selected checkpoint | Step 5000 |
 
-### 4.4 Inference Routing and Gating
+Validation distinguishes regions with candidate projection coverage from those without it, weighting errors by 1 and 0.2 respectively, with an additional 0.25 factor for old-cache replay. The underside of the head lacks evidence in these views and should not obscure changes around visible hair and eyes. This weighting affects evaluation and selection only; it is not an inference filling rule.
 
-At inference time, the parser's soft probability outputs pass through multiple gating layers before becoming final hard routing decisions:
+Step 200 failed an existing beard check and was excluded. Among eligible candidates, step 5000 had the lowest weighted validation error: 1881.25 → 1722.80, an 8.42% reduction. The latest checkpoint at step 6000 was therefore not automatically selected.
 
-1. **Dual-threshold topology-component routing**: occupancy ≥0.80 texels become high-confidence seeds, then physical-topology neighbors with occupancy ≥0.50 are absorbed when connected to a seed. Low-confidence fragments without a seed are not retained, and isolated components smaller than two texels are rejected. Every accepted texel inherits its component seed confidence, allowing a connected crown, glasses frame, or headset to participate in outer rescue as a unit instead of flickering pixel by pixel.
+### 7.3 Held-Out Test: Visible Gains and Underside Regression
 
-2. **Projected-texel consensus and asymmetric outer admission**: each source pixel's routing probability is center-weighted and voted into its projected UV texel. The final probability blends local pixel evidence (40%), texel-level consensus (60%), and the component occupancy prior. Ordinary outer decisions still need local and texel evidence. Component occupancy may rescue a route only when the current route already has minimum support (default `p_outer` ≥0.30), so it cannot promote an unrelated inner pixel by itself.
+Only after validation selection and real-image visual review was the pre-locked 112-image synthetic test set opened: 64 native skins plus no-accessory, glasses, and headphone variants of 16 identities. Weights were not reselected after testing. The table measures final outer-head geometry against **revised v103**:
 
-3. **Cross-view outer-visibility check**: for the 78 shared outer texels, a conflict is formed when one view strongly supports outer while another view clearly observes background or a high-confidence inner route at the same texel. The candidate is then vetoed. This rule applies only where shared evidence actually exists; it does not use the back view to overrule eyes or clothing patterns visible only from the front.
+| Test region | v103 IoU | v104 IoU | Added in error, v103 → v104 | Missed texels, v103 → v104 |
+| :--- | ---: | ---: | ---: | ---: |
+| Native skins, view-covered | 86.63% | 87.62% | 370 → 337 | 481 → 447 |
+| Native skins, unobserved head underside | 43.94% | 37.56% | 71 → 90 | 396 → 442 |
+| Native skins, full head | 81.69% | 81.69% | 441 → 427 | 877 → 889 |
+| Matched accessories, full head | 97.49% | 97.75% | 72 → 70 | 34 → 25 |
+| Matched accessories, view-covered | 97.31% | 97.44% | 66 → 70 | 34 → 25 |
 
-4. **Conservative outer gating** (default `conservative` profile):
-   - Outer confidence ≥ 0.80, inner-outer margin ≥ 0.55;
-   - Outer footprint coverage ≥ 0.25;
-   - Minimum 30 valid source pixels per outer texel;
-   - Background-edge pixels (color difference from detected background ≤ 8/255) are excluded.
+Total errors in visible native-skin regions decrease by 7.87%. However, full-head native IoU is precisely 0.816944 → 0.816866: essentially unchanged and slightly lower. Visible accessory false additions also increase by 4 texels. The head underside clearly regresses; not every metric improves.
 
-5. **Geometry rescue**: when a texel's source pixels lie in an outer-only silhouette region (`outer_mask > 0` and `inner_mask == 0`), or are routed to a precise secondary/backface surface slot, gating relaxes to confidence ≥ 0.60, margin ≥ 0.25, coverage ≥ 0.10. Precise geometric evidence can rescue an observation deferred by the outer-admission thresholds.
+These are identity-separated synthetic renders, not accuracy measurements on real generated images with human per-texel ground truth. Both candidates use the same frozen parent-pipeline cache to evaluate final alpha. Final color fitting cannot change alpha, so this table is not an RGB quality score either.
 
-6. **Semantic rescue**: when the parser predicts high part-level `outer_presence` and `outer_coverage`, the downstream confidence and coverage gates may be relaxed for outer observations that have already passed texel admission. This broad part-level semantic signal cannot bypass the fused texel gate, preventing “the head contains a hat or hair” from being interpreted as “all eyes and face pixels should be outer.”
+### 7.4 Real-Image Review and Candidate Status
 
-The default configuration is precision-first: the conservative profile prioritizes correctness of output outer texels over maximizing their quantity. Outer pixels that fail gating remain transparent in the UV atlas—deterministic repair never fabricates outer-layer texels.
+The complete pipeline was rerun on 43 original images: 3 training-fit checks and 40 real development images without gradient use. Review covered front/back renders, raw head UVs, and outer-alpha differences:
 
-`parser_debug_outer_uv_occupancy.png` shows raw occupancy probability, topology-propagated probability, and component routing state side by side (red=rejected candidate, green=accepted component, blue=high-confidence seed). It separates occupancy-component failures from downstream screen-pixel routing failures. Other debug images continue to distinguish pre-transform and post-transform state: `parser_debug_face_raw.png` and `parser_debug_layer_face_raw.png` use head logits in original input coordinates with the unwarped flood mask, while `parser_debug_face.png`, `parser_debug_layer_face.png`, and routed overlays reflect final hard routing in canonical coordinates.
+- The headphone/microphone feedback case retains zero false additions in the specified eye region.
+- In the hair feedback case, retained texels against a 96-texel v101 historical reference rise from 77 to 85, with zero texels outside that reference. The historical output is not human ground truth.
+- Existing scoped beard, nose, crown, headphone-color, glasses-forehead, and four-face brim checks pass.
+- All 43 bodies are byte-identical to revised v103. Across 19 repeated full inferences, alpha and body are identical; visible RGB is identical in 17 cases and differs by at most 1/255 per channel in 2.
 
-## 5. UV Reconstruction
+Visual review still finds isolated side/back/top texels in complex hairstyles and blurred hat lettering. Some added outer underside texels have no input-view support, so front/back renders cannot establish their correctness.
 
-Even when part and layer routing are correct, color sampling can still go wrong. Early approaches used texel centers, weighted averaging, or continuous RGB regression: when projection has slight offsets, the center point can land on an adjacent cell; when a grid cell contains both foreground and residual background, averaging produces intermediate colors that never existed in the input; generative models may then push these colors further into high-saturation regions.
+The model is consequently recorded as `reviewed_candidate_with_known_limitations`. At the source revision used for this article, it has not replaced the global default model. Reproduction requires pinning `parser.pt`, the paired `pipeline.json`, and the foreground model together. Replacing parser weights alone does not reproduce final color protection and related behavior.
 
-The current default `grid_mode` directly counts the real 8-bit RGB values of safe source pixels within each fitted grid cell and selects the most frequent color. It has the following properties:
+Configuration, selection, and detailed results are recorded in the [v104 training and review report](https://github.com/EntropyDrop/SkingToolkit/blob/43e676d8231fd3417d86721edb4ef4cef3dda40d/dense_uv_parser/V104_TRAINING.md).
 
-- Output colors are guaranteed to come from the input image, not from regression or averaging;
-- UV-center distance only breaks ties when multiple colors have equal support;
-- Interior character pixels are preferred over boundary pixels;
-- Boundary residuals close to the background color are excluded;
-- Outer texels require a sufficient number of valid source pixels, preventing a small number of background fragments from becoming prominent second-layer skin.
+## 8. Batch Export and Result Provenance
 
-This step embodies the most important change in the new workflow: **for observed colors, the system performs evidence aggregation, not image generation.**
+The v104 branch adds `run_all_edited_v104.py`, recursively processing `*_edited.png` into sibling `*_result_v104.png` files, each a 64×64 RGBA skin. It pins the reviewed step-5000 candidate and paired pipeline, with two workers by default.
 
-Routing thresholds are also no longer tuned for a single "higher is better" criterion. An outer threshold that is too low misclassifies inner layers or background as outer; one that is too high removes real bangs, hat edges, and leg second-layer skin. A more robust approach jointly uses classification confidence, inner-outer margin, geometric coverage, part-level outer presence probability, source pixel count, and multi-view consistency, monitoring outer precision and recall separately.
+Every job snapshots code, models, configuration, input lists, and hashes. Existing v104 outputs are backed up before atomic replacement; original inputs and other versions remain intact. After interruption, the same job can resume, rechecking completed outputs and skipping those that pass verification instead of mixing versions as workspace code changes.
 
-## 6. Greedy Topology Repair: Fix the Inner Layer, Leave the Outer Layer Untouched
+`progress.json` records progress, `results.jsonl` records per-image provenance and output hashes, and `final_audit.json` records final protection and format checks. Availability of the batch tool does not mean every image has finished or passed semantic review. Correct provenance does not establish correct hair, beard, or accessories at every texel. See the [v104 batch export documentation](https://github.com/EntropyDrop/SkingToolkit/blob/43e676d8231fd3417d86721edb4ef4cef3dda40d/dense_uv_parser/regression/v104_batch/README.md).
 
-The Dense UV Parser's final output is a partial UV map (output file `parser_pred_uv.png`): only texels whose routing and color can be determined from the front/back views are written; all other regions remain transparent. Invisible inner texels—such as the top of the head, soles of the feet, and sides of the torso—are therefore left empty. Before introducing more complex generative completion, we added a fully deterministic repair strategy to quickly obtain a baseline result and expose the parser's true upper bound.
+## 9. Current Limitations and Next Steps
 
-The core principle is straightforward:
+- **View dependence.** Fixed projections cannot rescue major pose, perspective, or proportion changes, and the pipeline remains centered on Steve geometry.
+- **Closed-source Stage One.** Hallucinated backs, missing accessories, and incorrect proportions propagate into reconstruction. Collecting original-image/render/UV triples remains an important route toward removing this dependency.
+- **Weak constraints on unseen regions.** v104's underside regression shows that cross-face context cannot replace actual view evidence. Additional useful views or more conservative outer predictions without evidence need separate investigation.
+- **Real semantic generalization remains unresolved.** Complex hair, occlusion, and rare accessories need broader real UV annotation. Local improvements on three training identities and reused development cases cannot substitute for new tests.
+- **Color and structure need separate review.** Correct alpha does not imply correct material, and a plausible render does not prove UV face or layer correctness. Final fitting improves source-image reconstruction error, not proof of the complete true texture.
 
-> **Only repair the inner skin layer; leave the outer layer untouched. All colors must come from confirmed texels within the same body part. No new colors are created. No cross-part copying.**
-
-### Fill Order: By Minecraft Topology, Not UV Coordinate Order
-
-The repair does not simply traverse by increasing UV x, y coordinates. Adjacent UV coordinates are not necessarily adjacent in 3D space—for example, the front and back of the head are separated on the UV map by the top and bottom head faces, but they are tightly adjacent in 3D. The fill order is therefore defined per body part according to its topological structure:
-
-1. **Front and back faces (face 0 and face 1)**: fill ring by ring from the border inward. The outermost ring is repaired first, then progressively inward. This ensures colors diffuse from known regions toward the unknown center while preserving the natural continuity of the texture.
-
-2. **Left and right faces (face 2 and face 3)**: fill row by row from both edges toward the middle. Within the same row, same-row known colors are preferred before falling back to a 3D nearest neighbor. This avoids absurd situations like a torso or arm side "borrowing" color from the top of the head.
-
-3. **Top and bottom faces (face 4 and face 5)**: likewise fill ring by ring from border to center.
-
-### Repair Decision: Symmetry First, 3D Nearest Neighbor as Fallback
-
-For each missing inner texel, the algorithm attempts to fill it in the following priority order:
-
-1. **Mirror symmetry first**: check whether the left-right mirrored texel is already defined. Minecraft skins are highly bilaterally symmetric—if the left side of the face has a confirmed color, the right side almost certainly has the same color. Mirror matching is based on 3D world coordinates, not UV pixel coordinates.
-
-2. **Same-part 3D nearest neighbor**: if the mirrored position is also unknown, find the nearest defined texel in canonical 3D space within the same body part. Unlike simple Manhattan distance on the UV map, 3D spatial distance correctly handles cross-face adjacency—for example, a texel on the right edge of the head front face is adjacent in 3D to a texel on the head right face, even though they may be far apart on the UV map.
-
-3. **Row-priority strategy**: for left and right faces, prefer sources in the same row. This preserves horizontal texture continuity—a belt or cuff should wrap uniformly around an arm rather than breaking at different heights.
-
-4. **Cascading propagation**: newly filled inner texels can immediately serve as sources for subsequent positions on the same part. This means if only a small patch of the arm front is known, it can progressively propagate outward rather than every vacancy fetching color from the same single source.
-
-5. **Strict no-cross-part rule**: never copy the nearest color across body parts—head to torso, torso to arm, etc.—just to fill the UV map.
-
-6. **Safe fallback**: if neither the mirrored position nor any same-part source is available, the texel remains transparent.
-
-### Outer Layer Preservation
-
-The repair algorithm never creates, deletes, or modifies any outer-layer texel. Confirmed outer texels can serve as color evidence for inner-layer texels (e.g., an arm's outer-layer color can propagate to the same arm's inner-layer vacancy), but the reverse never holds—inner-layer colors never affect the outer layer.
-
-### Value of Deterministic Repair
-
-This algorithm, corresponding to the `simple_inpainting` module in the codebase (output file `parser_pred_uv_simple_inpainting.png`), does not understand clothing design and cannot generate truly invisible complex patterns (such as text on a character's back or hidden tattoos). Its value lies precisely in being explainable and reproducible:
-
-- If simple inpainting already produces good rendering results, it indicates that the parser's observation coverage and color fidelity are largely correct, and the remaining issues lie in invisible regions—exactly the part that topology-aware completion needs to address.
-- If simple inpainting diffuses large areas into a single color, it indicates that the part has too little usable evidence, requiring improvements in view coverage, routing recall, or the downstream generative model—not hoping the completion model will "guess" a reasonable result.
-- If head repair is correct but arm repair shows cross-part contamination, the topology definition itself can be traced and corrected.
-
-In the full workflow, the deterministic repair result (`parser_pred_uv_simple_inpainting.png`) and the final output 64×64 skin file (`pred_uv.png`) are both preserved, allowing comparison between deterministic repair and future generative completion. In the current version, the final skin is taken directly from deterministic repair—no generative completion model has been connected yet—so inference with a fixed checkpoint and runtime contains no stochastic generation step. This is distinct from the default fast training mode, whose CUDA numerics are not bitwise deterministic.
-
-## 7. Current Limitations
-
-The new workflow improves the quality of generated skins, but it has clear boundaries:
-
-- **Dependence on normalized viewpoints.** The current geometric mapping targets fixed front/back views; significant deviations in pose, perspective, or scale will reduce accuracy.
-- **Currently Steve-arm-centric.** Slim arms require a simple client-side conversion tool; this typically does not affect the low-resolution expression.
-- **Stage One currently depends on a closed-source model.** This limits the full pipeline's reproducibility, cost control, and independent iteration capability; the current strategy treats it as a data cold-start and approach validation tool, not the final architecture.
-- **Stage One errors propagate forward.** Back-side hallucinations, missing accessories, and incorrect character proportions cannot be automatically recovered through UV inverse projection.
-- **Same-color adjacent structures still carry semantic ambiguity.** In unlit renders, the face, chin, and neck may have no visible seams, requiring joint judgment from geometric position, fixed-view priors, and global semantics.
-- **Outer-layer routing remains the hardest classification.** Outer-layer geometry is only marginally larger than inner-layer; small boundary offsets can cause inner/outer swaps; transparent outer layers also expose deeper surfaces. The current approach still exhibits inner/outer routing errors and asymmetries.
-- **Truly invisible textures have no unique answer.** Deterministic repair can only propagate existing colors within the same part; it cannot recover patterns that were never shown in the reference image.
-
-## 8. Summary
-
-This article has presented a two-stage Minecraft skin generation workflow: Stage One converts an arbitrary character reference image into normalized front/back rendered views; Stage Two reconstructs a 64×64 RGBA UV map from those renders through geometry fitting, semantic routing, grid-based color extraction, and deterministic topology repair.
-
-Stage Two follows an explicit priority: steps solvable by geometry do not invoke learned models; steps where color can be taken directly from the input do not invoke generation. Specifically:
-
-- Foreground extraction uses deterministic flood fill, with no probabilistic thresholding on model outputs;
-- Pixel-to-UV mapping is provided by precomputed geometric projections, using no pose estimation or deformable alignment;
-- Inner/outer/secondary surface routing is handled by the Dense UV Parser via supervised learning, with training labels automatically generated by the renderer;
-- Visible texel colors are taken as the mode of real pixels within each input projection grid cell, using no regression or generative infilling;
-- Invisible inner texels are propagated within the same body part by topology-aware deterministic rules—no new colors are created and no cross-part copying occurs.
-
-The benefits of this approach manifest at three levels: visible-region colors are traceable to specific pixels in the input, with a complete evidence chain; the error mode of each processing step can be independently evaluated and localized; the geometry, semantic, and repair modules can each be upgraded or replaced independently without affecting the rest of the pipeline.
-
-The main current limitations are the Stage One dependency on a closed-source image model and the absence of a generative completion module in Stage Two for handling truly invisible texture regions. Future work will proceed along two directions: continuously accumulating "original image → normalized render → UV skin" triples to train a Stage One model that does not depend on any closed-source model; and, once parser evidence quality reaches the required level, introducing topology-constrained, parser-confidence-conditioned generative completion to fill in the invisible regions.
+The two-stage approach remains, while Stage Two has grown from hard routing, sampling, and inner completion into a combination of geometric candidates, learned foreground, joint head semantics, final UV decoding, and visible-material fitting. v104 demonstrates a limited improvement in visible head regions. Further progress requires complex-hair and accessory ground truth, alongside better observations and evaluation for uncovered surfaces.
 
 ## References and Further Reading
+
+- [SkingToolkit v104 training, selection, and review](https://github.com/EntropyDrop/SkingToolkit/blob/43e676d8231fd3417d86721edb4ef4cef3dda40d/dense_uv_parser/V104_TRAINING.md): the source for this article’s version and metrics.
+- [Minecraft foreground model](https://github.com/EntropyDrop/SkingToolkit/blob/43e676d8231fd3417d86721edb4ef4cef3dda40d/dense_uv_parser/FOREGROUND.md): separate foreground training and silhouette/color-source masks.
+- [Revised v103 semantics and material protection](https://github.com/EntropyDrop/SkingToolkit/blob/43e676d8231fd3417d86721edb4ef4cef3dda40d/dense_uv_parser/V103_GENERALIZATION.md): parent-pipeline corrections retained by v104.
 
 - [From Reference Image to Minecraft Skin: A Generative Model Training Practice](/public/blog/skingen): our previous work, covering the image-to-image LoRA and composite target image approach.
 - [Minecraft Wiki: Skin](https://minecraft.wiki/w/Skin): Minecraft skin UV, inner/outer layer, and transparency documentation.

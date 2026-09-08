@@ -177,7 +177,7 @@ export default {
         previousPage: 'Previous page',
         nextPage: 'Next page',
         uploadLicenseTitle: 'Confirm Upload License',
-        uploadLicenseMessage: 'By uploading, you confirm that you hold the rights needed to grant this license and agree to offer the skin under CC BY-NC 4.0. Anyone may use, share, and adapt it for non-commercial purposes with attribution. This license is irrevocable; making the skin private limits new access but does not withdraw licenses already validly received.',
+        uploadLicenseMessage: 'By uploading, you confirm that you hold the rights needed to grant this license and agree to offer the skin under CC BY-NC 4.0. Anyone may use, share, and adapt it for non-commercial purposes with attribution. This license is irrevocable; deleting the skin does not withdraw licenses already validly received.',
         empty: 'It\'s empty here',
         create: 'Create Collection',
         name: 'Name',
@@ -204,9 +204,6 @@ export default {
         modeHumanUpload: 'Human Uploaded',
         search: 'Search',
         btnGenerate: 'AI Generate Skin',
-        confirmMakePrivate: 'Are you sure you want to make this public creation private? (Pro only)',
-        makePrivateTitle: 'Make Private',
-        makePrivatePro: 'Make Private (Pro)',
         privateQuotaExceeded: 'Free users have no private quota, please subscribe to Pro',
         deleteQuotaExceededTitle: 'Quota Reached',
         deleteQuotaExceeded: 'Free users can only delete 1 skin per day. Please subscribe to Pro for unlimited deletions.',
@@ -601,7 +598,7 @@ For a work generated during an active Pro-Plus, Pro-Max, or other paid period ex
 
 Editing or regenerating a work does not broaden the source work’s license. An edit or regeneration based on a CC BY-NC 4.0 work remains non-commercial; one based on a legacy upload with an unknown license remains unknown. A generating user editing their own commercially licensed work may retain that commercial license. Another user editing or regenerating a Public work may rely only on the non-commercial license offered to the public.
 
-Before saving an independently created or imported skin, the interface requires you to confirm that you hold the rights needed for the selected license. Where the selector is available, an active Pro account may choose the displayed EntropyDrop commercial-use license for that saving account; this choice does not create, clear, or transfer any third-party rights that you do not already hold. If the commercial option is unavailable or you choose CC BY-NC 4.0, the saved work is recorded as non-commercial. When either version is made Public, other users receive only CC BY-NC 4.0; a creator-only commercial license never extends to them. Private saving grants no new public access. Skins uploaded before license tracking was introduced are marked “Unknown license.” A valid CC BY-NC 4.0 license is irrevocable; deleting a work or making it Private does not withdraw a license already validly received by another person.
+Before saving an independently created or imported skin, the interface requires you to confirm that you hold the rights needed for the selected license. Where the selector is available, an active Pro account may choose the displayed EntropyDrop commercial-use license for that saving account; this choice does not create, clear, or transfer any third-party rights that you do not already hold. If the commercial option is unavailable or you choose CC BY-NC 4.0, the saved work is recorded as non-commercial. When either version is saved as Public, other users receive only CC BY-NC 4.0; a creator-only commercial license never extends to them. Private saving grants no new public access. Skins uploaded before license tracking was introduced are marked “Unknown license.” A valid CC BY-NC 4.0 license is irrevocable; deleting a work does not withdraw a license already validly received by another person.
 
 These licenses cover only rights that EntropyDrop, the uploader, or another licensor can grant and exclude third-party trademarks, characters, likenesses, copyrighted material, and other third-party rights. Whether an AI output is protected by intellectual-property rights may depend on the jurisdiction, the human creative contribution, and the particular work.
 
@@ -611,11 +608,11 @@ Because of the nature of AI, other users may receive identical or similar output
             },
             {
                 title: '7. Public Content, Private Content, and Platform License',
-                content: `When you designate a work as “Public,” its output, prompt, source image, intermediate processing results, author name, avatar, model parameters, and related public interactions may be accessed, displayed, or downloaded by anyone through pages, shared links, or public interfaces. Do not make content public if it contains identity documents, contact information, private photographs, information about minors, or other sensitive information.
+                content: `A skin’s Public or Private visibility is chosen when it is created and cannot be changed afterward. When you save a work as “Public,” its output, prompt, source image, intermediate processing results, author name, avatar, model parameters, and related public interactions may be accessed, displayed, or downloaded by anyone through pages, shared links, or public interfaces. Do not make content public if it contains identity documents, contact information, private photographs, information about minors, or other sensitive information.
 
 For Public Content, in addition to the user-to-user public license shown on the work detail page, you grant EntropyDrop a worldwide, non-exclusive, royalty-free, sublicensable license to store, reproduce, transform, and display the content; provide search, sharing, recommendation, derivative-creation, and community features; conduct safety review, moderation, and infringement handling; reasonably promote the Services; and evaluate, fine-tune, or train models using Public Content that is expressly identified as eligible for model improvement. A work’s Public status is independent of the generating user’s license; a creator-only commercial license displayed on the detail page does not extend to other users merely because the work is Public.
 
-If you delete Public Content or make it Private, we will stop using it for new public displays and new training runs. However, content already used in completed model training may not be separable or capable of being reverse-removed from model parameters, and rights already validly received by third parties under an irrevocable public license are unaffected, except where mandatory requirements provide otherwise.
+If you delete Public Content, we will stop using it for new public displays and new training runs. However, content already used in completed model training may not be separable or capable of being reverse-removed from model parameters, and rights already validly received by third parties under an irrevocable public license are unaffected, except where mandatory requirements provide otherwise.
 
 Direct messages, chats limited to specified participants, and non-public friend information are also treated as Private Content. Private Content is used only to provide generation, storage, editing, download, message delivery, security, and necessary technical support. Without your separate permission, we will not publicly display Private Content, provide it to ordinary users other than recipients or participants you designate, or use it for model fine-tuning or training. Authorized personnel and service providers may process Private Content on a need-to-know basis to complete a generation or deliver a message, respond to a report or security incident, investigate an issue you submit, or fulfill necessary obligations.`
             },
@@ -825,7 +822,7 @@ No online service can guarantee absolute security. If personal information is le
             },
             {
                 title: '11. Your Rights',
-                content: `Where applicable, you may request access to, a copy of, or export of personal information; correct or supplement inaccurate information; manage friends, remove a friend connection, or block another user; delete messages where the product supports deletion, works, addresses, or an account; change content visibility; withdraw consent; restrict or object to particular processing; close an account; request an explanation of our processing practices; or appeal an account, content, or privacy decision.
+                content: `Where applicable, you may request access to, a copy of, or export of personal information; correct or supplement inaccurate information; manage friends, remove a friend connection, or block another user; delete messages where the product supports deletion, works, addresses, or an account; withdraw consent; restrict or object to particular processing; close an account; request an explanation of our processing practices; or appeal an account, content, or privacy decision.
 
 Withdrawal does not affect processing completed before the withdrawal. You may exercise available rights through product features or by emailing support@entropydrop.com. We may reasonably verify your identity to protect account security.`
             },
@@ -905,7 +902,7 @@ Email: support@entropydrop.com`
         privateLicenseDescription: 'This work is currently private and is not offered for new public access.',
         publicDoesNotGrantCommercial: 'Your commercial license belongs only to the creator account. Public display does not grant commercial rights to other users.',
         otherUserNoCommercial: 'You receive only the CC BY-NC 4.0 non-commercial license. Public visibility or download access does not grant commercial rights.',
-        previousPublicLicense: 'This work was previously public. CC BY-NC 4.0 licenses already validly received are not withdrawn when it becomes private.',
+        previousPublicLicense: 'This work was previously public. CC BY-NC 4.0 licenses already validly received remain valid.',
         viewLicenseTerms: 'View the full CC BY-NC 4.0 terms',
         thirdPartyRightsNotice: 'The license covers only rights the licensor can grant and excludes third-party trademarks, characters, likenesses, copyrighted material, and other third-party rights.'
     },
@@ -1138,7 +1135,7 @@ Email: support@entropydrop.com`
             title: 'Latest Updates',
             description: 'Read the latest updates, research, architecture deep-dives and development notes from EntropyDrop.',
             list: [
-                { id: 'skin-reconstruction', title: 'From Rendering to Reconstruction: A New Workflow for Image-to-Minecraft-Skin', date: '2026-07-25', tags: ['Minecraft', 'Computer Vision', 'Geometry Reconstruction', 'Generative Model'], summary: 'Deconstructs the image-to-skin pipeline into normalized front/back views, deterministic foreground extraction, fixed-view geometry fitting, Dense UV Parser semantic routing, raw color sampling, and topological completion, and details data accumulation strategies for fully open-source model training.' },
+                { id: 'skin-reconstruction', title: 'From Rendering to Reconstruction: A New Workflow for Image-to-Minecraft-Skin', date: '2026-09-08', tags: ['Minecraft', 'Computer Vision', 'Geometry Reconstruction', 'Generative Model'], summary: 'Updates the reconstruction workflow for SkingToolkit v104 with learned foreground extraction, joint head semantics, cube-neighbor UV decoding, and final material fitting, including visible-head gains, unseen-underside regression, and the scope of candidate and batch validation.' },
                 { id: 'architecture', title: 'EntropyDrop Backend Runtime Architecture and Elastic Scaling Boundaries', date: '2026-05-22', tags: ['Architecture', 'Backend', 'Scalability'], summary: 'A code-grounded view of API readiness, connection pooling, ECS Service Auto Scaling, singleton background services, one-off migrations, and the remaining GPU/RQ worker scaling boundary.' },
                 { id: 'skingen', title: 'From Reference Images to Minecraft Skins: Generative Model Training in Practice', date: '2026-05-12', tags: ['LoRA', 'Fine-Tuning', 'Dataset', 'OpenSource'], summary: 'Based on the Flux2 Klein 4B base model, this article outlines the complete fine-tuning workflow for generating usable Minecraft skins from reference images, covering skin structure analysis, high-quality Control-Target dataset construction, LoRA training parameters, and Alpha Marker post-processing extraction.' },
                 { id: 'root-trust-governance', title: 'Root Trust Governance Paradigm', date: '2026-04-29', tags: ['Governance', 'Root Trust'], summary: 'EntropyDrop frames decentralized decision-making as the root trust layer for a verifiable, auditable, and community-governed open production system.' }
