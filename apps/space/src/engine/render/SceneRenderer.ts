@@ -652,6 +652,13 @@ export class SceneRenderer {
   declare wrenchPivotGizmo: THREE.Group;
   declare wrenchPivotArrows: Map<string, THREE.ArrowHelper>;
   declare wrenchPivotOrigin: THREE.Mesh;
+  declare selectionAxisGizmo: THREE.Group;
+  declare selectionGizmoHandles: Map<string, THREE.Group>;
+  declare selectionGizmoMaterials: Map<string, THREE.MeshBasicMaterial>;
+  declare selectionGizmoLineX: THREE.Line;
+  declare selectionGizmoLineY: THREE.Line;
+  declare selectionGizmoLineZ: THREE.Line;
+  declare selectionGizmoOrigin: THREE.Mesh;
   declare playerAvatar: THREE.Group;
   declare playerAvatarCharacter: CuteCharacter | null;
   declare playerFirstPersonHand: THREE.Group | null;
@@ -768,6 +775,7 @@ export class SceneRenderer {
     this.setupWrenchPivotGizmo();
     this.setupInventoryPlacementPreview();
     this.setupSelectionHologram();
+    this.setupSelectionAxisGizmo();
     this.setupPlayerAvatar();
     this.setupRemotePlayers();
 
@@ -1655,6 +1663,232 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
 
   clearWrenchPivotGizmo() {
     if (this.wrenchPivotGizmo) this.wrenchPivotGizmo.visible = false;
+  }
+
+  setupSelectionAxisGizmo() {
+    this.selectionAxisGizmo = new THREE.Group();
+    this.selectionAxisGizmo.name = 'SelectionAxisGizmo';
+    this.selectionAxisGizmo.visible = false;
+    this.selectionAxisGizmo.renderOrder = 98;
+
+    this.selectionGizmoHandles = new Map();
+    this.selectionGizmoMaterials = new Map();
+
+    const handleDefs = [
+      { key: '+x', axis: 'x' as const, dir: new THREE.Vector3(1, 0, 0), color: 0xff3b30 },
+      { key: '-x', axis: 'x' as const, dir: new THREE.Vector3(-1, 0, 0), color: 0xff3b30 },
+      { key: '+y', axis: 'y' as const, dir: new THREE.Vector3(0, 1, 0), color: 0x34c759 },
+      { key: '-y', axis: 'y' as const, dir: new THREE.Vector3(0, -1, 0), color: 0x34c759 },
+      { key: '+z', axis: 'z' as const, dir: new THREE.Vector3(0, 0, 1), color: 0x248aff },
+      { key: '-z', axis: 'z' as const, dir: new THREE.Vector3(0, 0, -1), color: 0x248aff }
+    ];
+
+    for (const def of handleDefs) {
+      const group = new THREE.Group();
+      group.name = `SelectionGizmoHandle_${def.key}`;
+      const directionVal: 1 | -1 = (def.dir.x > 0 || def.dir.y > 0 || def.dir.z > 0) ? 1 : -1;
+      group.userData = {
+        isGizmoHandle: true,
+        handleKey: def.key,
+        axis: def.axis,
+        direction: directionVal,
+        baseColor: def.color
+      };
+
+      // Arrow cone (compact and sleek)
+      const coneGeo = new THREE.ConeGeometry(0.08, 0.20, 16);
+      coneGeo.rotateX(Math.PI / 2);
+
+      const mat = new THREE.MeshBasicMaterial({
+        color: def.color,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.95
+      });
+      const cone = new THREE.Mesh(coneGeo, mat);
+      cone.renderOrder = 98;
+      cone.frustumCulled = false;
+      cone.lookAt(def.dir);
+      cone.userData = group.userData;
+      group.add(cone);
+
+      // Invisible pick sphere for accurate raycast hitting
+      const pickGeo = new THREE.SphereGeometry(0.20, 8, 8);
+      const pickMat = new THREE.MeshBasicMaterial({
+        visible: false,
+        depthTest: false,
+        depthWrite: false
+      });
+      const pickMesh = new THREE.Mesh(pickGeo, pickMat);
+      pickMesh.userData = group.userData;
+      group.add(pickMesh);
+
+      this.selectionGizmoHandles.set(def.key, group);
+      this.selectionGizmoMaterials.set(def.key, mat);
+      this.selectionAxisGizmo.add(group);
+    }
+
+    // Axis lines (X in red, Y in green, Z in blue)
+    const lineMatX = new THREE.LineBasicMaterial({ color: 0xff3b30, depthTest: false, depthWrite: false, transparent: true, opacity: 0.85 });
+    const lineMatY = new THREE.LineBasicMaterial({ color: 0x34c759, depthTest: false, depthWrite: false, transparent: true, opacity: 0.85 });
+    const lineMatZ = new THREE.LineBasicMaterial({ color: 0x248aff, depthTest: false, depthWrite: false, transparent: true, opacity: 0.85 });
+
+    const lineGeoX = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    const lineGeoY = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    const lineGeoZ = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+
+    this.selectionGizmoLineX = new THREE.Line(lineGeoX, lineMatX);
+    this.selectionGizmoLineY = new THREE.Line(lineGeoY, lineMatY);
+    this.selectionGizmoLineZ = new THREE.Line(lineGeoZ, lineMatZ);
+
+    this.selectionGizmoLineX.renderOrder = 97;
+    this.selectionGizmoLineY.renderOrder = 97;
+    this.selectionGizmoLineZ.renderOrder = 97;
+
+    this.selectionAxisGizmo.add(this.selectionGizmoLineX);
+    this.selectionAxisGizmo.add(this.selectionGizmoLineY);
+    this.selectionAxisGizmo.add(this.selectionGizmoLineZ);
+
+    // Origin sphere (compact center point)
+    const originGeo = new THREE.SphereGeometry(0.05, 12, 10);
+    const originMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.95
+    });
+    this.selectionGizmoOrigin = new THREE.Mesh(originGeo, originMat);
+    this.selectionGizmoOrigin.renderOrder = 99;
+    this.selectionAxisGizmo.add(this.selectionGizmoOrigin);
+
+    hookSceneMaterials(this.selectionAxisGizmo);
+    this.scene.add(this.selectionAxisGizmo);
+  }
+
+  updateSelectionAxisGizmo(bounds: any, isMicro = false) {
+    if (!bounds) {
+      this.clearSelectionAxisGizmo();
+      return;
+    }
+    if (!this.selectionAxisGizmo) this.setupSelectionAxisGizmo();
+
+    let minWx: number, maxWx: number, minWy: number, maxWy: number, minWz: number, maxWz: number;
+    if (isMicro) {
+      minWx = bounds.minX * MICRO_SIZE;
+      maxWx = (bounds.maxX + 1) * MICRO_SIZE;
+      minWy = bounds.minY * MICRO_SIZE;
+      maxWy = (bounds.maxY + 1) * MICRO_SIZE;
+      minWz = bounds.minZ * MICRO_SIZE;
+      maxWz = (bounds.maxZ + 1) * MICRO_SIZE;
+    } else {
+      minWx = bounds.minX;
+      maxWx = bounds.maxX + 1;
+      minWy = bounds.minY;
+      maxWy = bounds.maxY + 1;
+      minWz = bounds.minZ;
+      maxWz = bounds.maxZ + 1;
+    }
+
+    const cx = (minWx + maxWx) * 0.5;
+    const cy = (minWy + maxWy) * 0.5;
+    const cz = (minWz + maxWz) * 0.5;
+
+    const handleScale = isMicro ? 0.4 : 0.7;
+    const arrowOffset = isMicro ? 0.05 : 0.15;
+
+    const handlePositions: Record<string, [number, number, number]> = {
+      '+x': [maxWx + arrowOffset, cy, cz],
+      '-x': [minWx - arrowOffset, cy, cz],
+      '+y': [cx, maxWy + arrowOffset, cz],
+      '-y': [cx, minWy - arrowOffset, cz],
+      '+z': [cx, cy, maxWz + arrowOffset],
+      '-z': [cx, cy, minWz - arrowOffset]
+    };
+
+    for (const [key, pos] of Object.entries(handlePositions)) {
+      const handle = this.selectionGizmoHandles?.get(key);
+      if (handle) {
+        handle.position.set(pos[0], pos[1], pos[2]);
+        handle.scale.setScalar(handleScale);
+      }
+    }
+
+    this.selectionGizmoLineX.geometry.setFromPoints([
+      new THREE.Vector3(minWx - arrowOffset, cy, cz),
+      new THREE.Vector3(maxWx + arrowOffset, cy, cz)
+    ]);
+    this.selectionGizmoLineY.geometry.setFromPoints([
+      new THREE.Vector3(cx, minWy - arrowOffset, cz),
+      new THREE.Vector3(cx, maxWy + arrowOffset, cz)
+    ]);
+    this.selectionGizmoLineZ.geometry.setFromPoints([
+      new THREE.Vector3(cx, cy, minWz - arrowOffset),
+      new THREE.Vector3(cx, cy, maxWz + arrowOffset)
+    ]);
+
+    this.selectionGizmoOrigin.position.set(cx, cy, cz);
+    this.selectionGizmoOrigin.scale.setScalar(handleScale);
+
+    this.selectionAxisGizmo.visible = true;
+    this.selectionAxisGizmo.updateMatrixWorld(true);
+  }
+
+  highlightSelectionGizmoHandle(activeKey: string | null) {
+    if (!this.selectionGizmoMaterials) return;
+    const baseColors: Record<string, number> = {
+      '+x': 0xff3b30,
+      '-x': 0xff3b30,
+      '+y': 0x34c759,
+      '-y': 0x34c759,
+      '+z': 0x248aff,
+      '-z': 0x248aff
+    };
+    for (const [key, mat] of this.selectionGizmoMaterials) {
+      const handle = this.selectionGizmoHandles?.get(key);
+      if (key === activeKey) {
+        mat.color.setHex(0xffea00); // Highlight yellow
+        mat.opacity = 1.0;
+        if (handle) handle.scale.setScalar(1.25 * (handle.scale.x < 0.8 ? 0.65 : 1.0));
+      } else {
+        mat.color.setHex(baseColors[key]);
+        mat.opacity = 0.95;
+        if (handle) handle.scale.setScalar(handle.scale.x > 0.8 ? 1.0 : 0.65);
+      }
+    }
+  }
+
+  clearSelectionAxisGizmo() {
+    if (this.selectionAxisGizmo) {
+      this.selectionAxisGizmo.visible = false;
+      this.highlightSelectionGizmoHandle(null);
+    }
+  }
+
+  raycastSelectionGizmo(raycaster: THREE.Raycaster) {
+    if (!this.selectionAxisGizmo || !this.selectionAxisGizmo.visible) return null;
+    const candidates: THREE.Object3D[] = [];
+    if (this.selectionGizmoHandles) {
+      for (const handleGroup of this.selectionGizmoHandles.values()) {
+        candidates.push(...handleGroup.children);
+      }
+    }
+    const intersects = raycaster.intersectObjects(candidates, false);
+    if (intersects.length > 0) {
+      const hitObj = intersects[0].object;
+      const data = hitObj.userData;
+      if (data && data.isGizmoHandle) {
+        return {
+          handleKey: data.handleKey as string,
+          axis: data.axis as 'x' | 'y' | 'z',
+          direction: data.direction as 1 | -1,
+          point: intersects[0].point,
+          distance: intersects[0].distance
+        };
+      }
+    }
+    return null;
   }
 
   setWrenchTether(startPoint: THREE.Vector3 | null, endPoint: THREE.Vector3 | null) {

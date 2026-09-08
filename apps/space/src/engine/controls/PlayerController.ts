@@ -333,6 +333,9 @@ export class PlayerController {
   focusBlockPreview: any;
   boxSelectionPreview: any;
   inventoryPlacementPreview: any;
+  hoveredGizmoHandle: any;
+  activeGizmoDrag: any;
+  private selectionGizmoRaycaster: THREE.Raycaster | null = null;
 
   // --- Entity/component selector + inventory clipboard ---
   selectedSubtree: any;
@@ -432,6 +435,8 @@ export class PlayerController {
     this.boxSelectionPreview = null;
     // Hammer placement ghost: { slot, kind, position } | null
     this.inventoryPlacementPreview = null;
+    this.hoveredGizmoHandle = null;
+    this.activeGizmoDrag = null;
     // Entity/component selector + inventory clipboard
     this.selectedSubtree = null;          // { contraption, rootId, nodeIds: Set }
     this.selectedBlockSelection = null;   // { contraption, nodeId, blocks: [] }
@@ -550,7 +555,16 @@ export class PlayerController {
   setupEventListeners() {
     // Mouse Look
     document.addEventListener('mousemove', (e) => {
-      if (!this.isLocked) return;
+      if (this.activeGizmoDrag) {
+        this.updateGizmoDrag(e);
+        return;
+      }
+      if (!this.isLocked) {
+        if (this.activeTool === SpecialTool.SELECTOR) {
+          this.updateSelectionGizmoPointerHover(e);
+        }
+        return;
+      }
 
       this.yaw -= e.movementX * this.mouseSensitivity;
       this.pitch -= e.movementY * this.mouseSensitivity;
@@ -564,11 +578,19 @@ export class PlayerController {
     document.addEventListener('mouseup', (e) => {
       if (e.button !== 0) return;
       this.releaseWrenchGrab();
+      this.releaseGizmoDrag();
     });
 
     // Mouse Clicks
     document.addEventListener('mousedown', (e) => {
-      if (!this.isLocked) return;
+      if (!this.isLocked) {
+        if (this.activeTool === SpecialTool.SELECTOR && e.button === 0 && this.hoveredGizmoHandle) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.startGizmoDrag(this.hoveredGizmoHandle, e);
+        }
+        return;
+      }
 
       // Mouse movement and button events can arrive between animation frames.
       // Recast from the latest camera orientation and latest entity transforms
@@ -772,6 +794,11 @@ export class PlayerController {
   /** Switch tools from an interaction flow such as a successful selection copy. */
   activateTool(tool) {
     if (this.wrenchGrab) this.releaseWrenchGrab();
+    if (tool !== SpecialTool.SELECTOR) {
+      this.hoveredGizmoHandle = null;
+      this.releaseGizmoDrag();
+      this.sceneRenderer?.clearSelectionAxisGizmo?.();
+    }
     this.activeTool = tool;
     if (this.ui?.selectTool) this.ui.selectTool(tool);
     else this.ui?.updateToolPanelMode?.();
@@ -794,11 +821,14 @@ export class PlayerController {
     this.selectedBlockSelection = null;
     this.selectorLevel = null;
     this.selectorRange = null;
+    this.hoveredGizmoHandle = null;
+    this.releaseGizmoDrag();
     this.clearBrushSelection();
     this.boxSelectionPreview = null;
     this.focusBlockPreview = null;
     this.sceneRenderer?.clearBoxSelectionPreview?.();
     this.sceneRenderer?.clearFocusBlockGuide?.();
+    this.sceneRenderer?.clearSelectionAxisGizmo?.();
     if (this.sceneRenderer && this.contraptions) {
       this.sceneRenderer.updateSelectionHologram(null, null, null);
     }
@@ -872,6 +902,12 @@ export class PlayerController {
     // Count accepted game clicks, including swings into empty space. DOM/UI
     // clicks never reach this method unless the game owns pointer lock.
     this.toolUseSequence = (this.toolUseSequence || 0) + 1;
+    // Selector XYZ coordinate axis gizmo dragging
+    if (this.activeTool === SpecialTool.SELECTOR && this.hoveredGizmoHandle) {
+      this.startGizmoDrag(this.hoveredGizmoHandle, e);
+      return;
+    }
+
     // Hammer owns inventory construction. Selection never places inventory
     // contents, so copying and building remain distinct tool modes.
     if (this.activeTool === SpecialTool.HAMMER) {
@@ -6074,6 +6110,7 @@ export class PlayerController {
 
     this.updateMicroCarvePreview();
     this.updateInventoryPlacementPreview();
+    this.updateSelectionAxisGizmo();
   }
 
   /** Query along the current crosshair without changing hover presentation. */
@@ -6419,5 +6456,187 @@ export class PlayerController {
         quaternion: new THREE.Quaternion()
       };
     }
+  }
+
+  updateSelectionAxisGizmo() {
+    if (this.activeTool !== SpecialTool.SELECTOR) {
+      this.hoveredGizmoHandle = null;
+      this.sceneRenderer?.clearSelectionAxisGizmo?.();
+      return;
+    }
+
+    const isMicro = this.selectorMicroMode === true;
+    let bounds: any = null;
+    if (isMicro) {
+      bounds = this.contraptions?.getMicroSelectionBounds?.();
+    } else {
+      if (this.contraptions && this.contraptions.selectionCornerA !== null && this.contraptions.selectionCornerB !== null) {
+        bounds = this.contraptions.getSelectionBounds?.();
+      }
+    }
+
+    if (!bounds) {
+      this.hoveredGizmoHandle = null;
+      this.sceneRenderer?.clearSelectionAxisGizmo?.();
+      return;
+    }
+
+    this.sceneRenderer?.updateSelectionAxisGizmo?.(bounds, isMicro);
+
+    // If currently dragging, maintain active handle highlight
+    if (this.activeGizmoDrag) {
+      this.sceneRenderer?.highlightSelectionGizmoHandle?.(this.activeGizmoDrag.handleKey);
+      return;
+    }
+
+    // When pointer is locked, raycast against gizmo handles from the crosshair
+    if (this.isLocked) {
+      if (!this.selectionGizmoRaycaster) {
+        this.selectionGizmoRaycaster = new THREE.Raycaster();
+      }
+      const eyePos = this.physics?.getEyePosition?.() || this.camera.position;
+      const forwardFlat = PlayerController._forwardFlat
+        .set(0, 0, -1)
+        .applyQuaternion(this.camera.quaternion);
+      this.selectionGizmoRaycaster.set(eyePos, forwardFlat);
+
+      const hit = this.sceneRenderer?.raycastSelectionGizmo?.(this.selectionGizmoRaycaster);
+      this.hoveredGizmoHandle = hit;
+      this.sceneRenderer?.highlightSelectionGizmoHandle?.(hit ? hit.handleKey : null);
+    }
+  }
+
+  updateSelectionGizmoPointerHover(e: MouseEvent) {
+    if (this.activeTool !== SpecialTool.SELECTOR || !this.sceneRenderer) return;
+    if (!this.selectionGizmoRaycaster) {
+      this.selectionGizmoRaycaster = new THREE.Raycaster();
+    }
+    const pointer = new THREE.Vector2(
+      (e.clientX / window.innerWidth) * 2 - 1,
+      -(e.clientY / window.innerHeight) * 2 + 1
+    );
+    this.selectionGizmoRaycaster.setFromCamera(pointer, this.camera);
+    const hit = this.sceneRenderer.raycastSelectionGizmo(this.selectionGizmoRaycaster);
+    this.hoveredGizmoHandle = hit;
+    this.sceneRenderer.highlightSelectionGizmoHandle(hit ? hit.handleKey : null);
+  }
+
+  startGizmoDrag(hit: any, e: MouseEvent | null = null) {
+    if (!hit) return;
+    this.activeGizmoDrag = {
+      handleKey: hit.handleKey,
+      axis: hit.axis,
+      direction: hit.direction,
+      isMicro: this.selectorMicroMode === true,
+      accumulatedDelta: 0,
+      startX: e ? e.clientX : 0,
+      startY: e ? e.clientY : 0,
+      lastX: e ? e.clientX : 0,
+      lastY: e ? e.clientY : 0
+    };
+    this.sound?.playWrenchClick?.();
+  }
+
+  updateGizmoDrag(e: MouseEvent) {
+    if (!this.activeGizmoDrag) return;
+    const drag = this.activeGizmoDrag;
+    const isMicro = drag.isMicro;
+
+    const bounds = isMicro
+      ? this.contraptions.getMicroSelectionBounds()
+      : this.contraptions.getSelectionBounds();
+    if (!bounds) {
+      this.releaseGizmoDrag();
+      return;
+    }
+
+    const minWx = isMicro ? bounds.minX * MICRO_SIZE : bounds.minX;
+    const maxWx = isMicro ? (bounds.maxX + 1) * MICRO_SIZE : bounds.maxX + 1;
+    const minWy = isMicro ? bounds.minY * MICRO_SIZE : bounds.minY;
+    const maxWy = isMicro ? (bounds.maxY + 1) * MICRO_SIZE : bounds.maxY + 1;
+    const minWz = isMicro ? bounds.minZ * MICRO_SIZE : bounds.minZ;
+    const maxWz = isMicro ? (bounds.maxZ + 1) * MICRO_SIZE : bounds.maxZ + 1;
+
+    const center = new THREE.Vector3(
+      (minWx + maxWx) * 0.5,
+      (minWy + maxWy) * 0.5,
+      (minWz + maxWz) * 0.5
+    );
+
+    const axisVec = new THREE.Vector3(
+      drag.axis === 'x' ? 1 : 0,
+      drag.axis === 'y' ? 1 : 0,
+      drag.axis === 'z' ? 1 : 0
+    );
+
+    const v0 = center.clone().project(this.camera);
+    const v1 = center.clone().add(axisVec).project(this.camera);
+    const screenDir = new THREE.Vector2(v1.x - v0.x, -(v1.y - v0.y));
+    const len = screenDir.length();
+    if (len < 1e-4) {
+      screenDir.set(1, 0);
+    } else {
+      screenDir.divideScalar(len);
+    }
+
+    let dx = 0, dy = 0;
+    if (this.isLocked) {
+      dx = Number(e.movementX) || 0;
+      dy = Number(e.movementY) || 0;
+    } else {
+      dx = (e.clientX - drag.lastX);
+      dy = (e.clientY - drag.lastY);
+      drag.lastX = e.clientX;
+      drag.lastY = e.clientY;
+    }
+
+    const dot = (dx * screenDir.x + dy * screenDir.y) * drag.direction;
+    drag.accumulatedDelta += dot;
+
+    const pixelsPerStep = isMicro ? 8 : 16;
+    if (Math.abs(drag.accumulatedDelta) >= pixelsPerStep) {
+      const steps = Math.trunc(drag.accumulatedDelta / pixelsPerStep);
+      drag.accumulatedDelta -= steps * pixelsPerStep;
+
+      const result = this.contraptions.expandSelectionAxis(
+        drag.axis,
+        drag.direction,
+        steps,
+        isMicro
+      );
+
+      if (result.ok) {
+        this.sound?.playWrenchClick?.();
+        const updatedBounds = isMicro
+          ? this.contraptions.getMicroSelectionBounds()
+          : this.contraptions.getSelectionBounds();
+        this.sceneRenderer?.updateSelectionAxisGizmo(updatedBounds, isMicro);
+        this.sceneRenderer?.updateSelectionHologram(
+          this.contraptions.getSelectionBounds(),
+          this.contraptions.connectedSelection,
+          this.contraptions.microSelection
+        );
+
+        if (this.ui) {
+          if (isMicro) {
+            const b = updatedBounds;
+            const sx = b ? b.maxX - b.minX + 1 : 1;
+            const sy = b ? b.maxY - b.minY + 1 : 1;
+            const sz = b ? b.maxZ - b.minZ + 1 : 1;
+            this.ui.showToast(`Micro selection: ${sx}×${sy}×${sz} (${result.count} voxels) · G assemble · R copy · Del delete`);
+          } else {
+            const b = updatedBounds;
+            const sx = b ? b.maxX - b.minX + 1 : 1;
+            const sy = b ? b.maxY - b.minY + 1 : 1;
+            const sz = b ? b.maxZ - b.minZ + 1 : 1;
+            this.ui.showToast(`Selection: ${sx}×${sy}×${sz} (${result.count} blocks) · G assemble · R copy · Del delete`);
+          }
+        }
+      }
+    }
+  }
+
+  releaseGizmoDrag() {
+    this.activeGizmoDrag = null;
   }
 }

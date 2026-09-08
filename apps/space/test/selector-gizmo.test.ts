@@ -1,0 +1,278 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
+import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
+import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
+
+function makeStubWorld(microPairs: Array<[string, number]> = []) {
+  const map = new Map<string, { color: number }>();
+  for (const [key, color] of microPairs) {
+    map.set(key, { color });
+  }
+  return {
+    microVoxels: { cells: map },
+    getMicroBlock(mx: number, my: number, mz: number) {
+      return map.get(`${mx},${my},${mz}`) || null;
+    },
+    getBlock() { return 0; },
+    getBlockColor() { return 0; },
+    hasMicroInStandardCell() { return false; },
+    isAir(x: number, y: number, z: number) { return true; }
+  };
+}
+
+function makeStubSceneRenderer() {
+  const sr: any = Object.create(SceneRenderer.prototype);
+  sr.scene = new THREE.Scene();
+  sr.setupSelectionHologram();
+  sr.setupSelectionAxisGizmo();
+  return sr;
+}
+
+test('ContraptionManager.expandSelectionAxis expands and shrinks standard selection bounds', () => {
+  const scene = new THREE.Scene();
+  const world = makeStubWorld();
+  const manager = new ContraptionManager(scene, world, null, null);
+
+  manager.selectionCornerA = { x: 5, y: 10, z: 2 };
+  manager.selectionCornerB = { x: 8, y: 12, z: 6 };
+
+  // Expand +X by 2 blocks
+  let res = manager.expandSelectionAxis('x', 1, 2, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.bounds.maxX, 10);
+  assert.equal(res.bounds.minX, 5);
+
+  // Shrink +X by 1 block
+  res = manager.expandSelectionAxis('x', 1, -1, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.bounds.maxX, 9);
+
+  // Expand -X by 2 blocks (minX decreases)
+  res = manager.expandSelectionAxis('x', -1, 2, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.bounds.minX, 3);
+
+  // Expand +Y by 1 block
+  res = manager.expandSelectionAxis('y', 1, 1, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.bounds.maxY, 13);
+
+  // Expand -Z by 1 block (minZ decreases)
+  res = manager.expandSelectionAxis('z', -1, 1, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.bounds.minZ, 1);
+
+  // Clamping: cannot shrink below 1 block span (maxX cannot be less than minX)
+  res = manager.expandSelectionAxis('x', 1, -20, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.bounds.maxX, res.bounds.minX);
+});
+
+test('ContraptionManager.expandSelectionAxis expands and rematerializes micro selection', () => {
+  const scene = new THREE.Scene();
+  const world = makeStubWorld([
+    ['19,47,20', 0x111111],
+    ['20,47,20', 0x222222],
+    ['21,47,20', 0x333333]
+  ]);
+  const manager = new ContraptionManager(scene, world, null, null);
+
+  // Start with micro selection from 19 to 20 on X
+  manager.microBounds = { minX: 19, minY: 47, minZ: 20, maxX: 20, maxY: 47, maxZ: 20 };
+  manager.microSelection = manager.materializeMicroBox(19, 47, 20, 20, 47, 20);
+  assert.equal(manager.microSelection.length, 2);
+
+  // Expand +X by 1 micro step -> now covers 19..21 (should capture 3rd voxel)
+  const res = manager.expandSelectionAxis('x', 1, 1, true);
+  assert.equal(res.ok, true);
+  assert.equal(res.bounds.maxX, 21);
+  assert.equal(manager.microSelection.length, 3);
+
+  // Shrink +X by 1 micro step -> back to 19..20 (2 voxels)
+  const shrinkRes = manager.expandSelectionAxis('x', 1, -1, true);
+  assert.equal(shrinkRes.ok, true);
+  assert.equal(shrinkRes.bounds.maxX, 20);
+  assert.equal(manager.microSelection.length, 2);
+});
+
+test('SceneRenderer creates 6 selection gizmo handles and updates face positions', () => {
+  const renderer = makeStubSceneRenderer();
+  assert.ok(renderer.selectionAxisGizmo);
+  assert.equal(renderer.selectionGizmoHandles.size, 6);
+
+  const keys = ['+x', '-x', '+y', '-y', '+z', '-z'];
+  for (const k of keys) {
+    assert.ok(renderer.selectionGizmoHandles.has(k), `Handle ${k} should exist`);
+  }
+
+  // Update with standard bounds [2, 5, 3] to [4, 7, 6]
+  renderer.updateSelectionAxisGizmo({ minX: 2, minY: 5, minZ: 3, maxX: 4, maxY: 7, maxZ: 6 }, false);
+  assert.equal(renderer.selectionAxisGizmo.visible, true);
+
+  // +X face is at maxX + 1 = 5.0; handle position should be > 5.0
+  const handlePosX = renderer.selectionGizmoHandles.get('+x')!.position;
+  assert.ok(handlePosX.x >= 5.0, '+X handle should be at or outside +X face');
+
+  // -X face is at minX = 2.0; handle position should be < 2.0
+  const handleNegX = renderer.selectionGizmoHandles.get('-x')!.position;
+  assert.ok(handleNegX.x <= 2.0, '-X handle should be at or outside -X face');
+
+  // Test raycast against gizmo
+  const raycaster = new THREE.Raycaster();
+  // Aim directly at the +X handle position from outside
+  raycaster.set(new THREE.Vector3(10, handlePosX.y, handlePosX.z), new THREE.Vector3(-1, 0, 0));
+  const hit = renderer.raycastSelectionGizmo(raycaster);
+  assert.ok(hit, 'Raycaster should intersect gizmo handle');
+  assert.equal(hit.axis, 'x');
+  assert.equal(hit.direction, 1);
+
+  // Clear gizmo
+  renderer.clearSelectionAxisGizmo();
+  assert.equal(renderer.selectionAxisGizmo.visible, false);
+});
+
+test('PlayerController activates SelectionAxisGizmo on confirmed selection and drags to expand', () => {
+  const scene = new THREE.Scene();
+  const world = makeStubWorld();
+  const manager = new ContraptionManager(scene, world, null, null);
+  const renderer = makeStubSceneRenderer();
+
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorMicroMode = false;
+  controller.contraptions = manager;
+  controller.sceneRenderer = renderer;
+  controller.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  controller.camera.position.set(0, 10, 20);
+  controller.camera.lookAt(0, 0, 0);
+  controller.physics = { getEyePosition: () => new THREE.Vector3(0, 10, 20) };
+  controller.ui = { showToast() {} };
+  controller.sound = { playWrenchClick() {} };
+  controller.hoveredGizmoHandle = null;
+  controller.activeGizmoDrag = null;
+
+  // Before confirmation, gizmo is not shown
+  controller.updateSelectionAxisGizmo();
+  assert.equal(renderer.selectionAxisGizmo.visible, false);
+
+  // Confirm standard selection
+  manager.selectionCornerA = { x: 2, y: 3, z: 4 };
+  manager.selectionCornerB = { x: 5, y: 6, z: 7 };
+  controller.updateSelectionAxisGizmo();
+  assert.equal(renderer.selectionAxisGizmo.visible, true);
+
+  // Start gizmo drag on +X
+  controller.startGizmoDrag({ handleKey: '+x', axis: 'x', direction: 1 });
+  assert.ok(controller.activeGizmoDrag);
+  assert.equal(controller.activeGizmoDrag.axis, 'x');
+
+  // Trigger drag step expansion
+  manager.expandSelectionAxis('x', 1, 1, false);
+  const bounds = manager.getSelectionBounds();
+  assert.equal(bounds.maxX, 6, 'maxX should expand from 5 to 6');
+
+  // Release drag
+  controller.releaseGizmoDrag();
+  assert.equal(controller.activeGizmoDrag, null);
+
+  // Switching tool clears the gizmo
+  controller.activateTool(SpecialTool.SHOVEL);
+  assert.equal(renderer.selectionAxisGizmo.visible, false);
+});
+
+test('handleLeftClick on gizmo handle starts drag without clearing selection', () => {
+  const scene = new THREE.Scene();
+  const world = makeStubWorld();
+  const manager = new ContraptionManager(scene, world, null, null);
+  const renderer = makeStubSceneRenderer();
+
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorMicroMode = false;
+  controller.contraptions = manager;
+  controller.sceneRenderer = renderer;
+  controller.keys = {};
+  controller.currentRaycast = { hit: true, hitPos: { x: 10, y: 10, z: 10 } };
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+
+  // Set up confirmed selection
+  manager.selectionCornerA = { x: 10, y: 10, z: 10 };
+  manager.selectionCornerB = { x: 12, y: 12, z: 12 };
+
+  // Hovering a gizmo handle
+  controller.hoveredGizmoHandle = { handleKey: '+y', axis: 'y', direction: 1 };
+  controller.handleLeftClick();
+
+  // Drag should start, selection must NOT be cleared
+  assert.ok(controller.activeGizmoDrag);
+  assert.equal(controller.activeGizmoDrag.axis, 'y');
+  assert.notEqual(manager.selectionCornerA, null);
+  assert.notEqual(manager.selectionCornerB, null);
+
+  // Release drag
+  controller.releaseGizmoDrag();
+
+  // Clicking without hovering gizmo handle clears the selection
+  controller.hoveredGizmoHandle = null;
+  controller.handleLeftClick();
+  assert.equal(manager.selectionCornerA, null);
+  assert.equal(manager.selectionCornerB, null);
+});
+
+test('updateGizmoDrag translates mouse movement to discrete steps in micro mode', () => {
+  const scene = new THREE.Scene();
+  const world = makeStubWorld([
+    ['10,10,10', 0x111111],
+    ['11,10,10', 0x222222],
+    ['12,10,10', 0x333333]
+  ]);
+  const manager = new ContraptionManager(scene, world, null, null);
+  const renderer = makeStubSceneRenderer();
+
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorMicroMode = true;
+  controller.contraptions = manager;
+  controller.sceneRenderer = renderer;
+  controller.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  // Looking down -Z from (0, 0, 10)
+  controller.camera.position.set(0, 0, 10);
+  controller.camera.lookAt(0, 0, 0);
+  controller.isLocked = true;
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+
+  manager.microBounds = { minX: 10, minY: 10, minZ: 10, maxX: 11, maxY: 10, maxZ: 10 };
+  manager.microSelection = manager.materializeMicroBox(10, 10, 10, 11, 10, 10);
+  assert.equal(manager.microSelection.length, 2);
+
+  controller.startGizmoDrag({ handleKey: '+x', axis: 'x', direction: 1 });
+  assert.equal(controller.activeGizmoDrag.isMicro, true);
+
+  // Simulate mouse movement in +X direction (movementX > 0)
+  const event = { movementX: 30, movementY: 0 } as any;
+  controller.updateGizmoDrag(event);
+
+  // maxX should have expanded
+  const mb = manager.getMicroSelectionBounds();
+  assert.ok(mb.maxX > 11, `maxX should expand past 11, got ${mb.maxX}`);
+  assert.equal(manager.microSelection.length, 3, 'Newly covered voxel should be captured');
+});
+
+test('expandSelectionAxis clamps to MAX_ENTITY_BOUNDS (64 blocks)', () => {
+  const scene = new THREE.Scene();
+  const world = makeStubWorld();
+  const manager = new ContraptionManager(scene, world, null, null);
+
+  manager.selectionCornerA = { x: 0, y: 10, z: 0 };
+  manager.selectionCornerB = { x: 60, y: 10, z: 0 };
+
+  // Try to expand by 20 blocks (would be 81 total, exceeding 64 limit)
+  manager.expandSelectionAxis('x', 1, 20, false);
+  const bounds = manager.getSelectionBounds();
+  assert.equal(bounds.maxX - bounds.minX + 1, 64, 'Span must be clamped to 64 blocks');
+});
+
