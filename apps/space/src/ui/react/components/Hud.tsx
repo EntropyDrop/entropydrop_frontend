@@ -240,6 +240,8 @@ function SelectorPanel() {
       <div className="selector-toolbox-content" id="selector-toolbox-content">
         <div className="selector-action-buttons">
           <button id="assemble-btn" tabIndex={-1} className="banner-btn primary" disabled={!selector.canAssemble} onClick={() => controller?.assembleSelection?.(ContraptionMode.PROGRAMMABLE)}>{selector.assembleLabel}</button>
+          <button id="fill-btn" tabIndex={-1} className="banner-btn secondary" title="Fill selection with active color (B)" disabled={!selector.canDelete} onClick={() => controller?.fillSelectionBlocks?.()}>Fill (B)</button>
+          <button id="paint-btn" tabIndex={-1} className="banner-btn secondary" title="Paint selection with active color (P)" disabled={!selector.canDelete} onClick={() => controller?.paintSelectionBlocks?.()}>Paint (P)</button>
           <button id="copy-btn" tabIndex={-1} className="banner-btn secondary" title="Copy selection to backpack (R)" disabled={!selector.canCopy} onClick={() => controller?.copySelectionSmart?.()}>Copy (R)</button>
           <button id="delete-btn" tabIndex={-1} className="banner-btn danger" title="Delete selection (Del)" disabled={!selector.canDelete} onClick={() => controller?.deleteSelectionBlocks?.()}>Delete (Del)</button>
         </div>

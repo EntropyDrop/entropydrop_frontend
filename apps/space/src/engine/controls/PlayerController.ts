@@ -681,6 +681,18 @@ export class PlayerController {
           }
           break;
 
+        case 'KeyB': // B key: fill selection with active color
+          if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
+            this.fillSelectionBlocks();
+          }
+          break;
+
+        case 'KeyP': // P key: paint/recolor selection with active color
+          if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
+            this.paintSelectionBlocks();
+          }
+          break;
+
         case 'Delete': // Del key: delete the selected entity/component or selected blocks
         case 'Backspace':
           this.deleteSelectionBlocks();
@@ -1289,7 +1301,7 @@ export class PlayerController {
               const count = info?.count ?? 0;
               const clampedNote = cornerResult?.clamped ? ' · clamped to the 64×64×64 limit' : '';
               if (this.ui) {
-                this.ui.showToast(`Selector [2/2] micro box set! (${count} micro voxels)${clampedNote} · G assemble · R copy · Del delete`);
+                this.ui.showToast(`Selector [2/2] micro box set! (${count} micro voxels)${clampedNote} · G assemble · R copy · B fill · P paint · Del delete`);
               }
             } else {
               const bounds = this.contraptions.getSelectionBounds();
@@ -1299,7 +1311,7 @@ export class PlayerController {
               const totalBlocks = this.contraptions.getSelectionBlockCount();
               const clampedNote = cornerResult?.clamped ? ' · clamped to the 64×64×64 limit' : '';
               if (this.ui) {
-                this.ui.showToast(`Selector [2/2] box set! (${sx}x${sy}x${sz}, ${totalBlocks} blocks)${clampedNote} · G assemble · R copy · Del delete`);
+                this.ui.showToast(`Selector [2/2] box set! (${sx}x${sy}x${sz}, ${totalBlocks} blocks)${clampedNote} · G assemble · R copy · B fill · P paint · Del delete`);
               }
             }
           } else {
@@ -3181,6 +3193,90 @@ export class PlayerController {
     let removedStandard = 0;
     let removedMicro = 0;
 
+    const partition = (Array.isArray(microSelection) || manager.microBounds) && manager.partitionMicroSelection
+      ? manager.partitionMicroSelection()
+      : null;
+
+    if (partition) {
+      const stdCells = partition.standardCells;
+      const microCells = partition.microCells;
+      const total = stdCells.length + microCells.length;
+      const subdividedStandardCells = new Set<string>();
+      const started = this.startBulkEditJob({
+        label: 'Deleting micro selection',
+        total,
+        step: index => {
+          if (index < stdCells.length) {
+            const cell = stdCells[index];
+            const block = this.world.getBlock?.(cell.x, cell.y, cell.z);
+            if (block !== BlockTypes.AIR && particleBudget > 0) {
+              this.particles?.emitBlockBreak?.(
+                { x: cell.x + 0.5, y: cell.y + 0.5, z: cell.z + 0.5 },
+                this.world.getBlockColor?.(cell.x, cell.y, cell.z),
+                6
+              );
+              particleBudget--;
+            }
+            const result = this.performBasicAction({
+              domain: ActionDomain.WORLD,
+              action: 'clear-cell',
+              cell
+            });
+            removedStandard += result.standard || 0;
+            removedMicro += result.micro || 0;
+            return result.removed || 0;
+          } else {
+            const cell = microCells[index - stdCells.length];
+            const wx = Math.floor(cell.x / MICRO_DIVISIONS);
+            const wy = Math.floor(cell.y / MICRO_DIVISIONS);
+            const wz = Math.floor(cell.z / MICRO_DIVISIONS);
+            let block = this.world.getMicroBlock?.(cell.x, cell.y, cell.z);
+            if (!block && this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
+              block = { color: this.world.getBlockColor?.(wx, wy, wz) };
+            }
+            if (block && particleBudget > 0) {
+              this.particles?.emitBlockBreak?.(
+                {
+                  x: cell.x / MICRO_DIVISIONS + 0.5 / MICRO_DIVISIONS,
+                  y: cell.y / MICRO_DIVISIONS + 0.5 / MICRO_DIVISIONS,
+                  z: cell.z / MICRO_DIVISIONS + 0.5 / MICRO_DIVISIONS
+                },
+                block.color,
+                3
+              );
+              particleBudget--;
+            }
+            const cellKey = `${wx},${wy},${wz}`;
+            let result;
+            if (!subdividedStandardCells.has(cellKey)) {
+              if (this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
+                result = this.performBasicAction({
+                  domain: ActionDomain.WORLD,
+                  action: 'subdivide-standard',
+                  cell: { x: wx, y: wy, z: wz },
+                  micro: cell
+                });
+              }
+              subdividedStandardCells.add(cellKey);
+            }
+            if (!result) {
+              result = this.performBasicAction({
+                domain: ActionDomain.WORLD,
+                action: 'remove-micro',
+                micro: cell
+              });
+            }
+            const changed = result.removed || 0;
+            removedMicro += changed;
+            return changed;
+          }
+        },
+        finish: () => this.finishWorldSelectionDelete(removedStandard, removedMicro)
+      });
+      if (started) manager.clearSelection?.();
+      return started;
+    }
+
     if (Array.isArray(microSelection)) {
       const cells = microSelection.map(cell => ({ x: cell.x, y: cell.y, z: cell.z }));
       const subdividedStandardCells = new Set<string>();
@@ -3284,6 +3380,221 @@ export class PlayerController {
     return started;
   }
 
+  private startLargeWorldSelectionFill(manager, partition, bounds, color) {
+    let placedStandard = 0;
+    let placedMicro = 0;
+
+    if (partition) {
+      const stdCells = partition.standardCells;
+      const microCells = partition.microCells;
+      const total = stdCells.length + microCells.length;
+      const subdividedStandardCells = new Set<string>();
+      const started = this.startBulkEditJob({
+        label: 'Filling micro selection',
+        total,
+        step: index => {
+          if (index < stdCells.length) {
+            const cell = stdCells[index];
+            const result = this.performBasicAction({
+              domain: ActionDomain.WORLD,
+              action: 'place-standard',
+              cell,
+              color,
+              replace: true
+            });
+            if (result.placed) placedStandard++;
+            return result.placed || 0;
+          } else {
+            const cell = microCells[index - stdCells.length];
+            const wx = Math.floor(cell.x / MICRO_DIVISIONS);
+            const wy = Math.floor(cell.y / MICRO_DIVISIONS);
+            const wz = Math.floor(cell.z / MICRO_DIVISIONS);
+            const cellKey = `${wx},${wy},${wz}`;
+            if (!subdividedStandardCells.has(cellKey)) {
+              if (this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
+                this.performBasicAction({
+                  domain: ActionDomain.WORLD,
+                  action: 'subdivide-standard',
+                  cell: { x: wx, y: wy, z: wz },
+                  micro: cell
+                });
+              }
+              subdividedStandardCells.add(cellKey);
+            }
+            const result = this.performBasicAction({
+              domain: ActionDomain.WORLD,
+              action: 'place-micro',
+              micro: cell,
+              color,
+              replace: true
+            });
+            if (result.placed) placedMicro++;
+            return result.placed || 0;
+          }
+        },
+        finish: () => {
+          this.sound?.playBlockPlace?.();
+          const parts = [];
+          if (placedStandard > 0) parts.push(`${placedStandard} blocks`);
+          if (placedMicro > 0) parts.push(`${placedMicro} micro voxels`);
+          this.ui?.showToast?.(`Filled ${parts.join(' + ') || '0 voxels'} with ${colorToHex(color)}`);
+        }
+      });
+      if (started) manager.clearSelection?.();
+      return started;
+    }
+
+    const sparseCells = manager.connectedSelection !== null
+      ? [...(manager.connectedSelection || [])].map(cell => ({ x: cell.x, y: cell.y, z: cell.z }))
+      : null;
+    const sizeY = bounds.maxY - bounds.minY + 1;
+    const sizeZ = bounds.maxZ - bounds.minZ + 1;
+    const total = sparseCells?.length ?? (bounds.maxX - bounds.minX + 1) * sizeY * sizeZ;
+    const cellAt = index => {
+      if (sparseCells) return sparseCells[index];
+      return {
+        x: bounds.minX + Math.floor(index / (sizeY * sizeZ)),
+        y: bounds.minY + Math.floor(index / sizeZ) % sizeY,
+        z: bounds.minZ + index % sizeZ
+      };
+    };
+
+    const started = this.startBulkEditJob({
+      label: 'Filling selection',
+      total,
+      step: index => {
+        const cell = cellAt(index);
+        const result = this.performBasicAction({
+          domain: ActionDomain.WORLD,
+          action: 'place-standard',
+          cell,
+          color,
+          replace: true
+        });
+        if (result.placed) placedStandard++;
+        return result.placed || 0;
+      },
+      finish: () => {
+        this.sound?.playBlockPlace?.();
+        this.ui?.showToast?.(`Filled ${placedStandard} blocks with ${colorToHex(color)}`);
+      }
+    });
+    if (started) manager.clearSelection?.();
+    return started;
+  }
+
+  private startLargeWorldSelectionPaint(manager, partition, bounds, color, fromColor?: number) {
+    let paintedStandard = 0;
+    let paintedMicro = 0;
+
+    if (partition) {
+      const stdCells = partition.standardCells;
+      const microCells = partition.microCells;
+      const total = stdCells.length + microCells.length;
+      const subdividedStandardCells = new Set<string>();
+      const started = this.startBulkEditJob({
+        label: 'Recoloring micro selection',
+        total,
+        step: index => {
+          if (index < stdCells.length) {
+            const cell = stdCells[index];
+            const currColor = this.world.getBlockColor?.(cell.x, cell.y, cell.z);
+            if (fromColor === undefined || currColor === fromColor) {
+              const result = this.performBasicAction({
+                domain: ActionDomain.WORLD,
+                action: 'paint-standard',
+                cell,
+                color
+              });
+              if (result.painted) paintedStandard++;
+              return result.painted || 0;
+            }
+            return 0;
+          } else {
+            const cell = microCells[index - stdCells.length];
+            const wx = Math.floor(cell.x / MICRO_DIVISIONS);
+            const wy = Math.floor(cell.y / MICRO_DIVISIONS);
+            const wz = Math.floor(cell.z / MICRO_DIVISIONS);
+            const cellKey = `${wx},${wy},${wz}`;
+            if (!subdividedStandardCells.has(cellKey)) {
+              if (this.world.getBlock?.(wx, wy, wz) !== BlockTypes.AIR) {
+                this.performBasicAction({
+                  domain: ActionDomain.WORLD,
+                  action: 'subdivide-standard',
+                  cell: { x: wx, y: wy, z: wz },
+                  micro: cell
+                });
+              }
+              subdividedStandardCells.add(cellKey);
+            }
+            const mBlock = this.world.getMicroBlock?.(cell.x, cell.y, cell.z);
+            if (mBlock && (fromColor === undefined || mBlock.color === fromColor)) {
+              const result = this.performBasicAction({
+                domain: ActionDomain.WORLD,
+                action: 'paint-micro',
+                micro: cell,
+                color
+              });
+              if (result.painted) paintedMicro++;
+              return result.painted || 0;
+            }
+            return 0;
+          }
+        },
+        finish: () => {
+          this.sound?.playBlockPlace?.();
+          const parts = [];
+          if (paintedStandard > 0) parts.push(`${paintedStandard} blocks`);
+          if (paintedMicro > 0) parts.push(`${paintedMicro} micro voxels`);
+          this.ui?.showToast?.(`Recolored ${parts.join(' + ') || '0 voxels'} to ${colorToHex(color)}`);
+        }
+      });
+      if (started) manager.clearSelection?.();
+      return started;
+    }
+
+    const sparseCells = manager.connectedSelection !== null
+      ? [...(manager.connectedSelection || [])].map(cell => ({ x: cell.x, y: cell.y, z: cell.z }))
+      : null;
+    const sizeY = bounds.maxY - bounds.minY + 1;
+    const sizeZ = bounds.maxZ - bounds.minZ + 1;
+    const total = sparseCells?.length ?? (bounds.maxX - bounds.minX + 1) * sizeY * sizeZ;
+    const cellAt = index => {
+      if (sparseCells) return sparseCells[index];
+      return {
+        x: bounds.minX + Math.floor(index / (sizeY * sizeZ)),
+        y: bounds.minY + Math.floor(index / sizeZ) % sizeY,
+        z: bounds.minZ + index % sizeZ
+      };
+    };
+
+    const started = this.startBulkEditJob({
+      label: 'Recoloring selection',
+      total,
+      step: index => {
+        const cell = cellAt(index);
+        const currColor = this.world.getBlockColor?.(cell.x, cell.y, cell.z);
+        if (fromColor === undefined || currColor === fromColor) {
+          const result = this.performBasicAction({
+            domain: ActionDomain.WORLD,
+            action: 'paint-standard',
+            cell,
+            color
+          });
+          if (result.painted) paintedStandard++;
+          return result.painted || 0;
+        }
+        return 0;
+      },
+      finish: () => {
+        this.sound?.playBlockPlace?.();
+        this.ui?.showToast?.(`Recolored ${paintedStandard} blocks to ${colorToHex(color)}`);
+      }
+    });
+    if (started) manager.clearSelection?.();
+    return started;
+  }
+
   /**
    * Delete removes blocks in the current selection and then resets the selection.
    *
@@ -3374,27 +3685,53 @@ export class PlayerController {
       return;
     }
     const microSelection = manager.microSelection;
-    const isMicroSelection = Array.isArray(microSelection);
+    const isMicroSelection = Array.isArray(microSelection) || manager.microBounds !== null;
+    const partition = isMicroSelection && manager.partitionMicroSelection ? manager.partitionMicroSelection() : null;
     const bounds = isMicroSelection ? null : manager.getSelectionBounds();
     if (!bounds && !isMicroSelection) {
       if (this.ui) this.ui.showToast('Nothing selected - box-select a region with the selector first, then press Del');
       return;
     }
 
-    const largeSelectionCount = isMicroSelection
-      ? microSelection.length
-      : manager.connectedSelection !== null
-        ? manager.connectedSelection.length
-        : (bounds.maxX - bounds.minX + 1)
-          * (bounds.maxY - bounds.minY + 1)
-          * (bounds.maxZ - bounds.minZ + 1);
+    const largeSelectionCount = partition
+      ? partition.standardCells.length + partition.microCells.length
+      : isMicroSelection
+        ? microSelection?.length || 0
+        : manager.connectedSelection !== null
+          ? manager.connectedSelection.length
+          : (bounds.maxX - bounds.minX + 1)
+            * (bounds.maxY - bounds.minY + 1)
+            * (bounds.maxZ - bounds.minZ + 1);
     if (largeSelectionCount > BULK_EDIT_THRESHOLD) {
       this.startLargeWorldSelectionDelete(manager, microSelection, bounds);
       return;
     }
 
     let particleBudget = 64;
-    if (isMicroSelection) {
+    if (partition) {
+      for (const cell of partition.standardCells) {
+        const block = this.world.getBlock?.(cell.x, cell.y, cell.z);
+        if (block !== BlockTypes.AIR && particleBudget > 0) {
+          this.particles?.emitBlockBreak(
+            { x: cell.x + 0.5, y: cell.y + 0.5, z: cell.z + 0.5 },
+            this.world.getBlockColor?.(cell.x, cell.y, cell.z),
+            6
+          );
+          particleBudget--;
+        }
+      }
+      for (const cell of partition.microCells) {
+        const block = this.world.getMicroBlock?.(cell.x, cell.y, cell.z);
+        if (block && particleBudget > 0) {
+          this.particles?.emitBlockBreak(
+            { x: (cell.x + 0.5) * MICRO_SIZE, y: (cell.y + 0.5) * MICRO_SIZE, z: (cell.z + 0.5) * MICRO_SIZE },
+            block.color,
+            3
+          );
+          particleBudget--;
+        }
+      }
+    } else if (isMicroSelection && Array.isArray(microSelection)) {
       // Micro mode deletes exactly the selected 0.125 m cells that hold a voxel.
       for (const cell of microSelection) {
         let block = this.world.getMicroBlock?.(cell.x, cell.y, cell.z);
@@ -3457,6 +3794,156 @@ export class PlayerController {
       }
     } else if (this.ui) {
       this.ui.showToast('Selection region is empty (no blocks to delete)');
+    }
+  }
+
+  /**
+   * Fill fills the current selection with solid blocks using the active color.
+   */
+  fillSelectionBlocks(targetColor?: number) {
+    const manager = this.contraptions;
+    if (!manager) return;
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
+      return;
+    }
+
+    const color = targetColor ?? this.selectedColor;
+
+    // 1. Entity blocks fill
+    if (this.selectedBlockSelection && this.selectedBlockSelection.blocks.length > 0) {
+      const { contraption, nodeId, blocks } = this.selectedBlockSelection;
+      const result = this.performBasicAction({
+        domain: ActionDomain.ENTITY,
+        action: 'paint-blocks',
+        target: { contraption },
+        nodeId,
+        blocks,
+        color
+      });
+      contraption.clearSubtreeHighlight?.();
+      this.selectedBlockSelection = null;
+      if (result.ok) {
+        this.sound?.playBlockPlace?.();
+        this.ui?.showToast?.(`Filled ${result.painted || blocks.length} blocks on [${nodeId}] with ${colorToHex(color)}`);
+      }
+      return;
+    }
+
+    // 2. World box / micro selection fill
+    if (!this.world || !manager.hasValidSelection()) {
+      this.ui?.showToast?.('Nothing selected - box-select a region with the selector first, then press B or click Fill');
+      return;
+    }
+
+    const isMicroSelection = Array.isArray(manager.microSelection) || manager.microBounds !== null;
+    const partition = isMicroSelection && manager.partitionMicroSelection ? manager.partitionMicroSelection() : null;
+    const bounds = isMicroSelection ? null : manager.getSelectionBounds();
+
+    const largeSelectionCount = partition
+      ? partition.standardCells.length + partition.microCells.length
+      : isMicroSelection
+        ? manager.microSelection?.length || 0
+        : manager.connectedSelection !== null
+          ? manager.connectedSelection.length
+          : (bounds.maxX - bounds.minX + 1) * (bounds.maxY - bounds.minY + 1) * (bounds.maxZ - bounds.minZ + 1);
+
+    if (largeSelectionCount > BULK_EDIT_THRESHOLD) {
+      this.startLargeWorldSelectionFill(manager, partition, bounds, color);
+      return;
+    }
+
+    const result = this.performBasicAction({
+      domain: ActionDomain.SELECTION,
+      action: 'fill',
+      color
+    });
+
+    if (result.ok && (result.placed || 0) > 0) {
+      this.sound?.playBlockPlace?.();
+      const parts = [];
+      if (result.standard > 0) parts.push(`${result.standard} blocks`);
+      if (result.micro > 0) parts.push(`${result.micro} micro voxels`);
+      this.ui?.showToast?.(`Filled ${parts.join(' + ') || `${result.placed} voxels`} with ${colorToHex(color)}`);
+    } else {
+      this.ui?.showToast?.('Selection region fill completed');
+    }
+  }
+
+  /**
+   * Paint/Recolor replaces block colors in the current selection with the active color.
+   */
+  paintSelectionBlocks(targetColor?: number, fromColor?: number) {
+    const manager = this.contraptions;
+    if (!manager) return;
+    if (this.bulkEditJob) {
+      this.ui?.showToast?.(`Please wait for ${this.bulkEditJob.label.toLowerCase()} to finish`);
+      return;
+    }
+
+    const color = targetColor ?? this.selectedColor;
+
+    // 1. Entity blocks recolor
+    if (this.selectedBlockSelection && this.selectedBlockSelection.blocks.length > 0) {
+      const { contraption, nodeId, blocks } = this.selectedBlockSelection;
+      const targetBlocks = fromColor !== undefined
+        ? blocks.filter(b => b.color === fromColor)
+        : blocks;
+      const result = this.performBasicAction({
+        domain: ActionDomain.ENTITY,
+        action: 'paint-blocks',
+        target: { contraption },
+        nodeId,
+        blocks: targetBlocks,
+        color
+      });
+      contraption.clearSubtreeHighlight?.();
+      this.selectedBlockSelection = null;
+      if (result.ok) {
+        this.sound?.playBlockPlace?.();
+        this.ui?.showToast?.(`Recolored ${result.painted || targetBlocks.length} blocks on [${nodeId}] to ${colorToHex(color)}`);
+      }
+      return;
+    }
+
+    // 2. World box / micro selection recolor
+    if (!this.world || !manager.hasValidSelection()) {
+      this.ui?.showToast?.('Nothing selected - box-select a region with the selector first, then press P or click Paint');
+      return;
+    }
+
+    const isMicroSelection = Array.isArray(manager.microSelection) || manager.microBounds !== null;
+    const partition = isMicroSelection && manager.partitionMicroSelection ? manager.partitionMicroSelection() : null;
+    const bounds = isMicroSelection ? null : manager.getSelectionBounds();
+
+    const largeSelectionCount = partition
+      ? partition.standardCells.length + partition.microCells.length
+      : isMicroSelection
+        ? manager.microSelection?.length || 0
+        : manager.connectedSelection !== null
+          ? manager.connectedSelection.length
+          : (bounds.maxX - bounds.minX + 1) * (bounds.maxY - bounds.minY + 1) * (bounds.maxZ - bounds.minZ + 1);
+
+    if (largeSelectionCount > BULK_EDIT_THRESHOLD) {
+      this.startLargeWorldSelectionPaint(manager, partition, bounds, color, fromColor);
+      return;
+    }
+
+    const result = this.performBasicAction({
+      domain: ActionDomain.SELECTION,
+      action: 'paint',
+      color,
+      options: fromColor !== undefined ? { fromColor } : null
+    });
+
+    if (result.ok && (result.painted || 0) > 0) {
+      this.sound?.playBlockPlace?.();
+      const parts = [];
+      if (result.standard > 0) parts.push(`${result.standard} blocks`);
+      if (result.micro > 0) parts.push(`${result.micro} micro voxels`);
+      this.ui?.showToast?.(`Recolored ${parts.join(' + ') || `${result.painted} voxels`} to ${colorToHex(color)}`);
+    } else {
+      this.ui?.showToast?.('Selection region contains no matching blocks to recolor');
     }
   }
 
@@ -6623,13 +7110,13 @@ export class PlayerController {
             const sx = b ? b.maxX - b.minX + 1 : 1;
             const sy = b ? b.maxY - b.minY + 1 : 1;
             const sz = b ? b.maxZ - b.minZ + 1 : 1;
-            this.ui.showToast(`Micro selection: ${sx}×${sy}×${sz} (${result.count} voxels) · G assemble · R copy · Del delete`);
+            this.ui.showToast(`Micro selection: ${sx}×${sy}×${sz} (${result.count} voxels) · G assemble · R copy · B fill · P paint · Del delete`);
           } else {
             const b = updatedBounds;
             const sx = b ? b.maxX - b.minX + 1 : 1;
             const sy = b ? b.maxY - b.minY + 1 : 1;
             const sz = b ? b.maxZ - b.minZ + 1 : 1;
-            this.ui.showToast(`Selection: ${sx}×${sy}×${sz} (${result.count} blocks) · G assemble · R copy · Del delete`);
+            this.ui.showToast(`Selection: ${sx}×${sy}×${sz} (${result.count} blocks) · G assemble · R copy · B fill · P paint · Del delete`);
           }
         }
       }
