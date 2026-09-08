@@ -733,11 +733,18 @@ export function MonitorPage({ current }: MonitorPageProps) {
         method: 'DELETE'
       })
       if (response.ok) {
+        const data = await response.json().catch(() => ({}))
+        const characterResetMsg = data.character_reset
+          ? (isZh ? '（已重置使用此皮肤的个人形象）' : ' (Personal character using this skin has been reset)')
+          : ''
         setDeleteMessage({
           type: 'success',
-          text: isZh ? `成功删除皮肤 ${id} 及其相关资源。` : `Skin ${id} and associated resources successfully deleted.`
+          text: isZh
+            ? `成功删除皮肤 ${id} 及其相关资源${characterResetMsg}。`
+            : `Skin ${id} and associated resources successfully deleted${characterResetMsg}.`
         })
         setPurgeIdInput('')
+        window.dispatchEvent(new Event('user-updated'))
         // Refresh data
         fetchStats()
         fetchUnfinished(page)
@@ -2296,12 +2303,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
                   {isZh ? (
                     <>
                       您正在请求彻底物理删除皮肤 <strong>{deletingId}</strong>。
-                      这将永久删除该生成日志、数据库记录，并<b>物理擦除</b> S3 中的源图与结果图文件。此操作不可逆！
+                      这将永久删除该生成日志、数据库记录，并<b>物理擦除</b> S3 中的源图与结果图文件。若有人使用了此皮肤作为个人形象，该形象将被自动重置。此操作不可逆！
                     </>
                   ) : (
                     <>
                       Are you sure you want to permanently purge skin <strong>{deletingId}</strong>?
-                      This will soft-delete the database record and <b>physically erase</b> all associated source and result files from Amazon S3. This action is irreversible.
+                      This will soft-delete the database record and <b>physically erase</b> all associated source and result files from Amazon S3. If anyone used this skin as their personal character, it will be automatically reset. This action is irreversible.
                     </>
                   )}
                 </p>
