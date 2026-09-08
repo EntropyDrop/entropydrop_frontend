@@ -48,10 +48,10 @@ test('micro 2-point box on unsubdivided standard block selects micro cells witho
   assert.equal(world.getBlock(2, 5, 2), BlockTypes.COLOR_BLOCK);
   assert.equal(world.microVoxels.cells.size, 0, 'no micro voxels before selection');
 
-  // Select micro region inside (2, 5, 2): from micro (10, 25, 10) to (12, 29, 14)
-  // X: 10..12 (3 cells), Y: 25..29 (5 cells), Z: 10..14 (5 cells) => 3 * 5 * 5 = 75 micro cells
+  // Select micro region inside (2, 5, 2): from micro (16, 40, 16) to (18, 44, 20)
+  // X: 16..18 (3 cells), Y: 40..44 (5 cells), Z: 16..20 (5 cells) => 3 * 5 * 5 = 75 micro cells
   manager.setCornerA({ x: 2.0, y: 5.0, z: 2.0 }, { micro: true });
-  manager.setCornerB({ x: 2.59, y: 5.99, z: 2.99 }, { micro: true });
+  manager.setCornerB({ x: 2.374, y: 5.624, z: 2.624 }, { micro: true });
 
   assert.equal(manager.hasValidSelection(), true);
   assert.equal(manager.microSelection?.length, 75, 'selects 75 micro cells from the unsubdivided standard block');
@@ -66,9 +66,9 @@ test('assembling a micro selection over an unsubdivided standard block extracts 
   // Place standard block at (2, 5, 2) with red color 0xff0000
   world.setBlock(2, 5, 2, BlockTypes.COLOR_BLOCK, false, 0xff0000);
 
-  // Select 75 micro cells (3x5x5) out of the 125 micro cells
+  // Select 75 micro cells (3x5x5) out of the 512 micro cells
   manager.setCornerA({ x: 2.0, y: 5.0, z: 2.0 }, { micro: true });
-  manager.setCornerB({ x: 2.59, y: 5.99, z: 2.99 }, { micro: true });
+  manager.setCornerB({ x: 2.374, y: 5.624, z: 2.624 }, { micro: true });
   assert.equal(manager.microSelection?.length, 75);
 
   // Perform Assemble (G)
@@ -80,14 +80,14 @@ test('assembling a micro selection over an unsubdivided standard block extracts 
   const entity = result.entity;
   assert.ok(entity, 'assembly succeeded');
   assert.equal(entity.blocks.length, 75, 'assembled entity contains exactly the 75 selected micro blocks');
-  assert.deepEqual(entity.blocks[0].size, 0.2, 'entity blocks are 0.2m micro blocks');
+  assert.deepEqual(entity.blocks[0].size, 0.125, 'entity blocks are 0.125m micro blocks');
   assert.equal(entity.blocks[0].color, 0xff0000, 'entity blocks retain the original block color');
 
   // Verify world state after operation:
   // The standard block at (2, 5, 2) is now AIR because it was subdivided
   assert.equal(world.getBlock(2, 5, 2), BlockTypes.AIR, 'standard block is cleared after subdivision');
-  // The unselected 50 micro cells (125 - 75 = 50) remain in the world as micro voxels!
-  assert.equal(world.microVoxels.cells.size, 50, 'remaining 50 unselected micro voxels stay in the world');
+  // The unselected 437 micro cells (512 - 75 = 437) remain in the world as micro voxels!
+  assert.equal(world.microVoxels.cells.size, 437, 'remaining 437 unselected micro voxels stay in the world');
 });
 
 test('deleting a micro selection over an unsubdivided standard block carves the selected micro cells and preserves the rest', () => {
@@ -95,8 +95,8 @@ test('deleting a micro selection over an unsubdivided standard block carves the 
   // Place standard block at (3, 4, 5) with blue color 0x0000ff
   world.setBlock(3, 4, 5, BlockTypes.COLOR_BLOCK, false, 0x0000ff);
 
-  // Select 1 micro cell at (15, 20, 25) (which is corner of (3, 4, 5))
-  manager.toggleMicroCell({ x: 3.0, y: 4.0, z: 5.0 }); // (15, 20, 25)
+  // Select 1 micro cell at (24, 32, 40) (which is corner of (3, 4, 5))
+  manager.toggleMicroCell({ x: 3.0, y: 4.0, z: 5.0 }); // (24, 32, 40)
   assert.equal(manager.microSelection?.length, 1);
 
   // Perform Delete
@@ -105,25 +105,25 @@ test('deleting a micro selection over an unsubdivided standard block carves the 
   // Verify world state:
   // Standard block is now subdivided
   assert.equal(world.getBlock(3, 4, 5), BlockTypes.AIR);
-  // 124 micro voxels remain in the world
-  assert.equal(world.microVoxels.cells.size, 124, '124 micro voxels remain after deleting 1 micro voxel');
-  assert.equal(world.getMicroBlock(15, 20, 25), null, 'deleted micro cell is empty');
-  assert.notEqual(world.getMicroBlock(16, 20, 25), null, 'adjacent micro cell exists');
+  // 511 micro voxels remain in the world
+  assert.equal(world.microVoxels.cells.size, 511, '511 micro voxels remain after deleting 1 micro voxel');
+  assert.equal(world.getMicroBlock(24, 32, 40), null, 'deleted micro cell is empty');
+  assert.notEqual(world.getMicroBlock(25, 32, 40), null, 'adjacent micro cell exists');
 });
 
-test('copying a micro selection over an unsubdivided standard block samples 0.2m micro blocks without modifying the world', () => {
+test('copying a micro selection over an unsubdivided standard block samples 0.125m micro blocks without modifying the world', () => {
   const { controller, manager, world } = createController();
   // Place standard block at (1, 2, 3) with green color 0x00ff00
   world.setBlock(1, 2, 3, BlockTypes.COLOR_BLOCK, false, 0x00ff00);
 
   // Select 8 micro cells (2x2x2) inside the standard block
   manager.setCornerA({ x: 1.0, y: 2.0, z: 3.0 }, { micro: true });
-  manager.setCornerB({ x: 1.39, y: 2.39, z: 3.39 }, { micro: true }); // (5, 10, 15) to (6, 11, 16) => 2x2x2 = 8 cells
+  manager.setCornerB({ x: 1.249, y: 2.249, z: 3.249 }, { micro: true }); // (8, 16, 24) to (9, 17, 25) => 2x2x2 = 8 cells
   assert.equal(manager.microSelection?.length, 8);
 
   const sampled = controller.sampleWorldSelectionAsBlockSet();
   assert.equal(sampled.length, 8, 'sampled 8 micro blocks');
-  assert.equal(sampled[0].size, 0.2);
+  assert.equal(sampled[0].size, 0.125);
   assert.equal(sampled[0].color, 0x00ff00);
 
   // Verify the world is completely untouched by the copy operation

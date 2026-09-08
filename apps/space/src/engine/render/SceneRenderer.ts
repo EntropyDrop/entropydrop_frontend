@@ -1,3 +1,4 @@
+import { MICRO_DIVISIONS, MICRO_SIZE } from '@entropydrop/space-engine/voxel/MicroGrid.ts';
 import * as THREE from 'three';
 import {
   applyCameraBend, hookSceneMaterials, cullChunks,
@@ -292,8 +293,8 @@ export function buildUnifiedInventoryPreviewMesh(entries) {
     if (Math.abs(s - 1) > 1e-4) allSize1 = false;
   }
 
-  // Quantization step in milli-units (1.0 block -> 1000, 0.2 microblock -> 200)
-  const step = allSize1 ? 1000 : (minSize < 0.9 ? 200 : 1000);
+  // Quantization step in milli-units (1.0 block -> 1000, 0.125 microblock -> 125)
+  const step = allSize1 ? 1000 : (minSize < 0.9 ? MICRO_SIZE * 1000 : 1000);
   const toCoord = (val) => Math.round(val * 1000);
 
   // Map of patchKey -> { pos?: Patch, neg?: Patch }
@@ -931,18 +932,18 @@ export class SceneRenderer {
   }
 
   /**
-   * Micro-carve focus preview: draws the 5x5x5 micro-voxel grid wireframe
-   * inside the hit standard cell, and highlights the current 0.2³ micro cell
+   * Micro-carve focus preview: draws the 8x8x8 micro-voxel grid wireframe
+   * inside the hit standard cell, and highlights the current 0.125³ micro cell
    * when a micro block is hit.
    */
   setupMicroCarvePreview() {
     this.microCarveGroup = new THREE.Group();
     this.microCarveGroup.name = 'MicroCarvePreview';
 
-    // 5×5 grid lines on the outer surface of each 1×1×1 standard cell
+    // 8×8 grid lines on the outer surface of each 1×1×1 standard cell
     // (inner 3×3×3 lines hidden for a clean look)
     const positions = [];
-    const N = 5;
+    const N = MICRO_DIVISIONS;
     const step = 1 / N;
     for (const face of [0, 1]) {
       for (let j = 0; j <= N; j++) {
@@ -969,8 +970,8 @@ export class SceneRenderer {
     const gridLines = new THREE.LineSegments(gridGeo, gridMat);
     this.microCarveGroup.add(gridLines);
 
-    // Highlight box for the focused micro cell (0.2³) with segments for curvature bending
-    const cellGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2, 2, 2, 2);
+    // Highlight box for the focused micro cell (0.125³) with segments for curvature bending
+    const cellGeo = new THREE.BoxGeometry(MICRO_SIZE, MICRO_SIZE, MICRO_SIZE, 2, 2, 2);
     const cellEdges = new THREE.EdgesGeometry(cellGeo);
     const cellMat = new THREE.LineBasicMaterial({
       color: 0xff9f43,
@@ -989,7 +990,7 @@ export class SceneRenderer {
   /**
    * Update the micro-carve focus preview.
    * @param {null | { cellOrigin: THREE.Vector3, microCenter: THREE.Vector3|null, quaternion?: THREE.Quaternion }} preview
-   *   cellOrigin: world coordinates of the standard cell corner (5×5×5 grid drawn inside);
+   *   cellOrigin: world coordinates of the standard cell corner (8×8×8 grid drawn inside);
    *   microCenter: world coordinates of the focused micro cell center (when a micro
    *   block is hit), otherwise null;
    *   quaternion: optional orientation of the parent entity component.
@@ -1172,12 +1173,12 @@ export class SceneRenderer {
     this.selectionCellsGroup.visible = false;
     this.scene.add(this.selectionCellsGroup);
 
-    // Micro-mode sparse selection: each selected 0.2 m cell gets its own
+    // Micro-mode sparse selection: each selected 0.125 m cell gets its own
     // breathing hologram so Tab-toggled micro picks read distinctly from the
     // standard orange single-cell mode.
     this.selectionMicroCellsGroup = new THREE.Group();
     this.selectionMicroCellsGroup.name = 'MicroCellSelectionHologram';
-    this.selectionMicroCellBoxGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.2, 2, 2, 2);
+    this.selectionMicroCellBoxGeometry = new THREE.BoxGeometry(MICRO_SIZE, MICRO_SIZE, MICRO_SIZE, 2, 2, 2);
     this.selectionMicroCellEdgeGeometry = new THREE.EdgesGeometry(this.selectionMicroCellBoxGeometry);
     this.selectionMicroCellLineMaterial = new THREE.LineBasicMaterial({
       color: 0x48dbfb,
@@ -1561,7 +1562,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       quaternion?.isQuaternion ? quaternion : new THREE.Quaternion()
     );
     // The geometry is 1.04 m across, so scaling by the target cell size makes
-    // the guide hug a 1 m standard cell or a 0.2 m micro block.
+    // the guide hug a 1 m standard cell or a 0.125 m micro block.
     this.focusBlockGuide.scale.setScalar(cellSize);
     // Orange while point 1 is set; cyan while waiting for point 1.
     (this.focusBlockGuide.material as THREE.LineBasicMaterial).color
@@ -1760,19 +1761,19 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     };
     const clampCell = (value, min, max) => Math.max(min, Math.min(max, value));
     if (micro) {
-      // Micro mode (Selector Tab): a/b are the meter-space origins of 0.2 m
+      // Micro mode (Selector Tab): a/b are the meter-space origins of 0.125 m
       // cells, so quantize to micro indices and span whole micro cells.
-      let aMx = Math.floor(a.x * 5 + 1e-6);
+      let aMx = Math.floor(a.x * MICRO_DIVISIONS + 1e-6);
       let bMx = frame
-        ? Math.floor(b.x * 5 + 1e-6)
-        : unwrapPeriodicNear(Math.floor(b.x * 5 + 1e-6), aMx, TORUS_SIZE_X * 5);
-      let aMy = Math.floor(a.y * 5 + 1e-6);
-      let bMy = Math.floor(b.y * 5 + 1e-6);
-      let aMz = Math.floor(a.z * 5 + 1e-6);
+        ? Math.floor(b.x * MICRO_DIVISIONS + 1e-6)
+        : unwrapPeriodicNear(Math.floor(b.x * MICRO_DIVISIONS + 1e-6), aMx, TORUS_SIZE_X * MICRO_DIVISIONS);
+      let aMy = Math.floor(a.y * MICRO_DIVISIONS + 1e-6);
+      let bMy = Math.floor(b.y * MICRO_DIVISIONS + 1e-6);
+      let aMz = Math.floor(a.z * MICRO_DIVISIONS + 1e-6);
       let bMz = frame
-        ? Math.floor(b.z * 5 + 1e-6)
-        : unwrapPeriodicNear(Math.floor(b.z * 5 + 1e-6), aMz, TORUS_SIZE_Z * 5);
-      const limits = frameLimits(5);
+        ? Math.floor(b.z * MICRO_DIVISIONS + 1e-6)
+        : unwrapPeriodicNear(Math.floor(b.z * MICRO_DIVISIONS + 1e-6), aMz, TORUS_SIZE_Z * MICRO_DIVISIONS);
+      const limits = frameLimits(MICRO_DIVISIONS);
       if (limits) {
         aMx = clampCell(aMx, limits.minX, limits.maxX);
         bMx = clampCell(bMx, limits.minX, limits.maxX);
@@ -1787,14 +1788,14 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       const maxMy = Math.max(aMy, bMy);
       const minMz = Math.min(aMz, bMz);
       const maxMz = Math.max(aMz, bMz);
-      const sx = (maxMx - minMx + 1) * 0.2;
-      const sy = (maxMy - minMy + 1) * 0.2;
-      const sz = (maxMz - minMz + 1) * 0.2;
+      const sx = (maxMx - minMx + 1) * MICRO_SIZE;
+      const sy = (maxMy - minMy + 1) * MICRO_SIZE;
+      const sz = (maxMz - minMz + 1) * MICRO_SIZE;
       updateTorusSelectionBoxGeometry(this.boxSelectionFill, this.boxSelectionEdges, sx, sy, sz);
       applyFrame(new THREE.Vector3(
-        minMx * 0.2 + sx / 2,
-        minMy * 0.2 + sy / 2,
-        minMz * 0.2 + sz / 2
+        minMx * MICRO_SIZE + sx / 2,
+        minMy * MICRO_SIZE + sy / 2,
+        minMz * MICRO_SIZE + sz / 2
       ));
       this.boxSelectionFill.scale.set(sx, sy, sz);
       this.boxSelectionEdges.scale.set(sx, sy, sz);
@@ -1940,13 +1941,13 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         if (b.z > maxZ) maxZ = b.z;
       }
 
-      const sx = Math.max(0.001, (maxX - minX + 1) * 0.2);
-      const sy = Math.max(0.001, (maxY - minY + 1) * 0.2);
-      const sz = Math.max(0.001, (maxZ - minZ + 1) * 0.2);
+      const sx = Math.max(0.001, (maxX - minX + 1) * MICRO_SIZE);
+      const sy = Math.max(0.001, (maxY - minY + 1) * MICRO_SIZE);
+      const sz = Math.max(0.001, (maxZ - minZ + 1) * MICRO_SIZE);
 
-      const cx = (minX + maxX + 1) * 0.2 * 0.5;
-      const cy = (minY + maxY + 1) * 0.2 * 0.5;
-      const cz = (minZ + maxZ + 1) * 0.2 * 0.5;
+      const cx = (minX + maxX + 1) * MICRO_SIZE * 0.5;
+      const cy = (minY + maxY + 1) * MICRO_SIZE * 0.5;
+      const cz = (minZ + maxZ + 1) * MICRO_SIZE * 0.5;
 
       updateTorusSelectionBoxGeometry(this.selectionFill, this.selectionWireframe, sx, sy, sz);
       this.selectionGroup.position.set(cx, cy, cz);

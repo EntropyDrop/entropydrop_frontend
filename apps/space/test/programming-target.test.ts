@@ -165,7 +165,7 @@ test('contraption pointing follows the rendered torus deformation instead of a f
   const blockOrigin = new THREE.Vector3(TORUS_SPAWN_X, 18, TORUS_SPAWN_Z + 7.5);
   const contraption = new Contraption(
     5,
-    [{ localX: 0, localY: 0, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK }],
+    [{ localX: 0, localY: 0, localZ: 0, size: 0.125, block: BlockTypes.COLOR_BLOCK }],
     blockOrigin,
     scene
   );
@@ -173,7 +173,7 @@ test('contraption pointing follows the rendered torus deformation instead of a f
 
   // Aim close to the lower edge of the rendered front face. Across 7.5 m of
   // tube curvature, converting this ray only once at the eye drifts below the
-  // 0.2 m voxel even though the bent-space screen ray visibly crosses it.
+  // 0.125 m voxel even though the bent-space screen ray visibly crosses it.
   const eyeFlat = new THREE.Vector3(TORUS_SPAWN_X + 0.1, 18.01, TORUS_SPAWN_Z);
   const visibleTargetFlat = new THREE.Vector3(blockOrigin.x + 0.1, blockOrigin.y + 0.01, blockOrigin.z);
   const eyeBent = bendPoint(eyeFlat.x, eyeFlat.y, eyeFlat.z);

@@ -61,37 +61,37 @@ test('Hammer hover preview uses the same snapped pose as block-set placement', (
   assert.equal(controller.inventoryPlacementPreview.slot, slot);
 });
 
-test('Hammer aims a micro block set on the adjacent 0.2 m cell of a focused micro voxel', () => {
+test('Hammer aims a micro block set on the adjacent 0.125 m cell of a focused micro voxel', () => {
   const slot = {
     kind: 'blockset',
     blockCount: 2,
     blocks: [
-      { dx: 0, dy: 0, dz: 0, size: 0.2, color: 0x48dbfb },
-      { dx: 0.2, dy: 0, dz: 0, size: 0.2, color: 0xf2a93b }
+      { dx: 0, dy: 0, dz: 0, size: 0.125, color: 0x48dbfb },
+      { dx: 0.125, dy: 0, dz: 0, size: 0.125, color: 0xf2a93b }
     ]
   };
   const controller = makeController(slot);
   controller.currentRaycast = {
     hit: true,
     kind: 'micro',
-    microPos: { x: 12, y: 3, z: 7 },
-    placeMicroPos: { x: 13, y: 3, z: 7 },
-    hitPos: { x: 2.4, y: 0.6, z: 1.4 },
+    microPos: { x: 18, y: 3, z: 10 },
+    placeMicroPos: { x: 19, y: 3, z: 10 },
+    hitPos: { x: 2.25, y: 0.375, z: 1.25 },
     normal: { x: 1, y: 0, z: 0 }
   };
 
   controller.updateInventoryPlacementPreview();
   const buildPose = controller.getInventoryPlacementPose(slot);
 
-  assert.deepEqual(controller.inventoryPlacementPreview.position.toArray(), [2.6, 0.6, 1.4]);
-  assert.deepEqual(buildPose.position.toArray(), [2.6, 0.6, 1.4]);
+  assert.deepEqual(controller.inventoryPlacementPreview.position.toArray(), [2.375, 0.375, 1.25]);
+  assert.deepEqual(buildPose.position.toArray(), [2.375, 0.375, 1.25]);
 });
 
-test('Hammer aims a micro block set at 0.2 m precision across a standard block face', () => {
+test('Hammer aims a micro block set at 0.125 m precision across a standard block face', () => {
   const slot = {
     kind: 'blockset',
     blockCount: 1,
-    blocks: [{ dx: 0, dy: 0, dz: 0, size: 0.2, color: 0x48dbfb }]
+    blocks: [{ dx: 0, dy: 0, dz: 0, size: 0.125, color: 0x48dbfb }]
   };
   const controller = makeController(slot);
   controller.currentRaycast = {
@@ -104,7 +104,7 @@ test('Hammer aims a micro block set at 0.2 m precision across a standard block f
 
   const pose = controller.getInventoryPlacementPose(slot);
 
-  assert.deepEqual(pose.position.toArray(), [4.4, 6, 7.6]);
+  assert.deepEqual(pose.position.toArray(), [4.375, 6, 7.625]);
 });
 
 test('Hammer keeps block sets containing standard voxels on the 1 m grid', () => {
@@ -112,7 +112,7 @@ test('Hammer keeps block sets containing standard voxels on the 1 m grid', () =>
     kind: 'blockset',
     blockCount: 2,
     blocks: [
-      { dx: 0, dy: 0, dz: 0, size: 0.2, color: 0x48dbfb },
+      { dx: 0, dy: 0, dz: 0, size: 0.125, color: 0x48dbfb },
       { dx: 1, dy: 0, dz: 0, size: 1, color: 0xf2a93b }
     ]
   };
@@ -120,8 +120,8 @@ test('Hammer keeps block sets containing standard voxels on the 1 m grid', () =>
   controller.currentRaycast = {
     hit: true,
     kind: 'micro',
-    placeMicroPos: { x: 13, y: 3, z: 7 },
-    hitPos: { x: 2.4, y: 0.6, z: 1.4 },
+    placeMicroPos: { x: 19, y: 3, z: 10 },
+    hitPos: { x: 2.25, y: 0.375, z: 1.25 },
     normal: { x: 1, y: 0, z: 0 }
   };
 
@@ -351,7 +351,7 @@ test('entity-on-entity placement snaps to the targeted component micro grid with
   const slot = {
     kind: 'entity',
     rootComponentId: 'root',
-    blocks: [{ localX: 0, localY: 0, localZ: 0, size: 0.2, entityId: 'root' }]
+    blocks: [{ localX: 0, localY: 0, localZ: 0, size: 0.125, entityId: 'root' }]
   };
   const controller = makeController(slot);
   const targetOrigin = new THREE.Vector3(10.13, 7.07, -2.11);
@@ -393,8 +393,8 @@ test('entity-on-entity placement snaps to the targeted component micro grid with
   assert.equal(pose.targetContraption, target);
   assert.equal(pose.targetNodeId, 'arm');
   for (const coordinate of targetLocalOrigin.toArray()) {
-    assert.ok(Math.abs(coordinate * 5 - Math.round(coordinate * 5)) < 1e-8,
-      `target-local coordinate ${coordinate} must lie on the 0.2 m grid`);
+    assert.ok(Math.abs(coordinate * 8 - Math.round(coordinate * 8)) < 1e-8,
+      `target-local coordinate ${coordinate} must lie on the 0.125 m grid`);
   }
   assert.ok(pose.position.y > 7,
     'an entity side/top target must remain at the target instead of dropping to terrain');
@@ -548,7 +548,7 @@ test('renderer shows colored, scaled unified voxel mesh at the placement origin'
     kind: 'blockset',
     blocks: [
       { dx: 0, dy: 0, dz: 0, size: 1, color: 0xeb4d4b },
-      { dx: 1, dy: 2, dz: 3, size: 0.2, color: 0x48dbfb }
+      { dx: 1, dy: 2, dz: 3, size: 0.125, color: 0x48dbfb }
     ]
   };
 
@@ -580,7 +580,7 @@ test('hammer ghost is a unified outer boundary mesh with internal face culling',
     kind: 'blockset',
     blocks: [
       { dx: 0, dy: 0, dz: 0, size: 1, color: 0xeb4d4b },
-      { dx: 1, dy: 2, dz: 3, size: 0.2, color: 0x48dbfb }
+      { dx: 1, dy: 2, dz: 3, size: 0.125, color: 0x48dbfb }
     ]
   };
 

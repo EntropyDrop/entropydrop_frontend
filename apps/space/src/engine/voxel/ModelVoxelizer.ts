@@ -1,3 +1,4 @@
+import { MICRO_DIVISIONS, MICRO_SIZE } from '@entropydrop/space-engine/voxel/MicroGrid.ts';
 import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -10,7 +11,7 @@ import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
  * - GLTF / GLB full-color models with vertex colors, material colors, and texture maps.
  * - FBX meshes with transforms, vertex colors, material colors, and embedded textures.
  * - STL files (binary & ASCII), including VisCAM/SolidView embedded 15-bit colors.
- * - Quantization into standard blocks (1×1×1) or micro voxels (5×5×5 / 0.2).
+ * - Quantization into standard blocks (1×1×1) or micro voxels (8×8×8 / 0.125).
  * - Automatic hollow optimization to preserve surface shells and save resource budget.
  */
 
@@ -880,7 +881,7 @@ export function planModelSize(triangles: VoxelTriangle[], sizeBlocks: number, pr
   const N = Math.max(1, Math.floor(sizeBlocks) || 1);
   const scale = extent > 0 ? N / extent : 1;
   if (precision > 0 && precision < 0.5) {
-    return { micro: true, cells: N * 5, cellSize: 0.2, scale };
+    return { micro: true, cells: N * MICRO_DIVISIONS, cellSize: MICRO_SIZE, scale };
   }
   return { micro: false, cells: N, cellSize: 1, scale };
 }
@@ -1292,7 +1293,7 @@ export function voxelizeModel(
   let blocks: ModelVoxelResult['blocks'] = [];
 
   if (micro) {
-    // Merge solid 5x5x5 microblock regions that share the same color into 1x1x1 standard blocks
+    // Merge solid 8x8x8 microblock regions that share the same color into 1x1x1 standard blocks
     const merged = new Uint8Array(gsx * gsy * gsz);
     let maxBx = -Infinity, maxBy = -Infinity, maxBz = -Infinity;
     for (const [x, y, z] of filled) {
@@ -1301,16 +1302,16 @@ export function voxelizeModel(
       if (z > maxBz) maxBz = z;
     }
 
-    for (let x = minBx; x + 4 <= maxBx; x += 5) {
-      for (let y = minBy; y + 4 <= maxBy; y += 5) {
-        for (let z = minBz; z + 4 <= maxBz; z += 5) {
+    for (let x = minBx; x + MICRO_DIVISIONS - 1 <= maxBx; x += MICRO_DIVISIONS) {
+      for (let y = minBy; y + MICRO_DIVISIONS - 1 <= maxBy; y += MICRO_DIVISIONS) {
+        for (let z = minBz; z + MICRO_DIVISIONS - 1 <= maxBz; z += MICRO_DIVISIONS) {
           let isSolid = true;
           let firstMergedColor: number | null = null;
           let colorUniform = true;
 
-          for (let dx = 0; dx < 5; dx++) {
-            for (let dy = 0; dy < 5; dy++) {
-              for (let dz = 0; dz < 5; dz++) {
+          for (let dx = 0; dx < MICRO_DIVISIONS; dx++) {
+            for (let dy = 0; dy < MICRO_DIVISIONS; dy++) {
+              for (let dz = 0; dz < MICRO_DIVISIONS; dz++) {
                 const cIndex = idx(x + dx, y + dy, z + dz);
                 if (effectiveGrid[cIndex] !== 1) {
                   isSolid = false;
@@ -1329,9 +1330,9 @@ export function voxelizeModel(
 
           // Only merge if region is fully solid and has uniform color to preserve color details
           if (isSolid && colorUniform && firstMergedColor !== null) {
-            for (let dx = 0; dx < 5; dx++) {
-              for (let dy = 0; dy < 5; dy++) {
-                for (let dz = 0; dz < 5; dz++) {
+            for (let dx = 0; dx < MICRO_DIVISIONS; dx++) {
+              for (let dy = 0; dy < MICRO_DIVISIONS; dy++) {
+                for (let dz = 0; dz < MICRO_DIVISIONS; dz++) {
                   merged[idx(x + dx, y + dy, z + dz)] = 1;
                 }
               }
@@ -1341,9 +1342,9 @@ export function voxelizeModel(
             const by = y - minBy;
             const bz = z - minBz;
             blocks.push({
-              dx: Math.round(bx * s * 5) / 5,
-              dy: Math.round(by * s * 5) / 5,
-              dz: Math.round(bz * s * 5) / 5,
+              dx: Math.round(bx * s * MICRO_DIVISIONS) / MICRO_DIVISIONS,
+              dy: Math.round(by * s * MICRO_DIVISIONS) / MICRO_DIVISIONS,
+              dz: Math.round(bz * s * MICRO_DIVISIONS) / MICRO_DIVISIONS,
               size: 1,
               block: BlockTypes.COLOR_BLOCK,
               color: firstMergedColor
@@ -1353,7 +1354,7 @@ export function voxelizeModel(
       }
     }
 
-    // Emit remaining unmerged cells as 0.2 microblocks with exact full-color
+    // Emit remaining unmerged cells as 0.125 microblocks with exact full-color
     for (const [x, y, z] of filled) {
       if (merged[idx(x, y, z)] === 1) continue;
       const cell = idx(x, y, z);
@@ -1362,10 +1363,10 @@ export function voxelizeModel(
       const by = y - minBy;
       const bz = z - minBz;
       blocks.push({
-        dx: Math.round(bx * s * 5) / 5,
-        dy: Math.round(by * s * 5) / 5,
-        dz: Math.round(bz * s * 5) / 5,
-        size: 0.2,
+        dx: Math.round(bx * s * MICRO_DIVISIONS) / MICRO_DIVISIONS,
+        dy: Math.round(by * s * MICRO_DIVISIONS) / MICRO_DIVISIONS,
+        dz: Math.round(bz * s * MICRO_DIVISIONS) / MICRO_DIVISIONS,
+        size: MICRO_SIZE,
         block: BlockTypes.COLOR_BLOCK,
         color: cellCol
       });

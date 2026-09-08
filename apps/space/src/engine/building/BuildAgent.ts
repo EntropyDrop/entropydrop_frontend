@@ -27,7 +27,7 @@ Schema:
 }
 
 Rules:
-- Coordinates are local offsets from the placement anchor; Y is up. Standard voxels use integer coordinates and size 1. Micro voxels use 0.2-grid coordinates and size 0.2.
+- Coordinates are local offsets from the placement anchor; Y is up. Standard voxels use integer coordinates and size 1. Micro voxels use 0.125-grid coordinates and size 0.125.
 - Prefer compact box/line primitives over enumerating many blocks. Use hollow boxes for shells and several boxes when doors/windows need openings.
 - Use only color block material. Colors are #RRGGBB.
 - Keep each axis within 64 metres and the expanded result within 65,536 voxels.

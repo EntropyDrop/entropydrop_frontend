@@ -66,19 +66,19 @@ test('rotateBlocksY90 rotates standard blocks by 90 degrees and preserves intege
   assert.deepEqual(finalZ, origZ);
 });
 
-test('rotateBlocksY90 rotates micro blocks and keeps exact 0.2 scale alignment', () => {
+test('rotateBlocksY90 rotates micro blocks and keeps exact 0.125 scale alignment', () => {
   const controller = makeTestController();
   const microBlocks = [
-    { dx: 0, dy: 0, dz: 0, size: 0.2, color: '#fff' },
-    { dx: 0.2, dy: 0, dz: 0, size: 0.2, color: '#fff' },
-    { dx: 0.4, dy: 0, dz: 0, size: 0.2, color: '#fff' }
+    { dx: 0, dy: 0, dz: 0, size: 0.125, color: '#fff' },
+    { dx: 0.125, dy: 0, dz: 0, size: 0.125, color: '#fff' },
+    { dx: 0.25, dy: 0, dz: 0, size: 0.125, color: '#fff' }
   ];
 
   const rot1 = controller.rotateBlocksY90(microBlocks, 1);
   rot1.forEach((b: any) => {
-    // Must be exact multiple of 0.2
-    assert.equal(Math.abs(Math.round(b.dx * 5) - b.dx * 5) < 1e-6, true);
-    assert.equal(Math.abs(Math.round(b.dz * 5) - b.dz * 5) < 1e-6, true);
+    // Must be exact multiple of 0.125
+    assert.equal(Math.abs(Math.round(b.dx * 8) - b.dx * 8) < 1e-6, true);
+    assert.equal(Math.abs(Math.round(b.dz * 8) - b.dz * 8) < 1e-6, true);
   });
 });
 

@@ -1015,7 +1015,7 @@ export async function enterSpace(
       const pcError = new SpaceEntryError(
         'PC_ONLY_REQUIRED',
         zh
-          ? 'Space 目前仅支持 PC 电脑端运行。游戏包含 3D 体素物理引擎、0.2m 微体素精细雕刻与键鼠自主控制系统，请使用电脑浏览器（推荐 Chrome / Edge）体验完整功能。'
+          ? 'Space 目前仅支持 PC 电脑端运行。游戏包含 3D 体素物理引擎、0.125m 微体素精细雕刻与键鼠自主控制系统，请使用电脑浏览器（推荐 Chrome / Edge）体验完整功能。'
           : 'EntropyDrop Space is designed for desktop PC browsers only. It requires 3D GPU acceleration, voxel physics, and keyboard & mouse controls.',
         '/space',
         zh ? '返回主站' : 'Back to Main Site',

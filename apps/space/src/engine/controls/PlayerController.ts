@@ -1,3 +1,4 @@
+import { MICRO_DIVISIONS, MICRO_SIZE } from '@entropydrop/space-engine/voxel/MicroGrid.ts';
 import * as THREE from 'three';
 import { MAX_INVENTORY_NAME_LENGTH, trimInventoryName, inventoryNameLength, truncateInventoryName } from '@entropydrop/space-engine/storage/InventoryName.ts';
 import { BlockTypes, colorToHex, normalizeColor, PRESET_COLORS } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
@@ -53,8 +54,7 @@ export type PlayerPerspective = 'first_person' | 'third_person' | 'third_person_
 
 const HEX_COLOR = /^#?[0-9a-f]{6}$/i;
 
-const MICRO_DIVISIONS = 5;
-const INVENTORY_STORAGE_KEY = 'space.backpack.v6.pb';
+const INVENTORY_STORAGE_KEY = 'space.backpack.v7.pb';
 const INVENTORY_CATEGORIES = ['blockset', 'entity', 'colorset'];
 const DEFAULT_COLOR_SET_NAME = 'Default palette';
 export const MAX_INVENTORY_IMPORT_BYTES = 8 * 1024 * 1024;
@@ -178,7 +178,7 @@ function validateStoppedEntityGrid(slot): string | null {
     if (bounds.some((value, index) => (
       !Number.isFinite(value) || Math.abs(value - box[index]) > STOPPED_GRID_EPSILON
     ))) {
-      return 'Stopped entity voxels must align to the 0.2-unit construction grid';
+      return 'Stopped entity voxels must align to the 0.125-unit construction grid';
     }
     const [minX, minY, minZ, maxX, maxY, maxZ] = box;
     const keys: string[] = [];
@@ -245,7 +245,7 @@ type BulkEditJob = {
 
 export const SpecialTool = {
   SHOVEL: 'shovel',         // 1. Shovel (remove / place 1x1x1 standard blocks)
-  SPOON: 'spoon',           // 2. Spoon (carve 5x5x5 micro voxels)
+  SPOON: 'spoon',           // 2. Spoon (carve 8x8x8 micro voxels)
   SELECTOR: 'selector',     // 3. Selector (world/component selection and copy)
   HAMMER: 'hammer',         // 4. Hammer (preview/place inventory items)
   WRENCH: 'wrench',         // 5. Wrench (show pivot XYZ, hold to grab, right start/stop)
@@ -438,7 +438,7 @@ export class PlayerController {
     this.selectorLevel = null;            // Active box-selection level { contraption, nodeId } — decoupled from block selection
     this.selectorRange = null;            // { contraption, nodeId, pointA, pointB }
     // Selector Tab toggle: default selects standard 1 m blocks; true selects
-    // 0.2 m micro cells (single toggles + boxes materialize to existing micro
+    // 0.125 m micro cells (single toggles + boxes materialize to existing micro
     // voxels).
     this.selectorMicroMode = false;
     this.brushMicroMode = false;
@@ -695,7 +695,7 @@ export class PlayerController {
           break;
 
         case 'Tab': // Tab: switch the hammer bar between block sets and entities,
-          // or toggle the selector / brush between standard (1 m) and micro (0.2 m) blocks.
+          // or toggle the selector / brush between standard (1 m) and micro (0.125 m) blocks.
           if (this.activeTool === SpecialTool.HAMMER) {
             e.preventDefault();
             this.toggleHammerCategory();
@@ -941,9 +941,9 @@ export class PlayerController {
       let result;
       if (this.currentRaycast.kind === 'micro') {
         const mp = this.currentRaycast.microPos;
-        const wx = Math.floor(mp.x / 5);
-        const wy = Math.floor(mp.y / 5);
-        const wz = Math.floor(mp.z / 5);
+        const wx = Math.floor(mp.x / MICRO_DIVISIONS);
+        const wy = Math.floor(mp.y / MICRO_DIVISIONS);
+        const wz = Math.floor(mp.z / MICRO_DIVISIONS);
         result = this.performBasicAction({
           domain: ActionDomain.WORLD,
           action: 'clear-cell',
@@ -980,9 +980,9 @@ export class PlayerController {
             target: { contraption: c },
             nodeId: targetNodeId,
             micro: [
-              Math.round(hit.block.localX * 5),
-              Math.round(hit.block.localY * 5),
-              Math.round(hit.block.localZ * 5)
+              Math.round(hit.block.localX * MICRO_DIVISIONS),
+              Math.round(hit.block.localY * MICRO_DIVISIONS),
+              Math.round(hit.block.localZ * MICRO_DIVISIONS)
             ]
           });
           if (result.empty) {
@@ -995,9 +995,9 @@ export class PlayerController {
           }
         } else {
           const carved = [
-            Math.round((hit.placeMicroPos.localX - hit.normal.x * 0.2) * 5),
-            Math.round((hit.placeMicroPos.localY - hit.normal.y * 0.2) * 5),
-            Math.round((hit.placeMicroPos.localZ - hit.normal.z * 0.2) * 5)
+            Math.round((hit.placeMicroPos.localX - hit.normal.x * MICRO_SIZE) * MICRO_DIVISIONS),
+            Math.round((hit.placeMicroPos.localY - hit.normal.y * MICRO_SIZE) * MICRO_DIVISIONS),
+            Math.round((hit.placeMicroPos.localZ - hit.normal.z * MICRO_SIZE) * MICRO_DIVISIONS)
           ];
           result = this.performBasicAction({
             domain: ActionDomain.ENTITY,
@@ -1010,7 +1010,7 @@ export class PlayerController {
           if (result.ok) {
             this.ui?.notifyContraptionStructureChanged(c);
             if (this.ui) {
-              this.ui.showToast(`Carved 1 micro voxel out of a subdivided block on [${targetNodeId}] (124 left)`);
+              this.ui.showToast(`Carved 1 micro voxel out of a subdivided block on [${targetNodeId}] (511 left)`);
             }
           }
         }
@@ -1092,7 +1092,7 @@ export class PlayerController {
 
       if ((result.removed || 0) > 0) {
         if (carvedHit.kind === 'standard' && this.ui) {
-          this.ui.showToast(`Carved 1 micro voxel out of ${result.subdivided} (124 left)`);
+          this.ui.showToast(`Carved 1 micro voxel out of ${result.subdivided} (511 left)`);
         }
         this.particles.emitBlockBreak(carvedHit.hitPos, carvedHit.color, 4);
         this.sound.playBlockBreak({ kind: 'micro', count: result.removed });
@@ -1135,11 +1135,11 @@ export class PlayerController {
       const worldPoint = this.currentRaycast && this.currentRaycast.hit
         ? new THREE.Vector3(this.currentRaycast.hitPos.x, this.currentRaycast.hitPos.y, this.currentRaycast.hitPos.z)
         : null;
-      // Micro selection mode (Tab) targets the 0.2 m cell under the crosshair
+      // Micro selection mode (Tab) targets the 0.125 m cell under the crosshair
       // instead of the whole standard cell.
       const microCell = this.selectorMicroMode ? this.selectorMicroCellFromRaycast() : null;
       const targetPoint = microCell
-        ? new THREE.Vector3(microCell.x / 5, microCell.y / 5, microCell.z / 5)
+        ? new THREE.Vector3(microCell.x / MICRO_DIVISIONS, microCell.y / MICRO_DIVISIONS, microCell.z / MICRO_DIVISIONS)
         : worldPoint;
 
       // Shift + world click: exit entity box-selection level, enter world single-cell mode.
@@ -1164,7 +1164,7 @@ export class PlayerController {
           this.ui.showToast(info?.rejected
             ? `Selector single mode · ${info.count} cells · that cell lies outside the 64×64×64 limit`
             : this.selectorMicroMode
-              ? `Selector micro mode · ${info.count} micro cells · Shift+click toggles 0.2 m cells; Tab back to standard`
+              ? `Selector micro mode · ${info.count} micro cells · Shift+click toggles 0.125 m cells; Tab back to standard`
               : `Selector single mode · ${info.count} cells · Shift+click toggles; plain click restarts 2-point box`);
         }
         return;
@@ -1173,9 +1173,9 @@ export class PlayerController {
       // Entity box-selection progress (world click): corner 1 / corner 2 are anchored to the
       // target node's local frame so the range follows component rotation/translation — preventing
       // false "No blocks" misses when the component moves between clicks. In micro mode the
-      // corner snaps to the 0.2 m surface cell under the crosshair (targetPoint) exactly like
+      // corner snaps to the 0.125 m surface cell under the crosshair (targetPoint) exactly like
       // the world 2-point box; using the whole standard cell (worldPoint) would drop up to a
-      // 1 m layer of 0.2 m blocks from the range at the aimed face.
+      // 1 m layer of 0.125 m blocks from the range at the aimed face.
       if (this.selectorRange && this.selectorRange.pointA && !this.selectorRange.pointB && worldPoint) {
         this.selectorRange.pointB = this.rangePointToLocal(this.selectorRange, targetPoint);
         this.resolveBlockRangeSelection(this.selectorRange);
@@ -1219,7 +1219,7 @@ export class PlayerController {
             this.ui.showToast(info?.rejected
               ? `Selector single mode · ${info.count} cells · that cell lies outside the 64×64×64 limit`
               : this.selectorMicroMode
-                ? `Selector micro mode · ${info.count} micro cells · Shift+click toggles 0.2 m cells; Tab back to standard`
+                ? `Selector micro mode · ${info.count} micro cells · Shift+click toggles 0.125 m cells; Tab back to standard`
                 : `Selector single mode · ${info.count} cells · Shift+click toggles; plain click restarts 2-point box`);
           }
         } else {
@@ -1582,7 +1582,7 @@ export class PlayerController {
       a: pointA,
       b: pointB,
       space: 'node-local',
-      // Micro mode (Tab) keeps only 0.2 m blocks inside the range.
+      // Micro mode (Tab) keeps only 0.125 m blocks inside the range.
       micro: this.selectorMicroMode === true
     });
 
@@ -1936,7 +1936,7 @@ export class PlayerController {
       maxZ: cell.z + 1 - 1e-6
     }) || [];
     for (const micro of micros) {
-      consider(micro.x, micro.y, micro.z, micro.size || 0.2, BlockTypes.COLOR_BLOCK, micro.color, micro.part);
+      consider(micro.x, micro.y, micro.z, micro.size || MICRO_SIZE, BlockTypes.COLOR_BLOCK, micro.color, micro.part);
     }
   }
 
@@ -2006,7 +2006,7 @@ export class PlayerController {
                 cell.x / MICRO_DIVISIONS,
                 cell.y / MICRO_DIVISIONS,
                 cell.z / MICRO_DIVISIONS,
-                0.2,
+                MICRO_SIZE,
                 BlockTypes.COLOR_BLOCK,
                 color,
                 part
@@ -2021,9 +2021,9 @@ export class PlayerController {
 
         const item = collected[index - scanTotal];
         rawBlocks.push({
-          dx: microCells ? Math.round((item.x - minX) * 5) / 5 : item.x - minX,
-          dy: microCells ? Math.round((item.y - minY) * 5) / 5 : item.y - minY,
-          dz: microCells ? Math.round((item.z - minZ) * 5) / 5 : item.z - minZ,
+          dx: microCells ? Math.round((item.x - minX) * MICRO_DIVISIONS) / MICRO_DIVISIONS : item.x - minX,
+          dy: microCells ? Math.round((item.y - minY) * MICRO_DIVISIONS) / MICRO_DIVISIONS : item.y - minY,
+          dz: microCells ? Math.round((item.z - minZ) * MICRO_DIVISIONS) / MICRO_DIVISIONS : item.z - minZ,
           size: item.size,
           block: item.block,
           color: item.color,
@@ -2138,7 +2138,7 @@ export class PlayerController {
     const manager = this.contraptions;
     if (!this.world || !manager) return [];
 
-    // Micro selection (Tab mode): sample exactly the selected 0.2 m cells.
+    // Micro selection (Tab mode): sample exactly the selected 0.125 m cells.
     // Empty selected cells are skipped so the copy matches what G extracts.
     const microSelection = manager.microSelection;
     if (Array.isArray(microSelection)) {
@@ -2150,27 +2150,27 @@ export class PlayerController {
         if (block) {
           color = block.color;
         } else {
-          const wx = Math.floor(cell.x / 5);
-          const wy = Math.floor(cell.y / 5);
-          const wz = Math.floor(cell.z / 5);
+          const wx = Math.floor(cell.x / MICRO_DIVISIONS);
+          const wy = Math.floor(cell.y / MICRO_DIVISIONS);
+          const wz = Math.floor(cell.z / MICRO_DIVISIONS);
           if (this.world.getBlock && this.world.getBlock(wx, wy, wz) !== BlockTypes.AIR) {
             color = this.world.getBlockColor(wx, wy, wz);
           }
         }
         if (color === null || color === undefined) continue;
-        const x = cell.x * 0.2;
-        const y = cell.y * 0.2;
-        const z = cell.z * 0.2;
-        collected.push({ x, y, z, size: 0.2, block: BlockTypes.COLOR_BLOCK, color });
+        const x = cell.x * MICRO_SIZE;
+        const y = cell.y * MICRO_SIZE;
+        const z = cell.z * MICRO_SIZE;
+        collected.push({ x, y, z, size: MICRO_SIZE, block: BlockTypes.COLOR_BLOCK, color });
         if (x < minX) minX = x;
         if (y < minY) minY = y;
         if (z < minZ) minZ = z;
       }
       if (collected.length === 0) return [];
       return collected.map(b => ({
-        dx: Math.round((b.x - minX) * 5) / 5,
-        dy: Math.round((b.y - minY) * 5) / 5,
-        dz: Math.round((b.z - minZ) * 5) / 5,
+        dx: Math.round((b.x - minX) * MICRO_DIVISIONS) / MICRO_DIVISIONS,
+        dy: Math.round((b.y - minY) * MICRO_DIVISIONS) / MICRO_DIVISIONS,
+        dz: Math.round((b.z - minZ) * MICRO_DIVISIONS) / MICRO_DIVISIONS,
         size: b.size,
         block: b.block,
         color: b.color
@@ -2215,7 +2215,7 @@ export class PlayerController {
       for (const m of micros) {
         const cellKey = `${Math.floor(m.x)},${Math.floor(m.y)},${Math.floor(m.z)}`;
         if (singleKeys.has(cellKey)) {
-          consider(m.x, m.y, m.z, m.size || 0.2, BlockTypes.COLOR_BLOCK, m.color);
+          consider(m.x, m.y, m.z, m.size || MICRO_SIZE, BlockTypes.COLOR_BLOCK, m.color);
         }
       }
     } else {
@@ -2232,7 +2232,7 @@ export class PlayerController {
       }
       const micros = this.world.getMicroBlocksInAABB(microBounds) || [];
       for (const m of micros) {
-        consider(m.x, m.y, m.z, m.size || 0.2, BlockTypes.COLOR_BLOCK, m.color);
+        consider(m.x, m.y, m.z, m.size || MICRO_SIZE, BlockTypes.COLOR_BLOCK, m.color);
       }
     }
 
@@ -2375,7 +2375,7 @@ export class PlayerController {
       && slot.blocks.every(block => (Number(block?.size) || 1) < 1);
   }
 
-  /** Resolve the adjacent 0.2 m cell on either terrain or an entity surface. */
+  /** Resolve the adjacent 0.125 m cell on either terrain or an entity surface. */
   private getMicroBlockSetPlacementPosition(placementHit) {
     if (placementHit.kind === 'micro' && placementHit.placeMicroPos) {
       const micro = placementHit.placeMicroPos;
@@ -2917,7 +2917,7 @@ export class PlayerController {
    * Pure-micro block sets snap to the 1/5 grid; block sets containing standard
    * voxels stay on the 1 m grid. On terrain, entity slots geometrically centre
    * and settle onto sampled support without moving away from the player. On
-   * another entity, they align to the targeted component's 0.2 m grid, rotate
+   * another entity, they align to the targeted component's 0.125 m grid, rotate
    * outward from side faces, and move only along that normal to clear voxels.
    */
   getInventoryPlacementPose(slot) {
@@ -3255,7 +3255,7 @@ export class PlayerController {
    *   selecting root removes the whole entity.
    * - Entity block selection removes selected standard and microblocks directly
    *   owned by a component, removing the entity when it becomes empty.
-   * - World box or Shift single-cell selection removes standard and 5x5x5 microblocks.
+   * - World box or Shift single-cell selection removes standard and 8x8x8 microblocks.
    */
   deleteSelectionBlocks() {
     const manager = this.contraptions;
@@ -3359,20 +3359,20 @@ export class PlayerController {
 
     let particleBudget = 64;
     if (isMicroSelection) {
-      // Micro mode deletes exactly the selected 0.2 m cells that hold a voxel.
+      // Micro mode deletes exactly the selected 0.125 m cells that hold a voxel.
       for (const cell of microSelection) {
         let block = this.world.getMicroBlock?.(cell.x, cell.y, cell.z);
         if (!block) {
-          const wx = Math.floor(cell.x / 5);
-          const wy = Math.floor(cell.y / 5);
-          const wz = Math.floor(cell.z / 5);
+          const wx = Math.floor(cell.x / MICRO_DIVISIONS);
+          const wy = Math.floor(cell.y / MICRO_DIVISIONS);
+          const wz = Math.floor(cell.z / MICRO_DIVISIONS);
           if (this.world.getBlock && this.world.getBlock(wx, wy, wz) !== BlockTypes.AIR) {
             block = { color: this.world.getBlockColor(wx, wy, wz) };
           }
         }
         if (block && particleBudget > 0) {
           this.particles?.emitBlockBreak(
-            { x: cell.x * 0.2 + 0.1, y: cell.y * 0.2 + 0.1, z: cell.z * 0.2 + 0.1 },
+            { x: (cell.x + 0.5) * MICRO_SIZE, y: (cell.y + 0.5) * MICRO_SIZE, z: (cell.z + 0.5) * MICRO_SIZE },
             block.color, 3
           );
           particleBudget--;
@@ -3484,9 +3484,9 @@ export class PlayerController {
         const mp = this.currentRaycast.microPos;
         const normal = this.currentRaycast.normal;
         target = {
-          x: Math.floor(mp.x / 5) + (normal?.x || 0),
-          y: Math.floor(mp.y / 5) + (normal?.y || 0),
-          z: Math.floor(mp.z / 5) + (normal?.z || 0)
+          x: Math.floor(mp.x / MICRO_DIVISIONS) + (normal?.x || 0),
+          y: Math.floor(mp.y / MICRO_DIVISIONS) + (normal?.y || 0),
+          z: Math.floor(mp.z / MICRO_DIVISIONS) + (normal?.z || 0)
         };
       } else {
         target = this.currentRaycast.placePos;
@@ -3519,16 +3519,16 @@ export class PlayerController {
         const c = hit.contraption;
         const targetNodeId = hit.entityId ?? contraptionRootId(c);
         const placePos = hit.placeMicroPos;
-        const mx = Math.round(placePos.localX * 5) / 5;
-        const my = Math.round(placePos.localY * 5) / 5;
-        const mz = Math.round(placePos.localZ * 5) / 5;
+        const mx = Math.round(placePos.localX * MICRO_DIVISIONS) / MICRO_DIVISIONS;
+        const my = Math.round(placePos.localY * MICRO_DIVISIONS) / MICRO_DIVISIONS;
+        const mz = Math.round(placePos.localZ * MICRO_DIVISIONS) / MICRO_DIVISIONS;
 
         const result = this.performBasicAction({
           domain: ActionDomain.ENTITY,
           action: 'place-micro',
           target: { contraption: c },
           nodeId: targetNodeId,
-          micro: [Math.round(mx * 5), Math.round(my * 5), Math.round(mz * 5)],
+          micro: [Math.round(mx * MICRO_DIVISIONS), Math.round(my * MICRO_DIVISIONS), Math.round(mz * MICRO_DIVISIONS)],
           color: this.selectedColor
         });
 
@@ -3554,9 +3554,9 @@ export class PlayerController {
         entry.y += normal.y * 0.02;
         entry.z += normal.z * 0.02;
         targetMicro = {
-          x: Math.floor(entry.x * 5),
-          y: Math.floor(entry.y * 5),
-          z: Math.floor(entry.z * 5)
+          x: Math.floor(entry.x * MICRO_DIVISIONS),
+          y: Math.floor(entry.y * MICRO_DIVISIONS),
+          z: Math.floor(entry.z * MICRO_DIVISIONS)
         };
       }
       const result = targetMicro && this.performBasicAction({
@@ -3617,7 +3617,7 @@ export class PlayerController {
 
     const isEntity = 'localX' in blocks[0];
     const hasMicro = blocks.some(b => (b.size && b.size < 1) || (isEntity ? (!Number.isInteger(b.localX) || !Number.isInteger(b.localZ)) : (!Number.isInteger(b.dx) || !Number.isInteger(b.dz))));
-    const S = hasMicro ? 0.2 : 1.0;
+    const S = hasMicro ? MICRO_SIZE : 1.0;
 
     let minX = Infinity, maxX = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
@@ -3658,8 +3658,8 @@ export class PlayerController {
       let rz = rotated[1] - remZ;
 
       if (hasMicro) {
-        rx = Math.round(rx * 5) / 5;
-        rz = Math.round(rz * 5) / 5;
+        rx = Math.round(rx * MICRO_DIVISIONS) / MICRO_DIVISIONS;
+        rz = Math.round(rz * MICRO_DIVISIONS) / MICRO_DIVISIONS;
       } else {
         rx = Math.round(rx);
         rz = Math.round(rz);
@@ -3700,9 +3700,9 @@ export class PlayerController {
       return {
         ...child,
         position: {
-          x: Math.round(rx * 5) / 5,
+          x: Math.round(rx * MICRO_DIVISIONS) / MICRO_DIVISIONS,
           y: pos.y,
-          z: Math.round(rz * 5) / 5
+          z: Math.round(rz * MICRO_DIVISIONS) / MICRO_DIVISIONS
         }
       };
     });
@@ -4058,9 +4058,9 @@ export class PlayerController {
               target: { contraption: c },
               nodeId,
               micro: [
-                Math.round(hit.block.localX * 5),
-                Math.round(hit.block.localY * 5),
-                Math.round(hit.block.localZ * 5)
+                Math.round(hit.block.localX * MICRO_DIVISIONS),
+                Math.round(hit.block.localY * MICRO_DIVISIONS),
+                Math.round(hit.block.localZ * MICRO_DIVISIONS)
               ],
               color: this.selectedColor
             });
@@ -4072,9 +4072,9 @@ export class PlayerController {
           } else {
             const hitCell = hit.cell;
             const targetMicro = [
-              Math.round((hit.placeMicroPos.localX - hit.normal.x * 0.2) * 5),
-              Math.round((hit.placeMicroPos.localY - hit.normal.y * 0.2) * 5),
-              Math.round((hit.placeMicroPos.localZ - hit.normal.z * 0.2) * 5)
+              Math.round((hit.placeMicroPos.localX - hit.normal.x * MICRO_SIZE) * MICRO_DIVISIONS),
+              Math.round((hit.placeMicroPos.localY - hit.normal.y * MICRO_SIZE) * MICRO_DIVISIONS),
+              Math.round((hit.placeMicroPos.localZ - hit.normal.z * MICRO_SIZE) * MICRO_DIVISIONS)
             ];
             const subdivideRes = this.performBasicAction({
               domain: ActionDomain.ENTITY,
@@ -4107,9 +4107,9 @@ export class PlayerController {
             nodeId,
             ...(isMicro
               ? { micro: [
-                  Math.round(hit.block.localX * 5),
-                  Math.round(hit.block.localY * 5),
-                  Math.round(hit.block.localZ * 5)
+                  Math.round(hit.block.localX * MICRO_DIVISIONS),
+                  Math.round(hit.block.localY * MICRO_DIVISIONS),
+                  Math.round(hit.block.localZ * MICRO_DIVISIONS)
                 ] }
               : { cell: hit.cell }),
             color: this.selectedColor
@@ -4145,11 +4145,11 @@ export class PlayerController {
         const entry = this.currentRaycast.entry
           ? new THREE.Vector3(this.currentRaycast.entry.x, this.currentRaycast.entry.y, this.currentRaycast.entry.z)
           : this.physics.getEyePosition();
-        const clamp = (value: number, base: number) => Math.max(base * 5, Math.min(base * 5 + 4, value));
+        const clamp = (value: number, base: number) => Math.max(base * MICRO_DIVISIONS, Math.min(base * MICRO_DIVISIONS + MICRO_DIVISIONS - 1, value));
         const targetMicro = [
-          clamp(Math.floor((entry.x + normal.x * 0.02) * 5), hp.x),
-          clamp(Math.floor((entry.y + normal.y * 0.02) * 5), hp.y),
-          clamp(Math.floor((entry.z + normal.z * 0.02) * 5), hp.z)
+          clamp(Math.floor((entry.x + normal.x * 0.02) * MICRO_DIVISIONS), hp.x),
+          clamp(Math.floor((entry.y + normal.y * 0.02) * MICRO_DIVISIONS), hp.y),
+          clamp(Math.floor((entry.z + normal.z * 0.02) * MICRO_DIVISIONS), hp.z)
         ];
         const subdivideResult = this.performBasicAction({
           domain: ActionDomain.WORLD,
@@ -4236,9 +4236,9 @@ export class PlayerController {
       const targetPoint = this.brushMicroMode
         ? (hitEntity.placeMicroPos
             ? new THREE.Vector3(
-                hitEntity.placeMicroPos.localX - (hitEntity.normal?.x || 0) * 0.1,
-                hitEntity.placeMicroPos.localY - (hitEntity.normal?.y || 0) * 0.1,
-                hitEntity.placeMicroPos.localZ - (hitEntity.normal?.z || 0) * 0.1
+                hitEntity.placeMicroPos.localX - (hitEntity.normal?.x || 0) * (MICRO_SIZE / 2),
+                hitEntity.placeMicroPos.localY - (hitEntity.normal?.y || 0) * (MICRO_SIZE / 2),
+                hitEntity.placeMicroPos.localZ - (hitEntity.normal?.z || 0) * (MICRO_SIZE / 2)
               )
             : hitEntity.point)
         : hitEntity.point;
@@ -4464,7 +4464,7 @@ export class PlayerController {
 
   /**
    * Tab key (Selector tool): toggle between standard 1 m block selection
-   * (the default) and 0.2 m micro-block selection. Switching granularity
+   * (the default) and 0.125 m micro-block selection. Switching granularity
    * discards any in-progress or completed block selection (world box, sparse
    * single cells, entity box) so the two granularities never mix; component
    * subtree selection is unaffected.
@@ -4490,7 +4490,7 @@ export class PlayerController {
 
   /**
    * Tab key (Brush tool): toggle between standard 1 m block painting (the default)
-   * and 0.2 m micro-block painting.
+   * and 0.125 m micro-block painting.
    */
   toggleBrushMicroMode() {
     this.brushMicroMode = !this.brushMicroMode;
@@ -4498,14 +4498,14 @@ export class PlayerController {
       this.ui.updateToolPanelMode?.();
       this.ui.renderHotbar?.();
       this.ui.showToast(this.brushMicroMode
-        ? 'Brush: MICRO mode (0.2 m) · Tab switches to STANDARD'
+        ? 'Brush: MICRO mode (0.125 m) · Tab switches to STANDARD'
         : 'Brush: STANDARD mode (1.0 m) · Tab switches to MICRO');
     }
     return this.brushMicroMode;
   }
 
   /**
-   * Resolve the 0.2 m micro cell under the crosshair for the current world
+   * Resolve the 0.125 m micro cell under the crosshair for the current world
    * raycast. Micro hits use the hit micro cell directly; standard hits use
    * the exact face entry point pushed through the surface (the same math as
    * the spoon's direct carve), clamped to the hit standard cell so aiming at
@@ -4528,34 +4528,34 @@ export class PlayerController {
     const baseX = Math.floor(hp.x);
     const baseY = Math.floor(hp.y);
     const baseZ = Math.floor(hp.z);
-    const clamp = (value, base) => Math.max(base * 5, Math.min(base * 5 + 4, value));
+    const clamp = (value, base) => Math.max(base * MICRO_DIVISIONS, Math.min(base * MICRO_DIVISIONS + MICRO_DIVISIONS - 1, value));
     return {
-      x: wrapMicroX(clamp(Math.floor((entry.x + normal.x * 0.02) * 5), baseX)),
-      y: Math.max(0, clamp(Math.floor((entry.y + normal.y * 0.02) * 5), baseY)),
-      z: wrapMicroZ(clamp(Math.floor((entry.z + normal.z * 0.02) * 5), baseZ))
+      x: wrapMicroX(clamp(Math.floor((entry.x + normal.x * 0.02) * MICRO_DIVISIONS), baseX)),
+      y: Math.max(0, clamp(Math.floor((entry.y + normal.y * 0.02) * MICRO_DIVISIONS), baseY)),
+      z: wrapMicroZ(clamp(Math.floor((entry.z + normal.z * 0.02) * MICRO_DIVISIONS), baseZ))
     };
   }
 
-  /** Meter-space origin of the 0.2 m micro cell containing a world point. */
+  /** Meter-space origin of the 0.125 m micro cell containing a world point. */
   microMeterPoint(point) {
     if (!point) return null;
     return {
-      x: Math.floor(point.x * 5 + 1e-6) / 5,
-      y: Math.max(0, Math.floor(point.y * 5 + 1e-6)) / 5,
-      z: Math.floor(point.z * 5 + 1e-6) / 5
+      x: Math.floor(point.x * MICRO_DIVISIONS + 1e-6) / MICRO_DIVISIONS,
+      y: Math.max(0, Math.floor(point.y * MICRO_DIVISIONS + 1e-6)) / MICRO_DIVISIONS,
+      z: Math.floor(point.z * MICRO_DIVISIONS + 1e-6) / MICRO_DIVISIONS
     };
   }
 
   /**
    * Corner A of a pending world box in meter units. Micro-mode corners are
-   * stored as 0.2-grid integers, so they must be scaled down before the
+   * stored as 0.125-grid integers, so they must be scaled down before the
    * preview renderer (which works in meters) floors them.
    */
   pendingWorldCornerAMeters() {
     const cornerA = this.contraptions?.selectionCornerA;
     if (!cornerA) return null;
     return cornerA.micro
-      ? { x: cornerA.x / 5, y: cornerA.y / 5, z: cornerA.z / 5 }
+      ? { x: cornerA.x / MICRO_DIVISIONS, y: cornerA.y / MICRO_DIVISIONS, z: cornerA.z / MICRO_DIVISIONS }
       : { x: cornerA.x, y: cornerA.y, z: cornerA.z };
   }
 
@@ -4775,7 +4775,7 @@ export class PlayerController {
     if (category === 'blockset') {
       return {
         type: 'space-blockset',
-        version: 5,
+        version: 6,
         name: this.inventoryItemName('blockset', item),
         blocks: (item.blocks || []).map(b => {
           const shared = {
@@ -4784,7 +4784,7 @@ export class PlayerController {
           };
           if ((b.size ?? 1) < 1) {
             // Block-set files keep every coordinate integral. dx/dy/dz select
-            // the standard cell; mx/my/mz select one of its 5 subdivisions.
+            // the standard cell; mx/my/mz select one of its 8 subdivisions.
             const microX = Math.round(Number(b.dx) * MICRO_DIVISIONS);
             const microY = Math.round(Number(b.dy) * MICRO_DIVISIONS);
             const microZ = Math.round(Number(b.dz) * MICRO_DIVISIONS);
@@ -4921,7 +4921,7 @@ export class PlayerController {
     if (category === 'colorset') {
       return {
         type: 'space-colorset',
-        version: 5,
+        version: 6,
         name: item.name || 'color set',
         colors: item.colors
       };
@@ -5027,7 +5027,7 @@ export class PlayerController {
     };
     const runtimeVoxel = (block, ownerId = null) => {
       if (block?.block !== undefined && block.block !== BlockTypes.COLOR_BLOCK) {
-        throw new Error('Inventory v5 supports only color block id 1');
+        throw new Error('Inventory v6 supports only color block id 1');
       }
       const color = Number(block?.color ?? 0xf2a93b);
       if (!Number.isSafeInteger(color) || color < 0 || color > 0xffffff) {
@@ -5041,7 +5041,7 @@ export class PlayerController {
       if (hasMicro) {
         const micro = microValues.map(Number);
         if (!micro.every(value => Number.isInteger(value) && value >= 0 && value < MICRO_DIVISIONS)) {
-          throw new Error('Micro coordinates mx/my/mz must all be integers between 0 and 4');
+          throw new Error('Micro coordinates mx/my/mz must all be integers between 0 and 7');
         }
         coordinates = base.map((value, index) => (
           (value * MICRO_DIVISIONS + micro[index]) / MICRO_DIVISIONS
@@ -5065,8 +5065,8 @@ export class PlayerController {
     };
 
     if (category === 'blockset') {
-      if (data?.type !== 'space-blockset' || data?.version !== 5) {
-        return fail('Expected a space-blockset v5 Protobuf file');
+      if (data?.type !== 'space-blockset' || data?.version !== 6) {
+        return fail('Expected a space-blockset v6 Protobuf file');
       }
       if (typeof data.name !== 'string' || !trimInventoryName(data.name)) return fail('A block set must have a name');
       if (inventoryNameLength(data.name) > MAX_INVENTORY_NAME_LENGTH) {
@@ -5100,8 +5100,8 @@ export class PlayerController {
     }
 
     if (category === 'entity') {
-      if (data?.type !== 'space-entity' || data?.version !== 5 || !data.root) {
-        return fail('Expected a recursive space-entity v5 Protobuf file');
+      if (data?.type !== 'space-entity' || data?.version !== 6 || !data.root) {
+        return fail('Expected a recursive space-entity v6 Protobuf file');
       }
       if (Object.hasOwn(data, 'name')) return fail('Entity names belong to root.name');
 
@@ -5274,8 +5274,8 @@ export class PlayerController {
     }
 
     if (category === 'colorset') {
-      if (data?.type !== 'space-colorset' || data?.version !== 5) {
-        return fail('Expected a space-colorset v5 Protobuf file');
+      if (data?.type !== 'space-colorset' || data?.version !== 6) {
+        return fail('Expected a space-colorset v6 Protobuf file');
       }
       if (typeof data.name !== 'string' || !trimInventoryName(data.name)) return fail('A color set must have a name');
       if (inventoryNameLength(data.name) > MAX_INVENTORY_NAME_LENGTH) {
@@ -5644,7 +5644,7 @@ export class PlayerController {
             localX: cell.x / MICRO_DIVISIONS - origin.x,
             localY: cell.y / MICRO_DIVISIONS - origin.y,
             localZ: cell.z / MICRO_DIVISIONS - origin.z,
-            size: 0.2,
+            size: MICRO_SIZE,
             block: BlockTypes.COLOR_BLOCK,
             color,
             part
@@ -5685,7 +5685,7 @@ export class PlayerController {
             localX: micro.x - origin.x,
             localY: micro.y - origin.y,
             localZ: micro.z - origin.z,
-            size: micro.size || 0.2,
+            size: micro.size || MICRO_SIZE,
             block: BlockTypes.COLOR_BLOCK,
             color: micro.color,
             part: micro.part
@@ -6119,7 +6119,7 @@ export class PlayerController {
   }
 
   /**
-   * Cursor highlight (block focus box). When the shovel targets a 0.2 micro
+   * Cursor highlight (block focus box). When the shovel targets a 0.125 micro
    * voxel, the operation applies to the whole 1x1x1 standard cell, so the
    * outline stays 1x1x1 instead of shrinking to the micro cell.
    * @returns {null | { pos: {x,y,z}, size: number }}
@@ -6130,14 +6130,14 @@ export class PlayerController {
     if (this.activeTool === SpecialTool.SHOVEL && ray.kind === 'micro' && ray.microPos) {
       return {
         pos: {
-          x: Math.floor(ray.microPos.x / 5),
-          y: Math.floor(ray.microPos.y / 5),
-          z: Math.floor(ray.microPos.z / 5)
+          x: Math.floor(ray.microPos.x / MICRO_DIVISIONS),
+          y: Math.floor(ray.microPos.y / MICRO_DIVISIONS),
+          z: Math.floor(ray.microPos.z / MICRO_DIVISIONS)
         },
         size: 1
       };
     }
-    // Selector micro mode (Tab): highlight the exact 0.2 m cell under the
+    // Selector micro mode (Tab): highlight the exact 0.125 m cell under the
     // crosshair so the selection granularity is visible while aiming.
     if (this.selectorMicroMode && ray.kind && ray.hitPos) {
       const isSelectorTool = this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE;
@@ -6145,25 +6145,25 @@ export class PlayerController {
         const cell = this.selectorMicroCellFromRaycast(ray);
         if (cell) {
           return {
-            pos: { x: cell.x * 0.2, y: cell.y * 0.2, z: cell.z * 0.2 },
-            size: 0.2
+            pos: { x: cell.x * MICRO_SIZE, y: cell.y * MICRO_SIZE, z: cell.z * MICRO_SIZE },
+            size: MICRO_SIZE
           };
         }
       }
     }
-    // Brush micro mode (Tab): highlight the exact 0.2 m cell under the crosshair
+    // Brush micro mode (Tab): highlight the exact 0.125 m cell under the crosshair
     if (this.brushMicroMode && this.activeTool === SpecialTool.BRUSH && ray.kind && ray.hitPos) {
       if (ray.kind === 'micro' && ray.microPos) {
         return {
-          pos: { x: ray.microPos.x * 0.2, y: ray.microPos.y * 0.2, z: ray.microPos.z * 0.2 },
-          size: 0.2
+          pos: { x: ray.microPos.x * MICRO_SIZE, y: ray.microPos.y * MICRO_SIZE, z: ray.microPos.z * MICRO_SIZE },
+          size: MICRO_SIZE
         };
       }
       const cell = this.selectorMicroCellFromRaycast(ray);
       if (cell) {
         return {
-          pos: { x: cell.x * 0.2, y: cell.y * 0.2, z: cell.z * 0.2 },
-          size: 0.2
+          pos: { x: cell.x * MICRO_SIZE, y: cell.y * MICRO_SIZE, z: cell.z * MICRO_SIZE },
+          size: MICRO_SIZE
         };
       }
     }
@@ -6171,13 +6171,13 @@ export class PlayerController {
   }
 
   /**
-   * Compute the spoon 5x5x5 grid focus preview (same hit priority as clicks):
+   * Compute the spoon 8x8x8 grid focus preview (same hit priority as clicks):
    * entity hit first, then world ray; standard cell shows the full grid,
    * micro hit additionally highlights the current micro cell.
    */
   updateMicroCarvePreview() {
     this.microCarvePreview = null;
-    // Spoon: show 5×5 micro-voxel focus grid.
+    // Spoon: show 8×8 micro-voxel focus grid.
     // Selector (after a level has been selected): show a 1×1×1 outline on hover to help the user
     // aim their first box-selection corner.
     const isSpoon = this.activeTool === SpecialTool.SPOON;
@@ -6204,7 +6204,7 @@ export class PlayerController {
             new THREE.Vector3(hit.cell.x, hit.cell.y, hit.cell.z)
           )
         : null;
-      // Brush on stopped entity: show crosshair cell guide (focusBlockPreview), sized by mode (0.2m micro or 1m standard)
+      // Brush on stopped entity: show crosshair cell guide (focusBlockPreview), sized by mode (0.125m micro or 1m standard)
       if (isBrush) {
         if (this.canEditEntityInternals(contraption)) {
           const focusNode = contraption.entityNodes?.get?.(nodeId);
@@ -6216,13 +6216,13 @@ export class PlayerController {
           let cellSize = 1;
 
           if (this.brushMicroMode) {
-            cellSize = 0.2;
+            cellSize = MICRO_SIZE;
             if (hit.block && (hit.block.size || 1) < 1 && typeof contraption.getBlockWorldCenter === 'function') {
               center = contraption.getBlockWorldCenter(hit.block);
             } else if (hit.placeMicroPos && hit.normal && typeof contraption.entityLocalToWorld === 'function') {
-              const localX = (Math.floor((hit.placeMicroPos.localX - (hit.normal.x || 0) * 0.1) * 5) + 0.5) / 5;
-              const localY = (Math.floor((hit.placeMicroPos.localY - (hit.normal.y || 0) * 0.1) * 5) + 0.5) / 5;
-              const localZ = (Math.floor((hit.placeMicroPos.localZ - (hit.normal.z || 0) * 0.1) * 5) + 0.5) / 5;
+              const localX = (Math.floor((hit.placeMicroPos.localX - (hit.normal.x || 0) * (MICRO_SIZE / 2)) * MICRO_DIVISIONS) + 0.5) / MICRO_DIVISIONS;
+              const localY = (Math.floor((hit.placeMicroPos.localY - (hit.normal.y || 0) * (MICRO_SIZE / 2)) * MICRO_DIVISIONS) + 0.5) / MICRO_DIVISIONS;
+              const localZ = (Math.floor((hit.placeMicroPos.localZ - (hit.normal.z || 0) * (MICRO_SIZE / 2)) * MICRO_DIVISIONS) + 0.5) / MICRO_DIVISIONS;
               center = contraption.entityLocalToWorld(nodeId, new THREE.Vector3(localX, localY, localZ));
             } else if (hit.point) {
               center = hit.point.clone();
@@ -6284,13 +6284,13 @@ export class PlayerController {
           focusNode?.group?.updateWorldMatrix?.(true, false);
           const focusQuaternion = focusNode?.group
             ?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
-          // In micro mode, hovering a 0.2 m block focuses the guide on that
+          // In micro mode, hovering a 0.125 m block focuses the guide on that
           // block instead of the 1 m standard cell containing it.
           const microTarget = this.selectorMicroMode && hit.block && (hit.block.size || 1) < 1;
           this.focusBlockPreview = microTarget
             ? {
                 center: contraption.getBlockWorldCenter(hit.block),
-                cellSize: hit.block.size || 0.2,
+                cellSize: hit.block.size || MICRO_SIZE,
                 active: !!this.selectorRange.pointA,
                 quaternion: focusQuaternion
               }
@@ -6335,7 +6335,7 @@ export class PlayerController {
         };
         return;
       }
-      // Only the spoon renders the 5×5 micro-voxel grid.
+      // Only the spoon renders the 8×8 micro-voxel grid.
       if (!isSpoon) return;
       const focusNode = contraption.entityNodes?.get?.(nodeId);
       focusNode?.group?.updateWorldMatrix?.(true, false);
@@ -6355,11 +6355,11 @@ export class PlayerController {
       const pointA = this.rangePointToPreviewGrid(this.selectorRange, this.selectorRange.pointA);
       if (pointA) {
         // Cursor must use the same quantization the click applies: in micro mode
-        // the corner snaps to the 0.2 m surface cell under the crosshair, not to
+        // the corner snaps to the 0.125 m surface cell under the crosshair, not to
         // the whole standard cell (hitPos).
         const microCell = this.selectorMicroMode ? this.selectorMicroCellFromRaycast() : null;
         const cursorWorld = microCell
-          ? new THREE.Vector3(microCell.x / 5, microCell.y / 5, microCell.z / 5)
+          ? new THREE.Vector3(microCell.x / MICRO_DIVISIONS, microCell.y / MICRO_DIVISIONS, microCell.z / MICRO_DIVISIONS)
           : new THREE.Vector3(this.currentRaycast.hitPos.x, this.currentRaycast.hitPos.y, this.currentRaycast.hitPos.z);
         const cursor = this.worldPointToRangePreviewGrid(this.selectorRange, cursorWorld);
         const frame = this.rangePreviewFrame(this.selectorRange);
@@ -6382,7 +6382,7 @@ export class PlayerController {
       this.boxSelectionPreview = {
         pointA: this.pendingWorldCornerAMeters(),
         cursor: microC
-          ? { x: microC.x / 5, y: microC.y / 5, z: microC.z / 5 }
+          ? { x: microC.x / MICRO_DIVISIONS, y: microC.y / MICRO_DIVISIONS, z: microC.z / MICRO_DIVISIONS }
           : { x: Math.floor(hp.x), y: Math.floor(hp.y), z: Math.floor(hp.z) },
         micro: this.selectorMicroMode === true
       };
@@ -6403,12 +6403,12 @@ export class PlayerController {
       const mp = ray.microPos;
       this.microCarvePreview = {
         cellOrigin: new THREE.Vector3(
-          Math.floor(mp.x / 5),
-          Math.floor(mp.y / 5),
-          Math.floor(mp.z / 5)
+          Math.floor(mp.x / MICRO_DIVISIONS),
+          Math.floor(mp.y / MICRO_DIVISIONS),
+          Math.floor(mp.z / MICRO_DIVISIONS)
         ),
         microCenter: isSpoon
-          ? new THREE.Vector3((mp.x + 0.5) * 0.2, (mp.y + 0.5) * 0.2, (mp.z + 0.5) * 0.2)
+          ? new THREE.Vector3((mp.x + 0.5) * MICRO_SIZE, (mp.y + 0.5) * MICRO_SIZE, (mp.z + 0.5) * MICRO_SIZE)
           : null,
         quaternion: new THREE.Quaternion()
       };

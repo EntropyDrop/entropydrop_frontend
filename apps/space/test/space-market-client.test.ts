@@ -6,7 +6,7 @@ import { decodeInventoryResource, encodeInventoryResource } from '@entropydrop/s
 
 const COLORSET = {
   type: 'space-colorset',
-  version: 5,
+  version: 6,
   name: 'Sunset',
   colors: [
     '#111111', '#222222', '#333333',
@@ -21,22 +21,22 @@ const COLORSET_DIGEST = createHash('sha256')
 
 const BLOCKSET = {
   type: 'space-blockset',
-  version: 5,
+  version: 6,
   name: 'Signal tower',
   blocks: [{ dx: 1, dy: 2, dz: 3, block: 1, color: 0xf2a93b }],
 };
 const BLOCKSET_PROTOBUF = encodeInventoryResource('blockset', BLOCKSET);
 // Cross-language fixture for the backend's deterministic, name-omitting digest.
-const BLOCKSET_DIGEST = '6c972747dbed341845d8f3e69ee930385f0e5259e53938077daab6bce3abdf38';
+const BLOCKSET_DIGEST = '4bf3cbd569eeb687cb16020c3fc2bdb09154371aded6578ba9d99bbc597d59e6';
 
 test('market component names match Python bytes and recursive name-free digests', async () => {
   const component = (id, name, children) => ({ id, name, body: { type: 'dynamic' }, blocks: [], seats: [], children });
-  const entity = { type: 'space-entity', version: 5, constraints: [],
+  const entity = { type: 'space-entity', version: 6, constraints: [],
     root: component('world', '机体', [component('root', '模块', [component('tip', '末端', [])])]) };
   const wire = encodeInventoryResource('entity', entity);
-  assert.equal(Buffer.from(wire).toString('hex'), '08055a3612340a05776f726c641a0042210a04726f6f741a00420f0a037469701a006206e69cabe7abaf6206e6a8a1e59d976206e69cbae4bd93');
+  assert.equal(Buffer.from(wire).toString('hex'), '08065a3612340a05776f726c641a0042210a04726f6f741a00420f0a037469701a006206e69cabe7abaf6206e6a8a1e59d976206e69cbae4bd93');
   assert.deepEqual(decodeInventoryResource(wire).portable, entity);
-  const digest = '84523322927e6b15cfe45217dcdd190be7b6cf6fce53dd00fe334a4d3d0bb78b';
+  const digest = '959abbbdffb9b58f6d2685922de0513259647bb83faf2d39a92829468eb52ac9';
   assert.equal(createHash('sha256').update(encodeInventoryResource('entity', entity, { includeNames: false })).digest('hex'), digest);
   assert.equal(entity.root.children[0].name, '模块', 'digest encoding does not mutate names');
   let payload = wire;

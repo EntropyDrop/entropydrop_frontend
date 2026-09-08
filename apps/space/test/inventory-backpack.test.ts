@@ -229,19 +229,19 @@ test('serialize/parse round-trips block sets', () => {
     blockCount: 3,
     blocks: [
       { dx: 0, dy: 0, dz: 0, size: 1, block: 1, color: 0xff0000 },
-      { dx: 1.2, dy: 0.4, dz: 2.8, size: 0.2, block: 1, color: 0x00ff00 },
-      { dx: -0.2, dy: -1.4, dz: -2, size: 0.2, block: 1, color: 0x0000ff }
+      { dx: 1.125, dy: 0.25, dz: 2.5, size: 0.125, block: 1, color: 0x00ff00 },
+      { dx: -0.125, dy: -1.625, dz: -2, size: 0.125, block: 1, color: 0x0000ff }
     ]
   };
   const serialized = controller.serializeInventoryItem('blockset', slot);
-  assert.equal(serialized.version, 5);
+  assert.equal(serialized.version, 6);
   assert.equal('label' in serialized, false);
   assert.deepEqual(
     serialized.blocks.map(({ dx, dy, dz, mx, my, mz }) => ({ dx, dy, dz, mx, my, mz })),
     [
       { dx: 0, dy: 0, dz: 0, mx: undefined, my: undefined, mz: undefined },
       { dx: 1, dy: 0, dz: 2, mx: 1, my: 2, mz: 4 },
-      { dx: -1, dy: -2, dz: -2, mx: 4, my: 3, mz: 0 }
+      { dx: -1, dy: -2, dz: -2, mx: 7, my: 3, mz: 0 }
     ]
   );
   for (const block of serialized.blocks) {
@@ -255,15 +255,15 @@ test('serialize/parse round-trips block sets', () => {
   const parsed = controller.parseInventoryImport(encoded, 'blockset');
   assert.equal(parsed.ok, true, parsed.error);
   assert.equal(parsed.item.blocks.length, 3);
-  assert.deepEqual(parsed.item.blocks.map(block => block.dx), [-0.2, 0, 1.2]);
+  assert.deepEqual(parsed.item.blocks.map(block => block.dx), [-0.125, 0, 1.125]);
   const positiveMicro = parsed.item.blocks.find(block => block.color === 0x00ff00);
   const negativeMicro = parsed.item.blocks.find(block => block.color === 0x0000ff);
   const standard = parsed.item.blocks.find(block => block.color === 0xff0000);
   assert.deepEqual(
     [positiveMicro.dx, positiveMicro.dy, positiveMicro.dz, positiveMicro.size],
-    [1.2, 0.4, 2.8, 0.2],
+    [1.125, 0.25, 2.5, 0.125],
   );
-  assert.deepEqual([negativeMicro.dx, negativeMicro.dy], [-0.2, -1.4]);
+  assert.deepEqual([negativeMicro.dx, negativeMicro.dy], [-0.125, -1.625]);
   assert.equal(standard.size, 1);
   assert.equal('part' in positiveMicro, false);
   assert.equal(parsed.item.name, 'my set');
@@ -273,19 +273,19 @@ test('serialize/parse round-trips block sets', () => {
   const localParsed = controller.parseInventoryImport(local, 'blockset');
   assert.equal(localParsed.ok, false);
 
-  const legacy = JSON.stringify({ type: 'space-blockset', version: 1, name: 'old', blocks: [{ dx: 0.2, dy: 1.4, dz: 0, size: 0.2 }] });
+  const legacy = JSON.stringify({ type: 'space-blockset', version: 1, name: 'old', blocks: [{ dx: 0.125, dy: 1.625, dz: 0, size: 0.125 }] });
   const legacyParsed = controller.parseInventoryImport(legacy, 'blockset');
   assert.equal(legacyParsed.ok, false);
 
-  assert.equal(controller.parseInventoryImport('{"type":"space-blockset","version":2,"name":"bad","blocks":[{"dx":0.2,"dy":0,"dz":0}]}', 'blockset').ok, false);
+  assert.equal(controller.parseInventoryImport('{"type":"space-blockset","version":2,"name":"bad","blocks":[{"dx":0.125,"dy":0,"dz":0}]}', 'blockset').ok, false);
   assert.equal(controller.parseInventoryImport('{"type":"space-blockset","version":2,"name":"bad","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0,"mz":5}]}', 'blockset').ok, false);
   assert.equal(controller.parseInventoryImport('{"type":"space-blockset","version":2,"name":"bad","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0}]}', 'blockset').ok, false);
   const inferredMicro = controller.parseInventoryImport(encodeInventoryResource('blockset', {
-    type: 'space-blockset', version: 5, name: 'micro',
+    type: 'space-blockset', version: 6, name: 'micro',
     blocks: [{ dx: 0, dy: 0, dz: 0, mx: 1, my: 0, mz: 0, color: 0 }]
   }), 'blockset');
   assert.equal(inferredMicro.ok, true);
-  assert.equal(inferredMicro.item.blocks[0].size, 0.2);
+  assert.equal(inferredMicro.item.blocks[0].size, 0.125);
 
   assert.equal(controller.parseInventoryImport('{"blocks": []}', 'blockset').ok, false);
   assert.equal(controller.parseInventoryImport('not json', 'blockset').ok, false);
@@ -300,13 +300,13 @@ test('serialize/parse round-trips recursive entities with component-local data',
     blocks: [
       { localX: 0, localY: 0, localZ: 0, size: 1, block: 1, color: 0xff0000, entityId: 'root' },
       { localX: 1, localY: 0, localZ: 0, size: 1, block: 1, color: 0x00ff00, entityId: 'arm' },
-      { localX: 1.2, localY: 0.4, localZ: 2.8, size: 0.2, block: 1, color: 0x123456, entityId: 'arm' },
-      { localX: -0.2, localY: -1.4, localZ: -2, size: 0.2, block: 1, color: 0x654321, entityId: 'root' }
+      { localX: 1.125, localY: 0.25, localZ: 2.5, size: 0.125, block: 1, color: 0x123456, entityId: 'arm' },
+      { localX: -0.125, localY: -1.625, localZ: -2, size: 0.125, block: 1, color: 0x654321, entityId: 'root' }
     ],
     childEntities: [{
       id: 'arm',
       parentId: 'root',
-      localPosition: [0.6, 0.7, 0],
+      localPosition: [0.625, 0.75, 0],
       localRotation: [0, 1, 0, 0],
       anchorRotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2],
       collisionEnabled: false,
@@ -333,7 +333,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
       collideConnected: false,
       runtimeOnly: 'must not be exported'
     }],
-    rootPivotOverride: [0.9, 0.4, 0.7],
+    rootPivotOverride: [0.875, 0.375, 0.625],
     bodyType: 'dynamic',
     anchorRotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2],
     useGravity: false,
@@ -342,12 +342,12 @@ test('serialize/parse round-trips recursive entities with component-local data',
   };
 
   const serialized = controller.serializeInventoryItem('entity', slot);
-  assert.equal(serialized.version, 5);
+  assert.equal(serialized.version, 6);
   assert.equal(serialized.root.id, 'root');
   assert.equal(serialized.root.body.type, 'dynamic');
   assert.equal(serialized.root.body.useGravity, false);
   assert.equal(serialized.root.body.collisionEnabled, false);
-  assert.deepEqual(serialized.root.pivot, [0.9, 0.4, 0.7]);
+  assert.deepEqual(serialized.root.pivot, [0.875, 0.375, 0.625]);
   assert.deepEqual(serialized.root.seats, [{ position: [0.5, 1, 0.5] }]);
   assert.deepEqual(serialized.root.anchorRotation, [0, 0, Math.SQRT1_2, Math.SQRT1_2]);
   assert.equal(serialized.root.children.length, 1);
@@ -357,7 +357,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.equal(arm.body.useGravity, false);
   assert.equal(arm.script, 'self.applyForce([0,1,0]);');
   assert.equal(arm.scriptDisabled, true);
-  assert.deepEqual(arm.localPosition, [0.6, 0.7, 0]);
+  assert.deepEqual(arm.localPosition, [0.625, 0.75, 0]);
   assert.deepEqual(arm.localRotation, [0, 1, 0, 0], '180° quaternions must preserve w = 0');
   assert.deepEqual(arm.anchorRotation, [Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
   assert.deepEqual(arm.seats, [
@@ -387,20 +387,20 @@ test('serialize/parse round-trips recursive entities with component-local data',
   const parsed = controller.parseInventoryImport(encoded, 'entity');
   assert.equal(parsed.ok, true, parsed.error);
   assert.equal(parsed.item.blocks.length, 4);
-  const armMicro = parsed.item.blocks.find(block => block.entityId === 'arm' && block.size === 0.2);
-  const rootMicro = parsed.item.blocks.find(block => block.entityId === 'root' && block.size === 0.2);
-  assert.deepEqual([armMicro.localX, armMicro.localY, armMicro.localZ], [1.2, 0.4, 2.8]);
-  assert.deepEqual([rootMicro.localX, rootMicro.localY, rootMicro.localZ], [-0.2, -1.4, -2]);
+  const armMicro = parsed.item.blocks.find(block => block.entityId === 'arm' && block.size === 0.125);
+  const rootMicro = parsed.item.blocks.find(block => block.entityId === 'root' && block.size === 0.125);
+  assert.deepEqual([armMicro.localX, armMicro.localY, armMicro.localZ], [1.125, 0.25, 2.5]);
+  assert.deepEqual([rootMicro.localX, rootMicro.localY, rootMicro.localZ], [-0.125, -1.625, -2]);
   assert.deepEqual(parsed.item.scripts, [{ id: 'arm', code: 'self.applyForce([0,1,0]);' }]);
   assert.deepEqual(parsed.item.enabled, [{ id: 'arm', enabled: false }]);
   assert.equal(parsed.item.childEntities[0].collisionEnabled, false);
   assert.equal(parsed.item.childEntities[0].useGravity, false);
   assert.deepEqual(parsed.item.anchorRotation, [0, 0, Math.SQRT1_2, Math.SQRT1_2]);
-  assert.deepEqual(parsed.item.childEntities[0].localPosition, [0.6, 0.7, 0]);
+  assert.deepEqual(parsed.item.childEntities[0].localPosition, [0.625, 0.75, 0]);
   assert.deepEqual(parsed.item.childEntities[0].localRotation, [0, 1, 0, 0]);
   assert.deepEqual(parsed.item.childEntities[0].anchorRotation, [Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
   assert.equal(parsed.item.collisionEnabled, false);
-  assert.deepEqual(parsed.item.rootPivotOverride, [0.9, 0.4, 0.7]);
+  assert.deepEqual(parsed.item.rootPivotOverride, [0.875, 0.375, 0.625]);
   assert.deepEqual(parsed.item.childEntities[0].seats, [
     { position: [0, 1, 0] },
     { position: [1, 1, 0] }
@@ -414,21 +414,21 @@ test('serialize/parse round-trips recursive entities with component-local data',
   assert.ok(built, 'the imported entity should build');
   assert.equal(built.blocks.length, 4);
   assert.ok(built.entityNodes.has('arm'));
-  assert.ok(built.getEntityNode('arm').localPosition.distanceTo(new THREE.Vector3(0.6, 0.7, 0)) < 1e-9);
+  assert.ok(built.getEntityNode('arm').localPosition.distanceTo(new THREE.Vector3(0.625, 0.75, 0)) < 1e-9);
   assert.deepEqual(built.getEntityNode('arm').localQuaternion.toArray(), [0, 1, 0, 0]);
   assert.equal(built.getNodeCollisionEnabled('root'), false);
   assert.equal(built.getComponentSeats('arm').length, 2);
-  assert.deepEqual(built.rootPivotOverride?.toArray(), [0.9, 0.4, 0.7]);
+  assert.deepEqual(built.rootPivotOverride?.toArray(), [0.875, 0.375, 0.625]);
   const rebuiltSlot = built.serializeSubtree('root');
-  assert.deepEqual(rebuiltSlot.rootPivotOverride, [0.9, 0.4, 0.7]);
+  assert.deepEqual(rebuiltSlot.rootPivotOverride, [0.875, 0.375, 0.625]);
   assert.deepEqual(
     controller.serializeInventoryItem('entity', rebuiltSlot).root.pivot,
-    [0.9, 0.4, 0.7],
+    [0.875, 0.375, 0.625],
   );
 
   const inferredMicro = controller.parseInventoryImport(encodeInventoryResource('entity', {
     type: 'space-entity',
-    version: 5,
+    version: 6,
     root: {
       name: 'micro',
       id: 'root',
@@ -440,7 +440,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
     constraints: []
   }), 'entity');
   assert.equal(inferredMicro.ok, true);
-  assert.equal(inferredMicro.item.blocks[0].size, 0.2);
+  assert.equal(inferredMicro.item.blocks[0].size, 0.125);
 });
 
 test('serialize/parse round-trips color sets and enforces 9 valid hex colors', () => {
@@ -448,7 +448,7 @@ test('serialize/parse round-trips color sets and enforces 9 valid hex colors', (
   const set = { name: 'sunset', colors: ['#f1c40f', '#ff6b81', '#a55eea', '#48dbfb', '#2ed573', '#eb4d4b', '#f5f6fa', '#2f3542', '#f2a93b'] };
   const parsed = controller.parseInventoryImport(controller.encodeInventoryItem('colorset', set), 'colorset');
   assert.equal(parsed.ok, true, parsed.error);
-  assert.equal(controller.serializeInventoryItem('colorset', set).version, 5);
+  assert.equal(controller.serializeInventoryItem('colorset', set).version, 6);
   assert.equal(parsed.item.colors.length, 9);
   assert.equal(parsed.item.colors[0], '#f1c40f');
   assert.equal(parsed.item.name, 'sunset');
@@ -457,7 +457,7 @@ test('serialize/parse round-trips color sets and enforces 9 valid hex colors', (
   const bare = controller.parseInventoryImport(JSON.stringify(['#111111', '#222222']), 'colorset');
   assert.equal(bare.ok, false);
   const short = controller.parseInventoryImport(encodeInventoryResource('colorset', {
-    type: 'space-colorset', version: 5, name: 'short', colors: ['#111111', '#222222']
+    type: 'space-colorset', version: 6, name: 'short', colors: ['#111111', '#222222']
   }), 'colorset');
   assert.equal(short.ok, false);
 
@@ -465,7 +465,7 @@ test('serialize/parse round-trips color sets and enforces 9 valid hex colors', (
   assert.equal(controller.parseInventoryImport('{"type":"space-colorset","version":2,"name":"bad","colors":["#12345","x"]}', 'colorset').ok, false);
   assert.equal(controller.parseInventoryImport('{"blocks":1}', 'colorset').ok, false);
   const tooMany = controller.parseInventoryImport(encodeInventoryResource('colorset', {
-    type: 'space-colorset', version: 5, name: 'large', colors: new Array(10).fill('#123456')
+    type: 'space-colorset', version: 6, name: 'large', colors: new Array(10).fill('#123456')
   }), 'colorset');
   assert.equal(tooMany.ok, false);
 });
@@ -476,7 +476,7 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
 
   const baseEntity = {
     type: 'space-entity',
-    version: 5,
+    version: 6,
     root: {
       name: 'bounded',
       id: 'root',
@@ -510,7 +510,7 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
     root: { ...baseEntity.root, name: '\u001c' }
   }), 'entity').ok, true, 'Python strips C0 file separators; unnamed components are valid');
   assert.equal(controller.parseInventoryImport(Buffer.from(
-    '08055a120a0178120d0a07efbbbf726f6f741a002200',
+    '08065a120a0178120d0a07efbbbf726f6f741a002200',
     'hex',
   ), 'entity').ok, false, 'a leading UTF-8 BOM is component-id data, not a removable marker');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
@@ -605,7 +605,7 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
   }), 'entity').ok, false, 'constraint stiffness must stay within the backend range');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('blockset', {
     type: 'space-blockset',
-    version: 5,
+    version: 6,
     name: 'bad color',
     blocks: [{ dx: 0, dy: 0, dz: 0, block: 1, color: 0xffffffff }]
   }), 'blockset').ok, false, 'voxel colors may not be silently truncated to 24 bits');
@@ -691,7 +691,7 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
         children: []
       }]
     }
-  }), 'entity').ok, false, 'the stopped pose must stay on the 0.2-unit construction grid');
+  }), 'entity').ok, false, 'the stopped pose must stay on the 0.125-unit construction grid');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('entity', {
     ...baseEntity,
     root: {
@@ -725,7 +725,7 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
     'component-local voxel bounds must not be combined across the hierarchy');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('blockset', {
     type: 'space-blockset',
-    version: 5,
+    version: 6,
     name: 'overlap',
     blocks: [
       { dx: 0, dy: 0, dz: 0, block: 1, color: 0 },
@@ -736,7 +736,7 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
   const repeatedBlock = { dx: 0, dy: 0, dz: 0, color: 0 };
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('blockset', {
     type: 'space-blockset',
-    version: 5,
+    version: 6,
     name: 'too many',
     blocks: new Array(MAX_INVENTORY_BLOCKS + 1).fill(repeatedBlock)
   }), 'blockset').ok, false, 'oversized voxel arrays must be rejected');
@@ -755,7 +755,7 @@ test('backpack persists all categories and seeds the default palette', () => {
   controller.addInventoryItem('blockset', {
     kind: 'blockset',
     name: 'Stored shape',
-    blocks: [{ dx: 0.2, dy: 0, dz: 0, size: 0.2, block: 1, color: 0x123456 }],
+    blocks: [{ dx: 0.125, dy: 0, dz: 0, size: 0.125, block: 1, color: 0x123456 }],
     blockCount: 1
   });
   controller.addInventoryItem('entity', {
@@ -769,7 +769,7 @@ test('backpack persists all categories and seeds the default palette', () => {
   controller.setActiveInventoryCategory('entity');
   controller.selectedInventoryIndex = 0;
 
-  const raw = storage.getItem('space.backpack.v6.pb');
+  const raw = storage.getItem('space.backpack.v7.pb');
   assert.ok(raw);
   assert.throws(() => JSON.parse(raw), 'backpack storage is binary Protobuf encoded as base64 in localStorage');
   const stored = decodeBackpack(protobufFromBase64(raw));
@@ -783,7 +783,7 @@ test('backpack persists all categories and seeds the default palette', () => {
   assert.equal(restored.loadInventoriesFromLocalStorage(), true);
   assert.equal(restored.activeInventoryCategory, 'entity');
   assert.equal(restored.inventories.blockset.items[0].name, 'Renamed shape');
-  assert.equal(restored.inventories.blockset.items[0].blocks[0].dx, 0.2);
+  assert.equal(restored.inventories.blockset.items[0].blocks[0].dx, 0.125);
   assert.equal(restored.inventories.entity.items[0].name, 'Stored entity');
   assert.equal(restored.inventories.colorset.items.filter(Boolean).length, 2);
 });

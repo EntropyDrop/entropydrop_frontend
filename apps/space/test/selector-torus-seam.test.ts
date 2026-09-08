@@ -7,7 +7,7 @@ import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import { MicroVoxelLayer } from '@entropydrop/space-engine/voxel/MicroVoxelLayer.ts';
 import { TORUS_SIZE_X, TORUS_SIZE_Z } from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
-const MICRO_DIVISIONS = 5;
+const MICRO_DIVISIONS = 8;
 
 test('two-point selector uses the shortest box across both torus seams', () => {
   const manager = new ContraptionManager(new THREE.Scene(), {}, null, null);
@@ -79,30 +79,30 @@ test('micro selector materializes existing voxels across the torus seams', () =>
   const world: any = {
     microVoxels: {
       cells: new Map([
-        [`${periodMx - 1},25,${periodMz - 1}`, 0xff0000],
-        ['0,25,0', 0x00ff00],
-        ['1,25,1', 0x0000ff]
+        [`${periodMx - 1},40,${periodMz - 1}`, 0xff0000],
+        ['0,40,0', 0x00ff00],
+        ['1,40,1', 0x0000ff]
       ])
     },
     getBlock: () => BlockTypes.AIR
   };
   const manager = new ContraptionManager(new THREE.Scene(), world, null, null);
 
-  manager.setCornerA({ x: TORUS_SIZE_X - 0.2, y: 5, z: TORUS_SIZE_Z - 0.2 }, { micro: true });
-  const result = manager.setCornerB({ x: 0.2, y: 5, z: 0.2 }, { micro: true });
+  manager.setCornerA({ x: TORUS_SIZE_X - 0.125, y: 5, z: TORUS_SIZE_Z - 0.125 }, { micro: true });
+  const result = manager.setCornerB({ x: 0.125, y: 5, z: 0.125 }, { micro: true });
 
   assert.equal(result.clamped, false);
   assert.deepEqual(manager.microSelection, [
-    { x: periodMx - 1, y: 25, z: periodMz - 1 },
-    { x: periodMx, y: 25, z: periodMz },
-    { x: periodMx + 1, y: 25, z: periodMz + 1 }
+    { x: periodMx - 1, y: 40, z: periodMz - 1 },
+    { x: periodMx, y: 40, z: periodMz },
+    { x: periodMx + 1, y: 40, z: periodMz + 1 }
   ]);
   assert.deepEqual(manager.getMicroSelectionBounds(), {
     minX: periodMx - 1,
-    minY: 25,
+    minY: 40,
     minZ: periodMz - 1,
     maxX: periodMx + 1,
-    maxY: 25,
+    maxY: 40,
     maxZ: periodMz + 1
   });
 });
@@ -124,35 +124,35 @@ test('selection preview renders seam-crossing standard and micro boxes at compac
   ]);
 
   renderer.setBoxSelectionPreview(
-    { x: TORUS_SIZE_X - 0.2, y: 5, z: TORUS_SIZE_Z - 0.2 },
-    { x: 0.2, y: 5, z: 0.2 },
+    { x: TORUS_SIZE_X - 0.125, y: 5, z: TORUS_SIZE_Z - 0.125 },
+    { x: 0.125, y: 5, z: 0.125 },
     true
   );
-  assert.ok(Math.abs(renderer.boxSelectionFill.scale.x - 0.6) < 1e-9);
-  assert.ok(Math.abs(renderer.boxSelectionFill.scale.z - 0.6) < 1e-9);
-  assert.ok(Math.abs(renderer.boxSelectionGroup.position.x - (TORUS_SIZE_X + 0.1)) < 1e-9);
-  assert.ok(Math.abs(renderer.boxSelectionGroup.position.z - (TORUS_SIZE_Z + 0.1)) < 1e-9);
+  assert.ok(Math.abs(renderer.boxSelectionFill.scale.x - 0.375) < 1e-9);
+  assert.ok(Math.abs(renderer.boxSelectionFill.scale.z - 0.375) < 1e-9);
+  assert.ok(Math.abs(renderer.boxSelectionGroup.position.x - (TORUS_SIZE_X + 0.0625)) < 1e-9);
+  assert.ok(Math.abs(renderer.boxSelectionGroup.position.z - (TORUS_SIZE_Z + 0.0625)) < 1e-9);
 });
 
 test('micro extraction returns continuous coordinates for a region crossing the seam', () => {
   const periodMx = TORUS_SIZE_X * MICRO_DIVISIONS;
   const periodMz = TORUS_SIZE_Z * MICRO_DIVISIONS;
   const layer = new MicroVoxelLayer();
-  layer.set(periodMx - 1, 25, periodMz - 1, 0xff0000);
-  layer.set(0, 25, 0, 0x00ff00);
+  layer.set(periodMx - 1, 40, periodMz - 1, 0xff0000);
+  layer.set(0, 40, 0, 0x00ff00);
 
   const extracted = layer.extractCellsInBox(
     periodMx - 1,
-    25,
+    40,
     periodMz - 1,
     periodMx,
-    25,
+    40,
     periodMz
   );
 
   assert.deepEqual(extracted.map(cell => [cell.mx, cell.my, cell.mz]), [
-    [periodMx - 1, 25, periodMz - 1],
-    [periodMx, 25, periodMz]
+    [periodMx - 1, 40, periodMz - 1],
+    [periodMx, 40, periodMz]
   ]);
   assert.equal(layer.cells.size, 0);
 });

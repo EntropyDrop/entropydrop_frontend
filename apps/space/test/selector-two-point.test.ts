@@ -493,17 +493,17 @@ test('root-level box recognizes the visible edge of a rotated descendant', () =>
   assert.equal(controller.selectedBlockSelection, null);
 });
 
-test('a rotated child microblock uses its true 0.2 world AABB for selection', () => {
+test('a rotated child microblock uses its true 0.125 world AABB for selection', () => {
   const scene = new THREE.Scene();
   const contraption = new Contraption(
     2,
     [
       { localX: 4, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
-      { localX: 0, localY: 2, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK, entityId: 'tip' }
+      { localX: 0, localY: 2, localZ: 0, size: 0.125, block: BlockTypes.COLOR_BLOCK, entityId: 'tip' }
     ],
     new THREE.Vector3(0, 10, 0),
     scene,
-    { childEntities: [{ id: 'tip', parentId: 'root', pivot: [0.1, 2.1, 0.1] }] }
+    { childEntities: [{ id: 'tip', parentId: 'root', pivot: [0.0625, 2.0625, 0.0625] }] }
   );
   contraption.stopAllNodeScripts();
   contraption.getChildScriptApi('tip').setLocalEuler([0, Math.PI / 4, 0]);
@@ -512,7 +512,7 @@ test('a rotated child microblock uses its true 0.2 world AABB for selection', ()
   const micro = contraption.blocks.find(b => (b.entityId || 'root') === 'tip');
   const center = contraption.getBlockWorldCenter(micro);
   const bounds = contraption.getBlockWorldBounds(micro);
-  assert.ok(bounds.max.x - center.x > 0.13, 'the rotated X edge should exceed the old 0.1 approximation');
+  assert.ok(bounds.max.x - center.x > 0.08, 'the rotated X edge should exceed the old 0.0625 approximation');
 
   const controller = makeSelectorController();
   controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'tip']) };
@@ -520,8 +520,8 @@ test('a rotated child microblock uses its true 0.2 world AABB for selection', ()
   controller.selectorRange = {
     contraption,
     nodeId: 'root',
-    pointA: toNodeLocal(contraption, 'root', center.clone().add(new THREE.Vector3(0.125, -0.02, -0.02))),
-    pointB: toNodeLocal(contraption, 'root', center.clone().add(new THREE.Vector3(0.14, 0.02, 0.02)))
+    pointA: toNodeLocal(contraption, 'root', center.clone().add(new THREE.Vector3(0.078125, -0.02, -0.02))),
+    pointB: toNodeLocal(contraption, 'root', center.clone().add(new THREE.Vector3(0.0875, 0.02, 0.02)))
   };
   controller.resolveBlockRangeSelection(controller.selectorRange);
 

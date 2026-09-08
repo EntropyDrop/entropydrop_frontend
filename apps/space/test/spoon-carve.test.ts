@@ -12,7 +12,7 @@ import {
 } from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
 /**
- * Direct spoon carving subdivides a standard block into 5x5x5 and immediately removes
+ * Direct spoon carving subdivides a standard block into 8x8x8 and immediately removes
  * the microcell under the crosshair, without a separate conversion step.
  */
 
@@ -54,7 +54,7 @@ test('world: clicking a standard block subdivides it and removes the hit microce
       subdivideBlock: (wx, wy, wz) => {
         subdivided++;
         assert.deepEqual([wx, wy, wz], [2, 2, 2]);
-        return 125;
+        return 512;
       },
       removeMicroBlock: (mx, my, mz) => {
         removed = { mx, my, mz };
@@ -65,8 +65,8 @@ test('world: clicking a standard block subdivides it and removes the hit microce
   controller.handleLeftClick();
   assert.equal(subdivided, 1, 'the whole standard cell should subdivide');
   assert.ok(removed, 'one microcell should be removed immediately');
-  // Entry (2.4,2.3,2.1) maps to microcell (12,11,10), inside [10..14].
-  assert.deepEqual(removed, { mx: 12, my: 11, mz: 10 });
+  // Entry (2.4,2.3,2.1) maps to microcell (19,18,16), inside [16..23].
+  assert.deepEqual(removed, { mx: 19, my: 18, mz: 16 });
   assert.deepEqual(controller.__breakSounds, [{ kind: 'micro', count: 1 }]);
 });
 
@@ -88,7 +88,7 @@ test('world: a boundary entry point clamps the removed microcell inside the hit 
     },
     camera: { quaternion: new THREE.Quaternion() },
     world: {
-      subdivideBlock: () => 125,
+      subdivideBlock: () => 512,
       removeMicroBlock: (mx, my, mz) => { removed = { mx, my, mz }; return true; }
     }
   });
@@ -104,16 +104,16 @@ test('world: three rapid spoon clicks consume three micro layers before remesh p
   setWorldShapeMode('torus');
   try {
     const world = new World(new THREE.Scene()) as any;
-    const mx = TORUS_SPAWN_X * 5;
-    const mz = TORUS_SPAWN_Z * 5;
-    const ys = [100, 101, 102];
+    const mx = TORUS_SPAWN_X * 8;
+    const mz = TORUS_SPAWN_Z * 8;
+    const ys = [160, 161, 162];
     for (const my of ys) world.setMicroBlock(mx, my, mz, 0x123456);
     world.microVoxels.updateMesh();
 
     const camera = new THREE.PerspectiveCamera();
     camera.rotation.set(-Math.PI / 2, 0, 0);
     camera.updateMatrixWorld(true);
-    const eye = new THREE.Vector3(mx / 5 + 0.1, 25, mz / 5 + 0.1);
+    const eye = new THREE.Vector3(mx / 8 + 0.0625, 25, mz / 8 + 0.0625);
     const controller = makeSpoonController({
       camera,
       physics: { getEyePosition: () => eye },
@@ -144,7 +144,7 @@ test('world: three rapid spoon clicks consume three micro layers before remesh p
       ys.map(my => world.getMicroBlock(mx, my, mz)),
       [null, null, null],
     );
-    assert.equal(controller.currentRaycast.microPos.y, 102,
+    assert.equal(controller.currentRaycast.microPos.y, 162,
       'hover remains tied to the old published mesh until its replacement is ready');
     assert.deepEqual(controller.__breakSounds, [
       { kind: 'micro', count: 1 },
@@ -198,7 +198,7 @@ test('world: rapid spoon clicks continue while standard-to-micro publication is 
     }
 
     assert.equal(world.getBlock(wx, wy, wz), BlockTypes.AIR);
-    assert.equal(world.microVoxels.cells.size, 122,
+    assert.equal(world.microVoxels.cells.size, 509,
       'the subdivision plus two immediate follow-up clicks should consume three microcells');
     assert.equal(controller.currentRaycast.kind, 'standard',
       'hover remains on the visible standard mesh until the atomic replacement publishes');
@@ -244,7 +244,7 @@ test('world: a live retry cannot carve terrain hidden behind an entity', () => {
   assert.deepEqual(controller.__breakSounds, [], 'a failed carve must stay silent');
 });
 
-test('entity: clicking a standard block subdivides 125 cells and removes one', () => {
+test('entity: clicking a standard block subdivides 512 cells and removes one', () => {
   const blocks = [
     { localX: 0, localY: 0, localZ: 0, size: 1, block: BlockTypes.COLOR_BLOCK, color: 0xffffff, entityId: 'root' }
   ];
@@ -258,9 +258,9 @@ test('entity: clicking a standard block subdivides 125 cells and removes one', (
       entityId: 'root',
       cell: { x: 0, y: 0, z: 0 },
       kind: 'standard',
-      point: new THREE.Vector3(1.0, 0.2, 0.2),
-      // +X hit: adjacent microcell x=1.0 maps back to hit microcell x=0.8 (ix=4).
-      placeMicroPos: { localX: 1.0, localY: 0.2, localZ: 0.2 },
+      point: new THREE.Vector3(1.0, 0.125, 0.125),
+      // +X hit: adjacent microcell x=1.0 maps back to hit microcell x=0.875 (ix=7).
+      placeMicroPos: { localX: 1.0, localY: 0.125, localZ: 0.125 },
       normal: { x: 1, y: 0, z: 0 },
       color: 0xffffff
     }
@@ -268,16 +268,16 @@ test('entity: clicking a standard block subdivides 125 cells and removes one', (
   controller.handleLeftClick();
 
   assert.equal(rebuilt, 1, 'the operation should rebuild once');
-  assert.equal(contraption.blocks.length, 124, 'subdivide 125 cells and remove one');
+  assert.equal(contraption.blocks.length, 511, 'subdivide 512 cells and remove one');
   const carvedAway = contraption.blocks.some(b =>
     (b.size || 1) < 1 &&
-    Math.abs(b.localX - 0.8) < 1e-3 &&
-    Math.abs(b.localY - 0.2) < 1e-3 &&
-    Math.abs(b.localZ - 0.2) < 1e-3
+    Math.abs(b.localX - 0.875) < 1e-3 &&
+    Math.abs(b.localY - 0.125) < 1e-3 &&
+    Math.abs(b.localZ - 0.125) < 1e-3
   );
-  assert.equal(carvedAway, false, 'hit microcell (0.8,0.2,0.2) must be removed');
+  assert.equal(carvedAway, false, 'hit microcell (0.875,0.125,0.125) must be removed');
   const kept = contraption.blocks.filter(b => (b.size || 1) < 1 && Math.abs(b.localX - 0.0) < 1e-3);
-  assert.equal(kept.length, 25, 'the other 25 microcells in the ix=0 plane should remain');
+  assert.equal(kept.length, 64, 'the other 64 microcells in the ix=0 plane should remain');
   assert.deepEqual(controller.__breakSounds, [{ kind: 'micro', count: 1 }]);
 });
 
@@ -292,20 +292,20 @@ test('entity: a -X hit removes the opposite boundary microcell', () => {
       entityId: 'root',
       cell: { x: 0, y: 0, z: 0 },
       kind: 'standard',
-      point: new THREE.Vector3(0, 0.2, 0.2),
-      // -X hit: adjacent x=-0.2 maps to hit microcell x=0 (ix=0).
-      placeMicroPos: { localX: -0.2, localY: 0.2, localZ: 0.2 },
+      point: new THREE.Vector3(0, 0.125, 0.125),
+      // -X hit: adjacent x=-0.125 maps to hit microcell x=0 (ix=0).
+      placeMicroPos: { localX: -0.125, localY: 0.125, localZ: 0.125 },
       normal: { x: -1, y: 0, z: 0 },
       color: 0xffffff
     }
   });
   controller.handleLeftClick();
-  assert.equal(contraption.blocks.length, 124);
+  assert.equal(contraption.blocks.length, 511);
   const carvedAway = contraption.blocks.some(b =>
     (b.size || 1) < 1 &&
     Math.abs(b.localX - 0.0) < 1e-3 &&
-    Math.abs(b.localY - 0.2) < 1e-3 &&
-    Math.abs(b.localZ - 0.2) < 1e-3
+    Math.abs(b.localY - 0.125) < 1e-3 &&
+    Math.abs(b.localZ - 0.125) < 1e-3
   );
-  assert.equal(carvedAway, false, 'hit microcell (0,0.2,0.2) must be removed');
+  assert.equal(carvedAway, false, 'hit microcell (0,0.125,0.125) must be removed');
 });

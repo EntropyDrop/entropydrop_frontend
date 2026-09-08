@@ -10,7 +10,7 @@ test('getInventoryPreviewBlocks converts a blockset into voxel centers and sizes
     name: 'Test Blockset',
     blocks: [
       { dx: 0, dy: 0, dz: 0, size: 1, color: 0xff0000 },
-      { dx: 1, dy: 2, dz: 3, size: 0.2, color: 0x00ff00 }
+      { dx: 1, dy: 2, dz: 3, size: 0.125, color: 0x00ff00 }
     ]
   };
 
@@ -20,8 +20,8 @@ test('getInventoryPreviewBlocks converts a blockset into voxel centers and sizes
   assert.equal(blocks[0].size, 1);
   assert.equal(blocks[0].color, 0xff0000);
 
-  assert.deepEqual(blocks[1].center, new THREE.Vector3(1.1, 2.1, 3.1));
-  assert.equal(blocks[1].size, 0.2);
+  assert.deepEqual(blocks[1].center, new THREE.Vector3(1.0625, 2.0625, 3.0625));
+  assert.equal(blocks[1].size, 0.125);
   assert.equal(blocks[1].color, 0x00ff00);
 });
 

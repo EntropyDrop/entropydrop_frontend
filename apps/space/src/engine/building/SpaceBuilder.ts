@@ -1,3 +1,4 @@
+import { MICRO_DIVISIONS, MICRO_SIZE } from '@entropydrop/space-engine/voxel/MicroGrid.ts';
 import * as THREE from 'three';
 import { normalizeInventoryName, inventoryNameLength, MAX_INVENTORY_NAME_LENGTH } from '@entropydrop/space-engine/storage/InventoryName.ts';
 import { ActionDomain } from '@entropydrop/space-engine/actions/BasicActions.ts';
@@ -19,7 +20,6 @@ export const MAX_BUILD_TOTAL_SCRIPT_BYTES = 512 * 1024;
 export const BUILD_OPERATIONS_PER_FRAME = 128;
 export const BUILD_FRAME_BUDGET_MS = 5;
 
-const MICRO_DIVISIONS = 5;
 export type SpaceBuildKind = 'structure' | 'entity';
 export type SpaceBuildAnchor = 'crosshair' | [number, number, number];
 
@@ -27,7 +27,7 @@ export interface SpaceBuildVoxelInput {
   x: number;
   y: number;
   z: number;
-  size?: 1 | 0.2;
+  size?: 1 | typeof MICRO_SIZE;
   color?: number | string;
   componentId?: string;
 }
@@ -37,7 +37,7 @@ export interface SpaceBuildPrimitiveInput {
   from: [number, number, number];
   to: [number, number, number];
   hollow?: boolean;
-  size?: 1 | 0.2;
+  size?: 1 | typeof MICRO_SIZE;
   color?: number | string;
   componentId?: string;
 }
@@ -94,7 +94,7 @@ export interface NormalizedBuildVoxel {
   x: number;
   y: number;
   z: number;
-  size: 1 | 0.2;
+  size: 1 | typeof MICRO_SIZE;
   color: number;
   componentId: string;
 }
@@ -148,7 +148,7 @@ export interface SpaceBuilderJobStatus {
 }
 
 type AppliedVoxel = {
-  size: 1 | 0.2;
+  size: 1 | typeof MICRO_SIZE;
   cell?: { x: number; y: number; z: number };
   micro?: { x: number; y: number; z: number };
   color: number;
@@ -248,7 +248,7 @@ function runtimeConstraint(constraint: SpaceBuildConstraintInput): SpaceBuildCon
   return output;
 }
 
-function normalizedGridCoordinate(value: any, size: 1 | 0.2): number | null {
+function normalizedGridCoordinate(value: any, size: 1 | typeof MICRO_SIZE): number | null {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
   const units = size < 1 ? Math.round(number * MICRO_DIVISIONS) : Math.round(number);
@@ -284,7 +284,7 @@ function expandLine(from: number[], to: number[]): number[][] {
 }
 
 function expandPrimitive(primitive: SpaceBuildPrimitiveInput): SpaceBuildVoxelInput[] {
-  const size: 1 | 0.2 = primitive?.size === 0.2 ? 0.2 : 1;
+  const size: 1 | typeof MICRO_SIZE = primitive?.size === MICRO_SIZE ? MICRO_SIZE : 1;
   const scale = size < 1 ? MICRO_DIVISIONS : 1;
   const rawFrom = finiteVector(primitive?.from);
   const rawTo = finiteVector(primitive?.to);
@@ -580,16 +580,16 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
   const standards = new Set<string>();
   const microParents = new Set<string>();
   for (const raw of rawBlocks.slice(0, MAX_BUILD_PLAN_VOXELS)) {
-    if (raw?.size !== undefined && Number(raw.size) !== 1 && Number(raw.size) !== 0.2) {
-      errors.push('Voxel size must be 1 or 0.2.');
+    if (raw?.size !== undefined && Number(raw.size) !== 1 && Number(raw.size) !== MICRO_SIZE) {
+      errors.push('Voxel size must be 1 or 0.125.');
       continue;
     }
-    const size: 1 | 0.2 = Number(raw?.size) === 0.2 ? 0.2 : 1;
+    const size: 1 | typeof MICRO_SIZE = Number(raw?.size) === MICRO_SIZE ? MICRO_SIZE : 1;
     const x = normalizedGridCoordinate(raw?.x, size);
     const y = normalizedGridCoordinate(raw?.y, size);
     const z = normalizedGridCoordinate(raw?.z, size);
     if (x === null || y === null || z === null) {
-      errors.push('Every voxel coordinate must lie on its 1 m or 0.2 m grid.');
+      errors.push('Every voxel coordinate must lie on its 1 m or 0.125 m grid.');
       continue;
     }
     const componentId = kind === 'entity'
@@ -914,7 +914,7 @@ export class SpaceBuilder {
         color: block.color,
         actor: { source: 'agent', playerId: 'local' }
       });
-      if (result?.placed > 0) job.applied.push({ size: 0.2, micro, color: block.color });
+      if (result?.placed > 0) job.applied.push({ size: MICRO_SIZE, micro, color: block.color });
       return result?.placed || 0;
     }
     const cell = worldCellFor(job.position!, block);

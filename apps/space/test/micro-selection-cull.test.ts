@@ -25,15 +25,15 @@ test('micro selection hologram renders unified outer bounding box like standard 
   assert.ok(renderer.selectionGroup.visible);
   assert.equal(renderer.selectionMicroCellsGroup.visible, false);
 
-  // Bounds should span 2 microcells = 0.4m in each dimension
-  assert.ok(Math.abs(renderer.selectionGroup.scale.x - 0.4) < 1e-4);
-  assert.ok(Math.abs(renderer.selectionGroup.scale.y - 0.4) < 1e-4);
-  assert.ok(Math.abs(renderer.selectionGroup.scale.z - 0.4) < 1e-4);
+  // Bounds should span 2 microcells = 0.25m in each dimension
+  assert.ok(Math.abs(renderer.selectionGroup.scale.x - 0.25) < 1e-4);
+  assert.ok(Math.abs(renderer.selectionGroup.scale.y - 0.25) < 1e-4);
+  assert.ok(Math.abs(renderer.selectionGroup.scale.z - 0.25) < 1e-4);
 
-  // Center should be (0.5 * 0.2, 0.5 * 0.2, 0.5 * 0.2) = (0.2, 0.2, 0.2)
-  assert.ok(Math.abs(renderer.selectionGroup.position.x - 0.2) < 1e-4);
-  assert.ok(Math.abs(renderer.selectionGroup.position.y - 0.2) < 1e-4);
-  assert.ok(Math.abs(renderer.selectionGroup.position.z - 0.2) < 1e-4);
+  // Center should be (0.125, 0.125, 0.125) = (0.125, 0.125, 0.125)
+  assert.ok(Math.abs(renderer.selectionGroup.position.x - 0.125) < 1e-4);
+  assert.ok(Math.abs(renderer.selectionGroup.position.y - 0.125) < 1e-4);
+  assert.ok(Math.abs(renderer.selectionGroup.position.z - 0.125) < 1e-4);
 });
 
 test('entity block selection highlight renders single outer bounding box wireframe per node', () => {
@@ -44,10 +44,10 @@ test('entity block selection highlight renders single outer bounding box wirefra
   contraption.subtreeHighlightBoxes = [];
   contraption.clearSubtreeHighlight = Contraption.prototype.clearSubtreeHighlight.bind(contraption);
 
-  // 2 adjacent microblocks: (0, 0, 0) and (0.2, 0, 0)
+  // 2 adjacent microblocks: (0, 0, 0) and (0.125, 0, 0)
   const blocks = [
-    { entityId: 'root', localX: 0, localY: 0, localZ: 0, size: 0.2 },
-    { entityId: 'root', localX: 0.2, localY: 0, localZ: 0, size: 0.2 }
+    { entityId: 'root', localX: 0, localY: 0, localZ: 0, size: 0.125 },
+    { entityId: 'root', localX: 0.125, localY: 0, localZ: 0, size: 0.125 }
   ];
 
   contraption.highlightBlocks(blocks);

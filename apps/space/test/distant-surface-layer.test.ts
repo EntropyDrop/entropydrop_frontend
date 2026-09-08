@@ -19,7 +19,7 @@ function makeZoneBytes(zoneX = 0, zoneZ = 0, filled = false) {
   const bytes = new Uint8Array(SURFACE_ZONE_HEADER_BYTES + records * SURFACE_ZONE_RECORD_BYTES);
   bytes.set([0x45, 0x44, 0x53, 0x5a]);
   const view = new DataView(bytes.buffer);
-  view.setUint8(4, 2);
+  view.setUint8(4, 3);
   view.setUint8(5, 8);
   view.setUint8(6, 32);
   view.setUint8(7, 5);
@@ -31,7 +31,7 @@ function makeZoneBytes(zoneX = 0, zoneZ = 0, filled = false) {
   view.setUint32(28, records, true);
   const fillRecord = (index: number) => {
     const offset = SURFACE_ZONE_HEADER_BYTES + index * SURFACE_ZONE_RECORD_BYTES;
-    view.setUint16(offset, 85, true);
+    view.setUint16(offset, 136, true);
     bytes.set([0x71, 0x8f, 0x61], offset + 2);
   };
   if (filled) {
@@ -49,7 +49,7 @@ test('surface-zone binary parsing preserves identity, heights and colors', () =>
   assert.equal(zone.seed, 20260827);
   assert.equal(zone.sourceTerrainRevision, 7);
   assert.equal(zone.heightsMicro.length, 65_536);
-  assert.equal(zone.heightsMicro[0], 85);
+  assert.equal(zone.heightsMicro[0], 136);
   assert.deepEqual([...zone.colors.subarray(0, 3)], [0x71, 0x8f, 0x61]);
   assert.throws(() => parseSurfaceZoneSnapshot(makeZoneBytes().subarray(0, 40)), /snapshot/);
 });
@@ -197,7 +197,7 @@ test('backend zones populate one instanced far layer and retain a near-field cut
   assert.equal(layer.loadedZones.has('0,0'), true);
   assert.ok(layer.mesh.geometry.instanceCount > 0);
   assert.ok(layer.mesh.geometry.instanceCount < 65_536);
-  assert.equal(layer.mesh.geometry.getAttribute('surfaceHeight').getX(0), 85);
+  assert.equal(layer.mesh.geometry.getAttribute('surfaceHeight').getX(0), 136);
   assert.equal(layer.mesh.geometry.getAttribute('surfaceOffset').getX(0), 0);
   assert.equal(layer.mesh.geometry.getAttribute('surfaceOffset').getY(0), 0);
   assert.equal(layer.mesh.geometry.getAttribute('surfaceSize').getX(0), 2);
@@ -249,7 +249,7 @@ test('backend zones populate one instanced far layer and retain a near-field cut
   assert.match(sideShader.vertexShader, /TORUS_SURFACE_AXIS/);
   assert.match(sideShader.vertexShader, /surfaceWinding/);
   assert.ok(layer.sideMesh.geometry.instanceCount > 0);
-  assert.equal(layer.sideMesh.geometry.getAttribute('surfaceHeight').getX(0), 85);
+  assert.equal(layer.sideMesh.geometry.getAttribute('surfaceHeight').getX(0), 136);
   assert.equal(layer.sideMesh.geometry.getAttribute('surfaceBottomHeight').getX(0), 0);
 
   const detailMask = layer.detailMaskTexture.image.data as Uint8Array;
@@ -316,7 +316,7 @@ test('surface-zone remote verifies and progressively installs manifest entries',
     });
     if (url.endsWith('/surface-zones')) {
       return Response.json({
-        schema_version: 2,
+        schema_version: 3,
         samples_per_chunk_axis: 8,
         zone_size_chunks: 32,
         width_chunks: 32,
@@ -369,7 +369,7 @@ test('surface-zone remote never forwards login credentials to a manifest-selecte
     (async () => {
       calls++;
       return Response.json({
-        schema_version: 2,
+        schema_version: 3,
         samples_per_chunk_axis: 8,
         zone_size_chunks: 32,
         width_chunks: 32,

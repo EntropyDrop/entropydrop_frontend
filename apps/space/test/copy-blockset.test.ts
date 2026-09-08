@@ -112,13 +112,13 @@ test('pasting a block set creates ordinary world blocks and no entity', () => {
   assert.ok(controller.__toasts.some(m => m.includes('Built block set')));
 });
 
-test('block-set copy preserves 0.2 microblock offsets during paste', () => {
+test('block-set copy preserves 0.125 microblock offsets during paste', () => {
   const scene = new THREE.Scene();
   const world = new World(scene) as any;
   clearRegion(world, 4, 10, 4, 4, 10, 5);
   world.setBlock(4, 10, 4, BlockTypes.COLOR_BLOCK, false, 0xaaaaaa);
-  // Put a microblock in adjacent cell (4,10,5): microcell (22,50,27).
-  assert.equal(world.setMicroBlock(22, 50, 27, 0x123456), true);
+  // Put a microblock in adjacent cell (4,10,5): microcell (34,80,42).
+  assert.equal(world.setMicroBlock(34, 80, 42, 0x123456), true);
   const manager = new ContraptionManager(scene, {}, null, null);
   const controller = makeController({ manager, world });
 
@@ -130,11 +130,11 @@ test('block-set copy preserves 0.2 microblock offsets during paste', () => {
 
   const micro = slot.blocks.find(b => (b.size || 1) < 1);
   assert.ok(micro, 'the block set should contain the microblock');
-  assert.ok(Math.abs(micro.dx - 0.4) < 1e-6, `expected microblock dx=0.4, got ${micro.dx}`);
-  assert.ok(Math.abs(micro.dz - 1.4) < 1e-6, `expected microblock dz=1.4, got ${micro.dz}`);
+  assert.ok(Math.abs(micro.dx - 0.25) < 1e-6, `expected microblock dx=0.25, got ${micro.dx}`);
+  assert.ok(Math.abs(micro.dz - 1.25) < 1e-6, `expected microblock dz=1.25, got ${micro.dz}`);
   assert.equal(micro.color, 0x123456);
 
-  // Paste on top of (20,30,40); the microblock lands at microcell (102,155,207).
+  // Paste on top of (20,30,40); the microblock lands at microcell (162,248,330).
   clearRegion(world, 20, 31, 40, 20, 31, 41);
   controller.currentRaycast = {
     hit: true,
@@ -142,7 +142,7 @@ test('block-set copy preserves 0.2 microblock offsets during paste', () => {
     normal: { x: 0, y: 1, z: 0 }
   };
   controller.pasteInventorySlot();
-  const placed = world.getMicroBlock(102, 155, 207);
+  const placed = world.getMicroBlock(162, 248, 330);
   assert.ok(placed, 'the microblock should land in the expected cell');
   assert.equal(placed.color, 0x123456);
 });
@@ -299,7 +299,7 @@ test('pasteBlockSet in replace mode clears standard blocks before placing micro 
   const slot = {
     kind: 'blockset',
     blockCount: 1,
-    blocks: [{ dx: 0.2, dy: 0, dz: 0, size: 0.2, color: 0xabcd12 }]
+    blocks: [{ dx: 0.125, dy: 0, dz: 0, size: 0.125, color: 0xabcd12 }]
   };
   controller.inventorySlots[0] = slot;
   controller.currentRaycast = {
@@ -311,7 +311,7 @@ test('pasteBlockSet in replace mode clears standard blocks before placing micro 
   // Calling pasteBlockSet with replace = true clears standard block and writes micro voxel
   controller.pasteBlockSet(slot, true);
   assert.equal(world.getBlock(10, 21, 30), BlockTypes.AIR, 'replace removes the blocking standard cell');
-  const micro = world.getMicroBlock(51, 105, 150);
+  const micro = world.getMicroBlock(81, 168, 240);
   assert.ok(micro, 'the micro voxel must land in the cleared cell');
   assert.equal(micro.color, 0xabcd12);
 });

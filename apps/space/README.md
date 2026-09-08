@@ -18,11 +18,11 @@ character skin. An invalid or temporarily unavailable configured skin falls back
 the same way instead of blocking entry. The first random position is checkpointed
 immediately; later wrapped position/yaw updates are saved every five seconds,
 on realtime disconnect, and before page suspension. Backpack data remains browser-local under
-`space.backpack.v6.pb` and is never uploaded by this app. Older backpack schemas are
+`space.backpack.v7.pb` and is never uploaded by this app. Older backpack schemas are
 intentionally ignored. Player-authored standard
 and micro-voxel terrain overlays are loaded from the authenticated spaceAPI and
 sent back in idempotent batches of at most 256 mutations. A durable browser
-outbox under `space.world-edits.v2.*` preserves unacknowledged batches across a
+outbox under `space.world-edits.v3.*` preserves unacknowledged batches across a
 refresh; the earlier `space.world-edits.v1.*` local-only overlay is migrated and
 uploaded on first entry after this version.
 
@@ -113,7 +113,7 @@ drive dynamic bodies through force/torque or kinematic bodies through direct pos
 - There is one buildable block type. RGB color is stored per voxel instance.
 - The shovel creates and removes standard `1 × 1 × 1` voxels.
 - Clicking a standard voxel with the spoon replaces it losslessly with
-  `5 × 5 × 5 = 125` micro voxels.
+  `8 × 8 × 8 = 125` micro voxels.
 - The spoon can then create or remove individual `0.2 × 0.2 × 0.2` cells.
 - Micro voxels live in a sparse grid and are merged into dirty-region render
   meshes per 16×16 standard-cell chunk; they are not 125 independent rigid bodies.
@@ -198,16 +198,16 @@ writes `entropydrop_space_entities.*`; entering an online world removes that wor
 browser entity value. Creating or editing an entity uploads its canonical Protobuf definition
 and a bounded runtime snapshot, and active owned entities checkpoint changed
 state every six seconds. Removing one performs a backend hard delete. Offline mode keeps the
-version-3 browser persistence and never calls these entity endpoints; older
+version-4 browser persistence and never calls these entity endpoints; older
 entity data is intentionally ignored. This boundary applies
 only to world entities: the backpack deliberately remains local.
 
-Inventory Protobuf v5 stores display names on every `Component`, with no `Entity.name`.
+Inventory Protobuf v6 stores display names on every `Component`, with no `Entity.name`.
 An entity's display name is `root.name`; empty names display the component ID. Names may
 repeat and survive subtree copies, attachment, independent publication, and reloads.
 Only IDs determine references and sibling ordering. Market content digests recursively
 omit all component names; database list names are derived metadata. Browser backpacks
-use Protobuf v6, and old resource, backpack, and offline entity versions are not migrated.
+use Protobuf v7, and old resource, backpack, and offline entity versions are not migrated.
 
 External agents can submit canonical entity definitions directly with an account-level,
 long-lived spaceAPI key with full Space permissions (including existing keys); market publication is not required. They can read owned entities with `GET /entities/{id}/configuration`, edit component code/name/body defaults with `PATCH /entities/{id}/configuration`, and start/stop with `PUT /entities/{id}/run-state`, under the world API prefix. Edits require Stop and `expected_revision`; operation IDs make delayed retries safe. Entity playback has only running/stopped states. The browser polls the nearby
@@ -278,3 +278,11 @@ Keys with `space:blockset:build` can call
 specified grid origin without an online browser. Builds support quarter-turn rotation,
 standard and micro voxels, atomic quota enforcement, and bounded idempotent retries.
 See [blockset API and live allowances](../../../entropydrop_backend/docs/space-blockset-build-api.md).
+
+### 8×8×8 micro grid and P0 physics
+
+The construction grid is now 0.125 m (512 microcells per standard block).
+Editing, selection, previews, model import, wire formats, backend builds and far
+surfaces share this scale. Microterrain uses merged collision caches; sleeping
+entities watch local terrain and keep running their scripts. See
+[implementation and validation](docs/micro-grid-p0.md).

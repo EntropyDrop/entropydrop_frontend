@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
 
 /**
- * The shovel cursor keeps a 1x1x1 standard-cell outline over a 0.2 microblock because
+ * The shovel cursor keeps a 1x1x1 standard-cell outline over a 0.125 microblock because
  * the shovel removes every microblock in that standard cell.
  */
 
@@ -16,8 +16,8 @@ function makeController(tool) {
 
 test('shovel focus on a microblock keeps a 1x1x1 standard-cell outline', () => {
   const controller = makeController(SpecialTool.SHOVEL);
-  // Microcell (12,3,7) belongs to standard cell (2,0,1).
-  controller.currentRaycast = { hit: true, kind: 'micro', microPos: { x: 12, y: 3, z: 7 }, size: 0.2 };
+  // Microcell (18,3,10) belongs to standard cell (2,0,1).
+  controller.currentRaycast = { hit: true, kind: 'micro', microPos: { x: 18, y: 3, z: 10 }, size: 0.125 };
   const cursor = controller.getCursorHighlight();
   assert.deepEqual(cursor.pos, { x: 2, y: 0, z: 1 });
   assert.equal(cursor.size, 1, 'the outline must remain 1x1x1');
@@ -36,13 +36,13 @@ test('other tools keep a 0.2 outline when focused on a microblock', () => {
   controller.currentRaycast = {
     hit: true,
     kind: 'micro',
-    microPos: { x: 12, y: 3, z: 7 },
+    microPos: { x: 18, y: 3, z: 10 },
     hitPos: { x: 2.4, y: 0.6, z: 1.4 },
-    size: 0.2
+    size: 0.125
   };
   const cursor = controller.getCursorHighlight();
   assert.deepEqual(cursor.pos, { x: 2.4, y: 0.6, z: 1.4 });
-  assert.equal(cursor.size, 0.2);
+  assert.equal(cursor.size, 0.125);
 });
 
 test('no hit produces no cursor', () => {
@@ -68,7 +68,7 @@ test('a pointer action immediately re-picks and publishes the updated micro curs
       kind: 'micro',
       microPos: { x: 13, y: 4, z: 8 },
       hitPos: { x: 2.6, y: 0.8, z: 1.6 },
-      size: 0.2
+      size: 0.125
     };
     controller.microCarvePreview = { cellOrigin: { x: 2, y: 0, z: 1 } };
     calls.push(['raycast']);
@@ -78,7 +78,7 @@ test('a pointer action immediately re-picks and publishes the updated micro curs
 
   assert.deepEqual(calls, [
     ['raycast'],
-    ['cursor', { x: 2.6, y: 0.8, z: 1.6 }, 0.2],
+    ['cursor', { x: 2.6, y: 0.8, z: 1.6 }, 0.125],
     ['micro-preview', { cellOrigin: { x: 2, y: 0, z: 1 } }]
   ]);
 });

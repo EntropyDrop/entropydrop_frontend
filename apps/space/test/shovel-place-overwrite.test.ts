@@ -81,7 +81,7 @@ test('world shovel micro-cell clear reports its debris count as one standard fra
     currentRaycast: {
       hit: true,
       kind: 'micro',
-      microPos: { x: 12, y: 16, z: 24 },
+      microPos: { x: 18, y: 25, z: 36 },
       color: 0x123456
     },
     world: {
@@ -140,8 +140,8 @@ test('entity shovel micro-cell clear reports all removed debris in one sound', (
   const contraption = {
     id: 8,
     blocks: [
-      { localX: 0, localY: 0, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
-      { localX: 0.2, localY: 0, localZ: 0, size: 0.2, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
+      { localX: 0, localY: 0, localZ: 0, size: 0.125, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
+      { localX: 0.2, localY: 0, localZ: 0, size: 0.125, block: BlockTypes.COLOR_BLOCK, entityId: 'root' },
       { localX: 2, localY: 0, localZ: 0, size: 1, block: BlockTypes.COLOR_BLOCK, entityId: 'root' }
     ],
     rebuildAfterBlockChange() {}
@@ -166,11 +166,11 @@ test('entity shovel micro-cell clear reports all removed debris in one sound', (
 test('world placement beside a focused microblock targets the adjacent standard cell', () => {
   let placed = null;
   const controller = makeShovelController({
-    // Focused microcell (12,3,7) belongs to standard cell (2,0,1), hit on +X.
+    // Focused microcell (18,3,10) belongs to standard cell (2,0,1), hit on +X.
     currentRaycast: {
       hit: true,
       kind: 'micro',
-      microPos: { x: 12, y: 3, z: 7 },
+      microPos: { x: 18, y: 3, z: 10 },
       normal: { x: 1, y: 0, z: 0 }
     },
     world: {
@@ -193,7 +193,7 @@ test('world placement rejects a subdivided target cell', () => {
     currentRaycast: {
       hit: true,
       kind: 'micro',
-      microPos: { x: 12, y: 3, z: 7 },
+      microPos: { x: 18, y: 3, z: 10 },
       normal: { x: 0, y: 1, z: 0 }
     },
     world: {
@@ -219,7 +219,7 @@ test('world placement beside a standard block still targets the adjacent cell', 
 });
 
 test('entity placement beside a focused microblock preserves the subdivided cell', () => {
-  const microBlock = { localX: 0.4, localY: 0.2, localZ: 0.2, size: 0.2, block: BlockTypes.COLOR_BLOCK };
+  const microBlock = { localX: 0.4, localY: 0.2, localZ: 0.2, size: 0.125, block: BlockTypes.COLOR_BLOCK };
   const contraption = { blocks: [microBlock], rebuildAfterBlockChange() {} };
   let rebuilt = 0;
   contraption.rebuildAfterBlockChange = () => { rebuilt++; };
@@ -242,8 +242,8 @@ test('entity placement beside a focused microblock preserves the subdivided cell
 });
 
 test('entity placement rejects a subdivided target cell', () => {
-  const microBlock = { localX: 0.4, localY: 0.2, localZ: 0.2, size: 0.2, block: BlockTypes.COLOR_BLOCK };
-  const microInTarget = { localX: 1.4, localY: 0.2, localZ: 0.2, size: 0.2, block: BlockTypes.COLOR_BLOCK };
+  const microBlock = { localX: 0.4, localY: 0.2, localZ: 0.2, size: 0.125, block: BlockTypes.COLOR_BLOCK };
+  const microInTarget = { localX: 1.4, localY: 0.2, localZ: 0.2, size: 0.125, block: BlockTypes.COLOR_BLOCK };
   const contraption = { blocks: [microBlock, microInTarget], rebuildAfterBlockChange() {} };
   let rebuilt = 0;
   contraption.rebuildAfterBlockChange = () => { rebuilt++; };
@@ -285,7 +285,7 @@ test('entity placement beside a standard block still targets the adjacent cell',
 test('World.hasMicroInStandardCell detects microblocks in a standard cell', () => {
   const world = new World(new THREE.Scene());
   assert.equal(world.hasMicroInStandardCell(1, 2, 3), false);
-  assert.equal(world.setMicroBlock(7, 11, 16), true); // Belongs to standard cell (1,2,3).
+  assert.equal(world.setMicroBlock(10, 17, 25), true); // Belongs to standard cell (1,2,3).
   assert.equal(world.hasMicroInStandardCell(1, 2, 3), true);
   assert.equal(world.hasMicroInStandardCell(0, 2, 3), false);
 });

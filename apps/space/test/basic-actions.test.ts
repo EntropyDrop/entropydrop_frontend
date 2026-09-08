@@ -30,8 +30,8 @@ test('script voxel adapters and engine input use the same canonical action dispa
 
   assert.equal(scriptResult.ok, true);
   assert.equal(inputResult.ok, true);
-  assert.equal(scripted.blocks.length, 124);
-  assert.equal(inputDriven.blocks.length, 124);
+  assert.equal(scripted.blocks.length, 511);
+  assert.equal(inputDriven.blocks.length, 511);
   assert.deepEqual(
     scripted.blocks.map(item => [item.localX, item.localY, item.localZ]),
     inputDriven.blocks.map(item => [item.localX, item.localY, item.localZ])

@@ -78,12 +78,12 @@ test('Delete removes blocks inside a world box, preserves outside blocks, and re
   assert.deepEqual(controller.__breakSounds, [{ kind: 'bulk', count: 3 }]);
 });
 
-test('Delete also removes 5x5x5 microblocks inside a world box', () => {
+test('Delete also removes 8x8x8 microblocks inside a world box', () => {
   const scene = new THREE.Scene();
   const world = new World(scene) as any;
   clearRegion(world, 4, 10, 4, 4, 10, 5);
   world.setBlock(4, 10, 4, BlockTypes.COLOR_BLOCK, false, 0xaaaaaa);
-  assert.equal(world.setMicroBlock(22, 50, 27, 0x123456), true, 'place a microblock in the adjacent cell');
+  assert.equal(world.setMicroBlock(34, 80, 42, 0x123456), true, 'place a microblock in the adjacent cell');
   const manager = new ContraptionManager(scene, {}, null, null);
   const controller = makeController({ manager, world });
 
@@ -92,7 +92,7 @@ test('Delete also removes 5x5x5 microblocks inside a world box', () => {
   controller.deleteSelectionBlocks();
 
   assert.equal(world.getBlock(4, 10, 4), BlockTypes.AIR);
-  assert.equal(world.getMicroBlock(22, 50, 27), null, 'the microblock should be deleted');
+  assert.equal(world.getMicroBlock(34, 80, 42), null, 'the microblock should be deleted');
   assert.ok(controller.__toasts.some(m => m.includes('1 blocks + 1 micro voxels')));
   assert.deepEqual(controller.__breakSounds, [{ kind: 'bulk', count: 2 }]);
 });

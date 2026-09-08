@@ -1028,7 +1028,7 @@ test('Shift+click on entity micro-blocks toggles and multi-selects without selec
   manager.registerContraption(entity);
 
   const blockA = entity.blocks[0];
-  const blockB = entity.blocks[1] || { localX: 1, localY: 0, localZ: 0, size: 0.2, color: 0xff0000, entityId: 'root' };
+  const blockB = entity.blocks[1] || { localX: 1, localY: 0, localZ: 0, size: 0.125, color: 0xff0000, entityId: 'root' };
   if (!entity.blocks[1]) entity.blocks.push(blockB);
 
   const controller = Object.create(PlayerController.prototype);

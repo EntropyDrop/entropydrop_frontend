@@ -6,7 +6,7 @@ import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.t
 import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 
 /**
- * Spoon-focus 5x5x5 preview tests for updateMicroCarvePreview coordinate conversion.
+ * Spoon-focus 8x8x8 preview tests for updateMicroCarvePreview coordinate conversion.
  */
 
 function makeController(tool) {
@@ -26,7 +26,7 @@ test('tools other than the spoon produce no preview', () => {
   assert.equal(controller.microCarvePreview, null);
 });
 
-test('spoon over a world standard block previews its 5x5x5 grid', () => {
+test('spoon over a world standard block previews its 8x8x8 grid', () => {
   const controller = makeController(SpecialTool.SPOON);
   controller.currentRaycast = { hit: true, kind: 'standard', hitPos: { x: 3, y: 4, z: 5 } };
   controller.updateMicroCarvePreview();
@@ -36,13 +36,13 @@ test('spoon over a world standard block previews its 5x5x5 grid', () => {
 
 test('spoon over a world microblock highlights it within the parent standard cell', () => {
   const controller = makeController(SpecialTool.SPOON);
-  // Microcell (12,3,7) belongs to standard cell (2,0,1).
-  controller.currentRaycast = { hit: true, kind: 'micro', microPos: { x: 12, y: 3, z: 7 } };
+  // Microcell (18,3,10) belongs to standard cell (2,0,1).
+  controller.currentRaycast = { hit: true, kind: 'micro', microPos: { x: 18, y: 3, z: 10 } };
   controller.updateMicroCarvePreview();
   assert.deepEqual(controller.microCarvePreview.cellOrigin.toArray(), [2, 0, 1]);
   assert.deepEqual(
     controller.microCarvePreview.microCenter.toArray(),
-    [(12 + 0.5) * 0.2, (3 + 0.5) * 0.2, (7 + 0.5) * 0.2]
+    [(18 + 0.5) * 0.125, (3 + 0.5) * 0.125, (10 + 0.5) * 0.125]
   );
 });
 
@@ -52,7 +52,7 @@ test('spoon preview over an entity microblock follows the entity transform', () 
     77,
     [
       { localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK },
-      { localX: 0.4, localY: 0.2, localZ: 0.2, size: 0.2, block: BlockTypes.COLOR_BLOCK }
+      { localX: 0.25, localY: 0.125, localZ: 0.125, size: 0.125, block: BlockTypes.COLOR_BLOCK }
     ],
     new THREE.Vector3(10, 20, 30),
     scene,
@@ -74,10 +74,10 @@ test('spoon preview over an entity microblock follows the entity transform', () 
   assert.ok(Math.abs(preview.cellOrigin.x - 10) < 1e-6);
   assert.ok(Math.abs(preview.cellOrigin.y - 20) < 1e-6);
   assert.ok(Math.abs(preview.cellOrigin.z - 30) < 1e-6);
-  // Microcell center is local (0.5,0.3,0.3) plus entity origin (10,20,30).
-  assert.ok(Math.abs(preview.microCenter.x - 10.5) < 1e-6);
-  assert.ok(Math.abs(preview.microCenter.y - 20.3) < 1e-6);
-  assert.ok(Math.abs(preview.microCenter.z - 30.3) < 1e-6);
+  // Microcell center is local (0.3125,0.1875,0.1875) plus entity origin (10,20,30).
+  assert.ok(Math.abs(preview.microCenter.x - 10.3125) < 1e-6);
+  assert.ok(Math.abs(preview.microCenter.y - 20.1875) < 1e-6);
+  assert.ok(Math.abs(preview.microCenter.z - 30.1875) < 1e-6);
 });
 
 test('spoon over an entity standard block shows the grid without a microcell highlight', () => {

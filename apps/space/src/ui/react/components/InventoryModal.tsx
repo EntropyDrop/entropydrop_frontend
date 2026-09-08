@@ -1,3 +1,4 @@
+import { MICRO_SIZE } from '@entropydrop/space-engine/voxel/MicroGrid.ts';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   LiaDownloadSolid,
@@ -320,10 +321,10 @@ function Import3DModelPopover() {
               <div className="stl-toggle-group">
                 <button
                   type="button"
-                  className={`stl-toggle-option ${precision === 0.2 ? 'active' : ''}`}
-                  onClick={() => setPrecision(0.2)}
+                  className={`stl-toggle-option ${precision === MICRO_SIZE ? 'active' : ''}`}
+                  onClick={() => setPrecision(MICRO_SIZE)}
                 >
-                  0.2 (5×5×5 Micro)
+                  0.125 (8×8×8 Micro)
                 </button>
                 <button
                   type="button"

@@ -101,7 +101,7 @@ test('BuildPlan validation expands bounded primitives and rejects overlap', () =
     kind: 'structure',
     blocks: [
       { x: 0, y: 0, z: 0, size: 1 },
-      { x: 0.2, y: 0.2, z: 0.2, size: 0.2 }
+      { x: 0.125, y: 0.125, z: 0.125, size: 0.125 }
     ]
   });
   assert.equal(overlap.ok, false);
@@ -127,7 +127,7 @@ test('SpaceBuilder previews, incrementally commits and undoes a structure', () =
     anchor: 'crosshair',
     blocks: [
       { x: 0, y: 0, z: 0, color: '#112233' },
-      { x: 1.2, y: 0.2, z: 0.2, size: 0.2, color: '#abcdef' }
+      { x: 1.125, y: 0.125, z: 0.125, size: 0.125, color: '#abcdef' }
     ]
   });
   assert.equal(validation.ok, true);
@@ -135,7 +135,7 @@ test('SpaceBuilder previews, incrementally commits and undoes a structure', () =
   assert.deepEqual(builder.commit(), { ok: true, jobId: 'build-1', reason: 'queued' });
   while (builder.update(1, Infinity)) { /* incremental */ }
   assert.equal(standard.get('10,10,10')?.color, 0x112233);
-  assert.equal(micro.get('56,51,51')?.color, 0xabcdef);
+  assert.equal(micro.get('89,81,81')?.color, 0xabcdef);
   assert.equal(builder.getHistory().length, 1);
 
   assert.deepEqual(builder.undo(), { ok: true, jobId: 'undo-2', reason: 'queued' });

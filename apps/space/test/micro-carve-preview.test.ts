@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
 
 /**
- * The 5x5x5 spoon preview shows only surface grid lines, never the internal 3x3x3 grid.
+ * The 8x8x8 spoon preview shows only surface grid lines, never the internal 7x7x7 grid.
  */
 
 function makeRendererWithPreview() {
@@ -20,8 +20,8 @@ test('the micro-carve preview contains only surface line segments', () => {
   assert.ok(gridLines.isLineSegments);
   const pos = gridLines.geometry.attributes.position.array;
 
-  // 2 face orientations × 6 divisions × 6 lines × 2 endpoints × 3 coordinates.
-  assert.equal(pos.length, 2 * 6 * 6 * 2 * 3, 'the preview should contain 144 segments');
+  // 3 axes × 2 surface orientations × 9 grid lines × 2 endpoints × 3 coordinates.
+  assert.equal(pos.length, 3 * 2 * 9 * 2 * 2 * 3, 'the preview should contain 108 segments');
 
   const nearSurface = value => Math.abs(value) < 1e-9 || Math.abs(value - 1) < 1e-9;
   for (let i = 0; i < pos.length; i += 6) {
@@ -86,7 +86,7 @@ test('focusBlockGuide registers and positions a 1x1x1 X-ray wireframe', () => {
   assert.deepEqual(renderer.focusBlockGuide.scale.toArray(), [1, 1, 1], 'standard cells keep the full 1.0 m guide');
   assert.equal((renderer.focusBlockGuide.material as any).depthTest, false, 'disable depth testing for X-ray visibility');
 
-  // A 0.2 m micro target shrinks the guide to hug the micro block.
+  // A 0.125 m micro target shrinks the guide to hug the micro block.
   renderer.setFocusBlockGuide({ x: 2.6, y: 3.5, z: 4.6 }, false, 0.2);
   assert.deepEqual(renderer.focusBlockGuide.scale.toArray(), [0.2, 0.2, 0.2], 'micro targets scale the guide down');
   assert.deepEqual(renderer.focusBlockGuide.position.toArray(), [2.6, 3.5, 4.6]);

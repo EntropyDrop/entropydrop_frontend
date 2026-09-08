@@ -338,7 +338,7 @@ test('brush aiming at stopped entity in standard mode shows 1.0m crosshair guide
   assert.equal(controller.focusBlockPreview.active, false, 'active must be false before point 1');
 });
 
-test('brush aiming at stopped entity in micro mode shows 0.2m crosshair guide', () => {
+test('brush aiming at stopped entity in micro mode shows 0.125m crosshair guide', () => {
   const fakeContraption = {
     entityNodes: new Map([
       ['arm_node', { group: { matrixWorld: new THREE.Matrix4(), updateWorldMatrix() {} } }]
@@ -352,7 +352,7 @@ test('brush aiming at stopped entity in micro mode shows 0.2m crosshair guide', 
     hoveredContraptionHit: {
       contraption: fakeContraption,
       entityId: 'arm_node',
-      block: { localX: 1.0, localY: 2.0, localZ: 3.0, size: 0.2 },
+      block: { localX: 1.0, localY: 2.0, localZ: 3.0, size: 0.125 },
       cell: { x: 1, y: 2, z: 3 },
       point: new THREE.Vector3(1.1, 2.1, 3.1)
     }
@@ -360,7 +360,7 @@ test('brush aiming at stopped entity in micro mode shows 0.2m crosshair guide', 
 
   controller.updateMicroCarvePreview();
   assert.ok(controller.focusBlockPreview, 'focusBlockPreview must be set in micro mode');
-  assert.equal(controller.focusBlockPreview.cellSize, 0.2, 'cellSize must be 0.2 in micro mode');
+  assert.equal(controller.focusBlockPreview.cellSize, 0.125, 'cellSize must be 0.2 in micro mode');
   assert.deepEqual(
     { x: controller.focusBlockPreview.center.x, y: controller.focusBlockPreview.center.y, z: controller.focusBlockPreview.center.z },
     { x: 1.1, y: 2.1, z: 3.1 }

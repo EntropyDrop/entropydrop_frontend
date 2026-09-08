@@ -462,7 +462,7 @@ test('remote standard-to-micro replacement waits and publishes both layers toget
   const previousMesh = chunk.mesh;
   const requests: any[] = [];
   world.terrainWorker = { postMessage: request => requests.push(request) };
-  const micro = Array.from({ length: 125 }, (_, index) => {
+  const micro = Array.from({ length: 512 }, (_, index) => {
     const dx = index % 5;
     const dy = Math.floor(index / 5) % 5;
     const dz = Math.floor(index / 25);
@@ -691,8 +691,8 @@ test('deleting a published micro cell during remote replacement cannot be lost',
   world.dirtyChunks.clear();
   world.terrainWorker = { postMessage() {} };
 
-  const target = { mx: 1, my: 1_000, mz: 1 };
-  const shovelTarget = { mx: 6, my: 1_000, mz: 1 };
+  const target = { mx: 1, my: 1_600, mz: 1 };
+  const shovelTarget = { mx: 9, my: 1_600, mz: 1 };
   world.setMicroBlock(target.mx, target.my, target.mz, 0x112233);
   world.setMicroBlock(shovelTarget.mx, shovelTarget.my, shovelTarget.mz, 0x334455);
   for (let index = 0; index < 500; index++) {

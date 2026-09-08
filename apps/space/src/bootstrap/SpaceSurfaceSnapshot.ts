@@ -8,7 +8,7 @@ import {
   sha256Hex,
 } from './NetworkSafety.ts';
 
-export const SURFACE_ZONE_SCHEMA_VERSION = 2;
+export const SURFACE_ZONE_SCHEMA_VERSION = 3;
 export const SURFACE_ZONE_SAMPLES_PER_CHUNK_AXIS = 8;
 export const SURFACE_ZONE_SIZE_CHUNKS = 32;
 export const SURFACE_ZONE_HEADER_BYTES = 32;

@@ -177,11 +177,11 @@ test('planSTLSize uses size for scale and precision for representation', () => {
   assert.equal(std.cellSize, 1);
   assert.ok(Math.abs(std.scale - 0.2) < 1e-9, `scale should be 0.2, got ${std.scale}`);
 
-  // Precision 0.2 uses 40 microcells on the longest axis at fivefold resolution.
-  const micro = planSTLSize(tris, 8, 0.2);
+  // Precision 0.125 uses 64 microcells on the longest axis at eightfold resolution.
+  const micro = planSTLSize(tris, 8, 0.125);
   assert.equal(micro.micro, true);
-  assert.equal(micro.cells, 40);
-  assert.equal(micro.cellSize, 0.2);
+  assert.equal(micro.cells, 64);
+  assert.equal(micro.cellSize, 0.125);
   assert.ok(Math.abs(micro.scale - 0.2) < 1e-9, 'both precisions should scale the model to eight standard cells');
 });
 
@@ -201,32 +201,32 @@ test('scaled voxelization maps a 10-cube to a hollow 5x5x5 standard-block model'
 
 test('microblock precision keeps hollow surface shells while saving interior voxel budget', () => {
   const tris = cubeTriangles([0, 0, 0], [10, 10, 10]).map(([a, b, c]: number[][]) => ({ a: a as [number, number, number], b: b as [number, number, number], c: c as [number, number, number] }));
-  const plan = planSTLSize(tris, 5, 0.2);
-  assert.equal(plan.cells, 25);
+  const plan = planSTLSize(tris, 5, 0.125);
+  assert.equal(plan.cells, 40);
   const result = voxelizeSTL(tris, plan.cellSize, 0xabcdef, { micro: plan.micro, scale: plan.scale });
-  // 25x25x25 hollow microcells shell (3,458 microblocks) saves 12,167 interior blocks (down from 15,625).
-  assert.equal(result.blocks.length, 3458, '25x25x25 hollow shell should produce 3458 surface microblocks');
+  // 40x40x40 hollow microcells shell (9,128 microblocks) saves 54,872 interior blocks (down from 64,000).
+  assert.equal(result.blocks.length, 9128, '40x40x40 hollow shell should produce 9128 surface microblocks');
   assert.ok(
     result.blocks.every(b =>
-      Math.abs(b.dx * 5 - Math.round(b.dx * 5)) < 1e-9 &&
-      Math.abs(b.dy * 5 - Math.round(b.dy * 5)) < 1e-9 &&
-      Math.abs(b.dz * 5 - Math.round(b.dz * 5)) < 1e-9
+      Math.abs(b.dx * 8 - Math.round(b.dx * 8)) < 1e-9 &&
+      Math.abs(b.dy * 8 - Math.round(b.dy * 8)) < 1e-9 &&
+      Math.abs(b.dz * 8 - Math.round(b.dz * 8)) < 1e-9
     ),
-    'offsets should lie exactly on the 0.2 grid'
+    'offsets should lie exactly on the 0.125 grid'
   );
   const maxDx = Math.max(...result.blocks.map(b => b.dx));
-  assert.equal(maxDx, 4.8, `25 microcells span from dx 0 to 4.8`);
+  assert.equal(maxDx, 4.875, `40 microcells span from dx 0 to 4.875`);
 });
 
-test('microblock precision retains fine surface details as 0.2 blocks on hollow models', () => {
-  // A cube of 1.4m = 7 microcells on each axis (7x7x7 = 343 microcells)
-  // At s = 0.2:
+test('microblock precision retains fine surface details as 0.125 blocks on hollow models', () => {
+  // A cube of 0.875m = 7 microcells on each axis (7x7x7 = 343 microcells)
+  // At s = 0.125:
   // dx in [0..6], dy in [0..6], dz in [0..6] (7 cells)
   // Interior 5x5x5 core is hollowed out (343 - 125 = 218 surface microcells).
-  const tris = cubeTriangles([0, 0, 0], [1.4, 1.4, 1.4]).map(([a, b, c]: number[][]) => ({ a: a as [number, number, number], b: b as [number, number, number], c: c as [number, number, number] }));
-  const result = voxelizeSTL(tris, 0.2, 0x112233, { micro: true });
+  const tris = cubeTriangles([0, 0, 0], [0.875, 0.875, 0.875]).map(([a, b, c]: number[][]) => ({ a: a as [number, number, number], b: b as [number, number, number], c: c as [number, number, number] }));
+  const result = voxelizeSTL(tris, 0.125, 0x112233, { micro: true });
   assert.equal(result.blocks.length, 218, 'hollow shell contains 218 surface microblocks');
-  assert.ok(result.blocks.every(b => b.size === 0.2));
+  assert.ok(result.blocks.every(b => b.size === 0.125));
 });
 
 test('planSTLSize handles empty meshes, zero extent, and invalid size boundaries', () => {
@@ -235,8 +235,8 @@ test('planSTLSize handles empty meshes, zero extent, and invalid size boundaries
   const plan = planSTLSize(tris, 8, 1);
   assert.equal(plan.scale, 1, 'a zero-extent mesh should fall back to scale 1');
   assert.equal(plan.cells, 8);
-  const tiny = planSTLSize(tris, 0, 0.2);
-  assert.equal(tiny.cells, 5, 'size 0 should fall back to one standard cell or five microcells');
+  const tiny = planSTLSize(tris, 0, 0.125);
+  assert.equal(tiny.cells, 8, 'size 0 should fall back to one standard cell or eight microcells');
 });
 
 test('a 30-degree rotated cube voxelizes into a filled diamond-shaped solid', () => {
