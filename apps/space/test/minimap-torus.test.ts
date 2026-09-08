@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Minimap } from '../src/ui/Minimap.ts';
 import { Chunk, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '@entropydrop/space-engine/voxel/Chunk.ts';
+import { MicroVoxelLayer, MICRO_DIVISIONS } from '@entropydrop/space-engine/voxel/MicroVoxelLayer.ts';
 import { TORUS_SIZE_X, TORUS_SIZE_Z } from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
 function createMockElement(tag = 'div'): any {
@@ -246,5 +247,112 @@ test('Minimap correctly wraps entity positions near toroidal boundaries', () => 
     minimap.update({ x: 0, z: 0 }, 0, false, null);
   });
 
+  dom.cleanup();
+});
+
+test('Minimap micro heights use metres and preserve eighth-metre surfaces', () => {
+  const dom = setupMockDOM();
+  const microVoxels = new MicroVoxelLayer();
+  const chunk = makeMockChunk(0, 0, 10, 0x112233);
+  const chunks = new Map([['0,0', chunk]]);
+  const world = { chunks, microVoxels };
+  const minimap = new Minimap(world, null);
+  const center = Minimap.RANGE * Minimap.CELLS + Minimap.RANGE;
+  const cell = center + Minimap.CELLS + 1;
+
+  microVoxels.set(MICRO_DIVISIONS, 16, MICRO_DIVISIONS, 0xff0000);
+  minimap.recomputeTerrain(0, 0);
+  assert.equal(minimap.heights[cell], 11);
+  assert.equal(minimap.colors[cell], 0x112233, 'underground microcells must not cover standard terrain');
+
+  microVoxels.set(MICRO_DIVISIONS, 88, MICRO_DIVISIONS, 0x00ff00);
+  minimap.recomputeTerrain(0, 0);
+  assert.equal(minimap.heights[cell], 11.125);
+  assert.equal(minimap.colors[cell], 0x00ff00);
+
+  microVoxels.set(MICRO_DIVISIONS, 88, MICRO_DIVISIONS, 0x0000ff);
+  minimap.recomputeTerrain(0, 0);
+  assert.equal(minimap.colors[cell], 0x0000ff, 'recoloring must invalidate the local micro surface');
+
+  microVoxels.delete(MICRO_DIVISIONS, 88, MICRO_DIVISIONS);
+  minimap.recomputeTerrain(0, 0);
+  assert.equal(minimap.heights[cell], 11);
+  assert.equal(minimap.colors[cell], 0x112233);
+  dom.cleanup();
+});
+
+test('Minimap wraps indexed microcells and invalidates surfaces after chunk clearing', () => {
+  const dom = setupMockDOM();
+  const microVoxels = new MicroVoxelLayer();
+  const world = { chunks: new Map(), microVoxels };
+  const minimap = new Minimap(world, null);
+  const wrappedCell = (Minimap.RANGE - 1) * Minimap.CELLS + Minimap.RANGE - 1;
+
+  microVoxels.set(-MICRO_DIVISIONS, 0, -MICRO_DIVISIONS, 0xabcdef);
+  minimap.recomputeTerrain(0, 0);
+  assert.equal(minimap.heights[wrappedCell], 0.125);
+  assert.equal(minimap.colors[wrappedCell], 0xabcdef);
+
+  microVoxels.clearChunk(TORUS_SIZE_X / CHUNK_SIZE_X - 1, TORUS_SIZE_Z / CHUNK_SIZE_Z - 1);
+  minimap.recomputeTerrain(0, 0);
+  assert.equal(minimap.heights[wrappedCell], 0);
+  assert.equal(minimap.colors[wrappedCell], 0);
+
+  const replacement = new MicroVoxelLayer();
+  replacement.set(-MICRO_DIVISIONS, 1, -MICRO_DIVISIONS, 0x123456);
+  world.microVoxels = replacement;
+  minimap.recomputeTerrain(0, 0);
+  assert.equal(minimap.heights[wrappedCell], 0.25);
+  assert.equal(minimap.colors[wrappedCell], 0x123456);
+  dom.cleanup();
+});
+
+test('Minimap repeated local digs never scan far microcells or unchanged visible chunks', () => {
+  const dom = setupMockDOM();
+  const microVoxels = new MicroVoxelLayer();
+  microVoxels.set(0, 80, 0, 0x112233);
+  microVoxels.set(8, 80, 8, 0x112233);
+  microVoxels.set(CHUNK_SIZE_X * MICRO_DIVISIONS, 80, 0, 0x445566);
+  for (let x = 0; x < 32; x++) {
+    for (let y = 0; y < 32; y++) {
+      for (let z = 0; z < 32; z++) microVoxels.set(8000 + x, y, 8000 + z, 0x778899);
+    }
+  }
+  const minimap = new Minimap({ chunks: new Map(), microVoxels }, null);
+  const visitedChunks: string[] = [];
+  let visitedCells = 0;
+  const forEachCellInChunk = microVoxels.forEachCellInChunk.bind(microVoxels);
+  microVoxels.forEachCellInChunk = (cx, cz, visit) => {
+    visitedChunks.push(`${cx},${cz}`);
+    forEachCellInChunk(cx, cz, (mx, my, mz, color) => {
+      visitedCells++;
+      visit(mx, my, mz, color);
+    });
+  };
+  microVoxels.cells[Symbol.iterator] = () => {
+    throw new Error('minimap must never iterate the global microcell map');
+  };
+
+  minimap.recomputeTerrain(0, 0);
+  assert.equal(visitedCells, 3, 'the 32,768 far microcells are outside the queried region');
+  visitedChunks.length = 0;
+  visitedCells = 0;
+
+  microVoxels.delete(0, 80, 0);
+  minimap.recomputeTerrain(0, 0);
+  assert.deepEqual(visitedChunks, ['0,0']);
+  assert.equal(visitedCells, 1);
+  visitedChunks.length = 0;
+  visitedCells = 0;
+
+  microVoxels.delete(8, 80, 8);
+  minimap.recomputeTerrain(0, 0);
+  assert.deepEqual(visitedChunks, ['0,0']);
+  assert.equal(visitedCells, 0);
+  visitedChunks.length = 0;
+
+  microVoxels.delete(8000, 0, 8000);
+  minimap.recomputeTerrain(1, 0);
+  assert.deepEqual(visitedChunks, [], 'far edits and movement within cached chunks require no cell scan');
   dom.cleanup();
 });

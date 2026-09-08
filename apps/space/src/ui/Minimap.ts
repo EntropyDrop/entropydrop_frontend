@@ -8,6 +8,12 @@ type CachedChunkSurface = {
   colors: Uint32Array;
 };
 
+type CachedMicroChunkSurface = {
+  dataVersion: number | null;
+  heights: Float32Array;
+  colors: Uint32Array;
+};
+
 /**
  * Bottom-right minimap rendered on a top-down 2D canvas with seamless Torus wrap.
  * - Terrain: scans the highest standard or microblock in each loaded chunk column
@@ -37,13 +43,15 @@ export class Minimap {
   lastGridX = 0;
   lastGridZ = 0;
   lastRecompute = 0;
-  heights: Int32Array = new Int32Array(Minimap.CELLS * Minimap.CELLS);
+  heights: Float32Array = new Float32Array(Minimap.CELLS * Minimap.CELLS);
   colors: Uint32Array = new Uint32Array(Minimap.CELLS * Minimap.CELLS);
   imageData: ImageData | null = null;
   remotePlayers: any[];
   dpr = 1;
   private enabled = true;
   private chunkSurfaceCache = new WeakMap<object, CachedChunkSurface>();
+  private microSurfaceLayer: any = null;
+  private microSurfaceCache = new Map<string, CachedMicroChunkSurface>();
 
   private readonly resizeHandler = () => this.applySize();
 
@@ -268,6 +276,36 @@ export class Minimap {
     return surface;
   }
 
+  /** Revisit only changed visible micro chunks, using their numeric cell index. */
+  private getMicroChunkSurface(layer: any, cx: number, cz: number): CachedMicroChunkSurface | null {
+    if (typeof layer?.forEachCellInChunk !== 'function') return null;
+    const key = `${cx},${cz}`;
+    const revision = layer.getChunkRevision?.(cx, cz);
+    const dataVersion = Number.isFinite(revision) ? Number(revision) : null;
+    const cached = dataVersion === null ? null : this.microSurfaceCache.get(key);
+    if (cached?.dataVersion === dataVersion) return cached;
+
+    const cellCount = CHUNK_SIZE_X * CHUNK_SIZE_Z;
+    const heights = new Float32Array(cellCount);
+    const colors = new Uint32Array(cellCount);
+    const originX = cx * CHUNK_SIZE_X;
+    const originZ = cz * CHUNK_SIZE_Z;
+    layer.forEachCellInChunk(cx, cz, (mx: number, my: number, mz: number, color: number) => {
+      const lx = Math.floor(mx / MICRO_DIVISIONS) - originX;
+      const lz = Math.floor(mz / MICRO_DIVISIONS) - originZ;
+      const index = lz * CHUNK_SIZE_X + lx;
+      const topY = (my + 1) / MICRO_DIVISIONS;
+      if (topY > heights[index]) {
+        heights[index] = topY;
+        colors[index] = color;
+      }
+    });
+
+    const surface = { dataVersion, heights, colors };
+    if (dataVersion !== null) this.microSurfaceCache.set(key, surface);
+    return surface;
+  }
+
   /** Rebuild the terrain layer on an offscreen canvas with toroidal wrap around integer world coordinates. */
   recomputeTerrain(centerX, centerZ) {
     const C = Minimap.CELLS;
@@ -288,14 +326,25 @@ export class Minimap {
     const centerChunkZ = Math.floor(wrappedCenterZ / CHUNK_SIZE_Z);
     const chunkRadius = Math.ceil(halfRange / CHUNK_SIZE_X); // 6 chunks covers ±96m
 
-    // 1) Standard blocks: iterate chunks around the player using toroidal wrapping
+    const microLayer = world.microVoxels;
+    if (microLayer !== this.microSurfaceLayer) {
+      this.microSurfaceLayer = microLayer;
+      this.microSurfaceCache.clear();
+    }
+    const visibleChunkKeys = new Set<string>();
+
+    // 1) Standard and micro blocks: query only chunks around the player. Their
+    // surface caches are independent, so a micro edit cannot rescan unchanged
+    // standard blocks or microcells elsewhere in the world.
     for (let dcx = -chunkRadius; dcx <= chunkRadius; dcx++) {
       const cx = wrapChunkX(centerChunkX + dcx);
       for (let dcz = -chunkRadius; dcz <= chunkRadius; dcz++) {
         const cz = wrapChunkZ(centerChunkZ + dcz);
+        visibleChunkKeys.add(`${cx},${cz}`);
         const chunk = world.getChunk ? world.getChunk(cx, cz) : world.chunks.get(`${cx},${cz}`);
-        if (!chunk) continue;
-        const surface = this.getChunkSurface(chunk);
+        const surface = chunk ? this.getChunkSurface(chunk) : null;
+        const microSurface = this.getMicroChunkSurface(microLayer, cx, cz);
+        if (!surface && !microSurface) continue;
 
         for (let lx = 0; lx < CHUNK_SIZE_X; lx++) {
           const cellWx = cx * CHUNK_SIZE_X + lx;
@@ -317,47 +366,27 @@ export class Minimap {
 
             const i = gz * C + gx;
             const surfaceIndex = lz * CHUNK_SIZE_X + lx;
-            const topY = surface.heights[surfaceIndex];
-            if (topY >= 0) {
+            const topY = surface?.heights[surfaceIndex] ?? -1;
+            if (topY >= 0 && surface) {
               this.heights[i] = topY + 1; // 0 means no block.
               this.colors[i] = surface.colors[surfaceIndex];
+            }
+            const microTopY = microSurface?.heights[surfaceIndex] ?? 0;
+            if (microTopY > this.heights[i] && microSurface) {
+              this.heights[i] = microTopY;
+              this.colors[i] = microSurface.colors[surfaceIndex];
             }
           }
         }
       }
     }
 
-    // 2) Microblocks: one pass records the highest microblock in each column using toroidal wrapping
-    const micros = world.microVoxels?.cells;
-    if (micros && micros.size > 0) {
-      for (const [key, color] of micros) {
-        const parts = key.split(',');
-        if (parts.length !== 3) continue;
-        const cellWx = Math.floor(Number(parts[0]) / MICRO_DIVISIONS);
-        const cellWz = Math.floor(Number(parts[2]) / MICRO_DIVISIONS);
-
-        let dx = wrapX(cellWx) - wrappedCenterX;
-        if (dx > TORUS_SIZE_X / 2) dx -= TORUS_SIZE_X;
-        else if (dx < -TORUS_SIZE_X / 2) dx += TORUS_SIZE_X;
-
-        let dz = wrapZ(cellWz) - wrappedCenterZ;
-        if (dz > TORUS_SIZE_Z / 2) dz -= TORUS_SIZE_Z;
-        else if (dz < -TORUS_SIZE_Z / 2) dz += TORUS_SIZE_Z;
-
-        const gx = Math.round(dx + halfRange);
-        const gz = Math.round(dz + halfRange);
-        if (gx < 0 || gx >= C || gz < 0 || gz >= C) continue;
-
-        const i = gz * C + gx;
-        const my = Number(parts[1]) + 1;
-        if (my > this.heights[i]) {
-          this.heights[i] = my;
-          this.colors[i] = color;
-        }
-      }
+    // Keep cache memory bounded as the player travels across the world.
+    for (const key of this.microSurfaceCache.keys()) {
+      if (!visibleChunkKeys.has(key)) this.microSurfaceCache.delete(key);
     }
 
-    // 3) Fill ImageData with height shading.
+    // 2) Fill ImageData with height shading.
     if (!this.imageData) return;
     const data = this.imageData.data;
     const voidR = Minimap.VOID_COLOR[0], voidG = Minimap.VOID_COLOR[1], voidB = Minimap.VOID_COLOR[2];
