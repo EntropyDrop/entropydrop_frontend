@@ -59,7 +59,9 @@ test('tools stay compact and share the standard hand grip posture', () => {
     assert.ok(head.y > grip.y + 0.1, 'the hammer handle must point up from the grip');
   }
   const worldHammer = visibleTools(rig.object3d)[0];
-  assert.equal(worldHammer.rotation.x, Math.PI / 2, 'hammer must share standard grip rotation');
+  assert.ok(Math.abs(worldHammer.rotation.x - Math.PI / 2) < 1e-5, 'hammer must share standard grip rotation');
+  const strikingDirection = new THREE.Vector3(-1, 0, 0).transformDirection(worldHammer.matrixWorld);
+  assert.ok(strikingDirection.z < -0.5, 'the hammer head striking face must point forward');
   assert.equal(worldHammer.position.x, 0);
   assert.equal(worldHammer.position.y, 0);
   assert.equal(worldHammer.position.z, 0);
