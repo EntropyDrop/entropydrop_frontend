@@ -750,10 +750,24 @@ export function MonitorPage({ current }: MonitorPageProps) {
         fetchUnfinished(page)
       } else {
         const errData = await response.json().catch(() => ({}))
-        setDeleteMessage({
-          type: 'error',
-          text: errData.detail || (isZh ? `删除失败：${response.status}` : `Deletion failed: ${response.status}`)
-        })
+        const isCdnPending = typeof errData?.detail === 'string' && errData.detail.includes('CDN withdrawal is pending')
+        if (isCdnPending) {
+          setDeleteMessage({
+            type: 'success',
+            text: isZh
+              ? `任务 ${id} 已标记删除，CDN 缓存清理中...`
+              : `Task ${id} marked for deletion, CDN withdrawal in progress...`
+          })
+          setPurgeIdInput('')
+          window.dispatchEvent(new Event('user-updated'))
+          fetchStats()
+          fetchUnfinished(page)
+        } else {
+          setDeleteMessage({
+            type: 'error',
+            text: errData.detail || (isZh ? `删除失败：${response.status}` : `Deletion failed: ${response.status}`)
+          })
+        }
       }
     } catch (e) {
       setDeleteMessage({
@@ -786,10 +800,22 @@ export function MonitorPage({ current }: MonitorPageProps) {
         fetchUnfinished(1)
       } else {
         const errData = await response.json().catch(() => ({}))
-        setDeleteMessage({
-          type: 'error',
-          text: errData.detail || (isZh ? `删除失败：${response.status}` : `Deletion failed: ${response.status}`)
-        })
+        const isCdnPending = typeof errData?.detail === 'string' && errData.detail.includes('CDN withdrawal is pending')
+        if (isCdnPending) {
+          setDeleteMessage({
+            type: 'success',
+            text: isZh 
+              ? '失败任务已标记删除，CDN 缓存清理中...' 
+              : 'Failed tasks marked for deletion, CDN withdrawal in progress...'
+          })
+          fetchStats()
+          fetchUnfinished(1)
+        } else {
+          setDeleteMessage({
+            type: 'error',
+            text: errData.detail || (isZh ? `删除失败：${response.status}` : `Deletion failed: ${response.status}`)
+          })
+        }
       }
     } catch (e) {
       setDeleteMessage({
