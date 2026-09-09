@@ -220,7 +220,7 @@ test('Selector right-click never builds inventory contents', () => {
   assert.equal(built, 0);
 });
 
-test('Wrench right-click toggles start and stop through the shared action API', () => {
+test('Wrench right-click starts pointed entity, left-click stops and lifts it', () => {
   const scene = new THREE.Scene();
   const manager = new ContraptionManager(scene, {}, null, null);
   const entity = makeContraptionWithChildren();
@@ -232,26 +232,35 @@ test('Wrench right-click toggles start and stop through the shared action API', 
   controller.contraptions = manager;
   controller.world = {};
   controller.hoveredContraption = entity;
-  controller.hoveredContraptionHit = { contraption: entity, entityId: 'root' };
+  controller.hoveredContraptionHit = { contraption: entity, entityId: 'root', point: new THREE.Vector3(0, 0, 5) };
   controller.sound = { playWrenchClick() {} };
   controller.ui = { showToast() {} };
+  controller.camera = new THREE.PerspectiveCamera();
+  controller.physics = { getEyePosition: () => new THREE.Vector3() };
   controller.performBasicAction = PlayerController.prototype.performBasicAction.bind(controller);
 
+  // Left click on running entity: stops scripts and lifts it into grab while keeping it physicalized
   entity.getComponentState('root').preserved = 42;
-  entity.childDefinitions.get('arm').collisionEnabled = false;
-  assert.equal(entity.isNodeCollisionEnabled('arm'), false);
-  controller.handleRightClick();
+  controller.handleLeftClick();
   assert.equal(entity.isNodeScriptEnabled('root'), false);
   assert.equal(entity.isNodeScriptEnabled('arm'), false);
   assert.equal(entity.getComponentState('root').preserved, undefined, 'stop must reset state');
-  assert.equal(entity.scriptStatus, 'stopped', 'right click stops running entity');
-  assert.equal(entity.isNodeCollisionEnabled('arm'), false,
-    'Stop restores the authored collision default instead of forcing every component on');
+  assert.equal(entity.scriptStatus, 'stopped', 'left click stops running scripts');
+  assert.equal(entity.isPhysicsSimulationEnabled(), true, 'left click keeps entity physicalized during drag');
+  assert.ok(controller.wrenchGrab, 'left click initiates point grab');
 
+  // Release grab: stops scripts and disables physics simulation
+  assert.equal(controller.releaseWrenchGrab(), true);
+  assert.equal(controller.wrenchGrab, null);
+  assert.equal(entity.scriptStatus, 'stopped');
+  assert.equal(entity.isPhysicsSimulationEnabled(), false, 'releasing left click disables physics simulation');
+
+  // Right click starts the stopped entity
   controller.handleRightClick();
   assert.equal(entity.isNodeScriptEnabled('root'), true);
   assert.equal(entity.isNodeScriptEnabled('arm'), true);
-  assert.equal(entity.scriptStatus, 'running', 'right click restarts stopped entity');
+  assert.equal(entity.scriptStatus, 'running', 'right click starts stopped entity');
+  assert.equal(entity.isPhysicsSimulationEnabled(), true, 'right click re-enables physics simulation');
 });
 
 test('Wrench hold grabs the exact dynamic-body point and releases cleanly', () => {
@@ -296,7 +305,7 @@ test('Wrench hold grabs the exact dynamic-body point and releases cleanly', () =
   assert.equal(controller.wrenchGrab, null);
 });
 
-test('Wrench cannot inject motion into an entity while Stop has disabled physics', () => {
+test('Wrench left-click stops and lifts entity even if previously stopped', () => {
   const scene = new THREE.Scene();
   const manager = new ContraptionManager(scene, {}, null, null);
   const entity = makeContraptionWithChildren();
@@ -312,12 +321,17 @@ test('Wrench cannot inject motion into an entity while Stop has disabled physics
     entityId: 'root',
     point: entity.position.clone()
   };
+  controller.camera = new THREE.PerspectiveCamera();
   controller.physics = { getEyePosition: () => new THREE.Vector3() };
+  controller.sound = { playWrenchClick() {} };
   controller.ui = { showToast() {} };
 
-  assert.equal(controller.startWrenchGrab(), false);
-  assert.equal(controller.wrenchGrab, undefined);
-  assert.deepEqual(entity.velocity.toArray(), [0, 0, 0]);
+  assert.equal(controller.startWrenchGrab(), true);
+  assert.ok(controller.wrenchGrab, 'left-click grab succeeds on stopped entity');
+  assert.equal(controller.wrenchGrab.contraption, entity);
+  assert.equal(controller.releaseWrenchGrab(), true);
+  assert.equal(controller.wrenchGrab, null);
+  assert.equal(entity.scriptStatus, 'stopped');
 });
 
 test('component pivot updates preserve rotated component and descendant voxel positions', () => {

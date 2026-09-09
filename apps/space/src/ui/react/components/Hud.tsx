@@ -315,12 +315,12 @@ function WrenchPanel() {
           </span>
           <span className="mode-badge std">PHYSICS & CONTROL</span>
         </div>
-        <span className="palette-hotkey-hint"><b>XYZ</b> pivot · <b>Hold LMB</b> grab · <b>RMB</b> start/stop</span>
+        <span className="palette-hotkey-hint"><b>XYZ</b> pivot · <b>Hold LMB</b> stop & lift · <b>RMB</b> start</span>
       </div>
       <div className="selector-toolbox-content" id="wrench-toolbox-content">
         <div className="wrench-action-buttons">
-          <button type="button" tabIndex={-1} className="banner-btn secondary" title="The targeted component's pivot XYZ axes are display-only; hold left-click on a dynamic entity to grab" onClick={() => controller?.startWrenchGrab?.()}><b>LMB</b> Grab</button>
-          <button type="button" tabIndex={-1} className="banner-btn secondary" title="Right-click on an entity to start or stop physics and scripts (RMB)" onClick={() => controller?.toggleHoveredEntityPlayback?.()}><b>RMB</b> Start/Stop</button>
+          <button type="button" tabIndex={-1} className="banner-btn secondary" title="Hold left-click on an entity to stop and lift it (LMB)" onClick={() => controller?.startWrenchGrab?.()}><b>LMB</b> Stop & Lift</button>
+          <button type="button" tabIndex={-1} className="banner-btn secondary" title="Right-click on an entity to start physics and scripts (RMB)" onClick={() => controller?.startHoveredEntity?.()}><b>RMB</b> Start</button>
           <button type="button" tabIndex={-1} className="banner-btn secondary" title="Point at an entity and press C to open its code editor" onClick={() => controller?.openCodeEditorForTarget?.()}><b>C</b> Code</button>
           <button type="button" tabIndex={-1} className="banner-btn secondary" title="Point at a seat block and press V to mount/drive" onClick={() => controller?.toggleDriveVehicle?.()}><b>V</b> Drive</button>
         </div>

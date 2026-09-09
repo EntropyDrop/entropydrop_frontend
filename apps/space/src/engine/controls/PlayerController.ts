@@ -4265,9 +4265,9 @@ export class PlayerController {
       return;
     }
 
-    // Wrench right-click toggles entity runtime start/stop.
+    // Wrench right-click starts entity runtime.
     if (this.activeTool === SpecialTool.WRENCH) {
-      this.toggleHoveredEntityPlayback();
+      this.startHoveredEntity();
       return;
     }
 
@@ -4699,7 +4699,8 @@ export class PlayerController {
   }
 
   getWrenchTargetPosition(eyePos, targetDistance, anchorPos = eyePos, targetSpace = 'flat') {
-    const lookDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
+    const cameraQuat = this.camera?.quaternion || new THREE.Quaternion();
+    const lookDir = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraQuat).normalize();
     if (targetSpace !== 'bent') {
       return eyePos.clone().addScaledVector(lookDir, targetDistance);
     }
@@ -4719,13 +4720,29 @@ export class PlayerController {
   startWrenchGrab() {
     const contraption = this.hoveredContraptionHit?.contraption || this.hoveredContraption;
     if (!contraption) {
-      this.ui?.showToast?.('Wrench: hold left-click on a dynamic entity to grab it');
+      this.ui?.showToast?.('Wrench: hold left-click on an entity to stop and lift it');
       return false;
     }
-    if (contraption.isPhysicsSimulationEnabled?.() === false) {
-      this.ui?.showToast?.('Wrench: start the stopped entity before grabbing it');
-      return false;
+
+    this.releaseWrenchGrab();
+
+    // 1. Stop the entity if it is currently running
+    const isRunning = contraption.scriptStatus !== 'stopped' || contraption.isPhysicsSimulationEnabled?.() !== false;
+    if (isRunning) {
+      if (contraption.serverManaged === true) {
+        this.requestServerEntityRunState(contraption, 'stopped');
+      } else {
+        this.performBasicAction({
+          domain: ActionDomain.ENTITY,
+          action: 'stop-scripts',
+          target: { contraption }
+        });
+      }
     }
+
+    // 2. Enable physics simulation so the velocity servo can lift and move the rigid body
+    contraption.setPhysicsSimulationEnabled?.(true);
+
     const bodyId = this.getWrenchGrabBodyId(
       contraption,
       this.hoveredContraptionHit?.entityId ?? contraptionRootId(contraption)
@@ -4757,7 +4774,6 @@ export class PlayerController {
       targetSpace
     );
 
-    this.releaseWrenchGrab();
     this.wrenchGrab = {
       contraption,
       bodyId,
@@ -4768,14 +4784,73 @@ export class PlayerController {
       active: true
     };
     this.sound?.playWrenchClick?.();
+    const actionLabel = isRunning ? 'stopped and lifted' : 'lifted';
+    this.ui?.showToast?.(`Wrench: ${actionLabel} Entity #${contraption.id}`);
     return true;
   }
 
   releaseWrenchGrab() {
     const wasActive = !!this.wrenchGrab;
+    if (this.wrenchGrab?.contraption) {
+      const contraption = this.wrenchGrab.contraption;
+      if (contraption.serverManaged === true) {
+        this.requestServerEntityRunState(contraption, 'stopped');
+      } else if (contraption.scriptStatus !== 'stopped') {
+        this.performBasicAction({
+          domain: ActionDomain.ENTITY,
+          action: 'stop-scripts',
+          target: { contraption }
+        });
+      }
+      for (const body of contraption.rigidBodies?.values?.() || []) {
+        body.velocity?.set?.(0, 0, 0);
+        body.angularVelocity?.set?.(0, 0, 0);
+      }
+      contraption.velocity?.set?.(0, 0, 0);
+      contraption.angularVelocity?.set?.(0, 0, 0);
+      contraption.setPhysicsSimulationEnabled?.(false);
+    }
     this.wrenchGrab = null;
     this.sceneRenderer?.setWrenchTether?.(null, null);
     return wasActive;
+  }
+
+  startHoveredEntity() {
+    const contraption = this.hoveredContraptionHit?.contraption || this.hoveredContraption;
+    if (!contraption) {
+      this.ui?.showToast?.('Wrench: point at an entity to start it');
+      return false;
+    }
+    if (this.wrenchGrab?.contraption === contraption) {
+      this.releaseWrenchGrab();
+    }
+    if (contraption.serverManaged === true) {
+      return this.requestServerEntityRunState(contraption, 'running');
+    }
+    const hasRunnableCode = !!contraption.compiledScript || (contraption.compiledNodeScripts?.size || 0) > 0;
+    const isAlreadyRunning = contraption.isPhysicsSimulationEnabled?.() !== false &&
+      (hasRunnableCode ? contraption.scriptStatus === 'running' : true);
+
+    if (isAlreadyRunning && contraption.scriptStatus !== 'stopped') {
+      this.ui?.showToast?.(`Entity #${contraption.id} is already running`);
+      return true;
+    }
+
+    const result = this.performBasicAction({
+      domain: ActionDomain.ENTITY,
+      action: 'start-scripts',
+      target: { contraption }
+    });
+    this.sound?.playWrenchClick?.();
+    if (this.ui) {
+      const message = result.ok
+        ? `Entity #${contraption.id} started`
+        : result.reason === 'no_scripts'
+          ? `Entity #${contraption.id} has no runnable code`
+          : `Entity #${contraption.id} could not be started`;
+      this.ui.showToast(message);
+    }
+    return result.ok;
   }
 
   stopHoveredEntity() {
