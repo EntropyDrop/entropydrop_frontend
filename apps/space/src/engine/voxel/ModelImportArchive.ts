@@ -7,7 +7,7 @@ import {
   type ModelImportResource,
 } from './ModelVoxelizer.ts';
 
-export const MAX_MODEL_ARCHIVE_BYTES = 64 * 1024 * 1024;
+export const MAX_MODEL_ARCHIVE_BYTES = 128 * 1024 * 1024;
 const MAX_MODEL_ARCHIVE_ENTRIES = 256;
 const MAX_MODEL_ARCHIVE_EXPANDED_BYTES = MAX_MODEL_FILE_BYTES + MAX_MODEL_RESOURCE_BYTES;
 
