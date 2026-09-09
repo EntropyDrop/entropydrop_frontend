@@ -4743,6 +4743,14 @@ export class PlayerController {
     // 2. Enable physics simulation so the velocity servo can lift and move the rigid body
     contraption.setPhysicsSimulationEnabled?.(true);
 
+    // 3. Disable physical collision during grab so entity moves freely without collision snagging
+    if (typeof contraption.setCollisionSimulationEnabled === 'function') {
+      contraption.setCollisionSimulationEnabled(false);
+    } else {
+      contraption.collisionSimulationEnabled = false;
+      contraption.invalidateCollisionPoseCache?.();
+    }
+
     const bodyId = this.getWrenchGrabBodyId(
       contraption,
       this.hoveredContraptionHit?.entityId ?? contraptionRootId(contraption)
@@ -4809,6 +4817,12 @@ export class PlayerController {
       contraption.velocity?.set?.(0, 0, 0);
       contraption.angularVelocity?.set?.(0, 0, 0);
       contraption.setPhysicsSimulationEnabled?.(false);
+      if (typeof contraption.setCollisionSimulationEnabled === 'function') {
+        contraption.setCollisionSimulationEnabled(true);
+      } else {
+        contraption.collisionSimulationEnabled = true;
+        contraption.invalidateCollisionPoseCache?.();
+      }
     }
     this.wrenchGrab = null;
     this.sceneRenderer?.setWrenchTether?.(null, null);
@@ -4823,6 +4837,12 @@ export class PlayerController {
     }
     if (this.wrenchGrab?.contraption === contraption) {
       this.releaseWrenchGrab();
+    }
+    if (typeof contraption.setCollisionSimulationEnabled === 'function') {
+      contraption.setCollisionSimulationEnabled(true);
+    } else {
+      contraption.collisionSimulationEnabled = true;
+      contraption.invalidateCollisionPoseCache?.();
     }
     if (contraption.serverManaged === true) {
       return this.requestServerEntityRunState(contraption, 'running');

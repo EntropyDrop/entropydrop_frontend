@@ -239,7 +239,7 @@ test('Wrench right-click starts pointed entity, left-click stops and lifts it', 
   controller.physics = { getEyePosition: () => new THREE.Vector3() };
   controller.performBasicAction = PlayerController.prototype.performBasicAction.bind(controller);
 
-  // Left click on running entity: stops scripts and lifts it into grab while keeping it physicalized
+  // Left click on running entity: stops scripts and lifts it into grab while keeping it physicalized but disabling collision
   entity.getComponentState('root').preserved = 42;
   controller.handleLeftClick();
   assert.equal(entity.isNodeScriptEnabled('root'), false);
@@ -247,13 +247,15 @@ test('Wrench right-click starts pointed entity, left-click stops and lifts it', 
   assert.equal(entity.getComponentState('root').preserved, undefined, 'stop must reset state');
   assert.equal(entity.scriptStatus, 'stopped', 'left click stops running scripts');
   assert.equal(entity.isPhysicsSimulationEnabled(), true, 'left click keeps entity physicalized during drag');
+  assert.equal(entity.isCollisionSimulationEnabled(), false, 'left click disables physics collision during drag');
   assert.ok(controller.wrenchGrab, 'left click initiates point grab');
 
-  // Release grab: stops scripts and disables physics simulation
+  // Release grab: stops scripts, disables physics simulation, and restores collision
   assert.equal(controller.releaseWrenchGrab(), true);
   assert.equal(controller.wrenchGrab, null);
   assert.equal(entity.scriptStatus, 'stopped');
   assert.equal(entity.isPhysicsSimulationEnabled(), false, 'releasing left click disables physics simulation');
+  assert.equal(entity.isCollisionSimulationEnabled(), true, 'releasing left click restores collision simulation');
 
   // Right click starts the stopped entity
   controller.handleRightClick();
@@ -261,6 +263,7 @@ test('Wrench right-click starts pointed entity, left-click stops and lifts it', 
   assert.equal(entity.isNodeScriptEnabled('arm'), true);
   assert.equal(entity.scriptStatus, 'running', 'right click starts stopped entity');
   assert.equal(entity.isPhysicsSimulationEnabled(), true, 'right click re-enables physics simulation');
+  assert.equal(entity.isCollisionSimulationEnabled(), true, 'right click keeps collision enabled');
 });
 
 test('Wrench hold grabs the exact dynamic-body point and releases cleanly', () => {
@@ -823,7 +826,7 @@ test('Wrench grab is mass independent for extremely heavy entities', () => {
   assert.ok(entity.position.x > 2.5, `a billion-kilogram entity must follow the grab target, x=${entity.position.x}`);
 });
 
-test('Wrench cannot repeatedly drive a grabbed entity through terrain', () => {
+test('Wrench grab disables collision allowing smooth transport through terrain', () => {
   const wallX = 3;
   const world = {
     getBlock: (x) => x === wallX ? BlockTypes.COLOR_BLOCK : BlockTypes.AIR,
@@ -876,18 +879,58 @@ test('Wrench cannot repeatedly drive a grabbed entity through terrain', () => {
   controller.updateCameraPosition = () => {};
   controller.handleLeftClick();
 
+  assert.equal(entity.isCollisionSimulationEnabled(), false, 'collision is disabled during grab');
+
   eye.x = 8;
-  let maxX = entity.position.x;
   for (let frame = 0; frame < 120; frame++) {
     controller.update(1 / 60);
     entityPhysics.update(entity, 1 / 60);
-    maxX = Math.max(maxX, entity.position.x);
   }
 
-  assert.ok(maxX < 2.51, `the held body must remain on the near side of the wall, maxX=${maxX}`);
+  assert.ok(entity.position.x > 3, `with collision disabled during grab, entity passes freely, x=${entity.position.x}`);
+  controller.releaseWrenchGrab();
+  assert.equal(entity.isCollisionSimulationEnabled(), true, 'releasing grab restores collision');
 });
 
-test('Wrench cannot drive a grabbed entity through another entity', () => {
+test('ContraptionPhysics constrainWrenchVelocity constrains velocity when collision is enabled', () => {
+  const wallX = 3;
+  const world = {
+    getBlock: (x) => x === wallX ? BlockTypes.COLOR_BLOCK : BlockTypes.AIR,
+    raycast: (origin, direction, maxDistance) => {
+      if (!(direction.x > 0) || origin.x >= wallX) return { hit: false };
+      const distance = (wallX - origin.x) / direction.x;
+      return distance <= maxDistance
+        ? { hit: true, distance, normal: { x: -1, y: 0, z: 0 } }
+        : { hit: false };
+    },
+    raycastMicro: () => ({ hit: false }),
+    microVoxels: { get: () => null }
+  };
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, world, null, null);
+  const entityPhysics = new ContraptionPhysics(world as any);
+  manager.setPhysics(entityPhysics);
+  const entity = new Contraption(
+    4,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(1.95, 0, -5),
+    scene,
+    { rootComponentId: 'root', bodyType: 'dynamic', friction: 0, restitution: 0 }
+  );
+  manager.registerContraption(entity);
+  entity.setCollisionSimulationEnabled(true);
+  const body = entity.getRigidBody('root');
+  const constrained = entityPhysics.constrainWrenchVelocity(
+    entity,
+    body,
+    new THREE.Vector3(5, 0, 0),
+    1 / 60
+  );
+  assert.ok(constrained.velocity.x < 5, `velocity towards wall must be constrained when collision enabled, vx=${constrained.velocity.x}`);
+  assert.ok(constrained.normals.length > 0, 'contact normals must be reported');
+});
+
+test('Wrench grab disables collision allowing smooth transport through another entity', () => {
   const world = {
     getBlock: () => BlockTypes.AIR,
     raycast: () => ({ hit: false }),
@@ -941,15 +984,17 @@ test('Wrench cannot drive a grabbed entity through another entity', () => {
   controller.updateCameraPosition = () => {};
   controller.handleLeftClick();
 
+  assert.equal(grabbed.isCollisionSimulationEnabled(), false, 'collision is disabled on grabbed entity');
+
   eye.x = 8;
-  let maxX = grabbed.position.x;
   for (let frame = 0; frame < 120; frame++) {
     controller.update(1 / 60);
     manager.update(1 / 60, null);
-    maxX = Math.max(maxX, grabbed.position.x);
   }
 
-  assert.ok(maxX < 2.51, `the held body must not pass through the other entity, maxX=${maxX}`);
+  assert.ok(grabbed.position.x > 3, `with collision disabled during grab, grabbed entity passes smoothly, x=${grabbed.position.x}`);
+  controller.releaseWrenchGrab();
+  assert.equal(grabbed.isCollisionSimulationEnabled(), true, 'releasing grab restores collision');
   assert.equal(obstacle.position.x, 3.5, 'a kinematic obstacle must remain fixed');
 });
 
