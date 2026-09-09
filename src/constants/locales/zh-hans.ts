@@ -1117,7 +1117,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             copyFailed: '复制失败，请选中示例并手动复制。',
             note: '公开文档与 Skill 无需登录即可查阅。Agent 在世界中查询位置与提交建造时需要 Bearer API Key，届时 Agent 会主动向你索取，或指引你点击下方链接获取。',
             example: '发送给 Agent 的开箱即用 Prompt',
-            prompt: '请先阅读 EntropyDrop Space 的公开智能体指南：{guide}\n后端地址：{backend}\nAPI Key 获取页面：{keys_url}\n\n你的任务是根据我的建造需求，在 EntropyDrop Space 体素物理世界中生成并建造结构与可编程机械（使用 spaceAPI 与 entityAPI）。\n\n请按以下流程开始：\n1. 检查你是否已拥有我的 spaceAPI Key：\n   - 如果我尚未提供，请先询问我是否已有 key；若没有，请指引我打开 {keys_url} 创建并复制给你。\n2. 拿到 key 后，调用 spaceAPI 查询我在世界中的当前坐标（若返回位置过期或不可用，请提醒我先进入在线世界刷新坐标）。\n3. 询问我想建造什么，随后规划体素并编写 entityAPI 控制脚本，通过 API 完成建造。\n\n收到后请回复确认，并询问我的建造需求与 API Key。',
+            prompt: '请先阅读 EntropyDrop Space 智能体技能规范：{guide}（后端地址：{backend}）。\n请根据技能规范，向我索取 spaceAPI Key 与建造需求，并在世界中完成建造。',
         },
         agentDevTitle: '核心技术与创作者生态',
         agentDevSubtitle: '结合安全脚本沙箱、实时体素物理与内置资源市场，构建高自由度可编程世界。',

@@ -1117,7 +1117,7 @@ Email: support@entropydrop.com`
             copyFailed: 'Could not copy. Select the example and copy it manually.',
             note: 'Public skill and documentation do not require login. Querying player positions and submitting builds require a Bearer API key; your agent will ask you for an existing key or direct you to generate one when ready.',
             example: 'Ready-to-use prompt for your agent',
-            prompt: 'Please first read the EntropyDrop Space Agent Skill at: {guide}\nBackend URL: {backend}\nAPI Key Page: {keys_url}\n\nYour objective is to generate and build structures and programmable contraptions in the EntropyDrop Space voxel physics universe based on my instructions (using spaceAPI and entityAPI).\n\nPlease follow these steps:\n1. Check whether you already have my spaceAPI key:\n   - If not provided yet, ask me for my key, or guide me to open {keys_url} to create one and paste it to you.\n2. Once you have the key, query my active player coordinates via spaceAPI (if the position is stale or unavailable, remind me to enter the online world).\n3. Ask what I want to build, plan the voxels, write entityAPI controller code, and execute the build via spaceAPI.\n\nPlease reply to confirm you are ready, and ask for my build request and API key.',
+            prompt: 'Please read the EntropyDrop Space Agent Skill at: {guide} (Backend URL: {backend}).\nFollow the skill guide to ask me for my spaceAPI key and build request, and build it in EntropyDrop Space.',
         },
         agentDevTitle: 'Core Engine & Creator Ecosystem',
         agentDevSubtitle: 'Combining secure script sandboxes, real-time voxel physics, and a built-in marketplace for endless programmable creativity.',
