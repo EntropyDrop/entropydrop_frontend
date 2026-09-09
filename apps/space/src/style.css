@@ -1241,13 +1241,64 @@ button.palette-title:hover {
 
 .selector-toolbox-content {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
   background: rgba(0, 0, 0, 0.45);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 5px 8px;
-  min-height: 38px;
+  padding: 4px 6px;
+  min-height: 36px;
   border-radius: 2px;
+}
+
+.selector-shapes-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+
+.selector-shape-btn {
+  flex: 1;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--text-muted, #a0a0a0);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.selector-shape-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main, #ffffff);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.selector-shape-btn.active {
+  background: rgba(72, 219, 251, 0.2);
+  border-color: var(--accent-light, #48dbfb);
+  color: #ffffff;
+  box-shadow: 0 0 6px rgba(72, 219, 251, 0.3);
+}
+
+.selector-shape-btn .shape-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.selector-shape-btn.active .shape-icon {
+  color: var(--accent-light, #48dbfb);
 }
 
 .selector-status-col {

@@ -14,6 +14,7 @@ import {
   SpecialTool,
   type PlayerPerspective
 } from '../../../engine/controls/PlayerController.ts';
+import type { SelectorShape } from '../../../engine/controls/SelectorShapes.ts';
 import {
   DEFAULT_WORLD_SHAPE_MODE,
   getWorldShapeMode,
@@ -107,6 +108,7 @@ export interface BuildAgentMessage {
 
 export interface SelectorView {
   micro: boolean;
+  shape: SelectorShape;
   title: string;
   details: string;
   canAssemble: boolean;
@@ -230,13 +232,14 @@ const HOTBAR_SLOTS = [
   { type: 'tool', value: SpecialTool.SHOVEL, name: 'Shovel', icon: '', desc: 'Remove / place 1x1x1 standard blocks' },
   { type: 'tool', value: SpecialTool.SPOON, name: 'Spoon', icon: '', desc: 'Carve 8x8x8 micro voxels cell by cell' },
   { type: 'tool', value: SpecialTool.SELECTOR, name: 'Selector', icon: '', desc: 'Select and copy world/entity regions (max 64×64×64); no build action' },
-  { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'LMB build / attach to entity · RMB rotate 90°' },
+  { type: 'tool', value: SpecialTool.HAMMER, name: 'Hammer', icon: '', desc: 'LMB build / attach to entity · RMB / Arrows rotate' },
   { type: 'tool', value: SpecialTool.WRENCH, name: 'Wrench', icon: '', desc: 'Show pivot XYZ axes · hold left-click to grab · right-click start/stop' },
   { type: 'tool', value: SpecialTool.BRUSH, name: 'Brush', icon: '', desc: 'LMB paint · RMB 2-point dye · Tab micro/std' }
 ];
 
 const EMPTY_SELECTOR: SelectorView = {
   micro: false,
+  shape: 'box',
   title: 'Standard Selection',
   details: '',
   canAssemble: false,
@@ -822,6 +825,19 @@ export class SpaceUiStore {
     const total = this.snapshot.paletteColors.length;
     if (!total) return;
     this.selectPresetColor((this.snapshot.selectedColorIndex + direction + total) % total);
+  }
+
+  setSelectorShape(shape: SelectorShape): void {
+    if (this.snapshot.controller?.setSelectorShape) {
+      this.snapshot.controller.setSelectorShape(shape);
+    } else {
+      this.patch({
+        selector: {
+          ...this.snapshot.selector,
+          shape
+        }
+      });
+    }
   }
 
   selectPresetColor(index: number): void {
@@ -1717,7 +1733,8 @@ export class SpaceUiStore {
   private buildSelectorView(): SelectorView {
     const { controller, contraptions } = this.snapshot;
     const micro = controller?.selectorMicroMode === true;
-    const view: SelectorView = { ...EMPTY_SELECTOR, micro, title: micro ? 'Micro Selection' : 'Standard Selection' };
+    const shape: SelectorShape = controller?.selectorShape || 'box';
+    const view: SelectorView = { ...EMPTY_SELECTOR, micro, shape, title: micro ? 'Micro Selection' : 'Standard Selection' };
     if (!contraptions) return view;
     const child = contraptions.getChildSelectionInfo?.();
     const worldSelection = contraptions.getWorldGlueSelectionInfo?.();
@@ -1725,6 +1742,7 @@ export class SpaceUiStore {
     if (child) {
       return {
         micro,
+        shape,
         title: 'Entity Component Selection',
         details: `Entity #${child.contraption.id} [${child.parentId}] · ${child.count} cells · Shift multi-select · G create child · R copy${child.existingChildCount > 0 ? ` · ${child.existingChildCount} children attached` : ''}`,
         canAssemble: !!child.ready,
@@ -1737,6 +1755,7 @@ export class SpaceUiStore {
       const { contraption, rootId } = controller.selectedSubtree;
       return {
         micro,
+        shape,
         title: rootId === entityRootId(contraption) ? 'Entity Selected' : 'Component Selected',
         details: `Entity #${contraption.id} [${rootId}] · Del delete · R copy`,
         canAssemble: false,
@@ -1749,6 +1768,7 @@ export class SpaceUiStore {
       const { nodeId, blocks } = controller.selectedBlockSelection;
       return {
         micro,
+        shape,
         title: 'Component Blocks Selected',
         details: `[${nodeId}] · ${blocks.length} blocks · Del delete`,
         canAssemble: false,
@@ -1772,6 +1792,7 @@ export class SpaceUiStore {
       }
       return {
         micro,
+        shape,
         title: isMicro ? (worldSelection.mode === 'box' ? 'World Micro Box Selection' : 'World Micro-Cell Selection') : (worldSelection.mode === 'single' ? 'World Single-Cell Selection' : 'World 3-Point Box Selection'),
         details,
         canAssemble: !!worldSelection.ready,
@@ -1785,6 +1806,7 @@ export class SpaceUiStore {
       const bounds = contraptions.getSelectionBounds?.();
       return {
         micro,
+        shape,
         title: 'Selection Ready',
         details: bounds
           ? `Region: ${bounds.maxX - bounds.minX + 1}x${bounds.maxY - bounds.minY + 1}x${bounds.maxZ - bounds.minZ + 1} (${count} blocks) · G assemble · R copy`
@@ -1800,10 +1822,14 @@ export class SpaceUiStore {
 
   updateHUD(fps: number, playerPos: any, _raycast: any, _hoveredContraption: any, pingMs: number | null = null): void {
     const { contraptions, sceneRenderer, controller, editingContraption, activeModal } = this.snapshot;
+    const isMicroShape = Boolean(
+      controller?.selectorMicroMode && controller?.selectorShape && controller.selectorShape !== 'box'
+    );
     sceneRenderer?.updateSelectionHologram?.(
       contraptions?.getSelectionBounds?.(),
       contraptions?.connectedSelection,
-      contraptions?.microSelection
+      contraptions?.microSelection,
+      isMicroShape
     );
 
     const now = performance.now();

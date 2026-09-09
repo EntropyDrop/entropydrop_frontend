@@ -59,3 +59,25 @@ test('entity block selection highlight renders single outer bounding box wirefra
   // Single outer bounding box wireframe has exactly 12 edges (24 vertices)
   assert.equal(linePos.count, 24, 'outer bounding box should have exactly 12 edges (24 vertices)');
 });
+
+test('non-box micro shape hologram renders culled micro-voxel mesh in selectionMicroCellsGroup', () => {
+  const renderer = Object.create(SceneRenderer.prototype);
+  renderer.scene = new THREE.Scene();
+  renderer.setupSelectionHologram();
+
+  // Cylinder/sphere microcells: e.g. 5 points
+  const microCells = [
+    { x: 1, y: 1, z: 0 },
+    { x: 0, y: 1, z: 1 },
+    { x: 1, y: 1, z: 1 },
+    { x: 2, y: 1, z: 1 },
+    { x: 1, y: 1, z: 2 }
+  ];
+
+  renderer.updateSelectionHologram(null, null, microCells, true);
+
+  // When isMicroShape is true, selectionMicroCellsGroup is used
+  assert.equal(renderer.selectionGroup.visible, false);
+  assert.equal(renderer.selectionMicroCellsGroup.visible, true);
+  assert.equal(renderer.selectionMicroCellsGroup.children.length, 2, 'should have fill mesh and line segments');
+});

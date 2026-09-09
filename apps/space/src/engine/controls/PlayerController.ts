@@ -19,6 +19,7 @@ import {
 import { calculatePreviewDragForce, getInventoryPreviewBlocks } from '../render/SceneRenderer.ts';
 import { InventoryThumbnailRenderer } from '../render/InventoryThumbnailRenderer.ts';
 import type { SpaceStorage } from '../storage/BrowserStorage.ts';
+import { type SelectorShape, computeSelectionCells } from './SelectorShapes.ts';
 import {
   decodeBackpack,
   decodeInventoryResource,
@@ -343,13 +344,38 @@ export class PlayerController {
   selectorLevel: any;
   selectorRange: any;
   selectorMicroMode: boolean;
+  private _selectorShape: SelectorShape = 'box';
+  get selectorShape(): SelectorShape {
+    return this._selectorShape || 'box';
+  }
+  set selectorShape(val: SelectorShape) {
+    this._selectorShape = val;
+  }
+  selectionShapeAnchor: {
+    cornerA: { x: number; y: number; z: number };
+    cornerB: { x: number; y: number; z: number } | null;
+    micro: boolean;
+  } | null = null;
   brushMicroMode: boolean;
   brushSelection: any;
   inventories: any;
   activeInventoryCategory: string;
-  hammerRotationTurns: number;
+  hammerRotationTurnsY: number;
+  hammerRotationTurnsX: number;
+  get hammerRotationTurns(): number {
+    return this.hammerRotationTurnsY;
+  }
+  set hammerRotationTurns(val: number) {
+    this.hammerRotationTurnsY = val;
+  }
   private hammerRotatedSlotSource: any;
-  private hammerRotatedSlotTurns: number;
+  private hammerRotatedSlotTurnsKey: string | null;
+  get hammerRotatedSlotTurns(): number {
+    return this.hammerRotationTurnsY;
+  }
+  set hammerRotatedSlotTurns(val: number) {
+    this.hammerRotationTurnsY = val;
+  }
   private hammerRotatedSlotCache: any;
   persistentStorage: SpaceStorage | null;
   bulkEditJob: BulkEditJob | null;
@@ -446,6 +472,8 @@ export class PlayerController {
     // 0.125 m micro cells (single toggles + boxes materialize to existing micro
     // voxels).
     this.selectorMicroMode = false;
+    this._selectorShape = 'box';
+    this.selectionShapeAnchor = null;
     this.brushMicroMode = false;
     this.brushSelection = null;
     // The backpack holds three categories of at most 9 items each:
@@ -454,9 +482,10 @@ export class PlayerController {
     // - colorset: named sets of 9 palette colors, applied to the keyboard palette
     this.inventories = this.createEmptyInventories();
     this.activeInventoryCategory = 'blockset';
-    this.hammerRotationTurns = 0;
+    this.hammerRotationTurnsY = 0;
+    this.hammerRotationTurnsX = 0;
     this.hammerRotatedSlotSource = null;
-    this.hammerRotatedSlotTurns = 0;
+    this.hammerRotatedSlotTurnsKey = null;
     this.hammerRotatedSlotCache = null;
     this.loadInventoriesFromLocalStorage();
     // Driving State
@@ -662,12 +691,21 @@ export class PlayerController {
       (document.activeElement as HTMLElement).blur();
     }
 
-    // Direct Shift + 1..9: picks palette color N, or the active backpack
-    // category's slot N when the Hammer is the active tool.
+    // Direct Shift + 1..9:
+    // - When Selector tool is active: Shift + 1..5 switches selector shape (box, cylinder, sphere, stairs, line)
+    // - When Hammer is active: picks backpack slot N
+    // - Otherwise: picks palette color N
     if (e.shiftKey && e.code.startsWith('Digit')) {
       const num = parseInt(e.code.replace('Digit', ''), 10);
       if (num >= 1 && num <= 9) {
         e.preventDefault();
+        if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
+          const shapes: SelectorShape[] = ['box', 'cylinder', 'sphere', 'stairs', 'line'];
+          if (num >= 1 && num <= 5) {
+            this.setSelectorShape(shapes[num - 1]);
+            return;
+          }
+        }
         if (this.ui) {
           if (this.activeTool === SpecialTool.HAMMER) this.ui.selectInventorySlot(num - 1);
           else this.ui.selectPresetColor(num - 1);
@@ -781,6 +819,34 @@ export class PlayerController {
         }
         break;
 
+      case 'ArrowLeft':
+        e.preventDefault();
+        if (this.activeTool === SpecialTool.HAMMER) {
+          this.rotateActiveInventoryItem(-1, 'y');
+        }
+        break;
+
+      case 'ArrowRight':
+        e.preventDefault();
+        if (this.activeTool === SpecialTool.HAMMER) {
+          this.rotateActiveInventoryItem(1, 'y');
+        }
+        break;
+
+      case 'ArrowUp':
+        e.preventDefault();
+        if (this.activeTool === SpecialTool.HAMMER) {
+          this.rotateActiveInventoryItem(1, 'x');
+        }
+        break;
+
+      case 'ArrowDown':
+        e.preventDefault();
+        if (this.activeTool === SpecialTool.HAMMER) {
+          this.rotateActiveInventoryItem(-1, 'x');
+        }
+        break;
+
       case 'Digit1': this.setHotbarSlot(0); break;
       case 'Digit2': this.setHotbarSlot(1); break;
       case 'Digit3': this.setHotbarSlot(2); break;
@@ -839,6 +905,7 @@ export class PlayerController {
     this.selectedBlockSelection = null;
     this.selectorLevel = null;
     this.selectorRange = null;
+    this.selectionShapeAnchor = null;
     this.hoveredGizmoHandle = null;
     this.releaseGizmoDrag();
     this.clearBrushSelection();
@@ -1290,6 +1357,11 @@ export class PlayerController {
               point: targetPoint,
               micro: this.selectorMicroMode === true
             });
+            this.selectionShapeAnchor = {
+              cornerA: this.selectorMicroMode ? { ...microCell } : { x: Math.floor(hp.x), y: Math.floor(hp.y), z: Math.floor(hp.z) },
+              cornerB: null,
+              micro: this.selectorMicroMode === true
+            };
             if (this.ui) {
               this.ui.showToast(this.selectorMicroMode
                 ? `Selector [1/2] picked micro corner (cell ${microCell.x}, ${microCell.y}, ${microCell.z}), pick the opposite corner`
@@ -1302,7 +1374,19 @@ export class PlayerController {
               point: targetPoint,
               micro: this.selectorMicroMode === true
             });
-            if (this.selectorMicroMode) {
+            const ptB = this.selectorMicroMode ? { ...microCell } : { x: Math.floor(hp.x), y: Math.floor(hp.y), z: Math.floor(hp.z) };
+            if (this.selectionShapeAnchor) {
+              this.selectionShapeAnchor.cornerB = ptB;
+            } else {
+              this.selectionShapeAnchor = {
+                cornerA: this.selectorMicroMode ? { ...microCell } : { x: Math.floor(hp.x), y: Math.floor(hp.y), z: Math.floor(hp.z) },
+                cornerB: ptB,
+                micro: this.selectorMicroMode === true
+              };
+            }
+            if (this.selectorShape !== 'box') {
+              this.applySelectionShape(this.selectorShape);
+            } else if (this.selectorMicroMode) {
               const info = this.contraptions.getWorldGlueSelectionInfo?.();
               const count = info?.count ?? 0;
               const clampedNote = cornerResult?.clamped ? ' · clamped to the 64×64×64 limit' : '';
@@ -1364,6 +1448,16 @@ export class PlayerController {
         point: hit.point,
         micro: this.selectorMicroMode === true
       });
+      const ptB = this.selectorMicroMode
+        ? (this.contraptions.microCellFromPoint?.(hit.point) ?? { x: Math.floor(hit.point.x), y: Math.floor(hit.point.y), z: Math.floor(hit.point.z) })
+        : { x: Math.floor(hit.point.x), y: Math.floor(hit.point.y), z: Math.floor(hit.point.z) };
+      if (this.selectionShapeAnchor) {
+        this.selectionShapeAnchor.cornerB = ptB;
+      }
+      if (this.selectorShape !== 'box') {
+        this.applySelectionShape(this.selectorShape);
+        return;
+      }
       if (this.selectorMicroMode) {
         const info = this.contraptions.getWorldGlueSelectionInfo?.();
         const clampedNote = cornerResult?.clamped ? ' · clamped to the 64×64×64 limit' : '';
@@ -4183,6 +4277,75 @@ export class PlayerController {
   }
 
   /**
+   * Rotate a set of voxel blocks around the X axis by `quarterTurns * 90°`.
+   * The result is calculated directly from the supplied original coordinates,
+   * never by repeatedly rotating an already rounded intermediate result.
+   */
+  rotateBlocksX90(blocks: any[], quarterTurns = 1) {
+    if (!Array.isArray(blocks) || blocks.length === 0) return blocks;
+
+    const turns = this.normalizeQuarterTurns(quarterTurns);
+    if (turns === 0) return blocks.map(block => ({ ...block }));
+
+    const isEntity = 'localX' in blocks[0] || 'localY' in blocks[0];
+    const hasMicro = blocks.some(b => (b.size && b.size < 1) || (isEntity ? (!Number.isInteger(b.localY ?? 0) || !Number.isInteger(b.localZ ?? 0)) : (!Number.isInteger(b.dy ?? 0) || !Number.isInteger(b.dz ?? 0))));
+    const S = hasMicro ? MICRO_SIZE : 1.0;
+
+    let minY = Infinity, maxY = -Infinity;
+    let minZ = Infinity, maxZ = -Infinity;
+
+    for (const b of blocks) {
+      const y = isEntity ? (b.localY ?? 0) : (b.dy ?? 0);
+      const z = isEntity ? (b.localZ ?? 0) : (b.dz ?? 0);
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+
+    const cy = (minY + maxY) / 2;
+    const cz = (minZ + maxZ) / 2;
+
+    const rotatePoint = (y: number, z: number) => {
+      if (turns === 1) return [cy + cz - z, cz - cy + y];
+      if (turns === 2) return [2 * cy - y, 2 * cz - z];
+      return [cy - cz + z, cz + cy - y];
+    };
+
+    // Rotating an even-height/depth shape around its geometric center can land its
+    // lower-corner coordinates on half cells. Apply one deterministic grid
+    // correction derived from the original bounds for this final orientation.
+    const [sampleY, sampleZ] = rotatePoint(minY, minZ);
+    const gridUnitsY = sampleY / S;
+    const gridUnitsZ = sampleZ / S;
+    const remY = (gridUnitsY - Math.round(gridUnitsY)) * S;
+    const remZ = (gridUnitsZ - Math.round(gridUnitsZ)) * S;
+
+    return blocks.map(b => {
+      const y = isEntity ? (b.localY ?? 0) : (b.dy ?? 0);
+      const z = isEntity ? (b.localZ ?? 0) : (b.dz ?? 0);
+
+      const rotated = rotatePoint(y, z);
+      let ry = rotated[0] - remY;
+      let rz = rotated[1] - remZ;
+
+      if (hasMicro) {
+        ry = Math.round(ry * MICRO_DIVISIONS) / MICRO_DIVISIONS;
+        rz = Math.round(rz * MICRO_DIVISIONS) / MICRO_DIVISIONS;
+      } else {
+        ry = Math.round(ry);
+        rz = Math.round(rz);
+      }
+
+      if (isEntity) {
+        return { ...b, localY: ry, localZ: rz };
+      } else {
+        return { ...b, dy: ry, dz: rz };
+      }
+    });
+  }
+
+  /**
    * Rotate a set of voxel blocks around the Y axis by `quarterTurns * 90°`.
    * The result is calculated directly from the supplied original coordinates,
    * never by repeatedly rotating an already rounded intermediate result.
@@ -4194,15 +4357,15 @@ export class PlayerController {
     if (turns === 0) return blocks.map(block => ({ ...block }));
 
     const isEntity = 'localX' in blocks[0];
-    const hasMicro = blocks.some(b => (b.size && b.size < 1) || (isEntity ? (!Number.isInteger(b.localX) || !Number.isInteger(b.localZ)) : (!Number.isInteger(b.dx) || !Number.isInteger(b.dz))));
+    const hasMicro = blocks.some(b => (b.size && b.size < 1) || (isEntity ? (!Number.isInteger(b.localX ?? 0) || !Number.isInteger(b.localZ ?? 0)) : (!Number.isInteger(b.dx ?? 0) || !Number.isInteger(b.dz ?? 0))));
     const S = hasMicro ? MICRO_SIZE : 1.0;
 
     let minX = Infinity, maxX = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
 
     for (const b of blocks) {
-      const x = isEntity ? b.localX : b.dx;
-      const z = isEntity ? b.localZ : b.dz;
+      const x = isEntity ? (b.localX ?? 0) : (b.dx ?? 0);
+      const z = isEntity ? (b.localZ ?? 0) : (b.dz ?? 0);
       if (x < minX) minX = x;
       if (x > maxX) maxX = x;
       if (z < minZ) minZ = z;
@@ -4228,8 +4391,8 @@ export class PlayerController {
     const remZ = (gridUnitsZ - Math.round(gridUnitsZ)) * S;
 
     return blocks.map(b => {
-      const x = isEntity ? b.localX : b.dx;
-      const z = isEntity ? b.localZ : b.dz;
+      const x = isEntity ? (b.localX ?? 0) : (b.dx ?? 0);
+      const z = isEntity ? (b.localZ ?? 0) : (b.dz ?? 0);
 
       const rotated = rotatePoint(x, z);
       let rx = rotated[0] - remX;
@@ -4248,6 +4411,41 @@ export class PlayerController {
       } else {
         return { ...b, dx: rx, dz: rz };
       }
+    });
+  }
+
+  /**
+   * Rotate child entity definitions around the same center (cy, cz).
+   */
+  private rotateChildDefinitionsX90(childEntities: any[], quarterTurns = 1, center: { cy: number; cz: number } | null = null) {
+    if (!Array.isArray(childEntities) || childEntities.length === 0) return childEntities;
+    const turns = this.normalizeQuarterTurns(quarterTurns);
+    if (turns === 0) return childEntities.map(child => ({
+      ...child,
+      position: child.position ? { ...child.position } : child.position
+    }));
+    return childEntities.map(child => {
+      const pos = child.position || { x: 0, y: 0, z: 0 };
+      const cy = center ? center.cy : 0;
+      const cz = center ? center.cz : 0;
+      const ry = turns === 1
+        ? cy + cz - pos.z
+        : turns === 2
+          ? 2 * cy - pos.y
+          : cy - cz + pos.z;
+      const rz = turns === 1
+        ? cz - cy + pos.y
+        : turns === 2
+          ? 2 * cz - pos.z
+          : cz + cy - pos.y;
+      return {
+        ...child,
+        position: {
+          x: pos.x,
+          y: Math.round(ry * MICRO_DIVISIONS) / MICRO_DIVISIONS,
+          z: Math.round(rz * MICRO_DIVISIONS) / MICRO_DIVISIONS
+        }
+      };
     });
   }
 
@@ -4288,9 +4486,10 @@ export class PlayerController {
 
   /** Clear the Hammer's placement-only rotation without touching inventory data. */
   clearHammerRotation() {
-    this.hammerRotationTurns = 0;
+    this.hammerRotationTurnsY = 0;
+    this.hammerRotationTurnsX = 0;
     this.hammerRotatedSlotSource = null;
-    this.hammerRotatedSlotTurns = 0;
+    this.hammerRotatedSlotTurnsKey = null;
     this.hammerRotatedSlotCache = null;
     this.inventoryPlacementPreview = null;
     if (this.sceneRenderer) this.sceneRenderer.inventoryPlacementSlot = null;
@@ -4301,19 +4500,46 @@ export class PlayerController {
     const slot = this.inventorySlots?.[this.selectedInventoryIndex];
     if (!slot) return null;
 
-    const turns = this.normalizeQuarterTurns(this.hammerRotationTurns);
-    if (turns === 0) return slot;
+    const turnsY = this.normalizeQuarterTurns(this.hammerRotationTurnsY);
+    const turnsX = this.normalizeQuarterTurns(this.hammerRotationTurnsX);
+    if (turnsY === 0 && turnsX === 0) return slot;
+
+    const cacheKey = `${turnsY}:${turnsX}`;
     if (this.hammerRotatedSlotSource === slot &&
-        this.hammerRotatedSlotTurns === turns &&
+        this.hammerRotatedSlotTurnsKey === cacheKey &&
         this.hammerRotatedSlotCache) {
       return this.hammerRotatedSlotCache;
     }
 
     const isEntity = slot.kind === 'entity' || this.activeInventoryCategory === 'entity';
-    const placementRotation = new THREE.Quaternion().setFromAxisAngle(
+    const qY = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(0, 1, 0),
-      turns * Math.PI / 2
+      turnsY * Math.PI / 2
     );
+    const qX = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0),
+      turnsX * Math.PI / 2
+    );
+    const placementRotation = qY.clone().multiply(qX);
+
+    let rotatedBlocks = slot.blocks;
+    if (turnsX !== 0 && Array.isArray(rotatedBlocks)) {
+      rotatedBlocks = this.rotateBlocksX90(rotatedBlocks, turnsX);
+    }
+    if (turnsY !== 0 && Array.isArray(rotatedBlocks)) {
+      rotatedBlocks = this.rotateBlocksY90(rotatedBlocks, turnsY);
+    }
+
+    let rotatedChildren = slot.childEntities;
+    if (Array.isArray(rotatedChildren)) {
+      if (turnsX !== 0) {
+        rotatedChildren = this.rotateChildDefinitionsX90(rotatedChildren, turnsX);
+      }
+      if (turnsY !== 0) {
+        rotatedChildren = this.rotateChildDefinitionsY90(rotatedChildren, turnsY);
+      }
+    }
+
     const rotatedSlot = isEntity
       ? {
           ...slot,
@@ -4328,22 +4554,21 @@ export class PlayerController {
         }
       : {
           ...slot,
-          blocks: this.rotateBlocksY90(slot.blocks, turns),
-          childEntities: Array.isArray(slot.childEntities)
-            ? this.rotateChildDefinitionsY90(slot.childEntities, turns)
-            : slot.childEntities
+          blocks: rotatedBlocks,
+          childEntities: rotatedChildren
         };
     this.hammerRotatedSlotSource = slot;
-    this.hammerRotatedSlotTurns = turns;
+    this.hammerRotatedSlotTurnsKey = cacheKey;
     this.hammerRotatedSlotCache = rotatedSlot;
     return rotatedSlot;
   }
 
   /**
-   * Advance the active inventory item's temporary Y rotation by one quarter turn.
+   * Advance the active inventory item's temporary rotation by one quarter turn.
+   * axis: 'y' for horizontal rotation (yaw), 'x' for vertical rotation (pitch).
    * Every pose is derived from the untouched inventory item plus the total turn count.
    */
-  rotateActiveInventoryItem(direction = 1) {
+  rotateActiveInventoryItem(direction = 1, axis: 'x' | 'y' = 'y') {
     const category = this.activeInventoryCategory;
     if (category === 'colorset') return false;
     const slot = this.inventorySlots?.[this.selectedInventoryIndex];
@@ -4353,8 +4578,13 @@ export class PlayerController {
     }
 
     const step = direction >= 0 ? 1 : -1;
-    this.hammerRotationTurns = this.normalizeQuarterTurns((this.hammerRotationTurns || 0) + step);
+    if (axis === 'x') {
+      this.hammerRotationTurnsX = this.normalizeQuarterTurns((this.hammerRotationTurnsX || 0) + step);
+    } else {
+      this.hammerRotationTurnsY = this.normalizeQuarterTurns((this.hammerRotationTurnsY || 0) + step);
+    }
     this.hammerRotatedSlotSource = null;
+    this.hammerRotatedSlotTurnsKey = null;
     this.hammerRotatedSlotCache = null;
 
     if (this.sceneRenderer) {
@@ -4365,9 +4595,18 @@ export class PlayerController {
     InventoryThumbnailRenderer.getInstance().clearCache();
 
     this.sound?.playWrenchClick?.();
-    this.ui?.showToast?.(`Rotated "${slot.name || 'item'}" 90°`);
+    const axisLabel = axis === 'x' ? 'pitch' : 'yaw';
+    this.ui?.showToast?.(`Rotated "${slot.name || 'item'}" 90° (${axisLabel})`);
     this.ui?.syncInventoryState?.();
     return true;
+  }
+
+  rotateActiveInventoryItemY(direction = 1) {
+    return this.rotateActiveInventoryItem(direction, 'y');
+  }
+
+  rotateActiveInventoryItemX(direction = 1) {
+    return this.rotateActiveInventoryItem(direction, 'x');
   }
 
   private refreshWrenchPivotTargetPose(target = this.wrenchPivotTarget) {
@@ -5055,6 +5294,7 @@ export class PlayerController {
     this.selectedBlockSelection = null;
     this.selectorLevel = null;
     this.selectorRange = null;
+    this.selectionShapeAnchor = null;
     this.contraptions?.clearSelection?.();
     if (this.ui) {
       this.ui.updateToolPanelMode?.();
@@ -5064,6 +5304,111 @@ export class PlayerController {
         : 'Selector: STANDARD mode · Tab switches to MICRO');
     }
     return this.selectorMicroMode;
+  }
+
+  /** Switch active geometric selection shape (box, cylinder, sphere, stairs, line). */
+  setSelectorShape(shape: SelectorShape) {
+    this.selectorShape = shape;
+    this.ui?.setSelectorShape?.(shape);
+    this.ui?.updateToolPanelMode?.();
+    this.applySelectionShape(shape);
+  }
+
+  /**
+   * Mathematically compute voxels for the active shape within the selection
+   * bounds and update connectedSelection / microSelection.
+   */
+  applySelectionShape(shape: SelectorShape = this.selectorShape) {
+    if (!this.contraptions) return;
+    const isMicro = this.selectorMicroMode === true;
+
+    // Resolve anchor corners
+    let cornerA = this.selectionShapeAnchor?.cornerA;
+    let cornerB = this.selectionShapeAnchor?.cornerB;
+
+    if (!cornerA || !cornerB) {
+      if (isMicro) {
+        const mb = this.contraptions.getMicroSelectionBounds?.();
+        if (mb) {
+          cornerA = { x: mb.minX, y: mb.minY, z: mb.minZ };
+          cornerB = { x: mb.maxX, y: mb.maxY, z: mb.maxZ };
+        }
+      } else {
+        if (this.contraptions.selectionCornerA && this.contraptions.selectionCornerB) {
+          cornerA = this.contraptions.selectionCornerA;
+          cornerB = this.contraptions.selectionCornerB;
+        } else {
+          const bounds = this.contraptions.getSelectionBounds?.();
+          if (bounds) {
+            cornerA = { x: bounds.minX, y: bounds.minY, z: bounds.minZ };
+            cornerB = { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ };
+          }
+        }
+      }
+    }
+
+    if (!cornerA || !cornerB) {
+      return;
+    }
+
+    this.selectionShapeAnchor = {
+      cornerA: { ...cornerA },
+      cornerB: { ...cornerB },
+      micro: isMicro
+    };
+
+    if (shape === 'box') {
+      if (isMicro) {
+        const minX = Math.min(cornerA.x, cornerB.x);
+        const maxX = Math.max(cornerA.x, cornerB.x);
+        const minY = Math.min(cornerA.y, cornerB.y);
+        const maxY = Math.max(cornerA.y, cornerB.y);
+        const minZ = Math.min(cornerA.z, cornerB.z);
+        const maxZ = Math.max(cornerA.z, cornerB.z);
+        this.contraptions.microBounds = { minX, minY, minZ, maxX, maxY, maxZ };
+        this.contraptions.microSelection = this.contraptions.materializeMicroBox?.(minX, minY, minZ, maxX, maxY, maxZ) || [];
+      } else {
+        this.contraptions.connectedSelection = null;
+        this.contraptions.selectionCornerA = { ...cornerA };
+        this.contraptions.selectionCornerB = { ...cornerB };
+      }
+    } else {
+      const cells = computeSelectionCells(shape, cornerA, cornerB, isMicro);
+      if (isMicro) {
+        this.contraptions.microSelection = cells;
+        this.contraptions.microBounds = null;
+      } else {
+        this.contraptions.selectionCornerA = { ...cornerA };
+        this.contraptions.selectionCornerB = { ...cornerB };
+        this.contraptions.connectedSelection = cells;
+      }
+    }
+
+    const bounds = isMicro
+      ? this.contraptions.getMicroSelectionBounds?.()
+      : this.contraptions.getSelectionBounds?.();
+    this.sceneRenderer?.updateSelectionAxisGizmo?.(bounds, isMicro);
+    this.sceneRenderer?.updateSelectionHologram?.(
+      this.contraptions.getSelectionBounds?.(),
+      this.contraptions.connectedSelection,
+      this.contraptions.microSelection,
+      isMicro && shape !== 'box'
+    );
+
+    const shapeLabels: Record<SelectorShape, string> = {
+      box: '方 (Box)',
+      cylinder: '圆柱 (Cylinder)',
+      sphere: '球 (Sphere)',
+      stairs: '楼梯 (Stairs)',
+      line: '线 (Line)',
+    };
+    const count = isMicro
+      ? (this.contraptions.microSelection?.length ?? 0)
+      : (this.contraptions.connectedSelection !== null
+          ? this.contraptions.connectedSelection.length
+          : (this.contraptions.getSelectionBlockCount?.() ?? 0));
+    const unit = isMicro ? 'voxels' : 'blocks';
+    this.ui?.showToast?.(`Selector: ${shapeLabels[shape]} (${count} ${unit}) · F fill · P recolor · Del delete`);
   }
 
   /**
@@ -7149,6 +7494,37 @@ export class PlayerController {
 
       if (result.ok) {
         this.sound?.playWrenchClick?.();
+        if (this.selectorShape !== 'box') {
+          if (isMicro) {
+            const mb = this.contraptions.getMicroSelectionBounds();
+            if (mb) {
+              this.selectionShapeAnchor = {
+                cornerA: { x: mb.minX, y: mb.minY, z: mb.minZ },
+                cornerB: { x: mb.maxX, y: mb.maxY, z: mb.maxZ },
+                micro: true
+              };
+            }
+          } else {
+            if (this.contraptions.selectionCornerA && this.contraptions.selectionCornerB) {
+              this.selectionShapeAnchor = {
+                cornerA: { ...this.contraptions.selectionCornerA },
+                cornerB: { ...this.contraptions.selectionCornerB },
+                micro: false
+              };
+            }
+          }
+          const anchorA = this.selectionShapeAnchor?.cornerA;
+          const anchorB = this.selectionShapeAnchor?.cornerB;
+          if (anchorA && anchorB) {
+            const cells = computeSelectionCells(this.selectorShape, anchorA, anchorB, isMicro);
+            if (isMicro) {
+              this.contraptions.microSelection = cells;
+              this.contraptions.microBounds = null;
+            } else {
+              this.contraptions.connectedSelection = cells;
+            }
+          }
+        }
         const updatedBounds = isMicro
           ? this.contraptions.getMicroSelectionBounds()
           : this.contraptions.getSelectionBounds();
@@ -7156,7 +7532,8 @@ export class PlayerController {
         this.sceneRenderer?.updateSelectionHologram(
           this.contraptions.getSelectionBounds(),
           this.contraptions.connectedSelection,
-          this.contraptions.microSelection
+          this.contraptions.microSelection,
+          isMicro && this.selectorShape !== 'box'
         );
 
         if (this.ui) {
@@ -7182,3 +7559,6 @@ export class PlayerController {
     this.activeGizmoDrag = null;
   }
 }
+
+(PlayerController.prototype as any)._selectorShape = 'box';
+

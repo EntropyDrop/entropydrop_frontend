@@ -18,7 +18,9 @@ import {
 } from 'react-icons/lia';
 import { ContraptionMode } from '@entropydrop/space-engine/contraption/Contraption.ts';
 import { colorToHex } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { TbBox, TbCylinder, TbSphere, TbStairs, TbLine } from 'react-icons/tb';
 import { SpecialTool } from '../../../engine/controls/PlayerController.ts';
+import type { SelectorShape } from '../../../engine/controls/SelectorShapes.ts';
 import { InventoryThumbnailRenderer } from '../../../engine/render/InventoryThumbnailRenderer.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
@@ -197,7 +199,7 @@ function InventoryBar() {
             ))}
           </div>
         </div>
-        <span className="palette-hotkey-hint"><b>E</b> Full Backpack · <b>Tab</b> BKS↔ENT{category === 'entity' ? <> · <b>LMB</b> Auto-attach</> : null}</span>
+        <span className="palette-hotkey-hint"><b>E</b> Full Backpack · <b>Tab</b> BKS↔ENT · <b>Arrows/RMB</b> Rotate{category === 'entity' ? <> · <b>LMB</b> Auto-attach</> : null}</span>
       </div>
       <div id="inventory-bar" className="inventory-bar">
         {Array.from({ length: 9 }, (_, index) => {
@@ -224,6 +226,20 @@ function InventoryBar() {
   );
 }
 
+const SELECTOR_SHAPE_ITEMS: Array<{
+  id: SelectorShape;
+  name: string;
+  nameZh: string;
+  shortcut: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+}> = [
+  { id: 'box', name: 'Box', nameZh: '方', shortcut: 'Shift+1', icon: TbBox },
+  { id: 'cylinder', name: 'Cylinder', nameZh: '圆柱', shortcut: 'Shift+2', icon: TbCylinder },
+  { id: 'sphere', name: 'Sphere', nameZh: '球', shortcut: 'Shift+3', icon: TbSphere },
+  { id: 'stairs', name: 'Stairs', nameZh: '楼梯', shortcut: 'Shift+4', icon: TbStairs },
+  { id: 'line', name: 'Line', nameZh: '线', shortcut: 'Shift+5', icon: TbLine },
+];
+
 function SelectorPanel() {
   const { selector, controller, selectedColor } = useSpaceUi(state => state);
   const activeHex = colorToHex(selectedColor ?? 0xf2a93b);
@@ -248,9 +264,29 @@ function SelectorPanel() {
             <span className="selector-recent-color-hex">{activeHex.toUpperCase()}</span>
           </div>
         </div>
-        <span className="palette-hotkey-hint"><b>F</b> fill · <b>P</b> recolor</span>
+        <span className="palette-hotkey-hint"><b>Shift+1~5</b> shape · <b>F</b> fill · <b>P</b> recolor</span>
       </div>
       <div className="selector-toolbox-content" id="selector-toolbox-content">
+        <div className="selector-shapes-bar" id="selector-shapes-bar" role="group" aria-label="Selection Shape">
+          {SELECTOR_SHAPE_ITEMS.map(item => {
+            const Icon = item.icon;
+            const isActive = (selector.shape || 'box') === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                id={`selector-shape-${item.id}`}
+                tabIndex={-1}
+                className={`selector-shape-btn ${isActive ? 'active' : ''}`}
+                title={`${item.nameZh} (${item.name}) · ${item.shortcut}`}
+                aria-label={`${item.nameZh} (${item.name}) · ${item.shortcut}`}
+                onClick={() => spaceUiStore.setSelectorShape(item.id)}
+              >
+                <Icon size={15} className="shape-icon" />
+              </button>
+            );
+          })}
+        </div>
         <div className="selector-action-buttons">
           <button id="assemble-btn" tabIndex={-1} className="banner-btn primary" disabled={!selector.canAssemble} onClick={() => controller?.assembleSelection?.(ContraptionMode.PROGRAMMABLE)}>{selector.assembleLabel}</button>
           <button id="fill-btn" tabIndex={-1} className="banner-btn secondary" title={`Fill selection with ${activeHex.toUpperCase()} (F)`} disabled={!selector.canDelete} onClick={() => controller?.fillSelectionBlocks?.()}>

@@ -2154,7 +2154,46 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     if (this.boxSelectionGroup) this.boxSelectionGroup.visible = false;
   }
 
-  updateSelectionHologram(bounds, connectedBlocks = null, microBlocks = null) {
+  updateSelectionHologram(bounds, connectedBlocks = null, microBlocks = null, isMicroShape = false) {
+    if (isMicroShape && Array.isArray(microBlocks)) {
+      this.selectionGroup.visible = false;
+      this.selectionCellsGroup.visible = false;
+
+      if (microBlocks.length === 0) {
+        this.selectionMicroCellsGroup.visible = false;
+        return;
+      }
+
+      if (microBlocks.length <= 8192) {
+        const signature = microBlocks.length <= 1024
+          ? microBlocks.map(b => `${b.x},${b.y},${b.z}`).sort().join('|')
+          : `micro-${microBlocks.length}-${microBlocks[0].x},${microBlocks[0].y},${microBlocks[0].z}-${microBlocks[microBlocks.length - 1].x},${microBlocks[microBlocks.length - 1].y},${microBlocks[microBlocks.length - 1].z}`;
+
+        if (signature !== this.selectionMicroCellsSignature) {
+          for (const child of this.selectionMicroCellsGroup.children as any[]) {
+            child.geometry?.dispose();
+          }
+          this.selectionMicroCellsGroup.clear();
+          const geos = this.buildCulledVoxelHologram(microBlocks, MICRO_SIZE);
+          if (geos) {
+            const fill = new THREE.Mesh(geos.fillGeo, this.selectionMicroCellFillMaterial);
+            const lines = new THREE.LineSegments(geos.edgeGeo, this.selectionMicroCellLineMaterial);
+            fill.renderOrder = 20;
+            lines.renderOrder = 21;
+            this.selectionMicroCellsGroup.add(fill, lines);
+          }
+          this.selectionMicroCellsSignature = signature;
+        }
+
+        const t = performance.now() * 0.004;
+        const pulse = (Math.sin(t) + 1) * 0.5;
+        this.selectionMicroCellLineMaterial.opacity = 0.5 + pulse * 0.46;
+        this.selectionMicroCellFillMaterial.opacity = 0.06 + pulse * 0.17;
+        this.selectionMicroCellsGroup.visible = microBlocks.length > 0;
+        return;
+      }
+    }
+
     if (Array.isArray(microBlocks)) {
       this.selectionCellsGroup.visible = false;
       this.selectionMicroCellsGroup.visible = false;
