@@ -4724,19 +4724,23 @@ export class PlayerController {
       return false;
     }
 
+    if (this.wrenchGrab?.contraption === contraption) {
+      return true;
+    }
     this.releaseWrenchGrab();
 
     // 1. Stop the entity if it is currently running
     const isRunning = contraption.scriptStatus !== 'stopped' || contraption.isPhysicsSimulationEnabled?.() !== false;
     if (isRunning) {
-      if (contraption.serverManaged === true) {
-        this.requestServerEntityRunState(contraption, 'stopped');
-      } else {
+      if (contraption.scriptStatus !== 'stopped') {
         this.performBasicAction({
           domain: ActionDomain.ENTITY,
           action: 'stop-scripts',
           target: { contraption }
         });
+      }
+      if (contraption.serverManaged === true) {
+        this.requestServerEntityRunState(contraption, 'stopped', { silent: true });
       }
     }
 
@@ -4750,12 +4754,14 @@ export class PlayerController {
       contraption.collisionSimulationEnabled = false;
       contraption.invalidateCollisionPoseCache?.();
     }
+    contraption.isWrenchGrabbed = true;
 
     const bodyId = this.getWrenchGrabBodyId(
       contraption,
       this.hoveredContraptionHit?.entityId ?? contraptionRootId(contraption)
     );
     if (!bodyId) {
+      contraption.isWrenchGrabbed = false;
       this.ui?.showToast?.('Wrench: this entity has no dynamic body to grab');
       return false;
     }
@@ -4801,9 +4807,11 @@ export class PlayerController {
     const wasActive = !!this.wrenchGrab;
     if (this.wrenchGrab?.contraption) {
       const contraption = this.wrenchGrab.contraption;
-      if (contraption.serverManaged === true) {
-        this.requestServerEntityRunState(contraption, 'stopped');
-      } else if (contraption.scriptStatus !== 'stopped') {
+      contraption.isWrenchGrabbed = false;
+      if (contraption.scriptStatus !== 'stopped') {
+        if (contraption.serverManaged === true) {
+          this.requestServerEntityRunState(contraption, 'stopped', { silent: true });
+        }
         this.performBasicAction({
           domain: ActionDomain.ENTITY,
           action: 'stop-scripts',
@@ -4931,34 +4939,42 @@ export class PlayerController {
     this.serverEntityRunStateHandler = typeof handler === 'function' ? handler : null;
   }
 
-  async requestServerEntityRunState(contraption, desiredState) {
+  async requestServerEntityRunState(contraption, desiredState, options: any = {}) {
     if (contraption.serverCanControl !== true) {
-      this.ui?.showToast?.('Only this entity’s owner can start or stop it');
+      if (!options?.silent) {
+        this.ui?.showToast?.('Only this entity’s owner can start or stop it');
+      }
       return false;
     }
     if (!this.serverEntityRunStateHandler) {
-      this.ui?.showToast?.('Entity control is temporarily unavailable');
+      if (!options?.silent) {
+        this.ui?.showToast?.('Entity control is temporarily unavailable');
+      }
       return false;
     }
     try {
       await this.serverEntityRunStateHandler(contraption, desiredState);
-      this.sound?.playWrenchClick?.();
-      const executesHere = contraption.serverExecutesLocally === true;
-      this.ui?.showToast?.(
-        desiredState === 'stopped'
-          ? `Entity #${contraption.id} stopped (state reset)`
-          : executesHere
-            ? `Entity #${contraption.id} started`
-            : `Entity #${contraption.id} start requested for its owner browser`
-      );
+      if (!options?.silent) {
+        this.sound?.playWrenchClick?.();
+        const executesHere = contraption.serverExecutesLocally === true;
+        this.ui?.showToast?.(
+          desiredState === 'stopped'
+            ? `Entity #${contraption.id} stopped (state reset)`
+            : executesHere
+              ? `Entity #${contraption.id} started`
+              : `Entity #${contraption.id} start requested for its owner browser`
+        );
+      }
       return true;
     } catch (error: any) {
-      if (error?.code === 'ENTITY_REVISION_CONFLICT') {
-        this.ui?.showToast?.('Entity state changed elsewhere; try again');
-      } else if (error?.code === 'ENTITY_CONTROL_FORBIDDEN') {
-        this.ui?.showToast?.('Only this entity’s owner can start or stop it');
-      } else {
-        this.ui?.showToast?.('Entity could not be updated');
+      if (!options?.silent) {
+        if (error?.code === 'ENTITY_REVISION_CONFLICT') {
+          this.ui?.showToast?.('Entity state changed elsewhere; try again');
+        } else if (error?.code === 'ENTITY_CONTROL_FORBIDDEN') {
+          this.ui?.showToast?.('Only this entity’s owner can start or stop it');
+        } else {
+          this.ui?.showToast?.('Entity could not be updated');
+        }
       }
       return false;
     }

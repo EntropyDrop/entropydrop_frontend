@@ -128,3 +128,19 @@ test('hosted entities preserve the server pose without browser execution or glob
   assert.deepEqual(actions, [], 'global Stop would erase the saved runtime pose');
   assert.ok(entity.position.distanceTo(new THREE.Vector3(1, 32, 1)) < 1e-12);
 });
+
+test('entities grabbed by the wrench are not interrupted by server sync or polling playback', async () => {
+  const { sync, created, actions } = harness('owner-1');
+  await sync.poll();
+  assert.equal(created.length, 1);
+  const entity = created[0];
+  entity.isWrenchGrabbed = true;
+  entity.scriptStatus = 'stopped';
+  // Simulate entity being dragged: physics is active for drag servo
+  entity.setPhysicsSimulationEnabled(true);
+
+  // Poll again with updated revision
+  await sync.poll();
+  assert.deepEqual(actions, [], 'applyPlayback must not fire stop-scripts or start-scripts while wrench-grabbed');
+});
+

@@ -337,6 +337,78 @@ test('Wrench left-click stops and lifts entity even if previously stopped', () =
   assert.equal(entity.scriptStatus, 'stopped');
 });
 
+test('Wrench drag on running entity triggers stop and click sound exactly once', async () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null);
+  const entity = makeContraptionWithChildren();
+  entity.serverManaged = true;
+  entity.serverCanControl = true;
+  entity.serverCanEdit = true;
+  manager.registerContraption(entity);
+  assert.equal(entity.scriptStatus, 'running');
+
+  let clickCount = 0;
+  let serverRunStateCalls: any[] = [];
+  let stopScriptsCalls = 0;
+
+  const controller = Object.create(PlayerController.prototype) as any;
+  controller.activeTool = SpecialTool.WRENCH;
+  controller.contraptions = manager;
+  controller.world = {};
+  controller.hoveredContraption = entity;
+  controller.hoveredContraptionHit = {
+    contraption: entity,
+    entityId: 'root',
+    point: new THREE.Vector3(0, 0, 5),
+    distance: 5
+  };
+  controller.camera = new THREE.PerspectiveCamera();
+  controller.physics = { getEyePosition: () => new THREE.Vector3() };
+  controller.sound = {
+    playWrenchClick() {
+      clickCount++;
+    }
+  };
+  controller.ui = { showToast() {} };
+  controller.performBasicAction = (cmd: any) => {
+    if (cmd?.action === 'stop-scripts') {
+      stopScriptsCalls++;
+    }
+    return PlayerController.prototype.performBasicAction.call(controller, cmd);
+  };
+  controller.setServerEntityRunStateHandler((contraption: any, desiredState: string) => {
+    serverRunStateCalls.push({ id: contraption.id, desiredState });
+  });
+
+  // 1. Initial grab on running entity
+  const grabSuccess = controller.startWrenchGrab();
+  assert.equal(grabSuccess, true);
+  assert.equal(controller.wrenchGrab?.contraption, entity);
+  assert.equal(entity.scriptStatus, 'stopped', 'scripts stopped upon grab');
+  assert.equal(entity.isPhysicsSimulationEnabled(), true, 'physics enabled for drag servo');
+  assert.equal(entity.isCollisionSimulationEnabled(), false, 'collision disabled during drag');
+  assert.equal(clickCount, 1, 'click sound played exactly once on grab');
+  assert.equal(stopScriptsCalls, 1, 'stop-scripts invoked once on grab');
+  assert.equal(serverRunStateCalls.length, 1, 'server notified once on grab');
+  assert.equal(serverRunStateCalls[0].desiredState, 'stopped');
+
+  // 2. Repeated startWrenchGrab calls while actively dragging should be idempotent and not re-stop or re-play sound
+  assert.equal(controller.startWrenchGrab(), true);
+  assert.equal(clickCount, 1, 'no extra click sound on redundant grab call');
+  assert.equal(stopScriptsCalls, 1, 'no redundant stop-scripts on redundant grab call');
+  assert.equal(serverRunStateCalls.length, 1, 'no redundant server calls');
+
+  // 3. Release grab
+  assert.equal(controller.releaseWrenchGrab(), true);
+  assert.equal(controller.wrenchGrab, null);
+  assert.equal(entity.scriptStatus, 'stopped');
+  assert.equal(entity.isPhysicsSimulationEnabled(), false, 'physics disabled upon release');
+  assert.equal(entity.isCollisionSimulationEnabled(), true, 'collision restored upon release');
+  assert.equal(clickCount, 1, 'no extra click sound on release');
+  assert.equal(stopScriptsCalls, 1, 'no extra stop-scripts on release since already stopped');
+  assert.equal(serverRunStateCalls.length, 1, 'no extra server call on release');
+});
+
 test('component pivot updates preserve rotated component and descendant voxel positions', () => {
   const entity = makeContraptionWithChildren();
   entity.stopAllNodeScripts();

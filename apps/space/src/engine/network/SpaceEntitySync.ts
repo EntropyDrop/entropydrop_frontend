@@ -182,6 +182,9 @@ export class SpaceEntitySync {
   }
 
   private applyPlayback(contraption: any, entity: SpaceWorldEntityRecord) {
+    if (contraption.isWrenchGrabbed || this.controller?.wrenchGrab?.contraption === contraption) {
+      return;
+    }
     if (entity.execution_mode === 'hosted') {
       // Freeze the latest server pose. Global Stop would reset component state and
       // construction transforms, destroying the authoritative runtime snapshot.
@@ -191,7 +194,8 @@ export class SpaceEntitySync {
     }
     const shouldRun = (this.leasedUntil.get(entity.id) || 0) > Date.now()
       && entity.desired_run_state === 'running';
-    const isRunning = contraption.isPhysicsSimulationEnabled?.() !== false;
+    const isRunning = contraption.scriptStatus === 'running'
+      || (contraption.scriptStatus !== 'stopped' && contraption.isPhysicsSimulationEnabled?.() !== false);
     if (shouldRun === isRunning) return;
     this.contraptions.performBasicAction({
       domain: ActionDomain.ENTITY,
@@ -470,7 +474,9 @@ export class SpaceEntitySync {
       this.leasedUntil.delete(updated.id);
     }
     Object.assign(contraption, this.metadata(updated));
-    this.applyPlayback(contraption, updated);
+    if (!contraption.isWrenchGrabbed && this.controller?.wrenchGrab?.contraption !== contraption) {
+      this.applyPlayback(contraption, updated);
+    }
     contraption.serverPlaybackRevision = updated.revision;
     return updated;
   }
