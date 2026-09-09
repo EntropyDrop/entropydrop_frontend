@@ -60,8 +60,8 @@ export type STLVoxelResult = ModelVoxelResult;
 
 export const MAX_MODEL_FILE_BYTES = 128 * 1024 * 1024;
 export const MAX_STL_FILE_BYTES = 128 * 1024 * 1024;
-export const MAX_MODEL_TRIANGLES = 300000;
-export const MAX_STL_TRIANGLES = 300000;
+export const MAX_MODEL_TRIANGLES = 3000000;
+export const MAX_STL_TRIANGLES = 3000000;
 export const MAX_MODEL_RESOURCE_FILES = 64;
 export const MAX_MODEL_RESOURCE_BYTES = 128 * 1024 * 1024;
 export const MODEL_TEXTURE_ERROR_CODE = 'MODEL_TEXTURE_UNAVAILABLE';
