@@ -17,6 +17,7 @@ import {
   LiaRobotSolid
 } from 'react-icons/lia';
 import { ContraptionMode } from '@entropydrop/space-engine/contraption/Contraption.ts';
+import { colorToHex } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import { SpecialTool } from '../../../engine/controls/PlayerController.ts';
 import { InventoryThumbnailRenderer } from '../../../engine/render/InventoryThumbnailRenderer.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
@@ -224,7 +225,9 @@ function InventoryBar() {
 }
 
 function SelectorPanel() {
-  const { selector, controller } = useSpaceUi(state => state);
+  const { selector, controller, selectedColor } = useSpaceUi(state => state);
+  const activeHex = colorToHex(selectedColor ?? 0xf2a93b);
+
   return (
     <div className="selector-panel-wrapper" id="selector-panel-wrapper">
       <div className="palette-info-row">
@@ -234,14 +237,30 @@ function SelectorPanel() {
             <span id="selector-mode-badge" className={`mode-badge ${selector.micro ? 'micro' : 'std'}`}>{selector.micro ? 'MICRO' : 'STANDARD'}</span>
             <span className="mode-tab-hint flex items-center gap-0.5">Tab <LiaExchangeAltSolid style={{ display: 'inline' }} /></span>
           </button>
+          <div className="selector-recent-color" id="selector-recent-color" title={`Recent Color: ${activeHex.toUpperCase()} · Click to pick · Shift+1~9`}>
+            <label className="selector-recent-color-chip" style={{ backgroundColor: activeHex }}>
+              <input
+                type="color"
+                value={activeHex}
+                onChange={event => spaceUiStore.setBuildColor(event.target.value)}
+              />
+            </label>
+            <span className="selector-recent-color-hex">{activeHex.toUpperCase()}</span>
+          </div>
         </div>
-        <span className="palette-hotkey-hint"><b>Tab</b> switch mode</span>
+        <span className="palette-hotkey-hint"><b>F</b> fill · <b>P</b> recolor</span>
       </div>
       <div className="selector-toolbox-content" id="selector-toolbox-content">
         <div className="selector-action-buttons">
           <button id="assemble-btn" tabIndex={-1} className="banner-btn primary" disabled={!selector.canAssemble} onClick={() => controller?.assembleSelection?.(ContraptionMode.PROGRAMMABLE)}>{selector.assembleLabel}</button>
-          <button id="fill-btn" tabIndex={-1} className="banner-btn secondary" title="Fill selection with active color (B)" disabled={!selector.canDelete} onClick={() => controller?.fillSelectionBlocks?.()}>Fill (B)</button>
-          <button id="paint-btn" tabIndex={-1} className="banner-btn secondary" title="Paint selection with active color (P)" disabled={!selector.canDelete} onClick={() => controller?.paintSelectionBlocks?.()}>Paint (P)</button>
+          <button id="fill-btn" tabIndex={-1} className="banner-btn secondary" title={`Fill selection with ${activeHex.toUpperCase()} (F)`} disabled={!selector.canDelete} onClick={() => controller?.fillSelectionBlocks?.()}>
+            <span className="btn-color-dot" style={{ backgroundColor: activeHex }} />
+            Fill (F)
+          </button>
+          <button id="paint-btn" tabIndex={-1} className="banner-btn secondary" title={`Recolor selection with ${activeHex.toUpperCase()} (P)`} disabled={!selector.canDelete} onClick={() => controller?.paintSelectionBlocks?.()}>
+            <span className="btn-color-dot" style={{ backgroundColor: activeHex }} />
+            Paint (P)
+          </button>
           <button id="copy-btn" tabIndex={-1} className="banner-btn secondary" title="Copy selection to backpack (R)" disabled={!selector.canCopy} onClick={() => controller?.copySelectionSmart?.()}>Copy (R)</button>
           <button id="delete-btn" tabIndex={-1} className="banner-btn danger" title="Delete selection (Del)" disabled={!selector.canDelete} onClick={() => controller?.deleteSelectionBlocks?.()}>Delete (Del)</button>
         </div>

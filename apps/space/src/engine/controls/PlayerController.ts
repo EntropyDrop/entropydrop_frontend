@@ -618,138 +618,7 @@ export class PlayerController {
     document.addEventListener('contextmenu', (e) => e.preventDefault());
 
     // Keyboard controls
-    document.addEventListener('keydown', (e) => {
-      const eventTarget = e.target as HTMLElement;
-      if (eventTarget && (eventTarget.tagName === 'INPUT' || eventTarget.tagName === 'SELECT' || eventTarget.tagName === 'TEXTAREA' || eventTarget.isContentEditable)) return;
-
-      // Ensure any accidentally focused button or interactive 2D element is blurred
-      if (document.activeElement && document.activeElement !== document.body && (document.activeElement.tagName === 'BUTTON' || document.activeElement.getAttribute('role') === 'button')) {
-        (document.activeElement as HTMLElement).blur();
-      }
-
-      // Direct Shift + 1..9: picks palette color N, or the active backpack
-      // category's slot N when the Hammer is the active tool.
-      if (e.shiftKey && e.code.startsWith('Digit')) {
-        const num = parseInt(e.code.replace('Digit', ''), 10);
-        if (num >= 1 && num <= 9) {
-          e.preventDefault();
-          if (this.ui) {
-            if (this.activeTool === SpecialTool.HAMMER) this.ui.selectInventorySlot(num - 1);
-            else this.ui.selectPresetColor(num - 1);
-          }
-          return;
-        }
-      }
-
-      // F3 is the primary perspective shortcut. Keep F5 as a compatibility
-      // alias for existing users, but consume both before entity input so a
-      // mounted script never receives a global camera command.
-      if (isPerspectiveToggleCode(e.code)) {
-        e.preventDefault();
-        this.togglePerspective();
-        return;
-      }
-
-      this.recordEntityKeyDown(e.code);
-
-      switch (e.code) {
-        case 'KeyW': this.keys.forward = true; break;
-        case 'KeyS': this.keys.backward = true; break;
-        case 'KeyA': this.keys.left = true; break;
-        case 'KeyD': this.keys.right = true; break;
-        case 'Space':
-          e.preventDefault();
-          this.keys.jump = true;
-          break;
-        case 'ShiftLeft':
-        case 'ShiftRight':
-          this.keys.crouch = true;
-          this.keys.sprint = true;
-          this.physics.isSprinting = true;
-          break;
-
-        case 'Escape':
-          if (this.brushSelection) {
-            this.clearBrushSelection();
-            if (this.ui) this.ui.showToast('Brush selection cancelled');
-          }
-          break;
-
-        case 'KeyR': // R key: unified smart copy selection (entity or world blocks)
-          if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
-            this.copySelectionSmart();
-          }
-          break;
-
-        case 'KeyB': // B key: fill selection with active color
-          if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
-            this.fillSelectionBlocks();
-          }
-          break;
-
-        case 'KeyP': // P key: paint/recolor selection with active color
-          if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
-            this.paintSelectionBlocks();
-          }
-          break;
-
-        case 'Delete': // Del key: delete the selected entity/component or selected blocks
-        case 'Backspace':
-          this.deleteSelectionBlocks();
-          break;
-
-        case 'KeyC': // C key: open code editor / programmable terminal (always)
-          this.openCodeEditorForTarget();
-          break;
-
-        case 'KeyG': // G key: create child from block selection (selector) / assemble selection
-          if ((this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) &&
-              this.selectedBlockSelection) {
-            this.createChildFromSelectedBlocks();
-          } else {
-            this.assembleSelection();
-          }
-          break;
-
-        case 'KeyV': // V key: Mount / Drive vehicle
-          this.toggleDriveVehicle();
-          break;
-
-        case 'KeyF': // F key: Fly toggle
-          this.physics.isFlying = !this.physics.isFlying;
-          if (this.ui) this.ui.showToast(this.physics.isFlying ? 'FLY MODE ON' : 'FLY MODE OFF');
-          break;
-
-        case 'KeyE': // E key: Inventory Palette
-          if (this.ui) this.ui.toggleInventoryModal();
-          break;
-
-        case 'KeyO': // O key: Global Settings Modal
-          if (this.ui) this.ui.toggleGlobalSettingsModal();
-          break;
-
-        case 'Tab': // Tab: switch the hammer bar between block sets and entities,
-          // or toggle the selector / brush between standard (1 m) and micro (0.125 m) blocks.
-          if (this.activeTool === SpecialTool.HAMMER) {
-            e.preventDefault();
-            this.toggleHammerCategory();
-          } else if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
-            e.preventDefault();
-            this.toggleSelectorMicroMode();
-          } else if (this.activeTool === SpecialTool.BRUSH) {
-            e.preventDefault();
-            this.toggleBrushMicroMode();
-          }
-          break;
-
-        case 'Digit1': this.setHotbarSlot(0); break;
-        case 'Digit2': this.setHotbarSlot(1); break;
-        case 'Digit3': this.setHotbarSlot(2); break;
-        case 'Digit4': this.setHotbarSlot(3); break;
-        case 'Digit5': this.setHotbarSlot(4); break;
-        case 'Digit6': this.setHotbarSlot(5); break;
-      }
-    });
+    document.addEventListener('keydown', (e) => this.handleKeyDown(e));
 
     document.addEventListener('keyup', (e) => {
       // Always release captured input, even if focus moved into the editor
@@ -782,6 +651,143 @@ export class PlayerController {
     document.addEventListener('wheel', (e) => {
       this.handleWheel(e);
     });
+  }
+
+  handleKeyDown(e: KeyboardEvent) {
+    const eventTarget = e.target as HTMLElement;
+    if (eventTarget && (eventTarget.tagName === 'INPUT' || eventTarget.tagName === 'SELECT' || eventTarget.tagName === 'TEXTAREA' || eventTarget.isContentEditable)) return;
+
+    // Ensure any accidentally focused button or interactive 2D element is blurred
+    if (typeof document !== 'undefined' && document.activeElement && document.activeElement !== document.body && (document.activeElement.tagName === 'BUTTON' || document.activeElement.getAttribute('role') === 'button')) {
+      (document.activeElement as HTMLElement).blur();
+    }
+
+    // Direct Shift + 1..9: picks palette color N, or the active backpack
+    // category's slot N when the Hammer is the active tool.
+    if (e.shiftKey && e.code.startsWith('Digit')) {
+      const num = parseInt(e.code.replace('Digit', ''), 10);
+      if (num >= 1 && num <= 9) {
+        e.preventDefault();
+        if (this.ui) {
+          if (this.activeTool === SpecialTool.HAMMER) this.ui.selectInventorySlot(num - 1);
+          else this.ui.selectPresetColor(num - 1);
+        }
+        return;
+      }
+    }
+
+    // F3 is the primary perspective shortcut. Keep F5 as a compatibility
+    // alias for existing users, but consume both before entity input so a
+    // mounted script never receives a global camera command.
+    if (isPerspectiveToggleCode(e.code)) {
+      e.preventDefault();
+      this.togglePerspective();
+      return;
+    }
+
+    this.recordEntityKeyDown(e.code);
+
+    switch (e.code) {
+      case 'KeyW': this.keys.forward = true; break;
+      case 'KeyS': this.keys.backward = true; break;
+      case 'KeyA': this.keys.left = true; break;
+      case 'KeyD': this.keys.right = true; break;
+      case 'Space':
+        e.preventDefault();
+        this.keys.jump = true;
+        break;
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        this.keys.crouch = true;
+        this.keys.sprint = true;
+        this.physics.isSprinting = true;
+        break;
+
+      case 'Escape':
+        if (this.brushSelection) {
+          this.clearBrushSelection();
+          if (this.ui) this.ui.showToast('Brush selection cancelled');
+        }
+        break;
+
+      case 'KeyR': // R key: unified smart copy selection (entity or world blocks)
+        if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
+          this.copySelectionSmart();
+        }
+        break;
+
+      case 'KeyB': // B key: fill selection with active color
+        if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
+          this.fillSelectionBlocks();
+        }
+        break;
+
+      case 'KeyP': // P key: paint/recolor selection with active color
+        if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
+          this.paintSelectionBlocks();
+        }
+        break;
+
+      case 'Delete': // Del key: delete the selected entity/component or selected blocks
+      case 'Backspace':
+        this.deleteSelectionBlocks();
+        break;
+
+      case 'KeyC': // C key: open code editor / programmable terminal (always)
+        this.openCodeEditorForTarget();
+        break;
+
+      case 'KeyG': // G key: create child from block selection (selector) / assemble selection
+        if ((this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) &&
+            this.selectedBlockSelection) {
+          this.createChildFromSelectedBlocks();
+        } else {
+          this.assembleSelection();
+        }
+        break;
+
+      case 'KeyV': // V key: Mount / Drive vehicle
+        this.toggleDriveVehicle();
+        break;
+
+      case 'KeyF': // F key: Fill selection if selected in selector, otherwise Fly toggle
+        if ((this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) && this.hasActiveSelection()) {
+          this.fillSelectionBlocks();
+        } else {
+          this.physics.isFlying = !this.physics.isFlying;
+          if (this.ui) this.ui.showToast(this.physics.isFlying ? 'FLY MODE ON' : 'FLY MODE OFF');
+        }
+        break;
+
+      case 'KeyE': // E key: Inventory Palette
+        if (this.ui) this.ui.toggleInventoryModal();
+        break;
+
+      case 'KeyO': // O key: Global Settings Modal
+        if (this.ui) this.ui.toggleGlobalSettingsModal();
+        break;
+
+      case 'Tab': // Tab: switch the hammer bar between block sets and entities,
+        // or toggle the selector / brush between standard (1 m) and micro (0.125 m) blocks.
+        if (this.activeTool === SpecialTool.HAMMER) {
+          e.preventDefault();
+          this.toggleHammerCategory();
+        } else if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
+          e.preventDefault();
+          this.toggleSelectorMicroMode();
+        } else if (this.activeTool === SpecialTool.BRUSH) {
+          e.preventDefault();
+          this.toggleBrushMicroMode();
+        }
+        break;
+
+      case 'Digit1': this.setHotbarSlot(0); break;
+      case 'Digit2': this.setHotbarSlot(1); break;
+      case 'Digit3': this.setHotbarSlot(2); break;
+      case 'Digit4': this.setHotbarSlot(3); break;
+      case 'Digit5': this.setHotbarSlot(4); break;
+      case 'Digit6': this.setHotbarSlot(5); break;
+    }
   }
 
   handleWheel(e: { deltaY: number; shiftKey?: boolean }) {
@@ -1803,8 +1809,20 @@ export class PlayerController {
     }
   }
 
-  /**
-   * R key: copy the current selection into the active inventory slot.
+  /** Returns true if there is an active world or entity selection. */
+  hasActiveSelection(): boolean {
+    if (this.selectedBlockSelection && this.selectedBlockSelection.blocks?.length > 0) {
+      return true;
+    }
+    if (this.selectedSubtree && this.selectedSubtree.contraption) {
+      return true;
+    }
+    if (this.contraptions && this.contraptions.hasValidSelection()) {
+      return true;
+    }
+    return false;
+  }
+
   /**
    * Smart copy (R key or Copy button):
    * - If an entity component or subtree is selected, copies as an entity.
@@ -3830,9 +3848,27 @@ export class PlayerController {
       return;
     }
 
+    // 1.5 Entity subtree fill
+    if (this.selectedSubtree && this.selectedSubtree.contraption) {
+      const { contraption, rootId } = this.selectedSubtree;
+      const result = this.performBasicAction({
+        domain: ActionDomain.SELECTION,
+        action: 'paint',
+        selection: { kind: 'entity-subtree', contraption, rootId, nodeId: rootId },
+        color
+      });
+      contraption.clearSubtreeHighlight?.();
+      this.selectedSubtree = null;
+      if (result.ok) {
+        this.sound?.playBlockPlace?.();
+        this.ui?.showToast?.(`Filled component [${rootId}] with ${colorToHex(color)}`);
+      }
+      return;
+    }
+
     // 2. World box / micro selection fill
     if (!this.world || !manager.hasValidSelection()) {
-      this.ui?.showToast?.('Nothing selected - box-select a region with the selector first, then press B or click Fill');
+      this.ui?.showToast?.('Nothing selected - box-select a region with the selector first, then press F or click Fill');
       return;
     }
 
@@ -3902,6 +3938,25 @@ export class PlayerController {
       if (result.ok) {
         this.sound?.playBlockPlace?.();
         this.ui?.showToast?.(`Recolored ${result.painted || targetBlocks.length} blocks on [${nodeId}] to ${colorToHex(color)}`);
+      }
+      return;
+    }
+
+    // 1.5 Entity subtree recolor
+    if (this.selectedSubtree && this.selectedSubtree.contraption) {
+      const { contraption, rootId } = this.selectedSubtree;
+      const result = this.performBasicAction({
+        domain: ActionDomain.SELECTION,
+        action: 'paint',
+        selection: { kind: 'entity-subtree', contraption, rootId, nodeId: rootId },
+        color,
+        options: fromColor !== undefined ? { fromColor } : null
+      });
+      contraption.clearSubtreeHighlight?.();
+      this.selectedSubtree = null;
+      if (result.ok) {
+        this.sound?.playBlockPlace?.();
+        this.ui?.showToast?.(`Recolored component [${rootId}] to ${colorToHex(color)}`);
       }
       return;
     }
