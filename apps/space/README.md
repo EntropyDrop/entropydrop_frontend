@@ -113,10 +113,10 @@ drive dynamic bodies through force/torque or kinematic bodies through direct pos
 - There is one buildable block type. RGB color is stored per voxel instance.
 - The shovel creates and removes standard `1 × 1 × 1` voxels.
 - Clicking a standard voxel with the spoon replaces it losslessly with
-  `8 × 8 × 8 = 125` micro voxels.
-- The spoon can then create or remove individual `0.2 × 0.2 × 0.2` cells.
+  `8 × 8 × 8 = 512` micro voxels.
+- The spoon can then create or remove individual `0.125 × 0.125 × 0.125` cells.
 - Micro voxels live in a sparse grid and are merged into dirty-region render
-  meshes per 16×16 standard-cell chunk; they are not 125 independent rigid bodies.
+  meshes per 16×16 standard-cell chunk; they are not 512 independent rigid bodies.
 - Standard and micro voxels can be entityized together and are restored at the
   correct scale when the entity is solidified.
 

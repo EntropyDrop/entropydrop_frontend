@@ -958,8 +958,8 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         onlineLoading: '正在获取在线人数…',
         onlineUnavailable: '在线人数暂不可用',
         stats: {
-            scale: '0.2m 精细微雕',
-            physics: '体素物理引擎',
+            scale: '0.125m (8×8×8) 微格',
+            physics: '60Hz 刚体物理 & BVH 缓存',
             programmable: 'AI 辅助建造 & 自动控制',
             torus: '地球 / 甜甜圈模式'
         },
@@ -969,40 +969,100 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             status: 'STANDBY // 60 FPS'
         },
         featuresTitle: '核心机制与玩法系统',
-        featuresSubtitle: '从 0.2m 微体素精细微雕到刚体物理动力学与 AI 辅助建造及自动控制，打造高自由度的物理沙盒。',
+        featuresSubtitle: '从 0.125m 八分微格精雕、3D 选区 Gizmo 与物理刚体，到 AI 辅助建造与全自动动力巡航，打造高自由度的物理沙盒。',
         features: [
             {
-                tag: '0.2m 双尺度微雕',
-                title: '双尺度精细体素雕刻',
-                description: '标准方块（1.0m）快速构建大尺度地形，勺子工具无损切换至 0.2m 微体素（1/125 体积），搭配 24 位全彩调色盘打造极致机械与雕塑细节。',
-                badge: '1.0m / 0.2m // 全彩',
-                placeholderTitle: '双尺度体素微雕与调色盘截图'
+                tag: '0.125m 八分微格',
+                title: '双尺度微格雕刻与 3D 几何选区',
+                description: '标准方块（1.0m）快速构建地形骨架，勺子工具无损切换至 0.125m 微格（每方块 8×8×8 = 512 微格，1/512 体积）。支持空间三维 XYZ 坐标轴 Gizmo、多形状选区（立方体/圆柱/球体/楼梯/线型）与快捷键（F 填充 / P 换色），搭配 24 位全彩调色盘打造极致机械与微雕细节。',
+                badge: '1.0m / 0.125m (512格) // 全彩',
+                placeholderTitle: '0.125m 微格微雕与 3D 选区截图'
             },
             {
                 tag: '体素物理引擎',
                 title: '一键实体化与体素物理',
-                description: '框选任意连通体素结构按 G 键一键实体化为物理刚体，自动计算质心与惯性张量，支持动力学驱动、重力力矩与高频物理碰撞模拟。',
-                badge: 'RigidBody // G 键',
+                description: '框选连通体素按 G 键一键实体化为物理刚体，自动计算质心与惯性张量；使用扳手工具左键流畅拖拽搬运实体并智能旁路碰撞，右键即时启停动力脚本。底层结合 2×2×2m 分区 BVH 碰撞合并与实体休眠唤醒机制，兼顾高频碰撞模拟与丝滑运行帧率。',
+                badge: 'RigidBody // G 键 / 扳手交互',
                 placeholderTitle: '框选实体化刚体与物理碰撞截图'
             },
             {
                 tag: 'AI 辅助建造 & 自动控制',
                 title: 'AI 辅助建造与自主运动控制',
-                description: '通过 AI 快速辅助生成与建造复杂体素机械，对准实体按 C 呼出终端即可用自然语言下达自主悬停、寻路伴飞、姿态平衡等全自动控制指令，秒级驱动智能造物。',
+                description: '点击 HUD 中的 AI BUILD，以自然语言直接指挥 AI 规划并施工建造复杂场景与机械；对准实体按 C 呼出终端，通过自然语言即时生成 entityAPI 控制脚本，实现自主悬停、航向巡航、姿态平稳与传感器闭环控制。',
                 badge: 'AI 建造 & 自动驾驶 // C 键',
                 placeholderTitle: 'AI 辅助建造与自动控制终端截图'
             },
             {
-                tag: '可切换地形',
-                title: '地球 / 甜甜圈地形模式',
-                description: '默认以地球模式呈现球形地平线，也可随时在设置中切换为无边界的环面甜甜圈拓扑；两种模式都保留连续漫游体验，没有空气墙阻隔。',
-                badge: 'Earth / Torus // 随时切换',
+                tag: '可切换地形与影视光影',
+                title: '地球 / 甜甜圈地形与 Ultra HDR 光影',
+                description: '默认以地球模式呈现地平线弧度，可随时在设置中切换为无缝环面甜甜圈拓扑。搭载 Ultra 级 HDR 影视光影管线（4096² 柔和长阴影、分层动态体积云、丁达尔光束与接触遮蔽）与长达 4000m 的多层级远景 LOD，尽显壮丽世界风貌。',
+                badge: 'Earth / Torus // Ultra HDR',
                 placeholderTitle: '地球与甜甜圈地形切换截图'
             }
         ],
+        toolsGuide: {
+            eyebrow: '创作者工具箱',
+            title: '核心建造工具与常用快捷键',
+            subtitle: '无缝切换微雕刻度、精准空间几何选区、直观物理搬运与代码驱动。',
+            tools: [
+                {
+                    slot: '1',
+                    name: '铲子 Shovel',
+                    badge: '标准方块',
+                    desc: '放置与挖掘 1.0m 标准方块，适合快速搭建建筑地基与大尺度地形结构。',
+                    icon: 'pixelarticons:chart-bar'
+                },
+                {
+                    slot: '2',
+                    name: '勺子 Spoon',
+                    badge: '0.125m 微格',
+                    desc: '无损切换至 0.125m 八分微格（8×8×8 = 512 微格），用于精细微雕与复杂机械构件细节打磨。',
+                    icon: 'pixelarticons:drop'
+                },
+                {
+                    slot: '3',
+                    name: '选区工具 Selector',
+                    badge: '3D Gizmo',
+                    desc: 'XYZ 坐标轴拖动缩放，Shift+1..5 切换立方体/圆柱/球体/楼梯/线型掩膜，方向键 3D 旋转。',
+                    icon: 'pixelarticons:scale'
+                },
+                {
+                    slot: '4',
+                    name: '扳手 Wrench',
+                    badge: '物理操控',
+                    desc: '左键按住拖拽搬运实体（移动时碰撞旁路保护，释放即刻恢复物理），右键即时启停动力脚本。',
+                    icon: 'pixelarticons:sliders'
+                },
+                {
+                    slot: '5',
+                    name: '锤子 Hammer',
+                    badge: '模块化拼装',
+                    desc: '点击地面生成实体，或在停止的实体上安装子组件；方向键调整旋转角度，快速组合机械。',
+                    icon: 'pixelarticons:box'
+                },
+                {
+                    slot: '6',
+                    name: '调色盘 Palette',
+                    badge: '24-bit 全彩',
+                    desc: '自由 RGB 拾色器与 9 色快捷槽位，记录最近使用色，搭配笔刷实现体素表面精准涂装。',
+                    icon: 'pixelarticons:paint-bucket'
+                }
+            ],
+            shortcutsTitle: '高频操作快捷键',
+            shortcuts: [
+                { key: 'G', label: '实体化刚体', desc: '框选后按 G 将选区内方块转为物理实体' },
+                { key: 'C', label: '实体 AI & 终端', desc: '对准实体按 C 打开编辑器与自然语言 AI 编程' },
+                { key: 'F', label: '选区填充', desc: '使用当前色彩一键填充满当前选区' },
+                { key: 'P', label: '选区换色', desc: '将选区内已有方块全部批量替换为当前色彩' },
+                { key: 'Shift+1..5', label: '切换选区形状', desc: '依次切换方块、圆柱、球体、楼梯、线型' },
+                { key: '方向键', label: '3D 轴向旋转', desc: '在选区或锤子工具下旋转方向与俯仰角' },
+                { key: 'V', label: '载具驾驶', desc: '对准载具驾驶位方块按 V 坐上并操控' },
+                { key: 'B / E', label: '背包与市场', desc: '开启 3-Tab 背包，浏览方块、蓝图与云端市场' }
+            ]
+        },
         agentModes: {
             title: '三种 AI 入口，按任务选择',
-            subtitle: '在实体编辑器里编程，在 HUD 中完成世界任务，或让你自己的 Agent 连接 Space。',
+            subtitle: '一键接入外部 Agent，在实体编辑器里编程，或在 HUD 中完成世界任务。',
             scopeLabel: '目标范围',
             entryLabel: '从这里开始',
             exampleLabel: '可以这样描述任务',
@@ -1011,6 +1071,17 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             sharedDescription: '三种 Agent 将参考同一份公开 Skill，在授权范围内通过 spaceAPI 查询和修改世界。实体代码通过 entityAPI（self / ctx）持续运行，执行悬挂、转向和自动控制等行为；Agent 负责生成和更新这些代码。网页端统一 API 接入仍属后续扩展。',
             authNote: '网页助手的模型 API Key 用于连接模型；外部接入的 spaceAPI Key 用于授权世界操作，两者用途不同。',
             cards: [
+                {
+                    id: 'external',
+                    icon: 'pixelarticons:zap',
+                    title: '一键接入外部 Agent',
+                    status: '开箱即用',
+                    scope: '全自动读取世界位置、生成体素并执行代码建造',
+                    description: '无需提前配置密钥。直接复制下方开箱即用的 Prompt 发送给你的 AI Agent（如 Claude Code、Cursor、Windsurf、ChatGPT 等），Agent 会自动阅读公开规范，并在需要时主动向你索取或引导你创建 API Key 开始建造。',
+                    entry: '复制卡片中的 Prompt 发送给你的 Agent 即可开始。',
+                    example: '在对话框中直接粘贴开箱即用 Prompt 即可开启交互。',
+                    availability: '所有 API Key 均支持读取自己的保存位置、创建实体、修改自有实体代码和默认属性、启动／停止及建造方块组。修改前先停止实体。',
+                },
                 {
                     id: 'entity',
                     icon: 'pixelarticons:code',
@@ -1033,31 +1104,20 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                     example: '在我附近建一个车库，停放一辆越野车，并设置巡逻路线。',
                     availability: '目前生成建造方案，预览后确认施工；通用工具调用与跨实体协作为后续扩展。',
                 },
-                {
-                    id: 'external',
-                    icon: 'pixelarticons:terminal',
-                    title: '外部 spaceAPI Agent',
-                    status: 'API 已开放',
-                    scope: '在世界访问和实体所有权范围内拥有完整 Space 权限',
-                    description: '通过公开接口，在你习惯的 Agent、终端或自动化工具里操作 Space，衔接已有工作流程。',
-                    entry: '在导航栏「Space → API Keys」创建密钥，把后端地址、公开 Skill、密钥和任务交给你的 Agent。',
-                    example: '先读取我的位置，再在附近创建一辆带悬挂的越野车。',
-                    availability: '所有 API Key 均支持读取自己的保存位置、创建实体、修改自有实体代码和默认属性、启动／停止及建造方块组。修改前先停止实体。',
-                },
             ],
         },
         agentSetup: {
-            title: '外部 Agent 接入指南',
-            description: '在导航栏「Space → API Keys」创建密钥，也可在游戏内「设置 → API」管理。把后端地址、公开文档链接、密钥和任务一起发给你的 Agent；查询位置前先进入在线世界。',
+            title: '一键接入外部 Agent',
+            description: '无需提前配置密钥。直接复制下方开箱即用的 Prompt 发送给你的 AI Agent（如 Claude Code、Cursor、Windsurf、ChatGPT 等），Agent 会自动阅读公开规范，并在需要时主动向你索取或引导你创建 API Key 开始建造。',
             backend: '后端地址',
             guide: 'spaceAPI · Agent 网络请求',
             entityGuide: 'entityAPI · 实体代码参考',
-            copy: '复制连接说明',
-            copied: '已复制，请补上 API Key 和建造需求后发送。',
+            copy: '复制接入 Prompt',
+            copied: '已复制！直接发送给你的 Agent 即可开始。',
             copyFailed: '复制失败，请选中示例并手动复制。',
-            note: 'Markdown 文档无需登录；读取位置和建造请求需要 Bearer API Key。现有 Key 只能读取所属玩家的保存位置，超过 30 秒会标记为过期。localhost 后端只能供同一台机器上的 Agent 访问。',
-            example: '发给 Agent 的示例',
-            prompt: '请先读取 {guide}。后端地址：{backend}\nspaceAPI Key：<在此粘贴你的 Key>\n任务：<描述想建造的物体>\n先查询我的位置；如果位置过期或不可用，请提示我进入在线世界后重试。',
+            note: '公开文档与 Skill 无需登录即可查阅。Agent 在世界中查询位置与提交建造时需要 Bearer API Key，届时 Agent 会主动向你索取，或指引你点击下方链接获取。',
+            example: '发送给 Agent 的开箱即用 Prompt',
+            prompt: '请先阅读 EntropyDrop Space 的公开智能体指南：{guide}\n后端地址：{backend}\nAPI Key 获取页面：{keys_url}\n\n你的任务是根据我的建造需求，在 EntropyDrop Space 体素物理世界中生成并建造结构与可编程机械（使用 spaceAPI 与 entityAPI）。\n\n请按以下流程开始：\n1. 检查你是否已拥有我的 spaceAPI Key：\n   - 如果我尚未提供，请先询问我是否已有 key；若没有，请指引我打开 {keys_url} 创建并复制给你。\n2. 拿到 key 后，调用 spaceAPI 查询我在世界中的当前坐标（若返回位置过期或不可用，请提醒我先进入在线世界刷新坐标）。\n3. 询问我想建造什么，随后规划体素并编写 entityAPI 控制脚本，通过 API 完成建造。\n\n收到后请回复确认，并询问我的建造需求与 API Key。',
         },
         agentDevTitle: '核心技术与创作者生态',
         agentDevSubtitle: '结合安全脚本沙箱、实时体素物理与内置资源市场，构建高自由度可编程世界。',

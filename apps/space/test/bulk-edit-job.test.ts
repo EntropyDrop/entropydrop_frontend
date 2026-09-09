@@ -6,6 +6,7 @@ import { World } from '@entropydrop/space-engine/voxel/World.ts';
 import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.ts';
 import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import {
+  BULK_EDIT_MAX_OPERATIONS_PER_FRAME,
   BULK_EDIT_THRESHOLD,
   PlayerController,
   SpecialTool
@@ -222,4 +223,32 @@ test('large entity block selection creates its child through BulkEditJob', () =>
   const childId = [...contraption.childDefinitions.keys()][0];
   assert.equal(contraption.blocks.filter(block => block.entityId === childId).length, total);
   assert.equal(controller.__progress.at(-1).phase, 'complete');
+});
+
+test('processBulkEditFrame default batch size is 1024 operations per frame', () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null);
+  const controller = makeController(manager);
+  const total = 2000;
+  const slot = {
+    rootComponentId: 'root',
+    blockCount: total,
+    blocks: entityBlocks(total)
+  };
+  controller.activeTool = SpecialTool.HAMMER;
+  controller.setActiveInventoryCategory('entity');
+  controller.inventories.entity.items[0] = slot;
+  controller.inventories.entity.selected = 0;
+  controller.getInventoryPlacementPose = () => ({ position: new THREE.Vector3(30, 40, 30) });
+
+  assert.equal(BULK_EDIT_MAX_OPERATIONS_PER_FRAME, 1024);
+  assert.equal(controller.pasteInventorySlot(), true);
+  assert.ok(controller.bulkEditJob);
+  // Default call with no maxOperations argument uses BULK_EDIT_MAX_OPERATIONS_PER_FRAME (1024)
+  controller.processBulkEditFrame(undefined, Infinity);
+  assert.equal(controller.bulkEditJob.processed, 1024);
+  controller.processBulkEditFrame(undefined, Infinity);
+  assert.equal(controller.bulkEditJob, null, 'finished processing in 2 frames (1024 + 976)');
+  assert.equal(manager.contraptions.length, 1);
+  assert.equal(manager.contraptions[0].blocks.length, total);
 });

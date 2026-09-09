@@ -13,8 +13,8 @@ export function SpaceAgentInstructions() {
   return <section className="settings-agent-guide" aria-labelledby="settings-agent-guide-title">
     <div className="settings-section-title" id="settings-agent-guide-title">{zh ? '让外部 Agent 在你附近建造' : 'Build nearby with an external agent'}</div>
     <p>{zh
-      ? '进入在线世界，在下方创建 API Key，然后把后端地址、文档链接、Key 和建造需求一起发给你使用的 Agent。现有 Key 可读取你自己的最近保存位置。'
-      : 'Enter the online world, create an API key below, and give your agent the backend URL, guide link, key, and build request. Existing keys can read your own latest saved position.'}</p>
+      ? '可直接复制下方的 Prompt 发送给你的 Agent（如 Claude、Cursor 等），Agent 会根据指引向你索取 API Key，并在在线世界中建造你所需的机械或场景。'
+      : 'Directly copy the prompt below to your agent (e.g. Claude, Cursor). The agent will ask you for an API key and build structures in the online world.'}</p>
     <p>{zh
       ? 'Agent 通过 spaceAPI 发送网络请求；实体代码在运行时调用 entityAPI（self / ctx）。两份文档均免登录，并可互相跳转。'
       : 'Agents send HTTP requests through spaceAPI. Entity code calls entityAPI (self / ctx) inside the runtime. Both public documents link to each other.'}</p>
@@ -38,10 +38,10 @@ export function SpaceAgentInstructions() {
         return;
       }
       void navigator.clipboard.writeText(prompt).then(
-        () => setMessage(zh ? '已复制，请补上你的 API Key 和建造需求。' : 'Copied. Add your API key and build request.'),
+        () => setMessage(zh ? '已复制，直接发送给你的 Agent 即可。' : 'Copied. Send directly to your agent.'),
         () => setMessage(zh ? '复制失败，请展开示例并手动复制。' : 'Copy failed. Expand the example and copy it manually.'),
       );
-    }}>{zh ? '复制连接说明' : 'Copy connection instructions'}</button>
+    }}>{zh ? '复制接入 Prompt' : 'Copy Agent Prompt'}</button>
     {message ? <p role="status">{message}</p> : null}
   </section>;
 }

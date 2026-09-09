@@ -17,7 +17,7 @@ export const MAX_BUILD_PLAN_VOXELS = 65_536;
 export const MAX_BUILD_PLAN_CONSTRAINTS = 256;
 export const MAX_BUILD_SCRIPT_BYTES = 64 * 1024;
 export const MAX_BUILD_TOTAL_SCRIPT_BYTES = 512 * 1024;
-export const BUILD_OPERATIONS_PER_FRAME = 128;
+export const BUILD_OPERATIONS_PER_FRAME = 1024;
 export const BUILD_FRAME_BUDGET_MS = 5;
 
 export type SpaceBuildKind = 'structure' | 'entity';

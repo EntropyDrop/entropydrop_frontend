@@ -958,8 +958,8 @@ Email: support@entropydrop.com`
         onlineLoading: 'Checking online players…',
         onlineUnavailable: 'Online count unavailable',
         stats: {
-            scale: '0.2m Micro Sculpting',
-            physics: 'Voxel Physics Engine',
+            scale: '0.125m (8×8×8) Micro Grid',
+            physics: '60Hz Voxel Physics & BVH Cache',
             programmable: 'AI Building & Auto Control',
             torus: 'Earth / Donut Modes'
         },
@@ -969,40 +969,100 @@ Email: support@entropydrop.com`
             status: 'STANDBY // 60 FPS'
         },
         featuresTitle: 'Core Mechanics & Systems',
-        featuresSubtitle: 'From 0.2m micro-sculpting to rigid-body physics, AI-assisted building, and autonomous control.',
+        featuresSubtitle: 'From 0.125m micro-grid sculpting and 3D gizmo selection to rigid-body dynamics and AI-assisted autonomous control.',
         features: [
             {
-                tag: '0.2m DUAL-SCALE',
-                title: 'Dual-Scale Voxel Sculpting',
-                description: 'Build terrain with 1.0m standard blocks, switch seamlessly to 0.2m micro voxels (1/125 volume) with full 24-bit TrueColor palette for intricate mechanical and sculpting details.',
-                badge: '1.0m / 0.2m // TrueColor',
-                placeholderTitle: 'Dual-Scale Sculpting & Color Palette Screenshot'
+                tag: '0.125m MICRO GRID',
+                title: 'Dual-Scale Micro Sculpting & 3D Geometry',
+                description: 'Build terrain with 1.0m standard blocks, and switch losslessly to 0.125m micro voxels (8×8×8 = 512 microcells per block, 1/512 volume) with the Spoon. Features 3D XYZ axis gizmos, multi-shape selection (box, cylinder, sphere, stairs, line), batch shortcuts (F fill / P recolor), and a 24-bit TrueColor palette for intricate mechanical precision.',
+                badge: '1.0m / 0.125m (512 cells) // TrueColor',
+                placeholderTitle: '0.125m Micro-Grid Sculpting & 3D Selection Screenshot'
             },
             {
                 tag: 'VOXEL PHYSICS',
                 title: 'Entityization & Voxel Physics',
-                description: 'Box-select connected structures and press G to turn them into rigid bodies with automatic center of mass, inertia tensors, and high-frequency collision dynamics.',
-                badge: 'RigidBody // G Key',
+                description: 'Box-select voxels and press G to turn them into rigid bodies with automatic center of mass and inertia tensor calculation. Use the interactive Wrench to drag and carry entities with collision bypass, and right-click to toggle runtime scripts. Powered by 2×2×2m partitioned BVH collision caching and dynamic body sleep/wake optimization.',
+                badge: 'RigidBody // G Key / Wrench Drag',
                 placeholderTitle: 'Box Selection Entityization & Physics Collision Screenshot'
             },
             {
                 tag: 'AI BUILDING & AUTO CONTROL',
                 title: 'AI-Assisted Building & Autonomous Control',
-                description: 'Leverage AI to assist in constructing intricate voxel machinery. Point at any entity and press C to direct autonomous hovering, waypoint cruising, and attitude stabilization with natural language prompts.',
+                description: 'Click AI BUILD in the HUD to direct AI to plan and construct complex structures from natural language. Aim at an entity and press C to open the editor, generating entityAPI controller code for autonomous hovering, waypoint cruising, and attitude stabilization in seconds.',
                 badge: 'AI Building & Auto-Pilot // C Key',
                 placeholderTitle: 'AI Building & Autonomous Control Terminal Screenshot'
             },
             {
-                tag: 'SWITCHABLE TERRAIN',
-                title: 'Earth & Donut Terrain Modes',
-                description: 'Explore a spherical Earth-style horizon by default, then switch to the boundary-free torus donut topology at any time in Settings. Both modes preserve continuous world travel without invisible walls.',
-                badge: 'Earth / Torus // Switchable',
+                tag: 'SWITCHABLE TERRAIN & ULTRA HDR',
+                title: 'Earth & Donut Terrain Modes with Ultra HDR',
+                description: 'Explore with spherical Earth horizon curvature by default, or toggle to seamless Torus donut topology anytime. Features an Ultra HDR cinematic pipeline with 4096² soft morning shadows, dynamic layered clouds, atmospheric sun shafts, and multi-tier distant LOD up to 4000m continuous view distance.',
+                badge: 'Earth / Torus // Ultra HDR',
                 placeholderTitle: 'Switchable Earth and Donut Terrain Screenshot'
             }
         ],
+        toolsGuide: {
+            eyebrow: 'CREATOR TOOLKIT',
+            title: 'Core Creative Tools & Essential Controls',
+            subtitle: 'Seamlessly transition across dual scales, precision 3D gizmos, intuitive physical handling, and code-driven mechanics.',
+            tools: [
+                {
+                    slot: '1',
+                    name: 'Shovel',
+                    badge: 'Standard Blocks',
+                    desc: 'Place and carve 1.0m standard blocks for rapid architectural foundation and macro terrain layout.',
+                    icon: 'pixelarticons:chart-bar'
+                },
+                {
+                    slot: '2',
+                    name: 'Spoon',
+                    badge: '0.125m Micro Grid',
+                    desc: 'Losslessly subdivide standard blocks into 0.125m microcells (8×8×8 = 512 cells) for intricate sculpting and mechanical detail.',
+                    icon: 'pixelarticons:drop'
+                },
+                {
+                    slot: '3',
+                    name: 'Selector',
+                    badge: '3D Gizmo',
+                    desc: 'Interactive XYZ coordinate handles, Shift+1..5 shape masks (box, cylinder, sphere, stairs, line), and arrow key 3D rotation.',
+                    icon: 'pixelarticons:scale'
+                },
+                {
+                    slot: '4',
+                    name: 'Wrench',
+                    badge: 'Physical Handling',
+                    desc: 'Left-click & hold to drag entities with collision bypass protection; right-click to instantly start or stop runtime scripts.',
+                    icon: 'pixelarticons:sliders'
+                },
+                {
+                    slot: '5',
+                    name: 'Hammer',
+                    badge: 'Modular Assembly',
+                    desc: 'Spawn entities on terrain or install subcomponents directly onto stopped machines with arrow-key orientation.',
+                    icon: 'pixelarticons:box'
+                },
+                {
+                    slot: '6',
+                    name: 'Palette',
+                    badge: '24-bit TrueColor',
+                    desc: 'Full RGB color picker with 9 preset swatches and recent color tracking for precision surface texturing.',
+                    icon: 'pixelarticons:paint-bucket'
+                }
+            ],
+            shortcutsTitle: 'Essential Shortcuts Quick Reference',
+            shortcuts: [
+                { key: 'G', label: 'Entityize RigidBody', desc: 'Turn selection into an independent physical rigid body' },
+                { key: 'C', label: 'Entity AI & Terminal', desc: 'Open code editor and natural-language AI programming terminal' },
+                { key: 'F', label: 'Fill Selection', desc: 'Instantly fill the current selection with the active color' },
+                { key: 'P', label: 'Recolor Selection', desc: 'Batch replace all existing voxels in the selection with active color' },
+                { key: 'Shift+1..5', label: 'Selection Shapes', desc: 'Switch between Box, Cylinder, Sphere, Stairs, and Line masks' },
+                { key: 'Arrow Keys', label: '3D Axis Rotation', desc: 'Rotate yaw and pitch for selection masks or Hammer blueprints' },
+                { key: 'V', label: 'Mount Vehicle', desc: 'Aim at a vehicle pilot seat and press V to board and drive' },
+                { key: 'B / E', label: 'Backpack & Market', desc: 'Open 3-tab modal for blocks, blueprint shapes, and cloud marketplace' }
+            ]
+        },
         agentModes: {
             title: 'Three AI entry points, chosen for your task',
-            subtitle: 'Program in the entity editor, work across the world from the HUD, or connect your own agent to Space.',
+            subtitle: 'Onboard your external agent in one click, program in the entity editor, or work across the world from the HUD.',
             scopeLabel: 'Intended scope',
             entryLabel: 'Where to start',
             exampleLabel: 'Example task',
@@ -1011,6 +1071,17 @@ Email: support@entropydrop.com`
             sharedDescription: 'All three agents are designed to follow the same public Skill and query or change the world through authorized spaceAPI requests. Entity code calls entityAPI (self / ctx) for ongoing behaviors such as suspension, steering, and autonomous control; agents generate and update that code. Moving the browser assistants to this shared API is a planned extension.',
             authNote: 'A model API key connects a browser assistant to its model. A spaceAPI key authorizes an external agent to operate in the world. They serve different purposes.',
             cards: [
+                {
+                    id: 'external',
+                    icon: 'pixelarticons:zap',
+                    title: 'One-Click Agent Onboarding',
+                    status: 'Ready to use',
+                    scope: 'Autonomous position querying, voxel planning & entity code execution',
+                    description: 'No need to set up an API key first. Directly copy the prompt below to your AI Agent (e.g. Claude Code, Cursor, Windsurf, ChatGPT). The agent will read the public skill guide, ask for or guide creating a key, and start building.',
+                    entry: 'Directly copy the prompt from this card to your agent.',
+                    example: 'Paste the ready-to-use prompt into your agent to begin.',
+                    availability: 'All API keys include reading your saved position, creating entities, editing owned entity code and defaults, starting/stopping entities, and building blocksets. Stop before editing.',
+                },
                 {
                     id: 'entity',
                     icon: 'pixelarticons:code',
@@ -1033,31 +1104,20 @@ Email: support@entropydrop.com`
                     example: 'Build a garage near me, park an off-road vehicle inside, and set up a patrol route.',
                     availability: 'Generate a build plan, preview it, and confirm construction today. General tool use and coordination across entities are planned extensions.',
                 },
-                {
-                    id: 'external',
-                    icon: 'pixelarticons:terminal',
-                    title: 'External spaceAPI agent',
-                    status: 'API available',
-                    scope: 'Full Space permissions within your world access and entity ownership',
-                    description: 'Operate Space through its public API from your preferred agent, terminal, or automation tool, as part of your existing workflow.',
-                    entry: 'Create a key under Space → API Keys, then give your agent the backend URL, public Skill, key, and task.',
-                    example: 'Read my position, then create an off-road vehicle with suspension nearby.',
-                    availability: 'All API keys include reading your saved position, creating entities, editing owned entity code and defaults, starting/stopping entities, and building blocksets. Stop before editing.',
-                },
             ],
         },
         agentSetup: {
-            title: 'Connect an external agent',
-            description: 'Create a key under Space → API Keys, or manage it in the in-game Settings → API. Enter the online world before querying your position. Give your agent the backend URL, public guide, key, and the object you want to build.',
+            title: 'One-Click Agent Onboarding',
+            description: 'No need to set up an API key first. Simply copy the ready-to-use prompt below to your AI Agent (e.g. Claude Code, Cursor, Windsurf, ChatGPT). The agent will read the public skill guide, guide you to provide or generate an API key, and begin building.',
             backend: 'Backend URL',
             guide: 'spaceAPI · Agent HTTP requests',
             entityGuide: 'entityAPI · Entity code reference',
-            copy: 'Copy connection instructions',
-            copied: 'Copied. Add your API key and build request before sending.',
+            copy: 'Copy Agent Prompt',
+            copied: 'Copied! Send directly to your agent to start.',
             copyFailed: 'Could not copy. Select the example and copy it manually.',
-            note: 'The Markdown guide needs no login. Position and build requests need a Bearer API key. Existing keys can read only their owner’s saved position; checkpoints older than 30 seconds are marked stale. A localhost backend is reachable only by an agent on the same machine.',
-            example: 'Example prompt for your agent',
-            prompt: 'Read {guide} first. Backend URL: {backend}\nspaceAPI key: <paste your key here>\nTask: <describe what you want to build>\nRead my position first. If it is stale or unavailable, ask me to enter the online world and retry.',
+            note: 'Public skill and documentation do not require login. Querying player positions and submitting builds require a Bearer API key; your agent will ask you for an existing key or direct you to generate one when ready.',
+            example: 'Ready-to-use prompt for your agent',
+            prompt: 'Please first read the EntropyDrop Space Agent Skill at: {guide}\nBackend URL: {backend}\nAPI Key Page: {keys_url}\n\nYour objective is to generate and build structures and programmable contraptions in the EntropyDrop Space voxel physics universe based on my instructions (using spaceAPI and entityAPI).\n\nPlease follow these steps:\n1. Check whether you already have my spaceAPI key:\n   - If not provided yet, ask me for my key, or guide me to open {keys_url} to create one and paste it to you.\n2. Once you have the key, query my active player coordinates via spaceAPI (if the position is stale or unavailable, remind me to enter the online world).\n3. Ask what I want to build, plan the voxels, write entityAPI controller code, and execute the build via spaceAPI.\n\nPlease reply to confirm you are ready, and ask for my build request and API key.',
         },
         agentDevTitle: 'Core Engine & Creator Ecosystem',
         agentDevSubtitle: 'Combining secure script sandboxes, real-time voxel physics, and a built-in marketplace for endless programmable creativity.',
