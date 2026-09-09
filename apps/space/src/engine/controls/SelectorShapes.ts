@@ -8,11 +8,11 @@ export interface VoxelPoint {
 }
 
 export const SELECTOR_SHAPES: { key: SelectorShape; label: string; nameEn: string; shortcut: number }[] = [
-  { key: 'box', label: '方', nameEn: 'Box', shortcut: 1 },
-  { key: 'cylinder', label: '圆柱', nameEn: 'Cylinder', shortcut: 2 },
-  { key: 'sphere', label: '球', nameEn: 'Sphere', shortcut: 3 },
-  { key: 'stairs', label: '楼梯', nameEn: 'Stairs', shortcut: 4 },
-  { key: 'line', label: '线', nameEn: 'Line', shortcut: 5 }
+  { key: 'box', label: 'Box', nameEn: 'Box', shortcut: 1 },
+  { key: 'cylinder', label: 'Cylinder', nameEn: 'Cylinder', shortcut: 2 },
+  { key: 'sphere', label: 'Sphere', nameEn: 'Sphere', shortcut: 3 },
+  { key: 'stairs', label: 'Stairs', nameEn: 'Stairs', shortcut: 4 },
+  { key: 'line', label: 'Line', nameEn: 'Line', shortcut: 5 }
 ];
 
 export function bresenham3D(
@@ -71,7 +71,9 @@ export function computeSelectionCells(
   shape: SelectorShape,
   pointA: { x: number; y: number; z: number },
   pointB: { x: number; y: number; z: number },
-  isMicro = false
+  isMicro = false,
+  cylinderAxis: 'x' | 'y' | 'z' = 'y',
+  stairsAxis?: 'x' | 'z'
 ): VoxelPoint[] {
   const minX = Math.min(pointA.x, pointB.x);
   const maxX = Math.max(pointA.x, pointB.x);
@@ -106,18 +108,55 @@ export function computeSelectionCells(
   }
 
   if (shape === 'cylinder') {
-    const cx = (minX + maxX + 1) / 2;
-    const cz = (minZ + maxZ + 1) / 2;
-    const rx = W === 1 ? 0.51 : (W - 0.5) / 2;
-    const rz = D === 1 ? 0.51 : (D - 0.5) / 2;
+    if (cylinderAxis === 'x') {
+      const cy = (minY + maxY + 1) / 2;
+      const cz = (minZ + maxZ + 1) / 2;
+      const ry = H === 1 ? 0.51 : (H - 0.5) / 2;
+      const rz = D === 1 ? 0.51 : (D - 0.5) / 2;
 
-    for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
-        const ux = (x + 0.5) - cx;
-        for (let z = minZ; z <= maxZ; z++) {
-          const uz = (z + 0.5) - cz;
-          if ((ux / rx) ** 2 + (uz / rz) ** 2 <= 1.0 + 1e-5) {
-            cells.push(isMicro ? { x, y, z, micro: true } : { x, y, z });
+        for (let y = minY; y <= maxY; y++) {
+          const uy = (y + 0.5) - cy;
+          for (let z = minZ; z <= maxZ; z++) {
+            const uz = (z + 0.5) - cz;
+            if ((uy / ry) ** 2 + (uz / rz) ** 2 <= 1.0 + 1e-5) {
+              cells.push(isMicro ? { x, y, z, micro: true } : { x, y, z });
+            }
+          }
+        }
+      }
+    } else if (cylinderAxis === 'z') {
+      const cx = (minX + maxX + 1) / 2;
+      const cy = (minY + maxY + 1) / 2;
+      const rx = W === 1 ? 0.51 : (W - 0.5) / 2;
+      const ry = H === 1 ? 0.51 : (H - 0.5) / 2;
+
+      for (let z = minZ; z <= maxZ; z++) {
+        for (let x = minX; x <= maxX; x++) {
+          const ux = (x + 0.5) - cx;
+          for (let y = minY; y <= maxY; y++) {
+            const uy = (y + 0.5) - cy;
+            if ((ux / rx) ** 2 + (uy / ry) ** 2 <= 1.0 + 1e-5) {
+              cells.push(isMicro ? { x, y, z, micro: true } : { x, y, z });
+            }
+          }
+        }
+      }
+    } else {
+      // Default: along Y (vertical cylinder)
+      const cx = (minX + maxX + 1) / 2;
+      const cz = (minZ + maxZ + 1) / 2;
+      const rx = W === 1 ? 0.51 : (W - 0.5) / 2;
+      const rz = D === 1 ? 0.51 : (D - 0.5) / 2;
+
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const ux = (x + 0.5) - cx;
+          for (let z = minZ; z <= maxZ; z++) {
+            const uz = (z + 0.5) - cz;
+            if ((ux / rx) ** 2 + (uz / rz) ** 2 <= 1.0 + 1e-5) {
+              cells.push(isMicro ? { x, y, z, micro: true } : { x, y, z });
+            }
           }
         }
       }
@@ -150,28 +189,46 @@ export function computeSelectionCells(
 
   if (shape === 'stairs') {
     const dx = pointB.x - pointA.x;
+    const dy = pointB.y - pointA.y;
     const dz = pointB.z - pointA.z;
-    const isXAxis = Math.abs(dx) >= Math.abs(dz);
+    const isXAxis = stairsAxis !== undefined ? stairsAxis === 'x' : Math.abs(dx) >= Math.abs(dz);
+    const isPositiveY = dy >= 0;
 
     if (isXAxis) {
-      const isPositive = pointB.x >= pointA.x;
+      const isPositive = dx >= 0;
       for (let x = minX; x <= maxX; x++) {
         const u = isPositive ? (x - minX) : (maxX - x);
         const stepHeight = W === 1 ? H : (H === 1 ? 1 : 1 + Math.floor((u / (W - 1)) * (H - 1)));
-        for (let y = minY; y < minY + stepHeight; y++) {
-          for (let z = minZ; z <= maxZ; z++) {
-            cells.push(isMicro ? { x, y, z, micro: true } : { x, y, z });
+        if (isPositiveY) {
+          for (let y = minY; y < minY + stepHeight; y++) {
+            for (let z = minZ; z <= maxZ; z++) {
+              cells.push(isMicro ? { x, y, z, micro: true } : { x, y, z });
+            }
+          }
+        } else {
+          for (let y = maxY; y > maxY - stepHeight; y--) {
+            for (let z = minZ; z <= maxZ; z++) {
+              cells.push(isMicro ? { x, y, z, micro: true } : { x, y, z });
+            }
           }
         }
       }
     } else {
-      const isPositive = pointB.z >= pointA.z;
+      const isPositive = dz >= 0;
       for (let z = minZ; z <= maxZ; z++) {
         const u = isPositive ? (z - minZ) : (maxZ - z);
         const stepHeight = D === 1 ? H : (H === 1 ? 1 : 1 + Math.floor((u / (D - 1)) * (H - 1)));
-        for (let y = minY; y < minY + stepHeight; y++) {
-          for (let x = minX; x <= maxX; x++) {
-            cells.push(isMicro ? { x, y, z, micro: true } : { x, y, z });
+        if (isPositiveY) {
+          for (let y = minY; y < minY + stepHeight; y++) {
+            for (let x = minX; x <= maxX; x++) {
+              cells.push(isMicro ? { x, y, z, micro: true } : { x, y, z });
+            }
+          }
+        } else {
+          for (let y = maxY; y > maxY - stepHeight; y--) {
+            for (let x = minX; x <= maxX; x++) {
+              cells.push(isMicro ? { x, y, z, micro: true } : { x, y, z });
+            }
           }
         }
       }

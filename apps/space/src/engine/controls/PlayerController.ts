@@ -355,6 +355,8 @@ export class PlayerController {
     cornerA: { x: number; y: number; z: number };
     cornerB: { x: number; y: number; z: number } | null;
     micro: boolean;
+    cylinderAxis?: 'x' | 'y' | 'z';
+    stairsAxis?: 'x' | 'z';
   } | null = null;
   brushMicroMode: boolean;
   brushSelection: any;
@@ -823,6 +825,8 @@ export class PlayerController {
         e.preventDefault();
         if (this.activeTool === SpecialTool.HAMMER) {
           this.rotateActiveInventoryItem(-1, 'y');
+        } else if ((this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) && this.hasActiveSelection()) {
+          this.rotateSelection(-1, 'y');
         }
         break;
 
@@ -830,6 +834,8 @@ export class PlayerController {
         e.preventDefault();
         if (this.activeTool === SpecialTool.HAMMER) {
           this.rotateActiveInventoryItem(1, 'y');
+        } else if ((this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) && this.hasActiveSelection()) {
+          this.rotateSelection(1, 'y');
         }
         break;
 
@@ -837,6 +843,8 @@ export class PlayerController {
         e.preventDefault();
         if (this.activeTool === SpecialTool.HAMMER) {
           this.rotateActiveInventoryItem(1, 'x');
+        } else if ((this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) && this.hasActiveSelection()) {
+          this.rotateSelection(1, 'x');
         }
         break;
 
@@ -844,6 +852,8 @@ export class PlayerController {
         e.preventDefault();
         if (this.activeTool === SpecialTool.HAMMER) {
           this.rotateActiveInventoryItem(-1, 'x');
+        } else if ((this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) && this.hasActiveSelection()) {
+          this.rotateSelection(-1, 'x');
         }
         break;
 
@@ -5351,10 +5361,17 @@ export class PlayerController {
       return;
     }
 
+    const cylinderAxis = this.selectionShapeAnchor?.cylinderAxis || 'y';
+    const dx = cornerB.x - cornerA.x;
+    const dz = cornerB.z - cornerA.z;
+    const stairsAxis = this.selectionShapeAnchor?.stairsAxis || (Math.abs(dx) >= Math.abs(dz) ? 'x' : 'z');
+
     this.selectionShapeAnchor = {
       cornerA: { ...cornerA },
       cornerB: { ...cornerB },
-      micro: isMicro
+      micro: isMicro,
+      cylinderAxis,
+      stairsAxis
     };
 
     if (shape === 'box') {
@@ -5373,7 +5390,7 @@ export class PlayerController {
         this.contraptions.selectionCornerB = { ...cornerB };
       }
     } else {
-      const cells = computeSelectionCells(shape, cornerA, cornerB, isMicro);
+      const cells = computeSelectionCells(shape, cornerA, cornerB, isMicro, cylinderAxis, stairsAxis);
       if (isMicro) {
         this.contraptions.microSelection = cells;
         this.contraptions.microBounds = null;
@@ -5396,11 +5413,11 @@ export class PlayerController {
     );
 
     const shapeLabels: Record<SelectorShape, string> = {
-      box: '方 (Box)',
-      cylinder: '圆柱 (Cylinder)',
-      sphere: '球 (Sphere)',
-      stairs: '楼梯 (Stairs)',
-      line: '线 (Line)',
+      box: 'Box',
+      cylinder: 'Cylinder',
+      sphere: 'Sphere',
+      stairs: 'Stairs',
+      line: 'Line',
     };
     const count = isMicro
       ? (this.contraptions.microSelection?.length ?? 0)
@@ -5409,6 +5426,201 @@ export class PlayerController {
           : (this.contraptions.getSelectionBlockCount?.() ?? 0));
     const unit = isMicro ? 'voxels' : 'blocks';
     this.ui?.showToast?.(`Selector: ${shapeLabels[shape]} (${count} ${unit}) · F fill · P recolor · Del delete`);
+  }
+
+  /**
+   * Rotate the active selection 90° around the selection center.
+   * - axis = 'y': Yaw (horizontal rotation, ArrowLeft = -1, ArrowRight = 1)
+   * - axis = 'x': Pitch (vertical rotation, ArrowDown = -1, ArrowUp = 1)
+   */
+  rotateSelection(direction: number = 1, axis: 'x' | 'y' = 'y'): boolean {
+    if (!this.contraptions || !this.hasActiveSelection()) {
+      return false;
+    }
+
+    const isMicro = this.selectorMicroMode === true;
+    let cornerA = this.selectionShapeAnchor?.cornerA;
+    let cornerB = this.selectionShapeAnchor?.cornerB;
+
+    if (!cornerA || !cornerB) {
+      if (isMicro) {
+        const mb = this.contraptions.getMicroSelectionBounds?.();
+        if (mb) {
+          cornerA = { x: mb.minX, y: mb.minY, z: mb.minZ };
+          cornerB = { x: mb.maxX, y: mb.maxY, z: mb.maxZ };
+        }
+      } else {
+        if (this.contraptions.selectionCornerA && this.contraptions.selectionCornerB) {
+          cornerA = { ...this.contraptions.selectionCornerA };
+          cornerB = { ...this.contraptions.selectionCornerB };
+        } else {
+          const bounds = this.contraptions.getSelectionBounds?.();
+          if (bounds) {
+            cornerA = { x: bounds.minX, y: bounds.minY, z: bounds.minZ };
+            cornerB = { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ };
+          }
+        }
+      }
+    }
+
+    if (!cornerA || !cornerB) return false;
+
+    const minX = Math.min(cornerA.x, cornerB.x);
+    const maxX = Math.max(cornerA.x, cornerB.x);
+    const minY = Math.min(cornerA.y, cornerB.y);
+    const maxY = Math.max(cornerA.y, cornerB.y);
+    const minZ = Math.min(cornerA.z, cornerB.z);
+    const maxZ = Math.max(cornerA.z, cornerB.z);
+
+    const sizeX = maxX - minX + 1;
+    const sizeY = maxY - minY + 1;
+    const sizeZ = maxZ - minZ + 1;
+
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const cz = (minZ + maxZ) / 2;
+
+    const dx = cornerB.x - cornerA.x;
+    const dy = cornerB.y - cornerA.y;
+    const dz = cornerB.z - cornerA.z;
+
+    let newSizeX: number, newSizeY: number, newSizeZ: number;
+    let newDx: number, newDy: number, newDz: number;
+    let newMinX: number, newMaxX: number;
+    let newMinY: number, newMaxY: number;
+    let newMinZ: number, newMaxZ: number;
+
+    let currentCylinderAxis: 'x' | 'y' | 'z' = this.selectionShapeAnchor?.cylinderAxis || 'y';
+    let newCylinderAxis: 'x' | 'y' | 'z' = currentCylinderAxis;
+
+    const origDx = cornerB.x - cornerA.x;
+    const origDz = cornerB.z - cornerA.z;
+    let currentStairsAxis: 'x' | 'z' = this.selectionShapeAnchor?.stairsAxis || (Math.abs(origDx) >= Math.abs(origDz) ? 'x' : 'z');
+    let newStairsAxis: 'x' | 'z' = currentStairsAxis;
+
+    if (axis === 'y') {
+      newSizeX = sizeZ;
+      newSizeY = sizeY;
+      newSizeZ = sizeX;
+
+      // Rotate vector around Y
+      newDx = direction > 0 ? -dz : dz;
+      newDz = direction > 0 ? dx : -dx;
+      newDy = dy;
+
+      newMinX = Math.round(cx - (newSizeX - 1) / 2);
+      newMaxX = newMinX + newSizeX - 1;
+      newMinY = minY;
+      newMaxY = maxY;
+      newMinZ = Math.round(cz - (newSizeZ - 1) / 2);
+      newMaxZ = newMinZ + newSizeZ - 1;
+
+      if (currentCylinderAxis === 'x') newCylinderAxis = 'z';
+      else if (currentCylinderAxis === 'z') newCylinderAxis = 'x';
+
+      newStairsAxis = currentStairsAxis === 'x' ? 'z' : 'x';
+    } else {
+      newSizeX = sizeX;
+      newSizeY = sizeZ;
+      newSizeZ = sizeY;
+
+      // Rotate vector around X
+      newDx = dx;
+      newDy = direction > 0 ? -dz : dz;
+      newDz = direction > 0 ? dy : -dy;
+
+      newMinX = minX;
+      newMaxX = maxX;
+      newMinY = Math.round(cy - (newSizeY - 1) / 2);
+      newMaxY = newMinY + newSizeY - 1;
+      newMinZ = Math.round(cz - (newSizeZ - 1) / 2);
+      newMaxZ = newMinZ + newSizeZ - 1;
+
+      if (currentCylinderAxis === 'y') newCylinderAxis = 'z';
+      else if (currentCylinderAxis === 'z') newCylinderAxis = 'y';
+    }
+
+    // Clamp Y to prevent negative coordinates below ground
+    if (newMinY < 0) {
+      const shiftY = -newMinY;
+      newMinY += shiftY;
+      newMaxY += shiftY;
+    }
+
+    const newCornerA = {
+      x: newDx >= 0 ? newMinX : newMaxX,
+      y: newDy >= 0 ? newMinY : newMaxY,
+      z: newDz >= 0 ? newMinZ : newMaxZ
+    };
+    const newCornerB = {
+      x: newDx >= 0 ? newMaxX : newMinX,
+      y: newDy >= 0 ? newMaxY : newMinY,
+      z: newDz >= 0 ? newMaxZ : newMinZ
+    };
+
+    this.selectionShapeAnchor = {
+      cornerA: newCornerA,
+      cornerB: newCornerB,
+      micro: isMicro,
+      cylinderAxis: newCylinderAxis,
+      stairsAxis: newStairsAxis
+    };
+
+    if (this.selectorShape === 'box') {
+      if (isMicro) {
+        this.contraptions.microBounds = {
+          minX: newMinX, minY: newMinY, minZ: newMinZ,
+          maxX: newMaxX, maxY: newMaxY, maxZ: newMaxZ
+        };
+        this.contraptions.microSelection = this.contraptions.materializeMicroBox?.(
+          newMinX, newMinY, newMinZ, newMaxX, newMaxY, newMaxZ
+        ) || [];
+      } else {
+        this.contraptions.connectedSelection = null;
+        this.contraptions.selectionCornerA = { ...newCornerA };
+        this.contraptions.selectionCornerB = { ...newCornerB };
+      }
+    } else {
+      const cells = computeSelectionCells(this.selectorShape, newCornerA, newCornerB, isMicro, newCylinderAxis, newStairsAxis);
+      if (isMicro) {
+        this.contraptions.microSelection = cells;
+        this.contraptions.microBounds = null;
+      } else {
+        this.contraptions.selectionCornerA = { ...newCornerA };
+        this.contraptions.selectionCornerB = { ...newCornerB };
+        this.contraptions.connectedSelection = cells;
+      }
+    }
+
+    const bounds = isMicro
+      ? this.contraptions.getMicroSelectionBounds?.()
+      : this.contraptions.getSelectionBounds?.();
+    this.sceneRenderer?.updateSelectionAxisGizmo?.(bounds, isMicro);
+    this.sceneRenderer?.updateSelectionHologram?.(
+      this.contraptions.getSelectionBounds?.(),
+      this.contraptions.connectedSelection,
+      this.contraptions.microSelection,
+      isMicro && this.selectorShape !== 'box'
+    );
+
+    this.sound?.playWrenchClick?.();
+    const axisLabel = axis === 'x' ? 'pitch' : 'yaw';
+    const shapeLabels: Record<SelectorShape, string> = {
+      box: 'Box',
+      cylinder: 'Cylinder',
+      sphere: 'Sphere',
+      stairs: 'Stairs',
+      line: 'Line',
+    };
+    const count = isMicro
+      ? (this.contraptions.microSelection?.length ?? 0)
+      : (this.contraptions.connectedSelection !== null
+          ? this.contraptions.connectedSelection.length
+          : (this.contraptions.getSelectionBlockCount?.() ?? 0));
+    const unit = isMicro ? 'voxels' : 'blocks';
+    this.ui?.showToast?.(`Selector: rotated 90° (${axisLabel}) · ${shapeLabels[this.selectorShape] || this.selectorShape} (${count} ${unit})`);
+    this.ui?.updateToolPanelMode?.();
+    return true;
   }
 
   /**
@@ -7495,13 +7707,17 @@ export class PlayerController {
       if (result.ok) {
         this.sound?.playWrenchClick?.();
         if (this.selectorShape !== 'box') {
+          const cylinderAxis = this.selectionShapeAnchor?.cylinderAxis || 'y';
+          const stairsAxis = this.selectionShapeAnchor?.stairsAxis;
           if (isMicro) {
             const mb = this.contraptions.getMicroSelectionBounds();
             if (mb) {
               this.selectionShapeAnchor = {
                 cornerA: { x: mb.minX, y: mb.minY, z: mb.minZ },
                 cornerB: { x: mb.maxX, y: mb.maxY, z: mb.maxZ },
-                micro: true
+                micro: true,
+                cylinderAxis,
+                stairsAxis
               };
             }
           } else {
@@ -7509,14 +7725,16 @@ export class PlayerController {
               this.selectionShapeAnchor = {
                 cornerA: { ...this.contraptions.selectionCornerA },
                 cornerB: { ...this.contraptions.selectionCornerB },
-                micro: false
+                micro: false,
+                cylinderAxis,
+                stairsAxis
               };
             }
           }
           const anchorA = this.selectionShapeAnchor?.cornerA;
           const anchorB = this.selectionShapeAnchor?.cornerB;
           if (anchorA && anchorB) {
-            const cells = computeSelectionCells(this.selectorShape, anchorA, anchorB, isMicro);
+            const cells = computeSelectionCells(this.selectorShape, anchorA, anchorB, isMicro, cylinderAxis, stairsAxis);
             if (isMicro) {
               this.contraptions.microSelection = cells;
               this.contraptions.microBounds = null;

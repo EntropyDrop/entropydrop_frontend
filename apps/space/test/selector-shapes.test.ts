@@ -32,6 +32,10 @@ function createController(overrides: any = {}) {
   controller.contraptions = manager;
   controller.world = world;
   controller.keys = {};
+  controller.entityInputDown = new Set();
+  controller.entityInputPressed = new Set();
+  controller.entityInputReleased = new Set();
+  controller.physics = { isSprinting: false };
   controller.sound = { playBlockBreak() {}, playBlockPlace() {}, playWrenchClick() {}, playAssemblyClack() {} };
   controller.particles = { emitBlockBreak() {} };
   manager.selectionHost = controller;
@@ -327,4 +331,161 @@ test('PlayerController: micro mode fill, paint, delete respect active shape', ()
   // Delete micro selection
   controller.deleteSelectionBlocks();
   assert.equal(world.getMicroBlock(12, 80, 12), null, 'center microcell should be deleted');
+});
+
+test('PlayerController: ArrowLeft and ArrowRight rotate selection horizontally (yaw)', () => {
+  const { controller, manager } = createController();
+
+  // Set up a 5x2x3 selection box from (0, 0, 0) to (4, 1, 2)
+  manager.setCornerA({ x: 0, y: 0, z: 0 });
+  manager.setCornerB({ x: 4, y: 1, z: 2 });
+  controller.selectionShapeAnchor = {
+    cornerA: { x: 0, y: 0, z: 0 },
+    cornerB: { x: 4, y: 1, z: 2 },
+    micro: false
+  };
+
+  assert.deepEqual(manager.getSelectionBounds(), { minX: 0, minY: 0, minZ: 0, maxX: 4, maxY: 1, maxZ: 2 });
+
+  // ArrowRight: rotate 90° clockwise around Y -> size 5x2x3 becomes 3x2x5
+  controller.handleKeyDown({ code: 'ArrowRight', preventDefault() {} });
+  let b = manager.getSelectionBounds();
+  assert.equal(b.maxX - b.minX + 1, 3, 'width is now 3');
+  assert.equal(b.maxY - b.minY + 1, 2, 'height remains 2');
+  assert.equal(b.maxZ - b.minZ + 1, 5, 'depth is now 5');
+
+  // Rotate 3 more times with ArrowRight -> completes 360° back to original dimensions
+  controller.handleKeyDown({ code: 'ArrowRight', preventDefault() {} });
+  controller.handleKeyDown({ code: 'ArrowRight', preventDefault() {} });
+  controller.handleKeyDown({ code: 'ArrowRight', preventDefault() {} });
+  b = manager.getSelectionBounds();
+  assert.deepEqual(b, { minX: 0, minY: 0, minZ: 0, maxX: 4, maxY: 1, maxZ: 2 }, 'four 90° rotations return to original bounds');
+
+  // ArrowLeft: rotate 90° counter-clockwise around Y
+  controller.handleKeyDown({ code: 'ArrowLeft', preventDefault() {} });
+  b = manager.getSelectionBounds();
+  assert.equal(b.maxX - b.minX + 1, 3);
+  assert.equal(b.maxZ - b.minZ + 1, 5);
+});
+
+test('PlayerController: ArrowUp and ArrowDown rotate selection vertically (pitch)', () => {
+  const { controller, manager } = createController();
+
+  // 4x2x3 box from (0, 5, 0) to (3, 6, 2)
+  manager.setCornerA({ x: 0, y: 5, z: 0 });
+  manager.setCornerB({ x: 3, y: 6, z: 2 });
+  controller.selectionShapeAnchor = {
+    cornerA: { x: 0, y: 5, z: 0 },
+    cornerB: { x: 3, y: 6, z: 2 },
+    micro: false
+  };
+
+  // ArrowUp: rotate around X -> H (2) and D (3) swap -> size becomes 4x3x2
+  controller.handleKeyDown({ code: 'ArrowUp', preventDefault() {} });
+  let b = manager.getSelectionBounds();
+  assert.equal(b.maxX - b.minX + 1, 4, 'width remains 4');
+  assert.equal(b.maxY - b.minY + 1, 3, 'height is now 3');
+  assert.equal(b.maxZ - b.minZ + 1, 2, 'depth is now 2');
+
+  // ArrowDown: rotate back
+  controller.handleKeyDown({ code: 'ArrowDown', preventDefault() {} });
+  b = manager.getSelectionBounds();
+  assert.equal(b.maxY - b.minY + 1, 2);
+  assert.equal(b.maxZ - b.minZ + 1, 3);
+});
+
+test('PlayerController: Arrow keys rotate stairs orientation and update cells', () => {
+  const { controller, manager } = createController();
+
+  // 4x3x4 stairs footprint: climbing +X from (0, 0, 0) to (3, 2, 3)
+  manager.setCornerA({ x: 0, y: 0, z: 0 });
+  manager.setCornerB({ x: 3, y: 2, z: 3 });
+  controller.setSelectorShape('stairs');
+
+  // Initial stairs: climbing +X, so at x=0 height is 1, at x=3 height is 3
+  let keys = new Set(manager.connectedSelection.map((c: any) => `${c.x},${c.y},${c.z}`));
+  assert.equal(keys.has('0,0,0'), true);
+  assert.equal(keys.has('0,2,0'), false, 'step 0 is low');
+  assert.equal(keys.has('3,2,0'), true, 'step 3 is high');
+
+  // ArrowRight: rotate 90° -> now climbs along +Z
+  controller.handleKeyDown({ code: 'ArrowRight', preventDefault() {} });
+  keys = new Set(manager.connectedSelection.map((c: any) => `${c.x},${c.y},${c.z}`));
+  assert.equal(keys.has('0,2,3'), true, 'step at z=3 is high');
+  assert.equal(keys.has('0,2,0'), false, 'step at z=0 is low');
+});
+
+test('PlayerController: micro mode selection rotation preserves 0.125m grid', () => {
+  const { controller, manager } = createController({ selectorMicroMode: true });
+
+  // 5x2x3 micro selection: (10, 40, 10) to (14, 41, 12)
+  controller.selectionShapeAnchor = {
+    cornerA: { x: 10, y: 40, z: 10 },
+    cornerB: { x: 14, y: 41, z: 12 },
+    micro: true
+  };
+  manager.microBounds = { minX: 10, minY: 40, minZ: 10, maxX: 14, maxY: 41, maxZ: 12 };
+  manager.microSelection = manager.materializeMicroBox(10, 40, 10, 14, 41, 12);
+
+  // ArrowRight: rotates 90° horizontally -> size 5x2x3 becomes 3x2x5
+  controller.handleKeyDown({ code: 'ArrowRight', preventDefault() {} });
+  const b = manager.getMicroSelectionBounds();
+  assert.equal(b.maxX - b.minX + 1, 3);
+  assert.equal(b.maxY - b.minY + 1, 2);
+  assert.equal(b.maxZ - b.minZ + 1, 5);
+});
+
+test('PlayerController: cylinder rotates between Y and horizontal axes on pitch', () => {
+  const { controller, manager } = createController();
+
+  // 5x5x3 cylinder from (0, 0, 0) to (4, 4, 2)
+  manager.setCornerA({ x: 0, y: 0, z: 0 });
+  manager.setCornerB({ x: 4, y: 4, z: 2 });
+  controller.setSelectorShape('cylinder');
+  assert.equal(controller.selectionShapeAnchor.cylinderAxis, 'y');
+
+  // Pitch Up: rotates around X axis -> Y axis cylinder becomes Z axis cylinder
+  controller.handleKeyDown({ code: 'ArrowUp', preventDefault() {} });
+  assert.equal(controller.selectionShapeAnchor.cylinderAxis, 'z');
+
+  // Yaw Right: rotates around Y axis -> Z axis cylinder becomes X axis cylinder
+  controller.handleKeyDown({ code: 'ArrowRight', preventDefault() {} });
+  assert.equal(controller.selectionShapeAnchor.cylinderAxis, 'x');
+});
+
+test('PlayerController: stairs pitch vertically to form inverted ceiling stairs', () => {
+  const { controller, manager } = createController();
+
+  // 4x3x2 stairs from (0, 0, 0) to (3, 2, 1)
+  manager.setCornerA({ x: 0, y: 0, z: 0 });
+  manager.setCornerB({ x: 3, y: 2, z: 1 });
+  controller.setSelectorShape('stairs');
+
+  // Initially: at x=0, height is 1 at bottom (y=0)
+  let keys = new Set(manager.connectedSelection.map((c: any) => `${c.x},${c.y},${c.z}`));
+  assert.equal(keys.has('0,0,0'), true);
+  assert.equal(keys.has('0,2,0'), false);
+
+  // Pitch Up: rotates around X -> inverted ceiling stairs
+  controller.handleKeyDown({ code: 'ArrowUp', preventDefault() {} });
+  keys = new Set(manager.connectedSelection.map((c: any) => `${c.x},${c.y},${c.z}`));
+  // Step at ceiling: y=maxY is filled
+  assert.ok(keys.has('0,1,0') || keys.has('0,2,0') || keys.has('3,1,0'));
+});
+
+test('PlayerController: Super Glue tool also rotates selection with arrow keys', () => {
+  const { controller, manager } = createController({ activeTool: SpecialTool.SUPER_GLUE });
+
+  manager.setCornerA({ x: 0, y: 0, z: 0 });
+  manager.setCornerB({ x: 4, y: 1, z: 2 });
+  controller.selectionShapeAnchor = {
+    cornerA: { x: 0, y: 0, z: 0 },
+    cornerB: { x: 4, y: 1, z: 2 },
+    micro: false
+  };
+
+  controller.handleKeyDown({ code: 'ArrowRight', preventDefault() {} });
+  const b = manager.getSelectionBounds();
+  assert.equal(b.maxX - b.minX + 1, 3);
+  assert.equal(b.maxZ - b.minZ + 1, 5);
 });

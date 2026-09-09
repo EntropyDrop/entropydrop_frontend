@@ -229,15 +229,14 @@ function InventoryBar() {
 const SELECTOR_SHAPE_ITEMS: Array<{
   id: SelectorShape;
   name: string;
-  nameZh: string;
   shortcut: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
 }> = [
-  { id: 'box', name: 'Box', nameZh: '方', shortcut: 'Shift+1', icon: TbBox },
-  { id: 'cylinder', name: 'Cylinder', nameZh: '圆柱', shortcut: 'Shift+2', icon: TbCylinder },
-  { id: 'sphere', name: 'Sphere', nameZh: '球', shortcut: 'Shift+3', icon: TbSphere },
-  { id: 'stairs', name: 'Stairs', nameZh: '楼梯', shortcut: 'Shift+4', icon: TbStairs },
-  { id: 'line', name: 'Line', nameZh: '线', shortcut: 'Shift+5', icon: TbLine },
+  { id: 'box', name: 'Box', shortcut: 'Shift+1', icon: TbBox },
+  { id: 'cylinder', name: 'Cylinder', shortcut: 'Shift+2', icon: TbCylinder },
+  { id: 'sphere', name: 'Sphere', shortcut: 'Shift+3', icon: TbSphere },
+  { id: 'stairs', name: 'Stairs', shortcut: 'Shift+4', icon: TbStairs },
+  { id: 'line', name: 'Line', shortcut: 'Shift+5', icon: TbLine },
 ];
 
 function SelectorPanel() {
@@ -264,7 +263,7 @@ function SelectorPanel() {
             <span className="selector-recent-color-hex">{activeHex.toUpperCase()}</span>
           </div>
         </div>
-        <span className="palette-hotkey-hint"><b>Shift+1~5</b> shape · <b>F</b> fill · <b>P</b> recolor</span>
+        <span className="palette-hotkey-hint"><b>Shift+1~5</b> shape · <b>Arrows</b> rotate · <b>F</b> fill · <b>P</b> recolor</span>
       </div>
       <div className="selector-toolbox-content" id="selector-toolbox-content">
         <div className="selector-shapes-bar" id="selector-shapes-bar" role="group" aria-label="Selection Shape">
@@ -278,8 +277,8 @@ function SelectorPanel() {
                 id={`selector-shape-${item.id}`}
                 tabIndex={-1}
                 className={`selector-shape-btn ${isActive ? 'active' : ''}`}
-                title={`${item.nameZh} (${item.name}) · ${item.shortcut}`}
-                aria-label={`${item.nameZh} (${item.name}) · ${item.shortcut}`}
+                title={`${item.name} · ${item.shortcut}`}
+                aria-label={`${item.name} · ${item.shortcut}`}
                 onClick={() => spaceUiStore.setSelectorShape(item.id)}
               >
                 <Icon size={15} className="shape-icon" />
