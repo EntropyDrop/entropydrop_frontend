@@ -1616,20 +1616,34 @@ export class PlayerController {
     const node = range.contraption.entityNodes.get(range.nodeId);
     if (!node) return null;
     const blocks = range.contraption.blocks.filter(block => (
-      contraptionBlockOwnerId(range.contraption, block) === range.nodeId
-      && (!this.selectorMicroMode || (block.size || 1) < 1)
+      !this.selectorMicroMode || (block.size || 1) < 1
     ));
     if (blocks.length === 0) return null;
+    node.group?.updateWorldMatrix?.(true, false);
     const min = new THREE.Vector3(Infinity, Infinity, Infinity);
     const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    const tempBox = new THREE.Box3();
+    const pivot = node.pivotLocal;
     for (const block of blocks) {
-      const size = block.size || 1;
-      min.x = Math.min(min.x, block.localX);
-      min.y = Math.min(min.y, block.localY);
-      min.z = Math.min(min.z, block.localZ);
-      max.x = Math.max(max.x, block.localX + size);
-      max.y = Math.max(max.y, block.localY + size);
-      max.z = Math.max(max.z, block.localZ + size);
+      if (contraptionBlockOwnerId(range.contraption, block) === range.nodeId) {
+        const size = block.size || 1;
+        min.x = Math.min(min.x, block.localX);
+        min.y = Math.min(min.y, block.localY);
+        min.z = Math.min(min.z, block.localZ);
+        max.x = Math.max(max.x, block.localX + size);
+        max.y = Math.max(max.y, block.localY + size);
+        max.z = Math.max(max.z, block.localZ + size);
+      } else if (typeof range.contraption.getBlockWorldBounds === 'function') {
+        range.contraption.getBlockWorldBounds(block, tempBox);
+        node.group.worldToLocal(tempBox.min);
+        node.group.worldToLocal(tempBox.max);
+        min.x = Math.min(min.x, Math.min(tempBox.min.x, tempBox.max.x) + pivot.x);
+        min.y = Math.min(min.y, Math.min(tempBox.min.y, tempBox.max.y) + pivot.y);
+        min.z = Math.min(min.z, Math.min(tempBox.min.z, tempBox.max.z) + pivot.z);
+        max.x = Math.max(max.x, Math.max(tempBox.min.x, tempBox.max.x) + pivot.x);
+        max.y = Math.max(max.y, Math.max(tempBox.min.y, tempBox.max.y) + pivot.y);
+        max.z = Math.max(max.z, Math.max(tempBox.min.z, tempBox.max.z) + pivot.z);
+      }
     }
     return {
       object: node.group,
@@ -1682,7 +1696,8 @@ export class PlayerController {
       b: pointB,
       space: 'node-local',
       // Micro mode (Tab) keeps only 0.125 m blocks inside the range.
-      micro: this.selectorMicroMode === true
+      micro: this.selectorMicroMode === true,
+      allComponents: true
     });
 
     if (!result.ok) {
@@ -1695,23 +1710,18 @@ export class PlayerController {
         if (this.ui) this.ui.showToast(`Entity #${contraption.id} changed state — stop it before selecting internal blocks`, { tone: 'warning' });
         return;
       }
-      const componentsInRange = result.components || [];
-      if (componentsInRange.length === 1) {
-        this.startSubtreeSelection(contraption, componentsInRange[0]);
-      } else if (componentsInRange.length > 1) {
-        if (this.ui) {
-          this.ui.showToast(`Range covers multiple components (${componentsInRange.join(', ')}) - sub-selection cannot span across components`, { tone: 'warning' });
-        }
-      } else if (this.ui) {
-        this.ui.showToast(`No blocks of [${nodeId}] inside this range - try again`, { tone: 'warning' });
+      if (this.ui) {
+        this.ui.showToast(`No blocks inside this range - try again`, { tone: 'warning' });
       }
       return;
     }
 
     const selected = result.selection.blocks;
+    const components = result.components || [];
+    const targetNodeId = components.length === 1 ? components[0] : nodeId;
     this.selectedSubtree = null;
-    this.selectedBlockSelection = { contraption, nodeId, blocks: selected };
-    this.selectorLevel = { contraption, nodeId };
+    this.selectedBlockSelection = { contraption, nodeId: targetNodeId, blocks: selected };
+    this.selectorLevel = { contraption, nodeId: targetNodeId };
     // Box-selection complete: exit box mode. The next click anywhere will start a fresh re-box.
     this.selectorRange = null;
   }
@@ -1800,12 +1810,39 @@ export class PlayerController {
       if (this.ui) this.ui.showToast('No block selection - box-select blocks of a level first');
       return;
     }
-    const { contraption, nodeId, blocks } = sel;
+    const { contraption, blocks } = sel;
     if (!this.canEditEntityInternals(contraption)) {
       this.clearSelection();
       this.ui?.showToast?.('Stop the entity before creating a child component from its blocks');
       return null;
     }
+
+    // Validation: all selected blocks must belong to the same component and share that common parent
+    const components = new Set<string>();
+    for (const b of blocks) {
+      const owner = contraptionBlockOwnerId(contraption, b);
+      if (owner) components.add(owner);
+    }
+    if (components.size > 1) {
+      const sorted = Array.from(components).sort();
+      if (this.ui) {
+        this.ui.showToast(
+          `Range covers multiple components (${sorted.join(', ')}) - sub-selection cannot span across components`,
+          { tone: 'warning' }
+        );
+      }
+      return null;
+    }
+    const targetNodeId = [...components][0] || sel.nodeId;
+    if (!targetNodeId || !contraption.entityNodes.has(targetNodeId)) {
+      if (this.ui) {
+        this.ui.showToast(`Level [${targetNodeId}] no longer exists - selection reset`, { tone: 'warning' });
+      }
+      return null;
+    }
+    sel.nodeId = targetNodeId;
+    const nodeId = targetNodeId;
+
     if (blocks.length > BULK_EDIT_THRESHOLD) {
       const started = this.startLargeChildCreation(contraption, nodeId, blocks);
       if (started) {
@@ -1829,10 +1866,19 @@ export class PlayerController {
       if (this.ui) {
         this.ui.showToast(`Created child component [${child.id}] from ${blocks.length} blocks under [${nodeId}] · press C to program`);
       }
+      return child;
     } else if (this.ui) {
-      this.ui.showToast(result.reason === 'entity_not_stopped'
-        ? 'Stop the entity before creating a child component from its blocks'
-        : 'Could not create child component from this selection');
+      if (result.reason === 'multiple_components') {
+        const sorted = (result.components || []).sort();
+        this.ui.showToast(
+          `Range covers multiple components (${sorted.join(', ')}) - sub-selection cannot span across components`,
+          { tone: 'warning' }
+        );
+      } else {
+        this.ui.showToast(result.reason === 'entity_not_stopped'
+          ? 'Stop the entity before creating a child component from its blocks'
+          : 'Could not create child component from this selection');
+      }
     }
   }
 

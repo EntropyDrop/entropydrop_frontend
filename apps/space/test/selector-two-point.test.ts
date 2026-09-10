@@ -81,9 +81,11 @@ test('first selector click on root selects every component', () => {
   assert.deepEqual([...controller.selectedSubtree.nodeIds].sort(), ['arm', 'hand', 'root', 'wing']);
 });
 
-test('repeat clicks box-select only blocks directly owned by the current component', () => {
+test('repeat clicks can box-select any blocks within range across entity components, validated on G', () => {
   const { contraption } = makeEntityWithChildren();
+  const toasts: string[] = [];
   const controller = makeSelectorController();
+  controller.ui = { showToast: m => toasts.push(m), renderInventoryBar() {} };
 
   // First click selects the arm subtree.
   controller.hoveredContraptionHit = {
@@ -114,10 +116,13 @@ test('repeat clicks box-select only blocks directly owned by the current compone
   };
   controller.handleLeftClick();
   assert.ok(controller.selectedBlockSelection, 'a block selection should be created');
-  assert.equal(controller.selectedBlockSelection.nodeId, 'arm');
-  assert.equal(controller.selectedBlockSelection.blocks.length, 1, 'only the arm-owned block should be selected');
-  assert.equal(controller.selectedBlockSelection.blocks[0].localY, 1, 'the selected block should be arm-owned at y=1');
+  assert.equal(controller.selectedBlockSelection.blocks.length, 4, 'all 4 blocks in the range should be selected');
   assert.equal(controller.selectorRange, null, 'box mode should exit after completion');
+
+  // G key validates that blocks belong to multiple components and rejects creation
+  const created = controller.createChildFromSelectedBlocks();
+  assert.equal(created, null, 'G should reject multi-component selection');
+  assert.ok(toasts.some(m => m.includes('multiple components')), 'toast should report multiple components');
 });
 
 test('Shift-click switches component level without entering box mode', () => {
@@ -443,7 +448,7 @@ test('a second world click completes the in-progress a-c box', () => {
   assert.equal(manager.hasValidSelection(), true);
 });
 
-test('a root-level box over a child region automatically switches to that child level', () => {
+test('a root-level box over a child region directly selects that child\'s blocks', () => {
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
   controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm', 'hand', 'wing']) };
@@ -456,13 +461,13 @@ test('a root-level box over a child region automatically switches to that child 
   controller.selectorRange.pointB = toNodeLocal(contraption, 'root', center.clone().add(new THREE.Vector3(0.4, 0.4, 0.4)));
   controller.resolveBlockRangeSelection(controller.selectorRange);
 
-  assert.equal(controller.selectedSubtree.rootId, 'hand', 'selection should switch to hand');
-  assert.ok(controller.selectorRange, 'box mode should initialize for the new level');
-  assert.equal(controller.selectorRange.nodeId, 'hand');
-  assert.equal(controller.selectedBlockSelection, null, 'no incorrect block selection should be produced');
+  assert.ok(controller.selectedBlockSelection, 'hand block should be selected directly');
+  assert.equal(controller.selectedBlockSelection.nodeId, 'hand');
+  assert.equal(controller.selectedBlockSelection.blocks.length, 1);
+  assert.equal(controller.selectedBlockSelection.blocks[0].entityId, 'hand');
 });
 
-test('root-level box recognizes the visible edge of a rotated descendant', () => {
+test('root-level box recognizes and selects the visible edge of a rotated descendant', () => {
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
   const handBlock = contraption.blocks.find(b => (b.entityId || 'root') === 'hand');
@@ -488,9 +493,9 @@ test('root-level box recognizes the visible edge of a rotated descendant', () =>
 
   controller.resolveBlockRangeSelection(controller.selectorRange);
 
-  assert.equal(controller.selectedSubtree.rootId, 'hand', 'the rotated visible edge should resolve to hand');
-  assert.equal(controller.selectorRange.nodeId, 'hand');
-  assert.equal(controller.selectedBlockSelection, null);
+  assert.ok(controller.selectedBlockSelection, 'the rotated descendant block should be selected');
+  assert.equal(controller.selectedBlockSelection.nodeId, 'hand');
+  assert.equal(controller.selectedBlockSelection.blocks.length, 1);
 });
 
 test('a rotated child microblock uses its true 0.125 world AABB for selection', () => {
@@ -525,11 +530,12 @@ test('a rotated child microblock uses its true 0.125 world AABB for selection', 
   };
   controller.resolveBlockRangeSelection(controller.selectorRange);
 
-  assert.equal(controller.selectedSubtree.rootId, 'tip');
-  assert.equal(controller.selectorRange.nodeId, 'tip');
+  assert.ok(controller.selectedBlockSelection, 'tip microblock should be selected');
+  assert.equal(controller.selectedBlockSelection.nodeId, 'tip');
+  assert.equal(controller.selectedBlockSelection.blocks.length, 1);
 });
 
-test('a box covering multiple direct children does not switch level and reports ambiguity', () => {
+test('a box covering multiple direct children selects blocks and reports ambiguity on G', () => {
   const { contraption } = makeEntityWithChildren();
   const toasts: string[] = [];
   const controller = makeSelectorController();
@@ -548,7 +554,10 @@ test('a box covering multiple direct children does not switch level and reports 
     new THREE.Vector3(Math.max(c1.x, c2.x) + 0.5, Math.max(c1.y, c2.y) + 0.5, 0.5));
   controller.resolveBlockRangeSelection(controller.selectorRange);
 
-  assert.equal(controller.selectedSubtree.rootId, 'root', 'multiple child hits should not auto-switch');
+  assert.ok(controller.selectedBlockSelection, 'box selection across multiple components should succeed');
+  assert.equal(controller.selectedBlockSelection.blocks.length, 2, 'both arm and hand blocks should be selected');
+  const created = controller.createChildFromSelectedBlocks();
+  assert.equal(created, null, 'G should reject multi-component selection');
   assert.ok(toasts.some(m => m.includes('multiple components')), 'toast should report multiple components');
 });
 
@@ -691,7 +700,7 @@ test('re-boxing anchors range points in node-local space while the component rot
   assert.equal(controller.selectedBlockSelection.nodeId, 'arm');
 });
 
-test('re-boxing over a sibling component switches to it without false No-blocks', () => {
+test('re-boxing over a sibling component selects its blocks directly without false No-blocks', () => {
   const { contraption } = makeEntityWithChildren();
   const toasts: string[] = [];
   const controller = makeSelectorController();
@@ -719,13 +728,13 @@ test('re-boxing over a sibling component switches to it without false No-blocks'
   click('root', { x: 0, y: 0, z: 0 }, new THREE.Vector3(-1.5, 10.4, -1.5));
   assert.ok(controller.selectorRange && !controller.selectorRange.pointA, 're-boxing mode should activate');
 
-  // 4. A new range over sibling wing should switch to wing, not report No blocks of [arm].
+  // 4. A new range over sibling wing should select wing blocks directly, not report No blocks of [arm].
   click('wing', { x: 2, y: 0, z: 0 }, wingCenter.clone().add(new THREE.Vector3(-0.4, -0.4, -0.4)));
   click('wing', { x: 2, y: 0, z: 0 }, wingCenter.clone().add(new THREE.Vector3(0.4, 0.4, 0.4)));
   assert.equal(toasts.filter(t => t.includes('No blocks of')).length, 0, 'no false No blocks of [arm] message should appear');
-  assert.equal(controller.selectedSubtree.rootId, 'wing', 'selection should switch to sibling wing');
-  assert.equal(controller.selectorRange.nodeId, 'wing', 'box state should initialize for wing');
-  assert.equal(controller.selectedBlockSelection, null, 'the new level should wait for box points');
+  assert.ok(controller.selectedBlockSelection, 'wing blocks should be selected');
+  assert.equal(controller.selectedBlockSelection.nodeId, 'wing');
+  assert.equal(controller.selectedBlockSelection.blocks.length, 1);
 });
 
 test('switching entity selection clears the previous entity block highlights', () => {
@@ -885,3 +894,53 @@ test('entering entity selection clears world cornerA and cornerB state', () => {
   assert.ok(controller.selectedSubtree, 'entity subtree selection should be active');
   assert.equal(controller.selectedSubtree.rootId, 'arm');
 });
+
+test('Shift-clicking blocks across multiple components allows arbitrary selection, but G rejects until same component', () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null);
+  const { contraption } = makeEntityWithChildren();
+  manager.contraptions.push(contraption);
+  const toasts: string[] = [];
+  const controller = makeSelectorController({ manager });
+  controller.ui = { showToast: m => toasts.push(m), renderInventoryBar() {} };
+  controller.sound = { playAssemblyClack() {} };
+
+  const rootBlock = contraption.blocks.find(b => (b.entityId || 'root') === 'root');
+  const armBlock = contraption.blocks.find(b => (b.entityId || 'root') === 'arm');
+
+  // Shift-click root block
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'root',
+    block: rootBlock,
+    cell: { x: 0, y: 0, z: 0 },
+    point: new THREE.Vector3(0.5, 10.5, 0.5)
+  };
+  controller.handleLeftClick({ shiftKey: true });
+  assert.equal(controller.selectedBlockSelection.blocks.length, 1);
+
+  // Shift-click arm block (different component)
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'arm',
+    block: armBlock,
+    cell: { x: 0, y: 1, z: 0 },
+    point: new THREE.Vector3(0.5, 11.5, 0.5)
+  };
+  controller.handleLeftClick({ shiftKey: true });
+  assert.equal(controller.selectedBlockSelection.blocks.length, 2, 'both blocks should be selected');
+
+  // Pressing G rejects because blocks span multiple components
+  const failResult = controller.createChildFromSelectedBlocks();
+  assert.equal(failResult, null, 'child creation should fail validation');
+  assert.ok(toasts.some(m => m.includes('multiple components')), 'toast should warn about multiple components');
+
+  // Shift-click to deselect the arm block
+  controller.handleLeftClick({ shiftKey: true });
+  assert.equal(controller.selectedBlockSelection.blocks.length, 1, 'arm block deselected');
+
+  // Now pressing G succeeds because only root block remains
+  const successResult = controller.createChildFromSelectedBlocks();
+  assert.ok(successResult, 'child creation should succeed');
+});
+
