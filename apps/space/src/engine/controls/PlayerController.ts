@@ -1291,12 +1291,8 @@ export class PlayerController {
           point: targetPoint,
           micro: this.selectorMicroMode === true
         }).selection;
-        if (this.ui) {
-          this.ui.showToast(info?.rejected
-            ? `Selector single mode · ${info.count} cells · that cell lies outside the 64×64×64 limit`
-            : this.selectorMicroMode
-              ? `Selector micro mode · ${info.count} micro cells · Shift+click toggles 0.125 m cells; Tab back to standard`
-              : `Selector single mode · ${info.count} cells · Shift+click toggles; plain click restarts 2-point box`);
+        if (info?.rejected && this.ui) {
+          this.ui.showToast('Selected cell lies outside the 64×64×64 limit', { tone: 'warning' });
         }
         return;
       }
@@ -1314,9 +1310,6 @@ export class PlayerController {
       }
       if (this.selectorRange && !this.selectorRange.pointA && worldPoint) {
         this.selectorRange.pointA = this.rangePointToLocal(this.selectorRange, targetPoint);
-        if (this.ui) {
-          this.ui.showToast(`Level [${this.selectorRange.nodeId}] box [1/2]: pick the opposite corner (own blocks only)`);
-        }
         return;
       }
 
@@ -1346,12 +1339,8 @@ export class PlayerController {
             point: targetPoint,
             micro: this.selectorMicroMode === true
           }).selection;
-          if (this.ui) {
-            this.ui.showToast(info?.rejected
-              ? `Selector single mode · ${info.count} cells · that cell lies outside the 64×64×64 limit`
-              : this.selectorMicroMode
-                ? `Selector micro mode · ${info.count} micro cells · Shift+click toggles 0.125 m cells; Tab back to standard`
-                : `Selector single mode · ${info.count} cells · Shift+click toggles; plain click restarts 2-point box`);
+          if (info?.rejected && this.ui) {
+            this.ui.showToast('Selected cell lies outside the 64×64×64 limit', { tone: 'warning' });
           }
         } else {
           // 2-point world box: cornerA then cornerB define the diagonal AABB.
@@ -1359,7 +1348,6 @@ export class PlayerController {
           // micro voxels it contains; a plain click on the completed set clears it.
           if (this.selectorMicroMode && Array.isArray(this.contraptions?.microSelection)) {
             this.clearSelection();
-            if (this.ui) this.ui.showToast('Selector selection cleared');
           } else if (this.contraptions.selectionCornerA === null) {
             this.performBasicAction({
               domain: ActionDomain.SELECTION,
@@ -1372,11 +1360,6 @@ export class PlayerController {
               cornerB: null,
               micro: this.selectorMicroMode === true
             };
-            if (this.ui) {
-              this.ui.showToast(this.selectorMicroMode
-                ? `Selector [1/2] picked micro corner (cell ${microCell.x}, ${microCell.y}, ${microCell.z}), pick the opposite corner`
-                : `Selector [1/2] picked corner (${Math.floor(hp.x)}, ${Math.floor(hp.y)}, ${Math.floor(hp.z)}), pick the opposite corner`);
-            }
           } else if (this.contraptions.selectionCornerB === null) {
             const cornerResult = this.performBasicAction({
               domain: ActionDomain.SELECTION,
@@ -1396,28 +1379,13 @@ export class PlayerController {
             }
             if (this.selectorShape !== 'box') {
               this.applySelectionShape(this.selectorShape);
-            } else if (this.selectorMicroMode) {
-              const info = this.contraptions.getWorldGlueSelectionInfo?.();
-              const count = info?.count ?? 0;
-              const clampedNote = cornerResult?.clamped ? ' · clamped to the 64×64×64 limit' : '';
-              if (this.ui) {
-                this.ui.showToast(`Selector [2/2] micro box set! (${count} micro voxels)${clampedNote} · G assemble · R copy · B fill · P paint · Del delete`);
-              }
-            } else {
-              const bounds = this.contraptions.getSelectionBounds();
-              const sx = bounds ? bounds.maxX - bounds.minX + 1 : 1;
-              const sy = bounds ? bounds.maxY - bounds.minY + 1 : 1;
-              const sz = bounds ? bounds.maxZ - bounds.minZ + 1 : 1;
-              const totalBlocks = this.contraptions.getSelectionBlockCount();
-              const clampedNote = cornerResult?.clamped ? ' · clamped to the 64×64×64 limit' : '';
-              if (this.ui) {
-                this.ui.showToast(`Selector [2/2] box set! (${sx}x${sy}x${sz}, ${totalBlocks} blocks)${clampedNote} · G assemble · R copy · B fill · P paint · Del delete`);
-              }
+            }
+            if (cornerResult?.clamped && this.ui) {
+              this.ui.showToast('Selection exceeds 64×64×64 limit · clamped to bounds', { tone: 'warning' });
             }
           } else {
             // Box already complete — next plain click clears it and resets to idle.
             this.clearSelection();
-            if (this.ui) this.ui.showToast('Selector selection cleared');
           }
         }
       }
@@ -1469,21 +1437,13 @@ export class PlayerController {
         return;
       }
       if (this.selectorMicroMode) {
-        const info = this.contraptions.getWorldGlueSelectionInfo?.();
-        const clampedNote = cornerResult?.clamped ? ' · clamped to the 64×64×64 limit' : '';
-        if (this.ui) {
-          this.ui.showToast(`Selector [2/2] micro box set! (${info?.count ?? 0} micro voxels)${clampedNote} · press G to assemble`);
+        if (cornerResult?.clamped && this.ui) {
+          this.ui.showToast('Selection exceeds 64×64×64 limit · clamped to bounds', { tone: 'warning' });
         }
         return;
       }
-      const bounds = this.contraptions.getSelectionBounds();
-      const sx = bounds ? bounds.maxX - bounds.minX + 1 : 1;
-      const sy = bounds ? bounds.maxY - bounds.minY + 1 : 1;
-      const sz = bounds ? bounds.maxZ - bounds.minZ + 1 : 1;
-      const totalBlocks = this.contraptions.getSelectionBlockCount();
-      const clampedNote = cornerResult?.clamped ? ' · clamped to the 64×64×64 limit' : '';
-      if (this.ui) {
-        this.ui.showToast(`Selector [2/2] box set! (${sx}x${sy}x${sz}, ${totalBlocks} blocks)${clampedNote} · press G to assemble`);
+      if (cornerResult?.clamped && this.ui) {
+        this.ui.showToast('Selection exceeds 64×64×64 limit · clamped to bounds', { tone: 'warning' });
       }
       return;
     }
@@ -1520,19 +1480,10 @@ export class PlayerController {
         };
         this.selectorLevel = { contraption, nodeId: hitNodeId };
         this.selectorRange = null;
-        const count = result.selection.blocks.length;
-        const isMicro = (hitBlock.size || 1) < 1;
-        const kindLabel = isMicro ? 'micro blocks' : 'blocks';
-        if (this.ui) {
-          this.ui.showToast(`Multi-selected ${count} ${kindLabel} of [${hitNodeId}] · Shift+click to toggle more · R copy · G create child`);
-        }
       } else {
         this.selectedBlockSelection = null;
         this.selectorLevel = { contraption, nodeId: hitNodeId };
         this.selectorRange = null;
-        if (this.ui) {
-          this.ui.showToast(`Entity block selection cleared · Shift+click to select blocks`);
-        }
       }
       return;
     }
@@ -1542,9 +1493,6 @@ export class PlayerController {
     if (this.selectorRange && this.selectorRange.contraption === contraption) {
       if (!this.selectorRange.pointA) {
         this.selectorRange.pointA = this.rangePointToLocal(this.selectorRange, hit.point);
-        if (this.ui) {
-          this.ui.showToast(`Level [${this.selectorRange.nodeId}] box [1/2]: pick the opposite corner (own blocks only, children excluded)`);
-        }
         return;
       }
       this.selectorRange.pointB = this.rangePointToLocal(this.selectorRange, hit.point);
@@ -1568,9 +1516,6 @@ export class PlayerController {
         pointA: null,
         pointB: null
       };
-      if (this.ui) {
-        this.ui.showToast(`Re-boxing level [${this.selectorLevel.nodeId}] — click anywhere to set the first corner · Shift+click a component to switch level`);
-      }
       return;
     }
 
@@ -1622,12 +1567,8 @@ export class PlayerController {
     }
 
     const blockCount = contraption.blocks.filter(b => nodeIds.has(contraptionBlockOwnerId(contraption, b))).length;
-    if (this.ui) {
-      if (opts.wholeOnly) {
-        this.ui.showToast(`Entity #${contraption.id} is not stopped — whole entity selected (${blockCount} blocks) · Del delete entity · R copy · use Wrench right-click to stop it before selecting internal blocks`);
-      } else {
-        this.ui.showToast(`Selected level [${hitNodeId}] + descendants (${blockCount} blocks, no parent) · Del delete selection · R copy · click to box its own blocks · Shift+click to switch level`);
-      }
+    if (this.ui && opts.wholeOnly) {
+      this.ui.showToast(`Entity #${contraption.id} is not stopped — whole entity selected (${blockCount} blocks) · use Wrench right-click to stop it before selecting internal blocks`, { tone: 'warning' });
     }
   }
 
@@ -1729,7 +1670,7 @@ export class PlayerController {
       range.pointA = null;
       range.pointB = null;
       this.selectorRange = null;
-      if (this.ui) this.ui.showToast(`Level [${nodeId}] no longer exists - selection reset`);
+      if (this.ui) this.ui.showToast(`Level [${nodeId}] no longer exists - selection reset`, { tone: 'warning' });
       return;
     }
     const result = this.performBasicAction({
@@ -1751,30 +1692,18 @@ export class PlayerController {
         this.selectorLevel = null;
         this.selectorRange = null;
         this.startSubtreeSelection(contraption, contraptionRootId(contraption), { wholeOnly: true });
-        if (this.ui) this.ui.showToast(`Entity #${contraption.id} changed state — stop it before selecting internal blocks`);
+        if (this.ui) this.ui.showToast(`Entity #${contraption.id} changed state — stop it before selecting internal blocks`, { tone: 'warning' });
         return;
       }
       const componentsInRange = result.components || [];
       if (componentsInRange.length === 1) {
         this.startSubtreeSelection(contraption, componentsInRange[0]);
-        if (this.ui) {
-          const label = componentsInRange[0] === contraptionRootId(contraption)
-            ? 'entity root'
-            : `child level [${componentsInRange[0]}]`;
-          this.ui.showToast(`Selection belongs to ${label} - switched automatically · click twice to box its own blocks`);
-        }
       } else if (componentsInRange.length > 1) {
         if (this.ui) {
-          this.ui.showToast(`Range covers multiple components (${componentsInRange.join(', ')}) - Shift+click one to switch level`);
+          this.ui.showToast(`Range covers multiple components (${componentsInRange.join(', ')}) - sub-selection cannot span across components`, { tone: 'warning' });
         }
       } else if (this.ui) {
-        // Diagnostic: include world-space positions of A and B (node-local → current world).
-        const toWorld = p => node.group.localToWorld(new THREE.Vector3(p.x, p.y, p.z));
-        const fmt = p => {
-          const w = toWorld(p);
-          return `(${w.x.toFixed(2)}, ${w.y.toFixed(2)}, ${w.z.toFixed(2)})`;
-        };
-        this.ui.showToast(`No blocks of [${nodeId}] inside this range - A${fmt(pointA)} B${fmt(pointB)} - try again (or Shift+click to switch level)`);
+        this.ui.showToast(`No blocks of [${nodeId}] inside this range - try again`, { tone: 'warning' });
       }
       return;
     }
@@ -1785,12 +1714,6 @@ export class PlayerController {
     this.selectorLevel = { contraption, nodeId };
     // Box-selection complete: exit box mode. The next click anywhere will start a fresh re-box.
     this.selectorRange = null;
-
-    if (this.ui) {
-      this.ui.showToast(this.selectorMicroMode
-        ? `Selected ${selected.length} own micro blocks of [${nodeId}] (children excluded) · R copy · G create child`
-        : `Selected ${selected.length} own blocks of [${nodeId}] (children excluded) · R copy · G create child`);
-    }
   }
 
   /**
@@ -5529,21 +5452,6 @@ export class PlayerController {
       this.contraptions.microSelection,
       isMicro && shape !== 'box'
     );
-
-    const shapeLabels: Record<SelectorShape, string> = {
-      box: 'Box',
-      cylinder: 'Cylinder',
-      sphere: 'Sphere',
-      stairs: 'Stairs',
-      line: 'Line',
-    };
-    const count = isMicro
-      ? (this.contraptions.microSelection?.length ?? 0)
-      : (this.contraptions.connectedSelection !== null
-          ? this.contraptions.connectedSelection.length
-          : (this.contraptions.getSelectionBlockCount?.() ?? 0));
-    const unit = isMicro ? 'voxels' : 'blocks';
-    this.ui?.showToast?.(`Selector: ${shapeLabels[shape]} (${count} ${unit}) · F fill · P recolor · Del delete`);
   }
 
   /**
@@ -5722,21 +5630,6 @@ export class PlayerController {
     );
 
     this.sound?.playWrenchClick?.();
-    const axisLabel = axis === 'x' ? 'pitch' : 'yaw';
-    const shapeLabels: Record<SelectorShape, string> = {
-      box: 'Box',
-      cylinder: 'Cylinder',
-      sphere: 'Sphere',
-      stairs: 'Stairs',
-      line: 'Line',
-    };
-    const count = isMicro
-      ? (this.contraptions.microSelection?.length ?? 0)
-      : (this.contraptions.connectedSelection !== null
-          ? this.contraptions.connectedSelection.length
-          : (this.contraptions.getSelectionBlockCount?.() ?? 0));
-    const unit = isMicro ? 'voxels' : 'blocks';
-    this.ui?.showToast?.(`Selector: rotated 90° (${axisLabel}) · ${shapeLabels[this.selectorShape] || this.selectorShape} (${count} ${unit})`);
     this.ui?.updateToolPanelMode?.();
     return true;
   }
@@ -7871,22 +7764,6 @@ export class PlayerController {
           this.contraptions.microSelection,
           isMicro && this.selectorShape !== 'box'
         );
-
-        if (this.ui) {
-          if (isMicro) {
-            const b = updatedBounds;
-            const sx = b ? b.maxX - b.minX + 1 : 1;
-            const sy = b ? b.maxY - b.minY + 1 : 1;
-            const sz = b ? b.maxZ - b.minZ + 1 : 1;
-            this.ui.showToast(`Micro selection: ${sx}×${sy}×${sz} (${result.count} voxels) · G assemble · R copy · B fill · P paint · Del delete`);
-          } else {
-            const b = updatedBounds;
-            const sx = b ? b.maxX - b.minX + 1 : 1;
-            const sy = b ? b.maxY - b.minY + 1 : 1;
-            const sz = b ? b.maxZ - b.minZ + 1 : 1;
-            this.ui.showToast(`Selection: ${sx}×${sy}×${sz} (${result.count} blocks) · G assemble · R copy · B fill · P paint · Del delete`);
-          }
-        }
       }
     }
   }

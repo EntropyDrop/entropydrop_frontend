@@ -267,13 +267,11 @@ test('selector click flow: two plain clicks build a materialized micro box, thir
   assert.equal(manager.selectionCornerA, null, 'confirmed micro box is materialized, not kept as a box');
   assert.equal(manager.selectionCornerB, null);
   assert.deepEqual(manager.microSelection, [{ x: 19, y: 47, z: 20 }, { x: 20, y: 47, z: 20 }]);
-  assert.ok(controller.__toasts.some(m => m.includes('micro box set')));
 
   // Third plain click clears the completed micro selection.
   controller.handleLeftClick();
   assert.equal(manager.microSelection, null);
   assert.equal(manager.selectionCornerA, null);
-  assert.ok(controller.__toasts.some(m => m.includes('selection cleared')));
 });
 
 test('selector Shift+click toggles micro cells while in micro mode', () => {
@@ -289,7 +287,6 @@ test('selector Shift+click toggles micro cells while in micro mode', () => {
   };
   controller.handleLeftClick({ shiftKey: true });
   assert.deepEqual(manager.microSelection, [{ x: 19, y: 47, z: 17 }]);
-  assert.ok(controller.__toasts.some(m => m.includes('micro mode')));
 
   controller.handleLeftClick({ shiftKey: true });
   assert.equal(manager.microSelection.length, 0, 'toggling the same micro cell removes it');

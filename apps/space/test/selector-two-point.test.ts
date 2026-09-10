@@ -608,7 +608,6 @@ test('an entity click becomes point 2 for an in-progress world box', () => {
   controller.handleLeftClick();
   assert.deepEqual(manager.selectionCornerB, { x: 2, y: 12, z: 0 }, 'entity click should confirm the cell-rounded box');
   assert.equal(controller.selectedSubtree, null, 'subtree selection should not activate');
-  assert.ok(toasts.some(m => m.includes('[2/2]')), 'toast should report box completion');
 
   // A third entity click, after box completion, enters subtree selection.
   controller.hoveredContraptionHit = {

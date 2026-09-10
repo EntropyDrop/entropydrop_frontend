@@ -225,7 +225,6 @@ test('clicking a running entity completes an active world box instead of selecti
   clickEntity(controller, contraption, 'root', { x: 0, y: 0, z: 0 }, new THREE.Vector3(0.8, 10.8, 0.7));
   assert.deepEqual(manager.selectionCornerB, { x: 0, y: 10, z: 0 }, 'entity click should confirm the box');
   assert.equal(controller.selectedSubtree, null, 'whole-entity selection should not activate');
-  assert.ok(controller.__toasts.some(m => m.includes('[2/2]')), 'toast should report box completion');
 });
 
 test('R copies a whole running entity into an entity slot', () => {
