@@ -1414,7 +1414,9 @@ export class PlayerController {
    */
   selectorOnEntityClick(hit, e = null) {
     const contraption = hit.contraption;
-    const hitNodeId = hit.entityId ?? contraptionRootId(contraption);
+    const hitNodeId = (hit.entityId && contraption?.entityNodes?.has(hit.entityId))
+      ? hit.entityId
+      : contraptionRootId(contraption);
     const shiftHeld = !!(e?.shiftKey || this.keys?.crouch);
 
     // World 2-point box in progress (cornerA set, cornerB not yet set): clicking an entity
@@ -1473,17 +1475,21 @@ export class PlayerController {
         block: hitBlock
       });
       if (result.ok && result.selection) {
+        const isMicro = this.selectorMicroMode === true;
         this.selectedBlockSelection = {
           contraption,
           nodeId: hitNodeId,
-          blocks: result.selection.blocks
+          blocks: result.selection.blocks,
+          bounds: this.getEntitySelectionBounds(result.selection.blocks, isMicro)
         };
         this.selectorLevel = { contraption, nodeId: hitNodeId };
         this.selectorRange = null;
+        this.updateSelectionAxisGizmo();
       } else {
         this.selectedBlockSelection = null;
         this.selectorLevel = { contraption, nodeId: hitNodeId };
         this.selectorRange = null;
+        this.updateSelectionAxisGizmo();
       }
       return;
     }
@@ -1491,11 +1497,12 @@ export class PlayerController {
     // Box-selection in progress for this contraption: plain clicks sequentially set corner 1
     // then corner 2 (any surface point on the entity is accepted).
     if (this.selectorRange && this.selectorRange.contraption === contraption) {
+      const inwardPoint = this.getInwardEntityPoint(hit);
       if (!this.selectorRange.pointA) {
-        this.selectorRange.pointA = this.rangePointToLocal(this.selectorRange, hit.point);
+        this.selectorRange.pointA = this.rangePointToLocal(this.selectorRange, inwardPoint);
         return;
       }
-      this.selectorRange.pointB = this.rangePointToLocal(this.selectorRange, hit.point);
+      this.selectorRange.pointB = this.rangePointToLocal(this.selectorRange, inwardPoint);
       this.resolveBlockRangeSelection(this.selectorRange);
       return;
     }
@@ -1516,6 +1523,7 @@ export class PlayerController {
         pointA: null,
         pointB: null
       };
+      this.updateSelectionAxisGizmo();
       return;
     }
 
@@ -1533,9 +1541,6 @@ export class PlayerController {
   /**
    * Select a component level and auto-highlight its full subtree (descendants only, not the
    * parent). Clears any active world selection so the two modes never overlap.
-   *
-   * `opts.wholeOnly` selects the root and every descendant without entering box
-   * mode; subsequent clicks cannot start a subregion selection.
    */
   startSubtreeSelection(contraption, hitNodeId, opts: { wholeOnly?: boolean } = {}) {
     if (this.selectedSubtree && this.selectedSubtree.contraption !== contraption) {
@@ -1558,18 +1563,48 @@ export class PlayerController {
     this.selectedSubtree = { contraption, rootId: hitNodeId, nodeIds };
     this.selectedBlockSelection = null;
     if (opts.wholeOnly) {
-      // Whole-entity selection clears selectorLevel and selectorRange instead of entering box mode.
       this.selectorLevel = null;
       this.selectorRange = null;
+      this.updateSelectionAxisGizmo();
     } else {
       this.selectorLevel = { contraption, nodeId: hitNodeId };
       this.selectorRange = { contraption, nodeId: hitNodeId, pointA: null, pointB: null };
+      this.updateSelectionAxisGizmo();
     }
 
-    const blockCount = contraption.blocks.filter(b => nodeIds.has(contraptionBlockOwnerId(contraption, b))).length;
+    const blockCount = contraption.blocks.filter(b => nodeIds.has(b.entityId || 'root')).length;
     if (this.ui && opts.wholeOnly) {
-      this.ui.showToast(`Entity #${contraption.id} is not stopped — whole entity selected (${blockCount} blocks) · use Wrench right-click to stop it before selecting internal blocks`, { tone: 'warning' });
+      this.ui.showToast(`Entity #${contraption.id} is not stopped — whole entity selected (${blockCount} blocks) · Del delete entity · R copy entity · T copy block set · use Wrench to stop it before selecting internal blocks`);
     }
+  }
+
+  /**
+   * Shift a surface hit point slightly inward along the face normal so that
+   * cell quantization (Math.floor) and range selection firmly target the hit
+   * voxel instead of extending into the empty neighbor block along the normal.
+   */
+  getInwardEntityPoint(hit: any): THREE.Vector3 | null {
+    if (!hit?.point) return null;
+    let normal = hit.worldNormal;
+    if (!normal && hit.normal) {
+      const node = hit.contraption?.entityNodes?.get?.(hit.entityId || hit.contraption?.rootComponentId);
+      if (node?.group?.getWorldQuaternion) {
+        const q = node.group.getWorldQuaternion(new THREE.Quaternion());
+        normal = new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z).applyQuaternion(q).normalize();
+      } else {
+        normal = new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z);
+      }
+    }
+    if (!normal || (normal.x === 0 && normal.y === 0 && normal.z === 0)) {
+      return hit.point.clone ? hit.point.clone() : new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z);
+    }
+    const isMicro = hit.kind === 'micro' || (hit.block && (hit.block.size || 1) < 1) || this.selectorMicroMode;
+    const eps = isMicro ? 0.005 : 0.02;
+    return new THREE.Vector3(
+      hit.point.x - normal.x * eps,
+      hit.point.y - normal.y * eps,
+      hit.point.z - normal.z * eps
+    );
   }
 
   /**
@@ -1645,12 +1680,16 @@ export class PlayerController {
         max.z = Math.max(max.z, Math.max(tempBox.min.z, tempBox.max.z) + pivot.z);
       }
     }
+    const hasValidBounds = Number.isFinite(min.x) && Number.isFinite(max.x) &&
+                           Number.isFinite(min.y) && Number.isFinite(max.y) &&
+                           Number.isFinite(min.z) && Number.isFinite(max.z) &&
+                           min.x <= max.x && min.y <= max.y && min.z <= max.z;
     return {
       object: node.group,
-      pivot: node.pivotLocal.clone(),
+      pivot: (node.pivotLocal || new THREE.Vector3()).clone(),
       // The live range is only a selector aid. Clamp it to real component
       // bounds so pointing outside the entity cannot draw cyan ghost cells.
-      bounds: { min, max }
+      bounds: hasValidBounds ? { min, max } : null
     };
   }
 
@@ -1703,15 +1742,12 @@ export class PlayerController {
     if (!result.ok) {
       range.pointA = null;
       range.pointB = null;
-      if (result.reason === 'entity_not_stopped') {
-        this.selectorLevel = null;
-        this.selectorRange = null;
-        this.startSubtreeSelection(contraption, contraptionRootId(contraption), { wholeOnly: true });
-        if (this.ui) this.ui.showToast(`Entity #${contraption.id} changed state — stop it before selecting internal blocks`, { tone: 'warning' });
-        return;
-      }
       if (this.ui) {
-        this.ui.showToast(`No blocks inside this range - try again`, { tone: 'warning' });
+        if (result.reason === 'entity_not_stopped') {
+          this.ui.showToast(`Entity #${contraption.id} is not stopped — stop it with Wrench before selecting blocks`, { tone: 'warning' });
+        } else {
+          this.ui.showToast(`No blocks inside this range - try again`, { tone: 'warning' });
+        }
       }
       return;
     }
@@ -1720,10 +1756,17 @@ export class PlayerController {
     const components = result.components || [];
     const targetNodeId = components.length === 1 ? components[0] : nodeId;
     this.selectedSubtree = null;
-    this.selectedBlockSelection = { contraption, nodeId: targetNodeId, blocks: selected };
+    const isMicro = this.selectorMicroMode === true;
+    this.selectedBlockSelection = {
+      contraption,
+      nodeId: targetNodeId,
+      blocks: selected,
+      bounds: this.getEntitySelectionBounds(selected, isMicro)
+    };
     this.selectorLevel = { contraption, nodeId: targetNodeId };
     // Box-selection complete: exit box mode. The next click anywhere will start a fresh re-box.
     this.selectorRange = null;
+    this.updateSelectionAxisGizmo();
   }
 
   /**
@@ -7254,9 +7297,7 @@ export class PlayerController {
       } else {
         this.hoveredContraption.setHighlighted(true);
         if (this.hoveredContraptionHit) {
-          const hitNodeId = this.canEditEntityInternals(this.hoveredContraption)
-            ? this.hoveredContraptionHit.entityId ?? contraptionRootId(this.hoveredContraption)
-            : contraptionRootId(this.hoveredContraption);
+          const hitNodeId = this.hoveredContraptionHit.entityId ?? contraptionRootId(this.hoveredContraption);
           if (!this.contraptions.hasChildSelection() || this.contraptions.childSelection?.contraption !== this.hoveredContraption) {
             this.hoveredContraption.setFocusHighlight(hitNodeId);
           }
@@ -7473,32 +7514,34 @@ export class PlayerController {
       // must never fall through to the spoon micro-voxel grid.
       if (selectorActive) {
         if (this.selectorRange.contraption === contraption) {
-          const focusNode = contraption.entityNodes.get(nodeId);
+          const targetNodeId = hit.block?.entityId || nodeId;
+          const focusNode = contraption.entityNodes.get(targetNodeId) || contraption.entityNodes.get(nodeId);
           focusNode?.group?.updateWorldMatrix?.(true, false);
           const focusQuaternion = focusNode?.group
             ?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
           // In micro mode, hovering a 0.125 m block focuses the guide on that
           // block instead of the 1 m standard cell containing it.
           const microTarget = this.selectorMicroMode && hit.block && (hit.block.size || 1) < 1;
-          this.focusBlockPreview = microTarget
-            ? {
-                center: contraption.getBlockWorldCenter(hit.block),
-                cellSize: hit.block.size || MICRO_SIZE,
-                active: !!this.selectorRange.pointA,
-                quaternion: focusQuaternion
-              }
-            : {
-                center: contraption.entityLocalToWorld(
-                  nodeId,
+          const center = hit.block && typeof contraption.getBlockWorldCenter === 'function'
+            ? contraption.getBlockWorldCenter(hit.block)
+            : (hit.cell && typeof contraption.entityLocalToWorld === 'function'
+              ? contraption.entityLocalToWorld(
+                  targetNodeId,
                   new THREE.Vector3(hit.cell.x + 0.5, hit.cell.y + 0.5, hit.cell.z + 0.5)
-                ),
-                cellSize: 1,
-                active: !!this.selectorRange.pointA,
-                quaternion: focusQuaternion
-              };
+                )
+              : null);
+          if (center) {
+            this.focusBlockPreview = {
+              center,
+              cellSize: microTarget ? (hit.block.size || MICRO_SIZE) : 1,
+              active: !!this.selectorRange.pointA,
+              quaternion: focusQuaternion
+            };
+          }
           if (this.selectorRange.pointA && !this.selectorRange.pointB && hit.point) {
             const pointA = this.rangePointToPreviewGrid(this.selectorRange, this.selectorRange.pointA);
-            const cursor = this.worldPointToRangePreviewGrid(this.selectorRange, hit.point);
+            const inwardPoint = this.getInwardEntityPoint(hit);
+            const cursor = this.worldPointToRangePreviewGrid(this.selectorRange, inwardPoint);
             const frame = this.rangePreviewFrame(this.selectorRange);
             if (pointA && cursor && frame) {
               this.boxSelectionPreview = {
@@ -7614,6 +7657,138 @@ export class PlayerController {
     }
   }
 
+  getEntitySelectionBounds(blocks: any[], isMicro = false) {
+    if (!blocks || blocks.length === 0) return null;
+    if (isMicro) {
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (const b of blocks) {
+        const size = b.size || MICRO_SIZE;
+        const bx = Math.round(b.localX * MICRO_DIVISIONS);
+        const by = Math.round(b.localY * MICRO_DIVISIONS);
+        const bz = Math.round(b.localZ * MICRO_DIVISIONS);
+        const bSize = Math.max(1, Math.round(size * MICRO_DIVISIONS));
+        minX = Math.min(minX, bx);
+        minY = Math.min(minY, by);
+        minZ = Math.min(minZ, bz);
+        maxX = Math.max(maxX, bx + bSize - 1);
+        maxY = Math.max(maxY, by + bSize - 1);
+        maxZ = Math.max(maxZ, bz + bSize - 1);
+      }
+      if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
+      return { minX, maxX, minY, maxY, minZ, maxZ };
+    } else {
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (const b of blocks) {
+        const size = b.size || 1;
+        const bx = Math.floor(b.localX + 1e-6);
+        const by = Math.floor(b.localY + 1e-6);
+        const bz = Math.floor(b.localZ + 1e-6);
+        const bSize = Math.max(1, Math.round(size));
+        minX = Math.min(minX, bx);
+        minY = Math.min(minY, by);
+        minZ = Math.min(minZ, bz);
+        maxX = Math.max(maxX, bx + bSize - 1);
+        maxY = Math.max(maxY, by + bSize - 1);
+        maxZ = Math.max(maxZ, bz + bSize - 1);
+      }
+      if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
+      return { minX, maxX, minY, maxY, minZ, maxZ };
+    }
+  }
+
+  expandEntitySelectionAxis(axis: 'x' | 'y' | 'z', direction: 1 | -1, steps: number, isMicro = false) {
+    const contraption = this.selectedBlockSelection?.contraption || this.selectedSubtree?.contraption;
+    const nodeId = this.selectedBlockSelection?.nodeId || this.selectedSubtree?.rootId;
+    if (!contraption || !nodeId) return { ok: false, bounds: null, count: 0 };
+
+    if (!this.selectedBlockSelection && this.selectedSubtree) {
+      const nodeIds = this.selectedSubtree.nodeIds || this.collectSubtreeIds(contraption, nodeId);
+      const subtreeBlocks = contraption.blocks.filter((b: any) => nodeIds.has(contraptionBlockOwnerId(contraption, b)));
+      this.selectedBlockSelection = {
+        contraption,
+        nodeId,
+        blocks: subtreeBlocks,
+        bounds: this.getEntitySelectionBounds(subtreeBlocks, isMicro)
+      };
+      this.selectedSubtree = null;
+    }
+
+    if (!this.selectedBlockSelection) return { ok: false, bounds: null, count: 0 };
+
+    if (!this.selectedBlockSelection.bounds) {
+      this.selectedBlockSelection.bounds = this.getEntitySelectionBounds(this.selectedBlockSelection.blocks, isMicro);
+    }
+    const bounds = this.selectedBlockSelection.bounds;
+    if (!bounds) return { ok: false, bounds: null, count: 0 };
+
+    if (direction > 0) {
+      if (axis === 'x') {
+        bounds.maxX += steps;
+        if (bounds.maxX < bounds.minX) bounds.maxX = bounds.minX;
+      } else if (axis === 'y') {
+        bounds.maxY += steps;
+        if (bounds.maxY < bounds.minY) bounds.maxY = bounds.minY;
+      } else if (axis === 'z') {
+        bounds.maxZ += steps;
+        if (bounds.maxZ < bounds.minZ) bounds.maxZ = bounds.minZ;
+      }
+    } else {
+      if (axis === 'x') {
+        bounds.minX -= steps;
+        if (bounds.minX > bounds.maxX) bounds.minX = bounds.maxX;
+      } else if (axis === 'y') {
+        bounds.minY -= steps;
+        if (bounds.minY > bounds.maxY) bounds.minY = bounds.maxY;
+      } else if (axis === 'z') {
+        bounds.minZ -= steps;
+        if (bounds.minZ > bounds.maxZ) bounds.minZ = bounds.maxZ;
+      }
+    }
+
+    let minMeterX: number, maxMeterX: number;
+    let minMeterY: number, maxMeterY: number;
+    let minMeterZ: number, maxMeterZ: number;
+
+    if (isMicro) {
+      minMeterX = bounds.minX * MICRO_SIZE;
+      maxMeterX = (bounds.maxX + 1) * MICRO_SIZE;
+      minMeterY = bounds.minY * MICRO_SIZE;
+      maxMeterY = (bounds.maxY + 1) * MICRO_SIZE;
+      minMeterZ = bounds.minZ * MICRO_SIZE;
+      maxMeterZ = (bounds.maxZ + 1) * MICRO_SIZE;
+    } else {
+      minMeterX = bounds.minX;
+      maxMeterX = bounds.maxX + 1;
+      minMeterY = bounds.minY;
+      maxMeterY = bounds.maxY + 1;
+      minMeterZ = bounds.minZ;
+      maxMeterZ = bounds.maxZ + 1;
+    }
+
+    const matchingBlocks = contraption.blocks.filter((b: any) => {
+      const owner = contraptionBlockOwnerId(contraption, b);
+      if (owner !== nodeId) return false;
+      const s = b.size || 1;
+      if (isMicro && s >= 1) return false;
+      return (
+        b.localX < maxMeterX - 1e-6 &&
+        b.localX + s > minMeterX + 1e-6 &&
+        b.localY < maxMeterY - 1e-6 &&
+        b.localY + s > minMeterY + 1e-6 &&
+        b.localZ < maxMeterZ - 1e-6 &&
+        b.localZ + s > minMeterZ + 1e-6
+      );
+    });
+
+    this.selectedBlockSelection.blocks = matchingBlocks;
+    contraption.clearSubtreeHighlight?.();
+    contraption.highlightBlocks?.(matchingBlocks);
+
+    return { ok: true, bounds, count: matchingBlocks.length };
+  }
+
   updateSelectionAxisGizmo() {
     if (this.activeTool !== SpecialTool.SELECTOR) {
       this.hoveredGizmoHandle = null;
@@ -7623,6 +7798,8 @@ export class PlayerController {
 
     const isMicro = this.selectorMicroMode === true;
     let bounds: any = null;
+    let frame: any = null;
+
     if (isMicro) {
       bounds = this.contraptions?.getMicroSelectionBounds?.();
     } else {
@@ -7632,12 +7809,47 @@ export class PlayerController {
     }
 
     if (!bounds) {
+      if (this.selectedBlockSelection && this.selectedBlockSelection.contraption) {
+        const contraption = this.selectedBlockSelection.contraption;
+        const nodeId = this.selectedBlockSelection.nodeId;
+        const node = contraption.entityNodes?.get?.(nodeId);
+        if (node && node.group) {
+          if (!this.selectedBlockSelection.bounds) {
+            this.selectedBlockSelection.bounds = this.getEntitySelectionBounds(this.selectedBlockSelection.blocks, isMicro);
+          }
+          bounds = this.selectedBlockSelection.bounds;
+          if (bounds) {
+            frame = {
+              object: node.group,
+              pivot: (node.pivotLocal || new THREE.Vector3()).clone()
+            };
+          }
+        }
+      } else if (this.selectedSubtree && this.selectedSubtree.contraption) {
+        const contraption = this.selectedSubtree.contraption;
+        const rootId = this.selectedSubtree.rootId;
+        const node = contraption.entityNodes?.get?.(rootId);
+        if (node && node.group && this.canEditEntityInternals(contraption)) {
+          const nodeIds = this.selectedSubtree.nodeIds || this.collectSubtreeIds(contraption, rootId);
+          const blocks = contraption.blocks.filter((b: any) => nodeIds.has(contraptionBlockOwnerId(contraption, b)));
+          bounds = this.getEntitySelectionBounds(blocks, isMicro);
+          if (bounds) {
+            frame = {
+              object: node.group,
+              pivot: (node.pivotLocal || new THREE.Vector3()).clone()
+            };
+          }
+        }
+      }
+    }
+
+    if (!bounds) {
       this.hoveredGizmoHandle = null;
       this.sceneRenderer?.clearSelectionAxisGizmo?.();
       return;
     }
 
-    this.sceneRenderer?.updateSelectionAxisGizmo?.(bounds, isMicro);
+    this.sceneRenderer?.updateSelectionAxisGizmo?.(bounds, isMicro, frame);
 
     // If currently dragging, maintain active handle highlight
     if (this.activeGizmoDrag) {
@@ -7679,11 +7891,13 @@ export class PlayerController {
 
   startGizmoDrag(hit: any, e: MouseEvent | null = null) {
     if (!hit) return;
+    const isEntity = !!(this.selectedBlockSelection || this.selectedSubtree);
     this.activeGizmoDrag = {
       handleKey: hit.handleKey,
       axis: hit.axis,
       direction: hit.direction,
       isMicro: this.selectorMicroMode === true,
+      isEntity,
       accumulatedDelta: 0,
       startX: e ? e.clientX : 0,
       startY: e ? e.clientY : 0,
@@ -7698,35 +7912,80 @@ export class PlayerController {
     const drag = this.activeGizmoDrag;
     const isMicro = drag.isMicro;
 
-    const bounds = isMicro
-      ? this.contraptions.getMicroSelectionBounds()
-      : this.contraptions.getSelectionBounds();
-    if (!bounds) {
-      this.releaseGizmoDrag();
-      return;
+    let center: THREE.Vector3 | null = null;
+    let worldAxisVec: THREE.Vector3 | null = null;
+
+    if (drag.isEntity) {
+      const target = this.selectedBlockSelection?.contraption || this.selectedSubtree?.contraption;
+      const nodeId = this.selectedBlockSelection?.nodeId || this.selectedSubtree?.rootId;
+      if (!target || !nodeId) {
+        this.releaseGizmoDrag();
+        return;
+      }
+      let bounds = this.selectedBlockSelection?.bounds;
+      if (!bounds) {
+        const blocks = this.selectedBlockSelection?.blocks || (
+          this.selectedSubtree ? target.blocks.filter((b: any) => (this.selectedSubtree.nodeIds || this.collectSubtreeIds(target, nodeId)).has(contraptionBlockOwnerId(target, b))) : null
+        );
+        bounds = this.getEntitySelectionBounds(blocks, isMicro);
+      }
+      if (!bounds) {
+        this.releaseGizmoDrag();
+        return;
+      }
+
+      const minWx = isMicro ? bounds.minX * MICRO_SIZE : bounds.minX;
+      const maxWx = isMicro ? (bounds.maxX + 1) * MICRO_SIZE : bounds.maxX + 1;
+      const minWy = isMicro ? bounds.minY * MICRO_SIZE : bounds.minY;
+      const maxWy = isMicro ? (bounds.maxY + 1) * MICRO_SIZE : bounds.maxY + 1;
+      const minWz = isMicro ? bounds.minZ * MICRO_SIZE : bounds.minZ;
+      const maxWz = isMicro ? (bounds.maxZ + 1) * MICRO_SIZE : bounds.maxZ + 1;
+
+      const localCenter = new THREE.Vector3(
+        (minWx + maxWx) * 0.5,
+        (minWy + maxWy) * 0.5,
+        (minWz + maxWz) * 0.5
+      );
+      center = this.targetEntityLocalToWorld(target, nodeId, localCenter);
+
+      const localAxis = new THREE.Vector3(
+        drag.axis === 'x' ? 1 : 0,
+        drag.axis === 'y' ? 1 : 0,
+        drag.axis === 'z' ? 1 : 0
+      );
+      const quat = this.getTargetEntityWorldQuaternion(target, nodeId);
+      worldAxisVec = localAxis.applyQuaternion(quat);
+    } else {
+      const bounds = isMicro
+        ? this.contraptions.getMicroSelectionBounds()
+        : this.contraptions.getSelectionBounds();
+      if (!bounds) {
+        this.releaseGizmoDrag();
+        return;
+      }
+
+      const minWx = isMicro ? bounds.minX * MICRO_SIZE : bounds.minX;
+      const maxWx = isMicro ? (bounds.maxX + 1) * MICRO_SIZE : bounds.maxX + 1;
+      const minWy = isMicro ? bounds.minY * MICRO_SIZE : bounds.minY;
+      const maxWy = isMicro ? (bounds.maxY + 1) * MICRO_SIZE : bounds.maxY + 1;
+      const minWz = isMicro ? bounds.minZ * MICRO_SIZE : bounds.minZ;
+      const maxWz = isMicro ? (bounds.maxZ + 1) * MICRO_SIZE : bounds.maxZ + 1;
+
+      center = new THREE.Vector3(
+        (minWx + maxWx) * 0.5,
+        (minWy + maxWy) * 0.5,
+        (minWz + maxWz) * 0.5
+      );
+
+      worldAxisVec = new THREE.Vector3(
+        drag.axis === 'x' ? 1 : 0,
+        drag.axis === 'y' ? 1 : 0,
+        drag.axis === 'z' ? 1 : 0
+      );
     }
 
-    const minWx = isMicro ? bounds.minX * MICRO_SIZE : bounds.minX;
-    const maxWx = isMicro ? (bounds.maxX + 1) * MICRO_SIZE : bounds.maxX + 1;
-    const minWy = isMicro ? bounds.minY * MICRO_SIZE : bounds.minY;
-    const maxWy = isMicro ? (bounds.maxY + 1) * MICRO_SIZE : bounds.maxY + 1;
-    const minWz = isMicro ? bounds.minZ * MICRO_SIZE : bounds.minZ;
-    const maxWz = isMicro ? (bounds.maxZ + 1) * MICRO_SIZE : bounds.maxZ + 1;
-
-    const center = new THREE.Vector3(
-      (minWx + maxWx) * 0.5,
-      (minWy + maxWy) * 0.5,
-      (minWz + maxWz) * 0.5
-    );
-
-    const axisVec = new THREE.Vector3(
-      drag.axis === 'x' ? 1 : 0,
-      drag.axis === 'y' ? 1 : 0,
-      drag.axis === 'z' ? 1 : 0
-    );
-
     const v0 = center.clone().project(this.camera);
-    const v1 = center.clone().add(axisVec).project(this.camera);
+    const v1 = center.clone().add(worldAxisVec).project(this.camera);
     const screenDir = new THREE.Vector2(v1.x - v0.x, -(v1.y - v0.y));
     const len = screenDir.length();
     if (len < 1e-4) {
@@ -7754,62 +8013,75 @@ export class PlayerController {
       const steps = Math.trunc(drag.accumulatedDelta / pixelsPerStep);
       drag.accumulatedDelta -= steps * pixelsPerStep;
 
-      const result = this.contraptions.expandSelectionAxis(
-        drag.axis,
-        drag.direction,
-        steps,
-        isMicro
-      );
-
-      if (result.ok) {
-        this.sound?.playWrenchClick?.();
-        if (this.selectorShape !== 'box') {
-          const cylinderAxis = this.selectionShapeAnchor?.cylinderAxis || 'y';
-          const stairsAxis = this.selectionShapeAnchor?.stairsAxis;
-          if (isMicro) {
-            const mb = this.contraptions.getMicroSelectionBounds();
-            if (mb) {
-              this.selectionShapeAnchor = {
-                cornerA: { x: mb.minX, y: mb.minY, z: mb.minZ },
-                cornerB: { x: mb.maxX, y: mb.maxY, z: mb.maxZ },
-                micro: true,
-                cylinderAxis,
-                stairsAxis
-              };
-            }
-          } else {
-            if (this.contraptions.selectionCornerA && this.contraptions.selectionCornerB) {
-              this.selectionShapeAnchor = {
-                cornerA: { ...this.contraptions.selectionCornerA },
-                cornerB: { ...this.contraptions.selectionCornerB },
-                micro: false,
-                cylinderAxis,
-                stairsAxis
-              };
-            }
-          }
-          const anchorA = this.selectionShapeAnchor?.cornerA;
-          const anchorB = this.selectionShapeAnchor?.cornerB;
-          if (anchorA && anchorB) {
-            const cells = computeSelectionCells(this.selectorShape, anchorA, anchorB, isMicro, cylinderAxis, stairsAxis);
-            if (isMicro) {
-              this.contraptions.microSelection = cells;
-              this.contraptions.microBounds = null;
-            } else {
-              this.contraptions.connectedSelection = cells;
-            }
-          }
-        }
-        const updatedBounds = isMicro
-          ? this.contraptions.getMicroSelectionBounds()
-          : this.contraptions.getSelectionBounds();
-        this.sceneRenderer?.updateSelectionAxisGizmo(updatedBounds, isMicro);
-        this.sceneRenderer?.updateSelectionHologram(
-          this.contraptions.getSelectionBounds(),
-          this.contraptions.connectedSelection,
-          this.contraptions.microSelection,
-          isMicro && this.selectorShape !== 'box'
+      if (drag.isEntity) {
+        const result = this.expandEntitySelectionAxis(
+          drag.axis,
+          drag.direction,
+          steps,
+          isMicro
         );
+        if (result.ok) {
+          this.sound?.playWrenchClick?.();
+          this.updateSelectionAxisGizmo();
+        }
+      } else {
+        const result = this.contraptions.expandSelectionAxis(
+          drag.axis,
+          drag.direction,
+          steps,
+          isMicro
+        );
+
+        if (result.ok) {
+          this.sound?.playWrenchClick?.();
+          if (this.selectorShape !== 'box') {
+            const cylinderAxis = this.selectionShapeAnchor?.cylinderAxis || 'y';
+            const stairsAxis = this.selectionShapeAnchor?.stairsAxis;
+            if (isMicro) {
+              const mb = this.contraptions.getMicroSelectionBounds();
+              if (mb) {
+                this.selectionShapeAnchor = {
+                  cornerA: { x: mb.minX, y: mb.minY, z: mb.minZ },
+                  cornerB: { x: mb.maxX, y: mb.maxY, z: mb.maxZ },
+                  micro: true,
+                  cylinderAxis,
+                  stairsAxis
+                };
+              }
+            } else {
+              if (this.contraptions.selectionCornerA && this.contraptions.selectionCornerB) {
+                this.selectionShapeAnchor = {
+                  cornerA: { ...this.contraptions.selectionCornerA },
+                  cornerB: { ...this.contraptions.selectionCornerB },
+                  micro: false,
+                  cylinderAxis,
+                  stairsAxis
+                };
+              }
+            }
+            const anchorA = this.selectionShapeAnchor?.cornerA;
+            const anchorB = this.selectionShapeAnchor?.cornerB;
+            if (anchorA && anchorB) {
+              const cells = computeSelectionCells(this.selectorShape, anchorA, anchorB, isMicro, cylinderAxis, stairsAxis);
+              if (isMicro) {
+                this.contraptions.microSelection = cells;
+                this.contraptions.microBounds = null;
+              } else {
+                this.contraptions.connectedSelection = cells;
+              }
+            }
+          }
+          const updatedBounds = isMicro
+            ? this.contraptions.getMicroSelectionBounds()
+            : this.contraptions.getSelectionBounds();
+          this.sceneRenderer?.updateSelectionAxisGizmo(updatedBounds, isMicro);
+          this.sceneRenderer?.updateSelectionHologram(
+            this.contraptions.getSelectionBounds(),
+            this.contraptions.connectedSelection,
+            this.contraptions.microSelection,
+            isMicro && this.selectorShape !== 'box'
+          );
+        }
       }
     }
   }

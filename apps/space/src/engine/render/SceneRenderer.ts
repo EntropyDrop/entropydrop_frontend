@@ -1767,7 +1767,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     this.scene.add(this.selectionAxisGizmo);
   }
 
-  updateSelectionAxisGizmo(bounds: any, isMicro = false) {
+  updateSelectionAxisGizmo(bounds: any, isMicro = false, frame: any = null) {
     if (!bounds) {
       this.clearSelectionAxisGizmo();
       return;
@@ -1798,38 +1798,86 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     const handleScale = isMicro ? 0.4 : 0.7;
     const arrowOffset = isMicro ? 0.05 : 0.15;
 
-    const handlePositions: Record<string, [number, number, number]> = {
-      '+x': [maxWx + arrowOffset, cy, cz],
-      '-x': [minWx - arrowOffset, cy, cz],
-      '+y': [cx, maxWy + arrowOffset, cz],
-      '-y': [cx, minWy - arrowOffset, cz],
-      '+z': [cx, cy, maxWz + arrowOffset],
-      '-z': [cx, cy, minWz - arrowOffset]
-    };
+    if (frame?.object?.localToWorld) {
+      frame.object.updateWorldMatrix?.(true, false);
+      const pivot = frame.pivot ? new THREE.Vector3(frame.pivot.x, frame.pivot.y, frame.pivot.z) : new THREE.Vector3();
+      const localCenter = new THREE.Vector3(cx, cy, cz).sub(pivot);
+      this.selectionAxisGizmo.position.copy(frame.object.localToWorld(localCenter));
+      frame.object.getWorldQuaternion(this.selectionAxisGizmo.quaternion);
 
-    for (const [key, pos] of Object.entries(handlePositions)) {
-      const handle = this.selectionGizmoHandles?.get(key);
-      if (handle) {
-        handle.position.set(pos[0], pos[1], pos[2]);
-        handle.scale.setScalar(handleScale);
+      const hx = (maxWx - minWx) * 0.5;
+      const hy = (maxWy - minWy) * 0.5;
+      const hz = (maxWz - minWz) * 0.5;
+
+      const handlePositions: Record<string, [number, number, number]> = {
+        '+x': [hx + arrowOffset, 0, 0],
+        '-x': [-(hx + arrowOffset), 0, 0],
+        '+y': [0, hy + arrowOffset, 0],
+        '-y': [0, -(hy + arrowOffset), 0],
+        '+z': [0, 0, hz + arrowOffset],
+        '-z': [0, 0, -(hz + arrowOffset)]
+      };
+
+      for (const [key, pos] of Object.entries(handlePositions)) {
+        const handle = this.selectionGizmoHandles?.get(key);
+        if (handle) {
+          handle.position.set(pos[0], pos[1], pos[2]);
+          handle.scale.setScalar(handleScale);
+        }
       }
+
+      this.selectionGizmoLineX.geometry.setFromPoints([
+        new THREE.Vector3(-(hx + arrowOffset), 0, 0),
+        new THREE.Vector3(hx + arrowOffset, 0, 0)
+      ]);
+      this.selectionGizmoLineY.geometry.setFromPoints([
+        new THREE.Vector3(0, -(hy + arrowOffset), 0),
+        new THREE.Vector3(0, hy + arrowOffset, 0)
+      ]);
+      this.selectionGizmoLineZ.geometry.setFromPoints([
+        new THREE.Vector3(0, 0, -(hz + arrowOffset)),
+        new THREE.Vector3(0, 0, hz + arrowOffset)
+      ]);
+
+      this.selectionGizmoOrigin.position.set(0, 0, 0);
+      this.selectionGizmoOrigin.scale.setScalar(handleScale);
+    } else {
+      this.selectionAxisGizmo.position.set(0, 0, 0);
+      this.selectionAxisGizmo.quaternion.identity();
+
+      const handlePositions: Record<string, [number, number, number]> = {
+        '+x': [maxWx + arrowOffset, cy, cz],
+        '-x': [minWx - arrowOffset, cy, cz],
+        '+y': [cx, maxWy + arrowOffset, cz],
+        '-y': [cx, minWy - arrowOffset, cz],
+        '+z': [cx, cy, maxWz + arrowOffset],
+        '-z': [cx, cy, minWz - arrowOffset]
+      };
+
+      for (const [key, pos] of Object.entries(handlePositions)) {
+        const handle = this.selectionGizmoHandles?.get(key);
+        if (handle) {
+          handle.position.set(pos[0], pos[1], pos[2]);
+          handle.scale.setScalar(handleScale);
+        }
+      }
+
+      this.selectionGizmoLineX.geometry.setFromPoints([
+        new THREE.Vector3(minWx - arrowOffset, cy, cz),
+        new THREE.Vector3(maxWx + arrowOffset, cy, cz)
+      ]);
+      this.selectionGizmoLineY.geometry.setFromPoints([
+        new THREE.Vector3(cx, minWy - arrowOffset, cz),
+        new THREE.Vector3(cx, maxWy + arrowOffset, cz)
+      ]);
+      this.selectionGizmoLineZ.geometry.setFromPoints([
+        new THREE.Vector3(cx, cy, minWz - arrowOffset),
+        new THREE.Vector3(cx, cy, maxWz + arrowOffset)
+      ]);
+
+      this.selectionGizmoOrigin.position.set(cx, cy, cz);
+      this.selectionGizmoOrigin.scale.setScalar(handleScale);
     }
-
-    this.selectionGizmoLineX.geometry.setFromPoints([
-      new THREE.Vector3(minWx - arrowOffset, cy, cz),
-      new THREE.Vector3(maxWx + arrowOffset, cy, cz)
-    ]);
-    this.selectionGizmoLineY.geometry.setFromPoints([
-      new THREE.Vector3(cx, minWy - arrowOffset, cz),
-      new THREE.Vector3(cx, maxWy + arrowOffset, cz)
-    ]);
-    this.selectionGizmoLineZ.geometry.setFromPoints([
-      new THREE.Vector3(cx, cy, minWz - arrowOffset),
-      new THREE.Vector3(cx, cy, maxWz + arrowOffset)
-    ]);
-
-    this.selectionGizmoOrigin.position.set(cx, cy, cz);
-    this.selectionGizmoOrigin.scale.setScalar(handleScale);
 
     this.selectionAxisGizmo.visible = true;
     this.selectionAxisGizmo.updateMatrixWorld(true);
@@ -1862,6 +1910,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   clearSelectionAxisGizmo() {
     if (this.selectionAxisGizmo) {
       this.selectionAxisGizmo.visible = false;
+      this.selectionAxisGizmo.position.set(0, 0, 0);
+      this.selectionAxisGizmo.quaternion.identity();
       this.highlightSelectionGizmoHandle(null);
     }
   }
@@ -1984,6 +2034,11 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       if (!frame?.bounds?.min || !frame?.bounds?.max) return null;
       const min = previewVector3(frame.bounds.min).multiplyScalar(divisions);
       const max = previewVector3(frame.bounds.max).multiplyScalar(divisions);
+      if (!Number.isFinite(min.x) || !Number.isFinite(max.x) || min.x > max.x ||
+          !Number.isFinite(min.y) || !Number.isFinite(max.y) || min.y > max.y ||
+          !Number.isFinite(min.z) || !Number.isFinite(max.z) || min.z > max.z) {
+        return null;
+      }
       return {
         minX: Math.floor(min.x + 1e-6),
         minY: Math.floor(min.y + 1e-6),
@@ -2025,6 +2080,10 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       const sx = (maxMx - minMx + 1) * MICRO_SIZE;
       const sy = (maxMy - minMy + 1) * MICRO_SIZE;
       const sz = (maxMz - minMz + 1) * MICRO_SIZE;
+      if (!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sz) || sx <= 0 || sy <= 0 || sz <= 0) {
+        this.boxSelectionGroup.visible = false;
+        return;
+      }
       updateTorusSelectionBoxGeometry(this.boxSelectionFill, this.boxSelectionEdges, sx, sy, sz);
       applyFrame(new THREE.Vector3(
         minMx * MICRO_SIZE + sx / 2,
@@ -2060,6 +2119,10 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     const sx = Math.max(0.001, maxX - minX + 1);
     const sy = Math.max(0.001, maxY - minY + 1);
     const sz = Math.max(0.001, maxZ - minZ + 1);
+    if (!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sz) || sx <= 0 || sy <= 0 || sz <= 0) {
+      this.boxSelectionGroup.visible = false;
+      return;
+    }
     updateTorusSelectionBoxGeometry(this.boxSelectionFill, this.boxSelectionEdges, sx, sy, sz);
     applyFrame(new THREE.Vector3(
       (minX + maxX + 1) / 2,

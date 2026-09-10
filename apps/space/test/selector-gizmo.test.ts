@@ -276,3 +276,164 @@ test('expandSelectionAxis clamps to MAX_ENTITY_BOUNDS (64 blocks)', () => {
   assert.equal(bounds.maxX - bounds.minX + 1, 64, 'Span must be clamped to 64 blocks');
 });
 
+test('SceneRenderer.updateSelectionAxisGizmo positions and rotates gizmo to entity node frame', () => {
+  const renderer = makeStubSceneRenderer();
+  const group = new THREE.Group();
+  group.position.set(10, 20, 30);
+  group.rotation.set(0, Math.PI / 2, 0);
+  group.updateMatrixWorld(true);
+
+  const pivot = new THREE.Vector3(1, 0, 1);
+  const bounds = { minX: 0, maxX: 1, minY: 0, maxY: 1, minZ: 0, maxZ: 1 };
+
+  renderer.updateSelectionAxisGizmo(bounds, false, { object: group, pivot });
+  assert.equal(renderer.selectionAxisGizmo.visible, true);
+
+  // Local center is cx=1, cy=1, cz=1. Relative to pivot (1,0,1): (0, 1, 0).
+  // In world, group is at (10, 20, 30) rotated 90 deg around Y: (0, 1, 0) transforms to (10, 21, 30).
+  const gizmoPos = renderer.selectionAxisGizmo.position;
+  assert.ok(Math.abs(gizmoPos.x - 10) < 1e-4);
+  assert.ok(Math.abs(gizmoPos.y - 21) < 1e-4);
+  assert.ok(Math.abs(gizmoPos.z - 30) < 1e-4);
+
+  // Gizmo orientation matches group quaternion
+  const gizmoQuat = renderer.selectionAxisGizmo.quaternion;
+  const groupQuat = new THREE.Quaternion();
+  group.getWorldQuaternion(groupQuat);
+  assert.ok(Math.abs(gizmoQuat.y - groupQuat.y) < 1e-4);
+
+  // Handles are relative to gizmo center
+  const handleX = renderer.selectionGizmoHandles.get('+x')!.position;
+  assert.ok(handleX.x > 0.5, 'Handle +x should be outside local positive face');
+  assert.equal(handleX.y, 0, 'Handle +x local Y should be 0 relative to center');
+  assert.equal(handleX.z, 0, 'Handle +x local Z should be 0 relative to center');
+});
+
+test('PlayerController activates SelectionAxisGizmo on entity block selection and expands with expandEntitySelectionAxis', () => {
+  const scene = new THREE.Scene();
+  const world = makeStubWorld();
+  const renderer = makeStubSceneRenderer();
+
+  const group = new THREE.Group();
+  group.position.set(5, 0, 5);
+  group.updateMatrixWorld(true);
+
+  let highlightedBlocks: any[] = [];
+  const stubContraption: any = {
+    id: 1,
+    scriptStatus: 'stopped',
+    serverManaged: false,
+    entityNodes: new Map([
+      ['arm', { id: 'arm', group, pivotLocal: new THREE.Vector3() }]
+    ]),
+    blocks: [
+      { localX: 0, localY: 0, localZ: 0, size: 1, entityId: 'arm' },
+      { localX: 1, localY: 0, localZ: 0, size: 1, entityId: 'arm' },
+      { localX: 2, localY: 0, localZ: 0, size: 1, entityId: 'arm' }
+    ],
+    clearSubtreeHighlight() { highlightedBlocks = []; },
+    highlightBlocks(blocks: any[]) { highlightedBlocks = blocks; }
+  };
+
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorMicroMode = false;
+  controller.contraptions = { getSelectionBounds: () => null, getMicroSelectionBounds: () => null };
+  controller.sceneRenderer = renderer;
+  controller.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  controller.camera.position.set(0, 10, 20);
+  controller.camera.lookAt(0, 0, 0);
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+
+  // Select first block only
+  controller.selectedBlockSelection = {
+    contraption: stubContraption,
+    nodeId: 'arm',
+    blocks: [stubContraption.blocks[0]],
+    bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 }
+  };
+
+  controller.updateSelectionAxisGizmo();
+  assert.equal(renderer.selectionAxisGizmo.visible, true);
+
+  // Expand along +X by 1 step -> should now capture blocks 0 and 1
+  let res = controller.expandEntitySelectionAxis('x', 1, 1, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.count, 2);
+  assert.equal(controller.selectedBlockSelection.blocks.length, 2);
+  assert.equal(highlightedBlocks.length, 2);
+
+  // Expand along +X by 1 more step -> should now capture all 3 blocks
+  res = controller.expandEntitySelectionAxis('x', 1, 1, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.count, 3);
+  assert.equal(controller.selectedBlockSelection.blocks.length, 3);
+
+  // Shrink along +X by 1 step -> back to 2 blocks
+  res = controller.expandEntitySelectionAxis('x', 1, -1, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.count, 2);
+  assert.equal(controller.selectedBlockSelection.blocks.length, 2);
+});
+
+test('PlayerController activates SelectionAxisGizmo on selectedSubtree and expands via gizmo drag', () => {
+  const scene = new THREE.Scene();
+  const world = makeStubWorld();
+  const renderer = makeStubSceneRenderer();
+
+  const group = new THREE.Group();
+  group.position.set(0, 0, 0);
+  group.updateMatrixWorld(true);
+
+  let highlightedBlocks: any[] = [];
+  const stubContraption: any = {
+    id: 1,
+    scriptStatus: 'stopped',
+    serverManaged: false,
+    entityNodes: new Map([
+      ['componentA', { id: 'componentA', group, pivotLocal: new THREE.Vector3() }]
+    ]),
+    blocks: [
+      { localX: 0, localY: 0, localZ: 0, size: 1, entityId: 'componentA' },
+      { localX: 1, localY: 0, localZ: 0, size: 1, entityId: 'componentA' }
+    ],
+    clearSubtreeHighlight() { highlightedBlocks = []; },
+    highlightBlocks(blocks: any[]) { highlightedBlocks = blocks; }
+  };
+
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorMicroMode = false;
+  controller.contraptions = { getSelectionBounds: () => null, getMicroSelectionBounds: () => null };
+  controller.sceneRenderer = renderer;
+  controller.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  controller.camera.position.set(0, 0, 10);
+  controller.camera.lookAt(0, 0, 0);
+  controller.isLocked = true;
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+
+  controller.selectedSubtree = {
+    contraption: stubContraption,
+    rootId: 'componentA',
+    nodeIds: new Set(['componentA'])
+  };
+
+  controller.updateSelectionAxisGizmo();
+  assert.equal(renderer.selectionAxisGizmo.visible, true);
+
+  // Start gizmo drag on +X handle
+  controller.startGizmoDrag({ handleKey: '+x', axis: 'x', direction: 1 });
+  assert.equal(controller.activeGizmoDrag.isEntity, true);
+
+  // Move mouse in +X direction
+  const event = { movementX: 32, movementY: 0 } as any;
+  controller.updateGizmoDrag(event);
+
+  // Selected subtree was converted to selectedBlockSelection and expanded
+  assert.ok(controller.selectedBlockSelection);
+  assert.equal(controller.selectedBlockSelection.bounds.maxX, 3);
+});
+
+

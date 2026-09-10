@@ -944,3 +944,70 @@ test('Shift-clicking blocks across multiple components allows arbitrary selectio
   assert.ok(successResult, 'child creation should succeed');
 });
 
+test('selector box preview and range on entity surface normal does not spill into neighbor block', () => {
+  const { contraption } = makeEntityWithChildren();
+  const controller = makeSelectorController();
+
+  // 1. First click: select root
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'root',
+    block: contraption.blocks[0],
+    cell: { x: 0, y: 0, z: 0 },
+    point: new THREE.Vector3(0.5, 10.5, 0.5)
+  };
+  controller.handleLeftClick();
+  assert.ok(controller.selectorRange, 'selector range initialized');
+
+  // 2. Click point 1 on top face of block (0, 0, 0): world Y is 11.0 (entity at Y=10, block height 1)
+  // Face normal is +Y: (0, 1, 0)
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'root',
+    block: contraption.blocks[0],
+    cell: { x: 0, y: 0, z: 0 },
+    point: new THREE.Vector3(0.5, 11.0, 0.5),
+    worldNormal: new THREE.Vector3(0, 1, 0),
+    normal: new THREE.Vector3(0, 1, 0)
+  };
+  controller.handleLeftClick();
+  assert.ok(controller.selectorRange.pointA, 'pointA should be set');
+
+  // 3. Hover the same face: preview cursor should remain on cell 0 in Y, NOT jump to cell 1 (empty air / block in normal dir)
+  controller.updateMicroCarvePreview();
+  assert.ok(controller.boxSelectionPreview, 'boxSelectionPreview should exist');
+  // cursor Y must be < 1.0 (e.g. 0.98), which floors to cell 0 instead of cell 1
+  assert.ok(controller.boxSelectionPreview.cursor.y < 1.0, 'cursor Y must be within cell 0 bounds');
+  assert.equal(Math.floor(controller.boxSelectionPreview.cursor.y), 0, 'floored cursor Y must be 0');
+  assert.equal(Math.floor(controller.boxSelectionPreview.pointA.y), 0, 'floored pointA Y must be 0');
+
+  // 4. Hover +X face of block (0, 0, 0): point X is 1.0, worldNormal is (1, 0, 0)
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'root',
+    block: contraption.blocks[0],
+    cell: { x: 0, y: 0, z: 0 },
+    point: new THREE.Vector3(1.0, 10.5, 0.5),
+    worldNormal: new THREE.Vector3(1, 0, 0),
+    normal: new THREE.Vector3(1, 0, 0)
+  };
+  controller.updateMicroCarvePreview();
+  assert.ok(controller.boxSelectionPreview.cursor.x < 1.0, 'cursor X must be within cell 0 bounds');
+  assert.equal(Math.floor(controller.boxSelectionPreview.cursor.x), 0, 'floored cursor X must be 0');
+
+  // 5. Complete selection by clicking the top face again: only the single aimed block should be selected
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'root',
+    block: contraption.blocks[0],
+    cell: { x: 0, y: 0, z: 0 },
+    point: new THREE.Vector3(0.5, 11.0, 0.5),
+    worldNormal: new THREE.Vector3(0, 1, 0),
+    normal: new THREE.Vector3(0, 1, 0)
+  };
+  controller.handleLeftClick();
+  assert.ok(controller.selectedBlockSelection, 'block selection created');
+  assert.equal(controller.selectedBlockSelection.blocks.length, 1, 'only the single targeted block should be selected');
+  assert.equal(controller.selectedBlockSelection.blocks[0], contraption.blocks[0], 'selected block must be the aimed block');
+});
+
