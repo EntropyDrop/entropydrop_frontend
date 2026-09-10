@@ -193,7 +193,8 @@ export class SpaceEntitySync {
       return;
     }
     const shouldRun = (this.leasedUntil.get(entity.id) || 0) > Date.now()
-      && entity.desired_run_state === 'running';
+      && entity.desired_run_state === 'running'
+      && contraption.serverDesiredRunState !== 'stopped';
     const isRunning = contraption.scriptStatus === 'running'
       || (contraption.scriptStatus !== 'stopped' && contraption.isPhysicsSimulationEnabled?.() !== false);
     if (shouldRun === isRunning) return;
@@ -220,6 +221,11 @@ export class SpaceEntitySync {
         const revisionChanged = Number(active.serverPlaybackRevision) !== entity.revision;
         const metadata = this.metadata(entity);
         const executionChanged = active.serverExecutesLocally !== metadata.serverExecutesLocally;
+        if (active.isWrenchGrabbed || this.controller?.wrenchGrab?.contraption === active || active.serverDesiredRunState === 'stopped') {
+          if (entity.desired_run_state !== 'stopped' && Number(active.serverRevision) >= entity.revision) {
+            metadata.serverDesiredRunState = 'stopped';
+          }
+        }
         Object.assign(active, metadata);
         // An entity may stop itself without changing the owner's durable Wrench
         // intent. Re-apply playback only when that intent revision changes.
@@ -459,6 +465,10 @@ export class SpaceEntitySync {
   }
 
   private async setRunState(contraption: any, desiredState: SpaceEntityRunState) {
+    if (desiredState === 'stopped') {
+      this.leasedUntil.delete(String(contraption.publicId));
+      contraption.serverDesiredRunState = 'stopped';
+    }
     const updated = await this.client.setRunState(
       String(contraption.publicId),
       desiredState,

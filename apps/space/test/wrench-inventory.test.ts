@@ -7,6 +7,7 @@ import {
   PlayerController,
   SpecialTool
 } from '../src/engine/controls/PlayerController.ts';
+import { ActionDomain } from '@entropydrop/space-engine/actions/BasicActions.ts';
 import { ContraptionPhysics } from '@entropydrop/space-engine/physics/ContraptionPhysics.ts';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
 import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
@@ -406,7 +407,60 @@ test('Wrench drag on running entity triggers stop and click sound exactly once',
   assert.equal(entity.isCollisionSimulationEnabled(), true, 'collision restored upon release');
   assert.equal(clickCount, 1, 'no extra click sound on release');
   assert.equal(stopScriptsCalls, 1, 'no extra stop-scripts on release since already stopped');
-  assert.equal(serverRunStateCalls.length, 1, 'no extra server call on release');
+  assert.ok(serverRunStateCalls.every(c => c.desiredState === 'stopped'), 'all server calls strictly keep stopped state');
+});
+
+test('Wrench left-click grab never starts an entity or triggers scripts under any condition', () => {
+  const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null);
+  const entity = makeContraptionWithChildren();
+  entity.serverManaged = true;
+  entity.serverCanControl = true;
+  entity.serverCanEdit = true;
+  entity.serverDesiredRunState = 'running';
+  manager.registerContraption(entity);
+
+  const controller = Object.create(PlayerController.prototype) as any;
+  controller.activeTool = SpecialTool.WRENCH;
+  controller.contraptions = manager;
+  controller.world = {};
+  controller.hoveredContraption = entity;
+  controller.hoveredContraptionHit = {
+    contraption: entity,
+    entityId: 'root',
+    point: new THREE.Vector3(0, 0, 5),
+    distance: 5
+  };
+  controller.camera = new THREE.PerspectiveCamera();
+  controller.physics = { getEyePosition: () => new THREE.Vector3() };
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+
+  // Left click grab
+  controller.handleLeftClick();
+  assert.equal(entity.scriptStatus, 'stopped');
+  assert.equal(entity.serverDesiredRunState, 'stopped');
+  assert.equal(entity.isWrenchGrabbed, true);
+
+  // Re-invoking left click while grabbed keeps it grabbed and stopped
+  controller.handleLeftClick();
+  assert.equal(entity.scriptStatus, 'stopped');
+  assert.equal(entity.serverDesiredRunState, 'stopped');
+
+  // Attempting to execute start-scripts while wrench-grabbed is rejected
+  const actionResult = controller.performBasicAction({
+    domain: ActionDomain.ENTITY,
+    action: 'start-scripts',
+    target: { contraption: entity }
+  });
+  assert.equal(actionResult.ok, false);
+  assert.equal(entity.scriptStatus, 'stopped');
+
+  // Releasing grab keeps it stopped
+  controller.releaseWrenchGrab();
+  assert.equal(entity.scriptStatus, 'stopped');
+  assert.equal(entity.isPhysicsSimulationEnabled(), false);
+  assert.equal(entity.serverDesiredRunState, 'stopped');
 });
 
 test('component pivot updates preserve rotated component and descendant voxel positions', () => {

@@ -144,3 +144,27 @@ test('entities grabbed by the wrench are not interrupted by server sync or polli
   assert.deepEqual(actions, [], 'applyPlayback must not fire stop-scripts or start-scripts while wrench-grabbed');
 });
 
+test('entities stopped by wrench do not get restarted by polling after release', async () => {
+  const { sync, created, actions } = harness('owner-1');
+  await sync.poll();
+  assert.equal(created.length, 1);
+  const entity = created[0];
+
+  // Grab with wrench: mark stopped and clear lease
+  entity.isWrenchGrabbed = true;
+  entity.serverDesiredRunState = 'stopped';
+  entity.scriptStatus = 'stopped';
+  entity.setPhysicsSimulationEnabled(true);
+
+  // Release grab
+  entity.isWrenchGrabbed = false;
+  entity.setPhysicsSimulationEnabled(false);
+
+  // Poll arrives with stale server state having desired_run_state 'running'
+  actions.length = 0;
+  await sync.poll();
+  assert.deepEqual(actions, [], 'stale server poll must not restart an entity that was stopped locally');
+  assert.equal(entity.scriptStatus, 'stopped');
+  assert.equal(entity.isPhysicsSimulationEnabled(), false);
+});
+

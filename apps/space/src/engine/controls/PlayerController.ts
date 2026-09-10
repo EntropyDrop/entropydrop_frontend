@@ -4729,19 +4729,21 @@ export class PlayerController {
     }
     this.releaseWrenchGrab();
 
-    // 1. Stop the entity if it is currently running
-    const isRunning = contraption.scriptStatus !== 'stopped' || contraption.isPhysicsSimulationEnabled?.() !== false;
-    if (isRunning) {
-      if (contraption.scriptStatus !== 'stopped') {
-        this.performBasicAction({
-          domain: ActionDomain.ENTITY,
-          action: 'stop-scripts',
-          target: { contraption }
-        });
-      }
-      if (contraption.serverManaged === true) {
-        this.requestServerEntityRunState(contraption, 'stopped', { silent: true });
-      }
+    // 1. Unconditionally mark grabbed and stopped so background sync or physics cannot start scripts
+    contraption.isWrenchGrabbed = true;
+    const wasRunning = contraption.scriptStatus !== 'stopped' || contraption.isPhysicsSimulationEnabled?.() !== false;
+    if (contraption.scriptStatus !== 'stopped') {
+      this.performBasicAction({
+        domain: ActionDomain.ENTITY,
+        action: 'stop-scripts',
+        target: { contraption }
+      });
+    } else {
+      contraption.stopAllNodeScripts?.();
+    }
+    if (contraption.serverManaged === true) {
+      contraption.serverDesiredRunState = 'stopped';
+      this.requestServerEntityRunState(contraption, 'stopped', { silent: true });
     }
 
     // 2. Enable physics simulation so the velocity servo can lift and move the rigid body
@@ -4754,7 +4756,6 @@ export class PlayerController {
       contraption.collisionSimulationEnabled = false;
       contraption.invalidateCollisionPoseCache?.();
     }
-    contraption.isWrenchGrabbed = true;
 
     const bodyId = this.getWrenchGrabBodyId(
       contraption,
@@ -4762,6 +4763,7 @@ export class PlayerController {
     );
     if (!bodyId) {
       contraption.isWrenchGrabbed = false;
+      contraption.setPhysicsSimulationEnabled?.(false);
       this.ui?.showToast?.('Wrench: this entity has no dynamic body to grab');
       return false;
     }
@@ -4798,7 +4800,7 @@ export class PlayerController {
       active: true
     };
     this.sound?.playWrenchClick?.();
-    const actionLabel = isRunning ? 'stopped and lifted' : 'lifted';
+    const actionLabel = wasRunning ? 'stopped and lifted' : 'lifted';
     this.ui?.showToast?.(`Wrench: ${actionLabel} Entity #${contraption.id}`);
     return true;
   }
@@ -4809,14 +4811,17 @@ export class PlayerController {
       const contraption = this.wrenchGrab.contraption;
       contraption.isWrenchGrabbed = false;
       if (contraption.scriptStatus !== 'stopped') {
-        if (contraption.serverManaged === true) {
-          this.requestServerEntityRunState(contraption, 'stopped', { silent: true });
-        }
         this.performBasicAction({
           domain: ActionDomain.ENTITY,
           action: 'stop-scripts',
           target: { contraption }
         });
+      } else {
+        contraption.stopAllNodeScripts?.();
+      }
+      if (contraption.serverManaged === true) {
+        contraption.serverDesiredRunState = 'stopped';
+        this.requestServerEntityRunState(contraption, 'stopped', { silent: true });
       }
       for (const body of contraption.rigidBodies?.values?.() || []) {
         body.velocity?.set?.(0, 0, 0);
@@ -4846,6 +4851,8 @@ export class PlayerController {
     if (this.wrenchGrab?.contraption === contraption) {
       this.releaseWrenchGrab();
     }
+    contraption.isWrenchGrabbed = false;
+    contraption.serverDesiredRunState = 'running';
     if (typeof contraption.setCollisionSimulationEnabled === 'function') {
       contraption.setCollisionSimulationEnabled(true);
     } else {

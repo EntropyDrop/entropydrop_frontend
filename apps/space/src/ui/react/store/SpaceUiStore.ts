@@ -1165,8 +1165,14 @@ export class SpaceUiStore {
   getGlobalPlayback(): 'play' | 'stop' | null {
     const contraption = this.snapshot.editingContraption;
     if (!contraption) return null;
+    if (contraption.isWrenchGrabbed || this.snapshot.controller?.wrenchGrab?.contraption === contraption) {
+      return 'stop';
+    }
     if (contraption.serverManaged && !contraption.serverExecutesLocally) {
       return contraption.serverDesiredRunState === 'running' ? 'play' : 'stop';
+    }
+    if (contraption.scriptStatus === 'stopped') {
+      return 'stop';
     }
     return contraption.isPhysicsSimulationEnabled?.() === false ? 'stop' : 'play';
   }
