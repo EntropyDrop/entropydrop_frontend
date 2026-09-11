@@ -1569,7 +1569,11 @@ export class PlayerController {
     } else {
       this.selectorLevel = { contraption, nodeId: hitNodeId };
       this.selectorRange = { contraption, nodeId: hitNodeId, pointA: null, pointB: null };
-      this.updateSelectionAxisGizmo();
+      if (this.selectorShape !== 'box') {
+        this.applyEntitySelectionShape(this.selectorShape);
+      } else {
+        this.updateSelectionAxisGizmo();
+      }
     }
 
     const blockCount = contraption.blocks.filter(b => nodeIds.has(b.entityId || 'root')).length;
@@ -1766,7 +1770,23 @@ export class PlayerController {
     this.selectorLevel = { contraption, nodeId: targetNodeId };
     // Box-selection complete: exit box mode. The next click anywhere will start a fresh re-box.
     this.selectorRange = null;
-    this.updateSelectionAxisGizmo();
+    if (this.selectorShape !== 'box') {
+      const gridA = this.rangePointToPreviewGrid(range, pointA);
+      const gridB = this.rangePointToPreviewGrid(range, pointB);
+      let anchorA: any = undefined;
+      let anchorB: any = undefined;
+      if (gridA && gridB) {
+        anchorA = isMicro
+          ? { x: Math.round(gridA.x * MICRO_DIVISIONS), y: Math.round(gridA.y * MICRO_DIVISIONS), z: Math.round(gridA.z * MICRO_DIVISIONS) }
+          : { x: Math.floor(gridA.x + 1e-6), y: Math.floor(gridA.y + 1e-6), z: Math.floor(gridA.z + 1e-6) };
+        anchorB = isMicro
+          ? { x: Math.round(gridB.x * MICRO_DIVISIONS), y: Math.round(gridB.y * MICRO_DIVISIONS), z: Math.round(gridB.z * MICRO_DIVISIONS) }
+          : { x: Math.floor(gridB.x + 1e-6), y: Math.floor(gridB.y + 1e-6), z: Math.floor(gridB.z + 1e-6) };
+      }
+      this.applyEntitySelectionShape(this.selectorShape, anchorA, anchorB);
+    } else {
+      this.updateSelectionAxisGizmo();
+    }
   }
 
   /**
@@ -5455,10 +5475,122 @@ export class PlayerController {
   }
 
   /**
+   * Apply geometric selection shape (box, cylinder, sphere, stairs, line) to sub-component selection.
+   */
+  applyEntitySelectionShape(
+    shape: SelectorShape = this.selectorShape,
+    anchorA?: { x: number; y: number; z: number },
+    anchorB?: { x: number; y: number; z: number }
+  ) {
+    const contraption = this.selectedBlockSelection?.contraption || this.selectedSubtree?.contraption;
+    const nodeId = this.selectedBlockSelection?.nodeId || this.selectedSubtree?.rootId;
+    if (!contraption || !nodeId) return;
+
+    const isMicro = this.selectorMicroMode === true;
+
+    if (!this.selectedBlockSelection && this.selectedSubtree) {
+      const nodeIds = this.selectedSubtree.nodeIds || this.collectSubtreeIds(contraption, nodeId);
+      const subtreeBlocks = contraption.blocks.filter((b: any) => nodeIds.has(contraptionBlockOwnerId(contraption, b)));
+      this.selectedBlockSelection = {
+        contraption,
+        nodeId,
+        blocks: subtreeBlocks,
+        bounds: this.getEntitySelectionBounds(subtreeBlocks, isMicro)
+      };
+      this.selectedSubtree = null;
+    }
+
+    if (!this.selectedBlockSelection) return;
+
+    let bounds = this.selectedBlockSelection.bounds;
+    if (!bounds) {
+      bounds = this.getEntitySelectionBounds(this.selectedBlockSelection.blocks, isMicro);
+      this.selectedBlockSelection.bounds = bounds;
+    }
+    if (!bounds) return;
+
+    const cornerA = anchorA || this.selectionShapeAnchor?.cornerA || { x: bounds.minX, y: bounds.minY, z: bounds.minZ };
+    const cornerB = anchorB || this.selectionShapeAnchor?.cornerB || { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ };
+    const cylinderAxis = this.selectionShapeAnchor?.cylinderAxis || 'y';
+    const stairsAxis = this.selectionShapeAnchor?.stairsAxis;
+
+    this.selectionShapeAnchor = {
+      cornerA: { ...cornerA },
+      cornerB: { ...cornerB },
+      micro: isMicro,
+      cylinderAxis,
+      stairsAxis
+    };
+
+    const minX = Math.min(cornerA.x, cornerB.x);
+    const maxX = Math.max(cornerA.x, cornerB.x);
+    const minY = Math.min(cornerA.y, cornerB.y);
+    const maxY = Math.max(cornerA.y, cornerB.y);
+    const minZ = Math.min(cornerA.z, cornerB.z);
+    const maxZ = Math.max(cornerA.z, cornerB.z);
+
+    bounds.minX = minX;
+    bounds.maxX = maxX;
+    bounds.minY = minY;
+    bounds.maxY = maxY;
+    bounds.minZ = minZ;
+    bounds.maxZ = maxZ;
+
+    let matchingBlocks: any[] = [];
+    let shapeCells: any[] | null = null;
+
+    if (shape === 'box') {
+      matchingBlocks = contraption.blocks.filter((b: any) => {
+        if (contraptionBlockOwnerId(contraption, b) !== nodeId) return false;
+        const s = b.size || 1;
+        if (isMicro && s >= 1) return false;
+        const bx = isMicro ? Math.round(b.localX * MICRO_DIVISIONS) : Math.floor(b.localX + 1e-6);
+        const by = isMicro ? Math.round(b.localY * MICRO_DIVISIONS) : Math.floor(b.localY + 1e-6);
+        const bz = isMicro ? Math.round(b.localZ * MICRO_DIVISIONS) : Math.floor(b.localZ + 1e-6);
+        return bx >= minX && bx <= maxX &&
+               by >= minY && by <= maxY &&
+               bz >= minZ && bz <= maxZ;
+      });
+    } else {
+      shapeCells = computeSelectionCells(shape, cornerA, cornerB, isMicro, cylinderAxis, stairsAxis);
+      const cellSet = new Set(shapeCells.map(c => `${c.x},${c.y},${c.z}`));
+      matchingBlocks = contraption.blocks.filter((b: any) => {
+        if (contraptionBlockOwnerId(contraption, b) !== nodeId) return false;
+        const s = b.size || 1;
+        if (isMicro && s >= 1) return false;
+        const bx = isMicro ? Math.round(b.localX * MICRO_DIVISIONS) : Math.floor(b.localX + 1e-6);
+        const by = isMicro ? Math.round(b.localY * MICRO_DIVISIONS) : Math.floor(b.localY + 1e-6);
+        const bz = isMicro ? Math.round(b.localZ * MICRO_DIVISIONS) : Math.floor(b.localZ + 1e-6);
+        return cellSet.has(`${bx},${by},${bz}`);
+      });
+    }
+
+    this.selectedBlockSelection.blocks = matchingBlocks;
+    this.selectedBlockSelection.shapeCells = shapeCells;
+    contraption.clearSubtreeHighlight?.();
+    contraption.highlightBlocks?.(matchingBlocks);
+    this.updateSelectionAxisGizmo();
+
+    const node = contraption.entityNodes?.get?.(nodeId);
+    const frame = node?.group ? { object: node.group, pivot: (node.pivotLocal || new THREE.Vector3()).clone() } : null;
+    if (shape === 'box' || !shapeCells || shapeCells.length === 0) {
+      this.sceneRenderer?.updateSelectionHologram?.(null, null, null, false, frame);
+    } else if (isMicro) {
+      this.sceneRenderer?.updateSelectionHologram?.(null, null, shapeCells, true, frame);
+    } else {
+      this.sceneRenderer?.updateSelectionHologram?.(null, shapeCells, null, false, frame);
+    }
+  }
+
+  /**
    * Mathematically compute voxels for the active shape within the selection
    * bounds and update connectedSelection / microSelection.
    */
   applySelectionShape(shape: SelectorShape = this.selectorShape) {
+    if (this.selectedBlockSelection || this.selectedSubtree) {
+      this.applyEntitySelectionShape(shape);
+      return;
+    }
     if (!this.contraptions) return;
     const isMicro = this.selectorMicroMode === true;
 
@@ -5554,11 +5686,24 @@ export class PlayerController {
     }
 
     const isMicro = this.selectorMicroMode === true;
+    const isEntity = !!(this.selectedBlockSelection || this.selectedSubtree);
+
     let cornerA = this.selectionShapeAnchor?.cornerA;
     let cornerB = this.selectionShapeAnchor?.cornerB;
 
     if (!cornerA || !cornerB) {
-      if (isMicro) {
+      if (isEntity) {
+        const contraption = this.selectedBlockSelection?.contraption || this.selectedSubtree?.contraption;
+        const nodeId = this.selectedBlockSelection?.nodeId || this.selectedSubtree?.rootId;
+        if (contraption && nodeId) {
+          const blocks = this.selectedBlockSelection?.blocks || contraption.blocks.filter((b: any) => (this.selectedSubtree?.nodeIds || this.collectSubtreeIds(contraption, nodeId)).has(contraptionBlockOwnerId(contraption, b)));
+          const bounds = this.selectedBlockSelection?.bounds || this.getEntitySelectionBounds(blocks, isMicro);
+          if (bounds) {
+            cornerA = { x: bounds.minX, y: bounds.minY, z: bounds.minZ };
+            cornerB = { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ };
+          }
+        }
+      } else if (isMicro) {
         const mb = this.contraptions.getMicroSelectionBounds?.();
         if (mb) {
           cornerA = { x: mb.minX, y: mb.minY, z: mb.minZ };
@@ -5680,6 +5825,13 @@ export class PlayerController {
       cylinderAxis: newCylinderAxis,
       stairsAxis: newStairsAxis
     };
+
+    if (isEntity) {
+      this.applyEntitySelectionShape(this.selectorShape, newCornerA, newCornerB);
+      this.sound?.playWrenchClick?.();
+      this.ui?.updateToolPanelMode?.();
+      return true;
+    }
 
     if (this.selectorShape === 'box') {
       if (isMicro) {
@@ -7747,6 +7899,13 @@ export class PlayerController {
       }
     }
 
+    if (this.selectorShape && this.selectorShape !== 'box') {
+      const cornerA = { x: bounds.minX, y: bounds.minY, z: bounds.minZ };
+      const cornerB = { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ };
+      this.applyEntitySelectionShape(this.selectorShape, cornerA, cornerB);
+      return { ok: true, bounds, count: this.selectedBlockSelection?.blocks?.length || 0 };
+    }
+
     let minMeterX: number, maxMeterX: number;
     let minMeterY: number, maxMeterY: number;
     let minMeterZ: number, maxMeterZ: number;
@@ -7783,8 +7942,13 @@ export class PlayerController {
     });
 
     this.selectedBlockSelection.blocks = matchingBlocks;
+    this.selectedBlockSelection.shapeCells = null;
     contraption.clearSubtreeHighlight?.();
     contraption.highlightBlocks?.(matchingBlocks);
+
+    const node = contraption.entityNodes?.get?.(nodeId);
+    const frame = node?.group ? { object: node.group, pivot: (node.pivotLocal || new THREE.Vector3()).clone() } : null;
+    this.sceneRenderer?.updateSelectionHologram?.(null, null, null, false, frame);
 
     return { ok: true, bounds, count: matchingBlocks.length };
   }

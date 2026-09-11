@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { ActionDomain } from '@entropydrop/space-engine/actions/BasicActions.ts';
 import type {
   SpaceBuildValidation,
@@ -1828,15 +1829,32 @@ export class SpaceUiStore {
 
   updateHUD(fps: number, playerPos: any, _raycast: any, _hoveredContraption: any, pingMs: number | null = null): void {
     const { contraptions, sceneRenderer, controller, editingContraption, activeModal } = this.snapshot;
-    const isMicroShape = Boolean(
-      controller?.selectorMicroMode && controller?.selectorShape && controller.selectorShape !== 'box'
-    );
-    sceneRenderer?.updateSelectionHologram?.(
-      contraptions?.getSelectionBounds?.(),
-      contraptions?.connectedSelection,
-      contraptions?.microSelection,
-      isMicroShape
-    );
+    const isEntity = Boolean(controller?.selectedBlockSelection || controller?.selectedSubtree);
+    if (isEntity) {
+      const isShape = controller?.selectorShape && controller.selectorShape !== 'box';
+      const shapeCells = controller?.selectedBlockSelection?.shapeCells;
+      if (isShape && Array.isArray(shapeCells) && shapeCells.length > 0) {
+        const contraption = controller.selectedBlockSelection?.contraption || controller.selectedSubtree?.contraption;
+        const nodeId = controller.selectedBlockSelection?.nodeId || controller.selectedSubtree?.rootId;
+        const node = contraption?.entityNodes?.get?.(nodeId);
+        const frame = node?.group ? { object: node.group, pivot: (node.pivotLocal || new THREE.Vector3()).clone() } : null;
+        if (controller.selectorMicroMode) {
+          sceneRenderer?.updateSelectionHologram?.(null, null, shapeCells, true, frame);
+        } else {
+          sceneRenderer?.updateSelectionHologram?.(null, shapeCells, null, false, frame);
+        }
+      }
+    } else {
+      const isMicroShape = Boolean(
+        controller?.selectorMicroMode && controller?.selectorShape && controller.selectorShape !== 'box'
+      );
+      sceneRenderer?.updateSelectionHologram?.(
+        contraptions?.getSelectionBounds?.(),
+        contraptions?.connectedSelection,
+        contraptions?.microSelection,
+        isMicroShape
+      );
+    }
 
     const now = performance.now();
     if (this.lastHudPublishAt !== 0 && now - this.lastHudPublishAt < 100) return;

@@ -436,4 +436,92 @@ test('PlayerController activates SelectionAxisGizmo on selectedSubtree and expan
   assert.equal(controller.selectedBlockSelection.bounds.maxX, 3);
 });
 
+test('PlayerController supports cylinder selection mode on sub-components with rotation and gizmo expansion', () => {
+  const scene = new THREE.Scene();
+  const renderer = makeStubSceneRenderer();
+
+  const group = new THREE.Group();
+  group.position.set(10, 5, 10);
+  group.updateMatrixWorld(true);
+
+  // Construct a 3x3x3 block cluster on componentB
+  const blocks: any[] = [];
+  for (let x = 0; x < 3; x++) {
+    for (let y = 0; y < 3; y++) {
+      for (let z = 0; z < 3; z++) {
+        blocks.push({ localX: x, localY: y, localZ: z, size: 1, entityId: 'componentB' });
+      }
+    }
+  }
+
+  let highlightedBlocks: any[] = [];
+  const stubContraption: any = {
+    id: 2,
+    scriptStatus: 'stopped',
+    serverManaged: false,
+    entityNodes: new Map([
+      ['componentB', { id: 'componentB', group, pivotLocal: new THREE.Vector3() }]
+    ]),
+    blocks,
+    clearSubtreeHighlight() { highlightedBlocks = []; },
+    highlightBlocks(b: any[]) { highlightedBlocks = b; }
+  };
+
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorMicroMode = false;
+  controller.selectorShape = 'cylinder';
+  controller.contraptions = { getSelectionBounds: () => null, getMicroSelectionBounds: () => null };
+  controller.sceneRenderer = renderer;
+  controller.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  controller.camera.position.set(0, 0, 10);
+  controller.camera.lookAt(0, 0, 0);
+  controller.sound = { playWrenchClick() {} };
+  controller.ui = { showToast() {}, setSelectorShape() {}, updateToolPanelMode() {} };
+
+  // Set initial selectedBlockSelection (box containing all 27 blocks)
+  controller.selectedBlockSelection = {
+    contraption: stubContraption,
+    nodeId: 'componentB',
+    blocks: [...blocks],
+    bounds: { minX: 0, minY: 0, minZ: 0, maxX: 2, maxY: 2, maxZ: 2 }
+  };
+
+  // 1. Apply cylinder shape (vertical Y axis by default)
+  controller.applyEntitySelectionShape('cylinder');
+  assert.ok(controller.selectedBlockSelection.shapeCells);
+  assert.ok(controller.selectedBlockSelection.shapeCells.length > 0);
+  // Cylinder inscribed in 3x3x3 excludes outer corner columns (0,0), (0,2), (2,0), (2,2)
+  // Total cylinder blocks should be less than 27 (typically 5 cells per slice * 3 slices = 15 or 21)
+  assert.ok(controller.selectedBlockSelection.blocks.length < 27);
+  assert.ok(controller.selectedBlockSelection.blocks.length > 0);
+  assert.equal(highlightedBlocks.length, controller.selectedBlockSelection.blocks.length);
+
+  // Verify corner blocks are excluded by cylinder shape
+  const hasCorner = controller.selectedBlockSelection.blocks.some(
+    (b: any) => b.localX === 0 && b.localZ === 0
+  );
+  assert.equal(hasCorner, false, 'Corner block (0, y, 0) should be excluded in 3x3 cylinder');
+
+  // Verify center block is included
+  const hasCenter = controller.selectedBlockSelection.blocks.some(
+    (b: any) => b.localX === 1 && b.localY === 1 && b.localZ === 1
+  );
+  assert.equal(hasCenter, true, 'Center block (1, 1, 1) should be included in cylinder');
+
+  // 2. Test cylinder axis rotation on entity
+  controller.rotateSelection('cw', 'x');
+  assert.equal(controller.selectionShapeAnchor?.cylinderAxis, 'z');
+  assert.ok(controller.selectedBlockSelection.shapeCells.length > 0);
+
+  // 3. Test expanding cylinder via expandEntitySelectionAxis
+  const initialCount = controller.selectedBlockSelection.blocks.length;
+  const res = controller.expandEntitySelectionAxis('x', 1, 1, false);
+  assert.equal(res.ok, true);
+  assert.equal(controller.selectedBlockSelection.bounds.maxX, 3);
+  assert.ok(controller.selectedBlockSelection.shapeCells.length > 0);
+  assert.ok(controller.selectedBlockSelection.blocks.length >= initialCount);
+});
+
+
 

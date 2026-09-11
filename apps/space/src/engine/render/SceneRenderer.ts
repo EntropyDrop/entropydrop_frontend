@@ -2217,7 +2217,19 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     if (this.boxSelectionGroup) this.boxSelectionGroup.visible = false;
   }
 
-  updateSelectionHologram(bounds, connectedBlocks = null, microBlocks = null, isMicroShape = false) {
+  updateSelectionHologram(bounds, connectedBlocks = null, microBlocks = null, isMicroShape = false, frame: any = null) {
+    const applyFrameToGroup = (grp: THREE.Group) => {
+      if (frame?.object?.localToWorld) {
+        frame.object.updateWorldMatrix?.(true, false);
+        const pivot = frame.pivot ? new THREE.Vector3(frame.pivot.x, frame.pivot.y, frame.pivot.z) : new THREE.Vector3();
+        grp.position.copy(frame.object.localToWorld(new THREE.Vector3(0, 0, 0).sub(pivot)));
+        frame.object.getWorldQuaternion(grp.quaternion);
+      } else {
+        grp.position.set(0, 0, 0);
+        grp.quaternion.identity();
+      }
+    };
+
     if (isMicroShape && Array.isArray(microBlocks)) {
       this.selectionGroup.visible = false;
       this.selectionCellsGroup.visible = false;
@@ -2247,6 +2259,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
           }
           this.selectionMicroCellsSignature = signature;
         }
+
+        applyFrameToGroup(this.selectionMicroCellsGroup);
 
         const t = performance.now() * 0.004;
         const pulse = (Math.sin(t) + 1) * 0.5;
@@ -2320,6 +2334,9 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         }
         this.selectionCellsSignature = signature;
       }
+
+      applyFrameToGroup(this.selectionCellsGroup);
+
       const t = performance.now() * 0.004;
       const pulse = (Math.sin(t) + 1) * 0.5;
       this.selectionCellLineMaterial.opacity = 0.5 + pulse * 0.46;
@@ -2330,6 +2347,10 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
 
     this.selectionCellsGroup.visible = false;
     this.selectionMicroCellsGroup.visible = false;
+    this.selectionCellsGroup.position.set(0, 0, 0);
+    this.selectionCellsGroup.quaternion.identity();
+    this.selectionMicroCellsGroup.position.set(0, 0, 0);
+    this.selectionMicroCellsGroup.quaternion.identity();
 
     if (!bounds) {
       this.selectionGroup.visible = false;
