@@ -380,6 +380,8 @@ export default {
         upgrade: 'Upgrade',
         buyCreditsTip: 'You can purchase Credits directly as needed.',
         buyCreditsBtn: 'Buy Credits Directly',
+        monthlyCreditsFormulaTitle: 'Total Monthly Credits',
+        formulaPrefix: 'Formula:',
         plansData: {
             free: 'Free',
             pro_plus: 'Pro-Plus Subscription',
@@ -390,6 +392,10 @@ export default {
             free: {
                 title: 'Free',
                 price: '0',
+                totalCreditsLabel: 'Total Monthly Credits',
+                totalCreditsValue: '40 Credits',
+                creditFormula: '1 credit daily × 30 days + 10 monthly login credits = 40 credits',
+                dailyLogin: 'Claim 1 credit daily upon login',
                 quota: 'Claim 10 credits monthly.',
                 collections: 'Public collections only',
                 private: 'No private space',
@@ -400,6 +406,10 @@ export default {
             pro_plus: {
                 title: 'Pro-Plus',
                 price: '8',
+                totalCreditsLabel: 'Total Monthly Credits',
+                totalCreditsValue: '120 Credits',
+                creditFormula: '1 credit daily × 30 days + 10 monthly login credits + 80 extra credits = 120 credits',
+                dailyLogin: 'Claim 1 credit daily upon login',
                 quota: 'Get extra 80 credits monthly.',
                 collections: 'Support private collections',
                 private: '1,000 private skins limit',
@@ -410,6 +420,10 @@ export default {
             pro_max: {
                 title: 'Pro-Max',
                 price: '20',
+                totalCreditsLabel: 'Total Monthly Credits',
+                totalCreditsValue: '330 Credits',
+                creditFormula: '4 credits daily × 30 days + 10 monthly login credits + 200 extra credits = 330 credits',
+                dailyLogin: 'Claim 4 credits daily upon login',
                 quota: 'Get extra 200 credits monthly.',
                 collections: 'Support private collections',
                 private: '5,000 private skins limit',

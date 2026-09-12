@@ -262,12 +262,51 @@ export function ProPage({ current }: ProPageProps) {
                                     <h3 className={`text-lg font-bold ${current.fontClass}`}>{tier.perks.title}</h3>
                                 </div>
 
-                                <div className="flex items-baseline gap-1 mb-8">
+                                <div className="flex items-baseline gap-1 mb-6">
                                     <span className={`text-3xl font-bold ${current.fontClass} ${tier.styles.text}`}>${tier.perks.price}</span>
                                     <span className={`text-white/40 text-xs ${current.fontClass}`}>/ {current.pro.plansData.month}</span>
                                 </div>
 
+                                {/* Monthly Credits Yield & Calculation Formula Box */}
+                                <div className={`p-3.5 mb-6 border flex flex-col gap-2 ${
+                                    tier.key === 'free'
+                                        ? 'bg-white/[0.03] border-white/10'
+                                        : (tier.key === 'pro_plus'
+                                            ? 'bg-green-500/[0.08] border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.06)]'
+                                            : 'bg-purple-500/[0.08] border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.06)]')
+                                }`}>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className={`flex items-center gap-1.5 text-white/70 text-[11px] ${current.fontClass}`}>
+                                            <Icon icon="pixelarticons:coin" className={`text-sm shrink-0 ${tier.styles.text}`} />
+                                            <span>{tier.perks.totalCreditsLabel}</span>
+                                        </div>
+                                        <span className={`text-xs font-bold px-1.5 py-0.5 border shrink-0 ${current.fontClass} ${
+                                            tier.key === 'free'
+                                                ? 'bg-white/10 border-white/20 text-white'
+                                                : (tier.key === 'pro_plus'
+                                                    ? 'bg-green-500/20 border-green-500/40 text-green-400'
+                                                    : 'bg-purple-500/20 border-purple-500/40 text-purple-300')
+                                        }`}>
+                                            {tier.perks.totalCreditsValue}
+                                        </span>
+                                    </div>
+                                    <div className={`text-[11px] leading-relaxed text-white/80 pt-2 border-t border-dashed ${current.fontClass} ${
+                                        tier.key === 'free' ? 'border-white/10' : (tier.key === 'pro_plus' ? 'border-green-500/20' : 'border-purple-500/20')
+                                    }`}>
+                                        <div className={`text-white/40 text-[10px] mb-0.5 ${current.fontClass}`}>
+                                            {current.pro.formulaPrefix}
+                                        </div>
+                                        <div className={`break-words select-text ${current.fontClass}`}>
+                                            {tier.perks.creditFormula}
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="flex-1 flex flex-col gap-4 mb-8">
+                                    <div className="flex items-start gap-3">
+                                        <Icon icon="pixelarticons:coin" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
+                                        <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.dailyLogin}</span>
+                                    </div>
                                     <div className="flex items-start gap-3">
                                         <Icon icon="pixelarticons:image" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
                                         <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.quota}</span>

@@ -171,8 +171,6 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [purgeEmailInput, setPurgeEmailInput] = useState('')
   const [deleteMessage, setDeleteMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
-  const [dailyFreeCredits, setDailyFreeCredits] = useState<number>(6)
-  const [freeCreditsLoading, setFreeCreditsLoading] = useState(false)
 
   const [isTextToSkinEnabled, setIsTextToSkinEnabled] = useState(true)
   const [textToSkinSettingLoading, setTextToSkinSettingLoading] = useState(false)
@@ -285,49 +283,6 @@ export function MonitorPage({ current }: MonitorPageProps) {
 
 
 
-  const fetchDailyFreeCredits = async () => {
-    try {
-      const response = await apiFetch('/api/monitor/daily_free_credits')
-      if (response.ok) {
-        const data = await response.json()
-        setDailyFreeCredits(data.credits)
-      }
-    } catch (e) {
-      console.error('Failed to fetch daily free credits', e)
-    }
-  }
-
-  const updateDailyFreeCredits = async (value: number) => {
-    setFreeCreditsLoading(true)
-    try {
-      const response = await apiFetch('/api/monitor/daily_free_credits', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credits: value })
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setDailyFreeCredits(data.credits)
-        setDeleteMessage({
-          type: 'success',
-          text: isZh ? `成功更新每日免费版额度为 ${data.credits} Credits。` : `Daily free credits updated to ${data.credits}.`
-        })
-      } else {
-        const errData = await response.json().catch(() => ({}))
-        setDeleteMessage({
-          type: 'error',
-          text: errData.detail || current.monitor.operationFailed
-        })
-      }
-    } catch (e) {
-      setDeleteMessage({
-        type: 'error',
-        text: current.monitor.networkError
-      })
-    } finally {
-      setFreeCreditsLoading(false)
-    }
-  }
 
 
 
@@ -620,7 +575,6 @@ export function MonitorPage({ current }: MonitorPageProps) {
   useEffect(() => {
     fetchStats()
     fetchModesStatus()
-    fetchDailyFreeCredits()
     fetchModelPrices()
     const timer = setInterval(fetchStats, 3000)
     return () => clearInterval(timer)
@@ -1295,48 +1249,6 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           </div>
 
-          {/* Daily Free Credits Configuration Card */}
-          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="flex items-start gap-3.5">
-              <div className={`w-10 h-10 border flex items-center justify-center text-xl transition-all bg-green-500/10 border-green-500/30 text-green-400`}>
-                <Icon icon="pixelarticons:coin" className="" />
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
-                  {isZh ? '每日登录领取额度 • 算力控制' : 'Daily Login Credits • Compute Control'}
-                </h3>
-                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
-                  {isZh ? '设置所有用户每天登录领取的 Credit 额度。' : 'Set the number of credits daily login awards to all users.'}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min="0"
-                  max="1000"
-                  value={dailyFreeCredits}
-                  onChange={(e) => setDailyFreeCredits(parseInt(e.target.value) || 0)}
-                  className="w-16 px-2.5 py-1 text-center bg-black/40 border border-white/20 text-white font-mono text-sm focus:outline-none focus:border-green-500/50"
-                  disabled={freeCreditsLoading}
-                />
-                <button
-                  onClick={() => updateDailyFreeCredits(dailyFreeCredits)}
-                  disabled={freeCreditsLoading}
-                  className="px-3 py-1 bg-green-500/20 border border-green-500/40 text-green-400 hover:bg-green-500/30 hover:border-green-500/50 transition-colors text-xs font-bold font-mono tracking-wide flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {freeCreditsLoading ? (
-                    <Icon icon="pixelarticons:reload" className="animate-spin text-sm" />
-                  ) : (
-                    <Icon icon="pixelarticons:check" className="text-sm" />
-                  )}
-                  {isZh ? '保存' : 'SAVE'}
-                </button>
-              </div>
-            </div>
-          </div>
 
 
 

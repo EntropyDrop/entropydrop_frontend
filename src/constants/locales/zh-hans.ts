@@ -380,6 +380,8 @@ export default {
         upgrade: '升级',
         buyCreditsTip: '可以根据需要直接购买 Credits 点数',
         buyCreditsBtn: '直接购买 Credits',
+        monthlyCreditsFormulaTitle: '每月可获得的 Credits 总数',
+        formulaPrefix: '计算公式：',
         plansData: {
             free: '免费版',
             pro_plus: 'Pro-Plus 订阅',
@@ -390,6 +392,10 @@ export default {
             free: {
                 title: '免费版',
                 price: '0',
+                totalCreditsLabel: '每月可获得 Credits 总数',
+                totalCreditsValue: '40 Credits',
+                creditFormula: '每日 1 credit × 30天 + 每月登录奖励 10 credits = 40 credits',
+                dailyLogin: '每日登录领取 1 Credit 额度',
                 quota: '每月登录领取 10 Credit 额度',
                 collections: '仅支持公开收藏夹',
                 private: '不支持私有空间',
@@ -400,6 +406,10 @@ export default {
             pro_plus: {
                 title: 'Pro-Plus',
                 price: '8',
+                totalCreditsLabel: '每月可获得 Credits 总数',
+                totalCreditsValue: '120 Credits',
+                creditFormula: '每日 1 credit × 30天 + 每月登录奖励 10 credits + 每月额外获得 80 credits = 120 credits',
+                dailyLogin: '每日登录领取 1 Credit 额度',
                 quota: '每月额外获得 80 Credit 额度',
                 collections: '支持创建私有收藏夹',
                 private: '1,000 个私有皮肤上限',
@@ -410,6 +420,10 @@ export default {
             pro_max: {
                 title: 'Pro-Max',
                 price: '20',
+                totalCreditsLabel: '每月可获得 Credits 总数',
+                totalCreditsValue: '330 Credits',
+                creditFormula: '每日 4 credits × 30天 + 每月登录奖励 10 credits + 每月额外获得 200 credits = 330 credits',
+                dailyLogin: '每日登录领取 4 Credit 额度',
                 quota: '每月额外获得 200 Credit 额度',
                 collections: '支持创建私有收藏夹',
                 private: '5,000 个私有皮肤上限',
