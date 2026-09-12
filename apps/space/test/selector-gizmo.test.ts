@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import { Contraption } from '@entropydrop/space-engine/contraption/Contraption.ts';
 import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
+import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 
 function makeStubWorld(microPairs: Array<[string, number]> = []) {
   const map = new Map<string, { color: number }>();
@@ -739,6 +741,63 @@ test('Del key cascades deletion of child component and subcomponents when all bl
   // Child component had 1 block, now 0 blocks -> removeComponentSubtree('childComponent') called!
   assert.equal(removedSubtreeId, 'childComponent');
   assert.ok(toasts.some(t => t.includes('Component [childComponent] and all its subcomponents deleted')));
+});
+
+test('the XYZ gizmo stays hidden until the entity box has both points', () => {
+  const scene = new THREE.Scene();
+  const renderer = makeStubSceneRenderer();
+  const manager: any = new ContraptionManager(scene, {}, null, null);
+  const contraption = new Contraption(
+    1,
+    [
+      { localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK },
+      { localX: 1, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }
+    ],
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { rootComponentId: 'root' }
+  );
+  contraption.stopAllNodeScripts();
+  manager.contraptions.push(contraption);
+
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorMicroMode = false;
+  controller.selectorShape = 'box';
+  controller.selectedSubtree = null;
+  controller.selectedBlockSelection = null;
+  controller.selectorLevel = null;
+  controller.selectorRange = null;
+  controller.selectionShapeAnchor = null;
+  controller.bulkEditJob = null;
+  controller.keys = {};
+  controller.contraptions = manager;
+  controller.sceneRenderer = renderer;
+  controller.sound = { playBlockBreak() {}, playBlockPlace() {}, playWrenchClick() {} };
+  controller.ui = { showToast() {} };
+
+  contraption.rootGroup.updateMatrixWorld(true);
+  const rootBlock = contraption.blocks[0];
+  const center = contraption.getBlockWorldCenter(rootBlock);
+  const hit = (offset: THREE.Vector3) => ({
+    contraption,
+    entityId: 'root',
+    block: rootBlock,
+    cell: { x: 0, y: 0, z: 0 },
+    point: center.clone().add(offset)
+  });
+
+  // Point 1: the selection is not complete, so the whole-entity XYZ gizmo must stay hidden.
+  controller.hoveredContraptionHit = hit(new THREE.Vector3(-0.4, 0.5, -0.4));
+  controller.handleLeftClick();
+  assert.ok(controller.selectorRange?.pointA, 'point 1 is set');
+  assert.equal(renderer.selectionAxisGizmo.visible, false, 'no XYZ gizmo while only point 1 is set');
+
+  // Point 2 completes the box; now the gizmo is useful.
+  controller.hoveredContraptionHit = hit(new THREE.Vector3(0.4, 0.5, 0.4));
+  controller.handleLeftClick();
+  assert.ok(controller.selectedBlockSelection, 'the box completes on the second click');
+  assert.equal(renderer.selectionAxisGizmo.visible, true, 'the XYZ gizmo appears once the box is complete');
 });
 
 

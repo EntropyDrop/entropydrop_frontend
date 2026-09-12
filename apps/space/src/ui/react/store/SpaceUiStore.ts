@@ -848,6 +848,48 @@ export class SpaceUiStore {
     this.setBuildColor(item.hex);
   }
 
+  openColorPicker(): void {
+    if (typeof document === 'undefined') return;
+    this.snapshot.controller?.unlock?.();
+    const input = (document.getElementById('active-color-picker-input') ||
+      document.getElementById('selector-color-picker-input') ||
+      document.querySelector('.palette-color-picker-input')) as HTMLInputElement | null;
+    if (input) {
+      try {
+        if (typeof input.showPicker === 'function') {
+          input.showPicker();
+        } else {
+          input.click();
+        }
+      } catch {
+        input.click();
+      }
+    }
+  }
+
+  setPaletteColor(index: number, hex: string, notify = true): void {
+    if (index < 0 || index >= this.snapshot.paletteColors.length) return;
+    const safe = colorToHex(normalizeColor(hex));
+    const paletteColors = this.snapshot.paletteColors.map((item, i) =>
+      i === index ? { ...item, hex: safe } : item
+    );
+    this.patch({ paletteColors, selectedColorIndex: index });
+    this.setBuildColor(safe, notify);
+    try {
+      localStorage.setItem('space_palette_colors', JSON.stringify(paletteColors));
+    } catch { }
+
+    const activeColorSetId = this.snapshot.activeColorSetId;
+    if (activeColorSetId && this.snapshot.controller?.inventories?.colorset?.items) {
+      const items = this.snapshot.controller.inventories.colorset.items;
+      const found = items.find((item: any) => item && item.id === activeColorSetId);
+      if (found && Array.isArray(found.colors)) {
+        found.colors[index] = safe;
+        this.snapshot.controller.saveInventoriesToLocalStorage?.();
+      }
+    }
+  }
+
   getPaletteColors(): string[] {
     return this.snapshot.paletteColors.map(item => item.hex.toLowerCase());
   }

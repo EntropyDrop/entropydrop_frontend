@@ -8,8 +8,9 @@ import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerCont
 import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 
 /**
- * Running entities can be selected only as a whole. Level switching and subregion
- * boxes are disabled, while stopped entities retain normal behavior.
+ * A running entity is stopped by the first selector click (returning it to its
+ * construction pose); the next click starts the 2-point box. Entities the player
+ * may not edit keep whole-entity selection only.
  */
 
 function makeEntityWithChildren() {
@@ -61,44 +62,74 @@ function clickEntity(controller, contraption, entityId, cell, point, e = null) {
   controller.handleLeftClick(e);
 }
 
-test('clicking a running entity selects root and all descendants without box mode', () => {
+test('clicking a running entity stops it before starting the selection', () => {
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
   contraption.scriptStatus = 'running';
 
-  // Clicking an arm block selects the whole entity rather than the arm level.
+  // The first click stops the running entity instead of selecting it.
   clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5));
+  assert.equal(contraption.scriptStatus, 'stopped', 'the first click must stop the running entity');
+  assert.equal(controller.selectorRange, null, 'the stop click must not set a box point');
+  assert.equal(controller.selectedSubtree, null, 'the stop click must not select the entity');
+  assert.ok(controller.__toasts.some(m => m.includes('stopped')), 'a stop hint is shown');
 
-  assert.equal(controller.selectedSubtree.rootId, 'root', 'whole selection should be rooted at root');
-  assert.deepEqual(
-    [...controller.selectedSubtree.nodeIds].sort(),
-    ['arm', 'hand', 'root', 'wing'],
-    'selection should include every descendant'
-  );
-  assert.equal(controller.selectorRange, null, 'box mode should remain disabled');
-  assert.equal(controller.selectorLevel, null, 'no component level should be locked');
-  assert.ok(controller.__toasts.some(m => m.includes('whole entity selected')));
+  // The next click starts the 2-point box on the construction pose.
+  clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5));
+  assert.ok(controller.selectorRange, 'box mode activates once the entity is stopped');
+  assert.equal(controller.selectorRange.nodeId, 'arm', 'the clicked component becomes the selection level');
+  assert.ok(controller.selectorRange.pointA, 'the click after stopping sets the first point');
 });
 
-test('repeat and Shift-click on a running entity never switch level or enter box mode', () => {
+test('a server-managed running entity stops locally so the next click starts the box', async () => {
+  const { contraption } = makeEntityWithChildren();
+  const controller = makeSelectorController();
+  contraption.scriptStatus = 'running';
+  contraption.serverManaged = true;
+  contraption.serverCanEdit = true;
+  contraption.serverCanControl = true;
+  contraption.serverDesiredRunState = 'running';
+  let runStateCalls = 0;
+  controller.serverEntityRunStateHandler = async () => {
+    runStateCalls++;
+    return { id: 'ent-1', desired_run_state: 'stopped', owner_user_id: 'u', revision: 2, execution_mode: 'browser' };
+  };
+
+  // The stop must be applied locally right away, not only after a server round-trip.
+  clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5));
+  assert.equal(contraption.scriptStatus, 'stopped', 'the entity is stopped locally on the first click');
+  assert.equal(contraption.serverDesiredRunState, 'stopped', 'the durable run state is advanced too');
+  assert.equal(controller.canEditEntityInternals(contraption), true, 'the entity is editable immediately');
+  assert.equal(controller.selectorRange, null, 'the stop click does not set a point');
+
+  await Promise.resolve();
+  assert.equal(runStateCalls, 1, 'the server is asked exactly once, not once per click');
+
+  // The next click starts the box; it must not stop again.
+  clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5));
+  assert.ok(controller.selectorRange?.pointA, 'the next click sets the first point');
+  assert.equal(controller.selectorRange?.nodeId, 'arm');
+});
+
+test('after the stop click, level switching and box clicks behave normally', () => {
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
   contraption.scriptStatus = 'running';
 
-  clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5));
-  // A second click would normally enter arm-level box mode.
-  clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5));
-  assert.equal(controller.selectorRange, null, 'box mode should remain disabled');
-  assert.equal(controller.selectedSubtree.rootId, 'root');
-  assert.equal(controller.selectedSubtree.nodeIds.size, 4);
+  clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5)); // stop
+  assert.equal(contraption.scriptStatus, 'stopped');
 
-  // Shift-clicking hand would normally switch levels.
+  clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5)); // point 1
+  assert.equal(controller.selectorRange?.nodeId, 'arm');
+  assert.ok(controller.selectorRange?.pointA);
+
+  // Shift-clicking hand switches levels instead of entering box mode.
   clickEntity(controller, contraption, 'hand', { x: 0, y: 2, z: 0 }, new THREE.Vector3(0.5, 12.5, 0.5), { shiftKey: true });
-  assert.equal(controller.selectedSubtree.rootId, 'root', 'Shift-click should not switch level');
-  assert.equal(controller.selectorRange, null);
+  assert.equal(controller.selectedSubtree?.rootId, 'hand', 'Shift-click switches the level');
+  assert.equal(controller.selectorRange?.pointA ?? null, null, 'Shift-click does not set a box point');
 });
 
-test('whole selection replaces an in-progress box on a running entity', () => {
+test('a running entity is stopped even when a stale box was in progress', () => {
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
   contraption.scriptStatus = 'running';
@@ -114,9 +145,10 @@ test('whole selection replaces an in-progress box on a running entity', () => {
 
   clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5));
 
-  assert.equal(controller.selectorRange, null, 'stale box progress should be discarded');
+  assert.equal(contraption.scriptStatus, 'stopped', 'the running entity is stopped');
+  assert.equal(controller.selectorRange, null, 'stale box progress is discarded by the stop');
   assert.equal(controller.selectorLevel, null);
-  assert.equal(controller.selectedSubtree.rootId, 'root', 'selection should switch to the whole entity');
+  assert.equal(controller.selectedSubtree, null);
 });
 
 test('a stopped entity still allows arm-subtree selection and box mode', () => {
@@ -231,15 +263,19 @@ test('clicking an entity during an active world box is rejected with toast and c
   assert.equal(controller.selectedSubtree, null, 'whole-entity selection should not activate');
 });
 
-test('R copies a whole running entity into an entity slot', () => {
+test('R copies a whole entity into an entity slot after the running entity is stopped', () => {
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
   contraption.scriptStatus = 'running';
-  clickEntity(controller, contraption, 'arm', { x: 0, y: 1, z: 0 }, new THREE.Vector3(0.5, 11.5, 0.5));
+
+  // First click stops the entity; the next click selects the root level (whole tree).
+  clickEntity(controller, contraption, 'root', { x: 0, y: 0, z: 0 }, new THREE.Vector3(0.5, 10.5, 0.5));
+  assert.equal(contraption.scriptStatus, 'stopped');
+  clickEntity(controller, contraption, 'root', { x: 0, y: 0, z: 0 }, new THREE.Vector3(0.5, 10.5, 0.5));
 
   controller.copySelectionToInventory(); // R-key path.
   const slot = controller.inventorySlots[0];
-  assert.ok(slot, 'whole entity should be copied into the slot');
+  assert.ok(slot, 'the whole entity should be copied into the slot');
   assert.equal(slot.blockCount, 4, 'the slot should include every entity block');
   assert.notEqual(slot.kind, 'blockset', 'R should remain entity copy');
 });

@@ -34,10 +34,19 @@ function record() {
 function harness(currentUserId: string, overrides: Record<string, unknown> = {}) {
   const actions: string[] = [];
   const created: any[] = [];
+  const removed: any[] = [];
+  const restored: any[] = [];
   const manager: any = {
     contraptions: created,
     findActiveContraptionByPublicId: () => null,
     updateDormantServerEntity: () => false,
+    removeContraption(contraption: any) {
+      removed.push(contraption);
+    },
+    restoreContraptionStreamingState(contraption: any, state: any) {
+      restored.push({ contraption, state });
+      if (Array.isArray(state.position)) contraption.position.fromArray(state.position);
+    },
     buildFromSlot(_slot, origin) {
       let running = true;
       const entity: any = {
@@ -90,7 +99,7 @@ function harness(currentUserId: string, overrides: Record<string, unknown> = {})
     getPlayerPosition: () => ({ x: 1, z: 2 }),
     fetchImpl: fetchImpl as typeof fetch,
   });
-  return { sync, created, actions };
+  return { sync, created, actions, removed, restored, overrides };
 }
 
 test('the owner lease runs one browser entity at its exact quarter-turn construction origin', async () => {
@@ -166,5 +175,31 @@ test('entities stopped by wrench do not get restarted by polling after release',
   assert.deepEqual(actions, [], 'stale server poll must not restart an entity that was stopped locally');
   assert.equal(entity.scriptStatus, 'stopped');
   assert.equal(entity.isPhysicsSimulationEnabled(), false);
+});
+
+test('a snapshot-only server change updates the entity in place instead of rebuilding it', async () => {
+  const overrides: Record<string, unknown> = { snapshot_digest: 'a'.repeat(64) };
+  const { sync, created, removed, restored } = harness('owner-1', overrides);
+  await sync.poll();
+  assert.equal(created.length, 1);
+  const entity = created[0];
+  assert.equal(entity.serverSnapshotDigest, 'a'.repeat(64));
+
+  // The server publishes a new runtime snapshot while the definition is unchanged.
+  (sync as any).client.getSnapshot = async () => ({
+    position: [5, 40, 6],
+    velocity: [1, 0, 0],
+    nodes: [],
+    bodies: [],
+  });
+  overrides.snapshot_digest = 'b'.repeat(64);
+  await sync.poll();
+
+  assert.equal(removed.length, 0, 'a snapshot-only change must not remove the entity');
+  assert.equal(created.length, 1, 'the entity must not be rebuilt');
+  assert.equal(restored.length, 1, 'the runtime snapshot must be applied in place');
+  assert.deepEqual(restored[0].state.position, [5, 40, 6]);
+  assert.equal(entity.serverSnapshotDigest, 'b'.repeat(64), 'the local digest must advance to the server one');
+  assert.equal(entity.position.y, 40, 'the runtime pose is applied without a rebuild');
 });
 

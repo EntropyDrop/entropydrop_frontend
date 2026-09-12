@@ -705,38 +705,52 @@ export class PlayerController {
       (document.activeElement as HTMLElement).blur();
     }
 
-    // Alt + 1..9 (and Shift + 1..9):
-    // - When Selector tool is active: Alt + 1..5 switches selector shape (1: box, 2: cylinder, 3: sphere, 4: stairs, 5: line)
-    // - When Hammer is active: picks backpack slot N
-    // - When Shovel, Spoon or other tools: picks palette preset color N
+    // Digit 1..9 shortcuts:
+    // - When Shovel or Spoon is active: Alt + 1..9 picks palette preset color N
+    // - When Selector tool is active: Alt + 1..5 (or Shift + 1..5) switches selector shape (1: box, 2: cylinder, 3: sphere, 4: stairs, 5: line)
+    // - When Hammer is active: Alt + 1..9 (or Shift + 1..9) picks backpack slot N
+    // - When Brush or other tools: Alt + 1..9 (or Shift + 1..9) picks palette preset color N
     const digitMatch = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
-    if ((e.altKey || e.shiftKey) && digitMatch) {
+    if (digitMatch) {
       const num = parseInt(digitMatch[1], 10);
       if (num >= 1 && num <= 9) {
-        e.preventDefault();
-        if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
-          const shapes: SelectorShape[] = ['box', 'cylinder', 'sphere', 'stairs', 'line'];
-          if (num >= 1 && num <= 5) {
-            this.setSelectorShape(shapes[num - 1]);
-            return;
-          }
-        }
-        if (this.ui) {
-          if (this.activeTool === SpecialTool.HAMMER) {
-            this.ui.selectInventorySlot(num - 1);
-          } else {
-            this.ui.selectPresetColor(num - 1);
-            if (this.activeTool === SpecialTool.SHOVEL || this.activeTool === SpecialTool.SPOON) {
-              const hex = PRESET_COLORS[num - 1];
-              if (hex !== undefined) {
-                // Keep the controller's own placement color in sync with the
-                // preset the UI just selected.
-                this.selectedColor = normalizeColor(hex);
+        const isShovelOrSpoon = this.activeTool === SpecialTool.SHOVEL || this.activeTool === SpecialTool.SPOON;
+        if (isShovelOrSpoon) {
+          if (e.altKey) {
+            e.preventDefault();
+            if (this.ui) {
+              this.ui.selectPresetColor(num - 1);
+            } else {
+              const preset = PRESET_COLORS[num - 1];
+              if (preset) {
+                this.selectedColor = normalizeColor(preset.hex);
               }
             }
+            return;
           }
+        } else if (e.altKey || e.shiftKey) {
+          e.preventDefault();
+          if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
+            const shapes: SelectorShape[] = ['box', 'cylinder', 'sphere', 'stairs', 'line'];
+            if (num >= 1 && num <= 5) {
+              this.setSelectorShape(shapes[num - 1]);
+              return;
+            }
+          }
+          if (this.ui) {
+            if (this.activeTool === SpecialTool.HAMMER) {
+              this.ui.selectInventorySlot(num - 1);
+            } else {
+              this.ui.selectPresetColor(num - 1);
+            }
+          } else {
+            const preset = PRESET_COLORS[num - 1];
+            if (preset) {
+              this.selectedColor = normalizeColor(preset.hex);
+            }
+          }
+          return;
         }
-        return;
       }
     }
 
@@ -827,6 +841,12 @@ export class PlayerController {
         if (this.ui) this.ui.toggleInventoryModal();
         break;
 
+      case 'KeyI': // I key: open browser color picker near active color in toolbar
+        e.preventDefault();
+        this.unlock();
+        if (this.ui) this.ui.openColorPicker();
+        break;
+
       case 'KeyO': // O key: Global Settings Modal
         if (this.ui) this.ui.toggleGlobalSettingsModal();
         break;
@@ -904,7 +924,7 @@ export class PlayerController {
   }
 
   setHotbarSlot(index) {
-    if (this.ui) {
+    if (this.ui?.selectHotbarSlot) {
       this.ui.selectHotbarSlot(index);
     }
   }
@@ -1460,9 +1480,10 @@ export class PlayerController {
    * - **Shift+click**: immediately switch / re-select the component level without entering box
    *   mode.
    *
-   * Only stopped entities expose their construction grid. Running and
-   * errored entities allow whole-entity selection only; box mode and Shift-click
-   * level switching remain disabled.
+   * Only stopped entities expose their construction grid. A **running** entity is
+   * stopped by the first click (returning it to its construction pose); the next
+   * click starts the 2-point box on the now-editable entity. Entities the player
+   * is not allowed to edit keep whole-entity selection only.
    */
   selectorOnEntityClick(hit, e = null) {
     const contraption = hit.contraption;
@@ -1482,8 +1503,26 @@ export class PlayerController {
       return;
     }
 
-    // Non-stopped entities allow only whole-entity selection, never their internals.
+    // A running entity must be stopped before its construction grid can be
+    // selected. The first click stops it (returning it to the construction pose);
+    // the next click starts the 2-point box on the now-editable entity.
     if (!this.canEditEntityInternals(contraption)) {
+      const mayEdit = contraption.serverManaged !== true || contraption.serverCanEdit === true;
+      const mayStop = contraption.serverManaged !== true || contraption.serverCanControl === true;
+      // Only stop when the player may both edit and control it; otherwise the
+      // stop can never stick and whole-entity selection is the only option.
+      if (mayEdit && mayStop && this.isEntityRunning(contraption)) {
+        // Drop any stale selection before the stop resets the entity pose.
+        this.clearSelection();
+        const stopped = this.stopRunningEntityForSelection(contraption);
+        if (!stopped) {
+          this.ui?.showToast?.(`Entity #${contraption.id} could not be stopped`);
+          return;
+        }
+        this.sound?.playWrenchClick?.();
+        this.ui?.showToast?.(`Entity #${contraption.id} stopped — click again to start the selection`);
+        return;
+      }
       this.startSubtreeSelection(contraption, contraptionRootId(contraption), { wholeOnly: true });
       return;
     }
@@ -1616,6 +1655,44 @@ export class PlayerController {
       && (typeof contraption.canEditInternalSelection === 'function'
       ? contraption.canEditInternalSelection()
       : contraption.scriptStatus === 'stopped');
+  }
+
+  /**
+   * True while an entity still simulates scripts or physics, i.e. it must be
+   * stopped before its construction grid becomes selectable.
+   */
+  isEntityRunning(contraption) {
+    if (!contraption) return false;
+    if (typeof contraption.canEditInternalSelection === 'function') {
+      return !contraption.canEditInternalSelection();
+    }
+    return contraption.scriptStatus !== 'stopped';
+  }
+
+  /**
+   * Stop a running entity so the selector can expose its construction grid.
+   *
+   * The stop is applied locally first (same state reset the Wrench uses) so the
+   * next click can select immediately instead of waiting for a server
+   * round-trip. Server-managed entities additionally sync the durable run state;
+   * setting `serverDesiredRunState` stops the poll from restarting it before the
+   * server confirms.
+   */
+  stopRunningEntityForSelection(contraption) {
+    if (!contraption) return false;
+    const result = this.performBasicAction({
+      domain: ActionDomain.ENTITY,
+      action: 'stop-scripts',
+      target: { contraption }
+    });
+    const stopped = result.ok || result.reason === 'already_stopped';
+    if (contraption.serverManaged === true) {
+      contraption.serverDesiredRunState = 'stopped';
+      if (contraption.serverCanControl === true && this.serverEntityRunStateHandler) {
+        void this.requestServerEntityRunState(contraption, 'stopped', { silent: true });
+      }
+    }
+    return stopped;
   }
 
   /**
@@ -8508,10 +8585,14 @@ export class PlayerController {
           }
         }
       } else if (this.selectedSubtree && this.selectedSubtree.contraption) {
+        // While the first box point is still pending the subtree bounds are just
+        // the whole entity, so the XYZ resize gizmo stays hidden until the box
+        // is completed (second click).
+        const boxPending = !!this.selectorRange?.pointA && !this.selectorRange?.pointB;
         const contraption = this.selectedSubtree.contraption;
         const rootId = this.selectedSubtree.rootId;
         const node = contraption.entityNodes?.get?.(rootId);
-        if (node && node.group && this.canEditEntityInternals(contraption)) {
+        if (!boxPending && node && node.group && this.canEditEntityInternals(contraption)) {
           const nodeIds = this.selectedSubtree.nodeIds || this.collectSubtreeIds(contraption, rootId);
           const blocks = contraption.blocks.filter((b: any) => nodeIds.has(contraptionBlockOwnerId(contraption, b)));
           bounds = this.getEntitySelectionBounds(blocks, isMicro);

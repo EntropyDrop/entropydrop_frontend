@@ -212,27 +212,20 @@ export class SpaceEntitySync {
     if (active) {
       const remoteSnapshotChanged = active.serverSnapshotDigest !== entity.snapshot_digest;
       const remoteDefinitionChanged = active.serverDefinitionDigest !== entity.definition_digest;
+      if (remoteSnapshotChanged && !remoteDefinitionChanged) {
+        // A snapshot-only update (a running entity's periodic pose/physics
+        // publication, or our own checkpoint echo) must be applied IN PLACE.
+        // Removing and re-fetching the whole entity made it blink out for a
+        // moment and reappear on every server snapshot change.
+        if (await this.applySnapshotInPlace(active, entity)) return;
+      }
       if (remoteSnapshotChanged || remoteDefinitionChanged) {
         this.contraptions.removeContraption?.(active, {
           skipSave: true,
           skipRemoteDelete: true,
         });
       } else {
-        const revisionChanged = Number(active.serverPlaybackRevision) !== entity.revision;
-        const metadata = this.metadata(entity);
-        const executionChanged = active.serverExecutesLocally !== metadata.serverExecutesLocally;
-        if (active.isWrenchGrabbed || this.controller?.wrenchGrab?.contraption === active || active.serverDesiredRunState === 'stopped') {
-          if (entity.desired_run_state !== 'stopped' && Number(active.serverRevision) >= entity.revision) {
-            metadata.serverDesiredRunState = 'stopped';
-          }
-        }
-        Object.assign(active, metadata);
-        // An entity may stop itself without changing the owner's durable Wrench
-        // intent. Re-apply playback only when that intent revision changes.
-        if (revisionChanged || executionChanged) {
-          this.applyPlayback(active, entity);
-          active.serverPlaybackRevision = entity.revision;
-        }
+        this.applyRecordMetadata(active, entity);
         return;
       }
     }
@@ -280,6 +273,53 @@ export class SpaceEntitySync {
       console.warn(`Space entity ${entity.id} could not be loaded.`, error);
     } finally {
       this.loading.delete(entity.id);
+    }
+  }
+
+  /**
+   * Apply a server snapshot-only change to an existing contraption in place.
+   * Returns false when the snapshot cannot be fetched/projected, in which case
+   * the caller falls back to the remove-and-rebuild path.
+   */
+  private async applySnapshotInPlace(active: any, entity: SpaceWorldEntityRecord) {
+    if (typeof this.contraptions.restoreContraptionStreamingState !== 'function') return false;
+    if (active.isWrenchGrabbed || this.controller?.wrenchGrab?.contraption === active) {
+      // Never fight an active wrench drag with a remote pose: accept the digest
+      // (so the revision is not retried) but keep the locally held transform.
+      this.applyRecordMetadata(active, entity);
+      return true;
+    }
+    try {
+      const snapshot = await this.client.getSnapshot(entity);
+      if (!snapshot) return false;
+      this.contraptions.restoreContraptionStreamingState(active, {
+        ...snapshot,
+        ...this.metadata(entity),
+      });
+      this.applyRecordMetadata(active, entity);
+      return true;
+    } catch (error) {
+      console.warn(`Space entity ${entity.id} snapshot could not be applied in place; rebuilding.`, error);
+      return false;
+    }
+  }
+
+  /** Merge server metadata and re-apply playback only when the revision changed. */
+  private applyRecordMetadata(active: any, entity: SpaceWorldEntityRecord) {
+    const revisionChanged = Number(active.serverPlaybackRevision) !== entity.revision;
+    const metadata = this.metadata(entity);
+    const executionChanged = active.serverExecutesLocally !== metadata.serverExecutesLocally;
+    if (active.isWrenchGrabbed || this.controller?.wrenchGrab?.contraption === active || active.serverDesiredRunState === 'stopped') {
+      if (entity.desired_run_state !== 'stopped' && Number(active.serverRevision) >= entity.revision) {
+        metadata.serverDesiredRunState = 'stopped';
+      }
+    }
+    Object.assign(active, metadata);
+    // An entity may stop itself without changing the owner's durable Wrench
+    // intent. Re-apply playback only when that intent revision changes.
+    if (revisionChanged || executionChanged) {
+      this.applyPlayback(active, entity);
+      active.serverPlaybackRevision = entity.revision;
     }
   }
 

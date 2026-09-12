@@ -689,6 +689,9 @@ test('switching entity selection clears the previous entity block highlights', (
     new THREE.Vector3(10, 10, 10),
     scene
   );
+  // Construction mode, like a hammer-placed entity: selector clicks edit it
+  // directly instead of first stopping it.
+  b.stopAllNodeScripts();
   manager.contraptions.push(a, b);
   const controller = makeSelectorController({ manager });
 

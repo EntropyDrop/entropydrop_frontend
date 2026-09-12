@@ -158,24 +158,49 @@ function PaletteBar({ isBrush = false }: { isBrush?: boolean }) {
         )}
         <span className="palette-hotkey-hint">
           {isBrush ? (
-            <><b>LMB</b> paint · <b>RMB</b> sample</>
+            <><b>LMB</b> paint · <b>RMB</b> sample · <b>I</b> set color</>
           ) : (
-            <><b>Shift+1~9</b> pick · <b>E</b> set colors</>
+            <><b>Alt+1~9</b> pick · <b>I</b> set color</>
           )}
         </span>
       </div>
       <div id="color-palette-bar" className="color-palette-bar">
-        {paletteColors.map((item, index) => (
-          <button
-            type="button"
-            tabIndex={-1}
-            key={`${item.hex}:${index}`}
-            className={`color-chip ${index === selectedColorIndex ? 'active' : ''}`}
-            style={{ backgroundColor: item.hex }}
-            title={`${item.name || 'Custom'} (${item.hex.toUpperCase()}) · Shift+${index + 1}`}
-            onClick={() => spaceUiStore.selectPresetColor(index)}
-          ><span className="chip-num">{index + 1}</span></button>
-        ))}
+        {paletteColors.map((item, index) => {
+          const isActive = index === selectedColorIndex;
+          return (
+            <button
+              type="button"
+              tabIndex={-1}
+              key={`${item.hex}:${index}`}
+              id={isActive ? 'active-palette-color-chip' : undefined}
+              className={`color-chip ${isActive ? 'active' : ''}`}
+              style={{ backgroundColor: item.hex }}
+              title={`${item.name || 'Custom'} (${item.hex.toUpperCase()}) · Alt+${index + 1}${isActive ? ' · I to set color' : ''}`}
+              onClick={() => {
+                if (isActive) {
+                  spaceUiStore.openColorPicker();
+                } else {
+                  spaceUiStore.selectPresetColor(index);
+                }
+              }}
+            >
+              <span className="chip-num">{index + 1}</span>
+              {isActive && (
+                <input
+                  id="active-color-picker-input"
+                  type="color"
+                  className="palette-color-picker-input"
+                  value={item.hex}
+                  tabIndex={-1}
+                  aria-label={`Set color for slot ${index + 1}`}
+                  onChange={e => spaceUiStore.setPaletteColor(index, e.target.value, true)}
+                  onInput={e => spaceUiStore.setPaletteColor(index, (e.target as HTMLInputElement).value, false)}
+                  onClick={e => e.stopPropagation()}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -252,9 +277,10 @@ function SelectorPanel() {
             <span id="selector-mode-badge" className={`mode-badge ${selector.micro ? 'micro' : 'std'}`}>{selector.micro ? 'MICRO' : 'STANDARD'}</span>
             <span className="mode-tab-hint flex items-center gap-0.5">Tab <LiaExchangeAltSolid style={{ display: 'inline' }} /></span>
           </button>
-          <div className="selector-recent-color" id="selector-recent-color" title={`Recent Color: ${activeHex.toUpperCase()} · Click to pick · Shift+1~9`}>
+          <div className="selector-recent-color" id="selector-recent-color" title={`Recent Color: ${activeHex.toUpperCase()} · Click to pick · Alt+1~9 · Press I to set color`}>
             <label className="selector-recent-color-chip" style={{ backgroundColor: activeHex }}>
               <input
+                id="selector-color-picker-input"
                 type="color"
                 value={activeHex}
                 onChange={event => spaceUiStore.setBuildColor(event.target.value)}

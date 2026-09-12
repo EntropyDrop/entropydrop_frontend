@@ -587,8 +587,8 @@ export function PauseScreen() {
         <div className="controls-guide">
           <span><kbd className="key-badge">W</kbd><kbd className="key-badge">A</kbd><kbd className="key-badge">S</kbd><kbd className="key-badge">D</kbd> Move / Drive</span>
           <span><kbd className="key-badge">Space</kbd> Jump / Ascend</span>
-          <span><kbd className="key-badge">Shift+1-9</kbd> Palette color / Backpack slot</span>
-          <span><kbd className="key-badge">E</kbd> Backpack / Set colors</span>
+          <span><kbd className="key-badge">Alt+1-9</kbd> Palette color · <kbd className="key-badge">I</kbd> Set color</span>
+          <span><kbd className="key-badge">E</kbd> Backpack / Color sets</span>
           <span><kbd className="key-badge">1</kbd> Shovel: remove / place 1m blocks</span>
           <span><kbd className="key-badge">2</kbd> Spoon: micro-carve 8x8x8</span>
           <span><kbd className="key-badge">3</kbd> Selector: select region · Arrows rotate · Tab standard/micro blocks · R copy</span>
