@@ -634,15 +634,27 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                         }
                                     });
                                 }, 200);
-                            } else {
-                                const err = await response.json().catch(() => ({}));
-                                alert(err.detail || err.error || current.common.requestFailed);
+                                return;
                             }
+                            const err = await response.json().catch(() => ({}));
+                            const isCdnPending = typeof err?.detail === 'string' && (
+                                err.detail.includes('CDN withdrawal is pending') ||
+                                err.detail.toLowerCase().includes('cdn')
+                            );
+                            if (isCdnPending) {
+                                window.dispatchEvent(new Event('user-updated'));
+                                if (currentCollection) {
+                                    fetchItems(currentCollection.id, pageToFetch);
+                                }
+                                return;
+                            }
+                            alert(err.detail || err.error || current.common.requestFailed);
                             return;
                         }
                         if (response.ok) {
+                            window.dispatchEvent(new Event('user-updated'));
                             if (currentCollection) {
-                                fetchItems(currentCollection.id, pageToFetch)
+                                fetchItems(currentCollection.id, pageToFetch);
                             }
                         }
                     } catch (e) {
