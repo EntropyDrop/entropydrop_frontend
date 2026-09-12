@@ -376,3 +376,34 @@ test('whole-entity subtree highlight is depth-independent so it cannot z-fight t
   assert.equal(materials.fillMat.depthTest, false, 'subtree fill must be a depth-independent overlay');
   assert.equal(materials.fillMat.depthWrite, false);
 });
+
+test('focus highlight encloses blocks and keeps its fill occluded by the model', () => {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    22,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }],
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { rootComponentId: 'root' }
+  );
+  contraption.stopAllNodeScripts();
+
+  contraption.setFocusHighlight('root');
+  const materials = contraption.focusHighlightMaterials;
+  // Outline stays visible through parent geometry...
+  assert.equal(materials.focusedLine.depthTest, false, 'the focused outline must remain an X-ray overlay');
+  assert.equal(materials.childLine.depthTest, false, 'descendant outlines must remain X-ray overlays');
+  // ...but the translucent fill must be occluded, otherwise it blends through the
+  // component and reads as the highlight clipping into the model.
+  assert.equal(materials.focusedFill.depthTest, true, 'the focused fill must be occluded by the model');
+  assert.equal(materials.childFill.depthTest, true, 'the descendant fill must be occluded by the model');
+  assert.equal(materials.focusedFill.depthWrite, false);
+  // The box matches the blocks exactly (no inflation) and uses a polygon offset
+  // so the coincident faces do not z-fight the voxels.
+  assert.equal(materials.focusedFill.polygonOffset, true, 'the fill needs a polygon offset to avoid z-fighting');
+  assert.ok(materials.focusedFill.polygonOffsetFactor > 0);
+
+  const boxGeo: any = contraption.focusHighlightGeometries[0];
+  assert.ok(boxGeo?.parameters, 'the focused box geometry is registered');
+  assert.equal(boxGeo.parameters.width, 1, 'the guide must hug the 1 m block without inflating it');
+});

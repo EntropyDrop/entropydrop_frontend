@@ -11,6 +11,7 @@ import {
 } from '@entropydrop/space-engine/render/DistantSurfaceLayer.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
+import { getAltKeyLabel } from '../../../bootstrap/SpaceBootstrap.ts';
 
 const DISTANT_LOD_CONTROLS: ReadonlyArray<{
   distanceKey: DistantSurfaceDistanceSettingKey;
@@ -579,6 +580,7 @@ export function GlobalSettingsModal() {
 
 export function PauseScreen() {
   const hasStarted = useSpaceUi(state => state.hasStarted);
+  const altLabel = getAltKeyLabel();
   return (
     <div id="pause-screen" className={hasStarted ? 'hidden' : ''}>
       <div className="hero-box">
@@ -587,7 +589,7 @@ export function PauseScreen() {
         <div className="controls-guide">
           <span><kbd className="key-badge">W</kbd><kbd className="key-badge">A</kbd><kbd className="key-badge">S</kbd><kbd className="key-badge">D</kbd> Move / Drive</span>
           <span><kbd className="key-badge">Space</kbd> Jump / Ascend</span>
-          <span><kbd className="key-badge">Alt+1-9</kbd> Palette color · <kbd className="key-badge">I</kbd> Set color</span>
+          <span><kbd className="key-badge">{altLabel}+1-9</kbd> Palette color · <kbd className="key-badge">I</kbd> Set color</span>
           <span><kbd className="key-badge">E</kbd> Backpack / Color sets</span>
           <span><kbd className="key-badge">1</kbd> Shovel: remove / place 1m blocks</span>
           <span><kbd className="key-badge">2</kbd> Spoon: micro-carve 8x8x8</span>

@@ -8620,18 +8620,19 @@ export class PlayerController {
       return;
     }
 
-    // When pointer is locked, raycast against gizmo handles from the crosshair
+    // When pointer is locked, raycast against gizmo handles from the crosshair.
+    // The gizmo is drawn in bent space, so the pick ray must be bent too,
+    // otherwise the handles miss by the torus distortion.
     if (this.isLocked) {
-      if (!this.selectionGizmoRaycaster) {
-        this.selectionGizmoRaycaster = new THREE.Raycaster();
-      }
       const eyePos = this.physics?.getEyePosition?.() || this.camera.position;
       const forwardFlat = PlayerController._forwardFlat
         .set(0, 0, -1)
         .applyQuaternion(this.camera.quaternion);
-      this.selectionGizmoRaycaster.set(eyePos, forwardFlat);
-
-      const hit = this.sceneRenderer?.raycastSelectionGizmo?.(this.selectionGizmoRaycaster);
+      const eyeBent = bendPoint(eyePos.x, eyePos.y, eyePos.z, PlayerController._bentEye);
+      const forwardBent = bendDirection(
+        eyePos.x, eyePos.y, eyePos.z, forwardFlat, PlayerController._forwardBent
+      );
+      const hit = this.sceneRenderer?.raycastSelectionGizmoBent?.(eyeBent, forwardBent);
       this.hoveredGizmoHandle = hit;
       this.sceneRenderer?.highlightSelectionGizmoHandle?.(hit ? hit.handleKey : null);
     }
@@ -8647,7 +8648,15 @@ export class PlayerController {
       -(e.clientY / window.innerHeight) * 2 + 1
     );
     this.selectionGizmoRaycaster.setFromCamera(pointer, this.camera);
-    const hit = this.sceneRenderer.raycastSelectionGizmo(this.selectionGizmoRaycaster);
+    const flatOrigin = this.selectionGizmoRaycaster.ray.origin;
+    const flatDirection = this.selectionGizmoRaycaster.ray.direction;
+    const eyeBent = bendPoint(flatOrigin.x, flatOrigin.y, flatOrigin.z, PlayerController._bentEye);
+    const directionBent = bendDirection(
+      flatOrigin.x, flatOrigin.y, flatOrigin.z, flatDirection, PlayerController._forwardBent
+    );
+    const hit = this.sceneRenderer.raycastSelectionGizmoBent
+      ? this.sceneRenderer.raycastSelectionGizmoBent(eyeBent, directionBent)
+      : this.sceneRenderer.raycastSelectionGizmo(this.selectionGizmoRaycaster);
     this.hoveredGizmoHandle = hit;
     this.sceneRenderer.highlightSelectionGizmoHandle(hit ? hit.handleKey : null);
   }

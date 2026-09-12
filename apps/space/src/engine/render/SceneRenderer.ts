@@ -33,6 +33,8 @@ export const ENTITY_PREVIEW_FORCE_LIMIT_RATIO = 0.72;
 export const ENTITY_PREVIEW_MAX_FPS = 30;
 const ENTITY_PREVIEW_FRAME_INTERVAL_MS = 1000 / ENTITY_PREVIEW_MAX_FPS;
 const MAX_SELECTION_BEND_SEGMENTS = 64;
+/** Invisible pick-sphere radius for a selection axis handle, in metres (pre-scale). */
+const SELECTION_GIZMO_PICK_RADIUS = 0.32;
 const remotePlayerCullCamera = new THREE.PerspectiveCamera();
 const remotePlayerProjectedPosition = new THREE.Vector3();
 
@@ -1726,14 +1728,16 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       cone.userData = group.userData;
       group.add(cone);
 
-      // Invisible pick sphere for accurate raycast hitting
-      const pickGeo = new THREE.SphereGeometry(0.20, 8, 8);
+      // Invisible pick sphere for accurate raycast hitting. It is larger than
+      // the visible arrow so the small handles stay easy to grab.
+      const pickGeo = new THREE.SphereGeometry(SELECTION_GIZMO_PICK_RADIUS, 10, 8);
       const pickMat = new THREE.MeshBasicMaterial({
         visible: false,
         depthTest: false,
         depthWrite: false
       });
       const pickMesh = new THREE.Mesh(pickGeo, pickMat);
+      pickMesh.name = `SelectionGizmoPick_${def.key}`;
       pickMesh.userData = group.userData;
       group.add(pickMesh);
 
@@ -1952,6 +1956,49 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       }
     }
     return null;
+  }
+
+  /**
+   * Bent-space counterpart of {@link raycastSelectionGizmo}. The gizmo is
+   * rendered bent by the torus shader, so picking it with the flat ray made the
+   * small handles miss whenever the selection sat away from the player. Bend the
+   * ray and the handle centres the same way the renderer (and the entity pick)
+   * do, so the arrows are grabbed exactly where they appear.
+   */
+  raycastSelectionGizmoBent(origin: THREE.Vector3, direction: THREE.Vector3) {
+    if (!this.selectionAxisGizmo || !this.selectionAxisGizmo.visible) return null;
+    if (!origin || !direction) return null;
+    const ray = new THREE.Ray(origin.clone(), direction.clone().normalize());
+    this.selectionAxisGizmo.updateMatrixWorld(true);
+    let best: any = null;
+    const worldPos = new THREE.Vector3();
+    const bentCenter = new THREE.Vector3();
+    const hitPoint = new THREE.Vector3();
+    const sphere = new THREE.Sphere();
+    for (const handleGroup of this.selectionGizmoHandles?.values() || []) {
+      handleGroup.updateMatrixWorld(true);
+      const pick = handleGroup.children.find(child => child.name?.startsWith('SelectionGizmoPick_')) as THREE.Mesh | undefined;
+      if (!pick) continue;
+      pick.getWorldPosition(worldPos);
+      const pickRadius = (pick.geometry as any)?.parameters?.radius || SELECTION_GIZMO_PICK_RADIUS;
+      const radius = pickRadius * (handleGroup.scale?.x || 1);
+      bendPoint(worldPos.x, worldPos.y, worldPos.z, bentCenter);
+      sphere.center.copy(bentCenter);
+      sphere.radius = radius;
+      const hit = ray.intersectSphere(sphere, hitPoint);
+      if (!hit) continue;
+      const distance = ray.origin.distanceTo(hit);
+      if (best && distance >= best.distance) continue;
+      const data = handleGroup.userData;
+      best = {
+        handleKey: data.handleKey as string,
+        axis: data.axis as 'x' | 'y' | 'z',
+        direction: data.direction as 1 | -1,
+        point: hit.clone(),
+        distance
+      };
+    }
+    return best;
   }
 
   setWrenchTether(startPoint: THREE.Vector3 | null, endPoint: THREE.Vector3 | null) {

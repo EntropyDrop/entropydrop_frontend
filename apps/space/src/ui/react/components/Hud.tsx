@@ -24,6 +24,7 @@ import type { SelectorShape } from '../../../engine/controls/SelectorShapes.ts';
 import { InventoryThumbnailRenderer } from '../../../engine/render/InventoryThumbnailRenderer.ts';
 import { spaceUiStore } from '../store/SpaceUiStore.ts';
 import { useSpaceUi } from '../store/useSpaceUi.ts';
+import { getAltKeyLabel } from '../../../bootstrap/SpaceBootstrap.ts';
 
 import { LuShovel } from "react-icons/lu";
 
@@ -127,6 +128,7 @@ function NearbyEntities() {
 
 function PaletteBar({ isBrush = false }: { isBrush?: boolean }) {
   const { paletteColors, selectedColorIndex, brushMicro, controller } = useSpaceUi(state => state);
+  const altLabel = getAltKeyLabel();
   return (
     <div className="color-palette-bar-wrapper" id="color-palette-wrapper">
       <div className="palette-info-row">
@@ -160,7 +162,7 @@ function PaletteBar({ isBrush = false }: { isBrush?: boolean }) {
           {isBrush ? (
             <><b>LMB</b> paint · <b>RMB</b> sample · <b>I</b> set color</>
           ) : (
-            <><b>Alt+1~9</b> pick · <b>I</b> set color</>
+            <><b>{altLabel}+1~9</b> pick · <b>I</b> set color</>
           )}
         </span>
       </div>
@@ -175,7 +177,7 @@ function PaletteBar({ isBrush = false }: { isBrush?: boolean }) {
               id={isActive ? 'active-palette-color-chip' : undefined}
               className={`color-chip ${isActive ? 'active' : ''}`}
               style={{ backgroundColor: item.hex }}
-              title={`${item.name || 'Custom'} (${item.hex.toUpperCase()}) · Alt+${index + 1}${isActive ? ' · I to set color' : ''}`}
+              title={`${item.name || 'Custom'} (${item.hex.toUpperCase()}) · ${altLabel}+${index + 1}${isActive ? ' · I to set color' : ''}`}
               onClick={() => {
                 if (isActive) {
                   spaceUiStore.openColorPicker();
@@ -251,22 +253,22 @@ function InventoryBar() {
   );
 }
 
-const SELECTOR_SHAPE_ITEMS: Array<{
-  id: SelectorShape;
-  name: string;
-  shortcut: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-}> = [
-  { id: 'box', name: '长方体 (Box)', shortcut: 'Alt+1', icon: TbBox },
-  { id: 'cylinder', name: '圆柱 (Cylinder)', shortcut: 'Alt+2', icon: TbCylinder },
-  { id: 'sphere', name: '球体/圆 (Sphere)', shortcut: 'Alt+3', icon: TbSphere },
-  { id: 'stairs', name: '阶梯 (Stairs)', shortcut: 'Alt+4', icon: TbStairs },
-  { id: 'line', name: '线条 (Line)', shortcut: 'Alt+5', icon: TbLine },
-];
+function getSelectorShapeItems() {
+  const altLabel = getAltKeyLabel();
+  return [
+    { id: 'box' as const, name: '长方体 (Box)', shortcut: `${altLabel}+1`, icon: TbBox },
+    { id: 'cylinder' as const, name: '圆柱 (Cylinder)', shortcut: `${altLabel}+2`, icon: TbCylinder },
+    { id: 'sphere' as const, name: '球体/圆 (Sphere)', shortcut: `${altLabel}+3`, icon: TbSphere },
+    { id: 'stairs' as const, name: '阶梯 (Stairs)', shortcut: `${altLabel}+4`, icon: TbStairs },
+    { id: 'line' as const, name: '线条 (Line)', shortcut: `${altLabel}+5`, icon: TbLine },
+  ];
+}
 
 function SelectorPanel() {
   const { selector, controller, selectedColor } = useSpaceUi(state => state);
   const activeHex = colorToHex(selectedColor ?? 0xf2a93b);
+  const altLabel = getAltKeyLabel();
+  const selectorShapeItems = getSelectorShapeItems();
 
   return (
     <div className="selector-panel-wrapper" id="selector-panel-wrapper">
@@ -277,7 +279,7 @@ function SelectorPanel() {
             <span id="selector-mode-badge" className={`mode-badge ${selector.micro ? 'micro' : 'std'}`}>{selector.micro ? 'MICRO' : 'STANDARD'}</span>
             <span className="mode-tab-hint flex items-center gap-0.5">Tab <LiaExchangeAltSolid style={{ display: 'inline' }} /></span>
           </button>
-          <div className="selector-recent-color" id="selector-recent-color" title={`Recent Color: ${activeHex.toUpperCase()} · Click to pick · Alt+1~9 · Press I to set color`}>
+          <div className="selector-recent-color" id="selector-recent-color" title={`Recent Color: ${activeHex.toUpperCase()} · Click to pick · ${altLabel}+1~9 · Press I to set color`}>
             <label className="selector-recent-color-chip" style={{ backgroundColor: activeHex }}>
               <input
                 id="selector-color-picker-input"
@@ -289,11 +291,11 @@ function SelectorPanel() {
             <span className="selector-recent-color-hex">{activeHex.toUpperCase()}</span>
           </div>
         </div>
-        <span className="palette-hotkey-hint"><b>Alt+1~5</b> shape · <b>Arrows</b> rotate · <b>F</b> fill · <b>P</b> recolor</span>
+        <span className="palette-hotkey-hint"><b>{altLabel}+1~5</b> shape · <b>Arrows</b> rotate · <b>F</b> fill · <b>P</b> recolor</span>
       </div>
       <div className="selector-toolbox-content" id="selector-toolbox-content">
         <div className="selector-shapes-bar" id="selector-shapes-bar" role="group" aria-label="Selection Shape">
-          {SELECTOR_SHAPE_ITEMS.map(item => {
+          {selectorShapeItems.map(item => {
             const Icon = item.icon;
             const isActive = (selector.shape || 'box') === item.id;
             return (

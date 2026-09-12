@@ -6,6 +6,7 @@ import { ContraptionManager } from '@entropydrop/space-engine/contraption/Contra
 import { SceneRenderer } from '../src/engine/render/SceneRenderer.ts';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
 import { BlockTypes } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
+import { bendPoint } from '@entropydrop/space-engine/torus/TorusWorld.ts';
 
 function makeStubWorld(microPairs: Array<[string, number]> = []) {
   const map = new Map<string, { color: number }>();
@@ -798,6 +799,31 @@ test('the XYZ gizmo stays hidden until the entity box has both points', () => {
   controller.handleLeftClick();
   assert.ok(controller.selectedBlockSelection, 'the box completes on the second click');
   assert.equal(renderer.selectionAxisGizmo.visible, true, 'the XYZ gizmo appears once the box is complete');
+});
+
+test('selection gizmo handles are pickable in bent space where they are drawn', () => {
+  const renderer = makeStubSceneRenderer();
+  renderer.updateSelectionAxisGizmo({ minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }, false, null);
+  assert.equal(renderer.selectionAxisGizmo.visible, true);
+
+  const handle = renderer.selectionGizmoHandles.get('+x');
+  handle.updateMatrixWorld(true);
+  const pick = handle.children.find(child => String(child.name).startsWith('SelectionGizmoPick_'));
+  const flatCenter = pick.getWorldPosition(new THREE.Vector3());
+
+  // Aim a BENT ray at the handle's BENT centre, exactly like the renderer draws it.
+  const originFlat = flatCenter.clone().add(new THREE.Vector3(4, 0.3, 0));
+  const originBent = bendPoint(originFlat.x, originFlat.y, originFlat.z, new THREE.Vector3());
+  const bentCenter = bendPoint(flatCenter.x, flatCenter.y, flatCenter.z, new THREE.Vector3());
+  const directionBent = bentCenter.clone().sub(originBent).normalize();
+  const hit = renderer.raycastSelectionGizmoBent(originBent, directionBent);
+
+  assert.ok(hit, 'the bent ray must hit the handle where it is drawn');
+  assert.equal(hit.handleKey, '+x');
+  assert.ok(hit.distance > 3 && hit.distance < 5);
+
+  // A ray pointing away must miss.
+  assert.equal(renderer.raycastSelectionGizmoBent(originBent, new THREE.Vector3(0, 1, 0)), null);
 });
 
 

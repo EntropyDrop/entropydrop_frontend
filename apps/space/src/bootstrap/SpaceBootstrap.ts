@@ -259,6 +259,19 @@ export function isNonPcDevice(
   return isMobileUa || isIPadOS || Boolean(isTouchScreen && isSmallScreen);
 }
 
+export function isMacPlatform(
+  userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  platform = typeof navigator !== 'undefined' ? ((navigator as any).userAgentData?.platform || navigator.platform) : ''
+): boolean {
+  const ua = userAgent || '';
+  const plat = platform || '';
+  return /Mac/i.test(plat) || /Macintosh|MacIntel|iPhone|iPad|iPod/i.test(ua);
+}
+
+export function getAltKeyLabel(): string {
+  return isMacPlatform() ? 'Opt' : 'Alt';
+}
+
 export function resolveApiOrigin(configuredBase: string | undefined, pageOrigin: string) {
   const normalized = (configuredBase || '').trim().replace(/\/+$/, '');
   if (!normalized) return pageOrigin.includes('localhost') ? 'http://localhost:8000' : pageOrigin;

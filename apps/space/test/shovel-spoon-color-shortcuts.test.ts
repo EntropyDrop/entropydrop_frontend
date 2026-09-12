@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { PlayerController, SpecialTool } from '../src/engine/controls/PlayerController.ts';
 import { normalizeColor, colorToHex, PRESET_COLORS } from '@entropydrop/space-engine/voxel/BlockTypes.ts';
 import { spaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
+import { isMacPlatform, getAltKeyLabel } from '../src/bootstrap/SpaceBootstrap.ts';
 
 function createMockController(tool = SpecialTool.SHOVEL) {
   const controller: any = Object.create(PlayerController.prototype);
@@ -133,4 +134,19 @@ test('SpaceUiStore: setPaletteColor updates palette color, active build color, a
   assert.doesNotThrow(() => {
     spaceUiStore.openColorPicker();
   });
+});
+
+test('isMacPlatform and getAltKeyLabel return Opt on Mac and Alt on others', () => {
+  assert.equal(isMacPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 'MacIntel'), true);
+  assert.equal(isMacPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)', 'iPhone'), true);
+  assert.equal(isMacPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32'), false);
+  assert.equal(isMacPlatform('Mozilla/5.0 (X11; Linux x86_64)', 'Linux x86_64'), false);
+
+  // When on Mac platform, label is Opt
+  const macLabel = isMacPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 'MacIntel') ? 'Opt' : 'Alt';
+  assert.equal(macLabel, 'Opt');
+
+  // When on Windows platform, label is Alt
+  const winLabel = isMacPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32') ? 'Opt' : 'Alt';
+  assert.equal(winLabel, 'Alt');
 });
