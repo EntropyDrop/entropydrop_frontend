@@ -2,6 +2,7 @@ import { DEFAULT_PLAYER_SKIN_URL } from './bootstrap/SpaceBootstrap.ts';
 import * as THREE from 'three';
 import { SceneRenderer } from './engine/render/SceneRenderer.ts';
 import { World } from '@entropydrop/space-engine/voxel/World.ts';
+import { worldEditStorageKey } from '@entropydrop/space-engine/voxel/WorldEditPersistence.ts';
 import { PlayerPhysics } from '@entropydrop/space-engine/physics/PlayerPhysics.ts';
 import { ContraptionPhysics } from '@entropydrop/space-engine/physics/ContraptionPhysics.ts';
 import { ContraptionManager } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
@@ -88,6 +89,11 @@ class Game {
       skinUrl: session.skin_object_url,
       skinModel: session.player.skin_type
     });
+    // In offline mode, do not persist terrain edits. Clean up any stale offline terrain data.
+    if (session.mode === 'offline') {
+      persistentStorage?.removeItem?.(worldEditStorageKey(session.world.id));
+    }
+
     // Procedural terrain must use the durable, server-authoritative seed so all
     // players reconstruct the same base world.
     this.world = new World(
@@ -96,7 +102,7 @@ class Game {
       {
         worldId: session.world.id,
         remote: session.terrain_edit_remote,
-        storage: persistentStorage,
+        storage: session.mode === 'online' ? persistentStorage : null,
         onSyncStatus: status => spaceUiStore.setWorldEditSync(status),
         // A batch older than the bounded server dedupe window is intentionally
         // not replayed over newer shared-world edits. Reload the authoritative
@@ -128,14 +134,13 @@ class Game {
       this.world,
       this.soundManager,
       this.particleSystem,
-      persistentStorage
+      session.mode === 'online' ? persistentStorage : null
     );
     this.contraptionManager.setPhysics(this.contraptionPhysics);
     this.contraptionManager.setWorldId(session.world.id);
     this.contraptionManager.setEntityPersistenceMode(
-      session.mode === 'online' ? 'remote' : 'browser'
+      session.mode === 'online' ? 'remote' : 'none'
     );
-    if (session.mode === 'offline') this.contraptionManager.loadEntitiesFromStorage();
 
     this.playerPhysics = new PlayerPhysics(this.world, this.contraptionManager);
     this.uiStore = spaceUiStore;
@@ -267,7 +272,7 @@ class Game {
     this.lastSavedPlayerPosition = session.player.resumed && !spawnAdjusted
       ? JSON.stringify(this.currentPlayerPosition())
       : '';
-    this.installPlayerPositionPersistence();
+    this.installPlayerPositionPersistence(session.mode);
     // Persist a first-entry position or a recovered embedded spawn immediately.
     if (!session.player.resumed || spawnAdjusted) this.queuePlayerPositionSave(true);
 
@@ -405,10 +410,12 @@ class Game {
     }
   }
 
-  installPlayerPositionPersistence() {
+  installPlayerPositionPersistence(sessionMode: ReadySpaceSession['mode']) {
     const persistBeforeSuspension = () => {
       this.queuePlayerPositionSave(true, true);
-      this.contraptionManager?.saveEntitiesToStorage?.();
+      if (sessionMode === 'online') {
+        this.contraptionManager?.saveEntitiesToStorage?.();
+      }
     };
     window.addEventListener('pagehide', persistBeforeSuspension);
     window.addEventListener('beforeunload', persistBeforeSuspension);

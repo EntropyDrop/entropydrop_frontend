@@ -42,6 +42,7 @@ import {
   DEFAULT_LIGHTING_QUALITY, LIGHTING_PRESETS, LIGHTING_QUALITY_SETTING_KEY,
   normalizeLightingQuality, type LightingQuality,
 } from '../../../engine/render/LightingQuality.ts';
+import { triggerColorPickerInput } from '../utils/colorPickerInput.ts';
 
 export type SpaceModal = 'inventory' | 'code' | 'settings' | 'builder' | null;
 export type ResolutionScaleSetting = 'auto' | '1' | '0.8' | '0.67' | '0.5';
@@ -849,22 +850,8 @@ export class SpaceUiStore {
   }
 
   openColorPicker(): void {
-    if (typeof document === 'undefined') return;
     this.snapshot.controller?.unlock?.();
-    const input = (document.getElementById('active-color-picker-input') ||
-      document.getElementById('selector-color-picker-input') ||
-      document.querySelector('.palette-color-picker-input')) as HTMLInputElement | null;
-    if (input) {
-      try {
-        if (typeof input.showPicker === 'function') {
-          input.showPicker();
-        } else {
-          input.click();
-        }
-      } catch {
-        input.click();
-      }
-    }
+    triggerColorPickerInput();
   }
 
   setPaletteColor(index: number, hex: string, notify = true): void {
