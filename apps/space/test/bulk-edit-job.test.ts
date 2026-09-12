@@ -202,7 +202,7 @@ test('large world assembly extracts through BulkEditJob and commits one complete
 test('large entity block selection creates its child through BulkEditJob', () => {
   const scene = new THREE.Scene();
   const total = BULK_EDIT_THRESHOLD + 44;
-  const contraption = new Contraption(1, entityBlocks(total), new THREE.Vector3(), scene);
+  const contraption = new Contraption(1, entityBlocks(total + 10), new THREE.Vector3(), scene);
   contraption.stopAllNodeScripts();
   const manager = new ContraptionManager(scene, {}, null, null);
   manager.registerContraption(contraption);
@@ -210,7 +210,7 @@ test('large entity block selection creates its child through BulkEditJob', () =>
   controller.selectedBlockSelection = {
     contraption,
     nodeId: 'root',
-    blocks: [...contraption.blocks]
+    blocks: contraption.blocks.slice(0, total)
   };
 
   assert.equal(controller.createChildFromSelectedBlocks(), true);

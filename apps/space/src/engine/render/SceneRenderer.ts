@@ -931,10 +931,14 @@ export class SceneRenderer {
       color: 0x222222,
       linewidth: 2,
       transparent: true,
-      opacity: 0.6
+      opacity: 0.6,
+      depthTest: false,
+      depthWrite: false
     });
 
     this.cursorMesh = new THREE.LineSegments(edges, mat);
+    this.cursorMesh.name = 'CursorHighlight';
+    this.cursorMesh.renderOrder = 40;
     this.cursorMesh.visible = false;
     this.scene.add(this.cursorMesh);
   }
@@ -1207,9 +1211,18 @@ export class SceneRenderer {
     this.scene.add(this.selectionMicroCellsGroup);
   }
 
-  setCursor(hitPos, size = 1) {
-    if (hitPos) {
-      this.cursorMesh.position.set(hitPos.x + size / 2, hitPos.y + size / 2, hitPos.z + size / 2);
+  setCursor(hitPos, size = 1, quaternion = null, center = null) {
+    if (center || hitPos) {
+      if (center) {
+        this.cursorMesh.position.set(center.x, center.y, center.z);
+      } else {
+        this.cursorMesh.position.set(hitPos.x + size / 2, hitPos.y + size / 2, hitPos.z + size / 2);
+      }
+      if (quaternion?.isQuaternion) {
+        this.cursorMesh.quaternion.copy(quaternion);
+      } else {
+        this.cursorMesh.quaternion.set(0, 0, 0, 1);
+      }
       this.cursorMesh.scale.setScalar(size);
       this.cursorMesh.visible = true;
     } else {
@@ -2218,14 +2231,14 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
   }
 
   updateSelectionHologram(bounds, connectedBlocks = null, microBlocks = null, isMicroShape = false, frame: any = null) {
-    const applyFrameToGroup = (grp: THREE.Group) => {
+    const applyFrameToGroup = (grp: THREE.Group, offset: THREE.Vector3 = new THREE.Vector3(0, 0, 0)) => {
       if (frame?.object?.localToWorld) {
         frame.object.updateWorldMatrix?.(true, false);
         const pivot = frame.pivot ? new THREE.Vector3(frame.pivot.x, frame.pivot.y, frame.pivot.z) : new THREE.Vector3();
-        grp.position.copy(frame.object.localToWorld(new THREE.Vector3(0, 0, 0).sub(pivot)));
+        grp.position.copy(frame.object.localToWorld(offset.clone().sub(pivot)));
         frame.object.getWorldQuaternion(grp.quaternion);
       } else {
-        grp.position.set(0, 0, 0);
+        grp.position.copy(offset);
         grp.quaternion.identity();
       }
     };
@@ -2265,8 +2278,26 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         const t = performance.now() * 0.004;
         const pulse = (Math.sin(t) + 1) * 0.5;
         this.selectionMicroCellLineMaterial.opacity = 0.5 + pulse * 0.46;
-        this.selectionMicroCellFillMaterial.opacity = 0.06 + pulse * 0.17;
+        this.selectionMicroCellFillMaterial.opacity = 0.08 + pulse * 0.2;
         this.selectionMicroCellsGroup.visible = microBlocks.length > 0;
+
+        // Keep the outer bounding box wireframe visible as a guide
+        if (bounds) {
+          const sx = Math.max(0.001, (bounds.maxX - bounds.minX + 1) * MICRO_SIZE);
+          const sy = Math.max(0.001, (bounds.maxY - bounds.minY + 1) * MICRO_SIZE);
+          const sz = Math.max(0.001, (bounds.maxZ - bounds.minZ + 1) * MICRO_SIZE);
+          const cx = (bounds.minX + bounds.maxX + 1) * MICRO_SIZE * 0.5;
+          const cy = (bounds.minY + bounds.maxY + 1) * MICRO_SIZE * 0.5;
+          const cz = (bounds.minZ + bounds.maxZ + 1) * MICRO_SIZE * 0.5;
+          updateTorusSelectionBoxGeometry(this.selectionFill, this.selectionWireframe, sx, sy, sz);
+          this.selectionGroup.scale.set(sx, sy, sz);
+          applyFrameToGroup(this.selectionGroup, new THREE.Vector3(cx, cy, cz));
+          this.selectionWireframe.material.opacity = 0.35;
+          this.selectionFill.material.opacity = 0.03;
+          this.selectionGroup.visible = true;
+        } else {
+          this.selectionGroup.visible = false;
+        }
         return;
       }
     }
@@ -2300,8 +2331,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       const cz = (minZ + maxZ + 1) * MICRO_SIZE * 0.5;
 
       updateTorusSelectionBoxGeometry(this.selectionFill, this.selectionWireframe, sx, sy, sz);
-      this.selectionGroup.position.set(cx, cy, cz);
       this.selectionGroup.scale.set(sx, sy, sz);
+      applyFrameToGroup(this.selectionGroup, new THREE.Vector3(cx, cy, cz));
       this.selectionGroup.visible = true;
 
       // Pulse opacity subtly matching standard mode
@@ -2313,7 +2344,6 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     }
 
     if (connectedBlocks !== null) {
-      this.selectionGroup.visible = false;
       this.selectionMicroCellsGroup.visible = false;
       const signature = connectedBlocks
         .map(block => `${block.x},${block.y},${block.z}`)
@@ -2340,8 +2370,26 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       const t = performance.now() * 0.004;
       const pulse = (Math.sin(t) + 1) * 0.5;
       this.selectionCellLineMaterial.opacity = 0.5 + pulse * 0.46;
-      this.selectionCellFillMaterial.opacity = 0.06 + pulse * 0.17;
+      this.selectionCellFillMaterial.opacity = 0.08 + pulse * 0.2;
       this.selectionCellsGroup.visible = connectedBlocks.length > 0;
+
+      // Keep the outer bounding box wireframe visible as a guide
+      if (bounds) {
+        const sx = bounds.maxX - bounds.minX + 1;
+        const sy = bounds.maxY - bounds.minY + 1;
+        const sz = bounds.maxZ - bounds.minZ + 1;
+        const cx = (bounds.minX + bounds.maxX + 1) / 2;
+        const cy = (bounds.minY + bounds.maxY + 1) / 2;
+        const cz = (bounds.minZ + bounds.maxZ + 1) / 2;
+        updateTorusSelectionBoxGeometry(this.selectionFill, this.selectionWireframe, sx, sy, sz);
+        this.selectionGroup.scale.set(sx, sy, sz);
+        applyFrameToGroup(this.selectionGroup, new THREE.Vector3(cx, cy, cz));
+        this.selectionWireframe.material.opacity = 0.35;
+        this.selectionFill.material.opacity = 0.03;
+        this.selectionGroup.visible = true;
+      } else {
+        this.selectionGroup.visible = false;
+      }
       return;
     }
 
@@ -2357,17 +2405,19 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       return;
     }
 
-    const sx = bounds.maxX - bounds.minX + 1;
-    const sy = bounds.maxY - bounds.minY + 1;
-    const sz = bounds.maxZ - bounds.minZ + 1;
+    const isMicro = isMicroShape || (Array.isArray(microBlocks) && microBlocks.length > 0);
+    const scale = isMicro ? MICRO_SIZE : 1;
+    const sx = Math.max(0.001, (bounds.maxX - bounds.minX + 1) * scale);
+    const sy = Math.max(0.001, (bounds.maxY - bounds.minY + 1) * scale);
+    const sz = Math.max(0.001, (bounds.maxZ - bounds.minZ + 1) * scale);
 
-    const cx = (bounds.minX + bounds.maxX + 1) / 2;
-    const cy = (bounds.minY + bounds.maxY + 1) / 2;
-    const cz = (bounds.minZ + bounds.maxZ + 1) / 2;
+    const cx = (bounds.minX + bounds.maxX + 1) * scale * 0.5;
+    const cy = (bounds.minY + bounds.maxY + 1) * scale * 0.5;
+    const cz = (bounds.minZ + bounds.maxZ + 1) * scale * 0.5;
 
     updateTorusSelectionBoxGeometry(this.selectionFill, this.selectionWireframe, sx, sy, sz);
-    this.selectionGroup.position.set(cx, cy, cz);
     this.selectionGroup.scale.set(sx, sy, sz);
+    applyFrameToGroup(this.selectionGroup, new THREE.Vector3(cx, cy, cz));
     this.selectionGroup.visible = true;
 
     // Pulse opacity subtly

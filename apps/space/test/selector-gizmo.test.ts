@@ -523,5 +523,223 @@ test('PlayerController supports cylinder selection mode on sub-components with r
   assert.ok(controller.selectedBlockSelection.blocks.length >= initialCount);
 });
 
+test('Alt+1..9 shortcuts switch shape in Selector and pick color in Shovel/Spoon', () => {
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.keys = {};
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorShape = 'box';
+  controller.setSelectorShape = (shape: string) => { controller.selectorShape = shape; };
+  let chosenColorIndex = -1;
+  controller.ui = {
+    selectPresetColor: (idx: number) => { chosenColorIndex = idx; },
+    selectInventorySlot: () => {}
+  };
+  controller.setSelectedColor = (c: number) => { controller.selectedColor = c; };
+
+  // 1. Selector tool: Alt+2 switches to cylinder, Alt+3 switches to sphere
+  const eventAlt2 = { altKey: true, code: 'Digit2', preventDefault() {} };
+  PlayerController.prototype.handleKeyDown.call(controller, eventAlt2 as any);
+  assert.equal(controller.selectorShape, 'cylinder');
+
+  const eventAlt3 = { altKey: true, code: 'Digit3', preventDefault() {} };
+  PlayerController.prototype.handleKeyDown.call(controller, eventAlt3 as any);
+  assert.equal(controller.selectorShape, 'sphere');
+
+  // 2. Shovel tool: Alt+4 chooses color 3 (0-indexed)
+  controller.activeTool = SpecialTool.SHOVEL;
+  const eventAlt4 = { altKey: true, code: 'Digit4', preventDefault() {} };
+  PlayerController.prototype.handleKeyDown.call(controller, eventAlt4 as any);
+  assert.equal(chosenColorIndex, 3);
+
+  // 3. Spoon tool: Alt+1 chooses color 0
+  controller.activeTool = SpecialTool.SPOON;
+  const eventAlt1 = { altKey: true, code: 'Digit1', preventDefault() {} };
+  PlayerController.prototype.handleKeyDown.call(controller, eventAlt1 as any);
+  assert.equal(chosenColorIndex, 0);
+});
+
+test('2-point selection validation rules between entity and world', () => {
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorMicroMode = false;
+  controller.keys = {};
+  const toasts: string[] = [];
+  controller.ui = { showToast: (msg: string) => toasts.push(msg) };
+  controller.sceneRenderer = makeStubSceneRenderer();
+
+  const contraption1 = { id: 'c1', scriptStatus: 'stopped' };
+  const contraption2 = { id: 'c2', scriptStatus: 'stopped' };
+
+  // Rule A: Point 1 is world, Point 2 hits entity -> rejected
+  const manager = { selectionCornerA: { x: 0, y: 0, z: 0 }, selectionCornerB: null };
+  controller.contraptions = manager;
+  controller.hoveredContraptionHit = { contraption: contraption1, entityId: 'root' };
+  PlayerController.prototype.handleLeftClick.call(controller);
+  assert.equal(manager.selectionCornerA, null, 'CornerA should be cleared');
+  assert.ok(toasts.some(t => t.includes('起点不是实体，结束点也不能是实体')));
+
+  // Rule B: Point 1 is entity, Point 2 clicks world -> rejected
+  controller.hoveredContraptionHit = null;
+  controller.selectorRange = { contraption: contraption1, nodeId: 'root', pointA: { x: 0, y: 0, z: 0 }, pointB: null };
+  controller.currentRaycast = { hit: true, hitPos: { x: 5, y: 5, z: 5 } };
+  PlayerController.prototype.handleLeftClick.call(controller);
+  assert.equal(controller.selectorRange, null, 'selectorRange should be cleared');
+  assert.ok(toasts.some(t => t.includes('起点是实体，结束点也必须是该实体的一部分')));
+
+  // Rule C: Point 1 is entity c1, Point 2 hits entity c2 -> rejected
+  controller.selectorRange = { contraption: contraption1, nodeId: 'root', pointA: { x: 0, y: 0, z: 0 }, pointB: null };
+  controller.hoveredContraptionHit = { contraption: contraption2, entityId: 'root' };
+  controller.selectorOnEntityClick(controller.hoveredContraptionHit, {});
+  assert.ok(toasts.some(t => t.includes('选区的起点与终点必须属于同一实体')));
+
+  // Rule D: Point 1 and Point 2 on different components of c1 -> rejected
+  controller.selectorRange = { contraption: contraption1, nodeId: 'compA', pointA: { x: 0, y: 0, z: 0 }, pointB: null };
+  controller.hoveredContraptionHit = { contraption: contraption1, entityId: 'compB' };
+  controller.selectorOnEntityClick(controller.hoveredContraptionHit, {});
+  assert.ok(toasts.some(t => t.includes('选中区域必须是同一层级、同父组件')));
+});
+
+test('2-point selection validation: child component blocks and full parent component selection', () => {
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorMicroMode = false;
+  controller.selectorShape = 'box';
+  const toasts: string[] = [];
+  controller.ui = { showToast: (msg: string) => toasts.push(msg) };
+  controller.sceneRenderer = makeStubSceneRenderer();
+
+  const contraption = {
+    id: 'c1',
+    rootComponentId: 'root',
+    scriptStatus: 'stopped',
+    entityNodes: new Map([['root', { id: 'root', parentId: null }]]),
+    blocks: [
+      { localX: 0, localY: 0, localZ: 0, entityId: 'root' },
+      { localX: 1, localY: 0, localZ: 0, entityId: 'root' },
+      { localX: 2, localY: 0, localZ: 0, entityId: 'childA' } // Child component block
+    ],
+    clearSubtreeHighlight() {}
+  };
+
+  // Case 1: selection includes child component blocks -> rejected
+  controller.performBasicAction = () => ({
+    ok: true,
+    selection: { blocks: contraption.blocks },
+    components: ['root', 'childA']
+  });
+  controller.resolveBlockRangeSelection({
+    contraption,
+    nodeId: 'root',
+    pointA: { x: 0, y: 0, z: 0 },
+    pointB: { x: 2, y: 0, z: 0 }
+  });
+  assert.equal(controller.selectedBlockSelection, null);
+  assert.ok(toasts.some(t => t.includes('选区不能包含已分配的子组件方块')));
+
+  // Case 2: selection selects ALL blocks of parent component -> rejected when creating child (G)
+  controller.performBasicAction = () => ({
+    ok: true,
+    selection: {
+      blocks: [
+        { localX: 0, localY: 0, localZ: 0, entityId: 'root' },
+        { localX: 1, localY: 0, localZ: 0, entityId: 'root' }
+      ]
+    },
+    components: ['root']
+  });
+  controller.resolveBlockRangeSelection({
+    contraption,
+    nodeId: 'root',
+    pointA: { x: 0, y: 0, z: 0 },
+    pointB: { x: 1, y: 0, z: 0 }
+  });
+  assert.ok(controller.selectedBlockSelection);
+  const childResult = controller.createChildFromSelectedBlocks();
+  assert.equal(childResult, null);
+  assert.ok(toasts.some(t => t.includes('不能将整个父组件全部选中创建子组件')));
+});
+
+test('F key expands entity component by filling selection with blocks', () => {
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.activeTool = SpecialTool.SELECTOR;
+  controller.selectorMicroMode = false;
+  controller.selectedColor = 0xff0000;
+  controller.contraptions = { hasValidSelection: () => false };
+  const toasts: string[] = [];
+  controller.ui = { showToast: (msg: string) => toasts.push(msg), notifyContraptionStructureChanged() {} };
+  controller.sound = { playBlockPlace() {} };
+  controller.sceneRenderer = makeStubSceneRenderer();
+
+  let rebuilt = false;
+  const contraption: any = {
+    id: 'c1',
+    rootComponentId: 'compA',
+    entityNodes: new Map([['compA', { id: 'compA', parentId: null }]]),
+    blocks: [
+      { localX: 0, localY: 0, localZ: 0, entityId: 'compA', color: 0x111111 }
+    ],
+    rebuildAfterBlockChange: () => { rebuilt = true; },
+    clearSubtreeHighlight: () => {}
+  };
+
+  // Selection spans 2x1x1 (x: 0..1, y: 0, z: 0)
+  controller.selectedBlockSelection = {
+    contraption,
+    nodeId: 'compA',
+    blocks: [contraption.blocks[0]],
+    bounds: { minX: 0, minY: 0, minZ: 0, maxX: 1, maxY: 0, maxZ: 0 }
+  };
+
+  controller.fillSelectionBlocks();
+
+  assert.equal(rebuilt, true);
+  // Total blocks should now be 2: original recolored to 0xff0000 + newly placed block at (1, 0, 0)
+  assert.equal(contraption.blocks.length, 2);
+  assert.equal(contraption.blocks[0].color, 0xff0000);
+  assert.equal(contraption.blocks[1].localX, 1);
+  assert.equal(contraption.blocks[1].color, 0xff0000);
+  assert.equal(contraption.blocks[1].entityId, 'compA');
+  assert.equal(controller.selectedBlockSelection, null);
+});
+
+test('Del key cascades deletion of child component and subcomponents when all blocks are removed', () => {
+  const controller: any = Object.create(PlayerController.prototype);
+  controller.contraptions = { removeContraption: () => {} };
+  const toasts: string[] = [];
+  controller.ui = { showToast: (msg: string) => toasts.push(msg), notifyContraptionStructureChanged() {} };
+  controller.sound = { playBlockBreak() {} };
+
+  let removedSubtreeId: string | null = null;
+  const blockToDel = { localX: 0, localY: 0, localZ: 0, entityId: 'childComponent' };
+  const contraption: any = {
+    id: 'c1',
+    rootComponentId: 'root',
+    blocks: [
+      { localX: 10, localY: 10, localZ: 10, entityId: 'root' },
+      blockToDel
+    ],
+    clearSubtreeHighlight() {},
+    removeComponentSubtree: (id: string) => { removedSubtreeId = id; }
+  };
+
+  controller.selectedBlockSelection = {
+    contraption,
+    nodeId: 'childComponent',
+    blocks: [blockToDel]
+  };
+
+  // Mock performBasicAction delete which removes blockToDel from contraption.blocks
+  controller.performBasicAction = () => {
+    contraption.blocks = contraption.blocks.filter((b: any) => b !== blockToDel);
+    return { ok: true, removed: 1 };
+  };
+
+  controller.deleteSelectionBlocks();
+
+  // Child component had 1 block, now 0 blocks -> removeComponentSubtree('childComponent') called!
+  assert.equal(removedSubtreeId, 'childComponent');
+  assert.ok(toasts.some(t => t.includes('Component [childComponent] and all its subcomponents deleted')));
+});
+
 
 

@@ -70,6 +70,18 @@ const MAX_PORTABLE_CONSTRAINT_VALUE = 10_000;
 export const BULK_EDIT_THRESHOLD = 256;
 export const BULK_EDIT_MAX_OPERATIONS_PER_FRAME = 1024;
 export const BULK_EDIT_FRAME_BUDGET_MS = 5;
+/**
+ * Upper bound on the number of virtual 0.125 m cells a single micro-mode entity
+ * selection may synthesize. Keeps very large micro boxes a safe no-op with a
+ * warning instead of allocating millions of descriptors.
+ */
+export const MAX_MICRO_SELECTION_CELLS = 16384;
+/**
+ * Upper bound on how many 1 m blocks one Del/F/P/G may convert into 0.125 m
+ * voxels. Each conversion adds 512 voxels and the engine rebuild is the dominant
+ * cost, so oversized edits are refused with a warning instead of freezing.
+ */
+export const MAX_MICRO_MATERIALIZE_BLOCKS = 32;
 const ENTITY_PLACEMENT_MAX_DROP = 48;
 const ENTITY_PLACEMENT_SUPPORT_BINS = 12;
 const ENTITY_PLACEMENT_SUPPORT_SAMPLE_LIMIT = 256;
@@ -693,12 +705,13 @@ export class PlayerController {
       (document.activeElement as HTMLElement).blur();
     }
 
-    // Direct Shift + 1..9:
-    // - When Selector tool is active: Shift + 1..5 switches selector shape (box, cylinder, sphere, stairs, line)
+    // Alt + 1..9 (and Shift + 1..9):
+    // - When Selector tool is active: Alt + 1..5 switches selector shape (1: box, 2: cylinder, 3: sphere, 4: stairs, 5: line)
     // - When Hammer is active: picks backpack slot N
-    // - Otherwise: picks palette color N
-    if (e.shiftKey && e.code.startsWith('Digit')) {
-      const num = parseInt(e.code.replace('Digit', ''), 10);
+    // - When Shovel, Spoon or other tools: picks palette preset color N
+    const digitMatch = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
+    if ((e.altKey || e.shiftKey) && digitMatch) {
+      const num = parseInt(digitMatch[1], 10);
       if (num >= 1 && num <= 9) {
         e.preventDefault();
         if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
@@ -709,8 +722,19 @@ export class PlayerController {
           }
         }
         if (this.ui) {
-          if (this.activeTool === SpecialTool.HAMMER) this.ui.selectInventorySlot(num - 1);
-          else this.ui.selectPresetColor(num - 1);
+          if (this.activeTool === SpecialTool.HAMMER) {
+            this.ui.selectInventorySlot(num - 1);
+          } else {
+            this.ui.selectPresetColor(num - 1);
+            if (this.activeTool === SpecialTool.SHOVEL || this.activeTool === SpecialTool.SPOON) {
+              const hex = PRESET_COLORS[num - 1];
+              if (hex !== undefined) {
+                // Keep the controller's own placement color in sync with the
+                // preset the UI just selected.
+                this.selectedColor = normalizeColor(hex);
+              }
+            }
+          }
         }
         return;
       }
@@ -1254,7 +1278,44 @@ export class PlayerController {
     if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
       const isMultiSelect = !!(e?.shiftKey || this.keys.crouch);
 
+      const worldPoint = this.currentRaycast && this.currentRaycast.hit
+        ? new THREE.Vector3(this.currentRaycast.hitPos.x, this.currentRaycast.hitPos.y, this.currentRaycast.hitPos.z)
+        : null;
+
+      // 预选后左键再点击任意方块->回到未选:
+      // When in preselected state (completed selection without an in-progress 2-point drag),
+      // a plain left click on any block (entity or world) dismisses the selection and returns to unselected ('未选').
+      // A subtree-only selection created by Shift+click on an editable level also counts as
+      // preselected. Running/errored entities keep their whole-selection on repeat clicks (the
+      // only level they expose), so their non-editable subtree stays sticky.
+      const isEntityBoxInProgress = !!(this.selectorRange && this.selectorRange.pointA && !this.selectorRange.pointB);
+      const isWorldBoxInProgress = !!(this.contraptions && this.contraptions.selectionCornerA !== null && this.contraptions.selectionCornerB === null);
+      const isEditableSubtreeSelection = !!(
+        this.selectedSubtree?.contraption &&
+        this.selectedBlockSelection === null &&
+        this.canEditEntityInternals(this.selectedSubtree.contraption)
+      );
+      const isPreselected = !!(
+        isEditableSubtreeSelection ||
+        (this.selectedBlockSelection && this.selectedBlockSelection.blocks?.length > 0) ||
+        (this.contraptions && typeof this.contraptions.hasValidSelection === 'function' && this.contraptions.hasValidSelection())
+      );
+      const clickedAnyBlock = !!(this.hoveredContraptionHit || worldPoint);
+      if (!isMultiSelect && !isEntityBoxInProgress && !isWorldBoxInProgress && isPreselected && clickedAnyBlock) {
+        this.clearSelection();
+        return;
+      }
+
       if (this.hoveredContraptionHit) {
+        // If world selection was in progress (cornerA was set on world terrain), but point 2 hits an entity:
+        if (this.contraptions && this.contraptions.selectionCornerA !== null && this.contraptions.selectionCornerB === null) {
+          this.contraptions.selectionCornerA = null;
+          this.contraptions.selectionCornerB = null;
+          this.boxSelectionPreview = null;
+          this.sceneRenderer?.clearBoxSelectionPreview?.();
+          this.ui?.showToast?.('起点不是实体，结束点也不能是实体', { tone: 'warning' });
+          return;
+        }
         // Entity/component hit:
         //   First click  → select that component level (auto-highlights its subtree, not its parent).
         //   Second click → advance the 2-point box selection for that level's own blocks only.
@@ -1263,9 +1324,6 @@ export class PlayerController {
         return;
       }
 
-      const worldPoint = this.currentRaycast && this.currentRaycast.hit
-        ? new THREE.Vector3(this.currentRaycast.hitPos.x, this.currentRaycast.hitPos.y, this.currentRaycast.hitPos.z)
-        : null;
       // Micro selection mode (Tab) targets the 0.125 m cell under the crosshair
       // instead of the whole standard cell.
       const microCell = this.selectorMicroMode ? this.selectorMicroCellFromRaycast() : null;
@@ -1297,19 +1355,13 @@ export class PlayerController {
         return;
       }
 
-      // Entity box-selection progress (world click): corner 1 / corner 2 are anchored to the
-      // target node's local frame so the range follows component rotation/translation — preventing
-      // false "No blocks" misses when the component moves between clicks. In micro mode the
-      // corner snaps to the 0.125 m surface cell under the crosshair (targetPoint) exactly like
-      // the world 2-point box; using the whole standard cell (worldPoint) would drop up to a
-      // 1 m layer of 0.125 m blocks from the range at the aimed face.
+      // If entity selection was in progress (corner 1 on entity), but corner 2 is clicked on world:
       if (this.selectorRange && this.selectorRange.pointA && !this.selectorRange.pointB && worldPoint) {
-        this.selectorRange.pointB = this.rangePointToLocal(this.selectorRange, targetPoint);
-        this.resolveBlockRangeSelection(this.selectorRange);
-        return;
-      }
-      if (this.selectorRange && !this.selectorRange.pointA && worldPoint) {
-        this.selectorRange.pointA = this.rangePointToLocal(this.selectorRange, targetPoint);
+        this.selectorRange = null;
+        this.selectorLevel = null;
+        this.boxSelectionPreview = null;
+        this.sceneRenderer?.clearBoxSelectionPreview?.();
+        this.ui?.showToast?.('起点是实体，结束点也必须是该实体的一部分', { tone: 'warning' });
         return;
       }
 
@@ -1420,33 +1472,13 @@ export class PlayerController {
     const shiftHeld = !!(e?.shiftKey || this.keys?.crouch);
 
     // World 2-point box in progress (cornerA set, cornerB not yet set): clicking an entity
-    // also confirms cornerB — consistent with the "second click finalises the box" UX.
+    // must be rejected per requirement: "如果框选的起点不是实体，结束的点也应该不是实体，否则退出选区，给出提示。"
     if (this.contraptions && this.contraptions.selectionCornerA !== null && this.contraptions.selectionCornerB === null) {
-      const cornerResult = this.performBasicAction({
-        domain: ActionDomain.SELECTION,
-        action: 'corner-b',
-        point: hit.point,
-        micro: this.selectorMicroMode === true
-      });
-      const ptB = this.selectorMicroMode
-        ? (this.contraptions.microCellFromPoint?.(hit.point) ?? { x: Math.floor(hit.point.x), y: Math.floor(hit.point.y), z: Math.floor(hit.point.z) })
-        : { x: Math.floor(hit.point.x), y: Math.floor(hit.point.y), z: Math.floor(hit.point.z) };
-      if (this.selectionShapeAnchor) {
-        this.selectionShapeAnchor.cornerB = ptB;
-      }
-      if (this.selectorShape !== 'box') {
-        this.applySelectionShape(this.selectorShape);
-        return;
-      }
-      if (this.selectorMicroMode) {
-        if (cornerResult?.clamped && this.ui) {
-          this.ui.showToast('Selection exceeds 64×64×64 limit · clamped to bounds', { tone: 'warning' });
-        }
-        return;
-      }
-      if (cornerResult?.clamped && this.ui) {
-        this.ui.showToast('Selection exceeds 64×64×64 limit · clamped to bounds', { tone: 'warning' });
-      }
+      this.contraptions.selectionCornerA = null;
+      this.contraptions.selectionCornerB = null;
+      this.boxSelectionPreview = null;
+      this.sceneRenderer?.clearBoxSelectionPreview?.();
+      if (this.ui) this.ui.showToast('起点不是实体，结束点也不能是实体', { tone: 'warning' });
       return;
     }
 
@@ -1462,9 +1494,45 @@ export class PlayerController {
         this.selectedSubtree.contraption.clearSubtreeHighlight();
         this.selectedSubtree = null;
       }
-      const hitBlock = hit.block;
+      let hitBlock = hit.block;
       if (!hitBlock) {
         this.startSubtreeSelection(contraption, hitNodeId);
+        return;
+      }
+      // Micro mode selects 0.125 m voxels. Toggling a cell of a 1 m block is
+      // virtual (non-destructive): the block is only subdivided later, when
+      // Del/F/P/G actually mutate geometry.
+      if (this.selectorMicroMode === true && (hitBlock.size || 1) >= 1) {
+        const microCell = this.entityMicroCellFromHit(hit);
+        if (!microCell) return;
+        const previous = this.selectedBlockSelection;
+        const current = (previous?.contraption === contraption
+          && previous?.micro === true
+          && previous?.nodeId === hitNodeId)
+          ? [...previous.blocks]
+          : [];
+        const key = `${microCell.x},${microCell.y},${microCell.z}`;
+        const index = current.findIndex((b: any) => this.microCellKey(b) === key);
+        if (index >= 0) {
+          current.splice(index, 1);
+        } else {
+          current.push({
+            localX: microCell.x * MICRO_SIZE,
+            localY: microCell.y * MICRO_SIZE,
+            localZ: microCell.z * MICRO_SIZE,
+            size: MICRO_SIZE,
+            color: hitBlock.color,
+            block: hitBlock.block,
+            entityId: contraptionBlockOwnerId(contraption, hitBlock),
+            virtualMicro: true,
+            sourceBlock: hitBlock
+          });
+        }
+        if (current.length === 0) {
+          this.clearSelection();
+        } else {
+          this.setVirtualMicroSelection(contraption, hitNodeId, current);
+        }
         return;
       }
       const result = this.performBasicAction({
@@ -1494,41 +1562,53 @@ export class PlayerController {
       return;
     }
 
-    // Box-selection in progress for this contraption: plain clicks sequentially set corner 1
-    // then corner 2 (any surface point on the entity is accepted).
-    if (this.selectorRange && this.selectorRange.contraption === contraption) {
-      const inwardPoint = this.getInwardEntityPoint(hit);
-      if (!this.selectorRange.pointA) {
-        this.selectorRange.pointA = this.rangePointToLocal(this.selectorRange, inwardPoint);
+    // Point 2 on entity (selection in progress):
+    if (this.selectorRange && this.selectorRange.pointA) {
+      if (this.selectorRange.contraption !== contraption) {
+        this.clearSelection();
+        if (this.ui) this.ui.showToast('选区的起点与终点必须属于同一实体', { tone: 'warning' });
         return;
       }
+      if (this.selectorRange.nodeId !== hitNodeId) {
+        this.clearSelection();
+        if (this.ui) this.ui.showToast('选中区域必须是同一层级、同父组件', { tone: 'warning' });
+        return;
+      }
+      const inwardPoint = this.getInwardEntityPoint(hit);
       this.selectorRange.pointB = this.rangePointToLocal(this.selectorRange, inwardPoint);
       this.resolveBlockRangeSelection(this.selectorRange);
       return;
     }
 
-    // A level is already active: clicking anywhere on the contraption restarts box-selection
-    // (waiting for corner 1).
-    if (this.selectorLevel && this.selectorLevel.contraption === contraption) {
-      // Cancel previous block selection: clear orange highlight and any lingering world-selection
-      // state to prevent mixed stale UI.
-      this.performBasicAction({ domain: ActionDomain.SELECTION, action: 'clear' });
-      if (this.selectedBlockSelection) {
-        this.selectedBlockSelection.contraption.clearSubtreeHighlight();
-      }
-      this.selectedBlockSelection = null;
-      this.selectorRange = {
-        contraption,
-        nodeId: this.selectorLevel.nodeId,
-        pointA: null,
-        pointB: null
-      };
-      this.updateSelectionAxisGizmo();
-      return;
+    // Point 1 on entity (sets the first point immediately, allowing 2-click box selection):
+    if (this.contraptions) {
+      this.contraptions.selectionCornerA = null;
+      this.contraptions.selectionCornerB = null;
     }
-
-    // First click on a new entity/level: select this component and highlight its subtree.
-    this.startSubtreeSelection(contraption, hitNodeId);
+    // A fresh selection must not inherit the previous selection's shape corners,
+    // otherwise Alt+shape after a new box would recompute from a stale region.
+    this.selectionShapeAnchor = null;
+    this.performBasicAction({ domain: ActionDomain.SELECTION, action: 'clear' });
+    if (this.selectedSubtree) {
+      this.selectedSubtree.contraption.clearSubtreeHighlight?.();
+      this.selectedSubtree = null;
+    }
+    if (this.selectedBlockSelection) {
+      this.selectedBlockSelection.contraption.clearSubtreeHighlight?.();
+      this.selectedBlockSelection = null;
+    }
+    const nodeIds = this.collectSubtreeIds(contraption, hitNodeId);
+    this.selectedSubtree = { contraption, rootId: hitNodeId, nodeIds };
+    this.selectorLevel = { contraption, nodeId: hitNodeId };
+    this.selectorRange = {
+      contraption,
+      nodeId: hitNodeId,
+      pointA: null,
+      pointB: null
+    };
+    const inwardPoint = this.getInwardEntityPoint(hit);
+    this.selectorRange.pointA = this.rangePointToLocal(this.selectorRange, inwardPoint);
+    this.updateSelectionAxisGizmo();
   }
 
   canEditEntityInternals(contraption) {
@@ -1543,6 +1623,8 @@ export class PlayerController {
    * parent). Clears any active world selection so the two modes never overlap.
    */
   startSubtreeSelection(contraption, hitNodeId, opts: { wholeOnly?: boolean } = {}) {
+    // New selection: drop any shape corners left over from a previous region.
+    this.selectionShapeAnchor = null;
     if (this.selectedSubtree && this.selectedSubtree.contraption !== contraption) {
       this.selectedSubtree.contraption.clearSubtreeHighlight();
     }
@@ -1654,35 +1736,26 @@ export class PlayerController {
     if (!range || !range.contraption) return null;
     const node = range.contraption.entityNodes.get(range.nodeId);
     if (!node) return null;
-    const blocks = range.contraption.blocks.filter(block => (
-      !this.selectorMicroMode || (block.size || 1) < 1
+    // Clamp to EVERY block owned by this level, standard and micro alike. Filtering
+    // to micro blocks alone broke components that mix granularities: after carving
+    // a hole in one 1 m block, a box drawn on another (still standard) block was
+    // clamped to the carved micro geometry elsewhere in the component, so the
+    // live preview jumped to the wrong block.
+    const ownerBlocks = range.contraption.blocks.filter(block => (
+      contraptionBlockOwnerId(range.contraption, block) === range.nodeId
     ));
-    if (blocks.length === 0) return null;
+    if (ownerBlocks.length === 0) return null;
     node.group?.updateWorldMatrix?.(true, false);
     const min = new THREE.Vector3(Infinity, Infinity, Infinity);
     const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-    const tempBox = new THREE.Box3();
-    const pivot = node.pivotLocal;
-    for (const block of blocks) {
-      if (contraptionBlockOwnerId(range.contraption, block) === range.nodeId) {
-        const size = block.size || 1;
-        min.x = Math.min(min.x, block.localX);
-        min.y = Math.min(min.y, block.localY);
-        min.z = Math.min(min.z, block.localZ);
-        max.x = Math.max(max.x, block.localX + size);
-        max.y = Math.max(max.y, block.localY + size);
-        max.z = Math.max(max.z, block.localZ + size);
-      } else if (typeof range.contraption.getBlockWorldBounds === 'function') {
-        range.contraption.getBlockWorldBounds(block, tempBox);
-        node.group.worldToLocal(tempBox.min);
-        node.group.worldToLocal(tempBox.max);
-        min.x = Math.min(min.x, Math.min(tempBox.min.x, tempBox.max.x) + pivot.x);
-        min.y = Math.min(min.y, Math.min(tempBox.min.y, tempBox.max.y) + pivot.y);
-        min.z = Math.min(min.z, Math.min(tempBox.min.z, tempBox.max.z) + pivot.z);
-        max.x = Math.max(max.x, Math.max(tempBox.min.x, tempBox.max.x) + pivot.x);
-        max.y = Math.max(max.y, Math.max(tempBox.min.y, tempBox.max.y) + pivot.y);
-        max.z = Math.max(max.z, Math.max(tempBox.min.z, tempBox.max.z) + pivot.z);
-      }
+    for (const block of ownerBlocks) {
+      const size = block.size || 1;
+      min.x = Math.min(min.x, block.localX);
+      min.y = Math.min(min.y, block.localY);
+      min.z = Math.min(min.z, block.localZ);
+      max.x = Math.max(max.x, block.localX + size);
+      max.y = Math.max(max.y, block.localY + size);
+      max.z = Math.max(max.z, block.localZ + size);
     }
     const hasValidBounds = Number.isFinite(min.x) && Number.isFinite(max.x) &&
                            Number.isFinite(min.y) && Number.isFinite(max.y) &&
@@ -1756,17 +1829,55 @@ export class PlayerController {
       return;
     }
 
-    const selected = result.selection.blocks;
+    let selected = result.selection.blocks;
     const components = result.components || [];
-    const targetNodeId = components.length === 1 ? components[0] : nodeId;
-    this.selectedSubtree = null;
+
+    // Validation: "不含已分配的子组件的方块。（否则退出选择器，给出提示）"
+    const hasOtherComponentBlocks = selected.some((b: any) => contraptionBlockOwnerId(contraption, b) !== nodeId);
+    if (hasOtherComponentBlocks || components.length > 1 || (components.length === 1 && components[0] !== nodeId)) {
+      this.clearSelection();
+      if (this.ui) this.ui.showToast('选区不能包含已分配的子组件方块', { tone: 'warning' });
+      return;
+    }
+
     const isMicro = this.selectorMicroMode === true;
+
+    // Micro mode must select 0.125 m voxels, not whole 1 m blocks. The component
+    // may not own any micro geometry yet, so the range is resolved into a
+    // *virtual* micro selection: every micro cell of a covered standard block is
+    // synthesized in place (non-destructively). The entity is only subdivided
+    // later, when Del/F/P/G actually mutate the geometry.
+    if (isMicro) {
+      const cellRange = this.entityMicroCellRangeForBox(range);
+      const virtual = cellRange
+        ? this.buildEntityMicroSelection(contraption, nodeId, (x: number, y: number, z: number) => (
+            x >= cellRange.minX && x <= cellRange.maxX &&
+            y >= cellRange.minY && y <= cellRange.maxY &&
+            z >= cellRange.minZ && z <= cellRange.maxZ
+          ))
+        : null;
+      if (virtual) {
+        selected = virtual;
+      } else if (this.ui) {
+        this.ui.showToast(
+          `Micro selection is too large (limit ${MAX_MICRO_SELECTION_CELLS} voxels) — narrow the box`,
+          { tone: 'warning' }
+        );
+      }
+    }
+
+    const targetNodeId = nodeId;
+    this.selectedSubtree = null;
     this.selectedBlockSelection = {
       contraption,
       nodeId: targetNodeId,
       blocks: selected,
+      micro: isMicro,
+      virtualMicro: selected.some((b: any) => b.virtualMicro === true),
       bounds: this.getEntitySelectionBounds(selected, isMicro)
     };
+    contraption.clearSubtreeHighlight?.();
+    contraption.highlightBlocks?.(selected);
     this.selectorLevel = { contraption, nodeId: targetNodeId };
     // Box-selection complete: exit box mode. The next click anywhere will start a fresh re-box.
     this.selectorRange = null;
@@ -1787,6 +1898,195 @@ export class PlayerController {
     } else {
       this.updateSelectionAxisGizmo();
     }
+  }
+
+  /**
+   * Node-local 0.125 m cell index under an entity standard-block hit. Matches the
+   * surface micro cell the selector cursor highlights, so Shift+click toggles
+   * exactly the voxel the player is aiming at.
+   */
+  private entityMicroCellFromHit(hit) {
+    const place = hit?.placeMicroPos;
+    if (!place) return null;
+    const normal = hit.normal || { x: 0, y: 0, z: 0 };
+    return {
+      x: Math.floor((place.localX - (normal.x || 0) * (MICRO_SIZE / 2)) * MICRO_DIVISIONS),
+      y: Math.floor((place.localY - (normal.y || 0) * (MICRO_SIZE / 2)) * MICRO_DIVISIONS),
+      z: Math.floor((place.localZ - (normal.z || 0) * (MICRO_SIZE / 2)) * MICRO_DIVISIONS)
+    };
+  }
+
+  /**
+   * Authored-space 0.125 m cell index AABB covered by a node-local box range.
+   * Mirrors the engine's block-AABB intersection (both endpoints inclusive),
+   * so the synthesized micro cells match the blocks the shared query selects.
+   */
+  private entityMicroCellRangeForBox(range) {
+    const gridA = this.rangePointToPreviewGrid(range, range.pointA);
+    const gridB = this.rangePointToPreviewGrid(range, range.pointB);
+    if (!gridA || !gridB) return null;
+    const minX = Math.min(gridA.x, gridB.x);
+    const maxX = Math.max(gridA.x, gridB.x);
+    const minY = Math.min(gridA.y, gridB.y);
+    const maxY = Math.max(gridA.y, gridB.y);
+    const minZ = Math.min(gridA.z, gridB.z);
+    const maxZ = Math.max(gridA.z, gridB.z);
+    return {
+      minX: Math.ceil(minX * MICRO_DIVISIONS) - 1,
+      maxX: Math.floor(maxX * MICRO_DIVISIONS),
+      minY: Math.ceil(minY * MICRO_DIVISIONS) - 1,
+      maxY: Math.floor(maxY * MICRO_DIVISIONS),
+      minZ: Math.ceil(minZ * MICRO_DIVISIONS) - 1,
+      maxZ: Math.floor(maxZ * MICRO_DIVISIONS)
+    };
+  }
+
+  /**
+   * Build a **virtual** micro selection for a component: real micro blocks inside
+   * the region are reused, and every 0.125 m cell of a covered 1 m block is
+   * synthesized as a lightweight descriptor (`virtualMicro` + `sourceBlock`) that
+   * is NOT added to the entity. The geometry is only subdivided when an operation
+   * (Del/F/P/G) actually needs real voxels.
+   *
+   * @returns The descriptor list, or `null` when the region exceeds
+   *   {@link MAX_MICRO_SELECTION_CELLS} cells.
+   */
+  private buildEntityMicroSelection(contraption, nodeId, contains: (x: number, y: number, z: number) => boolean) {
+    const blocks: any[] = [];
+    let cells = 0;
+    for (const block of contraption.blocks) {
+      if (contraptionBlockOwnerId(contraption, block) !== nodeId) continue;
+      const size = (block.size !== undefined && block.size !== null) ? block.size : 1;
+      if (size < 1) {
+        const cx = Math.round(block.localX * MICRO_DIVISIONS);
+        const cy = Math.round(block.localY * MICRO_DIVISIONS);
+        const cz = Math.round(block.localZ * MICRO_DIVISIONS);
+        if (contains(cx, cy, cz)) blocks.push(block);
+        continue;
+      }
+      const baseX = Math.floor(block.localX + 1e-6) * MICRO_DIVISIONS;
+      const baseY = Math.floor(block.localY + 1e-6) * MICRO_DIVISIONS;
+      const baseZ = Math.floor(block.localZ + 1e-6) * MICRO_DIVISIONS;
+      const owner = contraptionBlockOwnerId(contraption, block);
+      for (let ix = 0; ix < MICRO_DIVISIONS; ix++) {
+        for (let iy = 0; iy < MICRO_DIVISIONS; iy++) {
+          for (let iz = 0; iz < MICRO_DIVISIONS; iz++) {
+            if (!contains(baseX + ix, baseY + iy, baseZ + iz)) continue;
+            if (++cells > MAX_MICRO_SELECTION_CELLS) return null;
+            blocks.push({
+              localX: (baseX + ix) * MICRO_SIZE,
+              localY: (baseY + iy) * MICRO_SIZE,
+              localZ: (baseZ + iz) * MICRO_SIZE,
+              size: MICRO_SIZE,
+              color: block.color,
+              block: block.block,
+              entityId: owner,
+              virtualMicro: true,
+              sourceBlock: block
+            });
+          }
+        }
+      }
+    }
+    return blocks;
+  }
+
+  /** Cell key used to compare a block descriptor with a 0.125 m cell index. */
+  private microCellKey(block) {
+    return `${Math.round(block.localX * MICRO_DIVISIONS)},${Math.round(block.localY * MICRO_DIVISIONS)},${Math.round(block.localZ * MICRO_DIVISIONS)}`;
+  }
+
+  /**
+   * Replace the current selection with a virtual micro selection made of the
+   * given descriptors, refreshing highlights, bounds and the shape gizmo.
+   */
+  private setVirtualMicroSelection(contraption, nodeId, blocks) {
+    this.selectedSubtree = null;
+    this.selectedBlockSelection = {
+      contraption,
+      nodeId,
+      blocks,
+      micro: true,
+      virtualMicro: blocks.some((b: any) => b.virtualMicro === true),
+      bounds: this.getEntitySelectionBounds(blocks, true)
+    };
+    this.selectorLevel = { contraption, nodeId };
+    this.selectorRange = null;
+    contraption.clearSubtreeHighlight?.();
+    contraption.highlightBlocks?.(blocks);
+    this.updateSelectionAxisGizmo();
+  }
+
+  /**
+   * Lazily subdivide the standard blocks behind a virtual micro selection and
+   * swap the virtual descriptors for the real micro voxels that now exist.
+   *
+   * Called only by mutating operations (Del / F / P / G); selecting and copying
+   * never touch entity geometry.
+   *
+   * @returns `true` when the selection is backed by real blocks afterwards.
+   */
+  private materializeMicroSelection() {
+    const selection = this.selectedBlockSelection;
+    if (!selection?.micro) return true;
+    const virtual = (selection.blocks || []).filter((b: any) => b.virtualMicro === true);
+    if (virtual.length === 0) return true;
+
+    const { contraption, nodeId } = selection;
+    const sources = new Set<any>();
+    for (const block of virtual) {
+      if (block.sourceBlock) sources.add(block.sourceBlock);
+    }
+    if (sources.size === 0) return true;
+    if (sources.size > MAX_MICRO_MATERIALIZE_BLOCKS) {
+      this.ui?.showToast?.(
+        `Micro edit would subdivide ${sources.size} standard blocks (limit ${MAX_MICRO_MATERIALIZE_BLOCKS}) — narrow the selection`,
+        { tone: 'warning' }
+      );
+      return false;
+    }
+
+    // Subdivide every source block through one batched action. Calling the
+    // single-block `subdivide-standard` action per block rebuilt collision,
+    // picking and chunk meshes for every block, which dominated the cost of a
+    // micro Del/F/P even for tiny entities.
+    const result = this.performBasicAction({
+      domain: ActionDomain.ENTITY,
+      action: 'subdivide-cells',
+      target: { contraption },
+      nodeId,
+      cells: [...sources].map((source: any) => ({
+        x: Math.floor(source.localX + 1e-6),
+        y: Math.floor(source.localY + 1e-6),
+        z: Math.floor(source.localZ + 1e-6)
+      }))
+    });
+    if (!result?.ok) {
+      this.ui?.showToast?.('Could not subdivide the selected blocks for micro editing', { tone: 'warning' });
+      return false;
+    }
+
+    // Map every selected cell to the real micro voxel now occupying it.
+    const realMicroByCell = new Map<string, any>();
+    for (const block of contraption.blocks) {
+      if (contraptionBlockOwnerId(contraption, block) !== nodeId) continue;
+      if ((block.size || 1) >= 1) continue;
+      realMicroByCell.set(this.microCellKey(block), block);
+    }
+    const realBlocks: any[] = [];
+    for (const block of selection.blocks) {
+      if (!block.virtualMicro) {
+        realBlocks.push(block);
+        continue;
+      }
+      const real = realMicroByCell.get(this.microCellKey(block));
+      if (real) realBlocks.push(real);
+    }
+    selection.blocks = realBlocks;
+    selection.virtualMicro = false;
+    selection.bounds = this.getEntitySelectionBounds(realBlocks, true);
+    this.ui?.notifyContraptionStructureChanged?.(contraption);
+    return true;
   }
 
   /**
@@ -1873,6 +2173,9 @@ export class PlayerController {
       if (this.ui) this.ui.showToast('No block selection - box-select blocks of a level first');
       return;
     }
+    // G moves real voxels into a child, so a virtual micro selection must be
+    // subdivided into real 0.125 m blocks first.
+    if (!this.materializeMicroSelection()) return null;
     const { contraption, blocks } = sel;
     if (!this.canEditEntityInternals(contraption)) {
       this.clearSelection();
@@ -1905,6 +2208,15 @@ export class PlayerController {
     }
     sel.nodeId = targetNodeId;
     const nodeId = targetNodeId;
+
+    // Validation: "但不能把整个父组件选中创建子组件"
+    const totalParentBlocks = contraption.blocks.filter((b: any) => contraptionBlockOwnerId(contraption, b) === nodeId).length;
+    if (blocks.length >= totalParentBlocks) {
+      if (this.ui) {
+        this.ui.showToast('不能将整个父组件全部选中创建子组件', { tone: 'warning' });
+      }
+      return null;
+    }
 
     if (blocks.length > BULK_EDIT_THRESHOLD) {
       const started = this.startLargeChildCreation(contraption, nodeId, blocks);
@@ -1953,7 +2265,7 @@ export class PlayerController {
     if (this.selectedSubtree && this.selectedSubtree.contraption) {
       return true;
     }
-    if (this.contraptions && this.contraptions.hasValidSelection()) {
+    if (this.contraptions && typeof this.contraptions.hasValidSelection === 'function' && this.contraptions.hasValidSelection()) {
       return true;
     }
     return false;
@@ -2019,7 +2331,12 @@ export class PlayerController {
       const slot = contraption.serializeSubtree(nodeId);
       const slotRootId = inventoryEntityRootId(slot);
       slot.blocks = this.stripCopiedBottomGap(
-        blocks.map(b => ({ ...b, entityId: slotRootId })),
+        // Virtual micro descriptors carry resolver-only fields that must not leak
+        // into the portable inventory payload.
+        blocks.map(b => {
+          const { virtualMicro, sourceBlock, ...rest } = b as any;
+          return { ...rest, entityId: slotRootId };
+        }),
         'localY'
       );
       slot.blockCount = blocks.length;
@@ -3768,6 +4085,9 @@ export class PlayerController {
 
     // 1. Remove selected blocks from an entity component.
     if (this.selectedBlockSelection && this.selectedBlockSelection.blocks.length > 0) {
+      // A virtual micro selection is only subdivided here, when geometry is
+      // actually mutated.
+      if (!this.materializeMicroSelection()) return;
       const { contraption, nodeId, blocks } = this.selectedBlockSelection;
       const result = this.performBasicAction({
         domain: ActionDomain.SELECTION,
@@ -3779,12 +4099,25 @@ export class PlayerController {
       this.selectorLevel = null;
       this.selectorRange = null;
       if (result.ok) {
-        if (!result.empty) this.ui?.notifyContraptionStructureChanged(contraption);
         const kind = result.removed > 1
           ? 'bulk'
           : (blocks[0]?.size || 1) < 1 ? 'micro' : 'standard';
         this.sound?.playBlockBreak({ kind, count: result.removed });
-        if (this.ui) this.ui.showToast(`Deleted ${result.removed} blocks from [${nodeId}]`);
+        const remainingBlocks = contraption.blocks.filter((b: any) => contraptionBlockOwnerId(contraption, b) === nodeId);
+        if (remainingBlocks.length === 0) {
+          if (nodeId === contraptionRootId(contraption) || contraption.blocks.length === 0) {
+            this.contraptions?.removeContraption?.(contraption);
+            this.ui?.notifyContraptionRemoved?.(contraption);
+            if (this.ui) this.ui.showToast(`Entity #${contraption.id} fully dismantled`);
+          } else {
+            contraption.removeComponentSubtree?.(nodeId);
+            this.ui?.notifyContraptionStructureChanged?.(contraption);
+            if (this.ui) this.ui.showToast(`Component [${nodeId}] and all its subcomponents deleted`);
+          }
+        } else {
+          if (!result.empty) this.ui?.notifyContraptionStructureChanged(contraption);
+          if (this.ui) this.ui.showToast(`Deleted ${result.removed} blocks from [${nodeId}]`);
+        }
       } else if (this.ui) {
         this.ui.showToast(result.reason === 'entity_not_stopped'
           ? 'Stop the entity before deleting internal blocks'
@@ -3964,40 +4297,73 @@ export class PlayerController {
 
     const color = targetColor ?? this.selectedColor;
 
-    // 1. Entity blocks fill
-    if (this.selectedBlockSelection && this.selectedBlockSelection.blocks.length > 0) {
-      const { contraption, nodeId, blocks } = this.selectedBlockSelection;
-      const result = this.performBasicAction({
-        domain: ActionDomain.ENTITY,
-        action: 'paint-blocks',
-        target: { contraption },
-        nodeId,
-        blocks,
-        color
-      });
-      contraption.clearSubtreeHighlight?.();
-      this.selectedBlockSelection = null;
-      if (result.ok) {
-        this.sound?.playBlockPlace?.();
-        this.ui?.showToast?.(`Filled ${result.painted || blocks.length} blocks on [${nodeId}] with ${colorToHex(color)}`);
+    // A whole-component (subtree) selection has no block box of its own. F must
+    // still "fill/expand the component" instead of only recoloring it, so
+    // normalize it into a block selection over the component's own blocks (the
+    // level that owns the start point) before the expand branch below.
+    if (!this.selectedBlockSelection && this.selectedSubtree?.contraption) {
+      const { contraption, rootId } = this.selectedSubtree;
+      if (!this.canEditEntityInternals(contraption)) {
+        this.clearSelection();
+        this.ui?.showToast?.('Stop the entity before expanding its components', { tone: 'warning' });
+        return;
       }
-      return;
+      const ownerBlocks = contraption.blocks.filter((b: any) => contraptionBlockOwnerId(contraption, b) === rootId);
+      const ownerBounds = this.getEntitySelectionBounds(ownerBlocks, this.selectorMicroMode === true);
+      if (ownerBlocks.length === 0 || !ownerBounds) {
+        this.clearSelection();
+        this.ui?.showToast?.('Selected component has no blocks to expand', { tone: 'warning' });
+        return;
+      }
+      this.selectedBlockSelection = {
+        contraption,
+        nodeId: rootId,
+        blocks: ownerBlocks,
+        bounds: ownerBounds
+      };
+      this.selectedSubtree = null;
     }
 
-    // 1.5 Entity subtree fill
-    if (this.selectedSubtree && this.selectedSubtree.contraption) {
-      const { contraption, rootId } = this.selectedSubtree;
+    // 1. Entity blocks fill -> expand component
+    if (this.selectedBlockSelection) {
+      // Filling mutates geometry, so any virtual micro selection is subdivided now.
+      if (!this.materializeMicroSelection()) return;
+      const { contraption, nodeId, bounds, shapeCells } = this.selectedBlockSelection;
+      const isMicro = this.selectorMicroMode === true;
+
+      let targetCoords: Array<{ x: number; y: number; z: number }> = [];
+      if (Array.isArray(shapeCells) && shapeCells.length > 0) {
+        targetCoords = shapeCells;
+      } else if (bounds) {
+        for (let x = bounds.minX; x <= bounds.maxX; x++) {
+          for (let y = bounds.minY; y <= bounds.maxY; y++) {
+            for (let z = bounds.minZ; z <= bounds.maxZ; z++) {
+              targetCoords.push({ x, y, z });
+            }
+          }
+        }
+      }
+
       const result = this.performBasicAction({
-        domain: ActionDomain.SELECTION,
-        action: 'paint',
-        selection: { kind: 'entity-subtree', contraption, rootId, nodeId: rootId },
-        color
+        domain: ActionDomain.ENTITY,
+        action: 'fill-blocks',
+        target: { contraption },
+        nodeId,
+        coords: targetCoords,
+        color,
+        micro: isMicro
       });
+
       contraption.clearSubtreeHighlight?.();
-      this.selectedSubtree = null;
-      if (result.ok) {
-        this.sound?.playBlockPlace?.();
-        this.ui?.showToast?.(`Filled component [${rootId}] with ${colorToHex(color)}`);
+      this.selectedBlockSelection = null;
+      this.selectorLevel = null;
+      this.selectorRange = null;
+      this.updateSelectionAxisGizmo();
+      this.sound?.playBlockPlace?.();
+      if (this.ui) {
+        const addedCount = result.added || 0;
+        const recoloredCount = result.recolored || 0;
+        this.ui.showToast(`Expanded [${nodeId}]: added ${addedCount}, updated ${recoloredCount} blocks with ${colorToHex(color)}`);
       }
       return;
     }
@@ -4057,6 +4423,8 @@ export class PlayerController {
 
     // 1. Entity blocks recolor
     if (this.selectedBlockSelection && this.selectedBlockSelection.blocks.length > 0) {
+      // Recoloring mutates geometry, so virtual micro cells are subdivided first.
+      if (!this.materializeMicroSelection()) return;
       const { contraption, nodeId, blocks } = this.selectedBlockSelection;
       const targetBlocks = fromColor !== undefined
         ? blocks.filter(b => b.color === fromColor)
@@ -5539,33 +5907,94 @@ export class PlayerController {
     let matchingBlocks: any[] = [];
     let shapeCells: any[] | null = null;
 
+    if (isMicro) {
+      // Virtual micro selection: synthesize 0.125 m cells over covered 1 m blocks
+      // without mutating the entity. Del/F/P/G subdivide lazily.
+      if (shape === 'box') {
+        matchingBlocks = this.buildEntityMicroSelection(contraption, nodeId, (x: number, y: number, z: number) => (
+          x >= bounds.minX && x <= bounds.maxX &&
+          y >= bounds.minY && y <= bounds.maxY &&
+          z >= bounds.minZ && z <= bounds.maxZ
+        )) || [];
+      } else {
+        shapeCells = computeSelectionCells(shape, cornerA, cornerB, true, cylinderAxis, stairsAxis);
+        const cellSet = new Set(shapeCells.map(c => `${c.x},${c.y},${c.z}`));
+        matchingBlocks = this.buildEntityMicroSelection(contraption, nodeId, (x: number, y: number, z: number) => (
+          cellSet.has(`${x},${y},${z}`)
+        )) || [];
+      }
+    } else {
+    const hasMicroInComponent = contraption.blocks.some((b: any) => contraptionBlockOwnerId(contraption, b) === nodeId && (b.size || 1) < 1);
     if (shape === 'box') {
-      matchingBlocks = contraption.blocks.filter((b: any) => {
-        if (contraptionBlockOwnerId(contraption, b) !== nodeId) return false;
-        const s = b.size || 1;
-        if (isMicro && s >= 1) return false;
+      const matchingMicro: any[] = [];
+      const matchingStandard: any[] = [];
+      for (const b of contraption.blocks) {
+        if (contraptionBlockOwnerId(contraption, b) !== nodeId) continue;
+        const isMicroB = (b.size || 1) < 1;
+        const s = (b.size !== undefined && b.size !== null) ? b.size : 1;
         const bx = isMicro ? Math.round(b.localX * MICRO_DIVISIONS) : Math.floor(b.localX + 1e-6);
         const by = isMicro ? Math.round(b.localY * MICRO_DIVISIONS) : Math.floor(b.localY + 1e-6);
         const bz = isMicro ? Math.round(b.localZ * MICRO_DIVISIONS) : Math.floor(b.localZ + 1e-6);
-        return bx >= minX && bx <= maxX &&
-               by >= minY && by <= maxY &&
-               bz >= minZ && bz <= maxZ;
-      });
+        const bSize = isMicro ? Math.max(1, Math.round(s * MICRO_DIVISIONS)) : 1;
+        const maxBx = bx + bSize - 1;
+        const maxBy = by + bSize - 1;
+        const maxBz = bz + bSize - 1;
+        if (!(maxBx < minX || bx > maxX || maxBy < minY || by > maxY || maxBz < minZ || bz > maxZ)) {
+          if (isMicroB) {
+            matchingMicro.push(b);
+          } else {
+            matchingStandard.push(b);
+          }
+        }
+      }
+      matchingBlocks = (isMicro && hasMicroInComponent && matchingMicro.length > 0)
+        ? matchingMicro
+        : (isMicro ? (matchingMicro.length > 0 ? matchingMicro : matchingStandard) : [...matchingMicro, ...matchingStandard]);
     } else {
       shapeCells = computeSelectionCells(shape, cornerA, cornerB, isMicro, cylinderAxis, stairsAxis);
       const cellSet = new Set(shapeCells.map(c => `${c.x},${c.y},${c.z}`));
-      matchingBlocks = contraption.blocks.filter((b: any) => {
-        if (contraptionBlockOwnerId(contraption, b) !== nodeId) return false;
-        const s = b.size || 1;
-        if (isMicro && s >= 1) return false;
+      const matchingMicro: any[] = [];
+      const matchingStandard: any[] = [];
+      for (const b of contraption.blocks) {
+        // Skip blocks owned by other components (parent/root/siblings) instead
+        // of aborting: only this component's own blocks may match the shape.
+        if (contraptionBlockOwnerId(contraption, b) !== nodeId) continue;
+        const isMicroB = (b.size || 1) < 1;
+        const s = (b.size !== undefined && b.size !== null) ? b.size : 1;
         const bx = isMicro ? Math.round(b.localX * MICRO_DIVISIONS) : Math.floor(b.localX + 1e-6);
         const by = isMicro ? Math.round(b.localY * MICRO_DIVISIONS) : Math.floor(b.localY + 1e-6);
         const bz = isMicro ? Math.round(b.localZ * MICRO_DIVISIONS) : Math.floor(b.localZ + 1e-6);
-        return cellSet.has(`${bx},${by},${bz}`);
-      });
+        if (s < 1) {
+          if (cellSet.has(`${bx},${by},${bz}`)) {
+            matchingMicro.push(b);
+          }
+        } else {
+          let intersects = false;
+          if (isMicro) {
+            for (let ix = 0; ix < MICRO_DIVISIONS && !intersects; ix++) {
+              for (let iy = 0; iy < MICRO_DIVISIONS && !intersects; iy++) {
+                for (let iz = 0; iz < MICRO_DIVISIONS && !intersects; iz++) {
+                  if (cellSet.has(`${bx + ix},${by + iy},${bz + iz}`)) intersects = true;
+                }
+              }
+            }
+          } else {
+            intersects = cellSet.has(`${bx},${by},${bz}`);
+          }
+          if (intersects) {
+            matchingStandard.push(b);
+          }
+        }
+      }
+      matchingBlocks = (isMicro && hasMicroInComponent && matchingMicro.length > 0)
+        ? matchingMicro
+        : (isMicro ? (matchingMicro.length > 0 ? matchingMicro : matchingStandard) : [...matchingMicro, ...matchingStandard]);
+    }
     }
 
     this.selectedBlockSelection.blocks = matchingBlocks;
+    this.selectedBlockSelection.micro = isMicro;
+    this.selectedBlockSelection.virtualMicro = matchingBlocks.some((b: any) => b.virtualMicro === true);
     this.selectedBlockSelection.shapeCells = shapeCells;
     contraption.clearSubtreeHighlight?.();
     contraption.highlightBlocks?.(matchingBlocks);
@@ -5574,11 +6003,13 @@ export class PlayerController {
     const node = contraption.entityNodes?.get?.(nodeId);
     const frame = node?.group ? { object: node.group, pivot: (node.pivotLocal || new THREE.Vector3()).clone() } : null;
     if (shape === 'box' || !shapeCells || shapeCells.length === 0) {
-      this.sceneRenderer?.updateSelectionHologram?.(null, null, null, false, frame);
+      // Micro bounds are expressed in 0.125 m grid units, so the outer guide box
+      // must be scaled by MICRO_SIZE too.
+      this.sceneRenderer?.updateSelectionHologram?.(bounds, null, null, isMicro, frame);
     } else if (isMicro) {
-      this.sceneRenderer?.updateSelectionHologram?.(null, null, shapeCells, true, frame);
+      this.sceneRenderer?.updateSelectionHologram?.(bounds, null, shapeCells, true, frame);
     } else {
-      this.sceneRenderer?.updateSelectionHologram?.(null, shapeCells, null, false, frame);
+      this.sceneRenderer?.updateSelectionHologram?.(bounds, shapeCells, null, false, frame);
     }
   }
 
@@ -5664,11 +6095,20 @@ export class PlayerController {
     }
 
     const bounds = isMicro
-      ? this.contraptions.getMicroSelectionBounds?.()
+      ? (shape === 'box'
+          ? this.contraptions.getMicroSelectionBounds?.()
+          : {
+              minX: Math.min(cornerA.x, cornerB.x),
+              maxX: Math.max(cornerA.x, cornerB.x),
+              minY: Math.min(cornerA.y, cornerB.y),
+              maxY: Math.max(cornerA.y, cornerB.y),
+              minZ: Math.min(cornerA.z, cornerB.z),
+              maxZ: Math.max(cornerA.z, cornerB.z)
+            })
       : this.contraptions.getSelectionBounds?.();
     this.sceneRenderer?.updateSelectionAxisGizmo?.(bounds, isMicro);
     this.sceneRenderer?.updateSelectionHologram?.(
-      this.contraptions.getSelectionBounds?.(),
+      bounds,
       this.contraptions.connectedSelection,
       this.contraptions.microSelection,
       isMicro && shape !== 'box'
@@ -5864,7 +6304,7 @@ export class PlayerController {
       : this.contraptions.getSelectionBounds?.();
     this.sceneRenderer?.updateSelectionAxisGizmo?.(bounds, isMicro);
     this.sceneRenderer?.updateSelectionHologram?.(
-      this.contraptions.getSelectionBounds?.(),
+      bounds,
       this.contraptions.connectedSelection,
       this.contraptions.microSelection,
       isMicro && this.selectorShape !== 'box'
@@ -7446,6 +7886,16 @@ export class PlayerController {
       } else if (this.activeTool === SpecialTool.BRUSH) {
         this.hoveredContraption.setHighlighted(true);
         this.hoveredContraption.clearFocusHighlight();
+      } else if (this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) {
+        // Selector: do NOT highlight parent components (setHighlighted(false)).
+        // Only highlight the hovered component and all its subcomponents via setFocusHighlight!
+        this.hoveredContraption.setHighlighted(false);
+        if (this.hoveredContraptionHit) {
+          const hitNodeId = this.hoveredContraptionHit.entityId ?? contraptionRootId(this.hoveredContraption);
+          if (!this.contraptions.hasChildSelection() || this.contraptions.childSelection?.contraption !== this.hoveredContraption) {
+            this.hoveredContraption.setFocusHighlight(hitNodeId);
+          }
+        }
       } else {
         this.hoveredContraption.setHighlighted(true);
         if (this.hoveredContraptionHit) {
@@ -7500,17 +7950,87 @@ export class PlayerController {
   refreshAimAfterPointerAction() {
     this.updateAimRaycast();
     const cursor = this.getCursorHighlight();
-    this.sceneRenderer?.setCursor?.(cursor ? cursor.pos : null, cursor?.size ?? 1);
+    this.sceneRenderer?.setCursor?.(cursor ? cursor.pos : null, cursor?.size ?? 1, cursor?.quaternion, cursor?.center);
     this.sceneRenderer?.setMicroCarvePreview?.(this.microCarvePreview);
   }
 
   /**
-   * Cursor highlight (block focus box). When the shovel targets a 0.125 micro
-   * voxel, the operation applies to the whole 1x1x1 standard cell, so the
-   * outline stays 1x1x1 instead of shrinking to the micro cell.
-   * @returns {null | { pos: {x,y,z}, size: number }}
+   * Cursor highlight (block focus box). When hovering over an entity (even a large
+   * multi-block entity), it displays the small wireframe for the pointed individual
+   * block (or micro-block). When the shovel targets a 0.125 micro voxel, the
+   * operation applies to the whole 1x1x1 standard cell, so the outline stays 1x1x1.
+   * @returns {null | { pos: {x,y,z}, size: number, quaternion?: any, center?: any, isEntity?: boolean }}
    */
   getCursorHighlight() {
+    if (this.hoveredContraptionHit) {
+      const hit = this.hoveredContraptionHit;
+      const contraption = hit.contraption;
+      if (contraption) {
+        const nodeId = hit.entityId ?? (typeof contraptionRootId === 'function' ? contraptionRootId(contraption) : (contraption.rootComponentId || 'root'));
+        const targetNodeId = hit.block?.entityId || nodeId;
+        const focusNode = contraption.entityNodes?.get?.(targetNodeId)
+          || contraption.entityNodes?.get?.(nodeId)
+          || contraption.entityNodes?.get?.(contraption.rootComponentId);
+        focusNode?.group?.updateWorldMatrix?.(true, false);
+        const quaternion = focusNode?.group?.getWorldQuaternion?.(new THREE.Quaternion())
+          || contraption.quaternion?.clone?.()
+          || new THREE.Quaternion();
+
+        const isMicroBlock = hit.kind === 'micro' || (hit.block && (hit.block.size || 1) < 1);
+        let size = isMicroBlock ? (hit.block?.size || MICRO_SIZE) : 1;
+
+        if (this.activeTool === SpecialTool.SHOVEL) {
+          size = 1;
+        } else if (this.activeTool === SpecialTool.BRUSH && this.brushMicroMode) {
+          size = MICRO_SIZE;
+        } else if ((this.activeTool === SpecialTool.SELECTOR || this.activeTool === SpecialTool.SUPER_GLUE) && this.selectorMicroMode) {
+          size = MICRO_SIZE;
+        }
+
+        let center: THREE.Vector3 | null = null;
+        if (this.activeTool === SpecialTool.SHOVEL && isMicroBlock && hit.block) {
+          const stdCellX = Math.floor(hit.block.localX) + 0.5;
+          const stdCellY = Math.floor(hit.block.localY) + 0.5;
+          const stdCellZ = Math.floor(hit.block.localZ) + 0.5;
+          center = typeof contraption.entityLocalToWorld === 'function'
+            ? contraption.entityLocalToWorld(targetNodeId, new THREE.Vector3(stdCellX, stdCellY, stdCellZ))
+            : null;
+        } else if (size === MICRO_SIZE && !isMicroBlock && hit.placeMicroPos && hit.normal && typeof contraption.entityLocalToWorld === 'function') {
+          const localX = (Math.floor((hit.placeMicroPos.localX - (hit.normal.x || 0) * (MICRO_SIZE / 2)) * MICRO_DIVISIONS) + 0.5) / MICRO_DIVISIONS;
+          const localY = (Math.floor((hit.placeMicroPos.localY - (hit.normal.y || 0) * (MICRO_SIZE / 2)) * MICRO_DIVISIONS) + 0.5) / MICRO_DIVISIONS;
+          const localZ = (Math.floor((hit.placeMicroPos.localZ - (hit.normal.z || 0) * (MICRO_SIZE / 2)) * MICRO_DIVISIONS) + 0.5) / MICRO_DIVISIONS;
+          center = contraption.entityLocalToWorld(targetNodeId, new THREE.Vector3(localX, localY, localZ));
+        } else if (hit.block && typeof contraption.getBlockWorldCenter === 'function') {
+          center = contraption.getBlockWorldCenter(hit.block);
+        } else if (hit.cell && typeof contraption.entityLocalToWorld === 'function') {
+          center = contraption.entityLocalToWorld(
+            targetNodeId,
+            new THREE.Vector3(hit.cell.x + size / 2, hit.cell.y + size / 2, hit.cell.z + size / 2)
+          );
+        } else if (hit.point) {
+          center = hit.point.isVector3 ? hit.point.clone() : new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z);
+        }
+
+        if (center) {
+          const pos = {
+            x: center.x - size / 2,
+            y: center.y - size / 2,
+            z: center.z - size / 2
+          };
+          return {
+            pos,
+            center,
+            size,
+            quaternion,
+            isEntity: true,
+            contraption,
+            nodeId: targetNodeId,
+            block: hit.block
+          };
+        }
+      }
+    }
+
     const ray = this.currentRaycast;
     if (!ray || !ray.hit) return null;
     if (this.activeTool === SpecialTool.SHOVEL && ray.kind === 'micro' && ray.microPos) {
@@ -7578,7 +8098,7 @@ export class PlayerController {
     const brushBoxPending = isBrush && !!this.brushSelection;
     this.focusBlockPreview = null;
     this.boxSelectionPreview = null;
-    if (!isSpoon && !selectorActive && !worldBoxPending && !brushBoxPending && !isBrush) return;
+    if (!isSpoon && !isSelectorTool && !worldBoxPending && !brushBoxPending && !isBrush) return;
 
     if (this.hoveredContraptionHit) {
       const hit = this.hoveredContraptionHit;
@@ -7658,6 +8178,22 @@ export class PlayerController {
         }
         return;
       }
+      // World 2-point box in progress: hovering an entity also shows the live preview
+      // (clicking the entity surface confirms cornerB, same as clicking world voxels).
+      if (worldBoxPending && hit.point) {
+        this.boxSelectionPreview = {
+          pointA: this.pendingWorldCornerAMeters(),
+          cursor: this.selectorMicroMode
+            ? this.microMeterPoint(hit.point)
+            : {
+                x: Math.floor(hit.point.x),
+                y: Math.floor(hit.point.y),
+                z: Math.floor(hit.point.z)
+              },
+          micro: this.selectorMicroMode === true
+        };
+        return;
+      }
       // Selector: once a level is active, hovering inside the entity shows the 1×1×1 focus
       // outline. After corner 1 is set (box-selection in progress) the outline turns orange and
       // a live AABB preview is drawn. Range corners are stored in node-local space and converted
@@ -7666,28 +8202,17 @@ export class PlayerController {
       // must never fall through to the spoon micro-voxel grid.
       if (selectorActive) {
         if (this.selectorRange.contraption === contraption) {
-          const targetNodeId = hit.block?.entityId || nodeId;
-          const focusNode = contraption.entityNodes.get(targetNodeId) || contraption.entityNodes.get(nodeId);
-          focusNode?.group?.updateWorldMatrix?.(true, false);
-          const focusQuaternion = focusNode?.group
-            ?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
-          // In micro mode, hovering a 0.125 m block focuses the guide on that
-          // block instead of the 1 m standard cell containing it.
-          const microTarget = this.selectorMicroMode && hit.block && (hit.block.size || 1) < 1;
-          const center = hit.block && typeof contraption.getBlockWorldCenter === 'function'
-            ? contraption.getBlockWorldCenter(hit.block)
-            : (hit.cell && typeof contraption.entityLocalToWorld === 'function'
-              ? contraption.entityLocalToWorld(
-                  targetNodeId,
-                  new THREE.Vector3(hit.cell.x + 0.5, hit.cell.y + 0.5, hit.cell.z + 0.5)
-                )
-              : null);
-          if (center) {
+          // Reuse the cursor target so the guide matches what the selector will
+          // pick: a 0.125 m cell inside a standard block in micro mode, or the
+          // whole block in standard mode. Previously a standard block always drew
+          // a 1 m guide even in micro mode, which read as a broken selection.
+          const cursor = this.getCursorHighlight();
+          if (cursor?.center) {
             this.focusBlockPreview = {
-              center,
-              cellSize: microTarget ? (hit.block.size || MICRO_SIZE) : 1,
+              center: cursor.center,
+              cellSize: cursor.size ?? 1,
               active: !!this.selectorRange.pointA,
-              quaternion: focusQuaternion
+              quaternion: cursor.quaternion || new THREE.Quaternion()
             };
           }
           if (this.selectorRange.pointA && !this.selectorRange.pointB && hit.point) {
@@ -7705,22 +8230,6 @@ export class PlayerController {
             }
           }
         }
-        return;
-      }
-      // World 2-point box in progress: hovering an entity also shows the live preview
-      // (clicking the entity surface confirms cornerB, same as clicking world voxels).
-      if (worldBoxPending && hit.point) {
-        this.boxSelectionPreview = {
-          pointA: this.pendingWorldCornerAMeters(),
-          cursor: this.selectorMicroMode
-            ? this.microMeterPoint(hit.point)
-            : {
-                x: Math.floor(hit.point.x),
-                y: Math.floor(hit.point.y),
-                z: Math.floor(hit.point.z)
-              },
-          micro: this.selectorMicroMode === true
-        };
         return;
       }
       // Only the spoon renders the 8×8 micro-voxel grid.
@@ -7815,7 +8324,7 @@ export class PlayerController {
       let minX = Infinity, minY = Infinity, minZ = Infinity;
       let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
       for (const b of blocks) {
-        const size = b.size || MICRO_SIZE;
+        const size = (b.size !== undefined && b.size !== null) ? b.size : 1;
         const bx = Math.round(b.localX * MICRO_DIVISIONS);
         const by = Math.round(b.localY * MICRO_DIVISIONS);
         const bz = Math.round(b.localZ * MICRO_DIVISIONS);
@@ -7926,29 +8435,38 @@ export class PlayerController {
       maxMeterZ = bounds.maxZ + 1;
     }
 
-    const matchingBlocks = contraption.blocks.filter((b: any) => {
-      const owner = contraptionBlockOwnerId(contraption, b);
-      if (owner !== nodeId) return false;
-      const s = b.size || 1;
-      if (isMicro && s >= 1) return false;
-      return (
-        b.localX < maxMeterX - 1e-6 &&
-        b.localX + s > minMeterX + 1e-6 &&
-        b.localY < maxMeterY - 1e-6 &&
-        b.localY + s > minMeterY + 1e-6 &&
-        b.localZ < maxMeterZ - 1e-6 &&
-        b.localZ + s > minMeterZ + 1e-6
-      );
-    });
+    const matchingBlocks = isMicro
+      ? (this.buildEntityMicroSelection(contraption, nodeId, (x: number, y: number, z: number) => (
+          x >= bounds.minX && x <= bounds.maxX &&
+          y >= bounds.minY && y <= bounds.maxY &&
+          z >= bounds.minZ && z <= bounds.maxZ
+        )) || [])
+      : contraption.blocks.filter((b: any) => {
+        const owner = contraptionBlockOwnerId(contraption, b);
+        if (owner !== nodeId) return false;
+        const s = b.size || 1;
+        return (
+          b.localX < maxMeterX - 1e-6 &&
+          b.localX + s > minMeterX + 1e-6 &&
+          b.localY < maxMeterY - 1e-6 &&
+          b.localY + s > minMeterY + 1e-6 &&
+          b.localZ < maxMeterZ - 1e-6 &&
+          b.localZ + s > minMeterZ + 1e-6
+        );
+      });
 
     this.selectedBlockSelection.blocks = matchingBlocks;
+    this.selectedBlockSelection.micro = isMicro;
+    this.selectedBlockSelection.virtualMicro = matchingBlocks.some((b: any) => b.virtualMicro === true);
     this.selectedBlockSelection.shapeCells = null;
     contraption.clearSubtreeHighlight?.();
     contraption.highlightBlocks?.(matchingBlocks);
 
     const node = contraption.entityNodes?.get?.(nodeId);
     const frame = node?.group ? { object: node.group, pivot: (node.pivotLocal || new THREE.Vector3()).clone() } : null;
-    this.sceneRenderer?.updateSelectionHologram?.(null, null, null, false, frame);
+    // Keep the outer cuboid guide box visible while the axis gizmo expands the
+    // box selection instead of hiding the hologram.
+    this.sceneRenderer?.updateSelectionHologram?.(bounds, null, null, isMicro, frame);
 
     return { ok: true, bounds, count: matchingBlocks.length };
   }
@@ -8240,7 +8758,7 @@ export class PlayerController {
             : this.contraptions.getSelectionBounds();
           this.sceneRenderer?.updateSelectionAxisGizmo(updatedBounds, isMicro);
           this.sceneRenderer?.updateSelectionHologram(
-            this.contraptions.getSelectionBounds(),
+            updatedBounds,
             this.contraptions.connectedSelection,
             this.contraptions.microSelection,
             isMicro && this.selectorShape !== 'box'

@@ -232,11 +232,11 @@ const SELECTOR_SHAPE_ITEMS: Array<{
   shortcut: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
 }> = [
-  { id: 'box', name: 'Box', shortcut: 'Shift+1', icon: TbBox },
-  { id: 'cylinder', name: 'Cylinder', shortcut: 'Shift+2', icon: TbCylinder },
-  { id: 'sphere', name: 'Sphere', shortcut: 'Shift+3', icon: TbSphere },
-  { id: 'stairs', name: 'Stairs', shortcut: 'Shift+4', icon: TbStairs },
-  { id: 'line', name: 'Line', shortcut: 'Shift+5', icon: TbLine },
+  { id: 'box', name: '长方体 (Box)', shortcut: 'Alt+1', icon: TbBox },
+  { id: 'cylinder', name: '圆柱 (Cylinder)', shortcut: 'Alt+2', icon: TbCylinder },
+  { id: 'sphere', name: '球体/圆 (Sphere)', shortcut: 'Alt+3', icon: TbSphere },
+  { id: 'stairs', name: '阶梯 (Stairs)', shortcut: 'Alt+4', icon: TbStairs },
+  { id: 'line', name: '线条 (Line)', shortcut: 'Alt+5', icon: TbLine },
 ];
 
 function SelectorPanel() {
@@ -263,7 +263,7 @@ function SelectorPanel() {
             <span className="selector-recent-color-hex">{activeHex.toUpperCase()}</span>
           </div>
         </div>
-        <span className="palette-hotkey-hint"><b>Shift+1~5</b> shape · <b>Arrows</b> rotate · <b>F</b> fill · <b>P</b> recolor</span>
+        <span className="palette-hotkey-hint"><b>Alt+1~5</b> shape · <b>Arrows</b> rotate · <b>F</b> fill · <b>P</b> recolor</span>
       </div>
       <div className="selector-toolbox-content" id="selector-toolbox-content">
         <div className="selector-shapes-bar" id="selector-shapes-bar" role="group" aria-label="Selection Shape">

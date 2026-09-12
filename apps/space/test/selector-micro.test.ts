@@ -544,7 +544,7 @@ function makeEntityWithTopMicroLayer(scene) {
   return { contraption, manager };
 }
 
-test('entity 2-point box: a world-clicked corner snaps to the 0.125 m surface cell in micro mode', () => {
+test('entity 2-point box rejects world click as corner 2 with toast warning', () => {
   const scene = new THREE.Scene();
   const { contraption, manager } = makeEntityWithTopMicroLayer(scene);
   const controller = makeMicroController({ manager, world: {} });
@@ -565,11 +565,7 @@ test('entity 2-point box: a world-clicked corner snaps to the 0.125 m surface ce
   controller.handleLeftClick();
   assert.ok(controller.selectorRange?.pointA, 'corner 1 anchored in node-local space');
 
-  // Corner 2: WORLD click on the top face of standard cell (0,12,0) with the
-  // crosshair at entry (0.1875, 13.0, 0.375). The surface micro cell is
-  // (1, 103, 3) -> meter origin (0.125, 12.875, 0.375). Snapping this corner to the
-  // whole standard cell (0,12,0) would drop the top 0.125 m layer (local y
-  // 2.6..2.8) out of the range.
+  // Corner 2: world click is rejected because point 1 was on an entity.
   controller.hoveredContraptionHit = null;
   controller.currentRaycast = {
     hit: true, kind: 'standard', hitPos: { x: 0, y: 12, z: 0 },
@@ -577,19 +573,14 @@ test('entity 2-point box: a world-clicked corner snaps to the 0.125 m surface ce
   };
   controller.handleLeftClick();
 
-  const selected = manager.entitySelection?.blocks || [];
-  assert.equal(selected.length, 1, 'the top 0.125 m layer must be inside the range');
-  assert.equal(selected[0].size, 0.125);
-  assert.equal(selected[0].localY, 2.625);
-  assert.equal(selected[0].color, 0x00ff00);
+  assert.equal(controller.selectorRange, null, 'entity selection range must be cleared on invalid world endpoint');
   assert.ok(
-    !controller.__toasts.some(m => m.includes('No blocks of')),
-    'no false "No blocks" miss for the aimed 0.125 m layer'
+    controller.__toasts.some(m => m.includes('起点是实体，结束点也必须是该实体的一部分')),
+    'toast should warn about invalid endpoint'
   );
-  assert.equal(controller.selectorRange, null, 'box mode exits after resolution');
 });
 
-test('entity 2-point box in standard mode still snaps world corners to whole cells', () => {
+test('entity 2-point box in standard mode also rejects world click as corner 2', () => {
   const scene = new THREE.Scene();
   const { contraption, manager } = makeEntityWithTopMicroLayer(scene);
   const controller = makeMicroController({ manager, world: {} });
@@ -607,9 +598,8 @@ test('entity 2-point box in standard mode still snaps world corners to whole cel
     block: contraption.blocks[2], point: pointAWorld
   };
   controller.handleLeftClick();
+  assert.ok(controller.selectorRange?.pointA, 'corner 1 anchored in node-local space');
 
-  // Standard mode: corner 2 is the hit cell itself, exactly as before the
-  // micro-corner fix (the 0.125 m block layer stays out of range).
   controller.hoveredContraptionHit = null;
   controller.currentRaycast = {
     hit: true, kind: 'standard', hitPos: { x: 0, y: 12, z: 0 },
@@ -617,10 +607,11 @@ test('entity 2-point box in standard mode still snaps world corners to whole cel
   };
   controller.handleLeftClick();
 
-  const selected = manager.entitySelection?.blocks || [];
-  assert.equal(selected.length, 1, 'standard mode selects the middle whole cell only');
-  assert.equal(selected[0].size || 1, 1, 'the middle standard block is a whole cell');
-  assert.equal(selected[0].localY, 1);
+  assert.equal(controller.selectorRange, null, 'entity selection range must be cleared');
+  assert.ok(
+    controller.__toasts.some(m => m.includes('起点是实体，结束点也必须是该实体的一部分')),
+    'toast should warn about invalid endpoint'
+  );
 });
 
 test('entity-range world hover preview quantizes the cursor to the surface micro cell in micro mode', () => {
@@ -881,3 +872,402 @@ test('toggleSelectorMicroMode toggles between standard (1m) and micro (0.125m) m
   assert.equal(controller.selectorMicroMode, false, 'toggles back to standard mode');
   assert.ok(uiCalls.some(c => c.includes('STANDARD mode')));
 });
+
+test('micro selector can select child component region and switch levels', () => {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    1,
+    [
+      { localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0x0000ff },
+      { localX: 1, localY: 0, localZ: 0, size: 0.125, block: BlockTypes.COLOR_BLOCK, color: 0x00ff00 },
+      { localX: 1.125, localY: 0, localZ: 0, size: 0.125, block: BlockTypes.COLOR_BLOCK, color: 0x00ff00 }
+    ],
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { rootComponentId: 'root' }
+  );
+  // Create child component 'arm' containing the micro blocks
+  const child = contraption.createChildEntity('root', [contraption.blocks[1], contraption.blocks[2]], 'arm');
+  assert.ok(child, 'child created');
+
+  const manager = new ContraptionManager(scene, {}, null, null);
+  manager.registerContraption(contraption);
+  contraption.stopAllNodeScripts();
+
+  const toasts: string[] = [];
+  const controller = makeMicroController({
+    manager,
+    selectorMicroMode: true,
+    hoveredContraption: contraption,
+    ui: {
+      showToast: (m: string) => toasts.push(m),
+      renderInventoryBar() {},
+      notifyContraptionStructureChanged() {}
+    }
+  });
+
+  const armNode = contraption.entityNodes.get('arm');
+  const armBlock = contraption.blocks.find(b => b.entityId === 'arm');
+
+  // 1. First click sets pointA on child component level
+  const point1 = armNode.group.localToWorld(new THREE.Vector3(0, 0, 0));
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'arm',
+    block: armBlock,
+    point: point1
+  };
+  controller.handleLeftClick();
+  assert.equal(controller.selectorLevel?.nodeId, 'arm', 'switched to arm component level');
+  assert.ok(controller.selectorRange?.pointA, 'pointA set on arm');
+
+  // 2. Second click sets pointB and resolves block selection
+  // Deliberately extend box slightly toward root to verify ancestor blocks don't falsely reject with child component warning
+  const point2 = armNode.group.localToWorld(new THREE.Vector3(0.2, 0.2, 0.2));
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'arm',
+    block: armBlock,
+    point: point2
+  };
+  controller.handleLeftClick();
+
+  assert.ok(controller.selectedBlockSelection, 'block selection created on child component');
+  assert.equal(controller.selectedBlockSelection.nodeId, 'arm');
+  assert.equal(controller.selectedBlockSelection.blocks.length, 2);
+  assert.ok(!toasts.includes('选区不能包含已分配的子组件方块'), 'ancestor root should not trigger child component rejection');
+});
+
+test('micro selector hologram bounding box is scaled by MICRO_SIZE', () => {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  const renderer: any = Object.create(SceneRenderer.prototype);
+  renderer.scene = scene;
+  renderer.camera = camera;
+  renderer.setupSelectionHologram();
+
+  // 8 micro cells across (0..7) = exactly 1.0 meter physical span
+  renderer.updateSelectionHologram({ minX: 0, maxX: 7, minY: 0, maxY: 7, minZ: 0, maxZ: 7 }, null, null, true);
+  assert.ok(renderer.selectionGroup.visible);
+  assert.equal(Math.round(renderer.selectionGroup.scale.x * 1000) / 1000, 1.0, 'scale.x should be 1.0m (8 * 0.125)');
+  assert.equal(Math.round(renderer.selectionGroup.scale.y * 1000) / 1000, 1.0, 'scale.y should be 1.0m (8 * 0.125)');
+  assert.equal(Math.round(renderer.selectionGroup.scale.z * 1000) / 1000, 1.0, 'scale.z should be 1.0m (8 * 0.125)');
+});
+
+test('micro box selection stays virtual and only Del subdivides the entity', () => {
+  const scene = new THREE.Scene();
+  // Entity with only standard 1m blocks.
+  const contraption = new Contraption(
+    10,
+    [
+      { localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0xff0000 },
+      { localX: 1, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0x00ff00 },
+      { localX: 2, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0x0000ff }
+    ],
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { rootComponentId: 'root' }
+  );
+  const manager = new ContraptionManager(scene, {}, null, null);
+  manager.registerContraption(contraption);
+  contraption.stopAllNodeScripts();
+  const controller = makeMicroController({ manager });
+  controller.selectorMicroMode = true;
+
+  contraption.rootGroup.updateMatrixWorld(true);
+  const node = contraption.entityNodes.get('root');
+  const pivot = node.pivotLocal;
+  /** Authored (block-local) point -> world, so the stored range corners are exact. */
+  const toWorld = (ax: number, ay: number, az: number) => node.group.localToWorld(
+    new THREE.Vector3(ax - pivot.x, ay - pivot.y, az - pivot.z)
+  );
+  const clickAuthored = (ax: number, ay: number, az: number) => {
+    controller.hoveredContraptionHit = {
+      contraption,
+      entityId: 'root',
+      block: contraption.blocks.find((b: any) => (b.size || 1) >= 1 && Math.floor(b.localX + 1e-6) === 0),
+      cell: { x: 0, y: 0, z: 0 },
+      point: toWorld(ax, ay, az),
+      worldNormal: new THREE.Vector3(0, 0, 0),
+      normal: new THREE.Vector3(0, 0, 0)
+    };
+    controller.handleLeftClick();
+  };
+
+  const standardBefore = contraption.blocks.filter((b: any) => (b.size || 1) >= 1).length;
+
+  // A 0.15 m box inside the first standard block = 2x2x2 micro cells.
+  clickAuthored(0.05, 0.05, 0.05);
+  assert.ok(controller.selectorRange?.pointA, 'point 1 set');
+  clickAuthored(0.2, 0.2, 0.2);
+
+  const selection = controller.selectedBlockSelection;
+  assert.ok(selection, 'preselected state reached in micro mode');
+  assert.equal(selection.micro, true, 'the selection is a micro selection');
+  assert.equal(selection.virtualMicro, true, 'the selection is still virtual (nothing subdivided yet)');
+  assert.equal(selection.blocks.length, 8, 'a 2x2x2 micro box selects exactly eight 0.125 m voxels');
+  assert.ok(
+    selection.blocks.every((b: any) => (b.size || 1) < 1 && b.virtualMicro === true),
+    'the selected state must be 0.125 m voxels, never the nearest standard block'
+  );
+
+  // Selecting is non-destructive: the entity still has its standard blocks only.
+  assert.equal(
+    contraption.blocks.filter((b: any) => (b.size || 1) >= 1).length,
+    standardBefore,
+    'selecting must not subdivide any standard block'
+  );
+  assert.equal(
+    contraption.blocks.filter((b: any) => (b.size || 1) < 1).length,
+    0,
+    'selecting must not create micro geometry'
+  );
+  assert.equal(controller.__toasts.filter((t: string) => t.includes('No blocks inside')).length, 0, 'no No blocks error toast');
+
+  // Del is the moment the geometry is subdivided.
+  controller.deleteSelectionBlocks();
+  assert.equal(
+    contraption.blocks.filter((b: any) => (b.size || 1) >= 1).length,
+    standardBefore - 1,
+    'Del subdivided the covered standard block on demand'
+  );
+  assert.equal(
+    contraption.blocks.filter((b: any) => (b.size || 1) < 1).length,
+    512 - 8,
+    'only the selected cells were removed from the newly subdivided micro geometry'
+  );
+  assert.equal(controller.selectedBlockSelection, null, 'Del consumes the selection');
+});
+
+test('F subdivides a virtual micro selection on demand before expanding it', () => {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    12,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0xff0000 }],
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { rootComponentId: 'root' }
+  );
+  const manager = new ContraptionManager(scene, {}, null, null);
+  manager.registerContraption(contraption);
+  contraption.stopAllNodeScripts();
+  const controller = makeMicroController({ manager });
+  controller.selectorMicroMode = true;
+
+  contraption.rootGroup.updateMatrixWorld(true);
+  const node = contraption.entityNodes.get('root');
+  const pivot = node.pivotLocal;
+  const clickAuthored = (ax: number, ay: number, az: number) => {
+    controller.hoveredContraptionHit = {
+      contraption,
+      entityId: 'root',
+      block: contraption.blocks.find((b: any) => (b.size || 1) >= 1),
+      cell: { x: 0, y: 0, z: 0 },
+      point: node.group.localToWorld(new THREE.Vector3(ax - pivot.x, ay - pivot.y, az - pivot.z)),
+      worldNormal: new THREE.Vector3(0, 0, 0),
+      normal: new THREE.Vector3(0, 0, 0)
+    };
+    controller.handleLeftClick();
+  };
+  clickAuthored(0.05, 0.05, 0.05);
+  clickAuthored(0.2, 0.2, 0.2);
+  assert.equal(contraption.blocks.length, 1, 'selection alone leaves the entity untouched');
+
+  controller.fillSelectionBlocks(0x00ff00);
+
+  assert.equal(
+    contraption.blocks.filter((b: any) => (b.size || 1) >= 1).length,
+    0,
+    'F subdivided the covered standard block'
+  );
+  const filled = contraption.blocks.filter((b: any) => (b.size || 1) < 1 && b.color === 0x00ff00);
+  assert.equal(filled.length, 8, 'the 2x2x2 virtual box was filled with the active color');
+});
+
+test('Shift+click in micro mode toggles a virtual 0.125 m cell; P subdivides and recolors it', () => {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    11,
+    [{ localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0xff0000 }],
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { rootComponentId: 'root' }
+  );
+  const manager = new ContraptionManager(scene, {}, null, null);
+  manager.registerContraption(contraption);
+  contraption.stopAllNodeScripts();
+  const controller = makeMicroController({ manager });
+  controller.selectorMicroMode = true;
+
+  // Aim at the +Y (top) face of the 1 m block; placeMicroPos is the neighboring
+  // micro cell along the normal.
+  controller.hoveredContraptionHit = {
+    contraption,
+    entityId: 'root',
+    block: contraption.blocks[0],
+    cell: { x: 0, y: 0, z: 0 },
+    point: new THREE.Vector3(0.5, 11.0, 0.5),
+    placeMicroPos: { localX: 0.5, localY: 1.0, localZ: 0.5 },
+    normal: { x: 0, y: 1, z: 0 }
+  };
+  controller.handleLeftClick({ shiftKey: true });
+
+  assert.ok(controller.selectedBlockSelection, 'micro shift selection should be created');
+  const selected = controller.selectedBlockSelection.blocks;
+  assert.equal(selected.length, 1);
+  assert.ok((selected[0].size || 1) < 1, 'the toggled block must be a 0.125 m voxel');
+  assert.equal(selected[0].virtualMicro, true, 'the toggled cell is virtual until an operation runs');
+  // (1.0 - 1 * 0.125 / 2) * 8 = 7.5 -> cell 7 -> localY = 0.875
+  assert.equal(Math.round(selected[0].localY * 1000) / 1000, 0.875, 'the aimed surface micro cell is toggled');
+  assert.equal(contraption.blocks.length, 1, 'toggling alone must not subdivide the standard block');
+
+  // P is the moment the geometry is subdivided.
+  controller.selectedColor = 0x00ff00;
+  controller.paintSelectionBlocks();
+
+  assert.equal(
+    contraption.blocks.filter((b: any) => (b.size || 1) < 1).length,
+    512,
+    'P subdivided the standard block into its 512 micro voxels'
+  );
+  const painted = contraption.blocks.filter((b: any) => (b.size || 1) < 1 && b.color === 0x00ff00);
+  assert.equal(painted.length, 1, 'only the selected cell was recolored');
+  assert.equal(Math.round(painted[0].localY * 1000) / 1000, 0.875);
+  assert.equal(
+    contraption.blocks.filter((b: any) => (b.size || 1) < 1 && b.color === 0xff0000).length,
+    511,
+    'the remaining micro voxels keep the original color'
+  );
+});
+
+test('micro Del subdivides every covered block with one batched rebuild', () => {
+  const scene = new THREE.Scene();
+  // Four standard blocks: a per-block subdivision would rebuild the entity five
+  // times (4 subdivisions + 1 delete); the batched path must rebuild twice.
+  const contraption = new Contraption(
+    13,
+    [0, 1, 2, 3].map(x => ({ localX: x, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0xff0000 })),
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { rootComponentId: 'root' }
+  );
+  const manager = new ContraptionManager(scene, {}, null, null);
+  manager.registerContraption(contraption);
+  contraption.stopAllNodeScripts();
+  const controller = makeMicroController({ manager });
+  controller.selectorMicroMode = true;
+
+  contraption.rootGroup.updateMatrixWorld(true);
+  const node = contraption.entityNodes.get('root');
+  const pivot = node.pivotLocal;
+  const click = (ax: number, ay: number, az: number) => {
+    controller.hoveredContraptionHit = {
+      contraption,
+      entityId: 'root',
+      block: contraption.blocks.find((b: any) => (b.size || 1) >= 1),
+      cell: { x: 0, y: 0, z: 0 },
+      point: node.group.localToWorld(new THREE.Vector3(ax - pivot.x, ay - pivot.y, az - pivot.z)),
+      worldNormal: new THREE.Vector3(0, 0, 0),
+      normal: new THREE.Vector3(0, 0, 0)
+    };
+    controller.handleLeftClick();
+  };
+  // A thin box covering a sliver of all four blocks.
+  click(0.05, 0.05, 0.05);
+  click(3.05, 0.2, 0.2);
+  const sources = new Set(
+    controller.selectedBlockSelection.blocks
+      .filter((b: any) => b.virtualMicro)
+      .map((b: any) => b.sourceBlock)
+  );
+  assert.equal(sources.size, 4, 'the range covers all four standard blocks');
+
+  let rebuilds = 0;
+  const original = contraption.rebuildAfterBlockChange.bind(contraption);
+  contraption.rebuildAfterBlockChange = (...args: any[]) => {
+    rebuilds++;
+    return original(...args);
+  };
+
+  controller.deleteSelectionBlocks();
+
+  assert.ok(
+    rebuilds <= 2,
+    `batched subdivision must rebuild at most twice, got ${rebuilds}`
+  );
+  assert.ok(contraption.blocks.length > 1, 'the entity keeps its remaining micro geometry');
+});
+
+test('micro selection over a standard block stays anchored after another block was carved', () => {
+  const scene = new THREE.Scene();
+  const contraption = new Contraption(
+    14,
+    [
+      { localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0xff0000 },
+      { localX: 1, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0x00ff00 }
+    ],
+    new THREE.Vector3(0, 10, 0),
+    scene,
+    { rootComponentId: 'root' }
+  );
+  const manager = new ContraptionManager(scene, {}, null, null);
+  manager.registerContraption(contraption);
+  contraption.stopAllNodeScripts();
+  const controller = makeMicroController({ manager });
+  controller.selectorMicroMode = true;
+
+  contraption.rootGroup.updateMatrixWorld(true);
+  const node = contraption.entityNodes.get('root');
+  const pivot = node.pivotLocal;
+  const clickAuthored = (ax: number, ay: number, az: number) => {
+    controller.hoveredContraptionHit = {
+      contraption,
+      entityId: 'root',
+      block: contraption.blocks.find((b: any) => (b.size || 1) >= 1),
+      cell: { x: 0, y: 0, z: 0 },
+      point: node.group.localToWorld(new THREE.Vector3(ax - pivot.x, ay - pivot.y, az - pivot.z)),
+      worldNormal: new THREE.Vector3(0, 0, 0),
+      normal: new THREE.Vector3(0, 0, 0)
+    };
+    controller.handleLeftClick();
+  };
+
+  // 1. Carve a micro hole in block 0.
+  clickAuthored(0.05, 0.05, 0.05);
+  clickAuthored(0.2, 0.2, 0.2);
+  controller.deleteSelectionBlocks();
+  assert.equal(contraption.blocks.filter((b: any) => (b.size || 1) >= 1).length, 1, 'block 1 stays standard');
+  const carvedMicro = contraption.blocks.filter((b: any) => (b.size || 1) < 1).length;
+  assert.equal(carvedMicro, 504, 'block 0 is now micro geometry with a hole');
+
+  // 2. Start a micro box on the still-standard block 1.
+  clickAuthored(1.05, 0.05, 0.05);
+  assert.ok(controller.selectorRange?.pointA, 'point 1 set on block 1');
+
+  // The live preview must clamp to the whole component, not to block 0's carved
+  // micro geometry (which is the only micro geometry that exists so far).
+  const frame = controller.rangePreviewFrame(controller.selectorRange);
+  assert.ok(frame?.bounds, 'preview frame exists');
+  assert.ok(frame.bounds.max.x >= 2 - 1e-6, 'preview frame must reach the selected standard block');
+
+  // The focus guide must target the 0.125 m cell, not the whole 1 m block.
+  controller.updateMicroCarvePreview();
+  assert.equal(controller.focusBlockPreview?.cellSize, 0.125, 'micro mode must guide a 0.125 m cell');
+
+  // 3. Complete the selection and delete: block 0's carved geometry must survive.
+  clickAuthored(1.2, 0.2, 0.2);
+  const selection = controller.selectedBlockSelection;
+  assert.ok(selection, 'selection completed over block 1');
+  assert.ok(
+    selection.blocks.every((b: any) => b.localX >= 1 - 1e-6),
+    'the selection must not leak onto block 0'
+  );
+  assert.equal(selection.bounds.minX, 8, 'selection bounds are anchored to block 1');
+
+  controller.deleteSelectionBlocks();
+  const block0Micro = contraption.blocks.filter((b: any) => (b.size || 1) < 1 && b.localX < 1 - 1e-6);
+  const block1Micro = contraption.blocks.filter((b: any) => (b.size || 1) < 1 && b.localX >= 1 - 1e-6);
+  assert.equal(block0Micro.length, 504, "block 0's carved geometry is untouched");
+  assert.equal(block1Micro.length, 512 - 8, 'only the selected cells of block 1 were removed');
+});
+

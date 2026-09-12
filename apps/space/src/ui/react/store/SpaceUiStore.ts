@@ -1833,16 +1833,24 @@ export class SpaceUiStore {
     if (isEntity) {
       const isShape = controller?.selectorShape && controller.selectorShape !== 'box';
       const shapeCells = controller?.selectedBlockSelection?.shapeCells;
+      const bounds = controller?.selectedBlockSelection?.bounds;
+      const contraption = controller.selectedBlockSelection?.contraption || controller.selectedSubtree?.contraption;
+      const nodeId = controller.selectedBlockSelection?.nodeId || controller.selectedSubtree?.rootId;
+      const node = contraption?.entityNodes?.get?.(nodeId);
+      const frame = node?.group ? { object: node.group, pivot: (node.pivotLocal || new THREE.Vector3()).clone() } : null;
       if (isShape && Array.isArray(shapeCells) && shapeCells.length > 0) {
-        const contraption = controller.selectedBlockSelection?.contraption || controller.selectedSubtree?.contraption;
-        const nodeId = controller.selectedBlockSelection?.nodeId || controller.selectedSubtree?.rootId;
-        const node = contraption?.entityNodes?.get?.(nodeId);
-        const frame = node?.group ? { object: node.group, pivot: (node.pivotLocal || new THREE.Vector3()).clone() } : null;
         if (controller.selectorMicroMode) {
-          sceneRenderer?.updateSelectionHologram?.(null, null, shapeCells, true, frame);
+          sceneRenderer?.updateSelectionHologram?.(bounds, null, shapeCells, true, frame);
         } else {
-          sceneRenderer?.updateSelectionHologram?.(null, shapeCells, null, false, frame);
+          sceneRenderer?.updateSelectionHologram?.(bounds, shapeCells, null, false, frame);
         }
+      } else if (bounds) {
+        sceneRenderer?.updateSelectionHologram?.(bounds, null, null, controller.selectorMicroMode === true, frame);
+      } else {
+        // Whole-entity (subtree) selection has no block bounds of its own. Clear
+        // the hologram so a box left over from a previous world/block selection
+        // cannot linger and clip through the entity.
+        sceneRenderer?.updateSelectionHologram?.(null, null, null);
       }
     } else {
       const isMicroShape = Boolean(

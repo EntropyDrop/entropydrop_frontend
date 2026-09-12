@@ -208,12 +208,14 @@ test('starting an entity invalidates an internal selection and stale destructive
   assert.equal(manager.entitySelection, null, 'a rejected stale selection is discarded');
 });
 
-test('clicking a running entity completes an active world box instead of selecting the entity', () => {
+test('clicking an entity during an active world box is rejected with toast and clears selection', () => {
   const scene = new THREE.Scene();
   const manager = new ContraptionManager(scene, {}, null, null);
   const { contraption } = makeEntityWithChildren();
   manager.contraptions.push(contraption);
+  const toasts: string[] = [];
   const controller = makeSelectorController({ manager });
+  controller.ui = { showToast: (m: string) => toasts.push(m) };
   contraption.scriptStatus = 'running';
 
   // First world click sets cornerA.
@@ -221,9 +223,11 @@ test('clicking a running entity completes an active world box instead of selecti
   controller.handleLeftClick();
   assert.ok(manager.selectionCornerA, 'point 1 should be set');
 
-  // The second click on a running entity confirms the world box.
+  // Second click on an entity is rejected.
   clickEntity(controller, contraption, 'root', { x: 0, y: 0, z: 0 }, new THREE.Vector3(0.8, 10.8, 0.7));
-  assert.deepEqual(manager.selectionCornerB, { x: 0, y: 10, z: 0 }, 'entity click should confirm the box');
+  assert.equal(manager.selectionCornerA, null, 'selection should be cleared on invalid entity endpoint');
+  assert.equal(manager.selectionCornerB, null, 'point 2 should not be set');
+  assert.ok(toasts.some(m => m.includes('起点不是实体，结束点也不能是实体')), 'toast should warn about invalid endpoint');
   assert.equal(controller.selectedSubtree, null, 'whole-entity selection should not activate');
 });
 

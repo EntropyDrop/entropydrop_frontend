@@ -548,7 +548,7 @@ class Game {
     // 6. Update Cursor Highlight
     const cursor = this.controller.getCursorHighlight();
     if (cursor) {
-      this.sceneRenderer.setCursor(cursor.pos, cursor.size);
+      this.sceneRenderer.setCursor(cursor.pos, cursor.size, cursor.quaternion, cursor.center);
     } else {
       this.sceneRenderer.setCursor(null);
     }

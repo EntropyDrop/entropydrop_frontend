@@ -16,6 +16,7 @@ function makeEntityWithChildren() {
     1,
     [
       { localX: 0, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK },
+      { localX: 1, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK },
       { localX: 0, localY: 1, localZ: 0, block: BlockTypes.COLOR_BLOCK },
       { localX: 0, localY: 2, localZ: 0, block: BlockTypes.COLOR_BLOCK },
       { localX: 2, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK }
@@ -81,22 +82,13 @@ test('first selector click on root selects every component', () => {
   assert.deepEqual([...controller.selectedSubtree.nodeIds].sort(), ['arm', 'hand', 'root', 'wing']);
 });
 
-test('repeat clicks can box-select any blocks within range across entity components, validated on G', () => {
+test('repeat clicks reject point 2 on a different component than point 1', () => {
   const { contraption } = makeEntityWithChildren();
   const toasts: string[] = [];
   const controller = makeSelectorController();
   controller.ui = { showToast: m => toasts.push(m), renderInventoryBar() {} };
 
-  // First click selects the arm subtree.
-  controller.hoveredContraptionHit = {
-    contraption,
-    entityId: 'arm',
-    cell: { x: 0, y: 1, z: 0 },
-    point: new THREE.Vector3(0.5, 11.5, 0.5)
-  };
-  controller.handleLeftClick();
-
-  // A repeat click sets range point 1 even when it hits a root-owned block.
+  // Point 1 on root.
   controller.hoveredContraptionHit = {
     contraption,
     entityId: 'root',
@@ -105,9 +97,10 @@ test('repeat clicks can box-select any blocks within range across entity compone
   };
   controller.handleLeftClick();
   assert.ok(controller.selectorRange, 'component-level box mode should activate');
-  assert.ok(controller.selectorRange.pointA, 'point 1 should be recorded without hitting arm');
+  assert.ok(controller.selectorRange.pointA, 'point 1 should be recorded');
+  assert.equal(controller.selectorRange.nodeId, 'root', 'point 1 should target root');
 
-  // Point 2 can also hit another node and still complete the box.
+  // Point 2 hits another node (wing), which must be rejected immediately.
   controller.hoveredContraptionHit = {
     contraption,
     entityId: 'wing',
@@ -115,14 +108,9 @@ test('repeat clicks can box-select any blocks within range across entity compone
     point: new THREE.Vector3(3, 13, 3)
   };
   controller.handleLeftClick();
-  assert.ok(controller.selectedBlockSelection, 'a block selection should be created');
-  assert.equal(controller.selectedBlockSelection.blocks.length, 4, 'all 4 blocks in the range should be selected');
-  assert.equal(controller.selectorRange, null, 'box mode should exit after completion');
-
-  // G key validates that blocks belong to multiple components and rejects creation
-  const created = controller.createChildFromSelectedBlocks();
-  assert.equal(created, null, 'G should reject multi-component selection');
-  assert.ok(toasts.some(m => m.includes('multiple components')), 'toast should report multiple components');
+  assert.equal(controller.selectedBlockSelection, null, 'selection across different components must be rejected');
+  assert.equal(controller.selectorRange, null, 'box mode should exit after rejection');
+  assert.ok(toasts.some(m => m.includes('同一层级、同父组件')), 'toast should warn about different component levels');
 });
 
 test('Shift-click switches component level without entering box mode', () => {
@@ -155,7 +143,7 @@ test('ordinary clicks advance the current-level box without switching components
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
 
-  // Click arm to select its subtree.
+  // Click arm sets point 1 on arm.
   controller.hoveredContraptionHit = {
     contraption,
     entityId: 'arm',
@@ -164,16 +152,6 @@ test('ordinary clicks advance the current-level box without switching components
   };
   controller.handleLeftClick();
   assert.equal(controller.selectedSubtree.rootId, 'arm');
-
-  // An ordinary wing click becomes arm-level point 1 instead of switching level.
-  controller.hoveredContraptionHit = {
-    contraption,
-    entityId: 'wing',
-    cell: { x: 2, y: 0, z: 0 },
-    point: new THREE.Vector3(2.5, 10.5, 0.5)
-  };
-  controller.handleLeftClick();
-  assert.equal(controller.selectedSubtree.rootId, 'arm', 'the selected level should remain arm');
   assert.ok(controller.selectorRange.pointA, 'the click should become box point 1');
 });
 
@@ -253,16 +231,8 @@ test('two points on one entity face select direct blocks through AABB intersecti
   const center = contraption.getBlockWorldCenter(rootBlock);
   const top = center.y + 0.5; // Root-block top face.
 
-  // Click root to select the root level.
-  controller.hoveredContraptionHit = {
-    contraption,
-    entityId: 'root',
-    cell: { x: 0, y: 0, z: 0 },
-    point: new THREE.Vector3(center.x, top, center.z)
-  };
-  controller.handleLeftClick();
-
   // Both points lie on the same top face, creating a zero-thickness Y range.
+  // Point 1:
   controller.hoveredContraptionHit = {
     contraption,
     entityId: 'root',
@@ -272,6 +242,7 @@ test('two points on one entity face select direct blocks through AABB intersecti
   controller.handleLeftClick();
   assert.ok(controller.selectorRange.pointA);
 
+  // Point 2:
   controller.hoveredContraptionHit = {
     contraption,
     entityId: 'root',
@@ -317,14 +288,7 @@ test('clicking after box completion starts re-boxing at the same level', () => {
   const center = contraption.getBlockWorldCenter(rootBlock);
   const top = center.y + 0.5;
 
-  // 1. Click root to select its level.
-  controller.hoveredContraptionHit = {
-    contraption, entityId: 'root', cell: { x: 0, y: 0, z: 0 },
-    point: new THREE.Vector3(center.x, top, center.z)
-  };
-  controller.handleLeftClick();
-
-  // 2. Set points 1 and 2 to complete a box.
+  // 1. Set points 1 and 2 to complete a box.
   controller.hoveredContraptionHit = {
     contraption, entityId: 'root', cell: { x: 0, y: 0, z: 0 },
     point: new THREE.Vector3(center.x - 0.5, top, center.z)
@@ -338,16 +302,20 @@ test('clicking after box completion starts re-boxing at the same level', () => {
   assert.ok(controller.selectedBlockSelection, 'the first box should complete');
   assert.equal(controller.selectorRange, null, 'box mode should exit after completion');
 
-  // 3. Another entity click enters re-boxing while keeping the root level.
+  // 2. Click any block in preselected state -> returns to unselected ('未选').
   controller.hoveredContraptionHit = {
-    contraption, entityId: 'wing', cell: { x: 2, y: 0, z: 0 },
-    point: new THREE.Vector3(center.x + 1.0, top, center.z + 0.5)
+    contraption, entityId: 'root', cell: { x: 0, y: 0, z: 0 },
+    point: new THREE.Vector3(center.x - 0.5, top, center.z)
   };
   controller.handleLeftClick();
-  assert.ok(controller.selectorRange, 're-boxing mode should activate');
-  assert.equal(controller.selectorRange.nodeId, 'root', 'the prior root level should remain');
-  assert.equal(controller.selectorRange.pointA, null, 're-boxing should wait for point 1');
-  assert.equal(controller.selectedBlockSelection, null, 'the old block selection should clear');
+  assert.equal(controller.selectedBlockSelection, null, 'preselection should clear and return to unselected');
+  assert.equal(controller.selectorRange, null, 'should be in unselected state');
+
+  // 3. Click again from unselected state -> starts new box point 1.
+  controller.handleLeftClick();
+  assert.ok(controller.selectorRange, 'new box selection should activate');
+  assert.equal(controller.selectorRange.nodeId, 'root', 'root level should remain');
+  assert.ok(controller.selectorRange.pointA, 'new box should set point 1 immediately');
 });
 
 test('clicking an entity after box completion waits for a new point 1', () => {
@@ -365,7 +333,7 @@ test('clicking an entity after box completion waits for a new point 1', () => {
   controller.selectorLevel = { contraption, nodeId: 'root' };
   controller.selectedSubtree = null;
 
-  // Clicking any component block enters re-boxing.
+  // 1. Clicking any component block when preselected clears selection and returns to unselected.
   controller.hoveredContraptionHit = {
     contraption,
     entityId: 'wing',
@@ -373,13 +341,17 @@ test('clicking an entity after box completion waits for a new point 1', () => {
     point: new THREE.Vector3(2.5, 10.5, 0.5)
   };
   controller.handleLeftClick();
-  assert.ok(controller.selectorRange, 're-boxing mode should activate');
-  assert.equal(controller.selectorRange.nodeId, 'root', 'the level should remain');
-  assert.equal(controller.selectorRange.pointA, null, 'mode should wait for point 1');
   assert.equal(controller.selectedBlockSelection, null, 'the old selection should clear');
+  assert.equal(controller.selectorRange, null, 'should return to unselected');
+
+  // 2. Next click starts a new box and sets point 1 directly on wing.
+  controller.handleLeftClick();
+  assert.ok(controller.selectorRange, 'new box mode should activate');
+  assert.equal(controller.selectorRange.nodeId, 'wing', 'level should switch to clicked component');
+  assert.ok(controller.selectorRange.pointA, 'mode should set point 1 immediately');
 });
 
-test('re-boxing accepts two world clicks to complete a new selection', () => {
+test('world clicks after entity selection clear entity state and start a new world box', () => {
   const scene = new THREE.Scene();
   const manager = new ContraptionManager(scene, {}, null, null);
   const { contraption } = makeEntityWithChildren();
@@ -389,28 +361,22 @@ test('re-boxing accepts two world clicks to complete a new selection', () => {
   controller.selectedBlockSelection = { contraption, nodeId: 'root', blocks: [rootBlock] };
   controller.selectorLevel = { contraption, nodeId: 'root' };
 
-  // Click the entity to enter re-boxing.
-  controller.hoveredContraptionHit = {
-    contraption,
-    entityId: 'root',
-    cell: { x: 0, y: 0, z: 0 },
-    point: new THREE.Vector3(0.5, 10.5, 0.5)
-  };
-  controller.handleLeftClick();
-  assert.ok(controller.selectorRange && !controller.selectorRange.pointA);
-  controller.hoveredContraptionHit = null;
-
-  // World point 1.
+  // World click 1: preselected entity selection is dismissed, returning to unselected.
   const c = contraption.getBlockWorldCenter(rootBlock);
   controller.currentRaycast = { hit: true, hitPos: { x: c.x - 0.4, y: c.y - 0.4, z: c.z - 0.4 } };
   controller.handleLeftClick();
-  assert.ok(controller.selectorRange.pointA, 'a world click should set point 1');
+  assert.equal(controller.selectedBlockSelection, null, 'entity selection should be cleared');
+  assert.equal(controller.selectorRange, null, 'entity selection range should be cleared');
 
-  // World point 2 completes the new box.
+  // World click 2: starts world box (corner A).
+  controller.handleLeftClick();
+  assert.ok(manager.selectionCornerA, 'a world click should set world corner A');
+
+  // World click 3: completes the world box (corner B).
   controller.currentRaycast = { hit: true, hitPos: { x: c.x + 0.4, y: c.y + 0.4, z: c.z + 0.4 } };
   controller.handleLeftClick();
-  assert.ok(controller.selectedBlockSelection, 'the new box should complete');
-  assert.equal(controller.selectorRange, null, 'box mode should exit after completion');
+  assert.ok(manager.selectionCornerB, 'the new world box should complete');
+  assert.equal(manager.hasValidSelection(), true, 'world selection should be valid');
 });
 
 test('a click outside a completed world box clears selection', () => {
@@ -448,9 +414,11 @@ test('a second world click completes the in-progress a-c box', () => {
   assert.equal(manager.hasValidSelection(), true);
 });
 
-test('a root-level box over a child region directly selects that child\'s blocks', () => {
+test('a root-level box over a child region is rejected with child component warning', () => {
   const { contraption } = makeEntityWithChildren();
+  const toasts: string[] = [];
   const controller = makeSelectorController();
+  controller.ui = { showToast: m => toasts.push(m), renderInventoryBar() {} };
   controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'arm', 'hand', 'wing']) };
   controller.selectorRange = { contraption, nodeId: 'root', pointA: null, pointB: null };
 
@@ -461,39 +429,36 @@ test('a root-level box over a child region directly selects that child\'s blocks
   controller.selectorRange.pointB = toNodeLocal(contraption, 'root', center.clone().add(new THREE.Vector3(0.4, 0.4, 0.4)));
   controller.resolveBlockRangeSelection(controller.selectorRange);
 
-  assert.ok(controller.selectedBlockSelection, 'hand block should be selected directly');
-  assert.equal(controller.selectedBlockSelection.nodeId, 'hand');
-  assert.equal(controller.selectedBlockSelection.blocks.length, 1);
-  assert.equal(controller.selectedBlockSelection.blocks[0].entityId, 'hand');
+  assert.equal(controller.selectedBlockSelection, null, 'box covering child component should be rejected');
+  assert.ok(toasts.some(m => m.includes('选区不能包含已分配的子组件方块')), 'toast should warn about child component');
 });
 
-test('root-level box recognizes and selects the visible edge of a rotated descendant', () => {
+test('rotated component box recognizes and selects the visible edge of a rotated component', () => {
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
   const handBlock = contraption.blocks.find(b => (b.entityId || 'root') === 'hand');
 
-  // Rotation expands the world AABB beyond size/2. The old center±size/2 shortcut
-  // missed this genuinely visible edge.
+  // Rotation expands the world AABB beyond size/2.
   contraption.getChildScriptApi('hand').setLocalEuler([0, Math.PI / 4, 0]);
   contraption.rootGroup.updateMatrixWorld(true);
   const center = contraption.getBlockWorldCenter(handBlock);
 
   controller.selectedSubtree = {
     contraption,
-    rootId: 'root',
-    nodeIds: new Set(['root', 'arm', 'hand', 'wing'])
+    rootId: 'hand',
+    nodeIds: new Set(['hand'])
   };
-  controller.selectorLevel = { contraption, nodeId: 'root' };
+  controller.selectorLevel = { contraption, nodeId: 'hand' };
   controller.selectorRange = {
     contraption,
-    nodeId: 'root',
-    pointA: toNodeLocal(contraption, 'root', center.clone().add(new THREE.Vector3(0.62, -0.04, -0.04))),
-    pointB: toNodeLocal(contraption, 'root', center.clone().add(new THREE.Vector3(0.68, 0.04, 0.04)))
+    nodeId: 'hand',
+    pointA: toNodeLocal(contraption, 'hand', center.clone().add(new THREE.Vector3(0.62, -0.04, -0.04))),
+    pointB: toNodeLocal(contraption, 'hand', center.clone().add(new THREE.Vector3(0.68, 0.04, 0.04)))
   };
 
   controller.resolveBlockRangeSelection(controller.selectorRange);
 
-  assert.ok(controller.selectedBlockSelection, 'the rotated descendant block should be selected');
+  assert.ok(controller.selectedBlockSelection, 'the rotated component block should be selected');
   assert.equal(controller.selectedBlockSelection.nodeId, 'hand');
   assert.equal(controller.selectedBlockSelection.blocks.length, 1);
 });
@@ -520,13 +485,13 @@ test('a rotated child microblock uses its true 0.125 world AABB for selection', 
   assert.ok(bounds.max.x - center.x > 0.08, 'the rotated X edge should exceed the old 0.0625 approximation');
 
   const controller = makeSelectorController();
-  controller.selectedSubtree = { contraption, rootId: 'root', nodeIds: new Set(['root', 'tip']) };
-  controller.selectorLevel = { contraption, nodeId: 'root' };
+  controller.selectedSubtree = { contraption, rootId: 'tip', nodeIds: new Set(['tip']) };
+  controller.selectorLevel = { contraption, nodeId: 'tip' };
   controller.selectorRange = {
     contraption,
-    nodeId: 'root',
-    pointA: toNodeLocal(contraption, 'root', center.clone().add(new THREE.Vector3(0.078125, -0.02, -0.02))),
-    pointB: toNodeLocal(contraption, 'root', center.clone().add(new THREE.Vector3(0.0875, 0.02, 0.02)))
+    nodeId: 'tip',
+    pointA: toNodeLocal(contraption, 'tip', center.clone().add(new THREE.Vector3(0.078125, -0.02, -0.02))),
+    pointB: toNodeLocal(contraption, 'tip', center.clone().add(new THREE.Vector3(0.0875, 0.02, 0.02)))
   };
   controller.resolveBlockRangeSelection(controller.selectorRange);
 
@@ -534,8 +499,7 @@ test('a rotated child microblock uses its true 0.125 world AABB for selection', 
   assert.equal(controller.selectedBlockSelection.nodeId, 'tip');
   assert.equal(controller.selectedBlockSelection.blocks.length, 1);
 });
-
-test('a box covering multiple direct children selects blocks and reports ambiguity on G', () => {
+test('a box covering multiple direct children is rejected immediately', () => {
   const { contraption } = makeEntityWithChildren();
   const toasts: string[] = [];
   const controller = makeSelectorController();
@@ -554,11 +518,8 @@ test('a box covering multiple direct children selects blocks and reports ambigui
     new THREE.Vector3(Math.max(c1.x, c2.x) + 0.5, Math.max(c1.y, c2.y) + 0.5, 0.5));
   controller.resolveBlockRangeSelection(controller.selectorRange);
 
-  assert.ok(controller.selectedBlockSelection, 'box selection across multiple components should succeed');
-  assert.equal(controller.selectedBlockSelection.blocks.length, 2, 'both arm and hand blocks should be selected');
-  const created = controller.createChildFromSelectedBlocks();
-  assert.equal(created, null, 'G should reject multi-component selection');
-  assert.ok(toasts.some(m => m.includes('multiple components')), 'toast should report multiple components');
+  assert.equal(controller.selectedBlockSelection, null, 'box selection across multiple components should be rejected');
+  assert.ok(toasts.some(m => m.includes('选区不能包含已分配的子组件方块')), 'toast should report child component blocks error');
 });
 
 test('after G creates a child, a world click clears entity state and starts a world box', () => {
@@ -592,7 +553,7 @@ test('after G creates a child, a world click clears entity state and starts a wo
   assert.equal(manager.hasValidSelection(), true, 'world selection should be valid for G assembly');
 });
 
-test('an entity click becomes point 2 for an in-progress world box', () => {
+test('an entity click during an in-progress world box is rejected with toast and exits selection', () => {
   const scene = new THREE.Scene();
   const manager = new ContraptionManager(scene, {}, null, null);
   const { contraption } = makeEntityWithChildren();
@@ -607,7 +568,7 @@ test('an entity click becomes point 2 for an in-progress world box', () => {
   controller.handleLeftClick();
   assert.ok(manager.selectionCornerA, 'point 1 should be set');
 
-  // Second click on an entity completes the world box rather than entering subtree selection.
+  // Second click on an entity is rejected.
   controller.hoveredContraptionHit = {
     contraption,
     entityId: 'root',
@@ -615,19 +576,9 @@ test('an entity click becomes point 2 for an in-progress world box', () => {
     point: new THREE.Vector3(2.8, 12.8, 0.7)
   };
   controller.handleLeftClick();
-  assert.deepEqual(manager.selectionCornerB, { x: 2, y: 12, z: 0 }, 'entity click should confirm the cell-rounded box');
-  assert.equal(controller.selectedSubtree, null, 'subtree selection should not activate');
-
-  // A third entity click, after box completion, enters subtree selection.
-  controller.hoveredContraptionHit = {
-    contraption,
-    entityId: 'arm',
-    cell: { x: 0, y: 1, z: 0 },
-    point: new THREE.Vector3(0.5, 11.5, 0.5)
-  };
-  controller.handleLeftClick();
-  assert.ok(controller.selectedSubtree, 'entity click after confirmation should enter subtree selection');
-  assert.equal(controller.selectedSubtree.rootId, 'arm');
+  assert.equal(manager.selectionCornerA, null, 'selection should be cleared on invalid entity endpoint');
+  assert.equal(manager.selectionCornerB, null, 'point 2 should not be set');
+  assert.ok(toasts.some(m => m.includes('起点不是实体，结束点也不能是实体')), 'toast should warn about invalid endpoint');
 });
 
 test('re-boxing anchors range points in node-local space while the component rotates', () => {
@@ -661,28 +612,23 @@ test('re-boxing anchors range points in node-local space while the component rot
   const armCenter = contraption.getBlockWorldCenter(armBlock);
   const rootCenter = contraption.getBlockWorldCenter(rootBlock);
 
-  // 1. Click arm to select its subtree.
-  click('arm', { x: 3, y: 0, z: 0 }, armCenter.clone().add(new THREE.Vector3(0.5, 0.5, 0.5)));
-  assert.equal(controller.selectedSubtree.rootId, 'arm');
-
-  // 2. First box-select an arm-owned block with both points on it.
+  // 1. Box-select an arm-owned block with 2 clicks directly.
   click('arm', { x: 3, y: 0, z: 0 }, armCenter.clone().add(new THREE.Vector3(-0.4, -0.4, -0.4)));
   click('arm', { x: 3, y: 0, z: 0 }, armCenter.clone().add(new THREE.Vector3(0.4, 0.4, 0.4)));
   assert.ok(controller.selectedBlockSelection, 'the first box should complete');
   assert.equal(controller.selectedBlockSelection.nodeId, 'arm');
   assert.equal(controller.selectorRange, null, 'box mode should exit after completion');
 
-  // 3. Click a nearby root block to enter re-boxing.
-  click('root', { x: 0, y: 0, z: 0 }, rootCenter.clone().add(new THREE.Vector3(-1.5, 0, -1.5)));
-  assert.ok(controller.selectorRange && !controller.selectorRange.pointA, 're-boxing should wait for point 1');
-  assert.equal(controller.selectedBlockSelection, null, 'the old selection should clear');
+  // Dismiss preselection to return to unselected:
+  click('arm', { x: 3, y: 0, z: 0 }, armCenter);
+  assert.equal(controller.selectedBlockSelection, null);
 
-  // 4. Set A' on the arm block before rotation.
+  // 2. Set A' on the arm block before rotation.
   const p1 = contraption.getBlockWorldCenter(armBlock);
   click('arm', { x: 3, y: 0, z: 0 }, p1.clone().add(new THREE.Vector3(-0.4, -0.4, -0.4)));
-  assert.ok(controller.selectorRange.pointA, "point A' should be set");
+  assert.ok(controller.selectorRange?.pointA, "point A' should be set");
 
-  // 5. Rotate arm 90 degrees between the two clicks, as a script-driven arm might.
+  // 3. Rotate arm 90 degrees between the two clicks, as a script-driven arm might.
   contraption.getChildScriptApi('arm').setLocalEuler([0, Math.PI / 2, 0]);
   contraption.rootGroup.updateMatrixWorld(true);
   const rotatedCenter = contraption.getBlockWorldCenter(armBlock);
@@ -691,8 +637,8 @@ test('re-boxing anchors range points in node-local space while the component rot
     'the block position should move after rotation'
   );
 
-  // 6. Set B' on the stationary root tower to complete the box.
-  click('root', { x: 0, y: 0, z: 0 }, rootCenter.clone().add(new THREE.Vector3(-0.4, 0.4, -0.4)));
+  // 4. Set B' on the arm block to complete the box.
+  click('arm', { x: 3, y: 0, z: 0 }, rotatedCenter.clone().add(new THREE.Vector3(0.4, 0.4, 0.4)));
 
   assert.equal(toasts.filter(t => t.includes('No blocks of')).length, 0,
     'node-local anchors should prevent a false No-blocks result after rotation');
@@ -714,21 +660,17 @@ test('re-boxing over a sibling component selects its blocks directly without fal
     controller.handleLeftClick();
   };
 
-  // 1. Click arm to select its subtree.
-  click('arm', { x: 0, y: 1, z: 0 }, armCenter.clone().add(new THREE.Vector3(0.5, 0, 0.5)));
-  assert.equal(controller.selectedSubtree.rootId, 'arm');
-
-  // 2. First box-select an arm-owned block.
+  // 1. First 2 clicks box-select an arm-owned block.
   click('arm', { x: 0, y: 1, z: 0 }, armCenter.clone().add(new THREE.Vector3(-0.4, -0.4, -0.4)));
   click('arm', { x: 0, y: 1, z: 0 }, armCenter.clone().add(new THREE.Vector3(0.4, 0.4, 0.4)));
   assert.ok(controller.selectedBlockSelection, 'the first box should complete');
   assert.equal(controller.selectedBlockSelection.nodeId, 'arm');
 
-  // 3. Click nearby to enter re-boxing while keeping arm level.
-  click('root', { x: 0, y: 0, z: 0 }, new THREE.Vector3(-1.5, 10.4, -1.5));
-  assert.ok(controller.selectorRange && !controller.selectorRange.pointA, 're-boxing mode should activate');
+  // Dismiss preselection on clicking wing:
+  click('wing', { x: 2, y: 0, z: 0 }, wingCenter);
+  assert.equal(controller.selectedBlockSelection, null, 'preselection should clear');
 
-  // 4. A new range over sibling wing should select wing blocks directly, not report No blocks of [arm].
+  // 2. A new range over sibling wing selects wing blocks directly in 2 clicks.
   click('wing', { x: 2, y: 0, z: 0 }, wingCenter.clone().add(new THREE.Vector3(-0.4, -0.4, -0.4)));
   click('wing', { x: 2, y: 0, z: 0 }, wingCenter.clone().add(new THREE.Vector3(0.4, 0.4, 0.4)));
   assert.equal(toasts.filter(t => t.includes('No blocks of')).length, 0, 'no false No blocks of [arm] message should appear');
@@ -750,11 +692,9 @@ test('switching entity selection clears the previous entity block highlights', (
   manager.contraptions.push(a, b);
   const controller = makeSelectorController({ manager });
 
-  // 1. Complete a block selection on entity a and attach per-block highlights.
+  // 1. Complete a block selection on entity a (2 clicks) and attach per-block highlights.
   const rootBlock = a.blocks.find(x => (x.entityId || 'root') === 'root');
   const center = a.getBlockWorldCenter(rootBlock);
-  controller.hoveredContraptionHit = { contraption: a, entityId: 'root', cell: { x: 0, y: 0, z: 0 }, point: center.clone() };
-  controller.handleLeftClick(); // Select a's level.
   controller.hoveredContraptionHit = { contraption: a, entityId: 'root', cell: { x: 0, y: 0, z: 0 }, point: center.clone().add(new THREE.Vector3(-0.4, -0.4, -0.4)) };
   controller.handleLeftClick(); // Box point 1.
   controller.hoveredContraptionHit = { contraption: a, entityId: 'root', cell: { x: 0, y: 0, z: 0 }, point: center.clone().add(new THREE.Vector3(0.4, 0.4, 0.4)) };
@@ -762,7 +702,7 @@ test('switching entity selection clears the previous entity block highlights', (
   assert.ok(controller.selectedBlockSelection, 'entity a should have a completed block selection');
   assert.ok(a.subtreeHighlightBoxes.length > 0, 'entity a should have block highlights');
 
-  // 2. Click entity b; selection switches and a's highlights must clear.
+  // 2. Click entity b; selection is dismissed returning to unselected, and a's highlights must clear.
   controller.hoveredContraptionHit = {
     contraption: b,
     entityId: 'root',
@@ -770,9 +710,12 @@ test('switching entity selection clears the previous entity block highlights', (
     point: new THREE.Vector3(10.5, 10.5, 10.5)
   };
   controller.handleLeftClick();
-  assert.equal(controller.selectedSubtree.contraption, b, 'selection should switch to b');
   assert.equal(controller.selectedBlockSelection, null, 'block selection should clear');
   assert.equal(a.subtreeHighlightBoxes.length, 0, 'a should retain no stale highlights');
+
+  // 3. Next click selects entity b:
+  controller.handleLeftClick();
+  assert.equal(controller.selectedSubtree.contraption, b, 'selection should switch to b');
 });
 
 test('inventory copy prunes empty ghost children and scripts from a block selection', () => {
@@ -807,35 +750,29 @@ test('inventory copy prunes empty ghost children and scripts from a block select
 test('clicking the sky preserves an in-progress entity box after point 1', () => {
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
+  const rootBlock = contraption.blocks.find(b => (b.entityId || 'root') === 'root');
+  const center = contraption.getBlockWorldCenter(rootBlock);
 
-  // 1. Select arm level.
+  // Click 1 sets pointA directly on root.
   controller.hoveredContraptionHit = {
     contraption,
-    entityId: 'arm',
-    cell: { x: 0, y: 1, z: 0 },
-    point: new THREE.Vector3(0.5, 11.5, 0.5)
+    entityId: 'root',
+    cell: { x: 0, y: 0, z: 0 },
+    point: center.clone().add(new THREE.Vector3(-0.4, 0.5, -0.4))
   };
   controller.handleLeftClick();
-  assert.ok(controller.selectorRange && !controller.selectorRange.pointA);
+  assert.ok(controller.selectorRange?.pointA, 'pointA should be set');
 
-  // 2. Set world point 1.
-  const armBlock = contraption.blocks.find(b => (b.entityId || 'root') === 'arm');
-  const c = contraption.getBlockWorldCenter(armBlock);
-  controller.currentRaycast = { hit: true, hitPos: { x: c.x - 0.4, y: c.y - 0.4, z: c.z - 0.4 } };
-  controller.handleLeftClick();
-  assert.ok(controller.selectorRange.pointA, 'point 1 should be set');
-
-  // 3. A sky click with no hit must preserve the in-progress box.
+  // Click 2 misses into the sky: hoveredContraptionHit and currentRaycast are both null.
   controller.hoveredContraptionHit = null;
-  controller.currentRaycast = { hit: false };
+  controller.currentRaycast = null;
   controller.handleLeftClick();
-  assert.ok(controller.selectorRange && controller.selectorRange.pointA, 'sky click should not cancel the box');
-  assert.equal(controller.selectedSubtree.rootId, 'arm', 'subtree selection should remain');
-  assert.ok(controller.selectorLevel, 'component level should remain');
+  assert.ok(controller.selectorRange?.pointA, 'an empty sky click must preserve the in-progress entity box');
 });
 
 test('selector box on entity A shows no spoon preview while hovering entity B', () => {
   const scene = new THREE.Scene();
+  const manager = new ContraptionManager(scene, {}, null, null);
   const { contraption: a } = makeEntityWithChildren();
   const b = new Contraption(
     99,
@@ -843,17 +780,19 @@ test('selector box on entity A shows no spoon preview while hovering entity B', 
     new THREE.Vector3(10, 10, 10),
     scene
   );
-  const controller = makeSelectorController();
-  // A box is in progress on a with point 1 set.
-  const rootBlock = a.blocks.find(x => (x.entityId || 'root') === 'root');
-  const center = a.getBlockWorldCenter(rootBlock);
-  controller.selectorRange = {
+  manager.contraptions.push(a, b);
+  const controller = makeSelectorController({ manager });
+
+  // Start entity selection on entity a.
+  controller.hoveredContraptionHit = {
     contraption: a,
-    nodeId: 'root',
-    pointA: a.entityNodes.get('root').group.worldToLocal(center.clone()),
-    pointB: null
+    entityId: 'root',
+    cell: { x: 0, y: 0, z: 0 },
+    point: new THREE.Vector3(0.5, 10.5, 0.5)
   };
-  // Hover distinct entity b.
+  controller.handleLeftClick();
+
+  // Hover over entity b with the crosshair.
   controller.hoveredContraptionHit = {
     contraption: b,
     entityId: 'root',
@@ -881,7 +820,7 @@ test('entering entity selection clears world cornerA and cornerB state', () => {
   controller.handleLeftClick(); // b completes the box.
   assert.ok(manager.selectionCornerA && manager.selectionCornerB, 'world box should complete');
 
-  // Clicking an entity enters mutually exclusive entity selection and clears world state.
+  // Clicking an entity in preselected state clears world state and returns to unselected.
   controller.hoveredContraptionHit = {
     contraption,
     entityId: 'arm',
@@ -891,8 +830,11 @@ test('entering entity selection clears world cornerA and cornerB state', () => {
   controller.handleLeftClick();
   assert.equal(manager.selectionCornerA, null, 'world cornerA should clear');
   assert.equal(manager.selectionCornerB, null, 'world cornerB should clear');
-  assert.ok(controller.selectedSubtree, 'entity subtree selection should be active');
-  assert.equal(controller.selectedSubtree.rootId, 'arm');
+
+  // Next click from unselected state selects the entity and starts point 1 on arm.
+  controller.handleLeftClick();
+  assert.ok(controller.selectorRange?.pointA, 'entity box point 1 should be active');
+  assert.equal(controller.selectorRange?.nodeId, 'arm');
 });
 
 test('Shift-clicking blocks across multiple components allows arbitrary selection, but G rejects until same component', () => {
@@ -948,18 +890,7 @@ test('selector box preview and range on entity surface normal does not spill int
   const { contraption } = makeEntityWithChildren();
   const controller = makeSelectorController();
 
-  // 1. First click: select root
-  controller.hoveredContraptionHit = {
-    contraption,
-    entityId: 'root',
-    block: contraption.blocks[0],
-    cell: { x: 0, y: 0, z: 0 },
-    point: new THREE.Vector3(0.5, 10.5, 0.5)
-  };
-  controller.handleLeftClick();
-  assert.ok(controller.selectorRange, 'selector range initialized');
-
-  // 2. Click point 1 on top face of block (0, 0, 0): world Y is 11.0 (entity at Y=10, block height 1)
+  // 1. Click point 1 on top face of block (0, 0, 0): world Y is 11.0 (entity at Y=10, block height 1)
   // Face normal is +Y: (0, 1, 0)
   controller.hoveredContraptionHit = {
     contraption,
@@ -971,9 +902,10 @@ test('selector box preview and range on entity surface normal does not spill int
     normal: new THREE.Vector3(0, 1, 0)
   };
   controller.handleLeftClick();
+  assert.ok(controller.selectorRange, 'selector range initialized');
   assert.ok(controller.selectorRange.pointA, 'pointA should be set');
 
-  // 3. Hover the same face: preview cursor should remain on cell 0 in Y, NOT jump to cell 1 (empty air / block in normal dir)
+  // 2. Hover the same face: preview cursor should remain on cell 0 in Y, NOT jump to cell 1 (empty air / block in normal dir)
   controller.updateMicroCarvePreview();
   assert.ok(controller.boxSelectionPreview, 'boxSelectionPreview should exist');
   // cursor Y must be < 1.0 (e.g. 0.98), which floors to cell 0 instead of cell 1
@@ -981,7 +913,7 @@ test('selector box preview and range on entity surface normal does not spill int
   assert.equal(Math.floor(controller.boxSelectionPreview.cursor.y), 0, 'floored cursor Y must be 0');
   assert.equal(Math.floor(controller.boxSelectionPreview.pointA.y), 0, 'floored pointA Y must be 0');
 
-  // 4. Hover +X face of block (0, 0, 0): point X is 1.0, worldNormal is (1, 0, 0)
+  // 3. Hover +X face of block (0, 0, 0): point X is 1.0, worldNormal is (1, 0, 0)
   controller.hoveredContraptionHit = {
     contraption,
     entityId: 'root',
@@ -995,7 +927,7 @@ test('selector box preview and range on entity surface normal does not spill int
   assert.ok(controller.boxSelectionPreview.cursor.x < 1.0, 'cursor X must be within cell 0 bounds');
   assert.equal(Math.floor(controller.boxSelectionPreview.cursor.x), 0, 'floored cursor X must be 0');
 
-  // 5. Complete selection by clicking the top face again: only the single aimed block should be selected
+  // 4. Complete selection by clicking the top face again: only the single aimed block should be selected
   controller.hoveredContraptionHit = {
     contraption,
     entityId: 'root',
