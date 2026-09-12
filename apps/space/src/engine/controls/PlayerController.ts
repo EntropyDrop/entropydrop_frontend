@@ -1931,15 +1931,19 @@ export class PlayerController {
             x >= cellRange.minX && x <= cellRange.maxX &&
             y >= cellRange.minY && y <= cellRange.maxY &&
             z >= cellRange.minZ && z <= cellRange.maxZ
-          ))
+          ), cellRange)
         : null;
       if (virtual) {
         selected = virtual;
-      } else if (this.ui) {
-        this.ui.showToast(
+      } else {
+        // Do not fall back to the coarse engine query: Del would then remove
+        // whole standard blocks from an oversized micro selection.
+        this.clearSelection();
+        this.ui?.showToast?.(
           `Micro selection is too large (limit ${MAX_MICRO_SELECTION_CELLS} voxels) — narrow the box`,
           { tone: 'warning' }
         );
+        return;
       }
     }
 
@@ -2028,7 +2032,7 @@ export class PlayerController {
    * @returns The descriptor list, or `null` when the region exceeds
    *   {@link MAX_MICRO_SELECTION_CELLS} cells.
    */
-  private buildEntityMicroSelection(contraption, nodeId, contains: (x: number, y: number, z: number) => boolean) {
+  private buildEntityMicroSelection(contraption, nodeId, contains: (x: number, y: number, z: number) => boolean, bounds) {
     const blocks: any[] = [];
     let cells = 0;
     for (const block of contraption.blocks) {
@@ -2038,16 +2042,29 @@ export class PlayerController {
         const cx = Math.round(block.localX * MICRO_DIVISIONS);
         const cy = Math.round(block.localY * MICRO_DIVISIONS);
         const cz = Math.round(block.localZ * MICRO_DIVISIONS);
-        if (contains(cx, cy, cz)) blocks.push(block);
+        if (cx < bounds.minX || cx > bounds.maxX || cy < bounds.minY || cy > bounds.maxY || cz < bounds.minZ || cz > bounds.maxZ) continue;
+        if (contains(cx, cy, cz)) {
+          if (++cells > MAX_MICRO_SELECTION_CELLS) return null;
+          blocks.push(block);
+        }
         continue;
       }
       const baseX = Math.floor(block.localX + 1e-6) * MICRO_DIVISIONS;
       const baseY = Math.floor(block.localY + 1e-6) * MICRO_DIVISIONS;
       const baseZ = Math.floor(block.localZ + 1e-6) * MICRO_DIVISIONS;
+      // Only enumerate the overlap. A tiny cut in a large entity must not visit
+      // 512 virtual cells for every unrelated standard block.
+      const minX = Math.max(0, bounds.minX - baseX);
+      const minY = Math.max(0, bounds.minY - baseY);
+      const minZ = Math.max(0, bounds.minZ - baseZ);
+      const maxX = Math.min(MICRO_DIVISIONS - 1, bounds.maxX - baseX);
+      const maxY = Math.min(MICRO_DIVISIONS - 1, bounds.maxY - baseY);
+      const maxZ = Math.min(MICRO_DIVISIONS - 1, bounds.maxZ - baseZ);
+      if (minX > maxX || minY > maxY || minZ > maxZ) continue;
       const owner = contraptionBlockOwnerId(contraption, block);
-      for (let ix = 0; ix < MICRO_DIVISIONS; ix++) {
-        for (let iy = 0; iy < MICRO_DIVISIONS; iy++) {
-          for (let iz = 0; iz < MICRO_DIVISIONS; iz++) {
+      for (let ix = minX; ix <= maxX; ix++) {
+        for (let iy = minY; iy <= maxY; iy++) {
+          for (let iz = minZ; iz <= maxZ; iz++) {
             if (!contains(baseX + ix, baseY + iy, baseZ + iz)) continue;
             if (++cells > MAX_MICRO_SELECTION_CELLS) return null;
             blocks.push({
@@ -4162,10 +4179,24 @@ export class PlayerController {
 
     // 1. Remove selected blocks from an entity component.
     if (this.selectedBlockSelection && this.selectedBlockSelection.blocks.length > 0) {
-      // A virtual micro selection is only subdivided here, when geometry is
-      // actually mutated.
-      if (!this.materializeMicroSelection()) return;
+      // The shared delete action carves virtual cells in one mutation, creating
+      // only the survivors of partially covered standard blocks.
       const { contraption, nodeId, blocks } = this.selectedBlockSelection;
+      const coverage = new Map<any, Set<string>>();
+      for (const block of blocks) {
+        if (!block.virtualMicro || !block.sourceBlock) continue;
+        let cells = coverage.get(block.sourceBlock);
+        if (!cells) coverage.set(block.sourceBlock, cells = new Set());
+        cells.add(this.microCellKey(block));
+      }
+      const partialCount = [...coverage.values()].filter(cells => cells.size < MICRO_DIVISIONS ** 3).length;
+      if (partialCount > MAX_MICRO_MATERIALIZE_BLOCKS) {
+        this.ui?.showToast?.(
+          `Micro edit would subdivide ${partialCount} standard blocks (limit ${MAX_MICRO_MATERIALIZE_BLOCKS}) — narrow the selection`,
+          { tone: 'warning' }
+        );
+        return;
+      }
       const result = this.performBasicAction({
         domain: ActionDomain.SELECTION,
         action: 'delete',
@@ -5992,13 +6023,13 @@ export class PlayerController {
           x >= bounds.minX && x <= bounds.maxX &&
           y >= bounds.minY && y <= bounds.maxY &&
           z >= bounds.minZ && z <= bounds.maxZ
-        )) || [];
+        ), bounds) || [];
       } else {
         shapeCells = computeSelectionCells(shape, cornerA, cornerB, true, cylinderAxis, stairsAxis);
         const cellSet = new Set(shapeCells.map(c => `${c.x},${c.y},${c.z}`));
         matchingBlocks = this.buildEntityMicroSelection(contraption, nodeId, (x: number, y: number, z: number) => (
           cellSet.has(`${x},${y},${z}`)
-        )) || [];
+        ), bounds) || [];
       }
     } else {
     const hasMicroInComponent = contraption.blocks.some((b: any) => contraptionBlockOwnerId(contraption, b) === nodeId && (b.size || 1) < 1);
@@ -8517,7 +8548,7 @@ export class PlayerController {
           x >= bounds.minX && x <= bounds.maxX &&
           y >= bounds.minY && y <= bounds.maxY &&
           z >= bounds.minZ && z <= bounds.maxZ
-        )) || [])
+        ), bounds) || [])
       : contraption.blocks.filter((b: any) => {
         const owner = contraptionBlockOwnerId(contraption, b);
         if (owner !== nodeId) return false;
@@ -8864,4 +8895,3 @@ export class PlayerController {
 }
 
 (PlayerController.prototype as any)._selectorShape = 'box';
-

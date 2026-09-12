@@ -1140,10 +1140,10 @@ test('Shift+click in micro mode toggles a virtual 0.125 m cell; P subdivides and
   );
 });
 
-test('micro Del subdivides every covered block with one batched rebuild', () => {
+test('micro Del carves every covered block with one atomic rebuild', () => {
   const scene = new THREE.Scene();
   // Four standard blocks: a per-block subdivision would rebuild the entity five
-  // times (4 subdivisions + 1 delete); the batched path must rebuild twice.
+  // times (4 subdivisions + 1 delete); the atomic path must rebuild once.
   const contraption = new Contraption(
     13,
     [0, 1, 2, 3].map(x => ({ localX: x, localY: 0, localZ: 0, block: BlockTypes.COLOR_BLOCK, color: 0xff0000 })),
@@ -1191,10 +1191,7 @@ test('micro Del subdivides every covered block with one batched rebuild', () => 
 
   controller.deleteSelectionBlocks();
 
-  assert.ok(
-    rebuilds <= 2,
-    `batched subdivision must rebuild at most twice, got ${rebuilds}`
-  );
+  assert.equal(rebuilds, 1, 'only the final carved geometry should be rebuilt');
   assert.ok(contraption.blocks.length > 1, 'the entity keeps its remaining micro geometry');
 });
 
@@ -1270,4 +1267,3 @@ test('micro selection over a standard block stays anchored after another block w
   assert.equal(block0Micro.length, 504, "block 0's carved geometry is untouched");
   assert.equal(block1Micro.length, 512 - 8, 'only the selected cells of block 1 were removed');
 });
-
