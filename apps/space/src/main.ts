@@ -89,10 +89,6 @@ class Game {
       skinUrl: session.skin_object_url,
       skinModel: session.player.skin_type
     });
-    // In offline mode, do not persist terrain edits. Clean up any stale offline terrain data.
-    if (session.mode === 'offline') {
-      persistentStorage?.removeItem?.(worldEditStorageKey(session.world.id));
-    }
 
     // Procedural terrain must use the durable, server-authoritative seed so all
     // players reconstruct the same base world.
@@ -102,13 +98,13 @@ class Game {
       {
         worldId: session.world.id,
         remote: session.terrain_edit_remote,
-        storage: session.mode === 'online' ? persistentStorage : null,
+        storage: persistentStorage,
         onSyncStatus: status => spaceUiStore.setWorldEditSync(status),
         // A batch older than the bounded server dedupe window is intentionally
         // not replayed over newer shared-world edits. Reload the authoritative
         // AOI after removing that stale outbox entry.
         onResyncRequired: () => {
-          if (session.mode === 'online') window.location.reload();
+          window.location.reload();
         }
       }
     );
@@ -139,19 +135,14 @@ class Game {
     this.contraptionManager.setPhysics(this.contraptionPhysics);
     this.sceneRenderer.setContraptions(this.contraptionManager);
     this.contraptionManager.setWorldId(session.world.id);
-    this.contraptionManager.setEntityPersistenceMode(
-      session.mode === 'online' ? 'remote' : 'browser'
-    );
-    if (session.mode === 'offline') {
-      this.contraptionManager.loadEntitiesFromStorage();
-    }
+    this.contraptionManager.setEntityPersistenceMode('remote');
 
     this.playerPhysics = new PlayerPhysics(this.world, this.contraptionManager);
     this.uiStore = spaceUiStore;
     this.uiStore.setAuthenticatedSession(
       session.api_origin,
-      session.mode === 'online' ? session.token : '',
-      session.mode === 'online' && session.player.is_admin === true,
+      session.token,
+      session.player.is_admin === true,
       session.world.id,
       session.account_api_origin || session.api_origin
     );
@@ -276,15 +267,12 @@ class Game {
     this.lastSavedPlayerPosition = session.player.resumed && !spawnAdjusted
       ? JSON.stringify(this.currentPlayerPosition())
       : '';
-    this.installPlayerPositionPersistence(session.mode);
+    this.installPlayerPositionPersistence();
     // Persist a first-entry position or a recovered embedded spawn immediately.
     if (!session.player.resumed || spawnAdjusted) this.queuePlayerPositionSave(true);
 
     // 5b. Multiplayer Synchronizer (Real-time player presence & terrain updates)
-    this.multiplayerSync = null;
-    this.entitySync = null;
-    if (session.mode === 'online') {
-      this.multiplayerSync = new MultiplayerSync({
+    this.multiplayerSync = new MultiplayerSync({
         apiOrigin: session.api_origin,
         token: session.token,
         worldId: session.world.id,
@@ -324,7 +312,6 @@ class Game {
       });
       this.sceneRenderer.setEntityImpostorRetention(id => this.entitySync?.hasRetainedImpostor(id) ?? false);
       this.entitySync.start();
-    }
 
     // The entry gate owns when gameplay starts. It waits for preloadTerrainAoi
     // to publish the complete initial detailed window first.
@@ -416,7 +403,7 @@ class Game {
     }
   }
 
-  installPlayerPositionPersistence(sessionMode: ReadySpaceSession['mode']) {
+  installPlayerPositionPersistence() {
     const persistBeforeSuspension = () => {
       this.queuePlayerPositionSave(true, true);
       this.contraptionManager?.saveEntitiesToStorage?.();

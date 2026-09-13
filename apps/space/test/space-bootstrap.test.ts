@@ -2,15 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cancelSpaceAdmission,
-  createOfflineSpaceSession,
   createPlayerPositionRemote,
   DEFAULT_PLAYER_SKIN_URL,
   encodePlayerPosition,
   hasPngSignature,
   initialTerrainStreamArea,
   loadTerrainEditRemote,
-  OFFLINE_PLAYER_POSITION_KEY,
-  OFFLINE_WORLD_ID,
   parseSpaceBootstrapPayload,
   requestSpaceAdmission,
   resolveApiOrigin,
@@ -18,8 +15,6 @@ import {
   terrainStreamAreaForPosition,
   terrainStreamAreaForPositionWithHysteresis,
 } from '../src/bootstrap/SpaceBootstrap.ts';
-import { worldEntitiesStorageKey } from '@entropydrop/space-engine/contraption/ContraptionManager.ts';
-import { worldEditStorageKey } from '@entropydrop/space-engine/voxel/WorldEditPersistence.ts';
 
 test('Space derives the API origin from the main frontend API configuration', () => {
   assert.equal(resolveApiOrigin('http://localhost:8000/skin', 'http://localhost:5173'), 'http://localhost:8000');
@@ -307,55 +302,3 @@ test('Space admission exposes only FIFO position and cancellation uses the same 
   assert.equal('estimated_wait_ms' in status, false);
 });
 
-test('offline Space isolates world, entity, and player state while retaining shared backpack storage', async () => {
-  const values = new Map<string, string>();
-  const originalStorage = (globalThis as any).localStorage;
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: string) => values.set(key, String(value)),
-      removeItem: (key: string) => values.delete(key)
-    }
-  });
-  try {
-    const session = createOfflineSpaceSession();
-    assert.equal(session.mode, 'offline');
-    assert.equal(session.world.id, OFFLINE_WORLD_ID);
-    assert.equal(session.terrain_edit_remote, null);
-    assert.equal(session.latency_monitor, null);
-    assert.equal(session.token, '');
-
-    const onlineWorldId = '00000000-0000-4000-8000-000000000001';
-    assert.notEqual(worldEditStorageKey(session.world.id), worldEditStorageKey(onlineWorldId));
-    assert.notEqual(worldEntitiesStorageKey(session.world.id), worldEntitiesStorageKey(onlineWorldId));
-
-    values.set('space.backpack.v8.pb', 'shared-backpack');
-    await session.player_position_remote.save({
-      x_cm: 10,
-      y_cm: 20,
-      z_cm: 30,
-      yaw_q15: 40,
-      pitch_q15: 0
-    });
-    assert.equal(values.get('space.backpack.v8.pb'), 'shared-backpack');
-    assert.match(values.get(OFFLINE_PLAYER_POSITION_KEY) || '', /"x_cm":10/);
-    assert.equal(values.has(`space.player-position.${onlineWorldId}`), false);
-  } finally {
-    if (originalStorage === undefined) {
-      delete (globalThis as any).localStorage;
-    } else {
-      Object.defineProperty(globalThis, 'localStorage', {
-        configurable: true,
-        value: originalStorage
-      });
-    }
-  }
-});
-
-test('offline Space uses the same bundled default skin as online fallback', () => {
-  const session = createOfflineSpaceSession();
-  assert.equal(session.player.skin_url, DEFAULT_PLAYER_SKIN_URL);
-  assert.equal(session.skin_object_url, DEFAULT_PLAYER_SKIN_URL);
-  assert.equal(session.entry_warning, null);
-});

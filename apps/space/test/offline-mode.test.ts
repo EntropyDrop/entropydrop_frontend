@@ -5,33 +5,29 @@ import { readFileSync } from 'node:fs';
 import { SpaceUiStore } from '../src/ui/react/store/SpaceUiStore.ts';
 
 
-test('Space UI shows queue position and can cancel while remaining offline', async () => {
+test('Space UI shows queue position and can cancel queue', async () => {
   const store = new SpaceUiStore();
   let cancelled = 0;
-  store.setSessionState('offline', 12, async () => {
+  store.setSessionState('online', 12, async () => {
     cancelled += 1;
-    store.setSessionState('offline', null, null);
+    store.setSessionState('online', null, null);
   });
 
-  assert.equal(store.getSnapshot().sessionMode, 'offline');
+  assert.equal(store.getSnapshot().sessionMode, 'online');
   assert.equal(store.getSnapshot().queuePosition, 12);
   await store.cancelSpaceQueue();
   assert.equal(cancelled, 1);
-  assert.equal(store.getSnapshot().sessionMode, 'offline');
+  assert.equal(store.getSnapshot().sessionMode, 'online');
   assert.equal(store.getSnapshot().queuePosition, null);
 });
 
-test('a completed queue waits for the player to choose online or offline Space', async () => {
+test('a completed queue signals onlineReady for the player', async () => {
   const store = new SpaceUiStore();
   let enteredOnline = 0;
-  let stayedOffline = 0;
   store.setSessionState(
-    'offline',
+    'online',
     null,
-    async () => {
-      stayedOffline += 1;
-      store.setSessionState('offline');
-    },
+    null,
     true,
     () => {
       enteredOnline += 1;
@@ -43,11 +39,6 @@ test('a completed queue waits for the player to choose online or offline Space',
 
   store.enterOnlineSpace();
   assert.equal(enteredOnline, 1);
-
-  await store.cancelSpaceQueue();
-  assert.equal(stayedOffline, 1);
-  assert.equal(store.getSnapshot().sessionMode, 'offline');
-  assert.equal(store.getSnapshot().onlineReady, false);
 });
 
 test('Space UI keeps skin setup guidance available in settings', () => {
@@ -59,91 +50,36 @@ test('Space UI keeps skin setup guidance available in settings', () => {
 });
 
 
-test('both Space welcome surfaces expose a direct offline entry', () => {
+test('Space welcome surfaces do NOT expose offline mode entries', () => {
   const appHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const welcomeSource = readFileSync(
     new URL('../../../src/pages/SpacePage.tsx', import.meta.url),
     'utf8'
   );
 
-  assert.match(appHtml, /\?mode=offline/);
-  assert.match(welcomeSource, /offlineSpaceAppUrl/);
-  assert.match(welcomeSource, /data\.offlineCta/);
+  assert.doesNotMatch(appHtml, /\?mode=offline/);
+  assert.doesNotMatch(welcomeSource, /offlineSpaceAppUrl/);
+  assert.doesNotMatch(welcomeSource, /data\.offlineCta/);
 });
 
-test('main.ts ensures offline mode disables terrain persistence while keeping entity and backpack persistence', () => {
+test('main.ts runs exclusively in online mode with remote persistence and backpack persistence', () => {
   const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 
-  // Terrain edits must not be persisted in offline mode
-  assert.match(mainSource, /session\.mode === 'offline'[\s\S]*?removeItem[\s\S]*?worldEditStorageKey/);
-  assert.match(mainSource, /storage:\s*session\.mode === 'online'\s*\?\s*persistentStorage\s*:\s*null/);
+  // Must not branch on offline mode
+  assert.doesNotMatch(mainSource, /session\.mode === 'offline'/);
 
-  // Entities must be persisted in offline mode so they remain visible across page refresh
-  assert.match(mainSource, /this\.contraptionManager\.setEntityPersistenceMode\(\s*session\.mode === 'online'\s*\?\s*'remote'\s*:\s*'browser'\s*\)/);
-  assert.match(mainSource, /this\.contraptionManager\.loadEntitiesFromStorage\(\)/);
+  // Storage and remote persistence are always enabled
+  assert.match(mainSource, /storage:\s*persistentStorage/);
+  assert.match(mainSource, /this\.contraptionManager\.setEntityPersistenceMode\(\s*'remote'\s*\)/);
+  assert.doesNotMatch(mainSource, /this\.contraptionManager\.loadEntitiesFromStorage\(\)/);
 
-  // Suspension/unload must persist entities in offline mode
-  assert.match(mainSource, /this\.contraptionManager\?\.saveEntitiesToStorage\?\.\(\)/);
-
-  // Backpack must retain persistentStorage in both online and offline modes
+  // Backpack retains persistentStorage
   assert.match(mainSource, /new PlayerController\([\s\S]*?persistentStorage\s*\)/);
-});
-
-test('offline entity persistence survives refresh: entities saved in browser mode reload successfully', async () => {
-  const { ContraptionManager, worldEntitiesStorageKey } = await import('@entropydrop/space-engine/contraption/ContraptionManager.ts');
-  const { BlockTypes } = await import('@entropydrop/space-engine/voxel/BlockTypes.ts');
-  const THREE = await import('three');
-  const worldId = 'offline-sandbox-v1';
-  const store = new Map<string, string>();
-  const mockStorage = {
-    getItem: (k: string) => store.get(k) ?? null,
-    setItem: (k: string, v: string) => { store.set(k, String(v)); },
-    removeItem: (k: string) => { store.delete(k); },
-  };
-
-  const scene = new THREE.Scene();
-  const manager1 = new ContraptionManager(scene, null, null, null, mockStorage as any);
-  manager1.setWorldId(worldId);
-  manager1.setEntityPersistenceMode('browser');
-
-  const slot = {
-    rootComponentId: 'root',
-    name: 'test-vehicle',
-    blocks: [{
-      localX: 0,
-      localY: 0,
-      localZ: 0,
-      size: 1,
-      color: 0x336699,
-      block: BlockTypes.COLOR_BLOCK,
-      entityId: 'root'
-    }],
-    childEntities: [],
-    scripts: []
-  };
-
-  const pos = new THREE.Vector3(10, 20, 30);
-  const created = manager1.buildFromSlot(slot, pos, null, true);
-  assert.ok(created);
-  assert.equal(manager1.contraptions.length, 1);
-  assert.equal(store.has(worldEntitiesStorageKey(worldId)), true);
-
-  // Simulate page refresh: a new game instance starts up
-  const manager2 = new ContraptionManager(new THREE.Scene(), null, null, null, mockStorage as any);
-  manager2.setWorldId(worldId);
-  manager2.setEntityPersistenceMode('browser');
-  const loadedCount = manager2.loadEntitiesFromStorage();
-
-  assert.equal(loadedCount, 1);
-  assert.equal(manager2.contraptions.length, 1);
-  assert.equal(manager2.contraptions[0].position.x, manager1.contraptions[0].position.x);
-  assert.equal(manager2.contraptions[0].position.y, manager1.contraptions[0].position.y);
-  assert.equal(manager2.contraptions[0].position.z, manager1.contraptions[0].position.z);
 });
 
 test('WorldEditPersistence with storage null does not persist terrain edits', async () => {
   const { WorldEditPersistence } = await import('@entropydrop/space-engine/voxel/WorldEditPersistence.ts');
-  const worldId = 'offline-sandbox-v1';
+  const worldId = 'test-sandbox-v1';
   const persistence = new WorldEditPersistence({
     worldId,
     storage: null,
@@ -157,7 +93,7 @@ test('WorldEditPersistence with storage null does not persist terrain edits', as
 
 test('ContraptionManager in none mode does not persist or load entities and purges storage', async () => {
   const { ContraptionManager, worldEntitiesStorageKey } = await import('@entropydrop/space-engine/contraption/ContraptionManager.ts');
-  const worldId = 'offline-sandbox-v1';
+  const worldId = 'test-sandbox-v1';
   const store = new Map<string, string>();
   const mockStorage = {
     getItem: (k: string) => store.get(k) ?? null,
@@ -189,4 +125,3 @@ test('ContraptionManager in none mode does not persist or load entities and purg
   const loaded = manager.loadEntitiesFromStorage();
   assert.equal(loaded, 0);
 });
-

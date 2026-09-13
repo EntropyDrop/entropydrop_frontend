@@ -53,7 +53,7 @@ function replaceGlobal(name: string, value: unknown): () => void {
   };
 }
 
-test('logged-out players can enter offline Space from the rendered error state', async t => {
+test('logged-out players are prompted to log in and no offline mode is offered', async t => {
   const elements = new Map([
     ['space-entry-gate', new FakeElement()],
     ['space-entry-status', new FakeElement()],
@@ -105,7 +105,7 @@ test('logged-out players can enter offline Space from the rendered error state',
     actions.map(action => ({ href: action.href, className: action.className })),
     [
       { href: '/skin/', className: 'space-entry-action' },
-      { href: '?mode=offline', className: 'space-entry-action secondary' },
+      { href: '/space/intro', className: 'space-entry-action secondary' },
     ]
   );
 });

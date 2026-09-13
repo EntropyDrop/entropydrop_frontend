@@ -255,7 +255,7 @@ export function CodeEditorModal() {
   const runtimeTitle = `Runtime: #${contraption.id} (${contraption.blocks.length} blocks) · ${String(contraption.bodyType).toUpperCase()}${childIds.length ? ` · children: ${childIds.join(', ')}` : ' · no children'}`;
   const status = playback === 'play' ? 'running' : 'stopped';
   const backendManaged = contraption.serverManaged === true;
-  const persistenceLabel = backendManaged ? 'backend' : 'offline browser';
+  const persistenceLabel = backendManaged ? 'backend' : 'session';
   const sourceLabel = backendManaged ? 'world entity' : 'local';
   const accessLabel = backendManaged
     ? contraption.serverCanEdit === true

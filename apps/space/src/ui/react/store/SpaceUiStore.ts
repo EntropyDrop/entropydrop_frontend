@@ -228,7 +228,7 @@ export interface SpaceUiSnapshot {
   isAdmin: boolean;
   musicEnabled: boolean;
   effectsEnabled: boolean;
-  sessionMode: 'online' | 'offline';
+  sessionMode: 'online';
   queuePosition: number | null;
   onlineReady: boolean;
 }
@@ -478,7 +478,7 @@ export class SpaceUiStore {
   }
 
   setSessionState(
-    mode: 'online' | 'offline',
+    mode: 'online' = 'online',
     queuePosition: number | null = null,
     cancelQueue: (() => Promise<void>) | null = null,
     onlineReady = false,
@@ -587,8 +587,10 @@ export class SpaceUiStore {
     ) || sceneRenderer?.getResolutionScaleState?.();
     shadowsEnabled = sceneRenderer?.setShadowsEnabled?.(shadowsEnabled) ?? shadowsEnabled;
     lightingQuality = sceneRenderer?.setLightingQuality?.(lightingQuality) ?? lightingQuality;
-    this.patch({ sceneRenderer, worldShapeMode, shadowsEnabled, lightingQuality, entityImpostorSettings,
-      ...resolutionSnapshot(sceneRenderer?.getResolutionScaleState?.() || state) });
+    this.patch({
+      sceneRenderer, worldShapeMode, shadowsEnabled, lightingQuality, entityImpostorSettings,
+      ...resolutionSnapshot(sceneRenderer?.getResolutionScaleState?.() || state)
+    });
   }
 
   setNavigationSystem(navigationSystem: any): void {
@@ -1487,8 +1489,8 @@ export class SpaceUiStore {
           `${summary.name} is ready to preview.`,
           `${summary.kind === 'entity' ? 'Entity' : 'Structure'} · ${summary.voxelCount.toLocaleString()} voxels`,
           `Bounds ${bounds} m${summary.componentCount > 1 ? ` · ${summary.componentCount} components` : ''}`
-            + `${summary.scriptCount ? ` · ${summary.scriptCount} scripts` : ''}`
-            + `${summary.constraintCount ? ` · ${summary.constraintCount} constraints` : ''}`,
+          + `${summary.scriptCount ? ` · ${summary.scriptCount} scripts` : ''}`
+          + `${summary.constraintCount ? ` · ${summary.constraintCount} constraints` : ''}`,
           'Review the hologram, then confirm construction.'
         ].join('\n'),
         reasoning: result.reasoning || '',
@@ -1767,11 +1769,11 @@ export class SpaceUiStore {
     this.patch(state
       ? resolutionSnapshot(state)
       : {
-          resolutionScaleMode: mode,
-          resolutionScale: mode === 'auto' ? this.snapshot.resolutionScale : Number(mode),
-          resolutionPixelRatio: this.snapshot.resolutionPixelRatio,
-          resolutionEffectsQuality: this.snapshot.resolutionEffectsQuality
-        });
+        resolutionScaleMode: mode,
+        resolutionScale: mode === 'auto' ? this.snapshot.resolutionScale : Number(mode),
+        resolutionPixelRatio: this.snapshot.resolutionPixelRatio,
+        resolutionEffectsQuality: this.snapshot.resolutionEffectsQuality
+      });
     if (persist) {
       try { localStorage.setItem('space_setting_resolution_scale', mode); } catch { }
     }

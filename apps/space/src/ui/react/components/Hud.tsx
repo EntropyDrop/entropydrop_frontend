@@ -433,25 +433,6 @@ export function Hud() {
   return (
     <>
       <div id="crosshair" />
-      {state.sessionMode === 'offline' ? (
-        <div className={`space-session-status ${state.onlineReady ? 'ready' : state.queuePosition !== null ? 'queued' : 'offline'}`} role="status" aria-live="polite">
-          <span>{state.onlineReady ? 'Ready to Connect' : state.queuePosition !== null ? `Queue #${state.queuePosition}` : 'Offline Mode'}</span>
-          {state.onlineReady ? (
-            <>
-              <button type="button" tabIndex={-1} onClick={() => spaceUiStore.enterOnlineSpace()}>
-                Enter Online Space
-              </button>
-              <button type="button" tabIndex={-1} onClick={() => { void spaceUiStore.cancelSpaceQueue(); }}>
-                Stay in Offline Mode
-              </button>
-            </>
-          ) : state.queuePosition !== null ? (
-            <button type="button" tabIndex={-1} onClick={() => { void spaceUiStore.cancelSpaceQueue(); }}>
-              Cancel Queue
-            </button>
-          ) : null}
-        </div>
-      ) : null}
       <div id="hud-overlay">
         <div className="hud-top">
           <div className="hud-card">

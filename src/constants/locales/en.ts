@@ -1000,7 +1000,6 @@ Email: support@entropydrop.com`
         tagline: 'AI-Assisted Building & Autonomous Control Voxel Universe',
         description: 'Sculpt voxels in Earth mode by default, or switch to the seamless torus donut terrain in Settings. Turn structures into dynamic rigid bodies with one click, use AI-assisted building to construct complex machinery, and mount intelligent AI for autonomous control, cruising, and physical interaction directly in your browser.',
         primaryCta: 'Enter Space',
-        offlineCta: 'Play Offline',
         secondaryCta: 'Core Features',
         onlinePlayers: 'players online',
         onlineLoading: 'Checking online players…',

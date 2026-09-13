@@ -1285,7 +1285,7 @@ export class SceneRenderer {
     this.previewForceArrow.visible = false;
     this.scene.add(this.previewForceArrow);
 
-canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
+    canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     canvas.addEventListener('pointermove', this.onPreviewPointerMove);
     canvas.addEventListener('pointerup', this.onPreviewPointerUp);
     canvas.addEventListener('pointercancel', this.onPreviewPointerUp);
@@ -1379,7 +1379,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       };
       this.previewArrowHoldUntil = Infinity;
       this.previewCanvas?.classList.add('is-dragging', 'is-applying-force');
-      
+
       return;
     }
 
@@ -1394,7 +1394,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
     this.previewCanvas?.classList.add('is-dragging');
     this.previewCanvas?.classList.remove('is-applying-force');
     if (this.previewForceArrow) this.previewForceArrow.visible = false;
-    
+
   }
 
   handleEntityPreviewPointerMove(event) {
@@ -1413,7 +1413,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         forceOrigin
       ));
       this.updatePreviewForceArrow(interaction);
-      
+
       return;
     }
 
@@ -1444,10 +1444,10 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
         this.applyEntityPreviewForce(interaction);
       }
       this.previewArrowHoldUntil = performance.now() + 650;
-      
+
     } else {
       this.previewInteraction = null;
-      }
+    }
   }
 
   applyEntityPreviewForce(interaction) {
@@ -1542,7 +1542,7 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       if (!this.previewInteraction.active && performance.now() > this.previewArrowHoldUntil) {
         this.previewForceArrow.visible = false;
         this.previewInteraction = null;
-          }
+      }
     }
 
     this.previewRenderer.render(this.scene, this.previewCamera);
@@ -2103,8 +2103,8 @@ canvas.addEventListener('pointerdown', this.onPreviewPointerDown);
       const min = previewVector3(frame.bounds.min).multiplyScalar(divisions);
       const max = previewVector3(frame.bounds.max).multiplyScalar(divisions);
       if (!Number.isFinite(min.x) || !Number.isFinite(max.x) || min.x > max.x ||
-          !Number.isFinite(min.y) || !Number.isFinite(max.y) || min.y > max.y ||
-          !Number.isFinite(min.z) || !Number.isFinite(max.z) || min.z > max.z) {
+        !Number.isFinite(min.y) || !Number.isFinite(max.y) || min.y > max.y ||
+        !Number.isFinite(min.z) || !Number.isFinite(max.z) || min.z > max.z) {
         return null;
       }
       return {

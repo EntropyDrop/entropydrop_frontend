@@ -20,12 +20,12 @@ const DISTANT_LOD_CONTROLS: ReadonlyArray<{
   label: string;
   description: string;
 }> = [
-  { distanceKey: 'lod2Distance', enabledKey: 'lod2Enabled', label: '2m Samples', description: 'Highest-detail snapshot radius' },
-  { distanceKey: 'lod4Distance', enabledKey: 'lod4Enabled', label: '4m Samples', description: '4m → 8m transition distance' },
-  { distanceKey: 'lod8Distance', enabledKey: 'lod8Enabled', label: '8m Samples', description: '8m → 16m transition distance' },
-  { distanceKey: 'lod16Distance', enabledKey: 'lod16Enabled', label: '16m Samples', description: '16m → 32m transition distance' },
-  { distanceKey: 'lod32Distance', enabledKey: 'lod32Enabled', label: '32m Samples', description: '32m → 64m transition distance' },
-];
+    { distanceKey: 'lod2Distance', enabledKey: 'lod2Enabled', label: '2m Samples', description: 'Highest-detail snapshot radius' },
+    { distanceKey: 'lod4Distance', enabledKey: 'lod4Enabled', label: '4m Samples', description: '4m → 8m transition distance' },
+    { distanceKey: 'lod8Distance', enabledKey: 'lod8Enabled', label: '8m Samples', description: '8m → 16m transition distance' },
+    { distanceKey: 'lod16Distance', enabledKey: 'lod16Enabled', label: '16m Samples', description: '16m → 32m transition distance' },
+    { distanceKey: 'lod32Distance', enabledKey: 'lod32Enabled', label: '32m Samples', description: '32m → 64m transition distance' },
+  ];
 
 function ModalBackdrop({ id, className = '', children, onClose }: { id: string; className?: string; children: React.ReactNode; onClose: () => void }) {
   return (
@@ -218,7 +218,7 @@ export function GlobalSettingsModal() {
             onKeyDown={event => {
               const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
                 : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
-                : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null;
+                  : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null;
               if (next === null) return;
               event.preventDefault();
               setTab(tabs[next]);
@@ -227,387 +227,387 @@ export function GlobalSettingsModal() {
           >{{ character: 'Character', graphics: 'Graphics', sound: 'Sound', api: 'API' }[value]}</button>)}
         </div>
         <div className="settings-tab-panel" role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`} tabIndex={0}>
-        {tab === 'character' ? <>
-        {state.currentSkin ? <section className="settings-section settings-character-card">
-          <div className="settings-section-title">CURRENT SKIN</div>
-          <CharacterSkinPreview url={state.currentSkin.url} model={state.currentSkin.model} />
-          <div className="settings-label">{state.currentSkin.model === 'slim' ? 'Slim' : 'Strong'} character</div>
-          <div className="settings-desc">This is the skin currently in use. Select a skin in Collection, choose Set as My Skin, then reload Space.</div>
-          <div className="settings-skin-actions"><a className="small-btn primary settings-skin-link" href="/skin/collection" target="_blank" rel="noopener noreferrer">Change Skin</a></div>
-        </section> : null}
-        {state.skinWarning || !state.currentSkin ? (
-          <section className="settings-skin-warning" aria-labelledby="settings-skin-warning-title">
-            <div className="settings-skin-warning-heading">
-              <span className="settings-skin-warning-icon" aria-hidden="true">!</span>
-              <div>
-                <div id="settings-skin-warning-title" className="settings-skin-warning-title">Set up your character skin</div>
-                <div className="settings-skin-warning-message">{state.skinWarning || 'No character skin is configured, so the default skin is in use.'}</div>
+          {tab === 'character' ? <>
+            {state.currentSkin ? <section className="settings-section settings-character-card">
+              <div className="settings-section-title">CURRENT SKIN</div>
+              <CharacterSkinPreview url={state.currentSkin.url} model={state.currentSkin.model} />
+              <div className="settings-label">{state.currentSkin.model === 'slim' ? 'Slim' : 'Strong'} character</div>
+              <div className="settings-desc">This is the skin currently in use. Select a skin in Collection, choose Set as My Skin, then reload Space.</div>
+              <div className="settings-skin-actions"><a className="small-btn primary settings-skin-link" href="/skin/collection" target="_blank" rel="noopener noreferrer">Change Skin</a></div>
+            </section> : null}
+            {state.skinWarning || !state.currentSkin ? (
+              <section className="settings-skin-warning" aria-labelledby="settings-skin-warning-title">
+                <div className="settings-skin-warning-heading">
+                  <span className="settings-skin-warning-icon" aria-hidden="true">!</span>
+                  <div>
+                    <div id="settings-skin-warning-title" className="settings-skin-warning-title">Set up your character skin</div>
+                    <div className="settings-skin-warning-message">{state.skinWarning || 'No character skin is configured, so the default skin is in use.'}</div>
+                  </div>
+                </div>
+                <ol className="settings-skin-steps">
+                  <li>Open Collection to upload a skin or choose one you already have.</li>
+                  <li>Alternatively, create a new skin on the Generate page.</li>
+                  <li>Open the chosen skin's detail page and select <strong>Set as My Skin</strong>.</li>
+                  <li>Return to Space and reload to use the new skin.</li>
+                </ol>
+                <div className="settings-skin-actions">
+                  <a className="small-btn primary settings-skin-link" href="/skin/collection" target="_blank" rel="noopener noreferrer">
+                    Open Collection
+                  </a>
+                  <a className="small-btn settings-skin-link" href="/skin/generate" target="_blank" rel="noopener noreferrer">
+                    Generate a Skin
+                  </a>
+                </div>
+              </section>
+            ) : null}
+          </> : null}
+          {tab === 'graphics' ? <>
+            <div className="settings-section">
+              <div className="settings-section-title">CAMERA &amp; VIEW</div>
+              <div className="settings-row">
+                <div className="settings-label-group"><span className="settings-label">Field of View (FOV)</span><span className="settings-desc">Camera lens angle (50° ~ 110°)</span></div>
+                <div className="settings-control-group"><input id="setting-fov-slider" className="settings-slider" type="range" min="50" max="110" step="1" value={state.fov} onChange={event => spaceUiStore.setFov(Number(event.target.value))} /><span id="setting-fov-val" className="settings-value-badge">{state.fov}°</span></div>
+              </div>
+              <div className="settings-row">
+                <div className="settings-label-group"><span className="settings-label">Perspective</span><span className="settings-desc">Cycle First, Third Back, and Third Front views (F3)</span></div>
+                <div className="settings-segmented-control" id="setting-perspective-group">
+                  {([
+                    ['first_person', '1st Person'],
+                    ['third_person', '3rd Back'],
+                    ['third_person_front', '3rd Front']
+                  ] as const).map(([value, label]) => <button key={value} tabIndex={-1} className={`segment-btn ${state.perspective === value ? 'active' : ''}`} onClick={() => spaceUiStore.setPerspective(value)}>{label}</button>)}
+                </div>
+              </div>
+              <div className="settings-row" id="setting-cam-dist-row" style={{ display: state.perspective === 'first_person' ? 'none' : 'flex' }}>
+                <div className="settings-label-group"><span className="settings-label">Third Person Distance</span><span className="settings-desc">Camera offset distance from player</span></div>
+                <div className="settings-control-group"><input id="setting-cam-dist-slider" className="settings-slider" type="range" min="2" max="8" step="0.5" value={state.cameraDistance} onChange={event => spaceUiStore.setCameraDistance(Number(event.target.value))} /><span id="setting-cam-dist-val" className="settings-value-badge">{state.cameraDistance.toFixed(1)} m</span></div>
+              </div>
+              <div className="settings-row">
+                <div className="settings-label-group"><span className="settings-label">Minimap</span><span className="settings-desc">Continuously updates nearby terrain and entities · may reduce performance while moving</span></div>
+                <div className="settings-segmented-control" id="setting-minimap-group">
+                  {([
+                    [true, 'Enabled'],
+                    [false, 'Disabled']
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={String(value)}
+                      tabIndex={-1}
+                      className={`segment-btn ${state.minimapEnabled === value ? 'active' : ''}`}
+                      aria-pressed={state.minimapEnabled === value}
+                      onClick={() => spaceUiStore.setMinimapEnabled(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-            <ol className="settings-skin-steps">
-              <li>Open Collection to upload a skin or choose one you already have.</li>
-              <li>Alternatively, create a new skin on the Generate page.</li>
-              <li>Open the chosen skin's detail page and select <strong>Set as My Skin</strong>.</li>
-              <li>Return to Space and reload to use the new skin.</li>
-            </ol>
-            <div className="settings-skin-actions">
-              <a className="small-btn primary settings-skin-link" href="/skin/collection" target="_blank" rel="noopener noreferrer">
-                Open Collection
-              </a>
-              <a className="small-btn settings-skin-link" href="/skin/generate" target="_blank" rel="noopener noreferrer">
-                Generate a Skin
-              </a>
+            <div className="settings-section">
+              <div className="settings-section-title">WORLD &amp; ENVIRONMENT</div>
+              <div className="settings-row">
+                <div className="settings-label-group"><span className="settings-label">World Shape</span><span className="settings-desc">Switch between a spherical horizon and the original ring world</span></div>
+                <div className="settings-segmented-control" id="setting-world-shape-group">
+                  {([
+                    ['earth', 'Earth Mode'],
+                    ['torus', 'Donut Mode']
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      tabIndex={-1}
+                      className={`segment-btn ${state.worldShapeMode === value ? 'active' : ''}`}
+                      aria-pressed={state.worldShapeMode === value}
+                      onClick={() => spaceUiStore.setWorldShapeMode(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          </section>
-        ) : null}
-        </> : null}
-        {tab === 'graphics' ? <>
-        <div className="settings-section">
-          <div className="settings-section-title">CAMERA &amp; VIEW</div>
-          <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">Field of View (FOV)</span><span className="settings-desc">Camera lens angle (50° ~ 110°)</span></div>
-            <div className="settings-control-group"><input id="setting-fov-slider" className="settings-slider" type="range" min="50" max="110" step="1" value={state.fov} onChange={event => spaceUiStore.setFov(Number(event.target.value))} /><span id="setting-fov-val" className="settings-value-badge">{state.fov}°</span></div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">Perspective</span><span className="settings-desc">Cycle First, Third Back, and Third Front views (F3)</span></div>
-            <div className="settings-segmented-control" id="setting-perspective-group">
-              {([
-                ['first_person', '1st Person'],
-                ['third_person', '3rd Back'],
-                ['third_person_front', '3rd Front']
-              ] as const).map(([value, label]) => <button key={value} tabIndex={-1} className={`segment-btn ${state.perspective === value ? 'active' : ''}`} onClick={() => spaceUiStore.setPerspective(value)}>{label}</button>)}
-            </div>
-          </div>
-          <div className="settings-row" id="setting-cam-dist-row" style={{ display: state.perspective === 'first_person' ? 'none' : 'flex' }}>
-            <div className="settings-label-group"><span className="settings-label">Third Person Distance</span><span className="settings-desc">Camera offset distance from player</span></div>
-            <div className="settings-control-group"><input id="setting-cam-dist-slider" className="settings-slider" type="range" min="2" max="8" step="0.5" value={state.cameraDistance} onChange={event => spaceUiStore.setCameraDistance(Number(event.target.value))} /><span id="setting-cam-dist-val" className="settings-value-badge">{state.cameraDistance.toFixed(1)} m</span></div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">Minimap</span><span className="settings-desc">Continuously updates nearby terrain and entities · may reduce performance while moving</span></div>
-            <div className="settings-segmented-control" id="setting-minimap-group">
-              {([
-                [true, 'Enabled'],
-                [false, 'Disabled']
-              ] as const).map(([value, label]) => (
-                <button
-                  key={String(value)}
-                  tabIndex={-1}
-                  className={`segment-btn ${state.minimapEnabled === value ? 'active' : ''}`}
-                  aria-pressed={state.minimapEnabled === value}
-                  onClick={() => spaceUiStore.setMinimapEnabled(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="settings-section">
-          <div className="settings-section-title">WORLD &amp; ENVIRONMENT</div>
-          <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">World Shape</span><span className="settings-desc">Switch between a spherical horizon and the original ring world</span></div>
-            <div className="settings-segmented-control" id="setting-world-shape-group">
-              {([
-                ['earth', 'Earth Mode'],
-                ['torus', 'Donut Mode']
-              ] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  tabIndex={-1}
-                  className={`segment-btn ${state.worldShapeMode === value ? 'active' : ''}`}
-                  aria-pressed={state.worldShapeMode === value}
-                  onClick={() => spaceUiStore.setWorldShapeMode(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="settings-section">
-          <div className="settings-section-title">PERFORMANCE</div>
-          <div className="settings-row settings-lighting-row">
-            <div className="settings-label-group">
-              <span className="settings-label" id="setting-lighting-label">Lighting Quality</span>
-              <span className="settings-desc" id="setting-lighting-description" aria-live="polite">
-                {LIGHTING_PRESETS[state.lightingQuality].description}
-                {state.lightingQuality !== 'low' && state.resolutionEffectsQuality === 'reduced'
-                  ? (state.lightingQuality === 'ultra'
-                    ? ' · Auto has paused bloom, sun rays and contact shadows; cinematic sky and color remain'
-                    : ' · Auto resolution has temporarily reduced effects; your selected quality is saved')
-                  : ''}
-              </span>
-            </div>
-            <div
-              className="settings-segmented-control settings-lighting-control"
-              id="setting-lighting-quality-group"
-              role="group"
-              aria-labelledby="setting-lighting-label"
-              aria-describedby="setting-lighting-description"
-            >
-              {LIGHTING_QUALITY_LEVELS.map(quality => (
-                <button
-                  key={quality}
-                  className={`segment-btn ${state.lightingQuality === quality ? 'active' : ''}`}
-                  aria-pressed={state.lightingQuality === quality}
-                  title={LIGHTING_PRESETS[quality].description}
-                  onClick={() => spaceUiStore.setLightingQuality(quality)}
-                >
-                  {LIGHTING_PRESETS[quality].label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group">
-              <span className="settings-label">Shadows</span>
-              <span className="settings-desc">{state.lightingQuality === 'low'
-                ? 'Paused at Low lighting quality · select Medium or higher to use shadows'
-                : `Render real-time sunlight shadows${state.shadowsEnabled && state.resolutionEffectsQuality === 'reduced' ? ' · temporarily paused by Auto resolution' : ''}`}</span>
-            </div>
-            <div className="settings-segmented-control" id="setting-shadows-group">
-              {([
-                [true, 'Enabled'],
-                [false, 'Disabled']
-              ] as const).map(([value, label]) => (
-                <button
-                  key={String(value)}
-                  tabIndex={-1}
-                  className={`segment-btn ${state.shadowsEnabled === value ? 'active' : ''}`}
-                  disabled={state.lightingQuality === 'low'}
-                  aria-pressed={state.shadowsEnabled === value}
-                  onClick={() => spaceUiStore.setShadowsEnabled(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="settings-row settings-resolution-row">
-            <div className="settings-label-group">
-              <span className="settings-label">Render Resolution</span>
-              <span className="settings-desc">Auto targets {state.resolutionTargetFps} FPS{state.lightingQuality === 'ultra' ? ' for cinematic lighting' : ''} · currently {Math.round(state.resolutionScale * 100)}% ({state.resolutionPixelRatio.toFixed(2)}× pixel ratio){state.resolutionEffectsQuality === 'reduced' ? ' · effects reduced' : ''}</span>
-            </div>
-            <div className="settings-segmented-control settings-resolution-control" id="setting-resolution-group">
-              {([
-                ['auto', 'Auto'],
-                ['1', '100%'],
-                ['0.8', '80%'],
-                ['0.67', '67%'],
-                ['0.5', '50%']
-              ] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  tabIndex={-1}
-                  className={`segment-btn ${state.resolutionScaleMode === value ? 'active' : ''}`}
-                  aria-pressed={state.resolutionScaleMode === value}
-                  onClick={() => spaceUiStore.setResolutionScale(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">Chunk Render Distance</span><span className="settings-desc">Voxel terrain mesh streaming radius (4 ~ 20 chunks)</span></div>
-            <div className="settings-control-group"><input id="setting-render-dist-slider" className="settings-slider" type="range" min="4" max="20" step="1" value={state.renderDistance} onChange={event => spaceUiStore.setRenderDistance(Number(event.target.value))} /><span id="setting-render-dist-val" className="settings-value-badge">{state.renderDistance} Chunks</span></div>
-          </div>
-        </div>
-        <div className="settings-section">
-          <div className="settings-section-title">
-            ENTITY CROSS-PLANE LOD
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group">
-              <label className="settings-label" htmlFor="setting-entity-impostor-start-slider">Entity Plane Start Distance</label>
-              <span className="settings-desc">Switch loaded entities to crossed planes beyond this distance; editing keeps full detail</span>
-            </div>
-            <div className="settings-control-group">
-              <input id="setting-entity-impostor-start-slider" className="settings-slider" type="range"
-                {...ENTITY_IMPOSTOR_SETTING_LIMITS.startDistance} value={state.entityImpostorSettings.startDistance}
-                onChange={event => spaceUiStore.setEntityImpostorSetting('startDistance', Number(event.target.value))} />
-              <span className="settings-value-badge">{state.entityImpostorSettings.startDistance} m</span>
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group">
-              <label className="settings-label" htmlFor="setting-entity-impostor-limit-slider">Entity Plane View Distance</label>
-              <span className="settings-desc">Keep previously loaded entity silhouettes beyond the chunk AOI; independent of terrain LOD</span>
-            </div>
-            <div className="settings-control-group">
-              <input id="setting-entity-impostor-limit-slider" className="settings-slider" type="range"
-                {...ENTITY_IMPOSTOR_SETTING_LIMITS.maxDistance}
-                min={Math.max(ENTITY_IMPOSTOR_SETTING_LIMITS.maxDistance.min, Math.ceil((state.entityImpostorSettings.startDistance + 100) / 100) * 100)}
-                value={state.entityImpostorSettings.maxDistance}
-                onChange={event => spaceUiStore.setEntityImpostorSetting('maxDistance', Number(event.target.value))} />
-              <span className="settings-value-badge">{state.entityImpostorSettings.maxDistance} m</span>
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-desc">Works in Earth and Donut modes · takes effect immediately and saves automatically</span></div>
-            <button className="small-btn" onClick={() => spaceUiStore.resetEntityImpostorSettings()}>Reset Entity LOD</button>
-          </div>
-        </div>
-        <div className="settings-section">
-          <div className="settings-section-title">
-            DISTANT TERRAIN LOD{distantLodDisabled ? ' · OFF IN EARTH MODE' : ''}
-          </div>
-          {DISTANT_LOD_CONTROLS.map(({ distanceKey, enabledKey, label, description }) => {
-            const limits = DISTANT_SURFACE_SETTING_LIMITS[distanceKey];
-            const enabled = !distantLodDisabled && state.distantSurfaceSettings[enabledKey];
-            return (
-              <div className="settings-row" key={distanceKey}>
+            <div className="settings-section">
+              <div className="settings-section-title">PERFORMANCE</div>
+              <div className="settings-row settings-lighting-row">
                 <div className="settings-label-group">
-                  <span className="settings-label">{label}</span>
-                  <span className="settings-desc">{description} · thresholds remain at least 50m apart</span>
+                  <span className="settings-label" id="setting-lighting-label">Lighting Quality</span>
+                  <span className="settings-desc" id="setting-lighting-description" aria-live="polite">
+                    {LIGHTING_PRESETS[state.lightingQuality].description}
+                    {state.lightingQuality !== 'low' && state.resolutionEffectsQuality === 'reduced'
+                      ? (state.lightingQuality === 'ultra'
+                        ? ' · Auto has paused bloom, sun rays and contact shadows; cinematic sky and color remain'
+                        : ' · Auto resolution has temporarily reduced effects; your selected quality is saved')
+                      : ''}
+                  </span>
+                </div>
+                <div
+                  className="settings-segmented-control settings-lighting-control"
+                  id="setting-lighting-quality-group"
+                  role="group"
+                  aria-labelledby="setting-lighting-label"
+                  aria-describedby="setting-lighting-description"
+                >
+                  {LIGHTING_QUALITY_LEVELS.map(quality => (
+                    <button
+                      key={quality}
+                      className={`segment-btn ${state.lightingQuality === quality ? 'active' : ''}`}
+                      aria-pressed={state.lightingQuality === quality}
+                      title={LIGHTING_PRESETS[quality].description}
+                      onClick={() => spaceUiStore.setLightingQuality(quality)}
+                    >
+                      {LIGHTING_PRESETS[quality].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-row">
+                <div className="settings-label-group">
+                  <span className="settings-label">Shadows</span>
+                  <span className="settings-desc">{state.lightingQuality === 'low'
+                    ? 'Paused at Low lighting quality · select Medium or higher to use shadows'
+                    : `Render real-time sunlight shadows${state.shadowsEnabled && state.resolutionEffectsQuality === 'reduced' ? ' · temporarily paused by Auto resolution' : ''}`}</span>
+                </div>
+                <div className="settings-segmented-control" id="setting-shadows-group">
+                  {([
+                    [true, 'Enabled'],
+                    [false, 'Disabled']
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={String(value)}
+                      tabIndex={-1}
+                      className={`segment-btn ${state.shadowsEnabled === value ? 'active' : ''}`}
+                      disabled={state.lightingQuality === 'low'}
+                      aria-pressed={state.shadowsEnabled === value}
+                      onClick={() => spaceUiStore.setShadowsEnabled(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-row settings-resolution-row">
+                <div className="settings-label-group">
+                  <span className="settings-label">Render Resolution</span>
+                  <span className="settings-desc">Auto targets {state.resolutionTargetFps} FPS{state.lightingQuality === 'ultra' ? ' for cinematic lighting' : ''} · currently {Math.round(state.resolutionScale * 100)}% ({state.resolutionPixelRatio.toFixed(2)}× pixel ratio){state.resolutionEffectsQuality === 'reduced' ? ' · effects reduced' : ''}</span>
+                </div>
+                <div className="settings-segmented-control settings-resolution-control" id="setting-resolution-group">
+                  {([
+                    ['auto', 'Auto'],
+                    ['1', '100%'],
+                    ['0.8', '80%'],
+                    ['0.67', '67%'],
+                    ['0.5', '50%']
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      tabIndex={-1}
+                      className={`segment-btn ${state.resolutionScaleMode === value ? 'active' : ''}`}
+                      aria-pressed={state.resolutionScaleMode === value}
+                      onClick={() => spaceUiStore.setResolutionScale(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-row">
+                <div className="settings-label-group"><span className="settings-label">Chunk Render Distance</span><span className="settings-desc">Voxel terrain mesh streaming radius (4 ~ 20 chunks)</span></div>
+                <div className="settings-control-group"><input id="setting-render-dist-slider" className="settings-slider" type="range" min="4" max="20" step="1" value={state.renderDistance} onChange={event => spaceUiStore.setRenderDistance(Number(event.target.value))} /><span id="setting-render-dist-val" className="settings-value-badge">{state.renderDistance} Chunks</span></div>
+              </div>
+            </div>
+            <div className="settings-section">
+              <div className="settings-section-title">
+                ENTITY CROSS-PLANE LOD
+              </div>
+              <div className="settings-row">
+                <div className="settings-label-group">
+                  <label className="settings-label" htmlFor="setting-entity-impostor-start-slider">Entity Plane Start Distance</label>
+                  <span className="settings-desc">Switch loaded entities to crossed planes beyond this distance; editing keeps full detail</span>
+                </div>
+                <div className="settings-control-group">
+                  <input id="setting-entity-impostor-start-slider" className="settings-slider" type="range"
+                    {...ENTITY_IMPOSTOR_SETTING_LIMITS.startDistance} value={state.entityImpostorSettings.startDistance}
+                    onChange={event => spaceUiStore.setEntityImpostorSetting('startDistance', Number(event.target.value))} />
+                  <span className="settings-value-badge">{state.entityImpostorSettings.startDistance} m</span>
+                </div>
+              </div>
+              <div className="settings-row">
+                <div className="settings-label-group">
+                  <label className="settings-label" htmlFor="setting-entity-impostor-limit-slider">Entity Plane View Distance</label>
+                  <span className="settings-desc">Keep previously loaded entity silhouettes beyond the chunk AOI; independent of terrain LOD</span>
+                </div>
+                <div className="settings-control-group">
+                  <input id="setting-entity-impostor-limit-slider" className="settings-slider" type="range"
+                    {...ENTITY_IMPOSTOR_SETTING_LIMITS.maxDistance}
+                    min={Math.max(ENTITY_IMPOSTOR_SETTING_LIMITS.maxDistance.min, Math.ceil((state.entityImpostorSettings.startDistance + 100) / 100) * 100)}
+                    value={state.entityImpostorSettings.maxDistance}
+                    onChange={event => spaceUiStore.setEntityImpostorSetting('maxDistance', Number(event.target.value))} />
+                  <span className="settings-value-badge">{state.entityImpostorSettings.maxDistance} m</span>
+                </div>
+              </div>
+              <div className="settings-row">
+                <div className="settings-label-group"><span className="settings-desc">Works in Earth and Donut modes · takes effect immediately and saves automatically</span></div>
+                <button className="small-btn" onClick={() => spaceUiStore.resetEntityImpostorSettings()}>Reset Entity LOD</button>
+              </div>
+            </div>
+            <div className="settings-section">
+              <div className="settings-section-title">
+                DISTANT TERRAIN LOD{distantLodDisabled ? ' · OFF IN EARTH MODE' : ''}
+              </div>
+              {DISTANT_LOD_CONTROLS.map(({ distanceKey, enabledKey, label, description }) => {
+                const limits = DISTANT_SURFACE_SETTING_LIMITS[distanceKey];
+                const enabled = !distantLodDisabled && state.distantSurfaceSettings[enabledKey];
+                return (
+                  <div className="settings-row" key={distanceKey}>
+                    <div className="settings-label-group">
+                      <span className="settings-label">{label}</span>
+                      <span className="settings-desc">{description} · thresholds remain at least 50m apart</span>
+                    </div>
+                    <div className="settings-control-group">
+                      <button
+                        className={`mini-toggle-btn ${enabled ? 'active' : ''}`}
+                        aria-pressed={enabled}
+                        disabled={distantLodDisabled}
+                        onClick={() => spaceUiStore.setDistantSurfaceSetting(enabledKey, !enabled)}
+                      >
+                        {enabled ? 'ON' : 'OFF'}
+                      </button>
+                      <input
+                        id={`setting-${distanceKey}-slider`}
+                        className="settings-slider"
+                        type="range"
+                        min={limits.min}
+                        max={limits.max}
+                        step={limits.step}
+                        value={state.distantSurfaceSettings[distanceKey]}
+                        disabled={!enabled || distantLodDisabled}
+                        onChange={event => spaceUiStore.setDistantSurfaceSetting(distanceKey, Number(event.target.value))}
+                      />
+                      <span className="settings-value-badge">{state.distantSurfaceSettings[distanceKey]} m</span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="settings-row">
+                <div className="settings-label-group">
+                  <span className="settings-label">64m Samples</span>
+                  <span className="settings-desc">Coarsest tier, used after the 32m threshold up to the surface limit</span>
                 </div>
                 <div className="settings-control-group">
                   <button
-                    className={`mini-toggle-btn ${enabled ? 'active' : ''}`}
-                    aria-pressed={enabled}
+                    className={`mini-toggle-btn ${!distantLodDisabled && state.distantSurfaceSettings.lod64Enabled ? 'active' : ''}`}
+                    aria-pressed={!distantLodDisabled && state.distantSurfaceSettings.lod64Enabled}
                     disabled={distantLodDisabled}
-                    onClick={() => spaceUiStore.setDistantSurfaceSetting(enabledKey, !enabled)}
+                    onClick={() => spaceUiStore.setDistantSurfaceSetting(
+                      'lod64Enabled',
+                      !state.distantSurfaceSettings.lod64Enabled,
+                    )}
                   >
-                    {enabled ? 'ON' : 'OFF'}
+                    {!distantLodDisabled && state.distantSurfaceSettings.lod64Enabled ? 'ON' : 'OFF'}
                   </button>
-                  <input
-                    id={`setting-${distanceKey}-slider`}
-                    className="settings-slider"
-                    type="range"
-                    min={limits.min}
-                    max={limits.max}
-                    step={limits.step}
-                    value={state.distantSurfaceSettings[distanceKey]}
-                    disabled={!enabled || distantLodDisabled}
-                    onChange={event => spaceUiStore.setDistantSurfaceSetting(distanceKey, Number(event.target.value))}
-                  />
-                  <span className="settings-value-badge">{state.distantSurfaceSettings[distanceKey]} m</span>
+                  <span className="settings-value-badge">64 m</span>
                 </div>
               </div>
-            );
-          })}
-          <div className="settings-row">
-            <div className="settings-label-group">
-              <span className="settings-label">64m Samples</span>
-              <span className="settings-desc">Coarsest tier, used after the 32m threshold up to the surface limit</span>
-            </div>
-            <div className="settings-control-group">
-              <button
-                className={`mini-toggle-btn ${!distantLodDisabled && state.distantSurfaceSettings.lod64Enabled ? 'active' : ''}`}
-                aria-pressed={!distantLodDisabled && state.distantSurfaceSettings.lod64Enabled}
-                disabled={distantLodDisabled}
-                onClick={() => spaceUiStore.setDistantSurfaceSetting(
-                  'lod64Enabled',
-                  !state.distantSurfaceSettings.lod64Enabled,
-                )}
-              >
-                {!distantLodDisabled && state.distantSurfaceSettings.lod64Enabled ? 'ON' : 'OFF'}
-              </button>
-              <span className="settings-value-badge">64 m</span>
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group">
-              <span className="settings-label">Far Surface Limit</span>
-              <span className="settings-desc">Render no snapshot terrain beyond this distance</span>
-            </div>
-            <div className="settings-control-group">
-              <input
-                id="setting-far-surface-limit-slider"
-                className="settings-slider"
-                type="range"
-                min={Math.max(
-                  DISTANT_SURFACE_SETTING_LIMITS.maxDistance.min,
-                  state.distantSurfaceSettings.lod32Distance + 50,
-                )}
-                max={DISTANT_SURFACE_SETTING_LIMITS.maxDistance.max}
-                step={DISTANT_SURFACE_SETTING_LIMITS.maxDistance.step}
-                value={state.distantSurfaceSettings.maxDistance}
-                disabled={distantLodDisabled}
-                onChange={event => spaceUiStore.setDistantSurfaceSetting('maxDistance', Number(event.target.value))}
-              />
-              <span className="settings-value-badge">{state.distantSurfaceSettings.maxDistance} m</span>
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group">
-              <span className="settings-label">Neighbor Connections</span>
-              <span className="settings-desc">Connect height differences up to this distance; 0 disables connections</span>
-            </div>
-            <div className="settings-control-group">
-              <input
-                id="setting-connection-distance-slider"
-                className="settings-slider"
-                type="range"
-                min={DISTANT_SURFACE_SETTING_LIMITS.connectionDistance.min}
-                max={DISTANT_SURFACE_SETTING_LIMITS.connectionDistance.max}
-                step={DISTANT_SURFACE_SETTING_LIMITS.connectionDistance.step}
-                value={state.distantSurfaceSettings.connectionDistance}
-                disabled={distantLodDisabled}
-                onChange={event => spaceUiStore.setDistantSurfaceSetting('connectionDistance', Number(event.target.value))}
-              />
-              <span className="settings-value-badge">
-                {state.distantSurfaceSettings.connectionDistance === 0
-                  ? 'Off'
-                  : `${state.distantSurfaceSettings.connectionDistance} m`}
-              </span>
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-label-group">
-              <span className="settings-desc">Recommended: all tiers on · 400 / 600 / 800 / 1000 / 1600m · full-world limit · connections 4000m</span>
-            </div>
-            <button className="small-btn" disabled={distantLodDisabled} onClick={() => spaceUiStore.resetDistantSurfaceSettings()}>
-              Reset Recommended
-            </button>
-          </div>
-        </div>
-        </> : null}
-        {tab === 'sound' ? <div className="settings-section">
-          <div className="settings-section-title">AUDIO &amp; SOUND</div>
-          <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">Background Music</span><span className="settings-desc">Play the Space soundtrack; disabled by default</span></div>
-            <div className="settings-segmented-control" id="setting-music-group">
-              {([
-                [false, 'Off'],
-                [true, 'On']
-              ] as const).map(([value, label]) => (
-                <button
-                  key={String(value)}
-                  tabIndex={-1}
-                  className={`segment-btn ${state.musicEnabled === value ? 'active' : ''}`}
-                  onClick={() => spaceUiStore.setMusicEnabled(value)}
-                >
-                  {label}
+              <div className="settings-row">
+                <div className="settings-label-group">
+                  <span className="settings-label">Far Surface Limit</span>
+                  <span className="settings-desc">Render no snapshot terrain beyond this distance</span>
+                </div>
+                <div className="settings-control-group">
+                  <input
+                    id="setting-far-surface-limit-slider"
+                    className="settings-slider"
+                    type="range"
+                    min={Math.max(
+                      DISTANT_SURFACE_SETTING_LIMITS.maxDistance.min,
+                      state.distantSurfaceSettings.lod32Distance + 50,
+                    )}
+                    max={DISTANT_SURFACE_SETTING_LIMITS.maxDistance.max}
+                    step={DISTANT_SURFACE_SETTING_LIMITS.maxDistance.step}
+                    value={state.distantSurfaceSettings.maxDistance}
+                    disabled={distantLodDisabled}
+                    onChange={event => spaceUiStore.setDistantSurfaceSetting('maxDistance', Number(event.target.value))}
+                  />
+                  <span className="settings-value-badge">{state.distantSurfaceSettings.maxDistance} m</span>
+                </div>
+              </div>
+              <div className="settings-row">
+                <div className="settings-label-group">
+                  <span className="settings-label">Neighbor Connections</span>
+                  <span className="settings-desc">Connect height differences up to this distance; 0 disables connections</span>
+                </div>
+                <div className="settings-control-group">
+                  <input
+                    id="setting-connection-distance-slider"
+                    className="settings-slider"
+                    type="range"
+                    min={DISTANT_SURFACE_SETTING_LIMITS.connectionDistance.min}
+                    max={DISTANT_SURFACE_SETTING_LIMITS.connectionDistance.max}
+                    step={DISTANT_SURFACE_SETTING_LIMITS.connectionDistance.step}
+                    value={state.distantSurfaceSettings.connectionDistance}
+                    disabled={distantLodDisabled}
+                    onChange={event => spaceUiStore.setDistantSurfaceSetting('connectionDistance', Number(event.target.value))}
+                  />
+                  <span className="settings-value-badge">
+                    {state.distantSurfaceSettings.connectionDistance === 0
+                      ? 'Off'
+                      : `${state.distantSurfaceSettings.connectionDistance} m`}
+                  </span>
+                </div>
+              </div>
+              <div className="settings-row">
+                <div className="settings-label-group">
+                  <span className="settings-desc">Recommended: all tiers on · 400 / 600 / 800 / 1000 / 1600m · full-world limit · connections 4000m</span>
+                </div>
+                <button className="small-btn" disabled={distantLodDisabled} onClick={() => spaceUiStore.resetDistantSurfaceSettings()}>
+                  Reset Recommended
                 </button>
-              ))}
+              </div>
+            </div>
+          </> : null}
+          {tab === 'sound' ? <div className="settings-section">
+            <div className="settings-section-title">AUDIO &amp; SOUND</div>
+            <div className="settings-row">
+              <div className="settings-label-group"><span className="settings-label">Background Music</span><span className="settings-desc">Play the Space soundtrack; disabled by default</span></div>
+              <div className="settings-segmented-control" id="setting-music-group">
+                {([
+                  [false, 'Off'],
+                  [true, 'On']
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={String(value)}
+                    tabIndex={-1}
+                    className={`segment-btn ${state.musicEnabled === value ? 'active' : ''}`}
+                    onClick={() => spaceUiStore.setMusicEnabled(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="settings-row">
+              <div className="settings-label-group"><span className="settings-label">Sound Effects</span><span className="settings-desc">Block, tool, mechanical, and physics sounds</span></div>
+              <div className="settings-segmented-control" id="setting-effects-group">
+                {([
+                  [true, 'On'],
+                  [false, 'Off']
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={String(value)}
+                    tabIndex={-1}
+                    className={`segment-btn ${state.effectsEnabled === value ? 'active' : ''}`}
+                    onClick={() => spaceUiStore.setEffectsEnabled(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-          <div className="settings-row">
-            <div className="settings-label-group"><span className="settings-label">Sound Effects</span><span className="settings-desc">Block, tool, mechanical, and physics sounds</span></div>
-            <div className="settings-segmented-control" id="setting-effects-group">
-              {([
-                [true, 'On'],
-                [false, 'Off']
-              ] as const).map(([value, label]) => (
-                <button
-                  key={String(value)}
-                  tabIndex={-1}
-                  className={`segment-btn ${state.effectsEnabled === value ? 'active' : ''}`}
-                  onClick={() => spaceUiStore.setEffectsEnabled(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-        : null}
-        {tab === 'api' ? <div className="settings-section">
-          <div className="settings-section-title">spaceAPI · AGENT ACCESS</div>
-          <div className="settings-desc">All API keys include full Space permissions: read your position, create and edit your entities, start/stop them, and build blocksets in worlds you can access.{SPACE_HOSTING_UI_ENABLED ? ' Hosted entity execution is also available.' : ''} Existing keys have the same full access. Keep them secret and revoke unused keys.</div>
-          <SpaceApiKeysSettings />
-        </div> : null}
+            : null}
+          {tab === 'api' ? <div className="settings-section">
+            <div className="settings-section-title">spaceAPI · AGENT ACCESS</div>
+            <div className="settings-desc">All API keys include full Space permissions: read your position, create and edit your entities, start/stop them, and build blocksets in worlds you can access.{SPACE_HOSTING_UI_ENABLED ? ' Hosted entity execution is also available.' : ''} Existing keys have the same full access. Keep them secret and revoke unused keys.</div>
+            <SpaceApiKeysSettings />
+          </div> : null}
         </div>
       </div>
     </ModalBackdrop>

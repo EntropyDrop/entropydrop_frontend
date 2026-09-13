@@ -49,11 +49,8 @@ export interface TerrainStreamArea {
 }
 
 export type SkinType = 'strong' | 'slim';
-export type SpaceSessionMode = 'online' | 'offline';
+export type SpaceSessionMode = 'online';
 
-export const OFFLINE_WORLD_ID = 'offline-sandbox-v1';
-export const OFFLINE_PLAYER_POSITION_KEY = 'space.offline.player-position.v1';
-const OFFLINE_WORLD_SEED = 20260827;
 export const DEFAULT_PLAYER_SKIN_URL = new URL('../../skin_D2A9EB7A.png', import.meta.url).href;
 
 export interface SpaceBootstrapPayload {
@@ -432,7 +429,7 @@ function entryErrorFromResponse(status: number, body: any) {
       zh ? '前往登录' : 'Log In',
       [
         { label: zh ? '前往登录' : 'Log In', url: '/skin/' },
-        { label: zh ? '进入离线模式' : 'Enter Offline Mode', url: '?mode=offline', secondary: true }
+        { label: zh ? '返回主站' : 'Back to Main Site', url: '/space/intro', secondary: true }
       ]
     );
   }
@@ -445,7 +442,7 @@ function entryErrorFromResponse(status: number, body: any) {
     zh ? '重试' : 'Retry',
     [
       { label: zh ? '重试' : 'Retry', url: window.location.href },
-      { label: zh ? '进入离线模式' : 'Enter Offline Mode', url: '?mode=offline', secondary: true }
+      { label: zh ? '返回主站' : 'Back to Main Site', url: '/space/intro', secondary: true }
     ]
   );
 }
@@ -844,89 +841,6 @@ async function completeOnlineSpace(
   };
 }
 
-function readOfflinePlayerPosition(): PlayerPositionPayload | null {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(OFFLINE_PLAYER_POSITION_KEY) || 'null');
-    if (
-      Number.isFinite(parsed?.x_cm)
-      && Number.isFinite(parsed?.y_cm)
-      && Number.isFinite(parsed?.z_cm)
-      && Number.isFinite(parsed?.yaw_q15)
-    ) {
-      return {
-        x_cm: Number(parsed.x_cm),
-        y_cm: Number(parsed.y_cm),
-        z_cm: Number(parsed.z_cm),
-        yaw_q15: Number(parsed.yaw_q15),
-        pitch_q15: Number(parsed.pitch_q15) || 0
-      };
-    }
-  } catch {
-    // A corrupt offline checkpoint is isolated and safe to replace.
-  }
-  return null;
-}
-
-function createOfflinePlayerPositionRemote(): PlayerPositionRemote {
-  return {
-    async save(position: PlayerPositionPayload): Promise<void> {
-      try {
-        localStorage.setItem(OFFLINE_PLAYER_POSITION_KEY, JSON.stringify(position));
-      } catch {
-        // Private browsing may make storage unavailable; offline play still works.
-      }
-    }
-  };
-}
-
-export function createOfflineSpaceSession(
-  prepared: PreparedOnlineSpace | null = null
-): ReadySpaceSession {
-  const savedPosition = readOfflinePlayerPosition();
-  const sourcePlayer = prepared?.payload.player;
-  const pageOrigin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
-  const configuredApiBase = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined;
-  const apiOrigin = prepared?.apiOrigin
-    || resolveApiOrigin(import.meta.env?.VITE_SPACE_API_BASE_URL || configuredApiBase, pageOrigin);
-  return {
-    protocol_version: 2,
-    max_online_players: 32,
-    queue_enabled: true,
-    websocket_url: '',
-    world: {
-      id: OFFLINE_WORLD_ID,
-      name: 'Offline Sandbox',
-      seed: OFFLINE_WORLD_SEED,
-      terrain_generator_version: 1,
-      terrain_revision: 0,
-      surface_snapshot_url: '',
-    },
-    player: {
-      user_id: sourcePlayer?.user_id || 'offline-player',
-      username: sourcePlayer?.username || 'Offline Player',
-      is_admin: false,
-      player_entity_id: 'offline-player',
-      skin_url: sourcePlayer?.skin_url || DEFAULT_PLAYER_SKIN_URL,
-      skin_type: sourcePlayer?.skin_type || 'strong',
-      start_x_cm: savedPosition?.x_cm ?? null,
-      start_y_cm: savedPosition?.y_cm ?? null,
-      start_z_cm: savedPosition?.z_cm ?? null,
-      start_yaw_q15: savedPosition?.yaw_q15 ?? null,
-      resumed: savedPosition !== null
-    },
-    mode: 'offline',
-    api_origin: apiOrigin,
-    account_api_origin: resolveApiOrigin(import.meta.env?.VITE_API_BASE_URL, typeof window === "undefined" ? "http://localhost" : window.location.origin),
-    token: prepared?.token || '',
-    skin_object_url: prepared?.skinObjectUrl || DEFAULT_PLAYER_SKIN_URL,
-    entry_warning: prepared?.entryWarning || null,
-    terrain_edit_remote: null,
-    surface_snapshot_remote: null,
-    player_position_remote: createOfflinePlayerPositionRemote(),
-    latency_monitor: null
-  };
-}
-
 export async function bootstrapSpace(): Promise<ReadySpaceSession> {
   const prepared = await prepareOnlineSpace();
   const admission = await requestSpaceAdmission(
@@ -938,8 +852,12 @@ export async function bootstrapSpace(): Promise<ReadySpaceSession> {
     throw new SpaceEntryError(
       'BOOTSTRAP_FAILED',
       `Space Queue #${admission.position}`,
-      `${window.location.pathname}?mode=offline`,
-      'Enter Offline Mode'
+      window.location.href,
+      'Retry',
+      [
+        { label: 'Retry', url: window.location.href },
+        { label: 'Back to Main Site', url: '/space/intro', secondary: true }
+      ]
     );
   }
   return completeOnlineSpace(prepared);
@@ -956,7 +874,7 @@ function renderEntryError(error: unknown) {
         zh ? '重试' : 'Retry',
         [
           { label: zh ? '重试' : 'Retry', url: window.location.href },
-          { label: zh ? '进入离线模式' : 'Enter Offline Mode', url: '?mode=offline', secondary: true }
+          { label: zh ? '返回主站' : 'Back to Main Site', url: '/space/intro', secondary: true }
         ]
       );
   const gate = document.getElementById('space-entry-gate');
@@ -1049,22 +967,10 @@ export async function enterSpace(
       return;
     }
 
-    const requestedMode = searchParams.get('mode');
-    if (requestedMode === 'offline') {
-      reportProgress(38, isZhLang() ? '正在读取离线世界…' : 'Loading offline world…');
-      const session = createOfflineSpaceSession();
-      hooks.onStateChange?.({
-        mode: 'offline',
-        queuePosition: null,
-        onlineReady: false,
-        cancelQueue: null,
-        enterOnline: null
-      });
-      reportProgress(88, isZhLang() ? '正在初始化离线世界…' : 'Initializing offline world…');
-      await startGame(session, reportProgress);
-      reportProgress(100, isZhLang() ? '离线世界已就绪' : 'Offline world ready');
-      if (gate) gate.hidden = true;
-      return;
+    if (searchParams.has('mode')) {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('mode');
+      window.history.replaceState(null, '', cleanUrl);
     }
 
     const prepared = await prepareOnlineSpace(reportProgress);
@@ -1092,7 +998,6 @@ export async function enterSpace(
 
     let queueActive = true;
     let queueCancelling = false;
-    let onlineReady = false;
     let pollAfterMs = admission.poll_after_ms;
     let pollController: AbortController | null = null;
     let currentPoll: Promise<SpaceAdmissionStatus> | null = null;
@@ -1110,28 +1015,11 @@ export async function enterSpace(
         throw error;
       }
       queueActive = false;
-      onlineReady = false;
-      const url = new URL(window.location.href);
-      url.searchParams.set('mode', 'offline');
-      window.history.replaceState(null, '', url);
-      hooks.onStateChange?.({
-        mode: 'offline',
-        queuePosition: null,
-        onlineReady: false,
-        cancelQueue: null,
-        enterOnline: null
-      });
+      window.location.href = '/space/intro';
     };
-    const enterOnline = () => {
-      if (!queueActive || queueCancelling || !onlineReady) return;
-      queueActive = false;
-      if (cancelBeforeUnload) {
-        window.removeEventListener('pagehide', cancelBeforeUnload);
-      }
-      window.location.reload();
-    };
+
     hooks.onStateChange?.({
-      mode: 'offline',
+      mode: 'online',
       queuePosition: admission.position,
       onlineReady: false,
       cancelQueue,
@@ -1140,12 +1028,9 @@ export async function enterSpace(
     reportProgress(
       72,
       isZhLang()
-        ? `在线队列 #${admission.position}，正在进入离线世界…`
-        : `Space Queue #${admission.position}, entering offline world…`
+        ? `在线队列 #${admission.position}，请稍候…`
+        : `Space Queue #${admission.position}, please wait…`
     );
-    await startGame(createOfflineSpaceSession(prepared), reportProgress);
-    reportProgress(100, isZhLang() ? '离线世界已就绪' : 'Offline world ready');
-    if (gate) gate.hidden = true;
 
     cancelBeforeUnload = () => {
       if (!queueActive) return;
@@ -1180,26 +1065,39 @@ export async function enterSpace(
           if (!queueActive || queueCancelling) continue;
           pollAfterMs = next.poll_after_ms;
           if (next.state === 'admitted') {
-            onlineReady = true;
+            queueActive = false;
+            if (cancelBeforeUnload) {
+              window.removeEventListener('pagehide', cancelBeforeUnload);
+            }
+            reportProgress(92, isZhLang() ? '排队完成，正在初始化 Space 场景…' : 'Admitted! Initializing Space scene…');
+            const session = await completeOnlineSpace(prepared, reportProgress);
             hooks.onStateChange?.({
-              mode: 'offline',
+              mode: 'online',
               queuePosition: null,
-              onlineReady: true,
-              cancelQueue,
-              enterOnline
+              onlineReady: false,
+              cancelQueue: null,
+              enterOnline: null
             });
-            continue;
+            await startGame(session, reportProgress);
+            reportProgress(100, isZhLang() ? 'Space 世界已就绪' : 'Space world ready');
+            if (gate) gate.hidden = true;
+            return;
           }
-          onlineReady = false;
           hooks.onStateChange?.({
-            mode: 'offline',
+            mode: 'online',
             queuePosition: next.position,
             onlineReady: false,
             cancelQueue,
             enterOnline: null
           });
+          reportProgress(
+            72,
+            isZhLang()
+              ? `在线队列 #${next.position}，请稍候…`
+              : `Space Queue #${next.position}, please wait…`
+          );
         } catch {
-          // Stay in the isolated offline world and retry without disrupting play.
+          // Retry on temporary network glitch
         } finally {
           if (currentPoll === poll) currentPoll = null;
           pollController = null;
