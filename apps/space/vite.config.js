@@ -40,18 +40,17 @@ export default defineConfig({
             || id.endsWith('/engine/contraption/BehaviorAgent.ts')) return 'agent';
           if (id.endsWith('/engine/contraption/Blueprints.ts')) return 'blueprints';
           if (id.includes('/entropydrop_space_engine/src/scripting/')) return 'script-runtime';
-          if (/\/entropydrop_space_engine\/src\/(physics|contraption|simulation|actions)\//.test(id)) return 'simulation';
-          if (/\/entropydrop_space_engine\/src\/(voxel|torus|worldgen|mesher|render)\//.test(id)) return 'world-rendering';
+          if (/\/entropydrop_space_engine\/src\/(physics|contraption|simulation|actions|voxel|torus|worldgen|mesher|render)\//.test(id)) return 'world-simulation';
           if (id.includes('/apps/space/src/engine/physics/')
             || id.includes('/apps/space/src/engine/contraption/')
             || id.includes('/apps/space/src/engine/simulation/')
-            || id.includes('/apps/space/src/engine/actions/')) return 'simulation';
-          if (id.includes('/apps/space/src/engine/voxel/')
+            || id.includes('/apps/space/src/engine/actions/')
+            || id.includes('/apps/space/src/engine/voxel/')
             || id.includes('/apps/space/src/engine/torus/')
             || id.includes('/apps/space/src/engine/worldgen/')
-            || id.includes('/apps/space/src/engine/mesher/')) return 'world-rendering';
-          if (id.includes('/apps/space/src/engine/render/')
-            || id.includes('/apps/space/src/engine/audio/')) return 'world-rendering';
+            || id.includes('/apps/space/src/engine/mesher/')
+            || id.includes('/apps/space/src/engine/render/')
+            || id.includes('/apps/space/src/engine/audio/')) return 'world-simulation';
         }
       }
     }
