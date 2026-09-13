@@ -275,6 +275,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const [isSettingSkin, setIsSettingSkin] = useState(false);
     const [skinSuccess, setSkinSuccess] = useState(false);
     const [skinError, setSkinError] = useState('');
+    const [isLicenseExpanded, setIsLicenseExpanded] = useState(false);
 
     useEffect(() => {
         if (!isLoggedIn) return;
@@ -350,19 +351,32 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const renderLicenseInfo = () => {
         if (!item.id || !item.license) return null;
 
+        const mainDescription = licenseCode === 'unknown'
+            ? current.mcmodal.licenseUnknownDescription
+            : hasCreatorCommercialLicense
+                ? current.mcmodal.creatorCommercialDescription
+                : item.is_public
+                    ? current.mcmodal.publicNonCommercialDescription
+                    : current.mcmodal.privateLicenseDescription;
+
+        const hasDetailedNotices = (item.is_public && licenseCode === 'entropydrop-commercial-1.0') ||
+            (!item.is_public && publicLicense === 'cc-by-nc-4.0') ||
+            (publicLicense === 'cc-by-nc-4.0') ||
+            Boolean(current.mcmodal.thirdPartyRightsNotice);
+
         return (
-            <div className={`border p-3 flex flex-col gap-2 ${licenseCode === 'unknown'
+            <div className={`border p-2.5 flex flex-col gap-2 transition-all ${licenseCode === 'unknown'
                 ? 'bg-orange-500/5 border-orange-500/20'
                 : hasCreatorCommercialLicense
                     ? 'bg-emerald-500/5 border-emerald-500/20'
                     : 'bg-blue-500/5 border-blue-500/20'
                 }`}>
                 <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 text-[10px] font-pixel-hans uppercase tracking-widest text-white/50">
-                        <Icon icon="pixelarticons:shield" className="text-sm" />
+                    <div className="flex items-center gap-1.5 text-xs font-pixel-hans uppercase tracking-wider text-white/70 font-semibold">
+                        <Icon icon="pixelarticons:shield" className="text-sm shrink-0" />
                         <span>{current.mcmodal.licenseTitle}</span>
                     </div>
-                    <span className={`text-[9px] font-pixel-hans px-2 py-0.5 border ${licenseCode === 'unknown'
+                    <span className={`text-xs font-pixel-hans px-2 py-0.5 border font-bold ${licenseCode === 'unknown'
                         ? 'text-orange-300 border-orange-500/30 bg-orange-500/10'
                         : hasCreatorCommercialLicense
                             ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10'
@@ -376,44 +390,66 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                     </span>
                 </div>
 
-                <p className="m-0 text-[10px] leading-relaxed text-white/60 font-pixel-hans">
-                    {licenseCode === 'unknown'
-                        ? current.mcmodal.licenseUnknownDescription
-                        : hasCreatorCommercialLicense
-                            ? current.mcmodal.creatorCommercialDescription
-                            : item.is_public
-                                ? current.mcmodal.publicNonCommercialDescription
-                                : current.mcmodal.privateLicenseDescription}
+                {/* Key Summary / Main License Description - Always Exposed */}
+                <p className="m-0 text-xs leading-relaxed text-white/90 font-pixel-hans">
+                    {mainDescription}
                 </p>
 
-                {item.is_public && licenseCode === 'entropydrop-commercial-1.0' && (
-                    <p className="m-0 text-[10px] leading-relaxed text-amber-300/80 font-pixel-hans">
-                        {isOwner
-                            ? current.mcmodal.publicDoesNotGrantCommercial
-                            : current.mcmodal.otherUserNoCommercial}
-                    </p>
-                )}
+                {/* Auxiliary Legal Notices & Terms - Collapsible */}
+                {hasDetailedNotices && (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => setIsLicenseExpanded(prev => !prev)}
+                            className="flex items-center justify-between text-[11px] text-white/50 hover:text-white/80 transition-colors pt-1.5 border-t border-white/5 cursor-pointer font-pixel-hans w-full text-left"
+                        >
+                            <span>{isLicenseExpanded ? (current.mcmodal.licenseHideDetails || '收起详情') : (current.mcmodal.licenseViewDetails || '查看详情')}</span>
+                            <Icon icon={isLicenseExpanded ? "pixelarticons:chevron-up" : "pixelarticons:chevron-down"} className="text-sm shrink-0" />
+                        </button>
 
-                {!item.is_public && publicLicense === 'cc-by-nc-4.0' && (
-                    <p className="m-0 text-[10px] leading-relaxed text-amber-300/80 font-pixel-hans">
-                        {current.mcmodal.previousPublicLicense}
-                    </p>
-                )}
+                        <AnimatePresence initial={false}>
+                            {isLicenseExpanded && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="flex flex-col gap-2 overflow-hidden pt-1"
+                                >
+                                    {item.is_public && licenseCode === 'entropydrop-commercial-1.0' && (
+                                        <p className="m-0 text-[11px] leading-relaxed text-amber-300/80 font-pixel-hans">
+                                            {isOwner
+                                                ? current.mcmodal.publicDoesNotGrantCommercial
+                                                : current.mcmodal.otherUserNoCommercial}
+                                        </p>
+                                    )}
 
-                {publicLicense === 'cc-by-nc-4.0' && (
-                    <a
-                        href="https://creativecommons.org/licenses/by-nc/4.0/"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] text-blue-300 hover:text-blue-200 font-pixel-hans underline underline-offset-2"
-                    >
-                        {current.mcmodal.viewLicenseTerms}
-                    </a>
-                )}
+                                    {!item.is_public && publicLicense === 'cc-by-nc-4.0' && (
+                                        <p className="m-0 text-[11px] leading-relaxed text-amber-300/80 font-pixel-hans">
+                                            {current.mcmodal.previousPublicLicense}
+                                        </p>
+                                    )}
 
-                <p className="m-0 pt-1 border-t border-white/5 text-[9px] leading-relaxed text-white/35 font-pixel-hans">
-                    {current.mcmodal.thirdPartyRightsNotice}
-                </p>
+                                    {publicLicense === 'cc-by-nc-4.0' && (
+                                        <a
+                                            href="https://creativecommons.org/licenses/by-nc/4.0/"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-xs text-blue-300 hover:text-blue-200 font-pixel-hans underline underline-offset-2 flex items-center gap-1 w-fit"
+                                        >
+                                            <Icon icon="pixelarticons:external-link" className="text-xs shrink-0" />
+                                            <span>{current.mcmodal.viewLicenseTerms}</span>
+                                        </a>
+                                    )}
+
+                                    <p className="m-0 pt-1.5 border-t border-white/5 text-[10px] leading-relaxed text-white/40 font-pixel-hans">
+                                        {current.mcmodal.thirdPartyRightsNotice}
+                                    </p>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </>
+                )}
             </div>
         );
     };
@@ -921,11 +957,11 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                         animate={{ scale: 1, opacity: 1, y: 0 }}
                         exit={{ scale: 0.9, opacity: 0.1 }}
                         transition={{ duration: 0.2, ease: "easeInOut" }}
-                        className={`pointer-events-auto flex items-center justify-center sm:p-4 w-full h-full lg:h-auto [@media(max-height:850px)]:lg:h-full transition-[max-width] duration-300 ${showSidebar ? 'max-w-[1280px]' : 'max-w-[950px]'}`}
+                        className={`pointer-events-auto flex items-center justify-center sm:p-4 w-full h-full lg:h-auto [@media(max-height:850px)]:lg:h-full transition-[max-width] duration-300 ${showSidebar ? 'max-w-[1280px]' : 'max-w-[1020px]'}`}
                         onClick={closeModal}
                     >
                         <div
-                            className="bg-[#121212] sm:border-2 border-white/10 w-full h-full sm:h-auto sm:w-fit flex flex-col lg:flex-row text-white shadow-[0_0_100px_rgba(0,0,0,0.8)] relative overflow-y-auto lg:overflow-hidden max-h-screen lg:max-h-[85vh] [@media(max-height:850px)]:lg:h-full [@media(max-height:850px)]:lg:max-h-full"
+                            className="bg-[#121212] sm:border-2 border-white/10 w-full h-full sm:h-auto sm:w-fit flex flex-col lg:flex-row text-white shadow-[0_0_100px_rgba(0,0,0,0.8)] relative overflow-y-auto lg:overflow-hidden max-h-screen lg:max-h-[90vh] lg:h-[760px] [@media(max-height:850px)]:lg:h-full [@media(max-height:850px)]:lg:max-h-full"
                             onClick={(e) => e.stopPropagation()}
                         >
                             {isNotFound ? (
@@ -965,7 +1001,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                     {/* Close Button */}
 
                                     {/* Left: 3D Preview Section */}
-                                    <div className={showSidebar ? 'hidden lg:block' : 'block'}>
+                                    <div className={showSidebar ? 'hidden lg:block lg:h-full' : 'block lg:h-full'}>
                                         {isLoadingDetails ? (
                                             <MCModalPreviewPlaceholder />
                                         ) : (
@@ -992,18 +1028,18 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
                                     {/* Right: Info Section */}
                                     {isLoadingDetails ? (
-                                        <div className="w-[316px] flex-shrink-0 p-4 flex items-center justify-center bg-[#121212] relative">
+                                        <div className="w-full lg:w-[360px] flex-shrink-0 p-4 flex items-center justify-center bg-[#121212] relative lg:h-full">
                                             <LoadingSpinner className="w-8 h-8 border-4" />
                                         </div>
                                     ) : (
-                                        <div className={`w-full lg:w-[316px] flex-shrink-0 flex flex-col bg-[#121212] relative h-auto lg:h-[720px] [@media(max-height:850px)]:lg:h-full border-t lg:border-t-0 lg:border-l border-white/10 ${showSidebar ? 'hidden lg:flex' : 'flex'}`}>
+                                        <div className={`w-full lg:w-[360px] flex-shrink-0 flex flex-col bg-[#121212] relative h-auto lg:h-full border-t lg:border-t-0 lg:border-l border-white/10 ${showSidebar ? 'hidden lg:flex' : 'flex'}`}>
                                             <div className="absolute bottom-0 right-0 w-64 h-64 bg-gradient-to-tl from-[#38598b]/5 to-transparent pointer-events-none" />
 
                                             {/* Header Info */}
                                             {isLoggedIn && (
-                                                <div className="flex justify-between items-start p-4 pb-2">
+                                                <div className="flex justify-between items-start px-4 pt-3 pb-1 pr-14">
                                                     <div>
-                                                        <div className="flex items-center gap-3 mb-2">
+                                                        <div className="flex items-center gap-3 mb-1.5">
                                                             <span className="px-2 py-0.5 bg-[#4ea632]/20 text-[#4ea632] text-[10px] font-pixel-hans border border-[#4ea632]/30 ">
                                                                 {!item.id ? 'UPLOADED' : (item.mode === 'aigc_text_to_skin' || (item.mode as any) === 'text') ? 'TEXT TO SKIN' : (item.mode === 'aigc_image_to_skin' || (item.mode as any) === 'image') ? 'IMAGE TO SKIN' : item.mode?.replace('aigc_', '').replaceAll('_', ' ').toUpperCase()}
                                                             </span>
@@ -1019,18 +1055,18 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                             )}
 
                                             {/* Scrollable Content */}
-                                            <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-24 lg:pb-3 flex flex-col gap-3 min-h-0">
+                                            <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar px-4 pb-20 lg:pb-3 flex flex-col gap-2 min-h-0">
 
                                                 {/* Flow Display */}
-                                                {isLoggedIn && <div className="bg-white/5 border border-white/10 p-2.5 w-full flex flex-col gap-2.5">
+                                                {isLoggedIn && <div className="bg-white/5 border border-white/10 p-2.5 w-full flex flex-col gap-2">
                                                     {renderEditableName('Name', item.name || '')}
 
                                                     {(!item.id || item.mode === 'human_edit' || item.mode === 'human_upload') ? (
                                                         <div className="flex flex-col gap-2">
-                                                            <div className="flex items-start gap-2">
-                                                                <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest flex-shrink-0 w-[75px]">Skin</div>
-                                                                <div className="flex flex-col gap-1.5 flex-shrink-0">
-                                                                    <div className="w-[180px] h-[180px] bg-black/40 border border-white/10 overflow-hidden relative">
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest flex-shrink-0 w-[60px]">Skin</div>
+                                                                <div className="flex flex-col gap-1 flex-shrink-0">
+                                                                    <div className="w-[160px] h-[160px] bg-black/40 border border-white/10 overflow-hidden relative">
                                                                         <Skin2DImg src={textureUrl} className="w-full h-full object-contain" />
                                                                     </div>
                                                                     {isAuthor && onAiEdit && (
@@ -1043,11 +1079,11 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                                     console.error("Failed to render 2D image for edit", e);
                                                                                 }
                                                                             }}
-                                                                            className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
+                                                                            className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1 active:translate-y-0.5 w-[160px] transition-colors"
                                                                             title="AI Edit"
                                                                         >
-                                                                            <Icon icon="pixelarticons:robot" className="text-[12px]" />
-                                                                            <span className="text-[10px] font-pixel-hans">AI Edit</span>
+                                                                            <Icon icon="pixelarticons:robot" className="text-[11px]" />
+                                                                            <span className="text-[9px] font-pixel-hans">AI Edit</span>
                                                                         </button>
                                                                     )}
                                                                 </div>
@@ -1062,10 +1098,10 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                 </div>
                                                             )}
                                                             {item.edited_image_url && (
-                                                                <div className="flex items-start gap-2">
-                                                                    <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest flex-shrink-0 w-[75px]">Intermediate</div>
-                                                                    <div className="flex flex-col gap-1.5 flex-shrink-0">
-                                                                        <div className="w-[180px] h-[180px] bg-black/40 border border-white/10 overflow-hidden relative">
+                                                                <div className="flex items-start justify-between gap-3">
+                                                                    <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest flex-shrink-0 w-[60px]">Intermediate</div>
+                                                                    <div className="flex flex-col gap-1 flex-shrink-0">
+                                                                        <div className="w-[160px] h-[160px] bg-black/40 border border-white/10 overflow-hidden relative">
                                                                             <img
                                                                                 src={item.edited_image_url}
                                                                                 className="w-full h-full object-contain"
@@ -1076,11 +1112,11 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                         {isAuthor && onAiEdit && (
                                                                             <button
                                                                                 onClick={() => handleEditImage(item.edited_image_url)}
-                                                                                className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
+                                                                                className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1 active:translate-y-0.5 w-[160px] transition-colors"
                                                                                 title="AI Edit"
                                                                             >
-                                                                                <Icon icon="pixelarticons:robot" className="text-[12px]" />
-                                                                                <span className="text-[10px] font-pixel-hans">AI Edit</span>
+                                                                                <Icon icon="pixelarticons:robot" className="text-[11px]" />
+                                                                                <span className="text-[9px] font-pixel-hans">AI Edit</span>
                                                                             </button>
                                                                         )}
                                                                     </div>
@@ -1090,10 +1126,10 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                     ) : (item.mode === 'aigc_image_to_skin') ? (
                                                         <div className="flex flex-col gap-2">
                                                             {item.source && (
-                                                                <div className="flex items-start gap-2">
-                                                                    <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest flex-shrink-0 w-[75px]">Source</div>
-                                                                    <div className="flex flex-col gap-1.5 flex-shrink-0">
-                                                                        <div className="w-[180px] h-[180px] bg-black/40 border border-white/10 overflow-hidden relative">
+                                                                <div className="flex items-start justify-between gap-3">
+                                                                    <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest flex-shrink-0 w-[60px]">Source</div>
+                                                                    <div className="flex flex-col gap-1 flex-shrink-0">
+                                                                        <div className="w-[160px] h-[160px] bg-black/40 border border-white/10 overflow-hidden relative">
                                                                             <img
                                                                                 src={item.source}
                                                                                 className="w-full h-full object-contain"
@@ -1104,11 +1140,11 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                         {isAuthor && onAiEdit && (
                                                                             <button
                                                                                 onClick={() => handleEditImage(item.source)}
-                                                                                className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
+                                                                                className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1 active:translate-y-0.5 w-[160px] transition-colors"
                                                                                 title="AI Edit"
                                                                             >
-                                                                                <Icon icon="pixelarticons:robot" className="text-[12px]" />
-                                                                                <span className="text-[10px] font-pixel-hans">AI Edit</span>
+                                                                                <Icon icon="pixelarticons:robot" className="text-[11px]" />
+                                                                                <span className="text-[9px] font-pixel-hans">AI Edit</span>
                                                                             </button>
                                                                         )}
                                                                     </div>
@@ -1116,12 +1152,12 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                             )}
                                                         </div>
                                                     ) : (
-                                                        <div className="flex flex-col gap-2.5">
+                                                        <div className="flex flex-col gap-2">
                                                             {item.source && (
-                                                                <div className="flex items-start gap-2">
-                                                                    <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest flex-shrink-0 w-[75px]">Source</div>
-                                                                    <div className="flex flex-col gap-1.5 flex-shrink-0">
-                                                                        <div className="w-[180px] h-[180px] bg-black/40 border border-white/10 overflow-hidden relative">
+                                                                <div className="flex items-start justify-between gap-3">
+                                                                    <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest flex-shrink-0 w-[60px]">Source</div>
+                                                                    <div className="flex flex-col gap-1 flex-shrink-0">
+                                                                        <div className="w-[160px] h-[160px] bg-black/40 border border-white/10 overflow-hidden relative">
                                                                             <img
                                                                                 src={item.source}
                                                                                 className="w-full h-full object-contain"
@@ -1139,10 +1175,10 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                 </div>
                                                             )}
                                                             {item.edited_image_url && (
-                                                                <div className="flex items-start gap-2">
-                                                                    <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest flex-shrink-0 w-[75px]">Intermediate</div>
-                                                                    <div className="flex flex-col gap-1.5 flex-shrink-0">
-                                                                        <div className="w-[180px] h-[180px] bg-black/40 border border-white/10 overflow-hidden relative">
+                                                                <div className="flex items-start justify-between gap-3">
+                                                                    <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest flex-shrink-0 w-[60px]">Intermediate</div>
+                                                                    <div className="flex flex-col gap-1 flex-shrink-0">
+                                                                        <div className="w-[160px] h-[160px] bg-black/40 border border-white/10 overflow-hidden relative">
                                                                             <img
                                                                                 src={item.edited_image_url}
                                                                                 className="w-full h-full object-contain"
@@ -1153,11 +1189,11 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                         {isAuthor && onAiEdit && (
                                                                             <button
                                                                                 onClick={() => handleEditImage(item.edited_image_url)}
-                                                                                className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1.5 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1.5 active:translate-y-0.5 w-[180px] transition-colors"
+                                                                                className="bg-[#3c8527] hover:bg-[#4ea632] text-white px-2 py-1 border border-black cursor-pointer shadow-md flex items-center justify-center gap-1 active:translate-y-0.5 w-[160px] transition-colors"
                                                                                 title="AI Edit"
                                                                             >
-                                                                                <Icon icon="pixelarticons:robot" className="text-[12px]" />
-                                                                                <span className="text-[10px] font-pixel-hans">AI Edit</span>
+                                                                                <Icon icon="pixelarticons:robot" className="text-[11px]" />
+                                                                                <span className="text-[9px] font-pixel-hans">AI Edit</span>
                                                                             </button>
                                                                         )}
                                                                     </div>
@@ -1172,95 +1208,96 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                     <>
                                                         {item.id && (
                                                             <div className="flex flex-col gap-2">
-                                                                <div className="grid grid-cols-1 gap-2">
-                                                                    {/* Artist Card */}
+                                                                {/* Author Card */}
+                                                                <div
+                                                                    onClick={() => toggleSidebar('author')}
+                                                                    className={`flex items-center gap-2 p-2 border cursor-pointer transition-all group ${showSidebar && sidebarType === 'author' ? 'bg-[#4ea632]/5 border-[#4ea632]/30' : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'}`}
+                                                                >
+                                                                    <SkinAvatarImage
+                                                                        textureUrl={item.creator?.skin_url}
+                                                                        fallbackSrc={item.creator?.avatar_url}
+                                                                        alt={item.creator?.username || "Avatar"}
+                                                                        className="w-8 h-8 bg-[#222] border border-white/10 group-hover:border-[#4ea632]/40 transition-colors shrink-0"
+                                                                        framed={false}
+                                                                    />
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5">Author</div>
+                                                                        <div className="text-sm font-pixel-hans text-white/90 group-hover:text-[#4ea632] transition-colors truncate">{item.creator?.username || "Unknown"}</div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Derived From (if exists) */}
+                                                                {parentItem && (
                                                                     <div
-                                                                        onClick={() => toggleSidebar('author')}
-                                                                        className={`flex items-center gap-2 p-2 border cursor-pointer transition-all group ${showSidebar && sidebarType === 'author' ? 'bg-[#4ea632]/5 border-[#4ea632]/30' : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'}`}
+                                                                        onClick={() => handleItemSelect(item.parent!)}
+                                                                        className="flex items-center gap-2 p-2 border cursor-pointer bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 transition-all group"
                                                                     >
-                                                                        <SkinAvatarImage
-                                                                            textureUrl={item.creator?.skin_url}
-                                                                            fallbackSrc={item.creator?.avatar_url}
-                                                                            alt={item.creator?.username || "Avatar"}
-                                                                            className="w-8 h-8 bg-[#222] border border-white/10 group-hover:border-[#4ea632]/40 transition-colors shrink-0"
-                                                                            framed={false}
-                                                                        />
+                                                                        <div className="w-8 h-8 bg-[#222] flex items-center justify-center border border-white/10 overflow-hidden group-hover:border-[#4ea632]/40 transition-colors shrink-0">
+                                                                            {parentItem.result ? (
+                                                                                <Skin2DImg src={parentItem.result}
+                                                                                    className="w-full h-full object-contain"
+                                                                                />
+                                                                            ) : (
+                                                                                <Icon icon="pixelarticons:history" className="text-lg text-white/40 group-hover:text-[#4ea632] transition-colors" />
+                                                                            )}
+                                                                        </div>
                                                                         <div className="min-w-0 flex-1">
-                                                                            <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5">Author</div>
-                                                                            <div className="text-sm font-pixel-hans text-white/90 group-hover:text-[#4ea632] transition-colors truncate">{item.creator?.username || "Unknown"}</div>
+                                                                            <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5">Derived From</div>
+                                                                            <div className="text-sm font-pixel-hans text-white/90 group-hover:text-[#4ea632] transition-colors truncate">{parentItem.name || parentItem.id}</div>
+                                                                            {parentItem.creator?.username && (
+                                                                                <div className="text-white/40 text-[10px] font-pixel-hans mt-0.5">by {parentItem.creator.username}</div>
+                                                                            )}
                                                                         </div>
                                                                     </div>
+                                                                )}
 
+                                                                {isParentDeleted && (
+                                                                    <div className="flex items-center gap-2 p-2 border bg-red-500/5 border-red-500/20 text-red-500">
+                                                                        <div className="w-8 h-8 bg-[#222] flex items-center justify-center border border-white/10 overflow-hidden shrink-0">
+                                                                            <Icon icon="pixelarticons:warning-box" className="text-lg text-red-400" />
+                                                                        </div>
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5">Derived From</div>
+                                                                            <div className="text-xs font-pixel-hans">{current.mcmodal.originalSkinDeleted}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Found In & Derived: 2-Column Side-by-Side Grid */}
+                                                                <div className="grid grid-cols-2 gap-2">
                                                                     {/* Containing Collections Card */}
                                                                     <div
                                                                         onClick={() => toggleSidebar('containing')}
-                                                                        className={`flex items-center gap-2 p-2 border cursor-pointer transition-all group ${showSidebar && sidebarType === 'containing' ? 'bg-[#4ea632]/5 border-[#4ea632]/30' : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'}`}
+                                                                        className={`flex items-center gap-2 p-2 border cursor-pointer transition-all group min-w-0 ${showSidebar && sidebarType === 'containing' ? 'bg-[#4ea632]/5 border-[#4ea632]/30' : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'}`}
                                                                     >
-                                                                        <div className="w-8 h-8 bg-[#222] flex items-center justify-center border border-white/10 overflow-hidden group-hover:border-[#4ea632]/40 transition-colors shrink-0">
-                                                                            <Icon icon="pixelarticons:folder" className="text-lg text-white/40 group-hover:text-[#4ea632] transition-colors" />
+                                                                        <div className="w-7 h-7 bg-[#222] flex items-center justify-center border border-white/10 overflow-hidden group-hover:border-[#4ea632]/40 transition-colors shrink-0">
+                                                                            <Icon icon="pixelarticons:folder" className="text-base text-white/40 group-hover:text-[#4ea632] transition-colors" />
                                                                         </div>
                                                                         <div className="min-w-0 flex-1">
-                                                                            <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5">Found In</div>
-                                                                            <div className="text-sm font-pixel-hans text-white/90 group-hover:text-[#4ea632] transition-colors truncate">{current.mcmodal.relatedCollections}</div>
+                                                                            <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5 truncate">Found In</div>
+                                                                            <div className="text-xs font-pixel-hans text-white/90 group-hover:text-[#4ea632] transition-colors truncate">{current.mcmodal.relatedCollections}</div>
                                                                         </div>
                                                                         {relatedCollectionsCount !== null && (
-                                                                            <span className="text-[10px] text-white/40 font-pixel-hans group-hover:text-[#4ea632] transition-colors shrink-0 pr-1">
+                                                                            <span className="text-[10px] text-white/40 font-pixel-hans group-hover:text-[#4ea632] transition-colors shrink-0">
                                                                                 {relatedCollectionsCount}
                                                                             </span>
                                                                         )}
                                                                     </div>
-                                                                </div>
 
-                                                                <div className={`grid gap-2 ${(parentItem || isParentDeleted) ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                                                                    {parentItem && (
-                                                                        <div
-                                                                            onClick={() => handleItemSelect(item.parent!)}
-                                                                            className="flex items-center gap-2 p-2 border cursor-pointer bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 transition-all group"
-                                                                        >
-                                                                            <div className="w-8 h-8 bg-[#222] flex items-center justify-center border border-white/10 overflow-hidden group-hover:border-[#4ea632]/40 transition-colors shrink-0">
-                                                                                {parentItem.result ? (
-                                                                                    <Skin2DImg src={parentItem.result}
-                                                                                        className="w-full h-full object-contain"
-                                                                                    />
-                                                                                ) : (
-                                                                                    <Icon icon="pixelarticons:history" className="text-lg text-white/40 group-hover:text-[#4ea632] transition-colors" />
-                                                                                )}
-                                                                            </div>
-                                                                            <div className="min-w-0 flex-1">
-                                                                                <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5">Derived From</div>
-                                                                                <div className="text-sm font-pixel-hans text-white/90 group-hover:text-[#4ea632] transition-colors truncate">{parentItem.name || parentItem.id}</div>
-                                                                                {parentItem.creator?.username && (
-                                                                                    <div className="text-white/40 text-[10px] font-pixel-hans mt-0.5">by {parentItem.creator.username}</div>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-
-                                                                    {isParentDeleted && (
-                                                                        <div className="flex items-center gap-2 p-2 border bg-red-500/5 border-red-500/20 text-red-500 flex-1">
-                                                                            <div className="w-8 h-8 bg-[#222] flex items-center justify-center border border-white/10 overflow-hidden shrink-0">
-                                                                                <Icon icon="pixelarticons:warning-box" className="text-lg text-red-400" />
-                                                                            </div>
-                                                                            <div className="min-w-0 flex-1">
-                                                                                <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5">Derived From</div>
-                                                                                <div className="text-xs font-pixel-hans">{current.mcmodal.originalSkinDeleted}</div>
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-
+                                                                    {/* Derived Card */}
                                                                     <div
                                                                         onClick={() => toggleSidebar('derived')}
-                                                                        className={`flex items-center gap-2 p-2 border cursor-pointer transition-all group ${showSidebar && sidebarType === 'derived' ? 'bg-[#4ea632]/5 border-[#4ea632]/30' : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'}`}
+                                                                        className={`flex items-center gap-2 p-2 border cursor-pointer transition-all group min-w-0 ${showSidebar && sidebarType === 'derived' ? 'bg-[#4ea632]/5 border-[#4ea632]/30' : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'}`}
                                                                     >
-                                                                        <div className="w-8 h-8 bg-[#222] flex items-center justify-center border border-white/10 overflow-hidden group-hover:border-[#4ea632]/40 transition-colors shrink-0">
-                                                                            <Icon icon="pixelarticons:git-merge" className="text-lg text-white/40 group-hover:text-[#4ea632] transition-colors" />
+                                                                        <div className="w-7 h-7 bg-[#222] flex items-center justify-center border border-white/10 overflow-hidden group-hover:border-[#4ea632]/40 transition-colors shrink-0">
+                                                                            <Icon icon="pixelarticons:git-merge" className="text-base text-white/40 group-hover:text-[#4ea632] transition-colors" />
                                                                         </div>
                                                                         <div className="min-w-0 flex-1">
-                                                                            <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5">Derived</div>
-                                                                            <div className="text-sm font-pixel-hans text-white/90 group-hover:text-[#4ea632] transition-colors truncate">{current.mcmodal.allDerived}</div>
+                                                                            <div className="text-white/30 text-[9px] font-pixel-hans uppercase tracking-widest mb-0.5 truncate">Derived</div>
+                                                                            <div className="text-xs font-pixel-hans text-white/90 group-hover:text-[#4ea632] transition-colors truncate">{current.mcmodal.allDerived}</div>
                                                                         </div>
                                                                         {derivedCount !== null && (
-                                                                            <span className="text-[10px] text-white/40 font-pixel-hans group-hover:text-[#4ea632] transition-colors shrink-0 pr-1">
+                                                                            <span className="text-[10px] text-white/40 font-pixel-hans group-hover:text-[#4ea632] transition-colors shrink-0">
                                                                                 {derivedCount}
                                                                             </span>
                                                                         )}
@@ -1269,65 +1306,65 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                             </div>
                                                         )}
 
-                                                        <div className="mt-auto w-full border-t border-dashed border-white/10 pt-1.5 flex flex-col gap-1">
+                                                        <div className="w-full border-t border-dashed border-white/10 pt-1.5 flex flex-col gap-1">
                                                             {item.model_version && (
                                                                 <div className="flex justify-between items-center text-white/30 text-[9px] font-pixel-hans">
-                                                                    <div className="flex items-center gap-1">
+                                                                    <div className="flex items-center gap-1 shrink-0">
                                                                         <Icon icon="pixelarticons:sliders" className="text-[10px] text-white/20" />
                                                                         <span className="uppercase tracking-widest text-white/40">Model</span>
                                                                     </div>
-                                                                    <div className="text-purple-400">{item.model_version.toUpperCase()}</div>
+                                                                    <div className="text-purple-400 font-mono truncate max-w-[200px] text-right">{item.model_version.toUpperCase()}</div>
                                                                 </div>
                                                             )}
                                                             {item.seed !== undefined && item.seed !== null && (
                                                                 <div className="flex justify-between items-center text-white/30 text-[9px] font-pixel-hans">
-                                                                    <div className="flex items-center gap-1">
+                                                                    <div className="flex items-center gap-1 shrink-0">
                                                                         <Icon icon="pixelarticons:sliders" className="text-[10px] text-white/20" />
                                                                         <span className="uppercase tracking-widest text-white/40">Seed</span>
                                                                     </div>
-                                                                    <div className="text-white/40">{item.seed}</div>
+                                                                    <div className="text-white/40 font-mono text-right">{item.seed}</div>
                                                                 </div>
                                                             )}
                                                             {item.guidance !== undefined && item.guidance !== null && (
                                                                 <div className="flex justify-between items-center text-white/30 text-[9px] font-pixel-hans">
-                                                                    <div className="flex items-center gap-1">
+                                                                    <div className="flex items-center gap-1 shrink-0">
                                                                         <Icon icon="pixelarticons:sliders" className="text-[10px] text-white/20" />
                                                                         <span className="uppercase tracking-widest text-white/40">Guidance</span>
                                                                     </div>
-                                                                    <div className="text-white/40">{item.guidance}</div>
+                                                                    <div className="text-white/40 font-mono text-right">{item.guidance}</div>
                                                                 </div>
                                                             )}
                                                             {item.n_step !== undefined && item.n_step !== null && (
                                                                 <div className="flex justify-between items-center text-white/30 text-[9px] font-pixel-hans">
-                                                                    <div className="flex items-center gap-1">
+                                                                    <div className="flex items-center gap-1 shrink-0">
                                                                         <Icon icon="pixelarticons:sliders" className="text-[10px] text-white/20" />
                                                                         <span className="uppercase tracking-widest text-white/40">Steps</span>
                                                                     </div>
-                                                                    <div className="text-white/40">{item.n_step}</div>
+                                                                    <div className="text-white/40 font-mono text-right">{item.n_step}</div>
                                                                 </div>
                                                             )}
                                                             {item.id && (
                                                                 <div className="flex justify-between items-center text-white/30 text-[9px] font-pixel-hans">
-                                                                    <div className="flex items-center gap-1">
+                                                                    <div className="flex items-center gap-1 shrink-0">
                                                                         <Icon icon="pixelarticons:sliders" className="text-[10px] text-white/20" />
                                                                         <span className="uppercase tracking-widest text-white/40">ID</span>
                                                                     </div>
-                                                                    <div className="text-white/40" title={item.id}>{item.id.toString()}</div>
+                                                                    <div className="text-white/40 font-mono select-all truncate max-w-[200px] text-right" title={item.id}>{item.id.toString()}</div>
                                                                 </div>
                                                             )}
                                                             {item.timestamp && (
                                                                 <div className="flex justify-between items-center text-white/30 text-[9px] font-pixel-hans">
-                                                                    <div className="flex items-center gap-1">
+                                                                    <div className="flex items-center gap-1 shrink-0">
                                                                         <Icon icon="pixelarticons:clock" className="text-[10px] text-white/20" />
                                                                         <span className="uppercase tracking-widest text-white/40">Created</span>
                                                                     </div>
-                                                                    <div className="text-white/40">{formatDate(item.timestamp)}</div>
+                                                                    <div className="text-white/40 font-mono text-right">{formatDate(item.timestamp)}</div>
                                                                 </div>
                                                             )}
 
                                                             {renderLicenseInfo()}
 
-                                                            <div className="flex flex-col gap-1.5 mt-2">
+                                                            <div className="flex flex-col gap-1 mt-1.5">
                                                                 <div
                                                                     className="group/set-character relative"
                                                                     tabIndex={canSetMinecraftSkin ? undefined : 0}
@@ -1380,7 +1417,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                             </div>
 
                                                             {item.id && item.mode && item.mode.startsWith('aigc_') && item.is_public === true && !hasUserFeedback && (
-                                                                <div className="p-3 bg-white/5 border border-white/10 flex flex-col gap-2 mt-2">
+                                                                <div className="p-3 bg-white/5 border border-white/10 flex flex-col gap-2 mt-1">
                                                                     <div className="text-white/40 text-[10px] font-pixel-hans uppercase tracking-widest">
                                                                         {current.mcmodal.feedbackTitle}
                                                                     </div>
@@ -1418,7 +1455,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                             )}
 
                                                             {item.id && (
-                                                                <div className="flex justify-end gap-3 text-white/25 text-[9px] font-pixel-hans mt-0.5 pt-1 border-t border-white/5">
+                                                                <div className="flex justify-end gap-3 text-white/30 text-[9px] font-pixel-hans pt-0.5">
                                                                     <button ref={reportButtonRef} onClick={handleReport} className={`hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer ${isReportOpen ? 'text-orange-400' : ''}`}>
                                                                         <Icon icon="pixelarticons:warning-box" className="text-[11px]" />
                                                                         <span>Report</span>
@@ -1565,7 +1602,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
                             <button
                                 onClick={closeModal}
-                                className={`absolute top-2 right-2 z-20 text-white/40 hover:text-white transition-all cursor-pointer bg-white/5 hover:bg-white/10 p-2 rounded-full border border-white/5 ${showSidebar ? 'hidden lg:flex' : 'flex'}`}
+                                className={`absolute top-3.5 right-4 z-20 text-white/40 hover:text-white transition-all cursor-pointer bg-white/5 hover:bg-white/10 p-2 rounded-full border border-white/5 ${showSidebar ? 'hidden lg:flex' : 'flex'}`}
                             >
                                 <Icon icon="pixelarticons:close" className="text-xl" />
                             </button>
@@ -1582,7 +1619,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
 function MCModalPreviewPlaceholder() {
     return (
-        <div className="w-full lg:w-[600px] aspect-square lg:h-[720px] [@media(max-height:850px)]:lg:h-full [@media(max-height:850px)]:lg:aspect-square bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] relative overflow-hidden flex-shrink-0 border-b lg:border-b-0 lg:border-r border-white/10 flex items-center justify-center">
+        <div className="w-full aspect-square lg:aspect-auto lg:w-[600px] h-full lg:h-full bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] relative overflow-hidden flex-shrink-0 border-b lg:border-b-0 lg:border-r border-white/10 flex items-center justify-center">
             <LoadingSpinner className="w-8 h-8 border-4" />
         </div>
     );

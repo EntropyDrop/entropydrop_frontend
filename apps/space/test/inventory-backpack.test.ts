@@ -234,7 +234,7 @@ test('serialize/parse round-trips block sets', () => {
     ]
   };
   const serialized = controller.serializeInventoryItem('blockset', slot);
-  assert.equal(serialized.version, 6);
+  assert.equal(serialized.version, 7);
   assert.equal('label' in serialized, false);
   assert.deepEqual(
     serialized.blocks.map(({ dx, dy, dz, mx, my, mz }) => ({ dx, dy, dz, mx, my, mz })),
@@ -281,7 +281,7 @@ test('serialize/parse round-trips block sets', () => {
   assert.equal(controller.parseInventoryImport('{"type":"space-blockset","version":2,"name":"bad","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0,"mz":5}]}', 'blockset').ok, false);
   assert.equal(controller.parseInventoryImport('{"type":"space-blockset","version":2,"name":"bad","blocks":[{"dx":0,"dy":0,"dz":0,"mx":1,"my":0}]}', 'blockset').ok, false);
   const inferredMicro = controller.parseInventoryImport(encodeInventoryResource('blockset', {
-    type: 'space-blockset', version: 6, name: 'micro',
+    type: 'space-blockset', version: 7, name: 'micro',
     blocks: [{ dx: 0, dy: 0, dz: 0, mx: 1, my: 0, mz: 0, color: 0 }]
   }), 'blockset');
   assert.equal(inferredMicro.ok, true);
@@ -342,7 +342,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
   };
 
   const serialized = controller.serializeInventoryItem('entity', slot);
-  assert.equal(serialized.version, 6);
+  assert.equal(serialized.version, 7);
   assert.equal(serialized.root.id, 'root');
   assert.equal(serialized.root.body.type, 'dynamic');
   assert.equal(serialized.root.body.useGravity, false);
@@ -428,7 +428,7 @@ test('serialize/parse round-trips recursive entities with component-local data',
 
   const inferredMicro = controller.parseInventoryImport(encodeInventoryResource('entity', {
     type: 'space-entity',
-    version: 6,
+    version: 7,
     root: {
       name: 'micro',
       id: 'root',
@@ -448,7 +448,7 @@ test('serialize/parse round-trips color sets and enforces 9 valid hex colors', (
   const set = { name: 'sunset', colors: ['#f1c40f', '#ff6b81', '#a55eea', '#48dbfb', '#2ed573', '#eb4d4b', '#f5f6fa', '#2f3542', '#f2a93b'] };
   const parsed = controller.parseInventoryImport(controller.encodeInventoryItem('colorset', set), 'colorset');
   assert.equal(parsed.ok, true, parsed.error);
-  assert.equal(controller.serializeInventoryItem('colorset', set).version, 6);
+  assert.equal(controller.serializeInventoryItem("colorset", set).version, 7);
   assert.equal(parsed.item.colors.length, 9);
   assert.equal(parsed.item.colors[0], '#f1c40f');
   assert.equal(parsed.item.name, 'sunset');
@@ -457,7 +457,7 @@ test('serialize/parse round-trips color sets and enforces 9 valid hex colors', (
   const bare = controller.parseInventoryImport(JSON.stringify(['#111111', '#222222']), 'colorset');
   assert.equal(bare.ok, false);
   const short = controller.parseInventoryImport(encodeInventoryResource('colorset', {
-    type: 'space-colorset', version: 6, name: 'short', colors: ['#111111', '#222222']
+    type: 'space-colorset', version: 7, name: 'short', colors: ['#111111', '#222222']
   }), 'colorset');
   assert.equal(short.ok, false);
 
@@ -465,7 +465,7 @@ test('serialize/parse round-trips color sets and enforces 9 valid hex colors', (
   assert.equal(controller.parseInventoryImport('{"type":"space-colorset","version":2,"name":"bad","colors":["#12345","x"]}', 'colorset').ok, false);
   assert.equal(controller.parseInventoryImport('{"blocks":1}', 'colorset').ok, false);
   const tooMany = controller.parseInventoryImport(encodeInventoryResource('colorset', {
-    type: 'space-colorset', version: 6, name: 'large', colors: new Array(10).fill('#123456')
+    type: 'space-colorset', version: 7, name: 'large', colors: new Array(10).fill('#123456')
   }), 'colorset');
   assert.equal(tooMany.ok, false);
 });
@@ -476,7 +476,7 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
 
   const baseEntity = {
     type: 'space-entity',
-    version: 6,
+    version: 7,
     root: {
       name: 'bounded',
       id: 'root',
@@ -605,7 +605,7 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
   }), 'entity').ok, false, 'constraint stiffness must stay within the backend range');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('blockset', {
     type: 'space-blockset',
-    version: 6,
+    version: 7,
     name: 'bad color',
     blocks: [{ dx: 0, dy: 0, dz: 0, block: 1, color: 0xffffffff }]
   }), 'blockset').ok, false, 'voxel colors may not be silently truncated to 24 bits');
@@ -725,7 +725,7 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
     'component-local voxel bounds must not be combined across the hierarchy');
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('blockset', {
     type: 'space-blockset',
-    version: 6,
+    version: 7,
     name: 'overlap',
     blocks: [
       { dx: 0, dy: 0, dz: 0, block: 1, color: 0 },
@@ -736,7 +736,7 @@ test('inventory imports enforce byte, voxel, bounds, hierarchy, and script budge
   const repeatedBlock = { dx: 0, dy: 0, dz: 0, color: 0 };
   assert.equal(controller.parseInventoryImport(encodeInventoryResource('blockset', {
     type: 'space-blockset',
-    version: 6,
+    version: 7,
     name: 'too many',
     blocks: new Array(MAX_INVENTORY_BLOCKS + 1).fill(repeatedBlock)
   }), 'blockset').ok, false, 'oversized voxel arrays must be rejected');
@@ -769,7 +769,7 @@ test('backpack persists all categories and seeds the default palette', () => {
   controller.setActiveInventoryCategory('entity');
   controller.selectedInventoryIndex = 0;
 
-  const raw = storage.getItem('space.backpack.v7.pb');
+  const raw = storage.getItem('space.backpack.v8.pb');
   assert.ok(raw);
   assert.throws(() => JSON.parse(raw), 'backpack storage is binary Protobuf encoded as base64 in localStorage');
   const stored = decodeBackpack(protobufFromBase64(raw));

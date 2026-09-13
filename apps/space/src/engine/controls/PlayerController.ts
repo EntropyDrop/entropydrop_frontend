@@ -55,7 +55,7 @@ export type PlayerPerspective = 'first_person' | 'third_person' | 'third_person_
 
 const HEX_COLOR = /^#?[0-9a-f]{6}$/i;
 
-const INVENTORY_STORAGE_KEY = 'space.backpack.v7.pb';
+const INVENTORY_STORAGE_KEY = 'space.backpack.v8.pb';
 const INVENTORY_CATEGORIES = ['blockset', 'entity', 'colorset'];
 const DEFAULT_COLOR_SET_NAME = 'Default palette';
 export const MAX_INVENTORY_IMPORT_BYTES = 8 * 1024 * 1024;
@@ -6710,7 +6710,7 @@ export class PlayerController {
     if (category === 'blockset') {
       return {
         type: 'space-blockset',
-        version: 6,
+        version: 7,
         name: this.inventoryItemName('blockset', item),
         blocks: (item.blocks || []).map(b => {
           const shared = {
@@ -6856,7 +6856,7 @@ export class PlayerController {
     if (category === 'colorset') {
       return {
         type: 'space-colorset',
-        version: 6,
+        version: 7,
         name: item.name || 'color set',
         colors: item.colors
       };
@@ -6962,7 +6962,7 @@ export class PlayerController {
     };
     const runtimeVoxel = (block, ownerId = null) => {
       if (block?.block !== undefined && block.block !== BlockTypes.COLOR_BLOCK) {
-        throw new Error('Inventory v6 supports only color block id 1');
+        throw new Error('Inventory v7 supports only color block id 1');
       }
       const color = Number(block?.color ?? 0xf2a93b);
       if (!Number.isSafeInteger(color) || color < 0 || color > 0xffffff) {
@@ -7000,8 +7000,8 @@ export class PlayerController {
     };
 
     if (category === 'blockset') {
-      if (data?.type !== 'space-blockset' || data?.version !== 6) {
-        return fail('Expected a space-blockset v6 Protobuf file');
+      if (data?.type !== 'space-blockset' || data?.version !== 7) {
+        return fail('Expected a space-blockset v7 Protobuf file');
       }
       if (typeof data.name !== 'string' || !trimInventoryName(data.name)) return fail('A block set must have a name');
       if (inventoryNameLength(data.name) > MAX_INVENTORY_NAME_LENGTH) {
@@ -7035,8 +7035,8 @@ export class PlayerController {
     }
 
     if (category === 'entity') {
-      if (data?.type !== 'space-entity' || data?.version !== 6 || !data.root) {
-        return fail('Expected a recursive space-entity v6 Protobuf file');
+      if (data?.type !== 'space-entity' || data?.version !== 7 || !data.root) {
+        return fail('Expected a recursive space-entity v7 Protobuf file');
       }
       if (Object.hasOwn(data, 'name')) return fail('Entity names belong to root.name');
 
@@ -7209,8 +7209,8 @@ export class PlayerController {
     }
 
     if (category === 'colorset') {
-      if (data?.type !== 'space-colorset' || data?.version !== 6) {
-        return fail('Expected a space-colorset v6 Protobuf file');
+      if (data?.type !== 'space-colorset' || data?.version !== 7) {
+        return fail('Expected a space-colorset v7 Protobuf file');
       }
       if (typeof data.name !== 'string' || !trimInventoryName(data.name)) return fail('A color set must have a name');
       if (inventoryNameLength(data.name) > MAX_INVENTORY_NAME_LENGTH) {

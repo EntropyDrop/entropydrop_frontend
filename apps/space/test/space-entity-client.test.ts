@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CheckpointEntityRequest,
+  CreateEntityRequest,
+} from '@entropydrop/space-engine/generated/space_api.ts';
+import {
   SpaceEntityApiError,
   SpaceEntityClient,
 } from '../src/bootstrap/SpaceEntityClient.ts';
@@ -17,7 +21,7 @@ function entity(overrides: Record<string, unknown> = {}) {
     world_id: 'world-1',
     owner_user_id: 'owner-1',
     name: 'Walker',
-    schema_version: 6,
+    schema_version: 7,
     definition_digest: definitionDigest,
     definition_size_bytes: definition.byteLength,
     definition_url: '/ignored/untrusted/path',
@@ -113,7 +117,7 @@ test('SpaceEntityClient lists, verifies definitions, creates, and changes run st
   );
 
   assert.equal(listed.items[0].name, 'Walker');
-  assert.equal(listed.items[0].schema_version, 6);
+  assert.equal(listed.items[0].schema_version, 7);
   assert.deepEqual(loadedSnapshot, { position: [1, 32, 2] });
   assert.equal(stopped.revision, 2);
   assert.equal(leases[0].granted, true);
@@ -122,13 +126,21 @@ test('SpaceEntityClient lists, verifies definitions, creates, and changes run st
   assert.equal((calls[0].options.headers as any).Authorization, 'Bearer space-token');
   assert.equal(calls[1].url, `https://api.example.test/space/api/v2/worlds/world-1/entities/3cd7daba-d196-44e8-a433-cf139258f617/definition?digest=${definitionDigest}`);
   assert.equal((calls[1].options.headers as any).Authorization, 'Bearer space-token');
-  assert.equal(JSON.parse(String(calls[2].options.body)).definition_base64, 'CAQaAA==');
-  assert.equal(JSON.parse(String(calls[2].options.body)).definition, undefined);
-  assert.match(JSON.parse(String(calls[2].options.body)).operation_id, /^[0-9a-f-]{36}$/i);
+  assert.equal((calls[2].options.headers as any)['Content-Type'], 'application/x-protobuf');
+  const createEnvelope = CreateEntityRequest.decode(calls[2].options.body as Uint8Array);
+  assert.deepEqual(Array.from(createEnvelope.definition!), Array.from(definition));
+  assert.deepEqual(createEnvelope.position, { xCm: 100, yCm: 3200, zCm: 200 });
+  assert.match(createEnvelope.operationId!, /^[0-9a-f-]{36}$/i);
   assert.match(calls[3].url, /\/browser$/);
-  assert.equal(JSON.parse(String(calls[3].options.body)).definition_base64, 'CAQaAA==');
+  const browserEnvelope = CreateEntityRequest.decode(calls[3].options.body as Uint8Array);
+  assert.deepEqual(Array.from(browserEnvelope.definition!), Array.from(definition));
+  assert.equal(new TextDecoder().decode(browserEnvelope.snapshotJson!), '{"position":[1,32,2]}');
   assert.match(calls[4].url, /\/snapshot$/);
   assert.match(calls[5].url, /\/checkpoint$/);
+  const checkpointEnvelope = CheckpointEntityRequest.decode(calls[5].options.body as Uint8Array);
+  assert.equal(checkpointEnvelope.expectedRevision, 1);
+  assert.equal(checkpointEnvelope.definition?.length ?? 0, 0);
+  assert.equal(new TextDecoder().decode(checkpointEnvelope.snapshotJson!), '{"position":[1,32,2]}');
   assert.equal(calls[6].options.method, 'DELETE');
   assert.deepEqual(JSON.parse(String(calls[7].options.body)).desired_run_state, 'stopped');
   assert.equal(JSON.parse(String(calls[7].options.body)).expected_revision, 1);
@@ -136,7 +148,7 @@ test('SpaceEntityClient lists, verifies definitions, creates, and changes run st
 });
 
 test('SpaceEntityClient rejects entity records outside the supported inventory schema', async () => {
-  for (const schema_version of [5, 7]) {
+  for (const schema_version of [5, 8]) {
     const client = new SpaceEntityClient('https://api.example.test', 'token', 'world-1',
       (async () => Response.json({
         items: [entity({ schema_version })], truncated: false, limit: 256,

@@ -1,6 +1,11 @@
 import { SPACE_HOSTING_UI_ENABLED } from './SpaceFeatures.ts';
 import { INVENTORY_PROTOBUF_SCHEMA_VERSION } from '@entropydrop/space-engine/storage/InventoryProtobuf.ts';
 import {
+  CheckpointEntityRequest,
+  CreateEntityRequest,
+  EntityRunState,
+} from '@entropydrop/space-engine/generated/space_api.ts';
+import {
   readJsonResponse,
   readResponseBytes,
   sha256Hex,
@@ -135,13 +140,20 @@ function parseEntity(value: any): SpaceWorldEntityRecord {
   return value as SpaceWorldEntityRecord;
 }
 
-function bytesToBase64(value: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < value.byteLength; offset += chunkSize) {
-    binary += String.fromCharCode(...value.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
+const PROTOBUF_CONTENT_TYPE = 'application/x-protobuf';
+
+function runStateEnum(value: SpaceEntityRunState | undefined): EntityRunState {
+  return value === 'running'
+    ? EntityRunState.ENTITY_RUN_STATE_RUNNING
+    : EntityRunState.ENTITY_RUN_STATE_STOPPED;
+}
+
+function encodeSnapshotJson(snapshot: Record<string, unknown>): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(snapshot));
+}
+
+function positionMessage(position: { x_cm: number; y_cm: number; z_cm: number }) {
+  return { xCm: position.x_cm, yCm: position.y_cm, zCm: position.z_cm };
 }
 
 function operationId(): string {
@@ -209,27 +221,33 @@ export class SpaceEntityClient {
 
   async create(payload: Omit<CreateSpaceWorldEntity, 'operation_id'> & { operation_id?: string }) {
     const { definition, ...requestPayload } = payload;
+    const envelope = CreateEntityRequest.encode({
+      operationId: payload.operation_id || operationId(),
+      definition,
+      position: positionMessage(requestPayload.position),
+      yawQuarterTurns: requestPayload.yaw_quarter_turns ?? 0,
+      desiredRunState: runStateEnum(requestPayload.desired_run_state),
+    }).finish();
     const body = await this.request('', {
       method: 'POST',
-      body: JSON.stringify({
-        ...requestPayload,
-        definition_base64: bytesToBase64(definition),
-        operation_id: payload.operation_id || operationId(),
-      }),
+      headers: { 'Content-Type': PROTOBUF_CONTENT_TYPE },
+      body: envelope,
     });
     return parseEntity(body);
   }
 
   async createBrowser(payload: PersistBrowserWorldEntity, createOperationId = operationId()) {
+    const envelope = CreateEntityRequest.encode({
+      operationId: createOperationId,
+      definition: payload.definition,
+      position: positionMessage(payload.position),
+      desiredRunState: runStateEnum(payload.desired_run_state),
+      snapshotJson: encodeSnapshotJson(payload.snapshot),
+    }).finish();
     const body = await this.request('/browser', {
       method: 'POST',
-      body: JSON.stringify({
-        operation_id: createOperationId,
-        definition_base64: bytesToBase64(payload.definition),
-        snapshot: payload.snapshot,
-        position: payload.position,
-        desired_run_state: payload.desired_run_state,
-      }),
+      headers: { 'Content-Type': PROTOBUF_CONTENT_TYPE },
+      body: envelope,
     });
     return parseEntity(body);
   }
@@ -334,16 +352,18 @@ export class SpaceEntityClient {
     expectedRevision: number,
     payload: Omit<PersistBrowserWorldEntity, 'definition'> & { definition?: Uint8Array },
   ) {
+    const envelope = CheckpointEntityRequest.encode({
+      operationId: operationId(),
+      expectedRevision,
+      ...(payload.definition ? { definition: payload.definition } : {}),
+      position: positionMessage(payload.position),
+      desiredRunState: runStateEnum(payload.desired_run_state),
+      snapshotJson: encodeSnapshotJson(payload.snapshot),
+    }).finish();
     const body = await this.request(`/${encodeURIComponent(entityId)}/checkpoint`, {
       method: 'PUT',
-      body: JSON.stringify({
-        operation_id: operationId(),
-        expected_revision: expectedRevision,
-        ...(payload.definition ? { definition_base64: bytesToBase64(payload.definition) } : {}),
-        snapshot: payload.snapshot,
-        position: payload.position,
-        desired_run_state: payload.desired_run_state,
-      }),
+      headers: { 'Content-Type': PROTOBUF_CONTENT_TYPE },
+      body: envelope,
     });
     return parseEntity(body);
   }

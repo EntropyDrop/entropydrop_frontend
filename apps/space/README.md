@@ -4,6 +4,19 @@
 
 entityAPI 是实体代码中通过 `self` / `ctx` 调用的运行时接口；spaceAPI 是 Agent 和客户端使用的 HTTP 接口。
 
+## Documentation map
+
+| Document | Contents |
+| --- | --- |
+| [docs/architecture.md](docs/architecture.md) | Three-repository split, module map and runtime data flow. |
+| [docs/networking.md](docs/networking.md) | REST boundaries, credentials and the `space-relay-v1` MessagePack schema. |
+| [docs/formats.md](docs/formats.md) | Inventory v7, backpack v8, API envelopes v2, `EDSZ` v3 and the world-edit outbox. |
+| [docs/ai-builder.md](docs/ai-builder.md) | HUD AI BuildPlan contract and `SpaceBuilder` runtime. |
+| [docs/micro-grid-p0.md](docs/micro-grid-p0.md) | 8×8×8 micro grid, collision caching and physics benchmarks. |
+| [docs/agent-access-design.md](docs/agent-access-design.md) | Agent access architecture and migration plan (design, not shipped status). |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Local verification, schema regeneration and documentation sources. |
+| [entropydrop_backend/docs/space-backend.md](../../../entropydrop_backend/docs/space-backend.md) | Backend architecture and consistency contract. |
+
 This app lives in the `entropydrop_frontend` npm workspace and is built as the
 independent `/space/app/` document. The main `/space/intro` route is the product
 introduction page. The app shares the repository's Three.js version and
@@ -18,13 +31,13 @@ character skin. An invalid or temporarily unavailable configured skin falls back
 the same way instead of blocking entry. The first random position is checkpointed
 immediately; later wrapped position/yaw updates are saved every five seconds,
 on realtime disconnect, and before page suspension. Backpack data remains browser-local under
-`space.backpack.v7.pb` and is never uploaded by this app. Older backpack schemas are
+`space.backpack.v8.pb` and is never uploaded by this app. Older backpack schemas are
 intentionally ignored. Player-authored standard
 and micro-voxel terrain overlays are loaded from the authenticated spaceAPI and
 sent back in idempotent batches of at most 256 mutations. A durable browser
 outbox under `space.world-edits.v3.*` preserves unacknowledged batches across a
-refresh; the earlier `space.world-edits.v1.*` local-only overlay is migrated and
-uploaded on first entry after this version.
+refresh; obsolete `space.world-edits.v1.*`/`v2` local-only overlays are ignored
+rather than migrated, so only v3 edits are uploaded.
 
 The distant world no longer uses a browser-generated low-poly thumbnail or a
 synthetic doughnut. The backend builds 128 revisioned `32x32`-chunk zone
@@ -202,12 +215,19 @@ version-4 browser persistence and never calls these entity endpoints; older
 entity data is intentionally ignored. This boundary applies
 only to world entities: the backpack deliberately remains local.
 
-Inventory Protobuf v6 stores display names on every `Component`, with no `Entity.name`.
+Inventory Protobuf v7 stores display names on every `Component`, with no `Entity.name`.
 An entity's display name is `root.name`; empty names display the component ID. Names may
 repeat and survive subtree copies, attachment, independent publication, and reloads.
 Only IDs determine references and sibling ordering. Market content digests recursively
 omit all component names; database list names are derived metadata. Browser backpacks
-use Protobuf v7, and old resource, backpack, and offline entity versions are not migrated.
+use Protobuf v8, and old resource, backpack, and offline entity versions are not migrated.
+Micro voxels use `is_micro` plus `micro_x`/`micro_y`/`micro_z` offsets and a `uint32 color_rgb`,
+matching the realtime `protocol.proto` encoding; the removed packed `micro_index` and
+`fixed32 color` of v6 are not accepted.
+Entity definitions travel as raw `application/x-protobuf` in both directions: upload uses
+the `space_api.proto` request envelope (`CreateEntityRequest`/`CheckpointEntityRequest`) and
+download is the raw canonical `InventoryResource`. JSON `definition_base64` requests remain
+accepted for existing external agents.
 
 External agents can submit canonical entity definitions directly with an account-level,
 long-lived spaceAPI key with full Space permissions (including existing keys); market publication is not required. They can read owned entities with `GET /entities/{id}/configuration`, edit component code/name/body defaults with `PATCH /entities/{id}/configuration`, and start/stop with `PUT /entities/{id}/run-state`, under the world API prefix. Edits require Stop and `expected_revision`; operation IDs make delayed retries safe. Entity playback has only running/stopped states. The browser polls the nearby
@@ -241,22 +261,25 @@ The V2 contract caps each world at 32 occupied sessions with FIFO queueing,
 uses reliable AOI presence plus wake/sleep entity activation, and keeps the
 three-category backpack in browser IndexedDB with automatic localStorage migration.
 
-- Architecture and consistency contract: [`docs/backend-storage.md`](docs/backend-storage.md)
-- PostgreSQL 15+ schema: [`backend/schema.sql`](backend/schema.sql)
-- Protobuf realtime protocol: [`backend/protocol.proto`](backend/protocol.proto)
+- Architecture and consistency contract: [`entropydrop_backend/docs/space-backend.md`](../../../entropydrop_backend/docs/space-backend.md)
+- PostgreSQL 15+ schema: [`entropydrop_backend/space/contracts/schema.sql`](../../../entropydrop_backend/space/contracts/schema.sql)
+- Protobuf realtime protocol: [`entropydrop_backend/space/contracts/protocol.proto`](../../../entropydrop_backend/space/contracts/protocol.proto)
+- Portable resource, backpack, and API envelopes: [`entropydrop_space_engine/proto/`](../../../entropydrop_space_engine/proto/README.md)
 
 ## Verification
 
-The latest gameplay, API, security, performance, and maintainability review is
-recorded in [the 2026-09-02 audit and remediation report](docs/audit-remediation-2026-09-02.md).
+The 2026-09-02 gameplay, API, security, performance, and maintainability audit was
+retired with the v7 wire format; its remediation is tracked by the tests below.
 
 ```bash
 npm run check
 npm run audit:deps
 ```
 
-`npm run check` performs TypeScript validation, the complete Node test suite,
-and a production Vite build. Pull requests run the same commands in CI.
+`npm run check` performs TypeScript validation, the engine checks (including
+`check:protobuf`), the local documentation-link check, the complete Node test suite, and a
+production Vite build. There is no hosted CI in this repository yet; run the same commands
+locally (or in a future workflow) before merging.
 
 
 ### External blockset building and settings

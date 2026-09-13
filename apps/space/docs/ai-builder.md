@@ -18,37 +18,89 @@ The HUD AI Builder currently generates declarative plans; its planned HTTP tool 
 
 ## BuildPlan V1
 
+The authoritative types are `SpaceBuildPlanInput` and friends in
+`src/engine/building/SpaceBuilder.ts`; the shape below mirrors them.
+
 ```ts
-interface SpaceBuildPlan {
-  version: 1;
-  kind: 'structure' | 'entity';
-  name: string;
-  anchor: 'crosshair' | [number, number, number];
-  blocks?: Array<{
-    x: number;
-    y: number;
-    z: number;
-    size?: 1 | 0.2;
-    color?: number | '#RRGGBB';
-    componentId?: string;
-  }>;
-  primitives?: Array<{
-    type: 'box' | 'line';
-    from: [number, number, number];
-    to: [number, number, number];
-    hollow?: boolean;
-    size?: 1 | 0.2;
-    color?: number | '#RRGGBB';
-    componentId?: string;
-  }>;
-  components?: BuildComponent[];
-  constraints?: BuildConstraint[];
+type SpaceBuildKind = 'structure' | 'entity';
+type SpaceBuildAnchor = 'crosshair' | [number, number, number];
+
+interface SpaceBuildVoxelInput {
+  x: number;
+  y: number;
+  z: number;
+  /** MICRO_SIZE is 0.125 m (8×8×8 grid); omit for a standard 1 m voxel. */
+  size?: 1 | 0.125;
+  color?: number | string;
+  componentId?: string;
+}
+
+interface SpaceBuildPrimitiveInput {
+  type: 'box' | 'line';
+  from: [number, number, number];
+  to: [number, number, number];
+  hollow?: boolean;
+  size?: 1 | 0.125;
+  color?: number | string;
+  componentId?: string;
+}
+
+interface SpaceBuildComponentInput {
+  id: string;
+  name?: string;
+  parentId?: string | null;
+  pivot?: [number, number, number];
+  bodyType?: 'dynamic' | 'kinematic';
+  mass?: number;
+  restitution?: number;
+  friction?: number;
+  useGravity?: boolean;
+  collisionEnabled?: boolean;
+  seats?: Array<[number, number, number] | { position: [number, number, number] }>;
+  script?: string;
+  scriptEnabled?: boolean;
+}
+
+interface SpaceBuildConstraintInput {
+  id: string;
+  type: 'point' | 'hinge' | 'weld';
+  /** Null selects the external world anchor; strings always name components. */
+  bodyA: string | null;
+  bodyB: string;
+  anchorA?: [number, number, number];
+  anchorB?: [number, number, number];
+  axisA?: [number, number, number];
+  axisB?: [number, number, number];
+  limits?: { min: number; max: number };
+  stiffness?: number;
+  collideConnected?: boolean;
+}
+
+interface SpaceBuildPlanInput {
+  version?: 1;
+  kind: SpaceBuildKind;
+  name?: string;
+  anchor?: SpaceBuildAnchor;
+  blocks?: SpaceBuildVoxelInput[];
+  primitives?: SpaceBuildPrimitiveInput[];
+  components?: SpaceBuildComponentInput[];
+  constraints?: SpaceBuildConstraintInput[];
+  bodyType?: 'dynamic' | 'kinematic';
+  mass?: number;
+  restitution?: number;
+  friction?: number;
+  useGravity?: boolean;
+  collisionEnabled?: boolean;
 }
 ```
 
 `structure` plans write ordinary world voxels. `entity` plans are converted into the existing serialized Entity slot format and registered through `ContraptionManager.buildFromSlot()`.
 
-Limits match the portable inventory/entity format: 65,536 voxels, 64 metres per axis, 64 components, hierarchy depth 16, 256 constraints, 64 KiB per script, and 512 KiB of scripts per entity.
+Limits are exported by `SpaceBuilder.ts`: 65,536 voxels, 256 constraints, 64 components,
+hierarchy depth 16, 64 metres per axis, 64 KiB per script, and 512 KiB of scripts per entity
+(`MAX_BUILD_PLAN_VOXELS`, `MAX_BUILD_PLAN_CONSTRAINTS`, `MAX_BUILD_SCRIPT_BYTES`,
+`MAX_BUILD_TOTAL_SCRIPT_BYTES`). Frame slicing uses `BUILD_OPERATIONS_PER_FRAME` (1024) and
+`BUILD_FRAME_BUDGET_MS` (5).
 
 ## Runtime service
 
@@ -56,7 +108,9 @@ Limits match the portable inventory/entity format: 65,536 voxels, 64 metres per 
 builder.validate(plan)
 builder.preview(plan)
 builder.getRenderPreview()
+builder.clearPreview()
 builder.commit(plan?)
+builder.update(maxOperations?, timeBudgetMs?)
 builder.getJob(jobId?)
 builder.cancel(jobId?)
 builder.undo(commitId?)

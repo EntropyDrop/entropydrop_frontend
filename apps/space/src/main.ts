@@ -137,6 +137,7 @@ class Game {
       session.mode === 'online' ? persistentStorage : null
     );
     this.contraptionManager.setPhysics(this.contraptionPhysics);
+    this.sceneRenderer.setContraptions(this.contraptionManager);
     this.contraptionManager.setWorldId(session.world.id);
     this.contraptionManager.setEntityPersistenceMode(
       session.mode === 'online' ? 'remote' : 'none'
@@ -316,7 +317,9 @@ class Game {
         contraptions: this.contraptionManager,
         world: this.world,
         getPlayerPosition: () => this.playerPhysics.position,
+        getEntityImpostorDistance: () => this.sceneRenderer.getEntityImpostorSettings().maxDistance,
       });
+      this.sceneRenderer.setEntityImpostorRetention(id => this.entitySync?.hasRetainedImpostor(id) ?? false);
       this.entitySync.start();
     }
 
@@ -609,7 +612,13 @@ class Game {
     // 7c. Navigation System is updated in controller.updateSimulation()
 
     // 8. Draw, then request idle-budgeted background chunk streaming.
-    this.sceneRenderer.render();
+    this.sceneRenderer.render([
+      this.controller.hoveredContraption,
+      this.controller.selectedBlockSelection?.contraption,
+      this.controller.selectedSubtree?.contraption,
+      this.controller.selectorLevel?.contraption,
+      this.controller.drivenContraption,
+    ]);
     this.world.scheduleStreamingWork();
     this.playerPhysics.endRenderInterpolation();
     this.contraptionManager.endRenderInterpolation();

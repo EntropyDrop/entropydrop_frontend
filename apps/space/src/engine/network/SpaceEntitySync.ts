@@ -7,7 +7,8 @@ import {
 import { sha256Hex } from '../../bootstrap/NetworkSafety.ts';
 import { ActionDomain } from '@entropydrop/space-engine/actions/BasicActions.ts';
 import { CHUNK_SIZE_X } from '@entropydrop/space-engine/voxel/Chunk.ts';
-import { TORUS_SIZE_X, TORUS_SIZE_Z, wrapX, wrapZ } from '@entropydrop/space-engine/torus/TorusWorld.ts';
+import { TORUS_SIZE_X, TORUS_SIZE_Z, unwrapPeriodicNear, wrapX, wrapZ } from '@entropydrop/space-engine/torus/TorusWorld.ts';
+import { ENTITY_IMPOSTOR_SETTING_LIMITS } from '../render/EntityImpostorSettings.ts';
 
 
 export const SPACE_ENTITY_POLL_INTERVAL_MS = 2_000;
@@ -26,6 +27,7 @@ type SpaceEntitySyncOptions = {
   contraptions: any;
   world: any;
   getPlayerPosition: () => { x: number; z: number };
+  getEntityImpostorDistance?: () => number;
   fetchImpl?: typeof fetch;
 };
 
@@ -41,6 +43,7 @@ export class SpaceEntitySync {
   private readonly contraptions: any;
   private readonly world: any;
   private readonly getPlayerPosition: () => { x: number; z: number };
+  private readonly getEntityImpostorDistance: () => number;
   private readonly instanceId: string;
   private readonly loading = new Set<string>();
   private readonly leasedUntil = new Map<string, number>();
@@ -53,6 +56,8 @@ export class SpaceEntitySync {
   private readonly lastSnapshotJson = new Map<string, string>();
   private readonly pendingDeletes = new Set<string>();
   private previousAoiIds = new Set<string>();
+  private readonly lastAoiRecords = new Map<string, SpaceWorldEntityRecord>();
+  private readonly retainedOutsideAoi = new Map<string, SpaceWorldEntityRecord>();
   private lastCheckpointAt = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private pollInFlight = false;
@@ -69,6 +74,7 @@ export class SpaceEntitySync {
     this.contraptions = options.contraptions;
     this.world = options.world;
     this.getPlayerPosition = options.getPlayerPosition;
+    this.getEntityImpostorDistance = options.getEntityImpostorDistance || (() => 0);
     if (typeof globalThis.crypto?.randomUUID !== 'function') {
       throw new Error('This browser cannot generate a secure entity executor identity.');
     }
@@ -95,6 +101,10 @@ export class SpaceEntitySync {
     this.contraptions?.setRemoteEntityPersistence?.(null);
   }
 
+  hasRetainedImpostor(publicId: string) {
+    return this.retainedOutsideAoi.has(publicId);
+  }
+
   async poll() {
     if (this.pollInFlight) return;
     this.pollInFlight = true;
@@ -113,8 +123,19 @@ export class SpaceEntitySync {
         console.warn('Space entity execution lease could not be renewed; entities stay stopped.', error);
       }
       await Promise.all(list.items.map(entity => this.applyRecord(entity)));
-      if (!list.truncated) this.removeEntitiesOutsideAoi(new Set(list.items.map(entity => entity.id)));
-      this.previousAoiIds = new Set(list.items.map(entity => entity.id));
+      const currentIds = new Set(list.items.map(entity => entity.id));
+      if (!list.truncated) this.removeEntitiesOutsideAoi(currentIds, position, radiusCm / 100);
+      // An incomplete list does not prove that a previously seen entity left
+      // the AOI or was deleted. Keep it until a complete poll can reconcile it.
+      if (!list.truncated) {
+        this.previousAoiIds = currentIds;
+        this.lastAoiRecords.clear();
+      }
+      for (const entity of list.items) {
+        this.previousAoiIds.add(entity.id);
+        this.lastAoiRecords.set(entity.id, entity);
+        this.retainedOutsideAoi.delete(entity.id);
+      }
       if (Date.now() - this.lastCheckpointAt >= SPACE_ENTITY_CHECKPOINT_INTERVAL_MS) {
         this.lastCheckpointAt = Date.now();
         for (const entityId of [...this.pendingDeletes]) this.queueDelete(entityId);
@@ -477,6 +498,8 @@ export class SpaceEntitySync {
         }
         this.pendingDeletes.delete(serverId);
         this.previousAoiIds.delete(serverId);
+        this.lastAoiRecords.delete(serverId);
+        this.retainedOutsideAoi.delete(serverId);
         this.lastSnapshotJson.delete(serverId);
         const localId = this.localIdByServerId.get(serverId) || id;
         this.localIdByServerId.delete(serverId);
@@ -489,10 +512,30 @@ export class SpaceEntitySync {
     this.saveChains.set(key, next);
   }
 
-  private removeEntitiesOutsideAoi(currentIds: Set<string>) {
-    for (const entityId of this.previousAoiIds) {
+  private removeEntitiesOutsideAoi(currentIds: Set<string>, position: { x: number; z: number }, aoiRadius: number) {
+    const candidates = new Set([...this.previousAoiIds, ...this.retainedOutsideAoi.keys()]);
+    const impostorDistance = Math.max(0, Number(this.getEntityImpostorDistance()) || 0);
+    for (const entityId of candidates) {
       if (currentIds.has(entityId)) continue;
       const active = this.contraptions.findActiveContraptionByPublicId?.(entityId);
+      const record = this.lastAoiRecords.get(entityId) || this.retainedOutsideAoi.get(entityId);
+      const distance = record ? Math.hypot(
+        unwrapPeriodicNear(record.position.x_cm / 100, position.x, TORUS_SIZE_X) - position.x,
+        unwrapPeriodicNear(record.position.z_cm / 100, position.z, TORUS_SIZE_Z) - position.z,
+      ) : Infinity;
+      // AOI absence only proves deletion while the old location is inside
+      // this complete query. Keep bounded metadata for the independent render
+      // cache outside it, freeing all full entity/physics data below. Cache up
+      // to the supported maximum so shrinking then expanding the view slider
+      // can reuse a baked plane without reloading the original construction.
+      if (record && impostorDistance > 0 && distance > aoiRadius
+        && distance <= ENTITY_IMPOSTOR_SETTING_LIMITS.maxDistance.max) {
+        this.retainedOutsideAoi.set(entityId, record);
+        while (this.retainedOutsideAoi.size > 128) {
+          this.retainedOutsideAoi.delete(this.retainedOutsideAoi.keys().next().value!);
+        }
+      } else this.retainedOutsideAoi.delete(entityId);
+      this.leasedUntil.delete(entityId);
       if (active?.serverManaged === true) {
         this.contraptions.removeContraption?.(active, {
           skipSave: true,

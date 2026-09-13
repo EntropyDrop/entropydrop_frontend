@@ -8,7 +8,7 @@ import { SEO } from '../components/SEO'
 import { Skin2D } from '../components/utils'
 import { LoadingSpinner } from '../components/LoadingPlaceholder'
 // import { MC } removed
-import { AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { MCModal } from '../components/MCModal'
 import { ConfirmModal } from '../components/ConfirmModal'
 import type { GenerationLogItem } from '../types/log'
@@ -101,6 +101,11 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [infoModal, setInfoModal] = useState<{ isOpen: boolean; title: string; message: string; type?: 'info' | 'error' | 'success' }>({ isOpen: false, title: '', message: '' })
     const [isHistoryLoading, setIsHistoryLoading] = useState(false)
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+    const [parentLogData, setParentLogData] = useState<GenerationLogItem | null>(null)
+    const [isParentLoading, setIsParentLoading] = useState(false)
+    const [parentLoadFailed, setParentLoadFailed] = useState(false)
+    const [isLicenseExpanded, setIsLicenseExpanded] = useState(false)
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -111,6 +116,117 @@ export function GeneratePage({ current }: GeneratePageProps) {
         document.addEventListener('mousedown', handleClickOutside)
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [])
+
+    useEffect(() => {
+        let cancelled = false
+        if (!sourceId) {
+            setParentLogData(null)
+            setIsParentLoading(false)
+            setParentLoadFailed(false)
+            return
+        }
+
+        setIsParentLoading(true)
+        setParentLoadFailed(false)
+        apiFetch(`/api/logs/${sourceId}`, { skipGlobalError: true })
+            .then(async (res) => {
+                if (!res.ok) throw new Error('Failed to fetch parent log')
+                const data = await res.json()
+                if (!cancelled) {
+                    setParentLogData(data)
+                    setIsParentLoading(false)
+                }
+            })
+            .catch((err) => {
+                console.error('Failed to load parent log for license', err)
+                if (!cancelled) {
+                    setParentLoadFailed(true)
+                    setIsParentLoading(false)
+                }
+            })
+
+        return () => {
+            cancelled = true
+        }
+    }, [sourceId])
+
+    const userIsPro = isPro
+    type GenLicensePreview = 'entropydrop-commercial-1.0' | 'cc-by-nc-4.0' | 'unknown' | 'loading' | 'unavailable'
+
+    let effectiveLicense: GenLicensePreview
+    if (sourceId) {
+        if (isParentLoading) {
+            effectiveLicense = 'loading'
+        } else if (parentLoadFailed || !parentLogData) {
+            effectiveLicense = 'unavailable'
+        } else {
+            const parentLicenseCode = parentLogData.license?.code || 'unknown'
+            if (parentLicenseCode === 'entropydrop-commercial-1.0') {
+                const isOwner = !!(currentUserId && currentUserId === parentLogData.creator?.id)
+                effectiveLicense = (isOwner && userIsPro) ? 'entropydrop-commercial-1.0' : 'cc-by-nc-4.0'
+            } else if (parentLicenseCode === 'cc-by-nc-4.0' || parentLicenseCode === 'unknown') {
+                effectiveLicense = parentLicenseCode
+            } else {
+                effectiveLicense = 'unavailable'
+            }
+        }
+    } else {
+        effectiveLicense = userIsPro ? 'entropydrop-commercial-1.0' : 'cc-by-nc-4.0'
+    }
+
+    const licenseLabel = effectiveLicense === 'entropydrop-commercial-1.0'
+        ? current.generate.licenseCommercial
+        : effectiveLicense === 'cc-by-nc-4.0'
+            ? 'CC BY-NC 4.0'
+            : effectiveLicense === 'unknown'
+                ? current.generate.licenseUnknown
+                : effectiveLicense === 'loading'
+                    ? current.generate.licenseLoading
+                    : current.generate.licenseUnavailable
+
+    const licenseDescription = effectiveLicense === 'entropydrop-commercial-1.0'
+        ? sourceId
+            ? current.generate.licenseParentCommercialOwnerDesc
+            : current.generate.licenseCommercialDesc
+        : effectiveLicense === 'cc-by-nc-4.0'
+            ? sourceId
+                ? (parentLogData?.license?.code === 'entropydrop-commercial-1.0'
+                    ? current.generate.licenseParentCommercialOtherDesc
+                    : current.generate.licenseParentNonCommercialDesc)
+                : current.generate.licenseNonCommercialDesc
+            : effectiveLicense === 'unknown'
+                ? current.generate.licenseParentUnknownDesc
+                : effectiveLicense === 'loading'
+                    ? current.generate.licenseLoadingDesc
+                    : current.generate.licenseUnavailableDesc
+
+    const licenseSummary = effectiveLicense === 'entropydrop-commercial-1.0'
+        ? sourceId
+            ? (current.generate.licenseParentCommercialOwnerSummary || current.generate.licenseParentCommercialOwnerDesc)
+            : (current.generate.licenseCommercialSummary || current.generate.licenseCommercialDesc)
+        : effectiveLicense === 'cc-by-nc-4.0'
+            ? sourceId
+                ? (parentLogData?.license?.code === 'entropydrop-commercial-1.0'
+                    ? (current.generate.licenseParentCommercialOtherSummary || current.generate.licenseParentCommercialOtherDesc)
+                    : (current.generate.licenseParentNonCommercialSummary || current.generate.licenseParentNonCommercialDesc))
+                : (current.generate.licenseNonCommercialSummary || current.generate.licenseNonCommercialDesc)
+            : effectiveLicense === 'unknown'
+                ? (current.generate.licenseParentUnknownSummary || current.generate.licenseParentUnknownDesc)
+                : effectiveLicense === 'loading'
+                    ? current.generate.licenseLoading
+                    : current.generate.licenseUnavailable
+
+    const licenseTone = effectiveLicense === 'entropydrop-commercial-1.0'
+        ? 'border-emerald-500/25 bg-emerald-500/5 text-emerald-300'
+        : effectiveLicense === 'cc-by-nc-4.0'
+            ? 'border-blue-500/25 bg-blue-500/5 text-blue-300'
+            : 'border-orange-500/25 bg-orange-500/5 text-orange-300'
+
+    const licenseBadgeTone = effectiveLicense === 'entropydrop-commercial-1.0'
+        ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300'
+        : effectiveLicense === 'cc-by-nc-4.0'
+            ? 'border-blue-400/50 bg-blue-500/20 text-blue-300'
+            : 'border-orange-400/50 bg-orange-500/20 text-orange-300'
 
     useEffect(() => {
         const loadStateImage = async () => {
@@ -318,6 +434,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
     useEffect(() => {
         setIsPro(false)
+        setCurrentUserId(null)
         setHistory([])
         if (authSession) {
             fetchModels()
@@ -343,6 +460,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             const res = await apiFetch('/api/users/me')
             if (res.ok) {
                 const data = await res.json()
+                setCurrentUserId(data.id || null)
                 setIsPro(data.is_pro)
                 setIsTextToSkinEnabled(data.text_to_skin_enabled !== false)
                 setIsImageToSkinEnabled(data.image_to_skin_enabled !== false)
@@ -739,10 +857,25 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                                <div className="flex items-center justify-between gap-1.5 mt-0.5">
                                                                     <span className={`text-[11px] font-bold text-[#a6df7a] truncate ${current.fontClass}`}>
                                                                         {phaseText}
                                                                     </span>
+                                                                    {item.license?.code === 'entropydrop-commercial-1.0' && (
+                                                                        <span className="shrink-0 px-1 py-0.2 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[7px] font-pixel-hans tracking-wider uppercase">
+                                                                            {current.generate.licenseCommercialBadge}
+                                                                        </span>
+                                                                    )}
+                                                                    {item.license?.code === 'cc-by-nc-4.0' && (
+                                                                        <span className="shrink-0 px-1 py-0.2 bg-blue-500/15 text-blue-300 border border-blue-500/30 text-[7px] font-pixel-hans tracking-wider">
+                                                                            {current.generate.licenseNonCommercialBadge}
+                                                                        </span>
+                                                                    )}
+                                                                    {item.license?.code === 'unknown' && (
+                                                                        <span className="shrink-0 px-1 py-0.2 bg-orange-500/15 text-orange-300 border border-orange-500/30 text-[7px] font-pixel-hans tracking-wider uppercase">
+                                                                            {current.generate.licenseUnknownBadge}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -813,6 +946,21 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                             <div className={`flex-1 text-xs lg:text-sm text-white/80 truncate ${current.fontClass}`}>
                                                                 {item.prompt || (item.mode === 'aigc_image_to_skin' || item.mode === 'aigc_image_edit_to_skin' ? current.generate.imageUploadDesc : current.generate.noPrompt)}
                                                             </div>
+                                                            {item.license?.code === 'entropydrop-commercial-1.0' && (
+                                                                <span className="shrink-0 px-1 py-0.5 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[7px] font-pixel-hans tracking-wider uppercase">
+                                                                    {current.generate.licenseCommercialBadge}
+                                                                </span>
+                                                            )}
+                                                            {item.license?.code === 'cc-by-nc-4.0' && (
+                                                                <span className="shrink-0 px-1 py-0.5 bg-blue-500/15 text-blue-300 border border-blue-500/30 text-[7px] font-pixel-hans tracking-wider">
+                                                                    {current.generate.licenseNonCommercialBadge}
+                                                                </span>
+                                                            )}
+                                                            {item.license?.code === 'unknown' && (
+                                                                <span className="shrink-0 px-1 py-0.5 bg-orange-500/15 text-orange-300 border border-orange-500/30 text-[7px] font-pixel-hans tracking-wider uppercase">
+                                                                    {current.generate.licenseUnknownBadge}
+                                                                </span>
+                                                            )}
                                                             {item.is_pro && (
                                                                 <span className="shrink-0 px-1 bg-yellow-500/20 text-yellow-500 text-[6px] lg:text-[7px] border border-yellow-500/30 flex items-center gap-0.5">
                                                                     <Icon icon="pixelarticons:zap" className="text-[6px]" />
@@ -1274,6 +1422,87 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                     </div>
                                 )}
 
+                                {/* License Display Section */}
+                                <div className={`border p-3 flex flex-col gap-2 transition-colors ${licenseTone}`}>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-1.5 text-xs font-pixel-hans uppercase tracking-wider text-white/70 font-semibold">
+                                            <Icon icon="pixelarticons:shield" className="text-sm shrink-0" />
+                                            <span>{current.generate.licenseTitle}</span>
+                                        </div>
+                                        <span className={`text-xs font-pixel-hans px-2 py-0.5 border font-bold ${licenseBadgeTone}`}>
+                                            {licenseLabel}
+                                        </span>
+                                    </div>
+
+                                    {/* Key Summary (Always Visible, Larger Font) */}
+                                    <p className="m-0 text-xs leading-relaxed text-white/90 font-pixel-hans">
+                                        {licenseSummary}
+                                    </p>
+
+                                    {/* Pro upgrade link if not pro and not from existing source */}
+                                    {!userIsPro && !sourceId && (
+                                        <div
+                                            onClick={() => navigate('/pro')}
+                                            className="pt-1.5 border-t border-white/5 flex items-center gap-1.5 text-xs text-yellow-400 hover:text-yellow-300 cursor-pointer font-pixel-hans transition-colors group"
+                                        >
+                                            <Icon icon="pixelarticons:zap" className="text-xs shrink-0 group-hover:scale-110 transition-transform" />
+                                            <span className="font-semibold">{current.generate.licenseProUpgradeHint}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Expand / Collapse Button */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsLicenseExpanded(prev => !prev)}
+                                        className="flex items-center justify-between text-xs text-white/50 hover:text-white/80 transition-colors pt-1.5 border-t border-white/5 cursor-pointer font-pixel-hans w-full text-left"
+                                    >
+                                        <span>{isLicenseExpanded ? (current.generate.licenseHideDetails || '收起详情') : (current.generate.licenseViewDetails || '查看详情')}</span>
+                                        <Icon icon={isLicenseExpanded ? "pixelarticons:chevron-up" : "pixelarticons:chevron-down"} className="text-sm shrink-0" />
+                                    </button>
+
+                                    {/* Collapsible Detailed Info */}
+                                    <AnimatePresence initial={false}>
+                                        {isLicenseExpanded && (
+                                            <motion.div
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: 'auto' }}
+                                                exit={{ opacity: 0, height: 0 }}
+                                                transition={{ duration: 0.2 }}
+                                                className="flex flex-col gap-2 overflow-hidden pt-1"
+                                            >
+                                                <p className="m-0 text-xs leading-relaxed text-white/60 font-pixel-hans">
+                                                    {licenseDescription}
+                                                </p>
+
+                                                {/* Public vs Private note */}
+                                                {!isPrivate && effectiveLicense === 'entropydrop-commercial-1.0' && (
+                                                    <p className="m-0 text-[11px] leading-relaxed text-amber-300/80 font-pixel-hans">
+                                                        {current.generate.licensePublicNotice}
+                                                    </p>
+                                                )}
+                                                {isPrivate && (
+                                                    <p className="m-0 text-[11px] leading-relaxed text-white/50 font-pixel-hans">
+                                                        {current.generate.licensePrivateNotice}
+                                                    </p>
+                                                )}
+
+                                                {/* CC BY-NC 4.0 terms link */}
+                                                {(effectiveLicense === 'cc-by-nc-4.0' || (!isPrivate && effectiveLicense === 'entropydrop-commercial-1.0')) && (
+                                                    <a
+                                                        href="https://creativecommons.org/licenses/by-nc/4.0/"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-xs text-blue-300 hover:text-blue-200 font-pixel-hans underline underline-offset-2 flex items-center gap-1 w-fit"
+                                                    >
+                                                        <Icon icon="pixelarticons:external-link" className="text-xs shrink-0" />
+                                                        <span>{current.generate.licenseTermsLink}</span>
+                                                    </a>
+                                                )}
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+
                                 <button
                                       disabled={
                                           isGenerating ||
@@ -1282,7 +1511,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                           generationCreditCost === null ||
                                           (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
                                           (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
-                                          (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled)
+                                          (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled) ||
+                                          (!!sourceId && (isParentLoading || parentLoadFailed))
                                       }
                                       onClick={(() => {
                                           const isMaintenance = (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled);
@@ -1292,7 +1522,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                           return shouldSubscribe ? () => navigate('/pro') : handleGenerate;
                                       })()}
                                       className={`py-3 lg:py-4 border-2 border-black cursor-pointer disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass} ${
-                                          ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled))
+                                          ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled) || (!!sourceId && (isParentLoading || parentLoadFailed)))
                                               ? 'bg-gray-700 text-white/40 cursor-not-allowed border-black'
                                               : (modelVersion && modelProStates[modelVersion] && !isPro)
                                                   ? 'bg-gradient-to-r from-yellow-600 via-amber-500 to-yellow-600 hover:from-yellow-500 hover:to-amber-400 text-black font-bold border-yellow-400'
@@ -1303,6 +1533,16 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                           <span key="generating" className="flex items-center justify-center gap-2">
                                               <Icon icon="pixelarticons:reload" className="animate-spin" />
                                               {current.generate.btnGenerating}
+                                          </span>
+                                      ) : (sourceId && isParentLoading) ? (
+                                          <span key="loading-license" className="flex items-center justify-center gap-2">
+                                              <Icon icon="pixelarticons:reload" className="animate-spin" />
+                                              {current.generate.licenseLoading}
+                                          </span>
+                                      ) : (sourceId && parentLoadFailed) ? (
+                                          <span key="failed-license" className="flex items-center justify-center gap-2 opacity-60">
+                                              <Icon icon="pixelarticons:close" />
+                                              {current.generate.licenseUnavailable}
                                           </span>
                                       ) : (modelVersion === 'unknown' || !modelVersion || generationCreditCost === null) ? (
                                           <span key="loading-model" className="flex items-center justify-center gap-2">
