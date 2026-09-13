@@ -134,14 +134,17 @@ class Game {
       this.world,
       this.soundManager,
       this.particleSystem,
-      session.mode === 'online' ? persistentStorage : null
+      persistentStorage
     );
     this.contraptionManager.setPhysics(this.contraptionPhysics);
     this.sceneRenderer.setContraptions(this.contraptionManager);
     this.contraptionManager.setWorldId(session.world.id);
     this.contraptionManager.setEntityPersistenceMode(
-      session.mode === 'online' ? 'remote' : 'none'
+      session.mode === 'online' ? 'remote' : 'browser'
     );
+    if (session.mode === 'offline') {
+      this.contraptionManager.loadEntitiesFromStorage();
+    }
 
     this.playerPhysics = new PlayerPhysics(this.world, this.contraptionManager);
     this.uiStore = spaceUiStore;
@@ -188,7 +191,7 @@ class Game {
           eyePosition: [eye.x, eye.y, eye.z],
           feetPosition: [feet.x, feet.y, feet.z],
           velocity: this.playerPhysics.velocity.toArray(),
-          yaw: this.controller.yaw,
+          yaw: this.controller.viewYaw,
           pitch: this.controller.pitch,
           isLocal: true,
           isOnGround: this.playerPhysics.isOnGround,
@@ -302,7 +305,7 @@ class Game {
         x: this.playerPhysics.position.x,
         y: this.playerPhysics.position.y,
         z: this.playerPhysics.position.z,
-        yaw: this.controller.yaw,
+        yaw: this.controller.viewYaw,
         pitch: this.controller.pitch
       });
       this.multiplayerSync.setSinceTerrainRevision(session.world.terrain_revision);
@@ -378,7 +381,7 @@ class Game {
   }
 
   currentPlayerPosition() {
-    return encodePlayerPosition(this.playerPhysics.position, this.controller.yaw, this.controller.pitch);
+    return encodePlayerPosition(this.playerPhysics.position, this.controller.viewYaw, this.controller.pitch);
   }
 
   queuePlayerPositionSave(force = false, keepalive = false) {
@@ -416,9 +419,7 @@ class Game {
   installPlayerPositionPersistence(sessionMode: ReadySpaceSession['mode']) {
     const persistBeforeSuspension = () => {
       this.queuePlayerPositionSave(true, true);
-      if (sessionMode === 'online') {
-        this.contraptionManager?.saveEntitiesToStorage?.();
-      }
+      this.contraptionManager?.saveEntitiesToStorage?.();
     };
     window.addEventListener('pagehide', persistBeforeSuspension);
     window.addEventListener('beforeunload', persistBeforeSuspension);
@@ -542,7 +543,7 @@ class Game {
     this.particleSystem.update(dt);
 
     // 5. Update Scene Lighting, Sky & Player Avatar
-    this.sceneRenderer.update(dt, playerPos, this.controller.yaw, {
+    this.sceneRenderer.update(dt, playerPos, this.controller.viewYaw, {
       velocity: this.playerPhysics.velocity,
       grounded: this.playerPhysics.isOnGround,
       flying: this.playerPhysics.isFlying,
@@ -604,7 +605,7 @@ class Game {
     // 7b. Minimap (bottom-right)
     this.minimap.update(
       playerPos,
-      this.controller.yaw,
+      this.controller.viewYaw,
       this.controller.isDriving,
       this.controller.drivenContraption
     );

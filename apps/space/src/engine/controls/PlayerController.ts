@@ -98,6 +98,19 @@ const WRENCH_GRAB_MAX_ACCELERATION = 36;
 const WRENCH_GRAB_MAX_TARGET_SPEED = 10;
 const WRENCH_GRAB_MAX_SPEED = 14;
 
+// A seat may pin the view yaw to the vehicle. The player keeps a small bounded
+// head-look arc so the cockpit still feels alive without letting them stare at
+// the world while the chassis swings underneath.
+const SEAT_LOOK_YAW_LIMIT = 0.6;
+
+/** Yaw of a rotation whose forward axis is -Z, using the camera's YXZ order. */
+function quaternionForwardYaw(quaternion: any): number {
+  if (!quaternion?.isQuaternion) return 0;
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
+  const planar = Math.hypot(forward.x, forward.z);
+  return planar < 1e-6 ? 0 : Math.atan2(-forward.x, -forward.z);
+}
+
 function contraptionRootId(contraption: any): string {
   const explicit = contraption?.rootComponentId;
   if (typeof explicit === 'string' && explicit.length > 0) return explicit;
@@ -405,6 +418,10 @@ export class PlayerController {
   isDriving: boolean;
   drivenContraption: any;
   drivenSeat: { componentId: string; seatIndex: number } | null;
+  /** True while the occupied seat drives the view yaw instead of free mouse look. */
+  drivenSeatLocksYaw: boolean;
+  /** Player yaw offset from the seat forward, clamped while the seat locks yaw. */
+  seatLookYaw: number;
   navigationSystem: any;
 
   constructor(
@@ -506,6 +523,8 @@ export class PlayerController {
     this.isDriving = false;
     this.drivenContraption = null;
     this.drivenSeat = null;
+    this.drivenSeatLocksYaw = false;
+    this.seatLookYaw = 0;
 
     this.setupPointerLock();
     this.setupEventListeners();
@@ -609,13 +628,23 @@ export class PlayerController {
         return;
       }
 
-      this.yaw -= e.movementX * this.mouseSensitivity;
+      // A yaw-locking seat owns the view direction: horizontal mouse motion
+      // only trims a bounded head-look arc inside the cockpit, while vertical
+      // motion stays free.
+      if (this.drivenSeatLocksYaw && this.isDriving) {
+        this.seatLookYaw = Math.max(
+          -SEAT_LOOK_YAW_LIMIT,
+          Math.min(SEAT_LOOK_YAW_LIMIT, this.seatLookYaw - e.movementX * this.mouseSensitivity)
+        );
+      } else {
+        this.yaw -= e.movementX * this.mouseSensitivity;
+      }
       this.pitch -= e.movementY * this.mouseSensitivity;
 
       const maxPitch = Math.PI / 2 - 0.01;
       this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
 
-      this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+      this.camera.rotation.set(this.pitch, this.viewYaw, 0, 'YXZ');
     });
 
     document.addEventListener('mouseup', (e) => {
@@ -6759,6 +6788,25 @@ export class PlayerController {
       const optionalNumber = value => value !== null && value !== undefined && Number.isFinite(Number(value))
         ? Number(value)
         : undefined;
+      // Seats accept the legacy `[x,y,z]` shorthand and the current object form.
+      // A missing rotation stays implicit so plain seats round trip unchanged;
+      // an unusable one drops the seat exactly like an unusable position.
+      const portableSeat = seat => {
+        const position = vector3(Array.isArray(seat) ? seat : seat?.position);
+        if (!position) return null;
+        if (Array.isArray(seat)) return { position };
+        const rotation = quaternion4(seat.rotation);
+        if (seat.rotation !== undefined && seat.rotation !== null && !rotation) return null;
+        return {
+          position,
+          ...(rotation ? { rotation } : {}),
+          ...(seat.fixedOrientation === true ? { fixedOrientation: true } : {})
+        };
+      };
+      const portableSeats = seats => (seats || []).flatMap(seat => {
+        const parsed = portableSeat(seat);
+        return parsed ? [parsed] : [];
+      });
       const childEntities = (item.childEntities || []).map(definition => ({
         id: String(definition.id || ''),
         name: typeof definition.name === 'string' ? truncateInventoryName(trimInventoryName(definition.name)) : '',
@@ -6773,10 +6821,7 @@ export class PlayerController {
         ...(optionalNumber(definition.mass) !== undefined ? { mass: optionalNumber(definition.mass) } : {}),
         ...(optionalNumber(definition.restitution) !== undefined ? { restitution: optionalNumber(definition.restitution) } : {}),
         ...(optionalNumber(definition.friction) !== undefined ? { friction: optionalNumber(definition.friction) } : {}),
-        seats: (definition.seats || []).flatMap(seat => {
-          const position = vector3(Array.isArray(seat) ? seat : seat?.position);
-          return position ? [{ position }] : [];
-        })
+        seats: portableSeats(definition.seats)
       }));
       const constraints = (item.constraints || []).map(constraint => ({
         id: String(constraint.id || ''),
@@ -6847,10 +6892,7 @@ export class PlayerController {
         friction: item.friction,
         useGravity: item.useGravity,
         collisionEnabled: item.collisionEnabled,
-        seats: (item.seats || []).flatMap(seat => {
-          const position = vector3(Array.isArray(seat) ? seat : seat?.position);
-          return position ? [{ position }] : [];
-        })
+        seats: portableSeats(item.seats)
       });
     }
     if (category === 'colorset') {
@@ -6901,20 +6943,32 @@ export class PlayerController {
         ? vector
         : null;
     };
-    const portableQuaternion = value => {
+    // Unit-quaternion shape check without the stopped-grid restriction, which
+    // applies only to authored component local/anchor rotations.
+    const portableUnitQuaternion = value => {
       if (value === undefined) return undefined;
       if (!Array.isArray(value) || value.length !== 4) return null;
       const components = value.map(Number);
       const lengthSq = components.reduce((sum, component) => sum + component * component, 0);
       const unitTolerance = Math.max(1e-6, 1e-6 * Math.max(Math.abs(lengthSq), 1));
       if (!components.every(Number.isFinite)
-        || components.some(component => component < -1 || component > 1)
         || !Number.isFinite(lengthSq)
         || Math.abs(lengthSq - 1) > unitTolerance) return null;
-      const normalized = new THREE.Quaternion(
+      return new THREE.Quaternion(
         components[0], components[1], components[2], components[3]
       ).normalize().toArray();
-      return isStoppedGridQuaternion(normalized) ? normalized : null;
+    };
+    const portableQuaternion = value => {
+      if (value === undefined) return undefined;
+      // The backend rejects components outside -1..1 before it even checks the
+      // norm, so an unnormalized rotation is mirrored here.
+      if (Array.isArray(value) && value.map(Number).some(component => component < -1 || component > 1)) {
+        return null;
+      }
+      const normalized = portableUnitQuaternion(value);
+      return normalized === null || normalized === undefined
+        ? null
+        : (isStoppedGridQuaternion(normalized) ? normalized : null);
     };
     const withinEntityBounds = (blocks, keys, ownerKey = null) => {
       const groups = new Map();
@@ -7125,6 +7179,14 @@ export class PlayerController {
           const position = portableVector(seat?.position, MAX_IMPORT_COORDINATE);
           if (seatCount > 256 || position === null || position === undefined) {
             throw new Error('Entity seats must be bounded 3D positions and may not exceed 256');
+          }
+          // Seat orientation is an arbitrary unit quaternion, unlike the
+          // stopped-grid local/anchor rotations, so it uses the plain check.
+          if (seat.rotation !== undefined && portableUnitQuaternion(seat.rotation) === null) {
+            throw new Error('Entity seat rotations must be unit quaternions');
+          }
+          if (seat.fixedOrientation !== undefined && typeof seat.fixedOrientation !== 'boolean') {
+            throw new Error('Entity seat fixedOrientation must be a boolean');
           }
         }
         for (const child of component.children) validateComponent(child, id, depth + 1);
@@ -7692,17 +7754,33 @@ export class PlayerController {
   toggleDriveVehicle() {
     if (this.isDriving) {
       const vehicle = this.drivenContraption;
+      const seat = this.drivenSeat;
+      // Read the seat-derived view before clearing the driving state; the
+      // getter needs the lock flags that the teardown below removes.
+      const dismountYaw = this.viewYaw;
       this.isDriving = false;
       this.contraptions.activeDrivable = null;
       this.drivenContraption = null;
       this.drivenSeat = null;
+      // Hand the seat-derived view direction back to free look so stepping out
+      // of a locked cockpit does not snap the camera.
+      this.yaw = dismountYaw;
+      this.seatLookYaw = 0;
+      this.drivenSeatLocksYaw = false;
       this.resetEntityInputState();
 
       if (vehicle) {
         // Leave beside the vehicle instead of teleporting two metres upward.
         // The bounding sphere keeps the player's AABB outside even when the
         // vehicle is rotated, while preserving its current altitude/velocity.
-        const exitDirection = new THREE.Vector3(1, 0, 0).applyQuaternion(vehicle.quaternion);
+        // A seat orientation wins over the chassis axis so the player is set
+        // down where the seat faces instead of inside a swung-out hull.
+        const seatRotation = seat
+          ? vehicle.getSeatWorldQuaternion?.(seat.componentId, seat.seatIndex)
+          : null;
+        const exitDirection = new THREE.Vector3(1, 0, 0).applyQuaternion(
+          seatRotation?.isQuaternion ? seatRotation : vehicle.quaternion
+        );
         exitDirection.y = 0;
         if (exitDirection.lengthSq() < 1e-6) exitDirection.set(1, 0, 0);
         exitDirection.normalize();
@@ -7734,6 +7812,11 @@ export class PlayerController {
       this.isDriving = true;
       this.drivenContraption = target;
       this.drivenSeat = { componentId: seat.componentId, seatIndex: seat.seatIndex };
+      this.drivenSeatLocksYaw = seat.fixedOrientation === true;
+      // Entering a locked seat snaps the view onto the seat forward axis and
+      // starts the head-look arc from center; `this.yaw` keeps tracking the
+      // free-look value so leaving the seat never whips the camera around.
+      this.seatLookYaw = 0;
       this.contraptions.activeDrivable = target;
       if (this.ui) this.ui.showToast(`Mounted! Key behavior is defined by the ctx.input script · [C] program [V] leave`);
     } else {
@@ -7797,6 +7880,28 @@ export class PlayerController {
     }
   }
 
+  /**
+   * The yaw the view actually renders with. A yaw-locking seat overrides free
+   * look with its solved world orientation plus the player's bounded head-look
+   * arc, so camera, avatar, minimap, and movement all agree while riding.
+   */
+  get viewYaw(): number {
+    if (!this.isDriving || !this.drivenSeatLocksYaw) {
+      return Number.isFinite(this.yaw) ? this.yaw : 0;
+    }
+    const lookOffset = Math.max(-SEAT_LOOK_YAW_LIMIT, Math.min(SEAT_LOOK_YAW_LIMIT, this.seatLookYaw));
+    const seatWorld = this.drivenSeat
+      ? this.drivenContraption?.getSeatWorldQuaternion?.(
+        this.drivenSeat.componentId,
+        this.drivenSeat.seatIndex
+      )
+      : null;
+    if (!seatWorld?.isQuaternion) {
+      return (Number.isFinite(this.yaw) ? this.yaw : 0) + lookOffset;
+    }
+    return quaternionForwardYaw(seatWorld) + lookOffset;
+  }
+
   updateCameraPosition() {
     const eyePos = this.physics.getEyePosition();
     // Always rebuild the normal player look before deriving an offset. The
@@ -7804,7 +7909,7 @@ export class PlayerController {
     // so reusing its quaternion on the next frame would make the two camera
     // positions alternate.
     const pitch = Number.isFinite(this.pitch) ? this.pitch : this.camera.rotation.x;
-    const yaw = Number.isFinite(this.yaw) ? this.yaw : this.camera.rotation.y;
+    const yaw = this.viewYaw;
     this.camera.rotation.set(pitch, yaw, 0, 'YXZ');
     if (this.perspective === 'third_person') {
       const backward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.camera.quaternion);
@@ -7835,11 +7940,17 @@ export class PlayerController {
       this.contraptions.activeDrivable = null;
       this.drivenContraption = null;
       this.drivenSeat = null;
+      this.drivenSeatLocksYaw = false;
+      this.seatLookYaw = 0;
       this.physics.ridingContraption = null;
       return false;
     }
     this.physics.position.copy(seatWorld);
     this.physics.velocity.set(0, 0, 0);
+    // Keep the free-look yaw tracking the locked view so dismounting, the
+    // minimap, the avatar, and the multiplayer snapshot all continue from the
+    // direction the player was actually facing.
+    if (this.drivenSeatLocksYaw) this.yaw = this.viewYaw;
     return true;
   }
 
@@ -7849,7 +7960,7 @@ export class PlayerController {
       if (this.navigationSystem?.isNavigating) {
         this.navigationSystem.update(dt);
       } else {
-        this.physics.update(dt, this.keys, this.yaw);
+        this.physics.update(dt, this.keys, this.viewYaw);
       }
     }
 

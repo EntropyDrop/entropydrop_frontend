@@ -147,6 +147,74 @@ test('mounted camera re-seats from the vehicle pose solved later in the frame', 
   assert.deepEqual(controller.physics.position.toArray(), [2.5, 3.25, -4]);
 });
 
+test('a yaw-locking seat swings the view with the vehicle and keeps a bounded head arc', () => {
+  const controller = Object.create(PlayerController.prototype) as any;
+  const seatWorldRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  controller.isDriving = true;
+  controller.drivenSeat = { componentId: 'arm', seatIndex: 1 };
+  controller.drivenSeatLocksYaw = true;
+  controller.seatLookYaw = 0;
+  controller.yaw = 0.3;
+  controller.pitch = -0.2;
+  controller.contraptions = { activeDrivable: null };
+  controller.physics = { position: new THREE.Vector3(), velocity: new THREE.Vector3() };
+  controller.drivenContraption = {
+    getSeatWorldPosition: () => new THREE.Vector3(1, 2, 3),
+    getSeatWorldQuaternion: (componentId, seatIndex) => {
+      assert.equal(componentId, 'arm');
+      assert.equal(seatIndex, 1);
+      return seatWorldRotation.clone();
+    }
+  };
+
+  // A -Z forward rotated +90° about Y points at -X, so this yaw is +PI/2.
+  assert.ok(Math.abs(controller.viewYaw - Math.PI / 2) < 1e-9);
+  assert.ok(Math.abs(controller.pitch + 0.2) < 1e-9, 'pitch stays free while only yaw is locked');
+
+  // The cockpit head arc is bounded, so the view still swings with the chassis.
+  controller.seatLookYaw = 4;
+  assert.ok(Math.abs(controller.viewYaw - (Math.PI / 2 + 0.6)) < 1e-9);
+
+  // Re-seating keeps the free-look yaw tracking the locked view.
+  controller.seatLookYaw = 0;
+  assert.equal(controller.syncDrivenVehiclePose(), true);
+  assert.ok(Math.abs(controller.yaw - Math.PI / 2) < 1e-9);
+});
+
+test('leaving a yaw-locking seat preserves the view direction and resets the lock', () => {
+  const controller = Object.create(PlayerController.prototype) as any;
+  const seatWorldRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  controller.isDriving = true;
+  controller.drivenSeat = { componentId: 'cab', seatIndex: 0 };
+  controller.drivenSeatLocksYaw = true;
+  controller.seatLookYaw = 0;
+  controller.yaw = 0;
+  controller.contraptions = { activeDrivable: null };
+  controller.physics = {
+    position: new THREE.Vector3(),
+    velocity: new THREE.Vector3(),
+    width: 0.6,
+    isOnGround: true,
+    ridingContraption: {}
+  };
+  controller.drivenContraption = {
+    position: new THREE.Vector3(0, 0, 0),
+    velocity: new THREE.Vector3(),
+    boundingRadius: 2,
+    quaternion: new THREE.Quaternion(),
+    getSeatWorldQuaternion: () => seatWorldRotation.clone()
+  };
+  controller.resetEntityInputState = () => {};
+  controller.ui = { showToast() {} };
+
+  controller.toggleDriveVehicle();
+
+  assert.equal(controller.isDriving, false);
+  assert.equal(controller.drivenSeatLocksYaw, false);
+  assert.equal(controller.drivenSeat, null);
+  assert.ok(Math.abs(controller.yaw - Math.PI / 2) < 1e-9, 'stepping out must not snap the camera');
+});
+
 test('V mounts the seat nearest the aimed entity block', () => {
   const controller = Object.create(PlayerController.prototype) as any;
   const focus = new THREE.Vector3(4, 5, 6);

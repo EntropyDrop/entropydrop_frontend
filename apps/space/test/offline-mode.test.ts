@@ -71,22 +71,74 @@ test('both Space welcome surfaces expose a direct offline entry', () => {
   assert.match(welcomeSource, /data\.offlineCta/);
 });
 
-test('main.ts ensures offline mode disables terrain and entity persistence while keeping backpack persistence', () => {
+test('main.ts ensures offline mode disables terrain persistence while keeping entity and backpack persistence', () => {
   const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 
   // Terrain edits must not be persisted in offline mode
   assert.match(mainSource, /session\.mode === 'offline'[\s\S]*?removeItem[\s\S]*?worldEditStorageKey/);
   assert.match(mainSource, /storage:\s*session\.mode === 'online'\s*\?\s*persistentStorage\s*:\s*null/);
 
-  // Entities must not be persisted in offline mode
-  assert.match(mainSource, /this\.contraptionManager\.setEntityPersistenceMode\(\s*session\.mode === 'online'\s*\?\s*'remote'\s*:\s*'none'\s*\)/);
-  assert.doesNotMatch(mainSource, /this\.contraptionManager\.loadEntitiesFromStorage\(\)/);
+  // Entities must be persisted in offline mode so they remain visible across page refresh
+  assert.match(mainSource, /this\.contraptionManager\.setEntityPersistenceMode\(\s*session\.mode === 'online'\s*\?\s*'remote'\s*:\s*'browser'\s*\)/);
+  assert.match(mainSource, /this\.contraptionManager\.loadEntitiesFromStorage\(\)/);
 
-  // Suspension/unload must only persist entities in online mode
-  assert.match(mainSource, /if\s*\(sessionMode === 'online'\)\s*\{\s*this\.contraptionManager\?\.saveEntitiesToStorage\?\.\(\);\s*\}/);
+  // Suspension/unload must persist entities in offline mode
+  assert.match(mainSource, /this\.contraptionManager\?\.saveEntitiesToStorage\?\.\(\)/);
 
   // Backpack must retain persistentStorage in both online and offline modes
   assert.match(mainSource, /new PlayerController\([\s\S]*?persistentStorage\s*\)/);
+});
+
+test('offline entity persistence survives refresh: entities saved in browser mode reload successfully', async () => {
+  const { ContraptionManager, worldEntitiesStorageKey } = await import('@entropydrop/space-engine/contraption/ContraptionManager.ts');
+  const { BlockTypes } = await import('@entropydrop/space-engine/voxel/BlockTypes.ts');
+  const THREE = await import('three');
+  const worldId = 'offline-sandbox-v1';
+  const store = new Map<string, string>();
+  const mockStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => { store.set(k, String(v)); },
+    removeItem: (k: string) => { store.delete(k); },
+  };
+
+  const scene = new THREE.Scene();
+  const manager1 = new ContraptionManager(scene, null, null, null, mockStorage as any);
+  manager1.setWorldId(worldId);
+  manager1.setEntityPersistenceMode('browser');
+
+  const slot = {
+    rootComponentId: 'root',
+    name: 'test-vehicle',
+    blocks: [{
+      localX: 0,
+      localY: 0,
+      localZ: 0,
+      size: 1,
+      color: 0x336699,
+      block: BlockTypes.COLOR_BLOCK,
+      entityId: 'root'
+    }],
+    childEntities: [],
+    scripts: []
+  };
+
+  const pos = new THREE.Vector3(10, 20, 30);
+  const created = manager1.buildFromSlot(slot, pos, null, true);
+  assert.ok(created);
+  assert.equal(manager1.contraptions.length, 1);
+  assert.equal(store.has(worldEntitiesStorageKey(worldId)), true);
+
+  // Simulate page refresh: a new game instance starts up
+  const manager2 = new ContraptionManager(new THREE.Scene(), null, null, null, mockStorage as any);
+  manager2.setWorldId(worldId);
+  manager2.setEntityPersistenceMode('browser');
+  const loadedCount = manager2.loadEntitiesFromStorage();
+
+  assert.equal(loadedCount, 1);
+  assert.equal(manager2.contraptions.length, 1);
+  assert.equal(manager2.contraptions[0].position.x, manager1.contraptions[0].position.x);
+  assert.equal(manager2.contraptions[0].position.y, manager1.contraptions[0].position.y);
+  assert.equal(manager2.contraptions[0].position.z, manager1.contraptions[0].position.z);
 });
 
 test('WorldEditPersistence with storage null does not persist terrain edits', async () => {

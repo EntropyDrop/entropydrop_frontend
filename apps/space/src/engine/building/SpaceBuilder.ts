@@ -53,7 +53,13 @@ export interface SpaceBuildComponentInput {
   friction?: number;
   useGravity?: boolean;
   collisionEnabled?: boolean;
-  seats?: Array<[number, number, number] | { position: [number, number, number] }>;
+  seats?: Array<[number, number, number] | {
+    position: [number, number, number];
+    /** Rider orientation `[x,y,z,w]` in the component pivot frame; default identity. */
+    rotation?: [number, number, number, number];
+    /** When true a mounted rider's yaw follows the seat's solved world orientation. */
+    fixedOrientation?: boolean;
+  }>;
   script?: string;
   scriptEnabled?: boolean;
 }
@@ -188,6 +194,15 @@ function finiteVector(value: any): [number, number, number] | null {
   return vector.every(Number.isFinite) ? vector as [number, number, number] : null;
 }
 
+/** Seat rider orientation: any unit quaternion, not a stopped-grid rotation. */
+function finiteUnitQuaternion(value: any): boolean {
+  if (!Array.isArray(value) || value.length !== 4) return false;
+  const quaternion = value.map(Number);
+  if (!quaternion.every(Number.isFinite)) return false;
+  const lengthSq = quaternion.reduce((sum, component) => sum + component * component, 0);
+  return lengthSq > 1e-12 && Math.abs(lengthSq - 1) <= 1e-3;
+}
+
 function clampedUnit(value: any, fallback: number): number {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : fallback;
@@ -246,6 +261,16 @@ function runtimeConstraint(constraint: SpaceBuildConstraintInput): SpaceBuildCon
   }
   if (constraint.limits !== undefined) output.limits = { ...constraint.limits };
   return output;
+}
+
+/** Runtime seat shape shared by AI build plans: position plus optional rider pose. */
+function builderSeat(seat: any): any {
+  if (Array.isArray(seat)) return { position: [...seat] };
+  return {
+    position: [...seat.position],
+    ...(Array.isArray(seat.rotation) && seat.rotation.length === 4 ? { rotation: [...seat.rotation] } : {}),
+    ...(seat.fixedOrientation === true ? { fixedOrientation: true } : {}),
+  };
 }
 
 function normalizedGridCoordinate(value: any, size: 1 | typeof MICRO_SIZE): number | null {
@@ -434,9 +459,7 @@ function runtimeSlot(plan: NormalizedSpaceBuildPlan): any {
       friction: component.friction ?? plan.friction,
       useGravity: component.useGravity ?? false,
       collisionEnabled: component.collisionEnabled ?? true,
-      seats: (component.seats || []).map(seat => ({
-        position: [...(Array.isArray(seat) ? seat : seat.position)]
-      }))
+      seats: (component.seats || []).map(seat => builderSeat(seat))
     })),
     scripts,
     enabled: scripts.map(script => ({
@@ -450,9 +473,7 @@ function runtimeSlot(plan: NormalizedSpaceBuildPlan): any {
     friction: root.friction ?? plan.friction,
     useGravity: root.useGravity ?? plan.useGravity,
     collisionEnabled: root.collisionEnabled ?? plan.collisionEnabled,
-    seats: (root.seats || []).map(seat => ({
-      position: [...(Array.isArray(seat) ? seat : seat.position)]
-    }))
+    seats: (root.seats || []).map(seat => builderSeat(seat))
   });
 }
 
@@ -544,6 +565,14 @@ export function validateSpaceBuildPlan(input: any): SpaceBuildValidation {
     for (const seat of component.seats || []) {
       if (!finiteVector(Array.isArray(seat) ? seat : seat?.position)) {
         errors.push(`Component '${id}' has an invalid seat.`);
+        continue;
+      }
+      if (Array.isArray(seat)) continue;
+      if (seat.rotation !== undefined && !finiteUnitQuaternion(seat.rotation)) {
+        errors.push(`Component '${id}' has a seat with an invalid rotation.`);
+      }
+      if (seat.fixedOrientation !== undefined && typeof seat.fixedOrientation !== 'boolean') {
+        errors.push(`Component '${id}' has a seat with an invalid fixedOrientation.`);
       }
     }
     if (component.script !== undefined) {

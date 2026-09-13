@@ -56,7 +56,13 @@ interface SpaceBuildComponentInput {
   friction?: number;
   useGravity?: boolean;
   collisionEnabled?: boolean;
-  seats?: Array<[number, number, number] | { position: [number, number, number] }>;
+  seats?: Array<[number, number, number] | {
+    position: [number, number, number];
+    /** Rider orientation `[x,y,z,w]` in the component pivot frame; identity faces -Z. */
+    rotation?: [number, number, number, number];
+    /** When true a mounted rider's yaw follows the seat's solved world orientation. */
+    fixedOrientation?: boolean;
+  }>;
   script?: string;
   scriptEnabled?: boolean;
 }
