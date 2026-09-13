@@ -24,6 +24,7 @@ const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage').then(m => ({ de
 const FigurePage = lazy(() => import('./pages/FigurePage').then(m => ({ default: m.FigurePage })))
 const CreditsPage = lazy(() => import('./pages/CreditsPage').then(m => ({ default: m.CreditsPage })))
 const SpaceApiKeysPage = lazy(() => import('./pages/SpaceApiKeysPage').then(m => ({ default: m.SpaceApiKeysPage })))
+const SpaceLoginPage = lazy(() => import('./pages/SpaceLoginPage').then(m => ({ default: m.SpaceLoginPage })))
 const SpacePage = lazy(() => import('./pages/SpacePage').then(m => ({ default: m.SpacePage })))
 
 
@@ -60,7 +61,7 @@ function SpaceIntroRedirect() {
 
 function SpaceAppRedirect() {
   useEffect(() => {
-    window.location.replace('/space/app/index.html' + window.location.search + window.location.hash)
+    window.location.replace((import.meta.env.VITE_SPACE_URL || '/space/app/index.html') + window.location.search + window.location.hash)
   }, [])
   return null
 }
@@ -135,7 +136,8 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/space/app" element={<SpaceAppRedirect />} />
         <Route path="/space/app/*" element={<SpaceAppRedirect />} />
         <Route path="/space/intro" element={<SpacePage current={currentLangData} />} />
-        <Route path="/space/apikeys" element={<SpaceApiKeysPage current={currentLangData} />} />
+        <Route path="/space/login" element={<SpaceLoginPage />} />
+            <Route path="/space/apikeys" element={<SpaceApiKeysPage current={currentLangData} />} />
         <Route path="/space" element={<SpaceIntroRedirect />} />
         <Route path="/space/*" element={<SpaceIntroRedirect />} />
       </Routes>

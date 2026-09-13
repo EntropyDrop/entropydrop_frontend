@@ -8,7 +8,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   // Space is a framework-independent TypeScript workspace with its own
   // typecheck/test pipeline; the React lint rules do not apply to it.
-  globalIgnores(['dist', 'apps/space/dist', 'apps/space/src', 'apps/space/test', 'apps/space/tools']),
+  globalIgnores(['dist']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

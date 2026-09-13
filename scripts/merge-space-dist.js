@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(scriptDir, '..')
-const source = path.join(rootDir, 'apps', 'space', 'dist')
+const source = path.resolve(rootDir, '../entropydrop_space/client/dist')
 const spaceRoot = path.join(rootDir, 'dist', 'space')
 const destination = path.join(spaceRoot, 'app')
 const siteIndex = path.join(rootDir, 'dist', 'index.html')

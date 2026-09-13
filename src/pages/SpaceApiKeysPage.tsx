@@ -6,8 +6,8 @@ import { SEO } from '../components/SEO'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { type LangData } from '../constants/lang'
 import { API_BASE_URL, apiFetch } from '../utils/api'
-import { SpaceApiKeyClient, SpaceApiKeyError, type SpaceApiKeyRecord } from '../../apps/space/src/bootstrap/SpaceApiKeyClient'
-import { spaceAgentConnection, spaceAgentPrompt } from '../../apps/space/src/bootstrap/SpaceAgentGuide'
+import { SpaceApiKeyClient, SpaceApiKeyError, type SpaceApiKeyRecord } from '@entropydrop/space/api-keys'
+import { spaceAgentConnection, spaceAgentPrompt } from '@entropydrop/space/agent-guide'
 
 // Used only to isolate UI state between accounts. The API validates credentials.
 function currentAccountId(): string | null {

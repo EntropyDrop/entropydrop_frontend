@@ -4,7 +4,8 @@ import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-const spaceIndexPath = fileURLToPath(new URL('./apps/space/index.html', import.meta.url))
+const spaceClientRoot = fileURLToPath(new URL('../entropydrop_space/client', import.meta.url))
+const spaceIndexPath = fileURLToPath(new URL('../entropydrop_space/client/index.html', import.meta.url))
 
 /**
  * Mount the framework-independent Space document inside the main Vite server.
@@ -35,8 +36,8 @@ function spaceDevMount(): Plugin {
         try {
           const source = await readFile(spaceIndexPath, 'utf8')
           const mountedSource = source
-            .replace('href="/src/style.css"', 'href="/apps/space/src/style.css"')
-            .replace('src="/src/main.ts"', 'src="/apps/space/src/main.ts"')
+            .replace('href="/src/style.css"', `href="/@fs/${spaceClientRoot}/src/style.css"`)
+            .replace('src="/src/main.ts"', `src="/@fs/${spaceClientRoot}/src/main.ts"`)
           const html = await server.transformIndexHtml(requestUrl, mountedSource)
           response.statusCode = 200
           response.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -63,7 +64,7 @@ export default defineConfig({
     fs: {
       allow: [
         searchForWorkspaceRoot(process.cwd()),
-        fileURLToPath(new URL('../entropydrop_space_engine', import.meta.url)),
+        fileURLToPath(new URL('../entropydrop_space', import.meta.url)),
       ],
     },
   },
