@@ -964,9 +964,17 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                             className="bg-[#121212] sm:border-2 border-white/10 w-full h-full sm:h-auto sm:w-fit flex flex-col lg:flex-row text-white shadow-[0_0_100px_rgba(0,0,0,0.8)] relative overflow-y-auto lg:overflow-hidden max-h-screen lg:max-h-[90vh] lg:h-[760px] [@media(max-height:850px)]:lg:h-full [@media(max-height:850px)]:lg:max-h-full"
                             onClick={(e) => e.stopPropagation()}
                         >
+                            <button
+                                onClick={closeModal}
+                                className="absolute top-3 right-3 z-50 w-8 h-8 flex lg:hidden items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer bg-black/40 hover:bg-black/60 active:translate-y-0.5 border border-white/10 hover:border-white/20 backdrop-blur-sm"
+                                title="Close"
+                                aria-label="Close"
+                            >
+                                <Icon icon="pixelarticons:close" className="text-lg" />
+                            </button>
                             {isNotFound ? (
                                 <div className="w-[400px] h-[300px] flex flex-col p-4 text-center bg-[#121212] text-white mx-auto">
-                                    <div className="w-full flex justify-end">
+                                    <div className="w-full hidden lg:flex justify-end">
                                         <button
                                             onClick={closeModal}
                                             className="w-8 h-8 flex items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer bg-black/40 hover:bg-black/60 active:translate-y-0.5 border border-white/10 hover:border-white/20 backdrop-blur-sm"
@@ -1010,8 +1018,6 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                     {/* Decorative Corner */}
                                     <div className="absolute top-0 left-0 w-24 h-24 bg-gradient-to-br from-[#4ea632]/20 to-transparent pointer-events-none" />
 
-                                    {/* Close Button */}
-
                                     {/* Left: 3D Preview Section */}
                                     <div className={showSidebar ? 'hidden lg:block lg:h-full' : 'block lg:h-full'}>
                                         {isLoadingDetails ? (
@@ -1041,7 +1047,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                     {/* Right: Info Section */}
                                     {isLoadingDetails ? (
                                         <div className="w-full lg:w-[360px] flex-shrink-0 p-4 flex flex-col bg-[#121212] lg:h-full">
-                                            <div className="flex justify-end items-center pb-2">
+                                            <div className="hidden lg:flex justify-end items-center pb-2">
                                                 <button
                                                     onClick={closeModal}
                                                     className="w-8 h-8 flex items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer bg-black/40 hover:bg-black/60 active:translate-y-0.5 border border-white/10 hover:border-white/20 backdrop-blur-sm shrink-0"
@@ -1078,7 +1084,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
                                                 <button
                                                     onClick={closeModal}
-                                                    className="w-8 h-8 flex items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer bg-black/40 hover:bg-black/60 active:translate-y-0.5 border border-white/10 hover:border-white/20 backdrop-blur-sm shrink-0 ml-2"
+                                                    className="w-8 h-8 hidden lg:flex items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer bg-black/40 hover:bg-black/60 active:translate-y-0.5 border border-white/10 hover:border-white/20 backdrop-blur-sm shrink-0 ml-2"
                                                     title="Close"
                                                     aria-label="Close"
                                                 >
