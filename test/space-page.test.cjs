@@ -20,3 +20,9 @@ test('Space entry points route to dedicated Space domain in production and local
   assert.match(loginSource, /import\.meta\.env\.DEV \? '\/space\/app\/' : 'https:\/\/space\.entropydrop\.com\/'/);
 });
 
+test('Space login handoff page is English-only', () => {
+  const loginSource = readFileSync(join(__dirname, '../src/pages/SpaceLoginPage.tsx'), 'utf8');
+  assert.doesNotMatch(loginSource, /[\u3400-\u9fff]/);
+  assert.match(loginSource, /Sign in to your EntropyDrop account before entering Space\./);
+  assert.match(loginSource, /loadingText="Loading Google sign-in…"/);
+});

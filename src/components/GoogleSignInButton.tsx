@@ -9,9 +9,16 @@ interface CredentialResponse {
 interface GoogleSignInButtonProps {
     onSuccess: (credentialResponse: CredentialResponse) => void
     onError: () => void
+    configErrorText?: string
+    loadingText?: string
 }
 
-export function GoogleSignInButton({ onSuccess, onError }: GoogleSignInButtonProps) {
+export function GoogleSignInButton({
+    onSuccess,
+    onError,
+    configErrorText = 'Google 登录暂时不可用 / Google sign-in unavailable',
+    loadingText = '正在加载 Google 登录… / Loading Google sign-in…',
+}: GoogleSignInButtonProps) {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
     const [clientId, setClientId] = useState(import.meta.env.VITE_GOOGLE_CLIENT_ID || '')
     const [configError, setConfigError] = useState(false)
@@ -41,8 +48,8 @@ export function GoogleSignInButton({ onSuccess, onError }: GoogleSignInButtonPro
         return () => window.removeEventListener('resize', handleResize)
     }, [])
 
-    if (configError) return <span role="alert">Google 登录暂时不可用 / Google sign-in unavailable</span>
-    if (!clientId) return <span role="status">正在加载 Google 登录… / Loading Google sign-in…</span>
+    if (configError) return <span role="alert">{configErrorText}</span>
+    if (!clientId) return <span role="status">{loadingText}</span>
 
     return (
         <GoogleOAuthProvider clientId={clientId} onScriptLoadError={onError}>

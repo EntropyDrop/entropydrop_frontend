@@ -44,7 +44,7 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
         window.dispatchEvent(new Event('auth-token-updated'))
         if (silent) redirect(null)
       } else {
-        setError('暂时无法连接账户服务，请稍后重试。 / Account service unavailable.')
+        setError('Account service unavailable. Please try again later.')
       }
     }).finally(() => {
       if (active) setChecking(false)
@@ -68,7 +68,7 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
       window.dispatchEvent(new Event('auth-token-updated'))
       window.location.replace(spaceDestinationWithToken(new URL(destination), data.access_token, window.location.origin))
     } catch {
-      setError('登录失败，请重试。 / Login failed. Please try again.')
+      setError('Login failed. Please try again.')
       setChecking(false)
     }
   }
@@ -83,22 +83,23 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
           EntropyDrop Space
         </h1>
         <p className="text-sm text-gray-300 max-w-sm m-0 leading-relaxed">
-          进入 Space 探索可编程体素世界前，请先登录 EntropyDrop 账号。<br />
-          <span className="text-xs text-gray-400">Sign in to your EntropyDrop account before entering Space.</span>
+          Sign in to your EntropyDrop account before entering Space.
         </p>
       </div>
 
       {checking ? (
         <div className="flex items-center justify-center gap-2.5 py-6 text-gray-400 text-sm" role="status">
           <Icon icon="pixelarticons:loader" className="animate-spin text-lg text-[#4ea632]" />
-          <span>正在连接账户服务… / Connecting…</span>
+          <span>Connecting to the account service…</span>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-4 w-full">
           <div className="flex justify-center my-1 scale-105">
             <GoogleSignInButton
               onSuccess={login}
-              onError={() => setError('Google 登录失败，请重试 / Google login failed, please try again')}
+              onError={() => setError('Google sign-in failed. Please try again.')}
+              configErrorText="Google sign-in is temporarily unavailable."
+              loadingText="Loading Google sign-in…"
             />
           </div>
           {error && (
@@ -112,7 +113,7 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
               className="inline-flex items-center gap-2 border border-white/20 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs text-gray-300 hover:text-white transition-all no-underline"
             >
               <Icon icon="pixelarticons:arrow-left" />
-              返回 Space 介绍页 / Back to Space Intro
+              Back to Space Intro
             </a>
           </div>
         </div>
