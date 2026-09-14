@@ -98,7 +98,8 @@ function SpaceImageSlot({
 
 export function SpacePage({ current }: SpacePageProps) {
     const data = current.space_page
-    const spaceAppUrl = import.meta.env.VITE_SPACE_URL || '/space/app/'
+    const defaultSpaceUrl = import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/'
+    const spaceAppUrl = import.meta.env.VITE_SPACE_URL || defaultSpaceUrl
     const spaceStatusUrl = new URL(
         SPACE_STATUS_PATH,
         new URL(API_BASE_URL, window.location.href),

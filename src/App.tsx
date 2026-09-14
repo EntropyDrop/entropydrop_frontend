@@ -61,7 +61,8 @@ function SpaceIntroRedirect() {
 
 function SpaceAppRedirect() {
   useEffect(() => {
-    window.location.replace((import.meta.env.VITE_SPACE_URL || '/space/app/index.html') + window.location.search + window.location.hash)
+    const target = import.meta.env.VITE_SPACE_URL || (import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/')
+    window.location.replace(target + window.location.search + window.location.hash)
   }, [])
   return null
 }

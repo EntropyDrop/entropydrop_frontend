@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { GoogleSignInButton } from '../components/GoogleSignInButton'
 import { apiFetch } from '../utils/api'
 
-const destination = import.meta.env.VITE_SPACE_URL || '/space/app/'
+const defaultDestination = import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/'
+const destination = import.meta.env.VITE_SPACE_URL || defaultDestination
 
 export function SpaceLoginPage() {
   const [checking, setChecking] = useState(true)
