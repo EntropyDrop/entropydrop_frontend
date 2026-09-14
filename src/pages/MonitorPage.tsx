@@ -230,6 +230,61 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [loadingSkingDdj, setLoadingSkingDdj] = useState(false)
   const [skingDdjPage, setSkingDdjPage] = useState(1)
 
+  // Subscription Credit Audit states
+  interface SubscriptionCreditAuditItem {
+    order_id: string;
+    user_id: string;
+    user_email: string;
+    user_username: string | null;
+    user_current_credits: number;
+    user_pro_level: string | null;
+    paypal_subscription_id: string | null;
+    paypal_order_id: string | null;
+    plan_type: 'pro-plus' | 'pro-max';
+    plan_name: string;
+    price: number;
+    paid_at: string | null;
+    created_at: string | null;
+    expected_credits: number;
+    granted_credits: number;
+    grant_status: 'success' | 'missing' | 'mismatch';
+    status_message: string;
+    credit_log: {
+      id: string;
+      amount: number;
+      action: string;
+      source: string | null;
+      idempotency_key: string | null;
+      created_at: string | null;
+    } | null;
+  }
+
+  interface SubscriptionCreditAuditSummary {
+    total_orders: number;
+    success_count: number;
+    anomaly_count: number;
+    total_credits_granted: number;
+    total_revenue: number;
+  }
+
+  interface SubscriptionCreditAuditData {
+    summary: SubscriptionCreditAuditSummary;
+    items: SubscriptionCreditAuditItem[];
+    total_count: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
+  }
+
+  const [subAuditData, setSubAuditData] = useState<SubscriptionCreditAuditData | null>(null)
+  const [loadingSubAudit, setLoadingSubAudit] = useState(false)
+  const [subAuditPage, setSubAuditPage] = useState(1)
+  const [subAuditStatusFilter, setSubAuditStatusFilter] = useState<'all' | 'anomaly' | 'success'>('all')
+  const [subAuditSearch, setSubAuditSearch] = useState('')
+  const [subAuditSearchInput, setSubAuditSearchInput] = useState('')
+  const [compensatingOrderId, setCompensatingOrderId] = useState<string | null>(null)
+  const [subAuditMessage, setSubAuditMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
   const isZh = current.lang === 'zh-hans'
 
   const fetchStats = async () => {
@@ -638,6 +693,78 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const handleOpenSkingDdjModal = () => {
     setSkingDdjPage(1)
     setShowSkingDdjModal(true)
+  }
+
+  const fetchSubAudits = async (p = subAuditPage, filter = subAuditStatusFilter, query = subAuditSearch) => {
+    setLoadingSubAudit(true)
+    try {
+      let url = `/api/monitor/subscription-credit-audits?page=${p}&page_size=15&status_filter=${filter}`
+      if (query.trim()) {
+        url += `&search=${encodeURIComponent(query.trim())}`
+      }
+      const resp = await apiFetch(url)
+      if (resp.ok) {
+        const data = await resp.json()
+        setSubAuditData(data)
+      } else {
+        console.error('Failed to fetch subscription credit audits', resp.status)
+      }
+    } catch (e) {
+      console.error('Network error fetching subscription credit audits', e)
+    } finally {
+      setLoadingSubAudit(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchSubAudits(subAuditPage, subAuditStatusFilter, subAuditSearch)
+  }, [subAuditPage, subAuditStatusFilter, subAuditSearch])
+
+  const handleSubAuditSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubAuditPage(1)
+    setSubAuditSearch(subAuditSearchInput)
+  }
+
+  const handleClearSubAuditSearch = () => {
+    setSubAuditSearchInput('')
+    setSubAuditSearch('')
+    setSubAuditPage(1)
+  }
+
+  const handleCompensateCredit = async (orderId: string, email: string, missing: number) => {
+    if (!window.confirm(isZh ? `确认要为用户 ${email} 补发 ${missing} 积分吗？` : `Confirm to compensate ${missing} credits to ${email}?`)) {
+      return
+    }
+    setCompensatingOrderId(orderId)
+    setSubAuditMessage(null)
+    try {
+      const resp = await apiFetch(`/api/monitor/subscription-credit-audits/${orderId}/compensate`, {
+        method: 'POST',
+      })
+      const data = await resp.json()
+      if (resp.ok) {
+        setSubAuditMessage({
+          type: 'success',
+          text: isZh
+            ? `补发成功！已为 ${data.user_email} 增加 ${data.compensated_credits} 积分（最新余额: ${data.new_user_credits}）`
+            : `Compensated successfully! Added ${data.compensated_credits} credits to ${data.user_email} (Balance: ${data.new_user_credits})`,
+        })
+        fetchSubAudits(subAuditPage, subAuditStatusFilter, subAuditSearch)
+      } else {
+        setSubAuditMessage({
+          type: 'error',
+          text: data.detail || (isZh ? '补发失败' : 'Failed to compensate credits'),
+        })
+      }
+    } catch (e) {
+      setSubAuditMessage({
+        type: 'error',
+        text: isZh ? '网络请求失败，请稍后重试' : 'Network error, please try again',
+      })
+    } finally {
+      setCompensatingOrderId(null)
+    }
   }
 
   const downloadImage = async (url: string, filename: string) => {
@@ -2221,6 +2348,380 @@ export function MonitorPage({ current }: MonitorPageProps) {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Subscription Payment & Credit Recharge Audit Section */}
+        <div className="bg-white/5 border border-white/10 p-4 sm:p-6 flex flex-col gap-5 shrink-0">
+          {/* Section Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="w-8 h-8 bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-500 text-lg">
+                <Icon icon="pixelarticons:coin" />
+              </div>
+              <div className="flex items-center gap-2.5">
+                <h3 className={`text-white text-base font-bold m-0 ${current.fontClass}`}>
+                  {isZh ? '订阅扣费与 Pro 用户积分充值监控' : 'Subscription Payment & Credit Recharge Audit'}
+                </h3>
+                {subAuditData && (
+                  subAuditData.summary.anomaly_count > 0 ? (
+                    <span className="px-2 py-0.5 bg-red-500/20 border border-red-500/40 text-red-400 text-[10px] uppercase font-mono font-bold tracking-wider rounded animate-pulse">
+                      {isZh ? `⚠️ 发现 ${subAuditData.summary.anomaly_count} 笔异常` : `⚠️ ${subAuditData.summary.anomaly_count} Anomalies`}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-green-500/10 border border-green-500/30 text-green-400 text-[10px] uppercase font-mono font-bold tracking-wider rounded">
+                      {isZh ? '✓ 充值流水全部正常' : '✓ All Credits Reconciled'}
+                    </span>
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <form onSubmit={handleSubAuditSearchSubmit} className="flex items-center gap-1">
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    value={subAuditSearchInput}
+                    onChange={(e) => setSubAuditSearchInput(e.target.value)}
+                    placeholder={isZh ? '搜索邮箱/订单号/订阅号...' : 'Search email, order, sub ID...'}
+                    className="h-8 pl-2.5 pr-7 bg-white/5 border border-white/10 text-white text-xs placeholder:text-white/30 focus:outline-none focus:border-yellow-500/50 w-44 sm:w-56"
+                  />
+                  {subAuditSearchInput && (
+                    <button
+                      type="button"
+                      onClick={handleClearSubAuditSearch}
+                      className="absolute right-2 text-white/40 hover:text-white text-xs cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  className="h-8 px-2.5 bg-white/10 border border-white/10 text-white/80 hover:text-white hover:bg-white/20 text-xs font-mono transition-all cursor-pointer"
+                >
+                  <Icon icon="pixelarticons:search" />
+                </button>
+              </form>
+
+              <button
+                onClick={() => fetchSubAudits(subAuditPage, subAuditStatusFilter, subAuditSearch)}
+                disabled={loadingSubAudit}
+                className="w-8 h-8 flex items-center justify-center bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                title={isZh ? '刷新审计数据' : 'Refresh audit data'}
+              >
+                <Icon icon="pixelarticons:reload" className={loadingSubAudit ? 'animate-spin text-yellow-400' : ''} />
+              </button>
+            </div>
+          </div>
+
+          {/* Audit Notification Banner */}
+          {subAuditMessage && (
+            <div className={`p-3 border flex items-center justify-between gap-3 text-xs animate-in slide-in-from-top-1 ${
+              subAuditMessage.type === 'success'
+                ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                : 'bg-red-500/10 border-red-500/30 text-red-400'
+            }`}>
+              <div className="flex items-center gap-2">
+                <Icon icon={subAuditMessage.type === 'success' ? 'pixelarticons:check' : 'pixelarticons:close'} className="text-base shrink-0" />
+                <span>{subAuditMessage.text}</span>
+              </div>
+              <button
+                onClick={() => setSubAuditMessage(null)}
+                className="text-white/60 hover:text-white font-mono cursor-pointer"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {/* Summary Stats Grid */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white/[0.03] border border-white/10 p-4 flex flex-col gap-1.5 hover:bg-white/5 transition-all">
+              <span className="text-white/40 text-[10px] uppercase font-mono tracking-wider">
+                {isZh ? '订阅扣费总笔数' : 'Total Subscription Orders'}
+              </span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-white text-2xl font-bold font-mono">
+                  {subAuditData ? subAuditData.summary.total_orders : '-'}
+                </span>
+                <span className="text-white/40 text-xs font-mono">
+                  (${subAuditData ? subAuditData.summary.total_revenue.toFixed(2) : '0.00'})
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-green-500/[0.03] border border-green-500/20 p-4 flex flex-col gap-1.5 hover:bg-green-500/10 transition-all">
+              <span className="text-green-400/60 text-[10px] uppercase font-mono tracking-wider">
+                {isZh ? '积分充值正常笔数' : 'Successful Grants'}
+              </span>
+              <span className="text-green-400 text-2xl font-bold font-mono">
+                {subAuditData ? subAuditData.summary.success_count : '-'}
+              </span>
+            </div>
+
+            <div className={`p-4 flex flex-col gap-1.5 transition-all border ${
+              (subAuditData?.summary.anomaly_count ?? 0) > 0
+                ? 'bg-red-500/10 border-red-500/40'
+                : 'bg-white/[0.03] border-white/10'
+            }`}>
+              <span className={`${(subAuditData?.summary.anomaly_count ?? 0) > 0 ? 'text-red-400' : 'text-white/40'} text-[10px] uppercase font-mono tracking-wider flex items-center gap-1`}>
+                {(subAuditData?.summary.anomaly_count ?? 0) > 0 && <Icon icon="pixelarticons:alert" />}
+                {isZh ? '充值异常/缺失笔数' : 'Anomalies / Missing'}
+              </span>
+              <span className={`${(subAuditData?.summary.anomaly_count ?? 0) > 0 ? 'text-red-400 font-black' : 'text-white/40'} text-2xl font-bold font-mono`}>
+                {subAuditData ? subAuditData.summary.anomaly_count : '-'}
+              </span>
+            </div>
+
+            <div className="bg-yellow-500/[0.03] border border-yellow-500/20 p-4 flex flex-col gap-1.5 hover:bg-yellow-500/10 transition-all">
+              <span className="text-yellow-400/60 text-[10px] uppercase font-mono tracking-wider">
+                {isZh ? '累计发放订阅积分' : 'Total Credits Granted'}
+              </span>
+              <span className="text-yellow-400 text-2xl font-bold font-mono">
+                {subAuditData ? subAuditData.summary.total_credits_granted.toLocaleString() : '-'}
+              </span>
+            </div>
+          </div>
+
+          {/* Filter Tabs */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setSubAuditStatusFilter('all'); setSubAuditPage(1); }}
+                className={`px-3 py-1.5 text-xs font-mono font-bold transition-all cursor-pointer border ${
+                  subAuditStatusFilter === 'all'
+                    ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                    : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {isZh ? '全部订单' : 'All Orders'} ({subAuditData ? subAuditData.summary.total_orders : 0})
+              </button>
+              <button
+                onClick={() => { setSubAuditStatusFilter('anomaly'); setSubAuditPage(1); }}
+                className={`px-3 py-1.5 text-xs font-mono font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                  subAuditStatusFilter === 'anomaly'
+                    ? 'bg-red-500/20 border-red-500 text-red-400'
+                    : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Icon icon="pixelarticons:alert" />
+                {isZh ? '仅看异常' : 'Anomalies Only'}
+                {(subAuditData?.summary.anomaly_count ?? 0) > 0 && (
+                  <span className="px-1.5 py-0.2 bg-red-500 text-black text-[10px] font-bold rounded-sm">
+                    {subAuditData?.summary.anomaly_count}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => { setSubAuditStatusFilter('success'); setSubAuditPage(1); }}
+                className={`px-3 py-1.5 text-xs font-mono font-bold transition-all cursor-pointer border ${
+                  subAuditStatusFilter === 'success'
+                    ? 'bg-green-500/20 border-green-500/50 text-green-400'
+                    : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {isZh ? '充值成功' : 'Success Only'} ({subAuditData ? subAuditData.summary.success_count : 0})
+              </button>
+            </div>
+
+            {subAuditSearch && (
+              <span className="text-xs text-white/40 font-mono">
+                {isZh ? `匹配 “${subAuditSearch}” 的结果` : `Filtered by "${subAuditSearch}"`}
+              </span>
+            )}
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto border border-white/10 bg-black/40">
+            <table className="w-full text-left text-xs font-mono border-collapse">
+              <thead>
+                <tr className="border-b border-white/10 bg-white/5 text-white/50 text-[11px] uppercase tracking-wider">
+                  <th className="py-2.5 px-3">{isZh ? '用户账号' : 'User'}</th>
+                  <th className="py-2.5 px-3">{isZh ? '订阅方案 / 金额' : 'Plan / Price'}</th>
+                  <th className="py-2.5 px-3">{isZh ? '扣款单号 / 时间' : 'Payment / Time'}</th>
+                  <th className="py-2.5 px-3">{isZh ? '应充 / 实充' : 'Expected / Granted'}</th>
+                  <th className="py-2.5 px-3">{isZh ? '充值状态' : 'Status'}</th>
+                  <th className="py-2.5 px-3">{isZh ? '账本流水详情' : 'Credit Log Details'}</th>
+                  <th className="py-2.5 px-3 text-right">{isZh ? '操作' : 'Action'}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {loadingSubAudit ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-white/40">
+                      <Icon icon="pixelarticons:loader" className="animate-spin text-xl text-yellow-500 mx-auto mb-2" />
+                      {isZh ? '正在加载订阅充值监控数据...' : 'Loading subscription audit data...'}
+                    </td>
+                  </tr>
+                ) : !subAuditData || subAuditData.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-white/40">
+                      {isZh ? '未找到符合条件的订阅记录' : 'No subscription records found'}
+                    </td>
+                  </tr>
+                ) : (
+                  subAuditData.items.map((item) => {
+                    const isAnomaly = item.grant_status !== 'success'
+                    return (
+                      <tr
+                        key={item.order_id}
+                        className={`hover:bg-white/[0.03] transition-colors ${
+                          isAnomaly ? 'bg-red-500/[0.04]' : ''
+                        }`}
+                      >
+                        {/* User */}
+                        <td className="py-3 px-3">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-white font-bold">{item.user_email}</span>
+                            <div className="flex items-center gap-1.5 text-[11px] text-white/40">
+                              <span>ID: {item.user_id.slice(0, 8)}...</span>
+                              <span>•</span>
+                              <span className="text-yellow-400/80">🪙 {item.user_current_credits}</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Plan / Price */}
+                        <td className="py-3 px-3">
+                          <div className="flex flex-col gap-0.5">
+                            <span className={`font-bold ${
+                              item.plan_type === 'pro-max' ? 'text-purple-400' : 'text-blue-400'
+                            }`}>
+                              {item.plan_name}
+                            </span>
+                            <span className="text-white/60 text-[11px]">
+                              ${item.price.toFixed(2)} USD
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Payment / Time */}
+                        <td className="py-3 px-3">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-white/80 font-mono text-[11px]">
+                              {item.paypal_order_id || item.order_id}
+                            </span>
+                            <span className="text-white/40 text-[10px]">
+                              {item.paid_at ? new Date(item.paid_at).toLocaleString() : (item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A')}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Expected / Granted */}
+                        <td className="py-3 px-3">
+                          <div className="flex items-baseline gap-1">
+                            <span className={`font-bold text-sm ${
+                              item.grant_status === 'success' ? 'text-green-400' : 'text-red-400'
+                            }`}>
+                              {item.granted_credits}
+                            </span>
+                            <span className="text-white/40 text-xs">/</span>
+                            <span className="text-white/60 text-xs">{item.expected_credits}</span>
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="py-3 px-3">
+                          {item.grant_status === 'success' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-500/10 border border-green-500/30 text-green-400 text-[11px] rounded">
+                              <Icon icon="pixelarticons:check" />
+                              {isZh ? '充值成功' : 'Granted'}
+                            </span>
+                          ) : item.grant_status === 'missing' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-500/20 border border-red-500 text-red-400 text-[11px] font-bold rounded animate-pulse">
+                              <Icon icon="pixelarticons:alert" />
+                              {isZh ? '异常未充值' : 'Missing Grant'}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-500/20 border border-yellow-500 text-yellow-400 text-[11px] font-bold rounded">
+                              <Icon icon="pixelarticons:alert" />
+                              {isZh ? '额度不符' : 'Mismatch'}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Credit Log Details */}
+                        <td className="py-3 px-3">
+                          {item.credit_log ? (
+                            <div className="flex flex-col gap-0.5 max-w-[220px]">
+                              <span className="text-white/70 text-[11px] truncate" title={item.credit_log.source || ''}>
+                                {item.credit_log.source || item.credit_log.id}
+                              </span>
+                              <span className="text-white/30 text-[10px]">
+                                {item.credit_log.created_at ? new Date(item.credit_log.created_at).toLocaleTimeString() : ''}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-white/30 italic text-[11px]">
+                              {isZh ? '无积分流水' : 'No credit log'}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3 px-3 text-right">
+                          {isAnomaly ? (
+                            <button
+                              onClick={() => handleCompensateCredit(
+                                item.order_id,
+                                item.user_email,
+                                item.expected_credits - item.granted_credits
+                              )}
+                              disabled={compensatingOrderId === item.order_id}
+                              className="px-2.5 py-1 bg-yellow-500/10 border border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/20 hover:text-white text-xs font-mono font-bold uppercase transition-all active:scale-95 disabled:opacity-50 cursor-pointer inline-flex items-center gap-1"
+                              title={isZh ? '一键为该扣款补充发放积分' : 'Compensate missing credits'}
+                            >
+                              {compensatingOrderId === item.order_id ? (
+                                <Icon icon="pixelarticons:reload" className="animate-spin text-yellow-400" />
+                              ) : (
+                                <Icon icon="pixelarticons:coin" />
+                              )}
+                              {isZh ? '补发积分' : 'Compensate'}
+                            </button>
+                          ) : (
+                            <span className="text-green-500/40 text-[11px] font-mono">
+                              ✓ {isZh ? '正常' : 'OK'}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {subAuditData && subAuditData.total_pages > 1 && (
+            <div className="flex items-center justify-between border-t border-white/5 pt-3">
+              <span className="text-[11px] text-white/40 font-mono">
+                {isZh ? (
+                  <>共 <span className="text-white font-bold">{subAuditData.total_count}</span> 笔 • 第 <span className="text-white font-bold">{subAuditPage}</span>/{subAuditData.total_pages} 页</>
+                ) : (
+                  <>Total <span className="text-white font-bold">{subAuditData.total_count}</span> orders • Page <span className="text-white font-bold">{subAuditPage}</span> of {subAuditData.total_pages}</>
+                )}
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setSubAuditPage(p => Math.max(1, p - 1))}
+                  disabled={subAuditPage === 1}
+                  className="px-3 py-1 bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer text-xs font-mono"
+                >
+                  {isZh ? '上一页' : 'PREV'}
+                </button>
+                <button
+                  onClick={() => setSubAuditPage(p => Math.min(subAuditData.total_pages, p + 1))}
+                  disabled={subAuditPage === subAuditData.total_pages}
+                  className="px-3 py-1 bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer text-xs font-mono"
+                >
+                  {isZh ? '下一页' : 'NEXT'}
+                </button>
+              </div>
             </div>
           )}
         </div>
