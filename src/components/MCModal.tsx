@@ -965,9 +965,21 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                             onClick={(e) => e.stopPropagation()}
                         >
                             {isNotFound ? (
-                                <div className="w-[400px] h-[300px] flex flex-col items-center justify-center p-8 text-center gap-3 bg-[#121212] text-white mx-auto">
-                                    <Icon icon="pixelarticons:warning-box" className="text-4xl text-red-500/80" />
-                                    <p className="font-pixel-hans text-sm text-white/90">{current.mcmodal.notFound}</p>
+                                <div className="w-[400px] h-[300px] flex flex-col p-4 text-center bg-[#121212] text-white mx-auto">
+                                    <div className="w-full flex justify-end">
+                                        <button
+                                            onClick={closeModal}
+                                            className="w-8 h-8 flex items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer bg-black/40 hover:bg-black/60 active:translate-y-0.5 border border-white/10 hover:border-white/20 backdrop-blur-sm"
+                                            title="Close"
+                                            aria-label="Close"
+                                        >
+                                            <Icon icon="pixelarticons:close" className="text-lg" />
+                                        </button>
+                                    </div>
+                                    <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4">
+                                        <Icon icon="pixelarticons:warning-box" className="text-4xl text-red-500/80" />
+                                        <p className="font-pixel-hans text-sm text-white/90">{current.mcmodal.notFound}</p>
+                                    </div>
                                 </div>
                             ) : (
                                 <>
@@ -1028,31 +1040,51 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
                                     {/* Right: Info Section */}
                                     {isLoadingDetails ? (
-                                        <div className="w-full lg:w-[360px] flex-shrink-0 p-4 flex items-center justify-center bg-[#121212] relative lg:h-full">
-                                            <LoadingSpinner className="w-8 h-8 border-4" />
+                                        <div className="w-full lg:w-[360px] flex-shrink-0 p-4 flex flex-col bg-[#121212] lg:h-full">
+                                            <div className="flex justify-end items-center pb-2">
+                                                <button
+                                                    onClick={closeModal}
+                                                    className="w-8 h-8 flex items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer bg-black/40 hover:bg-black/60 active:translate-y-0.5 border border-white/10 hover:border-white/20 backdrop-blur-sm shrink-0"
+                                                    title="Close"
+                                                    aria-label="Close"
+                                                >
+                                                    <Icon icon="pixelarticons:close" className="text-lg" />
+                                                </button>
+                                            </div>
+                                            <div className="flex-1 flex items-center justify-center">
+                                                <LoadingSpinner className="w-8 h-8 border-4" />
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className={`w-full lg:w-[360px] flex-shrink-0 flex flex-col bg-[#121212] relative h-auto lg:h-full border-t lg:border-t-0 lg:border-l border-white/10 ${showSidebar ? 'hidden lg:flex' : 'flex'}`}>
                                             <div className="absolute bottom-0 right-0 w-64 h-64 bg-gradient-to-tl from-[#38598b]/5 to-transparent pointer-events-none" />
 
                                             {/* Header Info */}
-                                            {isLoggedIn && (
-                                                <div className="flex justify-between items-start px-4 pt-3 pb-1 pr-14">
-                                                    <div>
-                                                        <div className="flex items-center gap-3 mb-1.5">
-                                                            <span className="px-2 py-0.5 bg-[#4ea632]/20 text-[#4ea632] text-[10px] font-pixel-hans border border-[#4ea632]/30 ">
+                                            <div className="flex justify-between items-center px-4 pt-3 pb-1">
+                                                <div className="flex items-center gap-3">
+                                                    {isLoggedIn && (
+                                                        <>
+                                                            <span className="px-2 py-0.5 bg-[#4ea632]/20 text-[#4ea632] text-[10px] font-pixel-hans border border-[#4ea632]/30">
                                                                 {!item.id ? 'UPLOADED' : (item.mode === 'aigc_text_to_skin' || (item.mode as any) === 'text') ? 'TEXT TO SKIN' : (item.mode === 'aigc_image_to_skin' || (item.mode as any) === 'image') ? 'IMAGE TO SKIN' : item.mode?.replace('aigc_', '').replaceAll('_', ' ').toUpperCase()}
                                                             </span>
-
 
                                                             <span className={`px-3 py-1 rounded-full text-[10px] font-pixel-hans flex items-center gap-2 border ${item.is_public ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-orange-500/10 text-orange-400 border-orange-500/20'}`}>
                                                                 <Icon icon={item.is_public ? "pixelarticons:earth" : "pixelarticons:lock"} />
                                                                 {item.is_public ? "PUBLIC" : "PRIVATE"}
                                                             </span>
-                                                        </div>
-                                                    </div>
+                                                        </>
+                                                    )}
                                                 </div>
-                                            )}
+
+                                                <button
+                                                    onClick={closeModal}
+                                                    className="w-8 h-8 flex items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer bg-black/40 hover:bg-black/60 active:translate-y-0.5 border border-white/10 hover:border-white/20 backdrop-blur-sm shrink-0 ml-2"
+                                                    title="Close"
+                                                    aria-label="Close"
+                                                >
+                                                    <Icon icon="pixelarticons:close" className="text-lg" />
+                                                </button>
+                                            </div>
 
                                             {/* Scrollable Content */}
                                             <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar px-4 pb-20 lg:pb-3 flex flex-col gap-2 min-h-0">
@@ -1600,12 +1632,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                 </>
                             )}
 
-                            <button
-                                onClick={closeModal}
-                                className={`absolute top-3.5 right-4 z-20 text-white/40 hover:text-white transition-all cursor-pointer bg-white/5 hover:bg-white/10 p-2 rounded-full border border-white/5 ${showSidebar ? 'hidden lg:flex' : 'flex'}`}
-                            >
-                                <Icon icon="pixelarticons:close" className="text-xl" />
-                            </button>
+
                         </div>
                     </motion.div>
                 )}
