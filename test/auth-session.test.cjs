@@ -94,12 +94,13 @@ test('concurrent 401 requests share refresh and retain POST bodies', async () =>
     env.dom.window.close();
 });
 
-test('API defaults and normalization always include the site mount', () => {
+test('API defaults and normalization strip legacy site mount', () => {
     const env = environment(async () => json({}));
     const { API_BASE_URL, normalizeApiBase } = env.load('src/utils/apiConfig.ts', '');
-    assert.equal(API_BASE_URL, 'http://localhost:8000/skin');
-    assert.equal(normalizeApiBase('https://api.example.test/'), 'https://api.example.test/skin');
-    assert.equal(normalizeApiBase('https://api.example.test/skin/'), 'https://api.example.test/skin');
+    assert.equal(API_BASE_URL, 'http://localhost:8000');
+    assert.equal(normalizeApiBase('https://api.example.test/'), 'https://api.example.test');
+    assert.equal(normalizeApiBase('https://api.example.test/skin'), 'https://api.example.test');
+    assert.equal(normalizeApiBase('https://api.example.test/skin/'), 'https://api.example.test');
     env.dom.window.close();
 });
 
