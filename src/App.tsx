@@ -137,8 +137,8 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/space/app" element={<SpaceAppRedirect />} />
         <Route path="/space/app/*" element={<SpaceAppRedirect />} />
         <Route path="/space/intro" element={<SpacePage current={currentLangData} />} />
-        <Route path="/space/login" element={<SpaceLoginPage />} />
-            <Route path="/space/apikeys" element={<SpaceApiKeysPage current={currentLangData} />} />
+        <Route path="/space/login" element={<SpaceLoginPage current={currentLangData} />} />
+        <Route path="/space/apikeys" element={<SpaceApiKeysPage current={currentLangData} />} />
         <Route path="/space" element={<SpaceIntroRedirect />} />
         <Route path="/space/*" element={<SpaceIntroRedirect />} />
       </Routes>

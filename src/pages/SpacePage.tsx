@@ -103,6 +103,11 @@ export function SpacePage({ current }: SpacePageProps) {
     const getSpaceLaunchUrl = () => {
         try {
             const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+            if (!token) {
+                const loginUrl = new URL('/space/login', typeof window !== 'undefined' ? window.location.href : 'https://entropydrop.com')
+                loginUrl.searchParams.set('destination', spaceAppUrl)
+                return loginUrl.toString()
+            }
             const url = new URL(spaceAppUrl, typeof window !== 'undefined' ? window.location.href : 'https://entropydrop.com')
             if (token && url.origin !== (typeof window !== 'undefined' ? window.location.origin : '')) {
                 url.hash = `token=${encodeURIComponent(token)}`
@@ -114,9 +119,15 @@ export function SpacePage({ current }: SpacePageProps) {
     }
     const handleLaunchSpace = (e: React.MouseEvent<HTMLAnchorElement>) => {
         const token = localStorage.getItem('token')
+        if (!token) {
+            const loginUrl = new URL('/space/login', window.location.href)
+            loginUrl.searchParams.set('destination', spaceAppUrl)
+            e.currentTarget.href = loginUrl.toString()
+            return
+        }
         try {
             const url = new URL(spaceAppUrl, window.location.href)
-            if (token && url.origin !== window.location.origin) {
+            if (url.origin !== window.location.origin) {
                 url.hash = `token=${encodeURIComponent(token)}`
                 e.currentTarget.href = url.toString()
             }
