@@ -3,39 +3,12 @@ import { Icon } from '@iconify/react'
 import { GoogleSignInButton } from '../components/GoogleSignInButton'
 import { PageContainer } from '../components/PageContainer'
 import { apiFetch } from '../utils/api'
+import { refreshAuthSession } from '../utils/fetchInterceptor'
+import { isSpaceTokenValid, resolveSpaceDestination, spaceDestinationWithToken } from '../utils/spaceLogin'
 import type { LangData } from '../constants/lang'
 
 const defaultDestination = import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/'
 const fallbackDestination = import.meta.env.VITE_SPACE_URL || defaultDestination
-
-function isTokenValid(token: string | null): boolean {
-  if (!token) return false
-  try {
-    const parts = token.split('.')
-    if (parts.length < 2) return false
-    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
-    const payload = JSON.parse(atob(padded))
-    if (typeof payload.exp === 'number') {
-      return payload.exp * 1000 > Date.now() + 10000
-    }
-    return true
-  } catch {
-    return false
-  }
-}
-
-function redirectWithToken(target: string, token: string | null) {
-  try {
-    const url = new URL(target, window.location.href)
-    if (token && url.origin !== window.location.origin) {
-      url.hash = `token=${encodeURIComponent(token)}`
-    }
-    window.location.replace(url.toString())
-  } catch {
-    window.location.replace(target)
-  }
-}
 
 interface SpaceLoginPageProps {
   current?: LangData
@@ -45,41 +18,40 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
   const [checking, setChecking] = useState(true)
   const [error, setError] = useState('')
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
-  const destination = searchParams?.get('destination') || fallbackDestination
+  const destination = resolveSpaceDestination(searchParams?.get('destination') || null, fallbackDestination, window.location.href).href
+  const silent = searchParams?.get('silent') === '1'
+  const reauthenticate = searchParams?.get('reauth') === '1'
   const fontClass = current?.fontClass || ''
 
   useEffect(() => {
     let active = true
 
-    // 1. Fast-path: if local storage already has a valid unexpired token, redirect immediately
+    const redirect = (token: string | null) => {
+      window.location.replace(spaceDestinationWithToken(new URL(destination), token, window.location.origin))
+    }
     const existingToken = localStorage.getItem('token')
-    if (isTokenValid(existingToken)) {
-      redirectWithToken(destination, existingToken)
+    if (!reauthenticate && isSpaceTokenValid(existingToken)) {
+      redirect(existingToken)
       return
     }
 
-    // 2. Otherwise, attempt session refresh via credentials
-    apiFetch('/api/auth/refresh', { method: 'POST', credentials: 'include', skipGlobalError: true })
-      .then(async response => {
-        if (active && response.ok) {
-          const data = await response.json().catch(() => null)
-          const token = (typeof data?.access_token === 'string' && data.access_token) || localStorage.getItem('token')
-          if (token && isTokenValid(token)) {
-            localStorage.setItem('token', token)
-            redirectWithToken(destination, token)
-            return
-          }
-        }
-      })
-      .catch(() => {
-        if (active) setError('暂时无法连接账户服务，请稍后重试。 / Account service unavailable.')
-      })
-      .finally(() => {
-        if (active) setChecking(false)
-      })
+    void refreshAuthSession().then(result => {
+      if (!active) return
+      if (isSpaceTokenValid(result.token)) {
+        redirect(result.token)
+      } else if (result.terminal) {
+        localStorage.removeItem('token')
+        window.dispatchEvent(new Event('auth-token-updated'))
+        if (silent) redirect(null)
+      } else {
+        setError('暂时无法连接账户服务，请稍后重试。 / Account service unavailable.')
+      }
+    }).finally(() => {
+      if (active) setChecking(false)
+    })
 
     return () => { active = false }
-  }, [destination])
+  }, [destination, silent, reauthenticate])
 
   const login = async ({ credential }: { credential?: string }) => {
     if (!credential) return
@@ -91,9 +63,10 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
       })
       if (!response.ok) throw new Error('Login failed')
       const data = await response.json()
+      if (!isSpaceTokenValid(data.access_token)) throw new Error('Invalid login response')
       localStorage.setItem('token', data.access_token)
       window.dispatchEvent(new Event('auth-token-updated'))
-      redirectWithToken(destination, data.access_token)
+      window.location.replace(spaceDestinationWithToken(new URL(destination), data.access_token, window.location.origin))
     } catch {
       setError('登录失败，请重试。 / Login failed. Please try again.')
       setChecking(false)

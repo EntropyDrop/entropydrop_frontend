@@ -100,41 +100,7 @@ export function SpacePage({ current }: SpacePageProps) {
     const data = current.space_page
     const defaultSpaceUrl = import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/'
     const spaceAppUrl = import.meta.env.VITE_SPACE_URL || defaultSpaceUrl
-    const getSpaceLaunchUrl = () => {
-        try {
-            const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-            if (!token) {
-                const loginUrl = new URL('/space/login', typeof window !== 'undefined' ? window.location.href : 'https://entropydrop.com')
-                loginUrl.searchParams.set('destination', spaceAppUrl)
-                return loginUrl.toString()
-            }
-            const url = new URL(spaceAppUrl, typeof window !== 'undefined' ? window.location.href : 'https://entropydrop.com')
-            if (token && url.origin !== (typeof window !== 'undefined' ? window.location.origin : '')) {
-                url.hash = `token=${encodeURIComponent(token)}`
-            }
-            return url.toString()
-        } catch {
-            return spaceAppUrl
-        }
-    }
-    const handleLaunchSpace = (e: React.MouseEvent<HTMLAnchorElement>) => {
-        const token = localStorage.getItem('token')
-        if (!token) {
-            const loginUrl = new URL('/space/login', window.location.href)
-            loginUrl.searchParams.set('destination', spaceAppUrl)
-            e.currentTarget.href = loginUrl.toString()
-            return
-        }
-        try {
-            const url = new URL(spaceAppUrl, window.location.href)
-            if (url.origin !== window.location.origin) {
-                url.hash = `token=${encodeURIComponent(token)}`
-                e.currentTarget.href = url.toString()
-            }
-        } catch {
-            // Keep default href
-        }
-    }
+    const getSpaceLaunchUrl = () => `/space/login?destination=${encodeURIComponent(spaceAppUrl)}`
     const spaceStatusUrl = new URL(
         SPACE_STATUS_PATH,
         new URL(API_BASE_URL, window.location.href),
@@ -313,7 +279,6 @@ export function SpacePage({ current }: SpacePageProps) {
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                     <a
                         href={getSpaceLaunchUrl()}
-                        onClick={handleLaunchSpace}
                         className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${current.fontClass}`}
                     >
                         <Icon icon="pixelarticons:play" className="text-xl" />
@@ -675,7 +640,6 @@ export function SpacePage({ current }: SpacePageProps) {
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
                         <a
                             href={getSpaceLaunchUrl()}
-                            onClick={handleLaunchSpace}
                             className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${current.fontClass}`}
                         >
                             <Icon icon="pixelarticons:play" className="text-xl" />

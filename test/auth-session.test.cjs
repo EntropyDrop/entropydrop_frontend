@@ -25,7 +25,7 @@ function environment(fetch, token = 'existing-token') {
     for (const name of ['logout', 'auth-token-updated', 'global-error']) window.addEventListener(name, () => events.push(name));
     const module = { exports: {} };
     const context = vm.createContext({ window, localStorage: window.localStorage, navigator: window.navigator,
-        alert: message => alerts.push(message), fetch: (...args) => window.fetch(...args), URL, Request, Response, Headers, AbortController, DOMException,
+        alert: message => alerts.push(message), fetch: (...args) => window.fetch(...args), URL, URLSearchParams, Request, Response, Headers, AbortController, DOMException,
         Event: window.Event, CustomEvent: window.CustomEvent, atob, console, require, module, exports: module.exports });
     return { dom, window, events, alerts, context, load(entry, base) {
         vm.runInContext(compile(entry, base), context);
@@ -162,4 +162,60 @@ test('mounted React consumers observe login, account changes and logout without 
         delete global.IS_REACT_ACT_ENVIRONMENT;
         env.dom.window.close();
     }
+});
+
+
+test('main-site refresh restores a legacy path-scoped session', async () => {
+    const calls = [];
+    const env = environment(async (url, init) => {
+        calls.push({ url: String(url), credentials: init.credentials });
+        return String(url).includes('/skin/api/auth/refresh') ? json({ access_token: 'restored' }) : json({}, 401);
+    });
+    const { refreshAuthSession } = env.load('src/utils/fetchInterceptor.ts');
+    assert.equal((await refreshAuthSession()).token, 'restored');
+    assert.deepEqual(calls, [
+        { url: 'https://api.example.test/api/auth/refresh', credentials: 'include' },
+        { url: 'https://api.example.test/skin/api/auth/refresh', credentials: 'include' },
+    ]);
+    assert.equal(env.window.localStorage.getItem('token'), 'restored');
+    env.window.close();
+});
+
+for (const failure of [503, 'offline']) {
+    test(`legacy refresh ${failure} must not expire a session after primary 401`, async () => {
+        const env = environment(async url => {
+            if (String(url).includes('/skin/api/auth/refresh')) {
+                if (failure === 'offline') throw new Error('offline');
+                return json({}, failure);
+            }
+            return json({}, 401);
+        });
+        const { refreshAuthSession } = env.load('src/utils/fetchInterceptor.ts');
+        assert.equal((await refreshAuthSession()).terminal, false);
+        assert.equal(env.window.localStorage.getItem('token'), 'existing-token');
+        env.window.close();
+    });
+}
+
+test('Space handoff rejects external destinations and keeps tokens in the fragment', () => {
+    const env = environment(async () => json({}));
+    const { resolveSpaceDestination, spaceDestinationWithToken, isSpaceTokenValid } = env.load('src/utils/spaceLogin.ts');
+    const fallback = 'https://space.entropydrop.com/';
+    const page = 'https://entropydrop.com/space/login';
+    for (const candidate of ['https://evil.example/', '//evil.example', 'javascript:alert(1)',
+        'https://space.entropydrop.com.evil.example/', 'https://user:password@space.entropydrop.com/',
+        '/space/login', 'https://entropydrop.com/skin/generate']) {
+        assert.equal(resolveSpaceDestination(candidate, fallback, page).href, fallback);
+    }
+    const target = resolveSpaceDestination('https://space.entropydrop.com/?force_pc=1#view=world', fallback, page);
+    const handoff = new URL(spaceDestinationWithToken(target, 'access-token', new URL(page).origin));
+    assert.equal(handoff.searchParams.get('force_pc'), '1');
+    assert.equal(handoff.searchParams.has('token'), false);
+    assert.equal(new URLSearchParams(handoff.hash.slice(1)).get('token'), 'access-token');
+    assert.equal(new URLSearchParams(handoff.hash.slice(1)).get('view'), 'world');
+    const local = resolveSpaceDestination('/space/app/?force_pc=1', '/space/app/', 'http://localhost:5173/space/login');
+    assert.equal(spaceDestinationWithToken(local, 'secret', 'http://localhost:5173'), 'http://localhost:5173/space/app/?force_pc=1');
+    assert.equal(isSpaceTokenValid('broken'), false);
+    assert.equal(isSpaceTokenValid('a.' + Buffer.from(JSON.stringify({ exp: Date.now() / 1000 + 60 })).toString('base64url') + '.b'), true);
+    env.window.close();
 });

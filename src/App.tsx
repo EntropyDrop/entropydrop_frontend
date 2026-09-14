@@ -60,11 +60,11 @@ function SpaceIntroRedirect() {
 }
 
 function SpaceAppRedirect() {
-  useEffect(() => {
-    const target = import.meta.env.VITE_SPACE_URL || (import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/')
-    window.location.replace(target + window.location.search + window.location.hash)
-  }, [])
-  return null
+  const location = useLocation()
+  const target = new URL(import.meta.env.VITE_SPACE_URL || (import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/'), window.location.href)
+  target.search = location.search
+  target.hash = location.hash
+  return <Navigate to={`/space/login?destination=${encodeURIComponent(target.href)}`} replace />
 }
 
 function RouteReadySignal({ children, onReady }: { children: ReactNode, onReady: () => void }) {

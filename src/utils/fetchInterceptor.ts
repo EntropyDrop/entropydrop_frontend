@@ -50,13 +50,19 @@ async function requestSessionRefresh(timeoutMs = 5000): Promise<RefreshResult> {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const response = await originalFetch(`${API_BASE_URL.replace(/\/+$/, '')}/api/auth/refresh`, {
+        const options: RequestInit = {
             method: 'POST',
             headers: { Accept: 'application/json' },
             credentials: 'include',
             cache: 'no-store',
             signal: controller.signal
-        });
+        };
+        let response = await originalFetch(`${API_BASE_URL}/api/auth/refresh`, options);
+        if (response.status === 401 || response.status === 404) {
+            const fallback = await originalFetch(`${API_BASE_URL}/skin/api/auth/refresh`, options);
+            // An unavailable legacy endpoint must not turn an outage into logout.
+            if (fallback.status !== 404) response = fallback;
+        }
         if (!response.ok) {
             return { token: null, terminal: response.status === 401 || response.status === 403 };
         }
