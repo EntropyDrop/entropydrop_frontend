@@ -76,7 +76,7 @@ export function SpaceApiKeysPage({ current }: { current: LangData }) {
             <div className="flex flex-wrap items-center gap-3">
                 <button className={buttonClass} type="button" onClick={async () => {
                     try {
-                        await navigator.clipboard.writeText(spaceAgentPrompt(connection.origin, current.lang === 'zh-hans'))
+                        await navigator.clipboard.writeText(spaceAgentPrompt(connection.origin))
                         setCopyMessage(text.instructionsCopied)
                     } catch {
                         setCopyMessage(text.copyFailed)

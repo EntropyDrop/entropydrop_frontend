@@ -8,7 +8,6 @@
     "build": "npm run build:site && node scripts/prepare-space-routes.js",
     "build:site": "tsc -b && node scripts/generate-sitemap.js && vite build",
     "build:space": "npm --prefix ../entropydrop_space run build",
-    "deploy:aws": "npm run build && node scripts/deploy-s3.js",
     "test:space": "node --test test/space-page.test.cjs && npm --prefix ../entropydrop_space test",
     "check:space": "node --test test/space-page.test.cjs && npm --prefix ../entropydrop_space run check",
     "lint": "eslint .",

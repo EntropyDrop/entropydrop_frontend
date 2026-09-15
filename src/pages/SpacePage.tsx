@@ -486,7 +486,7 @@ export function SpacePage({ current }: SpacePageProps) {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {data.agentModes.cards.map((card, index) => {
                         const isExternal = card.id === 'external'
                         return (
@@ -511,6 +511,10 @@ export function SpacePage({ current }: SpacePageProps) {
 
                                 {isExternal ? (
                                     <div className="flex flex-col gap-3 my-1">
+                                        <p className="m-0 text-sm leading-relaxed text-white/80">
+                                            <span className="text-purple-300">{data.agentModes.entryLabel}: </span>
+                                            {card.entry}
+                                        </p>
                                         <button
                                             type="button"
                                             className="w-full inline-flex min-h-11 items-center justify-center gap-2 border-2 border-black bg-[#3c8527] px-4 py-2.5 text-sm font-bold text-white shadow-[2px_2px_0_rgba(0,0,0,0.55)] hover:bg-[#4ea632] active:translate-y-0.5 active:shadow-none transition-all cursor-pointer"
