@@ -12,7 +12,8 @@
     "check:space": "node --test test/space-page.test.cjs && npm --prefix ../entropydrop_space run check",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:auth": "node --test test/auth-session.test.cjs"
+    "test:auth": "node --test test/auth-session.test.cjs",
+    "test:collection": "node --test test/collection-page.test.cjs"
   },
   "dependencies": {
     "@iconify-json/pixelarticons": "^1.2.5",

@@ -54,7 +54,9 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const authSession = useAuthSession();
     const navigate = useNavigate()
     const { userId, collectionId: pathCollectionId } = useParams()
-    const [myUserId, setMyUserId] = useState<string | null>(null)
+    const [userStatus, setUserStatus] = useState<{ session: string; id: string; isPro: boolean } | null>(null)
+    const myUserId = userStatus?.session === authSession ? userStatus.id : null
+    const isPro = userStatus?.session === authSession ? userStatus.isPro : false
     const [searchParams] = useSearchParams()
     const sharedId = searchParams.get('id')
     const [publicCollections, setPublicCollections] = useState<Collection[]>([])
@@ -76,7 +78,6 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const [isNewCollectionPublic, setIsNewCollectionPublic] = useState(true)
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false)
     const [itemToMove, setItemToMove] = useState<CollectionItem | null>(null)
-    const [isPro, setIsPro] = useState(false)
     const [isUploadPickerOpen, setIsUploadPickerOpen] = useState(false)
     const [uploadPickerTab, setUploadPickerTab] = useState<'public' | 'private'>('public')
     const [uploadPickerCollections, setUploadPickerCollections] = useState<Collection[]>([])
@@ -108,7 +109,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const [searchInput, setSearchInput] = useState('')
     const [modeInput, setModeInput] = useState('')
 
-    const fetchCollections = async (page: number = 1, targetUserId?: string, isPublic?: boolean) => {
+    const fetchCollections = async (page: number = 1, targetUserId?: string, isPublic?: boolean, signal?: AbortSignal) => {
         const isMe = !targetUserId || targetUserId === myUserId;
         // If we don't specify isPublic, we might be fetching for someone else or initial load
         // But for "independent" UI, we should specify.
@@ -119,9 +120,10 @@ export function CollectionPage({ current }: CollectionPageProps) {
             if (isPublic !== undefined) {
                 url += `&is_public=${isPublic}`
             }
-            const response = await apiFetch(url);
+            const response = await apiFetch(url, { signal });
             if (response.ok) {
                 const data = await response.json()
+                if (signal?.aborted) return
                 if (isPublic === true) {
                     setPublicCollections(data.items)
                     setPublicColTotalPages(data.total_pages)
@@ -137,31 +139,33 @@ export function CollectionPage({ current }: CollectionPageProps) {
                     // This fallback isn't ideal for total pages, but isMe fetch usually specifies isPublic now.
                 }
 
-                if (data.original_items) {
-                    setOriginalCollections(data.original_items || [])
+                // Later custom pages omit the default collections.
+                if (page === 1 && data.original_items) {
+                    setOriginalCollections(data.original_items)
                 }
             }
         } catch (e) {
-            console.error('Failed to fetch collections', e)
+            if (!signal?.aborted) console.error('Failed to fetch collections', e)
         } finally {
-            setIsLoading(false)
+            if (!signal?.aborted) setIsLoading(false)
         }
     }
 
-    const fetchUserStatus = async () => {
+    const fetchUserStatus = async (signal: AbortSignal) => {
+        if (!authSession) return
         try {
-            const res = await apiFetch('/api/users/me')
+            const res = await apiFetch('/api/users/me', { signal })
             if (res.ok) {
                 const data = await res.json()
-                setIsPro(data.is_pro)
-                setMyUserId(String(data.id))
+                if (signal.aborted) return
+                setUserStatus({ session: authSession, id: String(data.id), isPro: Boolean(data.is_pro) })
             }
         } catch (e) {
-            console.error('Failed to fetch user status', e)
+            if (!signal.aborted) console.error('Failed to fetch user status', e)
         }
     }
 
-    const fetchItems = async (collectionId: number | string, page: number = 1, targetUserId?: string) => {
+    const fetchItems = async (collectionId: number | string, page: number = 1, targetUserId?: string, signal?: AbortSignal) => {
         setIsLoading(true)
 
         try {
@@ -171,31 +175,33 @@ export function CollectionPage({ current }: CollectionPageProps) {
             let url = `/api/collections/items?collection_id=${collectionId}&user_id=${uid}&page=${page}&page_size=24`
             if (filterName) url += `&name=${encodeURIComponent(filterName)}`
             if (filterMode) url += `&mode=${filterMode}`
-            const response = await apiFetch(url)
+            const response = await apiFetch(url, { signal })
             if (response.ok) {
                 const data = await response.json()
+                if (signal?.aborted) return
                 setItems(data.items)
                 setItemTotalPages(data.total_pages)
                 setItemPage(data.page)
                 setTotalItems(data.total)
             }
         } catch (e) {
-            console.error('Failed to fetch items', e)
+            if (!signal?.aborted) console.error('Failed to fetch items', e)
         } finally {
-            setIsLoading(false)
+            if (!signal?.aborted) setIsLoading(false)
         }
     }
 
     useEffect(() => {
-        setIsPro(false)
-        setMyUserId('')
+        const controller = new AbortController()
+        setUserStatus(null)
         setPublicCollections([])
         setPrivateCollections([])
         setOriginalCollections([])
         setItems([])
         if (authSession) {
-            fetchUserStatus()
+            fetchUserStatus(controller.signal)
         }
+        return () => controller.abort()
     }, [authSession])
 
     useEffect(() => {
@@ -261,7 +267,9 @@ export function CollectionPage({ current }: CollectionPageProps) {
     ])
 
     useEffect(() => {
-        if (!authSession) return;
+        // Resolve ownership first so an early public-only response cannot
+        // overwrite the owner's liked and private collections.
+        if (!authSession || !myUserId) return;
 
         // 1. Handle legacy ?id= shared links
         if (sharedId) {
@@ -278,6 +286,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         }
 
         // 3. Handle data fetching based on params
+        const controller = new AbortController()
         if (userId) {
             if (pathCollectionId) {
                 // If we are in a collection but currentCollection is not set or different
@@ -295,25 +304,28 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         setCurrentCollection({ id: pathCollectionId, name: '...', is_public: true, item_count: 0 } as any);
                     }
                 }
-                fetchItems(pathCollectionId, itemPage, userId);
+                fetchItems(pathCollectionId, itemPage, userId, controller.signal);
             } else {
                 // List view
                 if (currentCollection) setCurrentCollection(null);
                 if (userId === myUserId) {
-                    fetchCollections(publicColPage, userId, true);
-                    fetchCollections(privateColPage, userId, false);
+                    fetchCollections(publicColPage, userId, true, controller.signal);
+                    fetchCollections(privateColPage, userId, false, controller.signal);
                 } else {
-                    fetchCollections(publicColPage, userId, true);
+                    fetchCollections(publicColPage, userId, true, controller.signal);
                 }
             }
         }
+        return () => controller.abort()
     }, [authSession, userId, pathCollectionId, myUserId, publicColPage, privateColPage, itemPage, filterName, filterMode]);
 
     useEffect(() => {
+        const controller = new AbortController()
         if (sharedId && authSession) {
             setCurrentCollection({ id: sharedId, name: current.collection.publicCollection, is_public: true, item_count: 0 } as any);
-            fetchItems(sharedId, 1);
+            fetchItems(sharedId, 1, undefined, controller.signal);
         }
+        return () => controller.abort()
     }, [authSession, sharedId]);
 
     const renderPreviewStack = (previews?: any[]) => {
@@ -741,12 +753,6 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                         setModeInput('');
                                         setItemPage(1);
                                         navigate(`/skin/collection/${uid}`);
-                                        if (uid === myUserId) {
-                                            fetchCollections(publicColPage, uid, true)
-                                            fetchCollections(privateColPage, uid, false)
-                                        } else {
-                                            fetchCollections(publicColPage, uid, true)
-                                        }
                                     }}
                                     className="p-1 hover:bg-white/10 text-white/40 hover:text-white transition-colors cursor-pointer shrink-0"
                                 >
