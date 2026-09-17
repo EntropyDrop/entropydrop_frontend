@@ -2,6 +2,7 @@ import { Icon } from '@iconify/react'
 import { useState, useEffect, useRef } from 'react'
 import { type LangData } from '../constants/lang'
 import { apiFetch } from '../utils/api'
+import { activateSubscriptionWithRetry } from '../utils/subscription'
 
 interface PayModalProps {
     isOpen: boolean;
@@ -127,11 +128,7 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
                     const token = localStorage.getItem('token');
                     if (!token) return;
                     try {
-                        const activateRes = await apiFetch(`/api/orders/subscription/activate`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ paypal_order_id: data.subscriptionID })
-                        });
+                        const activateRes = await activateSubscriptionWithRetry(data.subscriptionID);
 
                         if (activateRes.ok) {
                             window.dispatchEvent(new Event('user-updated'));

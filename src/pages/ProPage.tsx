@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
 import { apiFetch } from '../utils/api'
+import { activateSubscriptionWithRetry } from '../utils/subscription'
 import { SEO } from '../components/SEO'
 
 interface ProPageProps {
@@ -81,10 +82,7 @@ export function ProPage({ current }: ProPageProps) {
                 if (popup.closed) {
                     clearInterval(pollTimer);
                     try {
-                        const activateRes = await apiFetch('/api/orders/subscription/activate', {
-                            method: 'POST',
-                            body: JSON.stringify({ paypal_order_id: subscriptionId })
-                        });
+                        const activateRes = await activateSubscriptionWithRetry(subscriptionId);
 
                         if (activateRes.ok) {
                             window.dispatchEvent(new Event('user-updated'));
