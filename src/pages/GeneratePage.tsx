@@ -1549,18 +1549,41 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                 </div>
 
                                 {queueStatus && queueStatus.queued_count > 0 && (
-                                    <div className={`mb-2.5 px-3 py-2 border flex items-center justify-between text-xs ${current.fontClass} transition-colors select-none bg-amber-950/30 border-amber-500/40 text-amber-300`}>
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <Icon icon="pixelarticons:hourglass" className="text-amber-400 text-sm shrink-0 animate-spin" style={{ animationDuration: '6s' }} />
-                                            <span className="truncate">{renderQueueStatusText()}</span>
-                                        </div>
-                                        <span className="text-[11px] font-mono tracking-wide shrink-0 ml-2 opacity-90 flex items-center gap-1 font-bold">
-                                            <Icon icon="pixelarticons:clock" className="text-xs shrink-0 opacity-80" />
-                                            <span>
-                                                {(current.generate.queueEstimatedTime || '~{minutes} min')
-                                                    .replace('{minutes}', String(2 * (queueStatus.queued_count + 1)))}
+                                    <div className={`mb-2.5 px-3 py-2 border flex flex-col gap-1.5 text-xs ${current.fontClass} transition-colors select-none bg-amber-950/30 border-amber-500/40 text-amber-300`}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <Icon icon="pixelarticons:hourglass" className="text-amber-400 text-sm shrink-0 animate-spin" style={{ animationDuration: '6s' }} />
+                                                <span className="truncate">{renderQueueStatusText()}</span>
+                                            </div>
+                                            <span className="text-[11px] font-mono tracking-wide shrink-0 ml-2 opacity-90 flex items-center gap-1 font-bold">
+                                                <Icon icon="pixelarticons:clock" className="text-xs shrink-0 opacity-80" />
+                                                <span>
+                                                    {(current.generate.queueEstimatedTime || '~{minutes} min')
+                                                        .replace('{minutes}', String(2 * (queueStatus.queued_count + 1)))}
+                                                </span>
                                             </span>
-                                        </span>
+                                        </div>
+
+                                        {isPro ? (
+                                            <div className="pt-1.5 border-t border-amber-500/20 flex items-center gap-1.5 text-[10px] text-[#a6df7a]">
+                                                <Icon icon="pixelarticons:zap" className="text-xs shrink-0 text-yellow-400" />
+                                                <span className="truncate">{current.generate.queueProActiveHint || '已获得 PRO 优先排队特权'}</span>
+                                            </div>
+                                        ) : (
+                                            <div
+                                                onClick={() => navigate('/pro')}
+                                                className="pt-1.5 border-t border-amber-500/20 flex items-center justify-between text-[10px] text-yellow-400 hover:text-yellow-300 cursor-pointer transition-colors group"
+                                            >
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <Icon icon="pixelarticons:zap" className="text-xs shrink-0 group-hover:scale-110 transition-transform text-yellow-400" />
+                                                    <span className="truncate">{current.generate.queueProUpgradeHint || '升级为 PRO 享有优先排队特权'}</span>
+                                                </div>
+                                                <span className="underline shrink-0 opacity-80 group-hover:opacity-100 flex items-center gap-0.5">
+                                                    {current.generate.queueProUpgradeAction || '立即升级'}
+                                                    <Icon icon="pixelarticons:chevron-right" className="text-xs" />
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
