@@ -21,6 +21,12 @@ interface GeneratePageProps {
     current: LangData
 }
 
+interface QueueStatusData {
+    queued_count: number;
+    processing_count: number;
+    total_queue_count: number;
+}
+
 const max_seed = 100000000;
 const GENERATION_IMAGE_SIZE = 768;
 const MAX_GENERATION_IMAGE_BYTES = 480 * 1024;
@@ -106,6 +112,52 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [isParentLoading, setIsParentLoading] = useState(false)
     const [parentLoadFailed, setParentLoadFailed] = useState(false)
     const [isLicenseExpanded, setIsLicenseExpanded] = useState(false)
+    const [queueStatus, setQueueStatus] = useState<QueueStatusData | null>(null)
+
+    const fetchQueueStatus = async (overrideModel?: string) => {
+        try {
+            const currentModel = overrideModel ?? modelVersion
+            if (!currentModel || currentModel === 'unknown') {
+                return
+            }
+            const params = new URLSearchParams()
+            if (currentModel.includes(' + ')) {
+                const parts = currentModel.split(' + ')
+                params.append('aux_model_version', parts[0])
+                params.append('model_version', parts[1])
+            } else {
+                params.append('model_version', currentModel)
+            }
+            if (genMode) {
+                params.append('mode', genMode)
+            }
+            const res = await apiFetch(`/api/generate/queue_status?${params.toString()}`, { skipGlobalError: true })
+            if (res.ok) {
+                const data: QueueStatusData = await res.json()
+                setQueueStatus(data)
+            }
+        } catch {
+            // Ignore queue status error
+        }
+    }
+
+    useEffect(() => {
+        if (!modelVersion || modelVersion === 'unknown') return
+        fetchQueueStatus(modelVersion)
+        const timer = setInterval(() => {
+            fetchQueueStatus(modelVersion)
+        }, 30000)
+        return () => clearInterval(timer)
+    }, [modelVersion, genMode])
+
+    const renderQueueStatusText = () => {
+        if (!queueStatus || queueStatus.queued_count <= 0) return null
+        if (queueStatus.queued_count === 1 && current.generate.queueStatusWaitingSingle) {
+            return current.generate.queueStatusWaitingSingle
+        }
+        return (current.generate.queueStatusWaiting || '{count} 个任务正在排队')
+            .replace('{count}', String(queueStatus.queued_count))
+    }
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -533,15 +585,16 @@ export function GeneratePage({ current }: GeneratePageProps) {
         }
     }, [authSession, currentPage])
 
+    const hasActiveTask = history.some(item => ['pending', 'processing', 'pending_skin', 'processing_skin'].includes(item.status || ''))
+
     useEffect(() => {
-        const hasActive = history.some(item => ['pending', 'processing', 'pending_skin', 'processing_skin'].includes(item.status || ''))
-        if (hasActive && authSession) {
+        if (hasActiveTask && authSession) {
             const timer = setInterval(() => {
                 fetchHistory(currentPage)
-            }, 3000)
+            }, 30000)
             return () => clearInterval(timer)
         }
-    }, [authSession, history, currentPage])
+    }, [authSession, hasActiveTask, currentPage])
 
     useEffect(() => {
         if (lastSubmittedId && history.length > 0) {
@@ -705,6 +758,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 setCurrentPage(1) // Switching to page 1 will trigger fetchHistory(1) automatically via useEffect
             }
             fetchUserStatus() // Refresh quota
+            fetchQueueStatus() // Refresh queue status immediately
             //setInfoModal({ isOpen: true, title: current.generate.submitSuccess, message: current.generate.submitSuccessMsg, type: 'success' })
 
         } catch (e: any) {
@@ -1502,6 +1556,22 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                         )}
                                     </AnimatePresence>
                                 </div>
+
+                                {queueStatus && queueStatus.queued_count > 0 && (
+                                    <div className={`mb-2.5 px-3 py-2 border flex items-center justify-between text-xs ${current.fontClass} transition-colors select-none bg-amber-950/30 border-amber-500/40 text-amber-300`}>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <Icon icon="pixelarticons:hourglass" className="text-amber-400 text-sm shrink-0 animate-spin" style={{ animationDuration: '6s' }} />
+                                            <span className="truncate">{renderQueueStatusText()}</span>
+                                        </div>
+                                        <span className="text-[11px] font-mono tracking-wide shrink-0 ml-2 opacity-90 flex items-center gap-1 font-bold">
+                                            <Icon icon="pixelarticons:clock" className="text-xs shrink-0 opacity-80" />
+                                            <span>
+                                                {(current.generate.queueEstimatedTime || '~{minutes} min')
+                                                    .replace('{minutes}', String(2 * (queueStatus.queued_count + 1)))}
+                                            </span>
+                                        </span>
+                                    </div>
+                                )}
 
                                 <button
                                       disabled={
