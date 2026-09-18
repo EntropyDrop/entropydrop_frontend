@@ -915,21 +915,12 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                     <span className={`text-[11px] font-bold text-[#a6df7a] truncate ${current.fontClass}`}>
                                                                         {phaseText}
                                                                     </span>
-                                                                    {item.license?.code === 'entropydrop-commercial-1.0' && (
-                                                                        <span className="shrink-0 px-1 py-0.2 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[7px] font-pixel-hans tracking-wider uppercase">
-                                                                            {current.generate.licenseCommercialBadge}
+                                                                    <span className="shrink-0 px-1.5 py-0.5 bg-[#a6df7a]/15 text-[#a6df7a] border border-[#a6df7a]/30 text-[8px] font-mono font-bold flex items-center gap-1 leading-none">
+                                                                        <Icon icon="pixelarticons:clock" className="text-[9px] shrink-0 opacity-80" />
+                                                                        <span>
+                                                                            {(current.generate.queueEstimatedTime || '~{minutes} min').replace('{minutes}', String(2 * ((item.queue_position || 0) + 1)))}
                                                                         </span>
-                                                                    )}
-                                                                    {item.license?.code === 'cc-by-nc-4.0' && (
-                                                                        <span className="shrink-0 px-1 py-0.2 bg-blue-500/15 text-blue-300 border border-blue-500/30 text-[7px] font-pixel-hans tracking-wider">
-                                                                            {current.generate.licenseNonCommercialBadge}
-                                                                        </span>
-                                                                    )}
-                                                                    {item.license?.code === 'unknown' && (
-                                                                        <span className="shrink-0 px-1 py-0.2 bg-orange-500/15 text-orange-300 border border-orange-500/30 text-[7px] font-pixel-hans tracking-wider uppercase">
-                                                                            {current.generate.licenseUnknownBadge}
-                                                                        </span>
-                                                                    )}
+                                                                    </span>
                                                                 </div>
                                                             </div>
                                                         </div>
