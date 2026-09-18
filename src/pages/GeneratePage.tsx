@@ -155,8 +155,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         if (queueStatus.queued_count === 1 && current.generate.queueStatusWaitingSingle) {
             return current.generate.queueStatusWaitingSingle
         }
-        return (current.generate.queueStatusWaiting || '{count} 个任务正在排队')
-            .replace('{count}', String(queueStatus.queued_count))
+        return current.generate.queueStatusWaiting.replace('{count}', String(queueStatus.queued_count))
     }
 
     useEffect(() => {
@@ -632,10 +631,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
         if (isModelMaintenance) {
             setInfoModal({
                 isOpen: true,
-                title: current.lang === 'zh-hans' ? '模型维护中' : 'Model Under Maintenance',
-                message: current.lang === 'zh-hans' 
-                    ? '当前选择的模型正在维护中，请选择其他模型使用。' 
-                    : 'The selected model is under maintenance. Please choose another model.',
+                title: current.generate.modelUnderMaintenanceTitle,
+                message: current.generate.modelUnderMaintenanceMsg,
                 type: 'info'
             })
             return
@@ -858,7 +855,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                     <div className="flex flex-col gap-2 shrink-0">
                                         <h4 className={`text-[10px] text-[#a6df7a] m-0 uppercase tracking-wider flex items-center gap-1.5 font-bold ${current.fontClass}`}>
                                             <span className="w-1.5 h-1.5 bg-[#a6df7a] rounded-none animate-ping" />
-                                            {current.lang === 'zh-hans' ? '当前构建任务' : 'Active Tasks'}
+                                            {current.generate.activeTasksTitle}
                                         </h4>
                                         <div className="flex flex-col gap-2">
                                             {activeTasks.map(item => {
@@ -899,7 +896,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="flex items-center justify-between gap-1">
                                                                     <span className={`text-[9px] text-white/50 uppercase truncate ${current.fontClass}`}>
-                                                                        {item.mode === 'aigc_image_to_skin' ? 'Image to Skin' : item.mode === 'aigc_image_edit_to_skin' ? 'Image Edit to Skin' : 'Text to Skin'}
+                                                                        {item.mode === 'aigc_image_to_skin' ? current.generate.modeImageToSkin : item.mode === 'aigc_image_edit_to_skin' ? current.generate.modeImageEditToSkin : current.generate.modeTextToSkin}
                                                                     </span>
                                                                     {item.queue_position && item.queue_position > 0 ? (
                                                                         <span className="shrink-0 px-1 py-0.5 bg-[#a6df7a]/15 text-[#a6df7a] border border-[#a6df7a]/30 text-[8px] font-mono font-bold leading-none uppercase">
@@ -907,7 +904,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                         </span>
                                                                     ) : (
                                                                         <span className="shrink-0 px-1 py-0.5 bg-[#a6df7a]/10 text-[#a6df7a]/85 border border-[#a6df7a]/20 text-[8px] font-mono font-bold leading-none uppercase animate-pulse">
-                                                                            Q: READY
+                                                                            Q: {current.generate.queueReady}
                                                                         </span>
                                                                     )}
                                                                 </div>
@@ -918,7 +915,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                     <span className="shrink-0 text-[10px] text-white/50 font-mono flex items-center gap-1">
                                                                         <Icon icon="pixelarticons:clock" className="text-[10px] text-white/40" />
                                                                         <span>
-                                                                            {(current.generate.queueEstimatedTime || '~{minutes} min').replace('{minutes}', String(2 * ((item.queue_position || 0) + 1)))}
+                                                                            {current.generate.queueEstimatedTime.replace('{minutes}', String(2 * ((item.queue_position || 0) + 1)))}
                                                                         </span>
                                                                     </span>
                                                                 </div>
@@ -954,7 +951,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                         {activeTasks.length > 0 && (
                                             <h4 className={`text-[10px] text-white/30 m-0 uppercase tracking-wider flex items-center gap-1.5 font-bold mt-2 ${current.fontClass}`}>
                                                 <Icon icon="pixelarticons:book-open" className="text-xs" />
-                                                {current.lang === 'zh-hans' ? '已完成历史' : 'Completed History'}
+                                                {current.generate.completedHistoryTitle}
                                             </h4>
                                         )}
                                         <div className="flex flex-col gap-3">
@@ -1501,7 +1498,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                         onClick={() => setIsLicenseExpanded(prev => !prev)}
                                         className="flex items-center justify-between text-xs text-white/50 hover:text-white/80 transition-colors pt-1.5 border-t border-white/5 cursor-pointer font-pixel-hans w-full text-left"
                                     >
-                                        <span>{isLicenseExpanded ? (current.generate.licenseHideDetails || '收起详情') : (current.generate.licenseViewDetails || '查看详情')}</span>
+                                        <span>{isLicenseExpanded ? current.generate.licenseHideDetails : current.generate.licenseViewDetails}</span>
                                         <Icon icon={isLicenseExpanded ? "pixelarticons:chevron-up" : "pixelarticons:chevron-down"} className="text-sm shrink-0" />
                                     </button>
 
@@ -1558,8 +1555,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                             <span className="text-[11px] font-mono tracking-wide shrink-0 ml-2 opacity-90 flex items-center gap-1 font-bold">
                                                 <Icon icon="pixelarticons:clock" className="text-xs shrink-0 opacity-80" />
                                                 <span>
-                                                    {(current.generate.queueEstimatedTime || '~{minutes} min')
-                                                        .replace('{minutes}', String(2 * (queueStatus.queued_count + 1)))}
+                                                    {current.generate.queueEstimatedTime.replace('{minutes}', String(2 * (queueStatus.queued_count + 1)))}
                                                 </span>
                                             </span>
                                         </div>
@@ -1567,7 +1563,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                         {isPro ? (
                                             <div className="pt-1.5 border-t border-amber-500/20 flex items-center gap-1.5 text-[10px] text-[#a6df7a]">
                                                 <Icon icon="pixelarticons:zap" className="text-xs shrink-0 text-yellow-400" />
-                                                <span className="truncate">{current.generate.queueProActiveHint || '已获得 PRO 优先排队特权'}</span>
+                                                <span className="truncate">{current.generate.queueProActiveHint}</span>
                                             </div>
                                         ) : (
                                             <div
@@ -1576,10 +1572,10 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                             >
                                                 <div className="flex items-center gap-1.5 min-w-0">
                                                     <Icon icon="pixelarticons:zap" className="text-xs shrink-0 group-hover:scale-110 transition-transform text-yellow-400" />
-                                                    <span className="truncate">{current.generate.queueProUpgradeHint || '升级为 PRO 享有优先排队特权'}</span>
+                                                    <span className="truncate">{current.generate.queueProUpgradeHint}</span>
                                                 </div>
                                                 <span className="underline shrink-0 opacity-80 group-hover:opacity-100 flex items-center gap-0.5">
-                                                    {current.generate.queueProUpgradeAction || '立即升级'}
+                                                    {current.generate.queueProUpgradeAction}
                                                     <Icon icon="pixelarticons:chevron-right" className="text-xs" />
                                                 </span>
                                             </div>
