@@ -26,6 +26,9 @@ const CreditsPage = lazy(() => import('./pages/CreditsPage').then(m => ({ defaul
 const SpaceApiKeysPage = lazy(() => import('./pages/SpaceApiKeysPage').then(m => ({ default: m.SpaceApiKeysPage })))
 const SpaceLoginPage = lazy(() => import('./pages/SpaceLoginPage').then(m => ({ default: m.SpaceLoginPage })))
 const SpacePage = lazy(() => import('./pages/SpacePage').then(m => ({ default: m.SpacePage })))
+const TerrainLabPage = import.meta.env.DEV
+  ? lazy(() => import('./pages/TerrainLabPage').then(m => ({ default: m.TerrainLabPage })))
+  : () => null
 
 
 /**
@@ -139,13 +142,20 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/space/intro" element={<SpacePage current={currentLangData} />} />
         <Route path="/space/login" element={<SpaceLoginPage current={currentLangData} />} />
         <Route path="/space/apikeys" element={<SpaceApiKeysPage current={currentLangData} />} />
+        {import.meta.env.DEV && (
+          <>
+            <Route path="/space/terrain-lab" element={<TerrainLabPage />} />
+            <Route path="/terrain-lab" element={<TerrainLabPage />} />
+          </>
+        )}
         <Route path="/space" element={<SpaceIntroRedirect />} />
         <Route path="/space/*" element={<SpaceIntroRedirect />} />
       </Routes>
     </RouteTransition>
   )
 
-  if (isPolicyPage) {
+  const isStandaloneLab = Boolean(import.meta.env.DEV && (location.pathname === '/space/terrain-lab' || location.pathname === '/terrain-lab'))
+  if (isPolicyPage || isStandaloneLab) {
     return routes
   }
 
