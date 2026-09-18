@@ -915,8 +915,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                     <span className={`text-[11px] font-bold text-[#a6df7a] truncate ${current.fontClass}`}>
                                                                         {phaseText}
                                                                     </span>
-                                                                    <span className="shrink-0 px-1.5 py-0.5 bg-[#a6df7a]/15 text-[#a6df7a] border border-[#a6df7a]/30 text-[8px] font-mono font-bold flex items-center gap-1 leading-none">
-                                                                        <Icon icon="pixelarticons:clock" className="text-[9px] shrink-0 opacity-80" />
+                                                                    <span className="shrink-0 text-[10px] text-white/50 font-mono flex items-center gap-1">
+                                                                        <Icon icon="pixelarticons:clock" className="text-[10px] text-white/40" />
                                                                         <span>
                                                                             {(current.generate.queueEstimatedTime || '~{minutes} min').replace('{minutes}', String(2 * ((item.queue_position || 0) + 1)))}
                                                                         </span>
