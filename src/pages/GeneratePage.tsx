@@ -150,6 +150,38 @@ export function GeneratePage({ current }: GeneratePageProps) {
         return () => clearInterval(timer)
     }, [modelVersion, genMode])
 
+    const [queueToast, setQueueToast] = useState<{ message: string; isProUser: boolean } | null>(null)
+    const queueToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    const getQueueItemHint = (item: GenerationLogItem) => {
+        const count = item.queue_position || 0
+        const waitingText = count === 1 && current.generate.queueStatusWaitingSingle
+            ? current.generate.queueStatusWaitingSingle
+            : current.generate.queueStatusWaiting.replace('{count}', String(count))
+        const proHint = isPro ? current.generate.queueProActiveHint : current.generate.queueProUpgradeHint
+        const separator = current.fontClass.includes('hans') ? '，' : ', '
+        return `${waitingText}${separator}${proHint}`
+    }
+
+    const showQueueHint = (item: GenerationLogItem) => {
+        const message = getQueueItemHint(item)
+        if (queueToastTimerRef.current) {
+            clearTimeout(queueToastTimerRef.current)
+        }
+        setQueueToast({ message, isProUser: !!isPro })
+        queueToastTimerRef.current = setTimeout(() => {
+            setQueueToast(null)
+        }, 4000)
+    }
+
+    useEffect(() => {
+        return () => {
+            if (queueToastTimerRef.current) {
+                clearTimeout(queueToastTimerRef.current)
+            }
+        }
+    }, [])
+
     const renderQueueStatusText = () => {
         if (!queueStatus || queueStatus.queued_count <= 0) return null
         if (queueStatus.queued_count === 1 && current.generate.queueStatusWaitingSingle) {
@@ -899,25 +931,49 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                         {item.mode === 'aigc_image_to_skin' ? current.generate.modeImageToSkin : item.mode === 'aigc_image_edit_to_skin' ? current.generate.modeImageEditToSkin : current.generate.modeTextToSkin}
                                                                     </span>
                                                                     {item.queue_position && item.queue_position > 0 ? (
-                                                                        <span className="shrink-0 px-1 py-0.5 bg-[#a6df7a]/15 text-[#a6df7a] border border-[#a6df7a]/30 text-[8px] font-mono font-bold leading-none uppercase">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                showQueueHint(item);
+                                                                            }}
+                                                                            className="shrink-0 px-1.5 py-0.5 bg-[#a6df7a]/15 text-[#a6df7a] border border-[#a6df7a]/30 hover:bg-[#a6df7a]/25 hover:border-[#a6df7a]/60 active:scale-95 transition-all text-[8px] font-mono font-bold leading-none uppercase cursor-pointer"
+                                                                            title={getQueueItemHint(item)}
+                                                                        >
                                                                             Q: #{item.queue_position}
-                                                                        </span>
+                                                                        </button>
                                                                     ) : (
-                                                                        <span className="shrink-0 px-1 py-0.5 bg-[#a6df7a]/10 text-[#a6df7a]/85 border border-[#a6df7a]/20 text-[8px] font-mono font-bold leading-none uppercase animate-pulse">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                showQueueHint(item);
+                                                                            }}
+                                                                            className="shrink-0 px-1.5 py-0.5 bg-[#a6df7a]/10 text-[#a6df7a]/85 border border-[#a6df7a]/20 hover:bg-[#a6df7a]/20 hover:border-[#a6df7a]/40 active:scale-95 transition-all text-[8px] font-mono font-bold leading-none uppercase animate-pulse cursor-pointer"
+                                                                            title={getQueueItemHint(item)}
+                                                                        >
                                                                             Q: {current.generate.queueReady}
-                                                                        </span>
+                                                                        </button>
                                                                     )}
                                                                 </div>
                                                                 <div className="flex items-center justify-between gap-1.5 mt-0.5">
                                                                     <span className={`text-[11px] font-bold text-[#a6df7a] truncate ${current.fontClass}`}>
                                                                         {phaseText}
                                                                     </span>
-                                                                    <span className="shrink-0 text-[10px] text-white/50 font-mono flex items-center gap-1">
-                                                                        <Icon icon="pixelarticons:clock" className="text-[10px] text-white/40" />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            showQueueHint(item);
+                                                                        }}
+                                                                        className="shrink-0 text-[10px] text-white/50 hover:text-white/90 active:scale-95 transition-all font-mono flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer group"
+                                                                        title={getQueueItemHint(item)}
+                                                                    >
+                                                                        <Icon icon="pixelarticons:clock" className="text-[10px] text-white/40 group-hover:text-white/70" />
                                                                         <span>
                                                                             {current.generate.queueEstimatedTime.replace('{minutes}', String(2 * ((item.queue_position || 0) + 1)))}
                                                                         </span>
-                                                                    </span>
+                                                                    </button>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1678,6 +1734,45 @@ export function GeneratePage({ current }: GeneratePageProps) {
                         onEdit={(texUrl, logId, isPublic) => navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } })}
                         onAiEdit={(source: string, id: string, isPublic: boolean) => navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic } })}
                     />
+                )}
+            </AnimatePresence>
+
+            {/* Queue Item Hint Toast */}
+            <AnimatePresence>
+                {queueToast && (
+                    <motion.div
+                        key="queue-toast"
+                        initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                        transition={{ duration: 0.2 }}
+                        className={`fixed top-20 sm:top-24 left-1/2 -translate-x-1/2 z-[200] max-w-[92vw] sm:max-w-md bg-[#141414]/95 backdrop-blur-md border border-amber-500/50 text-amber-300 px-4 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,0.8)] flex items-center gap-2.5 ${current.fontClass} text-xs`}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <Icon icon="pixelarticons:hourglass" className="text-amber-400 text-sm shrink-0 animate-spin" style={{ animationDuration: '6s' }} />
+                        <span className="flex-1 leading-relaxed text-white/90">
+                            {queueToast.message}
+                        </span>
+                        {!queueToast.isProUser && (
+                            <button
+                                onClick={() => {
+                                    setQueueToast(null)
+                                    navigate('/pro')
+                                }}
+                                className="shrink-0 underline text-yellow-400 hover:text-yellow-300 cursor-pointer flex items-center gap-0.5 text-xs bg-transparent border-none p-0 transition-colors font-bold"
+                            >
+                                {current.generate.queueProUpgradeAction}
+                                <Icon icon="pixelarticons:chevron-right" className="text-xs" />
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setQueueToast(null)}
+                            className="shrink-0 text-white/40 hover:text-white cursor-pointer bg-transparent border-none p-0 ml-1 text-sm transition-colors flex items-center justify-center w-5 h-5"
+                            aria-label="Close"
+                        >
+                            <Icon icon="pixelarticons:close" />
+                        </button>
+                    </motion.div>
                 )}
             </AnimatePresence>
         </PageContainer>
