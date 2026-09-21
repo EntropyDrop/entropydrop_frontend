@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Icon } from '@iconify/react';
 import { Link } from 'react-router-dom';
+import { generateNeonNexus, NEXUS_DEFAULTS } from './terrainLab/neonNexus';
+import type { NexusConfig } from './terrainLab/neonNexus';
+import neonNexusSource from './terrainLab/neonNexus.ts?raw';
 
 // ============================================================================
 // 1. DETERMINISTIC SIMPLEX NOISE 2D / 3D (Identical to Game Engine & Backend)
@@ -144,16 +151,18 @@ const TORUS_SPAWN_X = 8192;
 const TORUS_SPAWN_Z = 1024;
 
 export type AlgorithmType =
+  | 'neon_nexus'
   | 'torus_official'
   | 'fbm_fractal'
   | 'ridged_mountain'
   | 'terraced_scifi'
   | 'density_3d'
+  | 'cyber_megastructure'
   | 'cyberpunk_city'
   | 'mandelbox_dusk'
   | 'custom_code';
 
-export interface TerrainConfig {
+export interface TerrainConfig extends NexusConfig {
   sizeX: number;
   sizeY: number;
   sizeZ: number;
@@ -187,6 +196,12 @@ export interface TerrainConfig {
   skybridgeInterval: number;
   windowDensity: number;
   neonTheme: 'neo_tokyo' | 'matrix' | 'outrun';
+  // Repeating Cyber Megastructure Parameters
+  megastructureTileSize: number;
+  megastructureHeight: number;
+  megastructureTiers: number;
+  microVoxelScale: number;
+  microDetailDensity: number;
   // Mandelbox Dusk Parameters
   mandelboxScale: number;
   mandelboxFold: number;
@@ -199,7 +214,20 @@ export interface TerrainConfig {
   mandelboxOffsetZ: number;
 }
 
+interface TerrainVoxel {
+  x: number;
+  y: number;
+  z: number;
+  color: number;
+  sizeX?: number;
+  sizeY?: number;
+  sizeZ?: number;
+  emissive?: boolean;
+  intensity?: number;
+}
+
 const DEFAULT_CONFIG: TerrainConfig = {
+  ...NEXUS_DEFAULTS,
   sizeX: 64,
   sizeY: 56,
   sizeZ: 64,
@@ -235,6 +263,11 @@ return Math.round(16 + ripple + n);`,
   skybridgeInterval: 14,
   windowDensity: 0.65,
   neonTheme: 'neo_tokyo',
+  megastructureTileSize: 24,
+  megastructureHeight: 50,
+  megastructureTiers: 4,
+  microVoxelScale: 0.38,
+  microDetailDensity: 0.7,
   mandelboxScale: -1.85,
   mandelboxFold: 1.0,
   mandelboxMinR: 0.5,
@@ -255,6 +288,14 @@ const THEMES: Record<string, { name: string; surface: number; middle: number; de
   desert: { name: 'Dune Sandstone', surface: 0xf59e0b, middle: 0xb45309, deep: 0x78350f },
 };
 
+const NEXUS_PRESET: Partial<TerrainConfig> = {
+  ...NEXUS_DEFAULTS,
+  algorithm: 'neon_nexus',
+  sizeX: 96, sizeY: 88, sizeZ: 96, yCutoff: 88,
+  offsetX: 0, offsetZ: 0, step: 1,
+  theme: 'scifi', renderMode: 'voxel',
+};
+
 // ============================================================================
 // 2.5 DETERMINISTIC HASH UTILITIES & CYBERPUNK CITY GENERATOR
 // ============================================================================
@@ -267,6 +308,286 @@ function hash2(x: number, z: number): number {
 function hash3(x: number, y: number, z: number): number {
   const n = Math.sin(x * 12.9898 + y * 45.164 + z * 78.233) * 43758.5453;
   return n - Math.floor(n);
+}
+
+function getMegastructureTileCoords(
+  wx: number,
+  wz: number,
+  tileSize: number
+): { localX: number; localZ: number; tileX: number; tileZ: number } {
+  const half = tileSize / 2;
+  const tileX = Math.floor((wx + half) / tileSize);
+  const tileZ = Math.floor((wz + half) / tileSize);
+  return {
+    localX: wx - tileX * tileSize,
+    localZ: wz - tileZ * tileSize,
+    tileX,
+    tileZ,
+  };
+}
+
+function getMegastructureColumnHeight(wx: number, wz: number, config: TerrainConfig): number {
+  const tileSize = Math.max(16, config.megastructureTileSize);
+  const { localX, localZ, tileX, tileZ } = getMegastructureTileCoords(wx, wz, tileSize);
+  const ax = Math.abs(localX);
+  const az = Math.abs(localZ);
+  const coreRadius = Math.max(3, Math.floor(tileSize * 0.2));
+  const maxHeight = Math.min(config.sizeY, config.megastructureHeight);
+  const tileVariation = 0.86 + hash2(tileX + config.seed * 0.13, tileZ - config.seed * 0.17) * 0.14;
+  const towerHeight = Math.max(12, Math.floor(maxHeight * tileVariation));
+
+  // A stepped central mass creates the large readable silhouette of every tile.
+  if (Math.max(ax, az) <= coreRadius) {
+    const ring = Math.max(ax, az) / coreRadius;
+    if (ring <= 0.38) return Math.min(config.sizeY, towerHeight + 3);
+    if (ring <= 0.72) return Math.floor(towerHeight * 0.84);
+    return Math.floor(towerHeight * 0.66);
+  }
+
+  // Four identical satellite pylons make the motif visibly repeat at a distance.
+  const satelliteCenter = tileSize * 0.34;
+  const satelliteRadius = Math.max(1, Math.floor(tileSize * 0.075));
+  if (
+    Math.abs(ax - satelliteCenter) <= satelliteRadius &&
+    Math.abs(az - satelliteCenter) <= satelliteRadius
+  ) {
+    return Math.floor(towerHeight * 0.58);
+  }
+
+  // Gate pylons anchor the bridge exits at the edge of each tile.
+  const gate = tileSize / 2 - 2;
+  if (
+    (Math.abs(ax - gate) <= 1 && az <= 1) ||
+    (Math.abs(az - gate) <= 1 && ax <= 1)
+  ) {
+    return Math.floor(towerHeight * 0.42);
+  }
+
+  return 0;
+}
+
+function sampleMegastructureHeight(wx: number, wz: number, config: TerrainConfig): number {
+  const structuralHeight = getMegastructureColumnHeight(wx, wz, config);
+  const tileSize = Math.max(16, config.megastructureTileSize);
+  const { localX, localZ } = getMegastructureTileCoords(wx, wz, tileSize);
+  const coreRadius = Math.max(3, Math.floor(tileSize * 0.2));
+  const onBridge =
+    (Math.abs(localZ) <= 1 && Math.abs(localX) > coreRadius) ||
+    (Math.abs(localX) <= 1 && Math.abs(localZ) > coreRadius);
+
+  if (!onBridge) return structuralHeight;
+
+  const highestBridge = Math.round(
+    (Math.max(1, config.megastructureTiers) * config.megastructureHeight) /
+      (Math.max(1, config.megastructureTiers) + 1)
+  );
+  return Math.max(structuralHeight, Math.min(config.sizeY, highestBridge + 2));
+}
+
+function generateCyberMegastructureVoxels(
+  cols: number,
+  rows: number,
+  step: number,
+  config: TerrainConfig
+): TerrainVoxel[] {
+  const voxels: TerrainVoxel[] = [];
+  const tileSize = Math.max(16, config.megastructureTileSize);
+  const coreRadius = Math.max(3, Math.floor(tileSize * 0.2));
+  const cutoff = Math.min(config.sizeY, config.yCutoff);
+  const tiers = Math.max(1, config.megastructureTiers);
+  const micro = Math.max(0.18, Math.min(0.48, config.microVoxelScale));
+  const detailDensity = Math.max(0, Math.min(1, config.microDetailDensity));
+  const bandPitch = Math.max(4, Math.floor(config.megastructureHeight / (tiers + 2)));
+
+  let C_FLOOR = 0x15274c;
+  let C_FLOOR_LINE = 0x16d9ee;
+  let C_SECONDARY = 0xb78cff;
+  let C_ACCENT = 0xff5cbd;
+  let C_SIGNAL = 0xffe79a;
+  const C_WALL = 0x2f4d75;
+  const C_WALL_EDGE = 0x6485a8;
+  const C_ROOF = 0x243d66;
+  const C_WINDOW_OFF = 0x14223b;
+
+  if (config.neonTheme === 'matrix') {
+    C_FLOOR_LINE = 0x6dff9b;
+    C_SECONDARY = 0xc4ff5f;
+    C_ACCENT = 0x67e8f9;
+    C_SIGNAL = 0xecfccb;
+  } else if (config.neonTheme === 'outrun') {
+    C_FLOOR = 0x10081c;
+    C_FLOOR_LINE = 0xff5cbd;
+    C_SECONDARY = 0xc4a7ff;
+    C_ACCENT = 0x5ff7ff;
+    C_SIGNAL = 0xffe08a;
+  }
+
+  const pushMicroDetail = (
+    x: number,
+    y: number,
+    z: number,
+    dirX: number,
+    dirZ: number,
+    color: number,
+    upper = false
+  ) => {
+    const faceOffset = step / 2 + micro / 2 + 0.025;
+    voxels.push({
+      x: x + dirX * faceOffset,
+      y: y + (upper ? 0.58 : 0.14),
+      z: z + dirZ * faceOffset,
+      color,
+      sizeX: micro,
+      sizeY: micro,
+      sizeZ: micro,
+      emissive: true,
+    });
+  };
+
+  for (let ix = 0; ix < cols; ix++) {
+    const posX = (ix - cols / 2) * step;
+    const wx = Math.round(config.offsetX + posX);
+
+    for (let iz = 0; iz < rows; iz++) {
+      const posZ = (iz - rows / 2) * step;
+      const wz = Math.round(config.offsetZ + posZ);
+      const { localX, localZ, tileX, tileZ } = getMegastructureTileCoords(wx, wz, tileSize);
+      const ax = Math.abs(localX);
+      const az = Math.abs(localZ);
+      const border = tileSize / 2 - step;
+      const isMainCircuit = ax < step * 0.45 || az < step * 0.45;
+      const isTileCircuit = Math.abs(ax - border) < step * 0.45 || Math.abs(az - border) < step * 0.45;
+      const isDataNode =
+        (Math.round(ax / Math.max(1, step)) + Math.round(az / Math.max(1, step))) % 7 === 0 &&
+        (isMainCircuit || isTileCircuit);
+
+      voxels.push({
+        x: posX,
+        y: 0,
+        z: posZ,
+        color: isDataNode ? C_SIGNAL : isMainCircuit || isTileCircuit ? C_FLOOR_LINE : C_FLOOR,
+        sizeX: step,
+        sizeY: 1,
+        sizeZ: step,
+        emissive: isDataNode || isMainCircuit || isTileCircuit,
+      });
+
+      const height = Math.min(cutoff, getMegastructureColumnHeight(wx, wz, config));
+      if (height > 0) {
+        const neighborHeights = [
+          getMegastructureColumnHeight(wx - step, wz, config),
+          getMegastructureColumnHeight(wx + step, wz, config),
+          getMegastructureColumnHeight(wx, wz - step, config),
+          getMegastructureColumnHeight(wx, wz + step, config),
+        ];
+
+        for (let y = 1; y <= height; y++) {
+          const exposedFaces = neighborHeights.map(neighborHeight => neighborHeight < y);
+          const isTop = y === height;
+          if (!isTop && !exposedFaces.some(Boolean)) continue;
+
+          const facadeHash = hash3(wx * 1.73 + config.seed, y * 2.91, wz * 1.37 - config.seed);
+          const isBand = y % bandPitch === 0 || y === Math.floor(height * 0.66);
+          const isWindow = !isTop && y > 2 && y % 2 === 0 && facadeHash < 0.72;
+          let color = isTop ? C_ROOF : C_WALL;
+          let emissive = false;
+
+          if (isBand) {
+            color = (Math.floor(y / bandPitch) + tileX + tileZ) % 2 === 0 ? C_FLOOR_LINE : C_ACCENT;
+            emissive = true;
+          } else if (isWindow) {
+            color = facadeHash < 0.42 ? C_FLOOR_LINE : facadeHash < 0.62 ? C_ACCENT : C_SIGNAL;
+            emissive = true;
+          } else if (!isTop && facadeHash < 0.86) {
+            color = C_WALL_EDGE;
+          } else if (!isTop) {
+            color = C_WINDOW_OFF;
+          }
+
+          voxels.push({
+            x: posX,
+            y,
+            z: posZ,
+            color,
+            sizeX: step,
+            sizeY: 1,
+            sizeZ: step,
+            emissive,
+          });
+
+          // Micro-voxel facade greebles: deterministic clusters attached to exposed faces.
+          if (!isTop && !isBand && facadeHash < detailDensity * 0.46) {
+            const microColor = facadeHash < detailDensity * 0.18 ? C_ACCENT : C_SECONDARY;
+            const directions: Array<[number, number, number]> = [
+              [-1, 0, 0],
+              [1, 0, 1],
+              [0, -1, 2],
+              [0, 1, 3],
+            ];
+            for (const [dirX, dirZ, faceIndex] of directions) {
+              if (!exposedFaces[faceIndex]) continue;
+              const faceHash = hash3(wx + faceIndex * 11.3, y + config.seed * 0.07, wz - faceIndex * 7.9);
+              if (faceHash < detailDensity) {
+                pushMicroDetail(posX, y, posZ, dirX, dirZ, microColor, faceHash > 0.45);
+              }
+            }
+          }
+        }
+
+        // Rooftop micro-voxel antenna clusters visually bridge the two voxel scales.
+        if (height >= 8 && ax <= step * 0.55 && az <= step * 0.55) {
+          for (let antenna = 0; antenna < 4 && height + antenna * micro <= cutoff + 1; antenna++) {
+            voxels.push({
+              x: posX,
+              y: height + antenna * micro,
+              z: posZ,
+              color: antenna === 3 ? C_SIGNAL : C_FLOOR_LINE,
+              sizeX: micro,
+              sizeY: micro,
+              sizeZ: micro,
+              emissive: true,
+            });
+          }
+        }
+      }
+
+      // Repeated cross-shaped bridge tiers connect every module into one megastructure.
+      const onBridgeX = az <= step && ax > coreRadius && ax < tileSize / 2;
+      const onBridgeZ = ax <= step && az > coreRadius && az < tileSize / 2;
+      if (onBridgeX || onBridgeZ) {
+        for (let tier = 1; tier <= tiers; tier++) {
+          const bridgeY = Math.round((tier * config.megastructureHeight) / (tiers + 1));
+          if (bridgeY > cutoff) continue;
+          const isRail = onBridgeX ? az >= step * 0.8 : ax >= step * 0.8;
+          voxels.push({
+            x: posX,
+            y: bridgeY,
+            z: posZ,
+            color: isRail ? C_FLOOR_LINE : C_WALL_EDGE,
+            sizeX: step,
+            sizeY: isRail ? 0.28 : 0.65,
+            sizeZ: step,
+            emissive: isRail,
+          });
+
+          if (!isRail && (Math.abs(wx + wz + tier) % 3 === 0)) {
+            voxels.push({
+              x: posX,
+              y: bridgeY + 0.72,
+              z: posZ,
+              color: tier % 2 === 0 ? C_ACCENT : C_SECONDARY,
+              sizeX: micro,
+              sizeY: micro,
+              sizeZ: micro,
+              emissive: true,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return voxels;
 }
 
 function generateCyberpunkCityVoxels(
@@ -285,16 +606,16 @@ function generateCyberpunkCityVoxels(
   const winDensity = config.windowDensity;
 
   // Palette selection
-  let C_ROAD_BASE = 0x0a101d;
+  const C_ROAD_BASE = 0x0a101d;
   let C_ROAD_GRID = 0x00f0ff;
   let C_ROAD_GRID_SUB = 0x00b4d8;
   const C_ROAD_ZEBRA = 0xe2e8f0;
 
-  let C_PILLAR_STEEL = 0x1e293b;
+  const C_PILLAR_STEEL = 0x1e293b;
   let C_PILLAR_NEON = 0x00f0ff;
   let C_PILLAR_RING = 0xf43f5e;
 
-  let C_BRIDGE_FLOOR = 0x1e293b;
+  const C_BRIDGE_FLOOR = 0x1e293b;
   let C_BRIDGE_SIGN = 0x00f0ff;
 
   const C_WALL_BASE = 0x16202e;
@@ -793,6 +1114,9 @@ export function TerrainLabPage() {
   const controlsRef = useRef<OrbitControls | null>(null);
   const terrainGroupRef = useRef<THREE.Group | null>(null);
   const bboxMeshRef = useRef<THREE.BoxHelper | null>(null);
+  const cinematicRef = useRef(false);
+  const composerRef = useRef<EffectComposer | null>(null);
+  const bloomRef = useRef<UnrealBloomPass | null>(null);
 
   const noise = useMemo(() => new FastSimplexNoise(config.seed), [config.seed]);
 
@@ -864,6 +1188,10 @@ export function TerrainLabPage() {
       const step = Math.max(1, cfg.terraceSteps);
       const h = Math.round(Math.floor(rawH / step) * step);
       return Math.max(minClamp, Math.min(maxClamp, h));
+    }
+
+    if (algorithm === 'cyber_megastructure') {
+      return sampleMegastructureHeight(wx, wz, cfg);
     }
 
     if (algorithm === 'cyberpunk_city') {
@@ -975,8 +1303,19 @@ export function TerrainLabPage() {
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     rendererRef.current = renderer;
+
+    const composer = new EffectComposer(renderer);
+    // Keep the glow buffer bounded on high-DPI displays.
+    composer.setPixelRatio(1);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.5, 0.45, 0.65);
+    const output = new OutputPass();
+    composer.addPass(bloom);
+    composer.addPass(output);
+    composerRef.current = composer;
+    bloomRef.current = bloom;
 
     const controls = new OrbitControls(camera, canvasRef.current);
     controls.enableDamping = true;
@@ -987,9 +1326,11 @@ export function TerrainLabPage() {
 
     // Lighting
     const hemiLight = new THREE.HemisphereLight(0xddeeff, 0x1b2533, 1.2);
+    hemiLight.name = 'terrain-hemi';
     scene.add(hemiLight);
 
     const dirLight = new THREE.DirectionalLight(0xfffaed, 2.0);
+    dirLight.name = 'terrain-key';
     dirLight.position.set(80, 120, 60);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
@@ -1004,6 +1345,7 @@ export function TerrainLabPage() {
 
     // Ground helper grid
     const grid = new THREE.GridHelper(300, 30, 0x1f2e3d, 0x121a24);
+    grid.name = 'terrain-grid';
     grid.position.y = -0.01;
     scene.add(grid);
 
@@ -1018,10 +1360,15 @@ export function TerrainLabPage() {
       const w = containerRef.current.clientWidth;
       const h = containerRef.current.clientHeight;
       cameraRef.current.aspect = w / h;
+      if (cinematicRef.current) cameraRef.current.setViewOffset(w, h, -Math.min(130, w * 0.1), 0, w, h);
+      else cameraRef.current.clearViewOffset();
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(w, h);
+      composer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(containerRef.current);
 
     // Render Loop
     let animId: number;
@@ -1031,7 +1378,8 @@ export function TerrainLabPage() {
     const animate = () => {
       animId = requestAnimationFrame(animate);
       controls.update();
-      renderer.render(scene, camera);
+      if (cinematicRef.current) composer.render();
+      else renderer.render(scene, camera);
 
       frameCount++;
       const now = performance.now();
@@ -1048,6 +1396,22 @@ export function TerrainLabPage() {
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
+      controls.dispose();
+      bloom.dispose();
+      output.dispose();
+      composer.dispose();
+      scene.traverse(object => {
+        if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
+          object.geometry.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach(material => material.dispose());
+        }
+        if (object instanceof THREE.InstancedMesh) object.dispose();
+      });
+      dirLight.shadow.map?.dispose();
+      composerRef.current = null;
+      bloomRef.current = null;
       renderer.dispose();
     };
   }, []);
@@ -1064,12 +1428,17 @@ export function TerrainLabPage() {
     while (group.children.length > 0) {
       const child = group.children[0];
       group.remove(child);
-      if ((child as any).geometry) (child as any).geometry.dispose();
-      if ((child as any).material) {
-        if (Array.isArray((child as any).material)) {
-          (child as any).material.forEach((m: any) => m.dispose());
+      if (child instanceof THREE.InstancedMesh) child.dispose();
+      const disposableChild = child as THREE.Object3D & {
+        geometry?: THREE.BufferGeometry;
+        material?: THREE.Material | THREE.Material[];
+      };
+      disposableChild.geometry?.dispose();
+      if (disposableChild.material) {
+        if (Array.isArray(disposableChild.material)) {
+          disposableChild.material.forEach(material => material.dispose());
         } else {
-          (child as any).material.dispose();
+          disposableChild.material.dispose();
         }
       }
     }
@@ -1081,6 +1450,8 @@ export function TerrainLabPage() {
 
     const cols = Math.floor(sizeX / step);
     const rows = Math.floor(sizeZ / step);
+
+    const nexus = algorithm === 'neon_nexus' ? generateNeonNexus(config) : null;
 
     const heights: number[][] = [];
     let minY = Infinity;
@@ -1094,7 +1465,9 @@ export function TerrainLabPage() {
       const wx = offsetX + (x - cols / 2) * step;
       for (let z = 0; z < rows; z++) {
         const wz = offsetZ + (z - rows / 2) * step;
-        const h = Math.min(sizeY, Math.max(0, sampleHeight(wx, wz, config)));
+        const h = nexus
+          ? nexus.heights[Math.min(nexus.width - 1, Math.floor(x * step)) + Math.min(nexus.depth - 1, Math.floor(z * step)) * nexus.width]
+          : Math.min(sizeY, Math.max(0, sampleHeight(wx, wz, config)));
         heights[x][z] = h;
         minY = Math.min(minY, h);
         maxY = Math.max(maxY, h);
@@ -1107,7 +1480,33 @@ export function TerrainLabPage() {
 
     // Adjust Scene Atmosphere & Fog
     if (sceneRef.current) {
-      if (algorithm === 'cyberpunk_city') {
+      const isNexus = algorithm === 'neon_nexus';
+      cinematicRef.current = isNexus;
+      if (rendererRef.current) {
+        rendererRef.current.toneMapping = isNexus ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+        rendererRef.current.toneMappingExposure = isNexus ? 1.05 : 1;
+      }
+      if (bloomRef.current) bloomRef.current.strength = config.nexusGlow;
+      if (cameraRef.current && containerRef.current) {
+        const { clientWidth: w, clientHeight: h } = containerRef.current;
+        if (isNexus) cameraRef.current.setViewOffset(w, h, -Math.min(130, w * 0.1), 0, w, h);
+        else cameraRef.current.clearViewOffset();
+      }
+      const hemi = sceneRef.current.getObjectByName('terrain-hemi') as THREE.HemisphereLight;
+      const key = sceneRef.current.getObjectByName('terrain-key') as THREE.DirectionalLight;
+      hemi.intensity = isNexus ? 1.7 : 1.2;
+      hemi.color.setHex(isNexus ? 0x8bb9e9 : 0xddeeff);
+      key.intensity = isNexus ? 1.5 : 2;
+      key.color.setHex(isNexus ? 0x91b8e1 : 0xfffaed);
+      const grid = sceneRef.current.getObjectByName('terrain-grid');
+      if (grid) grid.visible = !isNexus;
+      if (isNexus) {
+        sceneRef.current.background = new THREE.Color(0x101e36);
+        sceneRef.current.fog = new THREE.FogExp2(0x173859, 0.0038);
+      } else if (algorithm === 'cyber_megastructure') {
+        sceneRef.current.background = new THREE.Color(0x060b18);
+        sceneRef.current.fog = new THREE.FogExp2(0x060b18, 0.003);
+      } else if (algorithm === 'cyberpunk_city') {
         sceneRef.current.background = new THREE.Color(0x060811);
         sceneRef.current.fog = new THREE.FogExp2(0x060811, 0.007);
       } else if (algorithm === 'mandelbox_dusk') {
@@ -1119,19 +1518,33 @@ export function TerrainLabPage() {
       }
     }
 
+    if (algorithm === 'cyber_megastructure') {
+      const cyanFill = new THREE.PointLight(0x00e5ff, 55, Math.max(sizeX, sizeZ) * 1.8, 1.6);
+      cyanFill.position.set(-sizeX * 0.28, sizeY * 0.72, sizeZ * 0.18);
+      group.add(cyanFill);
+
+      const magentaFill = new THREE.PointLight(0xff2f92, 42, Math.max(sizeX, sizeZ) * 1.6, 1.7);
+      magentaFill.position.set(sizeX * 0.3, sizeY * 0.48, -sizeZ * 0.22);
+      group.add(magentaFill);
+    }
+
     let emittedCount = cols * rows;
 
     // ------------------------------------------------------------------------
     // A. VOXEL INSTANCED MESH
     // ------------------------------------------------------------------------
     if (renderMode === 'voxel') {
-      let voxelList: { x: number; y: number; z: number; color: number }[] = [];
+      let voxelList: TerrainVoxel[] = [];
 
       const colorSurface = new THREE.Color(themeColors.surface);
       const colorMiddle = new THREE.Color(themeColors.middle);
       const colorDeep = new THREE.Color(themeColors.deep);
 
-      if (algorithm === 'cyberpunk_city') {
+      if (nexus) {
+        voxelList = nexus.voxels;
+      } else if (algorithm === 'cyber_megastructure') {
+        voxelList = generateCyberMegastructureVoxels(cols, rows, step, config);
+      } else if (algorithm === 'cyberpunk_city') {
         voxelList = generateCyberpunkCityVoxels(cols, rows, step, config);
       } else if (algorithm === 'mandelbox_dusk') {
         voxelList = generateMandelboxDuskVoxels(cols, rows, step, config);
@@ -1175,31 +1588,60 @@ export function TerrainLabPage() {
       const totalVoxels = voxelList.length;
       emittedCount = totalVoxels;
       if (totalVoxels > 0) {
-        const boxGeo = new THREE.BoxGeometry(step, 1, step);
-        const boxMat = new THREE.MeshStandardMaterial({
-          roughness: 0.85,
-          metalness: 0.1,
-        });
+        const solidVoxels = voxelList.filter(voxel => !voxel.emissive);
+        const neonVoxels = voxelList.filter(voxel => voxel.emissive);
 
-        const instanced = new THREE.InstancedMesh(boxGeo, boxMat, totalVoxels);
-        instanced.castShadow = true;
-        instanced.receiveShadow = true;
+        const addVoxelBatch = (batch: TerrainVoxel[], material: THREE.Material, glows: boolean) => {
+          if (batch.length === 0) {
+            material.dispose();
+            return;
+          }
 
-        const dummy = new THREE.Object3D();
-        const dummyColor = new THREE.Color();
+          const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+          const instanced = new THREE.InstancedMesh(boxGeo, material, batch.length);
+          instanced.castShadow = !glows;
+          instanced.receiveShadow = !glows;
 
-        for (let i = 0; i < totalVoxels; i++) {
-          const v = voxelList[i];
-          dummy.position.set(v.x, v.y + 0.5, v.z);
-          dummy.updateMatrix();
-          instanced.setMatrixAt(i, dummy.matrix);
+          const dummy = new THREE.Object3D();
+          const dummyColor = new THREE.Color();
+          for (let i = 0; i < batch.length; i++) {
+            const voxel = batch[i];
+            const sizeX = voxel.sizeX ?? step;
+            const sizeY = voxel.sizeY ?? 1;
+            const sizeZ = voxel.sizeZ ?? step;
+            dummy.position.set(voxel.x, voxel.y + sizeY / 2, voxel.z);
+            dummy.scale.set(sizeX, sizeY, sizeZ);
+            dummy.updateMatrix();
+            instanced.setMatrixAt(i, dummy.matrix);
+            dummyColor.setHex(voxel.color);
+            if (algorithm === 'neon_nexus' && glows) dummyColor.multiplyScalar(voxel.intensity ?? 1);
+            instanced.setColorAt(i, dummyColor);
+          }
 
-          dummyColor.setHex(v.color);
-          instanced.setColorAt(i, dummyColor);
-        }
-        instanced.instanceMatrix.needsUpdate = true;
-        if (instanced.instanceColor) instanced.instanceColor.needsUpdate = true;
-        group.add(instanced);
+          instanced.instanceMatrix.needsUpdate = true;
+          if (instanced.instanceColor) instanced.instanceColor.needsUpdate = true;
+          group.add(instanced);
+        };
+
+        addVoxelBatch(
+          solidVoxels,
+          algorithm === 'neon_nexus'
+            ? new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.24, emissive: 0x0b1b2f, emissiveIntensity: 0.7 })
+            : algorithm === 'cyber_megastructure'
+            ? new THREE.MeshStandardMaterial({
+                roughness: 0.58,
+                metalness: 0.32,
+                emissive: 0x07152c,
+                emissiveIntensity: 0.55,
+              })
+            : new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0.2 }),
+          false
+        );
+        addVoxelBatch(
+          neonVoxels,
+          new THREE.MeshBasicMaterial({ fog: algorithm === 'neon_nexus', toneMapped: false }),
+          true
+        );
       }
     }
     // ------------------------------------------------------------------------
@@ -1260,11 +1702,18 @@ export function TerrainLabPage() {
     // Update Bounding Box outline
     if (bboxMeshRef.current && sceneRef.current) {
       sceneRef.current.remove(bboxMeshRef.current);
+      bboxMeshRef.current.geometry.dispose();
+      (bboxMeshRef.current.material as THREE.Material).dispose();
     }
-    const boxHelper = new THREE.BoxHelper(new THREE.Mesh(new THREE.BoxGeometry(sizeX, sizeY, sizeZ)), 0x38bdf8);
+    const boundsGeometry = new THREE.BoxGeometry(sizeX, sizeY, sizeZ);
+    const boundsMaterial = new THREE.MeshBasicMaterial();
+    const boxHelper = new THREE.BoxHelper(new THREE.Mesh(boundsGeometry, boundsMaterial), 0x38bdf8);
+    boundsGeometry.dispose();
+    boundsMaterial.dispose();
     boxHelper.position.set(0, sizeY / 2, 0);
     sceneRef.current.add(boxHelper);
     bboxMeshRef.current = boxHelper;
+    boxHelper.visible = algorithm !== 'neon_nexus';
 
     const t2 = performance.now();
 
@@ -1307,13 +1756,27 @@ export function TerrainLabPage() {
     rebuildTerrain();
   }, [rebuildTerrain]);
 
+  useEffect(() => {
+    if (config.algorithm !== 'neon_nexus' || !cameraRef.current || !controlsRef.current) return;
+    cameraRef.current.position.set(88, 58, 106);
+    controlsRef.current.target.set(0, 27, 0);
+    controlsRef.current.update();
+  }, [config.algorithm]);
+
   // Camera presets
-  const setCameraView = (view: 'iso' | 'top' | 'front' | 'side') => {
+  const setCameraView = (view: 'iso' | 'top' | 'front' | 'side' | 'street') => {
     if (!cameraRef.current || !controlsRef.current) return;
     const { sizeX, sizeY, sizeZ } = config;
     const maxDim = Math.max(sizeX, sizeZ, sizeY);
 
-    if (view === 'iso') {
+    if (view === 'street') {
+      const roadX = Math.round(config.offsetX / config.nexusPitch) * config.nexusPitch - config.offsetX;
+      cameraRef.current.position.set(roadX, 9, sizeZ * 0.46);
+      controlsRef.current.target.set(roadX - 1, 11, -sizeZ * 0.25);
+    } else if (view === 'iso' && config.algorithm === 'neon_nexus') {
+      cameraRef.current.position.set(maxDim * 0.92, sizeY * 0.66, maxDim * 1.1);
+      controlsRef.current.target.set(0, sizeY * 0.31, 0);
+    } else if (view === 'iso') {
       cameraRef.current.position.set(maxDim * 1.2, maxDim * 1.0, maxDim * 1.2);
       controlsRef.current.target.set(0, sizeY * 0.3, 0);
     } else if (view === 'top') {
@@ -1331,6 +1794,71 @@ export function TerrainLabPage() {
 
   // Generate copyable code
   const generatedCode = useMemo(() => {
+    if (config.algorithm === 'neon_nexus') {
+      const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed,
+        nexusPitch, nexusHeight, nexusDetail, nexusWindows, nexusBridges, nexusGlow } = config;
+      return {
+        ts: `${neonNexusSource}\n\n// Exact preview parameters (including seed and world anchor).\nconst result = generateNeonNexus(${JSON.stringify({ sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, nexusPitch, nexusHeight, nexusDetail, nexusWindows, nexusBridges, nexusGlow }, null, 2)});\n`,
+        py: '',
+      };
+    }
+    if (config.algorithm === 'cyber_megastructure') {
+      const tsCode = `// TypeScript - Repeating Cyber Megastructure Tile Field
+const tileSize = ${config.megastructureTileSize};
+const maxHeight = ${config.megastructureHeight};
+const tiers = ${config.megastructureTiers};
+const microScale = ${config.microVoxelScale};
+const detailDensity = ${config.microDetailDensity};
+
+export function sampleCyberMegastructure(wx: number, wz: number) {
+  const tileX = Math.floor((wx + tileSize / 2) / tileSize);
+  const tileZ = Math.floor((wz + tileSize / 2) / tileSize);
+  const lx = wx - tileX * tileSize;
+  const lz = wz - tileZ * tileSize;
+  const ax = Math.abs(lx), az = Math.abs(lz);
+  const core = Math.max(3, Math.floor(tileSize * 0.2));
+
+  // Three nested standard-voxel setbacks form the central megatower.
+  if (Math.max(ax, az) <= core) {
+    const ring = Math.max(ax, az) / core;
+    return Math.floor(maxHeight * (ring <= 0.38 ? 1 : ring <= 0.72 ? 0.84 : 0.66));
+  }
+
+  // Cross lanes receive bridge decks at: tier * maxHeight / (tiers + 1).
+  const bridge = (az <= 1 && ax > core) || (ax <= 1 && az > core);
+  if (bridge) return Math.round((tiers * maxHeight) / (tiers + 1)) + 2;
+  return 0;
+}
+
+// Attach microScale cubes to exposed facade faces when hash3(...) < detailDensity.`;
+
+      const pyCode = `# Python - Repeating Cyber Megastructure Tile Field
+TILE_SIZE = ${config.megastructureTileSize}
+MAX_HEIGHT = ${config.megastructureHeight}
+TIERS = ${config.megastructureTiers}
+MICRO_SCALE = ${config.microVoxelScale}
+DETAIL_DENSITY = ${config.microDetailDensity}
+
+def sample_cyber_megastructure(wx: int, wz: int) -> int:
+    tile_x = math.floor((wx + TILE_SIZE / 2) / TILE_SIZE)
+    tile_z = math.floor((wz + TILE_SIZE / 2) / TILE_SIZE)
+    lx, lz = wx - tile_x * TILE_SIZE, wz - tile_z * TILE_SIZE
+    ax, az = abs(lx), abs(lz)
+    core = max(3, math.floor(TILE_SIZE * 0.2))
+
+    if max(ax, az) <= core:
+        ring = max(ax, az) / core
+        scale = 1.0 if ring <= 0.38 else 0.84 if ring <= 0.72 else 0.66
+        return math.floor(MAX_HEIGHT * scale)
+
+    on_bridge = (az <= 1 and ax > core) or (ax <= 1 and az > core)
+    return round(TIERS * MAX_HEIGHT / (TIERS + 1)) + 2 if on_bridge else 0
+
+# Add MICRO_SCALE facade cubes wherever a deterministic hash is below DETAIL_DENSITY.`;
+
+      return { ts: tsCode, py: pyCode };
+    }
+
     if (config.algorithm === 'mandelbox_dusk') {
       const tsCode = `// TypeScript - Mandelbox City at Dusk Distance Estimator
 export function mandelboxDE(x: number, y: number, z: number, cfg = {
@@ -1522,8 +2050,8 @@ def sample_height(self, world_x: int, world_z: int) -> int:
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#090d13] text-gray-200 select-none font-mono">
       {/* Top Navigation Bar */}
-      <header className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-6 py-3 bg-[#0f1722]/80 backdrop-blur-md border-b border-white/10">
-        <div className="flex items-center gap-3">
+      <header className="absolute top-0 left-0 right-0 z-30 flex h-14 items-center gap-3 px-4 bg-[#0f1722]/80 backdrop-blur-md border-b border-white/10">
+        <div className="flex shrink-0 items-center gap-3">
           <Link
             to="/space/intro"
             className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-2.5 py-1.5 rounded border border-white/10 no-underline"
@@ -1532,18 +2060,51 @@ def sample_height(self, world_x: int, world_z: int) -> int:
             <span>Space</span>
           </Link>
           <div className="flex items-center gap-2">
-            <span className="font-bold text-white text-base tracking-wide flex items-center gap-1.5">
+            <span className="font-bold text-white text-sm tracking-wide hidden xl:flex items-center gap-1.5 whitespace-nowrap">
               <Icon icon="mdi:terrain" className="text-[#70be51] text-lg" />
               EntropyDrop · Terrain Lab
             </span>
-            <span className="px-2 py-0.5 text-[10px] font-semibold bg-[#70be51]/20 text-[#abdf9f] border border-[#70be51]/30 rounded">
+            <span className="hidden 2xl:block px-2 py-0.5 text-[10px] font-semibold bg-[#70be51]/20 text-[#abdf9f] border border-[#70be51]/30 rounded">
               VOXEL ALGORITHM WORKBENCH
             </span>
           </div>
         </div>
 
         {/* Preset Switcher */}
-        <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-white/10 text-xs">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap bg-black/40 p-1 rounded-lg border border-white/10 text-xs [&>button]:shrink-0">
+          <button
+            onClick={() => { setConfig(c => ({ ...c, ...NEXUS_PRESET })); setActiveTab('algorithm'); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'neon_nexus' ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-200' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
+            title="Dense voxel arcologies, micro windows, neon signs and layered skyways"
+          >
+            <Icon icon="mdi:city-variant-outline" className="text-cyan-300" />
+            <span>Neon Nexus</span>
+          </button>
+          <button
+            onClick={() =>
+              setConfig(c => ({
+                ...c,
+                algorithm: 'cyber_megastructure',
+                sizeX: 72,
+                sizeY: 60,
+                sizeZ: 72,
+                yCutoff: 60,
+                megastructureTileSize: 24,
+                megastructureHeight: 50,
+                megastructureTiers: 4,
+                microVoxelScale: 0.38,
+                microDetailDensity: 0.7,
+                neonTheme: 'neo_tokyo',
+                theme: 'scifi',
+                renderMode: 'voxel',
+              }))
+            }
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded transition-all ${config.algorithm === 'cyber_megastructure' ? 'bg-violet-500/20 text-cyan-300 border border-cyan-400/60 font-bold shadow-[0_0_14px_rgba(0,229,255,0.4)]' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
+            title="Repeating megastructure tiles with standard and micro voxels"
+          >
+            <span>🏙️</span>
+            <span>Mega Tiles</span>
+          </button>
           <button
             onClick={() =>
               setConfig(c => ({
@@ -1632,7 +2193,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
         </div>
 
         {/* Top Quick Actions */}
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex shrink-0 items-center gap-2 text-xs whitespace-nowrap">
           <button
             onClick={() => setConfig(c => ({ ...c, seed: Math.floor(Math.random() * 999999) }))}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-white transition-all"
@@ -1647,7 +2208,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
             className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3c8527] hover:bg-[#4ea833] text-white font-semibold rounded shadow transition-all active:scale-95"
           >
             <Icon icon="mdi:refresh" className="text-sm" />
-            <span>Regenerate</span>
+            <span className="hidden lg:inline">Regenerate</span>
           </button>
 
           <button
@@ -1667,6 +2228,10 @@ def sample_height(self, world_x: int, world_z: int) -> int:
 
       {/* Floating View Angle Selector */}
       <div className="absolute top-16 right-6 z-20 flex items-center gap-1 bg-[#0f1722]/85 backdrop-blur-md p-1 border border-white/10 rounded shadow-lg text-xs">
+        {config.algorithm === 'neon_nexus' && <button
+          onClick={() => setCameraView('street')}
+          className="px-2.5 py-1 rounded bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20"
+        >Street / 街景</button>}
         <button
           onClick={() => setCameraView('iso')}
           className="px-2.5 py-1 rounded hover:bg-white/10 text-white/80 hover:text-white"
@@ -1878,24 +2443,55 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 </label>
                 <select
                   value={config.algorithm}
-                  onChange={e => setConfig(c => ({ ...c, algorithm: e.target.value as AlgorithmType }))}
+                  onChange={e => {
+                    const algorithm = e.target.value as AlgorithmType;
+                    setConfig(c => ({ ...c, ...(algorithm === 'neon_nexus' ? NEXUS_PRESET : {}), algorithm }));
+                  }}
                   className="w-full bg-[#182330] border border-white/15 rounded px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#f59e0b]"
                 >
-                  <option value="mandelbox_dusk">🌇 1. Mandelbox - City at Dusk (Box-Fold 3D Fractal)</option>
-                  <option value="cyberpunk_city">🌃 2. Cyberpunk Mega-City (Grid Roads & Skybridges)</option>
-                  <option value="torus_official">🌱 3. Torus 3D Simplex (Official Game)</option>
-                  <option value="fbm_fractal">⛰️ 4. Multi-Octave Fractal (fBm)</option>
-                  <option value="ridged_mountain">🏔️ 5. Ridged Multifractal (Canyons & Peaks)</option>
-                  <option value="terraced_scifi">🛸 6. Sci-Fi Terraced Steppes</option>
-                  <option value="density_3d">🕳️ 7. 3D Cavity & Overhangs (Arch / Caves)</option>
-                  <option value="custom_code">💻 8. Custom Live Expression</option>
+                  <option value="neon_nexus">Neon Nexus · 霓虹巨构 / Dense Arcology</option>
+                  <option value="cyber_megastructure">🏙️ 1. Cyber Megastructure Tiles (Standard + Micro Voxels)</option>
+                  <option value="mandelbox_dusk">🌇 2. Mandelbox - City at Dusk (Box-Fold 3D Fractal)</option>
+                  <option value="cyberpunk_city">🌃 3. Cyberpunk Mega-City (Grid Roads & Skybridges)</option>
+                  <option value="torus_official">🌱 4. Torus 3D Simplex (Official Game)</option>
+                  <option value="fbm_fractal">⛰️ 5. Multi-Octave Fractal (fBm)</option>
+                  <option value="ridged_mountain">🏔️ 6. Ridged Multifractal (Canyons & Peaks)</option>
+                  <option value="terraced_scifi">🛸 7. Sci-Fi Terraced Steppes</option>
+                  <option value="density_3d">🕳️ 8. 3D Cavity & Overhangs (Arch / Caves)</option>
+                  <option value="custom_code">💻 9. Custom Live Expression</option>
                 </select>
               </div>
 
               {/* Algorithm-Specific Sliders */}
               <div className="space-y-3 pt-2 border-t border-white/10">
                 {/* Mandelbox Dusk Parameters */}
-                {config.algorithm === 'mandelbox_dusk' ? (
+                {config.algorithm === 'neon_nexus' ? (
+                  <>
+                    <div className="rounded border border-cyan-300/20 bg-[#0a1b2c] p-3 leading-relaxed">
+                      <div className="mb-1 text-xs tracking-wider text-cyan-200">NEON NEXUS / 霓虹巨构</div>
+                      <p className="text-[11px] text-slate-400">深蓝塔群、层叠街区与空中走廊。1m 标准方块构筑建筑，0.25m 微型方块刻画窗格、灯牌、设备与路面网格。</p>
+                    </div>
+                    {([
+                      { key: 'nexusPitch', label: '街区重复间距', min: 24, max: 36, step: 2, unit: 'm' },
+                      { key: 'nexusHeight', label: '天际线高度', min: 32, max: 88, step: 4, unit: 'm' },
+                      { key: 'nexusBridges', label: '空中交通层数', min: 0, max: 4, step: 1, unit: '' },
+                      { key: 'nexusDetail', label: '微型构件细节', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'nexusWindows', label: '亮灯窗口比例', min: 0.1, max: 0.9, step: 0.05, unit: '%' },
+                      { key: 'nexusGlow', label: '霓虹辉光', min: 0, max: 1.2, step: 0.05, unit: '' },
+                    ] as const).map(control => (
+                      <label key={control.key} className="block space-y-1.5 pt-1">
+                        <span className="flex justify-between text-white/60">
+                          <span>{control.label}</span>
+                          <span className="font-bold text-cyan-200">{control.unit === '%' ? Math.round(config[control.key] * 100) : config[control.key]}{control.unit}</span>
+                        </span>
+                        <input type="range" aria-label={control.label} min={control.min} max={control.max} step={control.step}
+                          value={config[control.key]} onChange={e => setConfig(c => ({ ...c, [control.key]: Number(e.target.value) }))}
+                          className="w-full accent-cyan-400" />
+                      </label>
+                    ))}
+                    <p className="text-[10px] leading-relaxed text-slate-500">相同种子与世界坐标会生成相同街区。Voxel 模式保留悬空结构；Surface / Wireframe 显示顶部高度概览。</p>
+                  </>
+                ) : config.algorithm === 'mandelbox_dusk' ? (
                   <>
                     {/* Mandelbox Scale */}
                     <div className="space-y-1">
@@ -2022,6 +2618,113 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                       />
                     </div>
                   </>
+                ) : config.algorithm === 'cyber_megastructure' ? (
+                  <>
+                    <div className="rounded border border-cyan-400/20 bg-cyan-400/5 p-2 text-[10px] leading-relaxed text-cyan-100/70">
+                      A deterministic tile motif repeats central megatowers, satellite pylons, bridge tiers,
+                      circuit floors, and micro-voxel facade greebles.
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-white/60">Megastructure Tile Pitch:</span>
+                        <span className="font-bold text-cyan-300">{config.megastructureTileSize}m</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="16"
+                        max="32"
+                        step="2"
+                        value={config.megastructureTileSize}
+                        onChange={e => setConfig(c => ({ ...c, megastructureTileSize: Number(e.target.value) }))}
+                        className="w-full accent-cyan-400"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-white/60">Central Megatower Height:</span>
+                        <span className="font-bold text-fuchsia-300">{config.megastructureHeight}m</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="24"
+                        max="60"
+                        step="2"
+                        value={config.megastructureHeight}
+                        onChange={e => setConfig(c => ({ ...c, megastructureHeight: Number(e.target.value) }))}
+                        className="w-full accent-fuchsia-400"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-white/60">Repeated Bridge Tiers:</span>
+                        <span className="font-bold text-cyan-300">{config.megastructureTiers}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="2"
+                        max="5"
+                        step="1"
+                        value={config.megastructureTiers}
+                        onChange={e => setConfig(c => ({ ...c, megastructureTiers: Number(e.target.value) }))}
+                        className="w-full accent-cyan-400"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-white/60">Micro-Voxel Size:</span>
+                        <span className="font-bold text-violet-300">{config.microVoxelScale.toFixed(2)}m</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="0.45"
+                        step="0.01"
+                        value={config.microVoxelScale}
+                        onChange={e => setConfig(c => ({ ...c, microVoxelScale: Number(e.target.value) }))}
+                        className="w-full accent-violet-400"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-white/60">Facade Micro Detail:</span>
+                        <span className="font-bold text-violet-300">{Math.round(config.microDetailDensity * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="1"
+                        step="0.05"
+                        value={config.microDetailDensity}
+                        onChange={e => setConfig(c => ({ ...c, microDetailDensity: Number(e.target.value) }))}
+                        className="w-full accent-violet-400"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-white/60">Cyber Neon Mood:</span>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { id: 'neo_tokyo', label: 'Tokyo Cyan', col: '#00e5ff' },
+                          { id: 'matrix', label: 'Matrix Lime', col: '#22c55e' },
+                          { id: 'outrun', label: 'Outrun Pink', col: '#ff2f92' },
+                        ].map(item => (
+                          <button
+                            key={item.id}
+                            onClick={() => setConfig(c => ({ ...c, neonTheme: item.id as TerrainConfig['neonTheme'] }))}
+                            className={`py-1 px-1.5 rounded text-[10px] border flex items-center justify-center gap-1 ${config.neonTheme === item.id ? 'bg-white/10 border-white text-white font-bold' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
+                          >
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.col }} />
+                            <span>{item.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
                 ) : config.algorithm === 'cyberpunk_city' ? (
                   <>
                     {/* City Block Size */}
@@ -2120,7 +2823,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                         ].map(item => (
                           <button
                             key={item.id}
-                            onClick={() => setConfig(c => ({ ...c, neonTheme: item.id as any }))}
+                            onClick={() => setConfig(c => ({ ...c, neonTheme: item.id as TerrainConfig['neonTheme'] }))}
                             className={`py-1 px-1.5 rounded text-[10px] border flex items-center justify-center gap-1 ${config.neonTheme === item.id ? 'bg-white/10 border-white text-white font-bold' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
                           >
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.col }} />
@@ -2387,6 +3090,9 @@ def sample_height(self, world_x: int, world_z: int) -> int:
               <div className="text-[11px] uppercase tracking-wider text-white/40 font-bold">
                 Export to Game Code
               </div>
+              {config.algorithm === 'neon_nexus' && (
+                <p className="text-[11px] leading-relaxed text-cyan-200/70">完整 TypeScript 生成器与当前参数。导出结果包含每个方块的位置、尺寸、颜色与发光强度，可直接接入实例渲染。</p>
+              )}
 
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
@@ -2407,7 +3113,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 </pre>
               </div>
 
-              <div className="space-y-2 pt-2 border-t border-white/10">
+              {config.algorithm !== 'neon_nexus' && <div className="space-y-2 pt-2 border-t border-white/10">
                 <div className="flex justify-between items-center">
                   <span className="text-white font-semibold flex items-center gap-1">
                     <Icon icon="mdi:language-python" className="text-yellow-400 text-base" />
@@ -2424,7 +3130,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 <pre className="p-2.5 bg-black/60 border border-white/10 rounded text-[10px] text-yellow-200 overflow-x-auto max-h-40 select-all">
                   {generatedCode.py}
                 </pre>
-              </div>
+              </div>}
             </div>
           )}
         </div>
@@ -2455,7 +3161,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
           </div>
 
           <div className="grid grid-cols-2 gap-y-1.5 text-[10px]">
-            <span className="text-white/50">Block Columns:</span>
+            <span className="text-white/50">Voxel Instances:</span>
             <span className="text-right text-white font-bold">{stats.voxelCount.toLocaleString()}</span>
 
             <span className="text-white/50">Min / Max Y:</span>
