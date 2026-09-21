@@ -4,12 +4,23 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Icon } from '@iconify/react';
 import { Link } from 'react-router-dom';
 import { generateNeonNexus, NEXUS_DEFAULTS } from './terrainLab/neonNexus';
 import type { NexusConfig } from './terrainLab/neonNexus';
 import neonNexusSource from './terrainLab/neonNexus.ts?raw';
+import { generateCopperMetropolis, METROPOLIS_DEFAULTS } from './terrainLab/copperMetropolis';
+import type { MetropolisConfig } from './terrainLab/copperMetropolis';
+import copperMetropolisSource from './terrainLab/copperMetropolis.ts?raw';
+import { generateNeonRain, NEON_RAIN_DEFAULTS } from './terrainLab/neonRain';
+import type { NeonRainConfig } from './terrainLab/neonRain';
+import neonRainSource from './terrainLab/neonRain.ts?raw';
+import { generateBrutalistDusk, BRUTALIST_DUSK_DEFAULTS } from './terrainLab/brutalistDusk';
+import type { BrutalistDuskConfig } from './terrainLab/brutalistDusk';
+import brutalistDuskSource from './terrainLab/brutalistDusk.ts?raw';
+import { createConcreteMaterial, createDuskSky } from './terrainLab/brutalistLook';
 
 // ============================================================================
 // 1. DETERMINISTIC SIMPLEX NOISE 2D / 3D (Identical to Game Engine & Backend)
@@ -151,6 +162,9 @@ const TORUS_SPAWN_X = 8192;
 const TORUS_SPAWN_Z = 1024;
 
 export type AlgorithmType =
+  | 'brutalist_dusk'
+  | 'neon_rain'
+  | 'copper_metropolis'
   | 'neon_nexus'
   | 'torus_official'
   | 'fbm_fractal'
@@ -162,7 +176,7 @@ export type AlgorithmType =
   | 'mandelbox_dusk'
   | 'custom_code';
 
-export interface TerrainConfig extends NexusConfig {
+export interface TerrainConfig extends NexusConfig, MetropolisConfig, NeonRainConfig, BrutalistDuskConfig {
   sizeX: number;
   sizeY: number;
   sizeZ: number;
@@ -228,6 +242,9 @@ interface TerrainVoxel {
 
 const DEFAULT_CONFIG: TerrainConfig = {
   ...NEXUS_DEFAULTS,
+  ...METROPOLIS_DEFAULTS,
+  ...NEON_RAIN_DEFAULTS,
+  ...BRUTALIST_DUSK_DEFAULTS,
   sizeX: 64,
   sizeY: 56,
   sizeZ: 64,
@@ -279,7 +296,30 @@ return Math.round(16 + ripple + n);`,
   mandelboxOffsetZ: 1.05,
 };
 
+const BRUTALIST_DUSK_PRESET: Partial<TerrainConfig> = {
+  ...BRUTALIST_DUSK_DEFAULTS, algorithm: 'brutalist_dusk',
+  sizeX: 192, sizeY: 160, sizeZ: 176, yCutoff: 160,
+  offsetX: 0, offsetZ: 12, step: 1, theme: 'copper', renderMode: 'voxel',
+};
+
+const NEON_RAIN_PRESET: Partial<TerrainConfig> = {
+  ...NEON_RAIN_DEFAULTS,
+  algorithm: 'neon_rain',
+  sizeX: 192, sizeY: 144, sizeZ: 176, yCutoff: 144,
+  offsetX: 20, offsetZ: 18, step: 1,
+  theme: 'scifi', renderMode: 'voxel',
+};
+
+const METROPOLIS_PRESET: Partial<TerrainConfig> = {
+  ...METROPOLIS_DEFAULTS,
+  algorithm: 'copper_metropolis',
+  sizeX: 192, sizeY: 128, sizeZ: 192, yCutoff: 128,
+  offsetX: 0, offsetZ: 0, step: 1,
+  theme: 'copper', renderMode: 'voxel',
+};
+
 const THEMES: Record<string, { name: string; surface: number; middle: number; deep: number }> = {
+  copper: { name: 'Copper Metropolis · 铜冠都会', surface: 0xe3d2a2, middle: 0xba6335, deep: 0x376870 },
   dusk: { name: 'Mandelbox Sunset Dusk', surface: 0xfbbf24, middle: 0xf43f5e, deep: 0x1e1b4b },
   nature: { name: 'EntropyDrop Nature', surface: 0x718f61, middle: 0x806b5c, deep: 0x66707d },
   scifi: { name: 'Cyberpunk Neon Matrix', surface: 0x00f0ff, middle: 0xf43f5e, deep: 0x090d16 },
@@ -1101,6 +1141,7 @@ export function TerrainLabPage() {
     meshTimeMs: 0,
     fps: 60,
   });
+  const [panelsVisible, setPanelsVisible] = useState(true);
   const [copiedCode, setCopiedCode] = useState<'ts' | 'py' | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1115,8 +1156,11 @@ export function TerrainLabPage() {
   const terrainGroupRef = useRef<THREE.Group | null>(null);
   const bboxMeshRef = useRef<THREE.BoxHelper | null>(null);
   const cinematicRef = useRef(false);
+  const panelsVisibleRef = useRef(true);
   const composerRef = useRef<EffectComposer | null>(null);
   const bloomRef = useRef<UnrealBloomPass | null>(null);
+  const aoRef = useRef<SSAOPass | null>(null);
+  const duskSkyRef = useRef<THREE.CanvasTexture | null>(null);
 
   const noise = useMemo(() => new FastSimplexNoise(config.seed), [config.seed]);
 
@@ -1310,6 +1354,13 @@ export function TerrainLabPage() {
     // Keep the glow buffer bounded on high-DPI displays.
     composer.setPixelRatio(1);
     composer.addPass(new RenderPass(scene, camera));
+    const ao = new SSAOPass(scene, camera, width, height, 16);
+    ao.kernelRadius = 12;
+    ao.minDistance = 0.001;
+    ao.maxDistance = 0.035;
+    ao.enabled = false;
+    composer.addPass(ao);
+    aoRef.current = ao;
     const bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.5, 0.45, 0.65);
     const output = new OutputPass();
     composer.addPass(bloom);
@@ -1340,6 +1391,7 @@ export function TerrainLabPage() {
 
     // Subtle blue fill light
     const fillLight = new THREE.DirectionalLight(0x4080ff, 0.6);
+    fillLight.name = 'terrain-fill';
     fillLight.position.set(-60, 40, -60);
     scene.add(fillLight);
 
@@ -1360,7 +1412,7 @@ export function TerrainLabPage() {
       const w = containerRef.current.clientWidth;
       const h = containerRef.current.clientHeight;
       cameraRef.current.aspect = w / h;
-      if (cinematicRef.current) cameraRef.current.setViewOffset(w, h, -Math.min(130, w * 0.1), 0, w, h);
+      if (cinematicRef.current && panelsVisibleRef.current) cameraRef.current.setViewOffset(w, h, -Math.min(130, w * 0.1), 0, w, h);
       else cameraRef.current.clearViewOffset();
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(w, h);
@@ -1398,6 +1450,10 @@ export function TerrainLabPage() {
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
       controls.dispose();
+      ao.dispose();
+      duskSkyRef.current?.dispose();
+      duskSkyRef.current = null;
+      aoRef.current = null;
       bloom.dispose();
       output.dispose();
       composer.dispose();
@@ -1451,7 +1507,10 @@ export function TerrainLabPage() {
     const cols = Math.floor(sizeX / step);
     const rows = Math.floor(sizeZ / step);
 
-    const nexus = algorithm === 'neon_nexus' ? generateNeonNexus(config) : null;
+    const metropolis = algorithm === 'copper_metropolis' ? generateCopperMetropolis(config) : null;
+    const city = metropolis ?? (algorithm === 'brutalist_dusk' ? generateBrutalistDusk(config)
+      : algorithm === 'neon_rain' ? generateNeonRain(config)
+      : algorithm === 'neon_nexus' ? generateNeonNexus(config) : null);
 
     const heights: number[][] = [];
     let minY = Infinity;
@@ -1465,8 +1524,8 @@ export function TerrainLabPage() {
       const wx = offsetX + (x - cols / 2) * step;
       for (let z = 0; z < rows; z++) {
         const wz = offsetZ + (z - rows / 2) * step;
-        const h = nexus
-          ? nexus.heights[Math.min(nexus.width - 1, Math.floor(x * step)) + Math.min(nexus.depth - 1, Math.floor(z * step)) * nexus.width]
+        const h = city
+          ? city.heights[Math.min(city.width - 1, Math.floor(x * step)) + Math.min(city.depth - 1, Math.floor(z * step)) * city.width]
           : Math.min(sizeY, Math.max(0, sampleHeight(wx, wz, config)));
         heights[x][z] = h;
         minY = Math.min(minY, h);
@@ -1481,26 +1540,57 @@ export function TerrainLabPage() {
     // Adjust Scene Atmosphere & Fog
     if (sceneRef.current) {
       const isNexus = algorithm === 'neon_nexus';
-      cinematicRef.current = isNexus;
+      const isCopper = algorithm === 'copper_metropolis';
+      const isRain = algorithm === 'neon_rain';
+      const isBrutal = algorithm === 'brutalist_dusk';
+      const composed = isNexus || isCopper || isRain || isBrutal;
+      if (aoRef.current) aoRef.current.enabled = isBrutal;
+      cinematicRef.current = composed;
       if (rendererRef.current) {
-        rendererRef.current.toneMapping = isNexus ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
-        rendererRef.current.toneMappingExposure = isNexus ? 1.05 : 1;
+        rendererRef.current.toneMapping = composed ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+        rendererRef.current.toneMappingExposure = isBrutal ? 1.12 : isRain ? 1.1 : isCopper ? 0.92 : isNexus ? 1.05 : 1;
       }
-      if (bloomRef.current) bloomRef.current.strength = config.nexusGlow;
+      if (bloomRef.current) bloomRef.current.strength = isBrutal ? config.brutalGlow : isRain ? config.rainGlow : isCopper ? 0 : config.nexusGlow;
       if (cameraRef.current && containerRef.current) {
         const { clientWidth: w, clientHeight: h } = containerRef.current;
-        if (isNexus) cameraRef.current.setViewOffset(w, h, -Math.min(130, w * 0.1), 0, w, h);
+        if (composed && panelsVisibleRef.current) cameraRef.current.setViewOffset(w, h, -Math.min(130, w * 0.1), 0, w, h);
         else cameraRef.current.clearViewOffset();
       }
       const hemi = sceneRef.current.getObjectByName('terrain-hemi') as THREE.HemisphereLight;
       const key = sceneRef.current.getObjectByName('terrain-key') as THREE.DirectionalLight;
-      hemi.intensity = isNexus ? 1.7 : 1.2;
-      hemi.color.setHex(isNexus ? 0x8bb9e9 : 0xddeeff);
-      key.intensity = isNexus ? 1.5 : 2;
-      key.color.setHex(isNexus ? 0x91b8e1 : 0xfffaed);
+      const fill = sceneRef.current.getObjectByName('terrain-fill') as THREE.DirectionalLight;
+      fill.intensity = isBrutal ? 0.55 : 0.6;
+      fill.color.setHex(isBrutal ? 0x8da3c5 : 0x4080ff);
+      hemi.intensity = isBrutal ? 1.4 : isRain ? 2.1 : isCopper ? 0.95 : isNexus ? 1.7 : 1.2;
+      hemi.color.setHex(isBrutal ? 0xa6b5cc : isRain ? 0xb1cce6 : isCopper ? 0xd5eaff : isNexus ? 0x8bb9e9 : 0xddeeff);
+      hemi.groundColor.setHex(isBrutal ? 0x4a4342 : isRain ? 0x253f63 : isCopper ? 0x88775d : 0x1b2533);
+      key.intensity = isBrutal ? 3.5 : isRain ? 2.5 : isCopper ? 2.8 : isNexus ? 1.5 : 2;
+      key.color.setHex(isBrutal ? 0xffcf9d : isRain ? 0xc7dcff : isNexus ? 0x91b8e1 : 0xfffaed);
+      const shadowSpan = (isCopper || isRain || isBrutal) ? Math.max(sizeX, sizeZ) * 0.72 : 5;
+      if (isCopper || isRain || isBrutal) key.position.set(sizeX * 0.65, sizeY * 1.6, sizeZ * 0.42);
+      else key.position.set(80, 120, 60);
+      if (isBrutal) key.position.set(180, 115, 65);
+      key.shadow.camera.left = -shadowSpan;
+      key.shadow.camera.right = shadowSpan;
+      key.shadow.camera.top = shadowSpan;
+      key.shadow.camera.bottom = -shadowSpan;
+      key.shadow.camera.far = (isCopper || isRain || isBrutal) ? Math.max(sizeX, sizeY, sizeZ) * 5 : 500;
+      key.shadow.camera.updateProjectionMatrix();
+      key.shadow.normalBias = (isCopper || isRain || isBrutal) ? 0.06 : 0;
+      key.shadow.needsUpdate = true;
       const grid = sceneRef.current.getObjectByName('terrain-grid');
-      if (grid) grid.visible = !isNexus;
-      if (isNexus) {
+      if (grid) grid.visible = !composed;
+      if (isBrutal) {
+        duskSkyRef.current ??= createDuskSky();
+        sceneRef.current.background = duskSkyRef.current;
+        sceneRef.current.fog = new THREE.FogExp2(0x6a7487, 0.0018);
+      } else if (isRain) {
+        sceneRef.current.background = new THREE.Color(0x07122c);
+        sceneRef.current.fog = new THREE.FogExp2(0x123969, 0.0038);
+      } else if (isCopper) {
+        sceneRef.current.background = new THREE.Color(0x78b5e4);
+        sceneRef.current.fog = new THREE.FogExp2(0xa4c3d8, 0.0011);
+      } else if (isNexus) {
         sceneRef.current.background = new THREE.Color(0x101e36);
         sceneRef.current.fog = new THREE.FogExp2(0x173859, 0.0038);
       } else if (algorithm === 'cyber_megastructure') {
@@ -1540,8 +1630,8 @@ export function TerrainLabPage() {
       const colorMiddle = new THREE.Color(themeColors.middle);
       const colorDeep = new THREE.Color(themeColors.deep);
 
-      if (nexus) {
-        voxelList = nexus.voxels;
+      if (city) {
+        voxelList = city.voxels;
       } else if (algorithm === 'cyber_megastructure') {
         voxelList = generateCyberMegastructureVoxels(cols, rows, step, config);
       } else if (algorithm === 'cyberpunk_city') {
@@ -1614,7 +1704,7 @@ export function TerrainLabPage() {
             dummy.updateMatrix();
             instanced.setMatrixAt(i, dummy.matrix);
             dummyColor.setHex(voxel.color);
-            if (algorithm === 'neon_nexus' && glows) dummyColor.multiplyScalar(voxel.intensity ?? 1);
+            if ((algorithm === 'neon_nexus' || algorithm === 'neon_rain' || algorithm === 'brutalist_dusk') && glows) dummyColor.multiplyScalar(voxel.intensity ?? 1);
             instanced.setColorAt(i, dummyColor);
           }
 
@@ -1625,7 +1715,13 @@ export function TerrainLabPage() {
 
         addVoxelBatch(
           solidVoxels,
-          algorithm === 'neon_nexus'
+          algorithm === 'brutalist_dusk'
+            ? createConcreteMaterial(config.brutalWeathering)
+            : algorithm === 'neon_rain'
+            ? new THREE.MeshStandardMaterial({ roughness: 0.38, metalness: 0.35 })
+            : algorithm === 'copper_metropolis'
+            ? new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.02 })
+            : algorithm === 'neon_nexus'
             ? new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.24, emissive: 0x0b1b2f, emissiveIntensity: 0.7 })
             : algorithm === 'cyber_megastructure'
             ? new THREE.MeshStandardMaterial({
@@ -1637,11 +1733,20 @@ export function TerrainLabPage() {
             : new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0.2 }),
           false
         );
-        addVoxelBatch(
-          neonVoxels,
-          new THREE.MeshBasicMaterial({ fog: algorithm === 'neon_nexus', toneMapped: false }),
-          true
-        );
+        // This city has exactly two materials. Emission uses each cube's HDR
+        // instance colour; normal blocks have no emissive contribution.
+        let lightMaterial: THREE.Material;
+        if (algorithm === 'neon_rain' || algorithm === 'brutalist_dusk') {
+          const emissiveMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 1, toneMapped: false });
+          emissiveMaterial.onBeforeCompile = shader => {
+            shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>',
+              '#include <emissivemap_fragment>\n#ifdef USE_COLOR\n totalEmissiveRadiance *= vColor.rgb;\n#endif');
+          };
+          lightMaterial = emissiveMaterial;
+        } else {
+          lightMaterial = new THREE.MeshBasicMaterial({ fog: algorithm === 'neon_nexus', toneMapped: false });
+        }
+        addVoxelBatch(neonVoxels, lightMaterial, true);
       }
     }
     // ------------------------------------------------------------------------
@@ -1713,7 +1818,7 @@ export function TerrainLabPage() {
     boxHelper.position.set(0, sizeY / 2, 0);
     sceneRef.current.add(boxHelper);
     bboxMeshRef.current = boxHelper;
-    boxHelper.visible = algorithm !== 'neon_nexus';
+    boxHelper.visible = algorithm !== 'brutalist_dusk' && algorithm !== 'neon_nexus' && algorithm !== 'copper_metropolis' && algorithm !== 'neon_rain';
 
     const t2 = performance.now();
 
@@ -1757,7 +1862,36 @@ export function TerrainLabPage() {
   }, [rebuildTerrain]);
 
   useEffect(() => {
-    if (config.algorithm !== 'neon_nexus' || !cameraRef.current || !controlsRef.current) return;
+    panelsVisibleRef.current = panelsVisible;
+    const camera = cameraRef.current, container = containerRef.current;
+    if (!camera || !container) return;
+    const { clientWidth: w, clientHeight: h } = container;
+    if (cinematicRef.current && panelsVisible) camera.setViewOffset(w, h, -Math.min(130, w * 0.1), 0, w, h);
+    else camera.clearViewOffset();
+    camera.updateProjectionMatrix();
+  }, [panelsVisible]);
+
+  useEffect(() => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    if (config.algorithm === 'brutalist_dusk') {
+      cameraRef.current.position.set(110, 105, 200);
+      controlsRef.current.target.set(0, 54, -8);
+      controlsRef.current.update();
+      return;
+    }
+    if (config.algorithm === 'neon_rain') {
+      cameraRef.current.position.set(158, 108, 166);
+      controlsRef.current.target.set(0, 38, 0);
+      controlsRef.current.update();
+      return;
+    }
+    if (config.algorithm === 'copper_metropolis') {
+      cameraRef.current.position.set(150, 113, 171);
+      controlsRef.current.target.set(-4, 33, -6);
+      controlsRef.current.update();
+      return;
+    }
+    if (config.algorithm !== 'neon_nexus') return;
     cameraRef.current.position.set(88, 58, 106);
     controlsRef.current.target.set(0, 27, 0);
     controlsRef.current.update();
@@ -1773,6 +1907,15 @@ export function TerrainLabPage() {
       const roadX = Math.round(config.offsetX / config.nexusPitch) * config.nexusPitch - config.offsetX;
       cameraRef.current.position.set(roadX, 9, sizeZ * 0.46);
       controlsRef.current.target.set(roadX - 1, 11, -sizeZ * 0.25);
+    } else if (view === 'iso' && config.algorithm === 'brutalist_dusk') {
+      cameraRef.current.position.set(maxDim * 0.573, sizeY * 0.656, maxDim * 1.042);
+      controlsRef.current.target.set(0, sizeY * 0.3375, -8);
+    } else if (view === 'iso' && config.algorithm === 'neon_rain') {
+      cameraRef.current.position.set(maxDim * 0.82, sizeY * 0.75, maxDim * 0.865);
+      controlsRef.current.target.set(0, sizeY * 0.26, 0);
+    } else if (view === 'iso' && config.algorithm === 'copper_metropolis') {
+      cameraRef.current.position.set(maxDim * 0.78, maxDim * 0.59, maxDim * 0.89);
+      controlsRef.current.target.set(-4, sizeY * 0.26, -6);
     } else if (view === 'iso' && config.algorithm === 'neon_nexus') {
       cameraRef.current.position.set(maxDim * 0.92, sizeY * 0.66, maxDim * 1.1);
       controlsRef.current.target.set(0, sizeY * 0.31, 0);
@@ -1794,6 +1937,30 @@ export function TerrainLabPage() {
 
   // Generate copyable code
   const generatedCode = useMemo(() => {
+    if (config.algorithm === 'brutalist_dusk') {
+      const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, brutalHeight, brutalDensity,
+        brutalWeathering, brutalTransit, brutalPeople, brutalLights, brutalGlow } = config;
+      return {
+        ts: `${brutalistDuskSource}\n\n// Exact preview geometry. All cubes declare normal / emissive material.\nconst result = generateBrutalistDusk(${JSON.stringify({ sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, brutalHeight, brutalDensity, brutalWeathering, brutalTransit, brutalPeople, brutalLights, brutalGlow }, null, 2)});\n`,
+        py: '',
+      };
+    }
+    if (config.algorithm === 'neon_rain') {
+      const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, rainHeight, rainLotSize,
+        rainWindows, rainSigns, rainBridges, rainTraffic, rainAmount, rainGlow } = config;
+      return {
+        ts: `${neonRainSource}\n\n// Reproduce the preview. Each cube declares normal / emissive material.\nconst result = generateNeonRain(${JSON.stringify({ sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, rainHeight, rainLotSize, rainWindows, rainSigns, rainBridges, rainTraffic, rainAmount, rainGlow }, null, 2)});\n`,
+        py: '',
+      };
+    }
+    if (config.algorithm === 'copper_metropolis') {
+      const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed,
+        metropolisHeight, metropolisLots, metropolisSpread, metropolisDetail, metropolisBridges } = config;
+      return {
+        ts: `${copperMetropolisSource}\n\n// Exact preview parameters. Cubes use centred X/Z and bottom Y.\nconst result = generateCopperMetropolis(${JSON.stringify({ sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, metropolisHeight, metropolisLots, metropolisSpread, metropolisDetail, metropolisBridges }, null, 2)});\n`,
+        py: '',
+      };
+    }
     if (config.algorithm === 'neon_nexus') {
       const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed,
         nexusPitch, nexusHeight, nexusDetail, nexusWindows, nexusBridges, nexusGlow } = config;
@@ -2073,6 +2240,30 @@ def sample_height(self, world_x: int, world_z: int) -> int:
         {/* Preset Switcher */}
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap bg-black/40 p-1 rounded-lg border border-white/10 text-xs [&>button]:shrink-0">
           <button
+            onClick={() => { setConfig(c => ({ ...c, ...BRUTALIST_DUSK_PRESET })); setActiveTab('algorithm'); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'brutalist_dusk' ? 'border-orange-200/50 bg-orange-200/10 text-orange-100' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
+            title="旧化混凝土巨构、贯通门洞、斜撑与高架列车 · 1m / 0.125m"
+          >
+            <Icon icon="mdi:office-building" className="text-orange-200" />
+            <span>Brutalist Dusk · 黄昏巨构</span>
+          </button>
+          <button
+            onClick={() => { setConfig(c => ({ ...c, ...NEON_RAIN_PRESET })); setActiveTab('algorithm'); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'neon_rain' ? 'border-fuchsia-400/50 bg-fuchsia-400/10 text-fuchsia-100' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
+            title="不规则霓虹街区、错层连桥与微方块灯牌 · 1m / 0.125m"
+          >
+            <Icon icon="mdi:weather-rainy" className="text-fuchsia-300" />
+            <span>Neon Rain · 霓雨都会</span>
+          </button>
+          <button
+            onClick={() => { setConfig(c => ({ ...c, ...METROPOLIS_PRESET })); setActiveTab('algorithm'); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'copper_metropolis' ? 'border-amber-300/50 bg-amber-300/10 text-amber-100' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
+            title="不规则街区、层叠塔楼、铜绿穹顶与米白立面"
+          >
+            <Icon icon="mdi:city" className="text-amber-300" />
+            <span>Copper Metropolis · 铜冠都会</span>
+          </button>
+          <button
             onClick={() => { setConfig(c => ({ ...c, ...NEXUS_PRESET })); setActiveTab('algorithm'); }}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'neon_nexus' ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-200' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
             title="Dense voxel arcologies, micro windows, neon signs and layered skyways"
@@ -2226,6 +2417,13 @@ def sample_height(self, world_x: int, world_z: int) -> int:
         <canvas ref={canvasRef} className="w-full h-full block cursor-grab active:cursor-grabbing" />
       </div>
 
+      <button
+        onClick={() => setPanelsVisible(visible => !visible)}
+        aria-label={panelsVisible ? 'Hide panels' : 'Show panels'}
+        aria-pressed={!panelsVisible}
+        className="absolute bottom-2 left-2 z-30 rounded border border-white/15 bg-[#0f1722]/85 px-2.5 py-1.5 text-[11px] text-white/70 hover:text-white"
+      >{panelsVisible ? 'Hide panels / 隐藏面板' : 'Show panels / 显示面板'}</button>
+
       {/* Floating View Angle Selector */}
       <div className="absolute top-16 right-6 z-20 flex items-center gap-1 bg-[#0f1722]/85 backdrop-blur-md p-1 border border-white/10 rounded shadow-lg text-xs">
         {config.algorithm === 'neon_nexus' && <button
@@ -2259,7 +2457,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
       </div>
 
       {/* Left Control Dashboard */}
-      <aside className="absolute top-16 left-6 bottom-6 z-20 w-84 bg-[#0f1722]/90 backdrop-blur-xl border border-white/15 rounded-lg shadow-2xl flex flex-col overflow-hidden text-xs">
+      <aside style={{ display: panelsVisible ? undefined : 'none' }} className="absolute top-16 left-6 bottom-10 z-20 w-84 bg-[#0f1722]/90 backdrop-blur-xl border border-white/15 rounded-lg shadow-2xl flex flex-col overflow-hidden text-xs">
         {/* Navigation Tabs */}
         <div className="flex border-b border-white/10 bg-black/20 text-[11px]">
           <button
@@ -2372,7 +2570,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 <input
                   type="range"
                   min="16"
-                  max="96"
+                  max={config.algorithm === 'brutalist_dusk' || config.algorithm === 'copper_metropolis' || config.algorithm === 'neon_rain' ? 160 : 96}
                   step="4"
                   value={config.sizeY}
                   onChange={e => setConfig(c => ({ ...c, sizeY: Number(e.target.value) }))}
@@ -2445,10 +2643,13 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                   value={config.algorithm}
                   onChange={e => {
                     const algorithm = e.target.value as AlgorithmType;
-                    setConfig(c => ({ ...c, ...(algorithm === 'neon_nexus' ? NEXUS_PRESET : {}), algorithm }));
+                    setConfig(c => ({ ...c, ...(algorithm === 'brutalist_dusk' ? BRUTALIST_DUSK_PRESET : algorithm === 'neon_rain' ? NEON_RAIN_PRESET : algorithm === 'copper_metropolis' ? METROPOLIS_PRESET : algorithm === 'neon_nexus' ? NEXUS_PRESET : {}), algorithm }));
                   }}
                   className="w-full bg-[#182330] border border-white/15 rounded px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#f59e0b]"
                 >
+                  <option value="brutalist_dusk">Brutalist Dusk · 黄昏巨构 / 混凝土与高架城市</option>
+                  <option value="neon_rain">Neon Rain · 霓雨都会 / 普通 + 发光材质</option>
+                  <option value="copper_metropolis">Copper Metropolis · 铜冠都会 / 不规则层叠城市</option>
                   <option value="neon_nexus">Neon Nexus · 霓虹巨构 / Dense Arcology</option>
                   <option value="cyber_megastructure">🏙️ 1. Cyber Megastructure Tiles (Standard + Micro Voxels)</option>
                   <option value="mandelbox_dusk">🌇 2. Mandelbox - City at Dusk (Box-Fold 3D Fractal)</option>
@@ -2465,7 +2666,95 @@ def sample_height(self, world_x: int, world_z: int) -> int:
               {/* Algorithm-Specific Sliders */}
               <div className="space-y-3 pt-2 border-t border-white/10">
                 {/* Mandelbox Dusk Parameters */}
-                {config.algorithm === 'neon_nexus' ? (
+                {config.algorithm === 'brutalist_dusk' ? (
+                  <>
+                    <div className="rounded border border-orange-200/20 bg-[#272727] p-3 leading-relaxed">
+                      <div className="mb-1 text-xs tracking-wider text-orange-100">BRUTALIST DUSK / 黄昏巨构</div>
+                      <p className="text-[11px] text-stone-400">不对称塔墩、贯通门洞、承重斜撑与空中楼层。凹入窗洞、混凝土雨痕、工业管线和站台列车，在冷暖暮光中呈现真实的建筑尺度。</p>
+                      <div className="mt-2 flex gap-2 text-[10px]">
+                        <span className="rounded border border-stone-500/30 px-1.5 text-stone-300">普通材质</span>
+                        <span className="rounded border border-orange-200/30 px-1.5 text-orange-200">发光材质</span>
+                      </div>
+                    </div>
+                    {([
+                      { key: 'brutalHeight', label: '巨构主塔高度', min: 80, max: 148, step: 2, unit: 'm' },
+                      { key: 'brutalDensity', label: '周边城区密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'brutalWeathering', label: '混凝土风化程度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'brutalTransit', label: '高架轨道层数', min: 0, max: 1, step: 0.5, unit: '' },
+                      { key: 'brutalPeople', label: '站台与广场人群', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'brutalLights', label: '室内亮灯比例', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'brutalGlow', label: '灯光辉光强度', min: 0, max: 0.8, step: 0.05, unit: '' },
+                    ] as const).map(control => (
+                      <label key={control.key} className="block space-y-1.5 pt-1">
+                        <span className="flex justify-between text-white/60">
+                          <span>{control.label}</span>
+                          <span className="font-bold text-orange-100">{control.key === 'brutalTransit' ? Math.round(config[control.key] * 2) : control.unit === '%' ? Math.round(config[control.key] * 100) : config[control.key]}{control.unit}</span>
+                        </span>
+                        <input type="range" aria-label={control.label} min={control.min} max={control.max} step={control.step}
+                          value={config[control.key]} onChange={e => setConfig(c => ({ ...c, [control.key]: Number(e.target.value) }))}
+                          className="w-full accent-orange-200" />
+                      </label>
+                    ))}
+                    <p className="text-[10px] leading-relaxed text-stone-500">仅 1m / 0.125m 立方块。更换种子改变塔高、周边街区、窗口和旧痕。列车与人物为静态模型；Y-Slice 可检查内部结构。预览附带暮云、材质颗粒和接触阴影。</p>
+                  </>
+                ) : config.algorithm === 'neon_rain' ? (
+                  <>
+                    <div className="rounded border border-fuchsia-300/20 bg-[#161b35] p-3 leading-relaxed">
+                      <div className="mb-1 text-xs tracking-wider text-fuchsia-100">NEON RAIN / 霓雨都会</div>
+                      <p className="text-[11px] text-slate-400">深蓝塔楼、青紫灯牌、错层连桥与雨夜街巷。不规则地块组合双塔、偏心退台和板式楼体，窗格与霓虹节奏独立变化。</p>
+                      <div className="mt-2 flex gap-2 text-[10px]">
+                        <span className="rounded border border-slate-500/30 px-1.5 text-slate-300">普通材质</span>
+                        <span className="rounded border border-cyan-300/30 px-1.5 text-cyan-200">发光材质</span>
+                      </div>
+                    </div>
+                    {([
+                      { key: 'rainHeight', label: '塔群最高高度', min: 48, max: 136, step: 4, unit: 'm' },
+                      { key: 'rainLotSize', label: '街区地块尺度', min: 16, max: 32, step: 1, unit: 'm' },
+                      { key: 'rainWindows', label: '亮灯窗口比例', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'rainSigns', label: '霓虹灯牌密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'rainBridges', label: '错层连桥密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'rainTraffic', label: '街道与悬浮交通', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'rainAmount', label: '雨丝密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'rainGlow', label: '霓虹辉光强度', min: 0, max: 1.2, step: 0.05, unit: '' },
+                    ] as const).map(control => (
+                      <label key={control.key} className="block space-y-1.5 pt-1">
+                        <span className="flex justify-between text-white/60">
+                          <span>{control.label}</span>
+                          <span className="font-bold text-fuchsia-100">{control.unit === '%' ? Math.round(config[control.key] * 100) : config[control.key]}{control.unit}</span>
+                        </span>
+                        <input type="range" aria-label={control.label} min={control.min} max={control.max} step={control.step}
+                          value={config[control.key]} onChange={e => setConfig(c => ({ ...c, [control.key]: Number(e.target.value) }))}
+                          className="w-full accent-fuchsia-400" />
+                      </label>
+                    ))}
+                    <p className="text-[10px] leading-relaxed text-slate-500">所有构件仅由 1m / 0.125m 立方块组成。亮灯比例、灯牌密度和辉光可分别调节；更换种子重新规划楼体与街巷。雨丝为静态体素构件。</p>
+                  </>
+                ) : config.algorithm === 'copper_metropolis' ? (
+                  <>
+                    <div className="rounded border border-amber-200/20 bg-[#25251f] p-3 leading-relaxed">
+                      <div className="mb-1 text-xs tracking-wider text-amber-100">COPPER METROPOLIS / 铜冠都会</div>
+                      <p className="text-[11px] text-stone-400">米白石框、陶土塔楼与铜绿穹顶。错落街巷与多中心天际线，组合八类屋顶、六类立面、偏心退台和空中连廊，打散建筑重复感。</p>
+                    </div>
+                    {([
+                      { key: 'metropolisHeight', label: '主城天际线', min: 40, max: 136, step: 4, unit: 'm' },
+                      { key: 'metropolisLots', label: '平均地块尺度', min: 14, max: 28, step: 1, unit: 'm' },
+                      { key: 'metropolisSpread', label: '建筑高差变化', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'metropolisDetail', label: '微方块细节', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'metropolisBridges', label: '相邻楼宇连桥', min: 0, max: 0.8, step: 0.05, unit: '%' },
+                    ] as const).map(control => (
+                      <label key={control.key} className="block space-y-1.5 pt-1">
+                        <span className="flex justify-between text-white/60">
+                          <span>{control.label}</span>
+                          <span className="font-bold text-amber-100">{control.unit === '%' ? Math.round(config[control.key] * 100) : config[control.key]}{control.unit}</span>
+                        </span>
+                        <input type="range" aria-label={control.label} min={control.min} max={control.max} step={control.step}
+                          value={config[control.key]} onChange={e => setConfig(c => ({ ...c, [control.key]: Number(e.target.value) }))}
+                          className="w-full accent-amber-300" />
+                      </label>
+                    ))}
+                    <p className="text-[10px] leading-relaxed text-stone-500">切换种子可重新规划整座城市。1m 标准方块搭主体，0.125m 微方块补窗沿、屋顶设备和雨棚。Top 查看街巷布局；Y-Slice 查看建筑剖面。</p>
+                  </>
+                ) : config.algorithm === 'neon_nexus' ? (
                   <>
                     <div className="rounded border border-cyan-300/20 bg-[#0a1b2c] p-3 leading-relaxed">
                       <div className="mb-1 text-xs tracking-wider text-cyan-200">NEON NEXUS / 霓虹巨构</div>
@@ -3090,8 +3379,8 @@ def sample_height(self, world_x: int, world_z: int) -> int:
               <div className="text-[11px] uppercase tracking-wider text-white/40 font-bold">
                 Export to Game Code
               </div>
-              {config.algorithm === 'neon_nexus' && (
-                <p className="text-[11px] leading-relaxed text-cyan-200/70">完整 TypeScript 生成器与当前参数。导出结果包含每个方块的位置、尺寸、颜色与发光强度，可直接接入实例渲染。</p>
+              {(config.algorithm === 'brutalist_dusk' || config.algorithm === 'neon_rain' || config.algorithm === 'neon_nexus' || config.algorithm === 'copper_metropolis') && (
+                <p className="text-[11px] leading-relaxed text-cyan-200/70">完整 TypeScript 生成器与当前参数。导出结果包含每个方块的位置、尺寸和颜色{config.algorithm === 'neon_rain' || config.algorithm === 'brutalist_dusk' ? '，以及普通 / 发光材质标记和发光强度' : config.algorithm === 'neon_nexus' ? '，以及发光强度' : ''}，可直接接入实例渲染。</p>
               )}
 
               <div className="space-y-2">
@@ -3113,7 +3402,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 </pre>
               </div>
 
-              {config.algorithm !== 'neon_nexus' && <div className="space-y-2 pt-2 border-t border-white/10">
+              {config.algorithm !== 'brutalist_dusk' && config.algorithm !== 'neon_rain' && config.algorithm !== 'neon_nexus' && config.algorithm !== 'copper_metropolis' && <div className="space-y-2 pt-2 border-t border-white/10">
                 <div className="flex justify-between items-center">
                   <span className="text-white font-semibold flex items-center gap-1">
                     <Icon icon="mdi:language-python" className="text-yellow-400 text-base" />
@@ -3137,7 +3426,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
       </aside>
 
       {/* Bottom Right Floating Stats & 2D Heightmap */}
-      <div className="absolute bottom-6 right-6 z-20 flex flex-col gap-2.5 items-end">
+      <div style={{ display: panelsVisible ? undefined : 'none' }} className="absolute bottom-6 right-6 z-20 flex flex-col gap-2.5 items-end">
         {/* Top-Down 2D Canvas */}
         <div className="bg-[#0f1722]/85 backdrop-blur-md p-2 border border-white/15 rounded-lg shadow-xl flex flex-col items-center gap-1.5">
           <div className="flex justify-between items-center w-full px-1 text-[10px] text-white/50">

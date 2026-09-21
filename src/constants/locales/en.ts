@@ -1010,9 +1010,9 @@ Email: support@entropydrop.com`
     space_page: {
         title: 'EntropyDrop Space',
         eyebrow: 'PLAYABLE PROTOTYPE',
-        platform: 'WebGL 2 · Voxel Physics · Earth / Donut Terrain',
+        platform: 'WebGL 2 · Voxel Physics · Donut Terrain',
         tagline: 'AI-Assisted Building & Autonomous Control Voxel Universe',
-        description: 'Sculpt voxels in Earth mode by default, or switch to the seamless torus donut terrain in Settings. Turn structures into dynamic rigid bodies with one click, use AI-assisted building to construct complex machinery, and mount intelligent AI for autonomous control, cruising, and physical interaction directly in your browser.',
+        description: 'Sculpt voxels across a seamless torus donut world. Turn structures into dynamic rigid bodies with one click, use AI-assisted building to construct complex machinery, and mount intelligent AI for autonomous control, cruising, and physical interaction directly in your browser.',
         primaryCta: 'Enter Space',
         secondaryCta: 'Core Features',
         onlinePlayers: 'players online',
@@ -1022,7 +1022,7 @@ Email: support@entropydrop.com`
             scale: '0.125m (8×8×8) Micro Grid',
             physics: '60Hz Voxel Physics & BVH Cache',
             programmable: 'AI Building & Auto Control',
-            torus: 'Earth / Donut Modes'
+            torus: 'Seamless Donut World'
         },
         heroPreview: {
             title: 'Space Realtime Viewport',
@@ -1054,11 +1054,11 @@ Email: support@entropydrop.com`
                 placeholderTitle: 'AI Building & Autonomous Control Terminal Screenshot'
             },
             {
-                tag: 'SWITCHABLE TERRAIN & ULTRA HDR',
-                title: 'Earth & Donut Terrain Modes with Ultra HDR',
-                description: 'Explore with spherical Earth horizon curvature by default, or toggle to seamless Torus donut topology anytime. Features an Ultra HDR cinematic pipeline with 4096² soft morning shadows, dynamic layered clouds, atmospheric sun shafts, and multi-tier distant LOD up to 4000m continuous view distance.',
-                badge: 'Earth / Torus // Ultra HDR',
-                placeholderTitle: 'Switchable Earth and Donut Terrain Screenshot'
+                tag: 'DONUT TERRAIN & ULTRA HDR',
+                title: 'Seamless Donut Terrain with Ultra HDR',
+                description: 'Explore a seamless Torus donut topology with an Ultra HDR cinematic pipeline, including 4096² soft morning shadows, dynamic layered clouds, atmospheric sun shafts, and multi-tier distant LOD up to 4000m continuous view distance.',
+                badge: 'Torus // Ultra HDR',
+                placeholderTitle: 'Seamless Donut Terrain Screenshot'
             }
         ],
         toolsGuide: {

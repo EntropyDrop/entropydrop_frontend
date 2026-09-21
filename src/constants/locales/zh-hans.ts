@@ -1010,9 +1010,9 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
     space_page: {
         title: 'EntropyDrop Space',
         eyebrow: '可游玩原型',
-        platform: 'WebGL 2 · 体素物理 · 地球 / 甜甜圈地形',
+        platform: 'WebGL 2 · 体素物理 · 甜甜圈地形',
         tagline: 'AI 辅助建造与自动控制的体素物理世界',
-        description: '默认在地球模式中自由雕刻体素，也可随时在设置中切换为无边界的环面甜甜圈地形。一键将结构实体化为物理刚体，借助 AI 辅助快速建造复杂机械，并挂载 AI 智能体实现全自动动力巡航与行为控制。',
+        description: '在无缝环面甜甜圈世界中自由雕刻体素。一键将结构实体化为物理刚体，借助 AI 辅助快速建造复杂机械，并挂载 AI 智能体实现全自动动力巡航与行为控制。',
         primaryCta: '进入 Space 世界',
         secondaryCta: '核心特性',
         onlinePlayers: '人在线',
@@ -1022,7 +1022,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             scale: '0.125m (8×8×8) 微格',
             physics: '60Hz 刚体物理 & BVH 缓存',
             programmable: 'AI 辅助建造 & 自动控制',
-            torus: '地球 / 甜甜圈模式'
+            torus: '无缝甜甜圈世界'
         },
         heroPreview: {
             title: 'Space 实时运行视口',
@@ -1054,11 +1054,11 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                 placeholderTitle: 'AI 辅助建造与自动控制终端截图'
             },
             {
-                tag: '可切换地形与影视光影',
-                title: '地球 / 甜甜圈地形与 Ultra HDR 光影',
-                description: '默认以地球模式呈现地平线弧度，可随时在设置中切换为无缝环面甜甜圈拓扑。搭载 Ultra 级 HDR 影视光影管线（4096² 柔和长阴影、分层动态体积云、丁达尔光束与接触遮蔽）与长达 4000m 的多层级远景 LOD，尽显壮丽世界风貌。',
-                badge: 'Earth / Torus // Ultra HDR',
-                placeholderTitle: '地球与甜甜圈地形切换截图'
+                tag: '甜甜圈地形与影视光影',
+                title: '无缝甜甜圈地形与 Ultra HDR 光影',
+                description: '探索无缝环面甜甜圈拓扑，搭载 Ultra 级 HDR 影视光影管线（4096² 柔和长阴影、分层动态体积云、丁达尔光束与接触遮蔽）与长达 4000m 的多层级远景 LOD，尽显壮丽世界风貌。',
+                badge: 'Torus // Ultra HDR',
+                placeholderTitle: '无缝甜甜圈地形截图'
             }
         ],
         toolsGuide: {

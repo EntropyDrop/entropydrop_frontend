@@ -37,6 +37,15 @@ test('Space welcome page does not expose offline mode entries', () => {
   assert.doesNotMatch(source, /data\.offlineCta/);
 });
 
+test('Space intro presents the donut world as the only terrain mode', () => {
+  for (const locale of ['en', 'zh-hans']) {
+    const source = readFileSync(join(__dirname, `../src/constants/locales/${locale}.ts`), 'utf8');
+    const spacePage = source.split('    space_page: {')[1];
+    assert.doesNotMatch(spacePage, /Earth|earth|地球/);
+    assert.match(spacePage, /Torus|甜甜圈/);
+  }
+});
+
 test('Space entry points route to dedicated Space domain in production and local mount in dev', () => {
   const spacePageSource = readFileSync(join(__dirname, '../src/pages/SpacePage.tsx'), 'utf8');
   assert.match(spacePageSource, /import\.meta\.env\.DEV \? '\/space\/app\/' : 'https:\/\/space\.entropydrop\.com\/'/);
