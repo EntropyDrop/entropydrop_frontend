@@ -21,6 +21,22 @@ import { generateBrutalistDusk, BRUTALIST_DUSK_DEFAULTS } from './terrainLab/bru
 import type { BrutalistDuskConfig } from './terrainLab/brutalistDusk';
 import brutalistDuskSource from './terrainLab/brutalistDusk.ts?raw';
 import { createConcreteMaterial, createDuskSky } from './terrainLab/brutalistLook';
+import { generateAetherArchipelago, AETHER_DEFAULTS } from './terrainLab/aetherArchipelago';
+import type { AetherConfig } from './terrainLab/aetherArchipelago';
+import aetherSource from './terrainLab/aetherArchipelago.ts?raw';
+import { createAetherMaterial, createAetherSky } from './terrainLab/aetherLook';
+import { generateAstralFoundry, FOUNDRY_DEFAULTS } from './terrainLab/astralFoundry';
+import type { FoundryConfig } from './terrainLab/astralFoundry';
+import foundrySource from './terrainLab/astralFoundry.ts?raw';
+import { createFoundryMaterial, createAstralSky } from './terrainLab/astralLook';
+import { generateTitanCanyon, CANYON_DEFAULTS } from './terrainLab/titanCanyon';
+import type { CanyonConfig } from './terrainLab/titanCanyon';
+import canyonSource from './terrainLab/titanCanyon.ts?raw';
+import { createCanyonMaterial, createCanyonSky } from './terrainLab/canyonLook';
+import { generateColossusHarbor, HARBOR_DEFAULTS } from './terrainLab/colossusHarbor';
+import type { HarborConfig } from './terrainLab/colossusHarbor';
+import harborSource from './terrainLab/colossusHarbor.ts?raw';
+import { createHarborMaterial, createHarborSky } from './terrainLab/harborLook';
 
 // ============================================================================
 // 1. DETERMINISTIC SIMPLEX NOISE 2D / 3D (Identical to Game Engine & Backend)
@@ -162,6 +178,10 @@ const TORUS_SPAWN_X = 8192;
 const TORUS_SPAWN_Z = 1024;
 
 export type AlgorithmType =
+  | 'colossus_harbor'
+  | 'titan_canyon'
+  | 'astral_foundry'
+  | 'aether_archipelago'
   | 'brutalist_dusk'
   | 'neon_rain'
   | 'copper_metropolis'
@@ -176,7 +196,7 @@ export type AlgorithmType =
   | 'mandelbox_dusk'
   | 'custom_code';
 
-export interface TerrainConfig extends NexusConfig, MetropolisConfig, NeonRainConfig, BrutalistDuskConfig {
+export interface TerrainConfig extends NexusConfig, MetropolisConfig, NeonRainConfig, BrutalistDuskConfig, AetherConfig, FoundryConfig, CanyonConfig, HarborConfig {
   sizeX: number;
   sizeY: number;
   sizeZ: number;
@@ -245,6 +265,10 @@ const DEFAULT_CONFIG: TerrainConfig = {
   ...METROPOLIS_DEFAULTS,
   ...NEON_RAIN_DEFAULTS,
   ...BRUTALIST_DUSK_DEFAULTS,
+  ...AETHER_DEFAULTS,
+  ...FOUNDRY_DEFAULTS,
+  ...CANYON_DEFAULTS,
+  ...HARBOR_DEFAULTS,
   sizeX: 64,
   sizeY: 56,
   sizeZ: 64,
@@ -294,6 +318,30 @@ return Math.round(16 + ripple + n);`,
   mandelboxThreshold: 0.16,
   mandelboxOffsetX: 1.05,
   mandelboxOffsetZ: 1.05,
+};
+
+const HARBOR_PRESET: Partial<TerrainConfig> = {
+  ...HARBOR_DEFAULTS, algorithm: 'colossus_harbor',
+  sizeX: 384, sizeY: 192, sizeZ: 384, yCutoff: 192,
+  offsetX: 0, offsetZ: 0, step: 1, theme: 'copper', renderMode: 'voxel',
+};
+
+const CANYON_PRESET: Partial<TerrainConfig> = {
+  ...CANYON_DEFAULTS, algorithm: 'titan_canyon',
+  sizeX: 384, sizeY: 192, sizeZ: 320, yCutoff: 192,
+  offsetX: 32, offsetZ: 24, step: 1, theme: 'copper', renderMode: 'voxel',
+};
+
+const FOUNDRY_PRESET: Partial<TerrainConfig> = {
+  ...FOUNDRY_DEFAULTS, algorithm: 'astral_foundry',
+  sizeX: 320, sizeY: 192, sizeZ: 320, yCutoff: 192,
+  offsetX: 0, offsetZ: 0, step: 1, theme: 'scifi', renderMode: 'voxel',
+};
+
+const AETHER_PRESET: Partial<TerrainConfig> = {
+  ...AETHER_DEFAULTS, algorithm: 'aether_archipelago',
+  sizeX: 384, sizeY: 192, sizeZ: 384, yCutoff: 192,
+  offsetX: -122, offsetZ: 12, step: 1, theme: 'nature', renderMode: 'voxel',
 };
 
 const BRUTALIST_DUSK_PRESET: Partial<TerrainConfig> = {
@@ -1161,6 +1209,15 @@ export function TerrainLabPage() {
   const bloomRef = useRef<UnrealBloomPass | null>(null);
   const aoRef = useRef<SSAOPass | null>(null);
   const duskSkyRef = useRef<THREE.CanvasTexture | null>(null);
+  const harborSkyRef = useRef<THREE.CanvasTexture | null>(null);
+  const harborOverviewRef = useRef<ReturnType<typeof generateColossusHarbor>['overviewView'] | null>(null);
+  const statueViewsRef = useRef<ReturnType<typeof generateColossusHarbor>['statueViews']>([]);
+  const statueIndexRef = useRef(0);
+  const canyonSkyRef = useRef<THREE.CanvasTexture | null>(null);
+  const astralSkyRef = useRef<THREE.CanvasTexture | null>(null);
+  const canyonOverviewRef = useRef<ReturnType<typeof generateTitanCanyon>['overviewView'] | null>(null);
+  const platformViewRef = useRef<ReturnType<typeof generateAstralFoundry>['deckView']>(null);
+  const aetherSkyRef = useRef<THREE.CanvasTexture | null>(null);
 
   const noise = useMemo(() => new FastSimplexNoise(config.seed), [config.seed]);
 
@@ -1451,6 +1508,14 @@ export function TerrainLabPage() {
       resizeObserver.disconnect();
       controls.dispose();
       ao.dispose();
+      harborSkyRef.current?.dispose();
+      harborSkyRef.current = null;
+      canyonSkyRef.current?.dispose();
+      canyonSkyRef.current = null;
+      astralSkyRef.current?.dispose();
+      astralSkyRef.current = null;
+      aetherSkyRef.current?.dispose();
+      aetherSkyRef.current = null;
       duskSkyRef.current?.dispose();
       duskSkyRef.current = null;
       aoRef.current = null;
@@ -1508,7 +1573,16 @@ export function TerrainLabPage() {
     const rows = Math.floor(sizeZ / step);
 
     const metropolis = algorithm === 'copper_metropolis' ? generateCopperMetropolis(config) : null;
-    const city = metropolis ?? (algorithm === 'brutalist_dusk' ? generateBrutalistDusk(config)
+    const harbor = algorithm === 'colossus_harbor' ? generateColossusHarbor(config) : null;
+    harborOverviewRef.current = harbor?.overviewView ?? null;
+    statueViewsRef.current = harbor?.statueViews ?? [];
+    statueIndexRef.current = 0;
+    const canyon = algorithm === 'titan_canyon' ? generateTitanCanyon(config) : null;
+    const foundry = algorithm === 'astral_foundry' ? generateAstralFoundry(config) : null;
+    canyonOverviewRef.current = canyon?.overviewView ?? null;
+    platformViewRef.current = harbor?.deckView ?? canyon?.deckView ?? foundry?.deckView ?? null;
+    const city = harbor ?? canyon ?? foundry ?? metropolis ?? (algorithm === 'aether_archipelago' ? generateAetherArchipelago(config)
+      : algorithm === 'brutalist_dusk' ? generateBrutalistDusk(config)
       : algorithm === 'neon_rain' ? generateNeonRain(config)
       : algorithm === 'neon_nexus' ? generateNeonNexus(config) : null);
 
@@ -1543,14 +1617,19 @@ export function TerrainLabPage() {
       const isCopper = algorithm === 'copper_metropolis';
       const isRain = algorithm === 'neon_rain';
       const isBrutal = algorithm === 'brutalist_dusk';
-      const composed = isNexus || isCopper || isRain || isBrutal;
-      if (aoRef.current) aoRef.current.enabled = isBrutal;
+      const isAether = algorithm === 'aether_archipelago';
+      const isFoundry = algorithm === 'astral_foundry';
+      const isHarbor = algorithm === 'colossus_harbor';
+      const isCanyon = algorithm === 'titan_canyon';
+      if (controlsRef.current) controlsRef.current.maxPolarAngle = isFoundry || isCanyon || isHarbor ? Math.PI * 0.85 : Math.PI / 2 + 0.1;
+      const composed = isNexus || isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor;
+      if (aoRef.current) aoRef.current.enabled = isBrutal || isAether || isFoundry || isCanyon || isHarbor;
       cinematicRef.current = composed;
       if (rendererRef.current) {
         rendererRef.current.toneMapping = composed ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
-        rendererRef.current.toneMappingExposure = isBrutal ? 1.12 : isRain ? 1.1 : isCopper ? 0.92 : isNexus ? 1.05 : 1;
+        rendererRef.current.toneMappingExposure = isHarbor ? 1.05 : isCanyon ? 1.14 : isFoundry ? 1.12 : isAether ? 1.05 : isBrutal ? 1.12 : isRain ? 1.1 : isCopper ? 0.92 : isNexus ? 1.05 : 1;
       }
-      if (bloomRef.current) bloomRef.current.strength = isBrutal ? config.brutalGlow : isRain ? config.rainGlow : isCopper ? 0 : config.nexusGlow;
+      if (bloomRef.current) bloomRef.current.strength = isHarbor ? config.harborGlow : isCanyon ? config.canyonGlow : isFoundry ? config.forgeGlow : isAether ? config.aetherGlow : isBrutal ? config.brutalGlow : isRain ? config.rainGlow : isCopper ? 0 : config.nexusGlow;
       if (cameraRef.current && containerRef.current) {
         const { clientWidth: w, clientHeight: h } = containerRef.current;
         if (composed && panelsVisibleRef.current) cameraRef.current.setViewOffset(w, h, -Math.min(130, w * 0.1), 0, w, h);
@@ -1559,28 +1638,54 @@ export function TerrainLabPage() {
       const hemi = sceneRef.current.getObjectByName('terrain-hemi') as THREE.HemisphereLight;
       const key = sceneRef.current.getObjectByName('terrain-key') as THREE.DirectionalLight;
       const fill = sceneRef.current.getObjectByName('terrain-fill') as THREE.DirectionalLight;
-      fill.intensity = isBrutal ? 0.55 : 0.6;
-      fill.color.setHex(isBrutal ? 0x8da3c5 : 0x4080ff);
-      hemi.intensity = isBrutal ? 1.4 : isRain ? 2.1 : isCopper ? 0.95 : isNexus ? 1.7 : 1.2;
-      hemi.color.setHex(isBrutal ? 0xa6b5cc : isRain ? 0xb1cce6 : isCopper ? 0xd5eaff : isNexus ? 0x8bb9e9 : 0xddeeff);
-      hemi.groundColor.setHex(isBrutal ? 0x4a4342 : isRain ? 0x253f63 : isCopper ? 0x88775d : 0x1b2533);
-      key.intensity = isBrutal ? 3.5 : isRain ? 2.5 : isCopper ? 2.8 : isNexus ? 1.5 : 2;
-      key.color.setHex(isBrutal ? 0xffcf9d : isRain ? 0xc7dcff : isNexus ? 0x91b8e1 : 0xfffaed);
-      const shadowSpan = (isCopper || isRain || isBrutal) ? Math.max(sizeX, sizeZ) * 0.72 : 5;
-      if (isCopper || isRain || isBrutal) key.position.set(sizeX * 0.65, sizeY * 1.6, sizeZ * 0.42);
+      fill.intensity = isHarbor ? 0.55 : isCanyon ? 0.8 : isFoundry ? 1.1 : isAether ? 0.6 : isBrutal ? 0.55 : 0.6;
+      fill.color.setHex(isHarbor ? 0x93b6cc : isCanyon ? 0x98bedb : isFoundry ? 0x8ac6e8 : isAether ? 0x9eaedb : isBrutal ? 0x8da3c5 : 0x4080ff);
+      hemi.intensity = isHarbor ? 0.9 : isCanyon ? 1.85 : isFoundry ? 1.65 : isAether ? 1.8 : isBrutal ? 1.4 : isRain ? 2.1 : isCopper ? 0.95 : isNexus ? 1.7 : 1.2;
+      hemi.color.setHex(isHarbor ? 0xc4ccd2 : isCanyon ? 0xb2c7dc : isFoundry ? 0xb1c8e8 : isAether ? 0xc2cbe8 : isBrutal ? 0xa6b5cc : isRain ? 0xb1cce6 : isCopper ? 0xd5eaff : isNexus ? 0x8bb9e9 : 0xddeeff);
+      hemi.groundColor.setHex(isHarbor ? 0x675741 : isCanyon ? 0x625449 : isFoundry ? 0x393644 : isAether ? 0x63546b : isBrutal ? 0x4a4342 : isRain ? 0x253f63 : isCopper ? 0x88775d : 0x1b2533);
+      key.intensity = isHarbor ? 3.7 : isCanyon ? 3.6 : isFoundry ? 4.3 : isAether ? 3.8 : isBrutal ? 3.5 : isRain ? 2.5 : isCopper ? 2.8 : isNexus ? 1.5 : 2;
+      key.color.setHex(isHarbor ? 0xffd69b : isCanyon ? 0xffd7ab : isFoundry ? 0xffd09a : isAether ? 0xffd3a1 : isBrutal ? 0xffcf9d : isRain ? 0xc7dcff : isNexus ? 0x91b8e1 : 0xfffaed);
+      const shadowSpan = (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor) ? Math.max(sizeX, sizeZ) * 0.72 : 5;
+      if (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor) key.position.set(sizeX * 0.65, sizeY * 1.6, sizeZ * 0.42);
       else key.position.set(80, 120, 60);
       if (isBrutal) key.position.set(180, 115, 65);
+      if (isAether) key.position.set(-150, 170, 80);
+      if (isFoundry) key.position.set(-180, 90, -150);
+      if (isCanyon) key.position.set(140, 150, 100);
+      if (isHarbor) key.position.set(-150, 150, 100);
       key.shadow.camera.left = -shadowSpan;
       key.shadow.camera.right = shadowSpan;
       key.shadow.camera.top = shadowSpan;
       key.shadow.camera.bottom = -shadowSpan;
-      key.shadow.camera.far = (isCopper || isRain || isBrutal) ? Math.max(sizeX, sizeY, sizeZ) * 5 : 500;
+      key.shadow.camera.far = (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor) ? Math.max(sizeX, sizeY, sizeZ) * 5 : 500;
       key.shadow.camera.updateProjectionMatrix();
-      key.shadow.normalBias = (isCopper || isRain || isBrutal) ? 0.06 : 0;
+      key.shadow.normalBias = (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor) ? 0.06 : 0;
+      // Static industrial geometry only needs a fresh shadow map after regeneration.
+      key.shadow.autoUpdate = !(isFoundry || isCanyon || isHarbor);
       key.shadow.needsUpdate = true;
       const grid = sceneRef.current.getObjectByName('terrain-grid');
       if (grid) grid.visible = !composed;
-      if (isBrutal) {
+      sceneRef.current.environment = null;
+      if (isHarbor) {
+        harborSkyRef.current ??= createHarborSky();
+        sceneRef.current.background = harborSkyRef.current;
+        sceneRef.current.environment = harborSkyRef.current;
+        sceneRef.current.fog = new THREE.FogExp2(0x7f8584, 0.00145);
+      } else if (isCanyon) {
+        canyonSkyRef.current ??= createCanyonSky();
+        sceneRef.current.background = canyonSkyRef.current;
+        sceneRef.current.environment = canyonSkyRef.current;
+        sceneRef.current.fog = new THREE.FogExp2(0x6c7989, 0.0036);
+      } else if (isFoundry) {
+        astralSkyRef.current ??= createAstralSky();
+        sceneRef.current.background = astralSkyRef.current;
+        sceneRef.current.environment = astralSkyRef.current;
+        sceneRef.current.fog = new THREE.FogExp2(0x62748c, 0.0022);
+      } else if (isAether) {
+        aetherSkyRef.current ??= createAetherSky();
+        sceneRef.current.background = aetherSkyRef.current;
+        sceneRef.current.fog = new THREE.FogExp2(0xb5a4b8, 0.0014);
+      } else if (isBrutal) {
         duskSkyRef.current ??= createDuskSky();
         sceneRef.current.background = duskSkyRef.current;
         sceneRef.current.fog = new THREE.FogExp2(0x6a7487, 0.0018);
@@ -1704,7 +1809,7 @@ export function TerrainLabPage() {
             dummy.updateMatrix();
             instanced.setMatrixAt(i, dummy.matrix);
             dummyColor.setHex(voxel.color);
-            if ((algorithm === 'neon_nexus' || algorithm === 'neon_rain' || algorithm === 'brutalist_dusk') && glows) dummyColor.multiplyScalar(voxel.intensity ?? 1);
+            if ((algorithm === 'neon_nexus' || algorithm === 'neon_rain' || algorithm === 'brutalist_dusk' || algorithm === 'aether_archipelago' || algorithm === 'astral_foundry' || algorithm === 'colossus_harbor' || algorithm === 'titan_canyon') && glows) dummyColor.multiplyScalar(voxel.intensity ?? 1);
             instanced.setColorAt(i, dummyColor);
           }
 
@@ -1715,7 +1820,15 @@ export function TerrainLabPage() {
 
         addVoxelBatch(
           solidVoxels,
-          algorithm === 'brutalist_dusk'
+          algorithm === 'colossus_harbor'
+            ? createHarborMaterial(config.harborWear, offsetX, offsetZ)
+            : algorithm === 'titan_canyon'
+            ? createCanyonMaterial(config.canyonWear, offsetX, offsetZ)
+            : algorithm === 'astral_foundry'
+            ? createFoundryMaterial(config.forgeWear, offsetX, offsetZ)
+            : algorithm === 'aether_archipelago'
+            ? createAetherMaterial()
+            : algorithm === 'brutalist_dusk'
             ? createConcreteMaterial(config.brutalWeathering)
             : algorithm === 'neon_rain'
             ? new THREE.MeshStandardMaterial({ roughness: 0.38, metalness: 0.35 })
@@ -1736,7 +1849,7 @@ export function TerrainLabPage() {
         // This city has exactly two materials. Emission uses each cube's HDR
         // instance colour; normal blocks have no emissive contribution.
         let lightMaterial: THREE.Material;
-        if (algorithm === 'neon_rain' || algorithm === 'brutalist_dusk') {
+        if (algorithm === 'neon_rain' || algorithm === 'brutalist_dusk' || algorithm === 'aether_archipelago' || algorithm === 'astral_foundry' || algorithm === 'colossus_harbor' || algorithm === 'titan_canyon') {
           const emissiveMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 1, toneMapped: false });
           emissiveMaterial.onBeforeCompile = shader => {
             shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>',
@@ -1818,7 +1931,7 @@ export function TerrainLabPage() {
     boxHelper.position.set(0, sizeY / 2, 0);
     sceneRef.current.add(boxHelper);
     bboxMeshRef.current = boxHelper;
-    boxHelper.visible = algorithm !== 'brutalist_dusk' && algorithm !== 'neon_nexus' && algorithm !== 'copper_metropolis' && algorithm !== 'neon_rain';
+    boxHelper.visible = algorithm !== 'colossus_harbor' && algorithm !== 'titan_canyon' && algorithm !== 'astral_foundry' && algorithm !== 'aether_archipelago' && algorithm !== 'brutalist_dusk' && algorithm !== 'neon_nexus' && algorithm !== 'copper_metropolis' && algorithm !== 'neon_rain';
 
     const t2 = performance.now();
 
@@ -1873,6 +1986,18 @@ export function TerrainLabPage() {
 
   useEffect(() => {
     if (!cameraRef.current || !controlsRef.current) return;
+    if (config.algorithm === 'astral_foundry') {
+      cameraRef.current.position.set(90, 84, -138);
+      controlsRef.current.target.set(-20, 65, 20);
+      controlsRef.current.update();
+      return;
+    }
+    if (config.algorithm === 'aether_archipelago') {
+      cameraRef.current.position.set(151, 129, 188);
+      controlsRef.current.target.set(-6, 76, -8);
+      controlsRef.current.update();
+      return;
+    }
     if (config.algorithm === 'brutalist_dusk') {
       cameraRef.current.position.set(110, 105, 200);
       controlsRef.current.target.set(0, 54, -8);
@@ -1897,16 +2022,47 @@ export function TerrainLabPage() {
     controlsRef.current.update();
   }, [config.algorithm]);
 
+  useEffect(() => {
+    const view = config.algorithm === 'colossus_harbor' ? harborOverviewRef.current : config.algorithm === 'titan_canyon' ? canyonOverviewRef.current : null;
+    if (!view || !cameraRef.current || !controlsRef.current) return;
+    const { position, target } = view;
+    cameraRef.current.position.set(position.x, position.y, position.z);
+    controlsRef.current.target.set(target.x, target.y, target.z);
+    controlsRef.current.update();
+  }, [config.algorithm, config.offsetX, config.offsetZ, config.seed]);
+
   // Camera presets
-  const setCameraView = (view: 'iso' | 'top' | 'front' | 'side' | 'street') => {
+  const setCameraView = (view: 'iso' | 'top' | 'front' | 'side' | 'street' | 'foundry_deck' | 'sculpture') => {
     if (!cameraRef.current || !controlsRef.current) return;
     const { sizeX, sizeY, sizeZ } = config;
     const maxDim = Math.max(sizeX, sizeZ, sizeY);
 
-    if (view === 'street') {
+    if (view === 'sculpture' && statueViewsRef.current.length) {
+      const { position, target } = statueViewsRef.current[statueIndexRef.current++ % statueViewsRef.current.length];
+      cameraRef.current.position.set(position.x, position.y, position.z);
+      controlsRef.current.target.set(target.x, target.y, target.z);
+    } else if (view === 'iso' && config.algorithm === 'colossus_harbor' && harborOverviewRef.current) {
+      const { position, target } = harborOverviewRef.current;
+      cameraRef.current.position.set(position.x, position.y, position.z);
+      controlsRef.current.target.set(target.x, target.y, target.z);
+    } else if (view === 'foundry_deck' && platformViewRef.current) {
+      const { position, target } = platformViewRef.current;
+      cameraRef.current.position.set(position.x, position.y, position.z);
+      controlsRef.current.target.set(target.x, target.y, target.z);
+    } else if (view === 'iso' && config.algorithm === 'titan_canyon' && canyonOverviewRef.current) {
+      const { position, target } = canyonOverviewRef.current;
+      cameraRef.current.position.set(position.x, position.y, position.z);
+      controlsRef.current.target.set(target.x, target.y, target.z);
+    } else if (view === 'iso' && config.algorithm === 'astral_foundry') {
+      cameraRef.current.position.set(maxDim * 0.28125, sizeY * 0.4375, -maxDim * 0.43125);
+      controlsRef.current.target.set(-20, sizeY * 0.339, 20);
+    } else if (view === 'street') {
       const roadX = Math.round(config.offsetX / config.nexusPitch) * config.nexusPitch - config.offsetX;
       cameraRef.current.position.set(roadX, 9, sizeZ * 0.46);
       controlsRef.current.target.set(roadX - 1, 11, -sizeZ * 0.25);
+    } else if (view === 'iso' && config.algorithm === 'aether_archipelago') {
+      cameraRef.current.position.set(maxDim * 0.393, maxDim * 0.336, maxDim * 0.49);
+      controlsRef.current.target.set(-6, sizeY * 0.396, -8);
     } else if (view === 'iso' && config.algorithm === 'brutalist_dusk') {
       cameraRef.current.position.set(maxDim * 0.573, sizeY * 0.656, maxDim * 1.042);
       controlsRef.current.target.set(0, sizeY * 0.3375, -8);
@@ -1937,6 +2093,35 @@ export function TerrainLabPage() {
 
   // Generate copyable code
   const generatedCode = useMemo(() => {
+    if (config.algorithm === 'colossus_harbor') {
+      const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, harborRelief, harborStatues, harborScale,
+        harborCity, harborIndustry, harborTransit, harborSteam, harborWear, harborGlow } = config;
+      return { ts: `${harborSource}\n\n// Coordinate-addressed sculptural harbour. All geometry uses normal / emissive cubes.\nconst result = generateColossusHarbor(${JSON.stringify({ sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, harborRelief, harborStatues, harborScale, harborCity, harborIndustry, harborTransit, harborSteam, harborWear, harborGlow }, null, 2)});\n`, py: '' };
+    }
+    if (config.algorithm === 'titan_canyon') {
+      const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, canyonDepth, canyonWidth,
+        canyonIndustry, canyonGears, canyonWind, canyonPipes, canyonSteam, canyonWear, canyonGlow } = config;
+      return {
+        ts: `${canyonSource}\n\n// World-addressed canyon crop. All geometry uses normal / emissive cubes.\nconst result = generateTitanCanyon(${JSON.stringify({ sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, canyonDepth, canyonWidth, canyonIndustry, canyonGears, canyonWind, canyonPipes, canyonSteam, canyonWear, canyonGlow }, null, 2)});\n`,
+        py: '',
+      };
+    }
+    if (config.algorithm === 'astral_foundry') {
+      const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, forgeScale, forgeHeight,
+        forgeDensity, forgeMachinery, forgeConduits, forgeLinks, forgeTraffic, forgeWear, forgeGlow } = config;
+      return {
+        ts: `${foundrySource}\n\n// Deterministic world crop, 1m / 0.125m cubes, normal / emissive.\nconst result = generateAstralFoundry(${JSON.stringify({ sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, forgeScale, forgeHeight, forgeDensity, forgeMachinery, forgeConduits, forgeLinks, forgeTraffic, forgeWear, forgeGlow }, null, 2)});\n`,
+        py: '',
+      };
+    }
+    if (config.algorithm === 'aether_archipelago') {
+      const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, aetherScale, aetherDensity,
+        aetherCastles, aetherForest, aetherCrystals, aetherWaterfalls, aetherBridges, aetherGlow } = config;
+      return {
+        ts: `${aetherSource}\n\n// Deterministic world crop; geometry uses normal / emissive materials.\nconst result = generateAetherArchipelago(${JSON.stringify({ sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, aetherScale, aetherDensity, aetherCastles, aetherForest, aetherCrystals, aetherWaterfalls, aetherBridges, aetherGlow }, null, 2)});\n`,
+        py: '',
+      };
+    }
     if (config.algorithm === 'brutalist_dusk') {
       const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, brutalHeight, brutalDensity,
         brutalWeathering, brutalTransit, brutalPeople, brutalLights, brutalGlow } = config;
@@ -2240,6 +2425,38 @@ def sample_height(self, world_x: int, world_z: int) -> int:
         {/* Preset Switcher */}
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap bg-black/40 p-1 rounded-lg border border-white/10 text-xs [&>button]:shrink-0">
           <button
+            onClick={() => { setConfig(c => ({ ...c, ...HARBOR_PRESET })); setActiveTab('algorithm'); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'colossus_harbor' ? 'border-amber-200/50 bg-amber-200/10 text-amber-100' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
+            title="多种巨型雕塑、山地港城与沿岸工业 · 世界坐标连续生成"
+          >
+            <Icon icon="mdi:account-supervisor-circle" className="text-amber-200" />
+            <span>Colossus Harbor · 万像港湾</span>
+          </button>
+          <button
+            onClick={() => { setConfig(c => ({ ...c, ...CANYON_PRESET })); setActiveTab('algorithm'); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'titan_canyon' ? 'border-sky-200/50 bg-sky-200/10 text-sky-100' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
+            title="层状峡谷、巨型齿轮、冷却塔与螺旋风机"
+          >
+            <Icon icon="mdi:wind-turbine" className="text-sky-200" />
+            <span>Titan Canyon · 巨轮峡谷</span>
+          </button>
+          <button
+            onClick={() => { setConfig(c => ({ ...c, ...FOUNDRY_PRESET })); setActiveTab('algorithm'); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'astral_foundry' ? 'border-amber-200/50 bg-amber-200/10 text-amber-100' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
+            title="装甲高塔、机械环、多层廊桥与星际船坞"
+          >
+            <Icon icon="mdi:space-station" className="text-amber-200" />
+            <span>Astral Foundry · 星穹铸城</span>
+          </button>
+          <button
+            onClick={() => { setConfig(c => ({ ...c, ...AETHER_PRESET })); setActiveTab('algorithm'); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'aether_archipelago' ? 'border-violet-300/50 bg-violet-300/10 text-violet-100' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
+            title="古堡、浮岛、森林与瀑布 · 按世界坐标连续生成"
+          >
+            <Icon icon="mdi:castle" className="text-violet-200" />
+            <span>Aether Archipelago · 云海群岛</span>
+          </button>
+          <button
             onClick={() => { setConfig(c => ({ ...c, ...BRUTALIST_DUSK_PRESET })); setActiveTab('algorithm'); }}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'brutalist_dusk' ? 'border-orange-200/50 bg-orange-200/10 text-orange-100' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
             title="旧化混凝土巨构、贯通门洞、斜撑与高架列车 · 1m / 0.125m"
@@ -2425,7 +2642,15 @@ def sample_height(self, world_x: int, world_z: int) -> int:
       >{panelsVisible ? 'Hide panels / 隐藏面板' : 'Show panels / 显示面板'}</button>
 
       {/* Floating View Angle Selector */}
-      <div className="absolute top-16 right-6 z-20 flex items-center gap-1 bg-[#0f1722]/85 backdrop-blur-md p-1 border border-white/10 rounded shadow-lg text-xs">
+      <div style={{ maxWidth: panelsVisible ? 'max(12rem, calc(100% - 24rem))' : 'calc(100% - 3rem)' }}
+        className="absolute top-16 right-6 z-30 flex flex-wrap justify-end items-center gap-1 bg-[#0f1722]/85 backdrop-blur-md p-1 border border-white/10 rounded shadow-lg text-xs">
+        {config.algorithm === 'colossus_harbor' && <button onClick={() => setCameraView('sculpture')}
+          className="px-3 py-1.5 bg-black/50 text-amber-100 text-xs rounded border border-amber-100/20 hover:bg-white/10"
+          title="依次查看当前区域中的完整雕塑">雕塑近景</button>}
+        {(config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry') && <button
+          onClick={() => setCameraView('foundry_deck')}
+          className="px-2.5 py-1 rounded bg-amber-200/10 text-amber-100 hover:bg-amber-200/20"
+        >Deck / 平台视角</button>}
         {config.algorithm === 'neon_nexus' && <button
           onClick={() => setCameraView('street')}
           className="px-2.5 py-1 rounded bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20"
@@ -2510,7 +2735,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 <input
                   type="range"
                   min="16"
-                  max="192"
+                  max={config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' ? 384 : 192}
                   step="8"
                   value={config.sizeX}
                   onChange={e => setConfig(c => ({ ...c, sizeX: Number(e.target.value) }))}
@@ -2540,7 +2765,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 <input
                   type="range"
                   min="16"
-                  max="192"
+                  max={config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' ? 384 : 192}
                   step="8"
                   value={config.sizeZ}
                   onChange={e => setConfig(c => ({ ...c, sizeZ: Number(e.target.value) }))}
@@ -2570,7 +2795,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 <input
                   type="range"
                   min="16"
-                  max={config.algorithm === 'brutalist_dusk' || config.algorithm === 'copper_metropolis' || config.algorithm === 'neon_rain' ? 160 : 96}
+                  max={config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' ? 192 : config.algorithm === 'brutalist_dusk' || config.algorithm === 'copper_metropolis' || config.algorithm === 'neon_rain' ? 160 : 96}
                   step="4"
                   value={config.sizeY}
                   onChange={e => setConfig(c => ({ ...c, sizeY: Number(e.target.value) }))}
@@ -2643,10 +2868,14 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                   value={config.algorithm}
                   onChange={e => {
                     const algorithm = e.target.value as AlgorithmType;
-                    setConfig(c => ({ ...c, ...(algorithm === 'brutalist_dusk' ? BRUTALIST_DUSK_PRESET : algorithm === 'neon_rain' ? NEON_RAIN_PRESET : algorithm === 'copper_metropolis' ? METROPOLIS_PRESET : algorithm === 'neon_nexus' ? NEXUS_PRESET : {}), algorithm }));
+                    setConfig(c => ({ ...c, ...(algorithm === 'colossus_harbor' ? HARBOR_PRESET : algorithm === 'titan_canyon' ? CANYON_PRESET : algorithm === 'astral_foundry' ? FOUNDRY_PRESET : algorithm === 'aether_archipelago' ? AETHER_PRESET : algorithm === 'brutalist_dusk' ? BRUTALIST_DUSK_PRESET : algorithm === 'neon_rain' ? NEON_RAIN_PRESET : algorithm === 'copper_metropolis' ? METROPOLIS_PRESET : algorithm === 'neon_nexus' ? NEXUS_PRESET : {}), algorithm }));
                   }}
                   className="w-full bg-[#182330] border border-white/15 rounded px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#f59e0b]"
                 >
+                  <option value="colossus_harbor">Colossus Harbor · 万像港湾 / 雕塑山城</option>
+                  <option value="titan_canyon">Titan Canyon · 巨轮峡谷 / 河谷工业世界</option>
+                  <option value="astral_foundry">Astral Foundry · 星穹铸城 / 星际工业世界</option>
+                  <option value="aether_archipelago">Aether Archipelago · 云海群岛 / 古堡与浮空世界</option>
                   <option value="brutalist_dusk">Brutalist Dusk · 黄昏巨构 / 混凝土与高架城市</option>
                   <option value="neon_rain">Neon Rain · 霓雨都会 / 普通 + 发光材质</option>
                   <option value="copper_metropolis">Copper Metropolis · 铜冠都会 / 不规则层叠城市</option>
@@ -2666,7 +2895,147 @@ def sample_height(self, world_x: int, world_z: int) -> int:
               {/* Algorithm-Specific Sliders */}
               <div className="space-y-3 pt-2 border-t border-white/10">
                 {/* Mandelbox Dusk Parameters */}
-                {config.algorithm === 'brutalist_dusk' ? (
+                {config.algorithm === 'colossus_harbor' ? (
+                  <>
+                    <div className="rounded border border-amber-200/20 bg-[#302e28] p-3 leading-relaxed">
+                      <div className="mb-1 text-xs tracking-wider text-amber-100">COLOSSUS HARBOR / 万像港湾</div>
+                      <p className="text-[11px] text-slate-400">夕照中的雕塑群山与工业港城。翼神、守卫、贤者、坐像、托球巨人、狮子与雄鹰，以不同姿态、衣褶和羽翼俯瞰河岸街区。</p>
+                      <p className="mt-2 text-[11px] text-amber-200/75">河湾、山脊、地标群落与建筑组合随世界坐标变化。点击「雕塑近景」可依次查看不同雕塑。</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: c.offsetX + 620 }))} className="rounded border border-amber-200/20 px-2 py-1 text-amber-200 hover:bg-white/10">探索相邻流域</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetZ: c.offsetZ - 512 }))} className="rounded border border-amber-200/20 px-2 py-1 text-amber-200 hover:bg-white/10">沿河探索 512m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: 0, offsetZ: 0 }))} className="rounded border border-white/15 px-2 py-1 text-white/60 hover:bg-white/10">返回起始港湾</button>
+                    </div>
+                    <p className="text-[10px] text-slate-400">当前世界位置：X {config.offsetX}m / Z {config.offsetZ}m</p>
+                    {([
+                      { key: 'harborRelief', label: '山地起伏', min: 0.65, max: 1.3, step: 0.05, unit: '×' },
+                      { key: 'harborStatues', label: '雕塑群落密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'harborScale', label: '雕塑尺度', min: 0.7, max: 1.15, step: 0.05, unit: '×' },
+                      { key: 'harborCity', label: '港城密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'harborIndustry', label: '沿岸工业密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'harborTransit', label: '高架铁路密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'harborSteam', label: '烟雾与蒸汽', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'harborWear', label: '石材与工业旧化', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'harborGlow', label: '灯光辉光', min: 0, max: 0.8, step: 0.05, unit: '' },
+                    ] as const).map(control => (
+                      <label key={control.key} className="block space-y-1.5 pt-1">
+                        <span className="flex justify-between text-white/60"><span>{control.label}</span>
+                          <span className="font-bold text-amber-100">{control.unit === '%' ? Math.round(config[control.key] * 100) : config[control.key]}{control.unit}</span></span>
+                        <input type="range" aria-label={control.label} min={control.min} max={control.max} step={control.step}
+                          value={config[control.key]} onChange={e => setConfig(c => ({ ...c, [control.key]: Number(e.target.value) }))} className="w-full accent-amber-200" />
+                      </label>
+                    ))}
+                    <p className="text-[10px] leading-relaxed text-slate-500">仅 1m / 0.125m 方块、普通 / 发光两种材质。雕塑、列车、船只和蒸汽为静态几何；Code 可导出完整生成器。</p>
+                  </>
+                ) : config.algorithm === 'titan_canyon' ? (
+                  <>
+                    <div className="rounded border border-sky-200/20 bg-[#272d32] p-3 leading-relaxed">
+                      <div className="mb-1 text-xs tracking-wider text-sky-100">TITAN CANYON / 巨轮峡谷</div>
+                      <p className="text-[11px] text-slate-400">曲折河流切开层状岩壁，巨轮工厂沿岸嵌入台地。冷却塔、能源核心、跨谷管廊与高地螺旋风机，在暮光中形成不同的工业群落。</p>
+                      <p className="mt-2 text-[11px] text-sky-200/75">河道宽度、侵蚀沟壑与岩层随世界坐标变化，工厂和风机根据地形选址。可切换平台视角观察近处结构。</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: c.offsetX + 512 }))} className="rounded border border-sky-200/20 px-2 py-1 text-sky-200 hover:bg-white/10">向东探索 512m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetZ: c.offsetZ - 512 }))} className="rounded border border-sky-200/20 px-2 py-1 text-sky-200 hover:bg-white/10">沿谷探索 512m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: 32, offsetZ: 24 }))} className="rounded border border-white/15 px-2 py-1 text-white/60 hover:bg-white/10">返回起始峡谷</button>
+                    </div>
+                    <p className="text-[10px] text-slate-400">当前世界位置：X {config.offsetX}m / Z {config.offsetZ}m</p>
+                    {([
+                      { key: 'canyonDepth', label: '峡谷落差', min: 44, max: 94, step: 2, unit: 'm' },
+                      { key: 'canyonWidth', label: '峡谷宽度', min: 0.7, max: 1.4, step: 0.05, unit: '×' },
+                      { key: 'canyonIndustry', label: '沿岸工业密度', min: 0.2, max: 1, step: 0.05, unit: '%' },
+                      { key: 'canyonGears', label: '巨型齿轮比例', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'canyonWind', label: '高地风机密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'canyonPipes', label: '跨谷管廊比例', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'canyonSteam', label: '蒸汽密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'canyonWear', label: '岩石与金属旧化', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'canyonGlow', label: '能源辉光', min: 0, max: 0.8, step: 0.05, unit: '' },
+                    ] as const).map(control => (
+                      <label key={control.key} className="block space-y-1.5 pt-1">
+                        <span className="flex justify-between text-white/60">
+                          <span>{control.label}</span>
+                          <span className="font-bold text-sky-100">{control.unit === '%' ? Math.round(config[control.key] * 100) : config[control.key]}{control.unit}</span>
+                        </span>
+                        <input type="range" aria-label={control.label} min={control.min} max={control.max} step={control.step}
+                          value={config[control.key]} onChange={e => setConfig(c => ({ ...c, [control.key]: Number(e.target.value) }))}
+                          className="w-full accent-sky-200" />
+                      </label>
+                    ))}
+                    <p className="text-[10px] leading-relaxed text-slate-500">仅 1m / 0.125m 方块、普通 / 发光两种材质。风机、河面和微方块蒸汽为静态场景；Code 可导出完整生成器和当前参数。</p>
+                  </>
+                ) : config.algorithm === 'astral_foundry' ? (
+                  <>
+                    <div className="rounded border border-amber-200/20 bg-[#262932] p-3 leading-relaxed">
+                      <div className="mb-1 text-xs tracking-wider text-amber-100">ASTRAL FOUNDRY / 星穹铸城</div>
+                      <p className="text-[11px] text-slate-400">星云与夕照下的工业巨城。装甲塔楼、机械轴承、承重斜撑、多层平台和飞船穿插在冷暖金属之间。</p>
+                      <p className="mt-2 text-[11px] text-amber-200/75">工业枢纽、反应堆与船坞随区域变化。不同体量、轮廓和连接关系形成连续世界，近处可切换平台视角观察微方块细节。</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: c.offsetX + 512 }))} className="rounded border border-amber-200/20 px-2 py-1 text-amber-200 hover:bg-white/10">向东探索 512m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetZ: c.offsetZ - 512 }))} className="rounded border border-amber-200/20 px-2 py-1 text-amber-200 hover:bg-white/10">向北探索 512m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: 0, offsetZ: 0 }))} className="rounded border border-white/15 px-2 py-1 text-white/60 hover:bg-white/10">返回起始铸城</button>
+                    </div>
+                    <p className="text-[10px] text-slate-400">当前世界位置：X {config.offsetX}m / Z {config.offsetZ}m</p>
+                    {([
+                      { key: 'forgeScale', label: '工业设施尺度', min: 0.8, max: 1.3, step: 0.05, unit: '×' },
+                      { key: 'forgeHeight', label: '主塔高度', min: 80, max: 176, step: 2, unit: 'm' },
+                      { key: 'forgeDensity', label: '城区密度', min: 0.2, max: 1, step: 0.05, unit: '%' },
+                      { key: 'forgeMachinery', label: '机械与平台细节', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'forgeConduits', label: '能源管线密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'forgeLinks', label: '空中廊桥密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'forgeTraffic', label: '飞船密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'forgeWear', label: '金属磨损程度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'forgeGlow', label: '能源辉光', min: 0, max: 0.8, step: 0.05, unit: '' },
+                    ] as const).map(control => (
+                      <label key={control.key} className="block space-y-1.5 pt-1">
+                        <span className="flex justify-between text-white/60">
+                          <span>{control.label}</span>
+                          <span className="font-bold text-amber-100">{control.unit === '%' ? Math.round(config[control.key] * 100) : config[control.key]}{control.unit}</span>
+                        </span>
+                        <input type="range" aria-label={control.label} min={control.min} max={control.max} step={control.step}
+                          value={config[control.key]} onChange={e => setConfig(c => ({ ...c, [control.key]: Number(e.target.value) }))}
+                          className="w-full accent-amber-200" />
+                      </label>
+                    ))}
+                    <p className="text-[10px] leading-relaxed text-slate-500">1m / 0.125m 方块，普通 / 发光两种材质。飞船为静态体素，星云为预览环境。可在 Size XYZ 扩大观察区域，Code 导出生成器及当前参数。</p>
+                  </>
+                ) : config.algorithm === 'aether_archipelago' ? (
+                  <>
+                    <div className="rounded border border-violet-200/20 bg-[#252331] p-3 leading-relaxed">
+                      <div className="mb-1 text-xs tracking-wider text-violet-100">AETHER ARCHIPELAGO / 云海群岛</div>
+                      <p className="text-[11px] text-slate-400">云海之上的哥特古堡、森林、遗迹与水晶。岩层断裂形成不同的岛底和悬崖，暖色夕照、瀑布和桥梁串起高低错落的岛群。</p>
+                      <p className="mt-2 text-[11px] text-violet-200/75">世界坐标决定每座岛的形状、生态和建筑组合。大岛、小岛和空旷区交错分布，移动观察区域可继续探索。</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: c.offsetX + 512 }))} className="rounded border border-violet-200/20 px-2 py-1 text-violet-200 hover:bg-white/10">向东探索 512m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetZ: c.offsetZ - 512 }))} className="rounded border border-violet-200/20 px-2 py-1 text-violet-200 hover:bg-white/10">向北探索 512m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: -122, offsetZ: 12 }))} className="rounded border border-white/15 px-2 py-1 text-white/60 hover:bg-white/10">返回起始群岛</button>
+                    </div>
+                    <p className="text-[10px] text-slate-400">当前世界位置：X {config.offsetX}m / Z {config.offsetZ}m</p>
+                    {([
+                      { key: 'aetherScale', label: '岛屿尺度', min: 0.75, max: 1.35, step: 0.05, unit: '×' },
+                      { key: 'aetherDensity', label: '岛群密度', min: 0.2, max: 1, step: 0.05, unit: '%' },
+                      { key: 'aetherCastles', label: '大岛古堡比例', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'aetherForest', label: '森林覆盖', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'aetherCrystals', label: '水晶簇密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'aetherWaterfalls', label: '瀑布比例', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'aetherBridges', label: '岛间桥梁密度', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'aetherGlow', label: '水晶辉光', min: 0, max: 0.8, step: 0.05, unit: '' },
+                    ] as const).map(control => (
+                      <label key={control.key} className="block space-y-1.5 pt-1">
+                        <span className="flex justify-between text-white/60">
+                          <span>{control.label}</span>
+                          <span className="font-bold text-violet-100">{control.unit === '%' ? Math.round(config[control.key] * 100) : config[control.key]}{control.unit}</span>
+                        </span>
+                        <input type="range" aria-label={control.label} min={control.min} max={control.max} step={control.step}
+                          value={config[control.key]} onChange={e => setConfig(c => ({ ...c, [control.key]: Number(e.target.value) }))}
+                          className="w-full accent-violet-300" />
+                      </label>
+                    ))}
+                    <p className="text-[10px] leading-relaxed text-slate-500">仅 1m / 0.125m 方块，普通 / 发光两种材质。瀑布和飞艇为静态体素；云海为预览背景。Size XYZ 可将观察区域扩大到 384m；Code 导出完整世界生成器与当前参数。</p>
+                  </>
+                ) : config.algorithm === 'brutalist_dusk' ? (
                   <>
                     <div className="rounded border border-orange-200/20 bg-[#272727] p-3 leading-relaxed">
                       <div className="mb-1 text-xs tracking-wider text-orange-100">BRUTALIST DUSK / 黄昏巨构</div>
@@ -3379,8 +3748,8 @@ def sample_height(self, world_x: int, world_z: int) -> int:
               <div className="text-[11px] uppercase tracking-wider text-white/40 font-bold">
                 Export to Game Code
               </div>
-              {(config.algorithm === 'brutalist_dusk' || config.algorithm === 'neon_rain' || config.algorithm === 'neon_nexus' || config.algorithm === 'copper_metropolis') && (
-                <p className="text-[11px] leading-relaxed text-cyan-200/70">完整 TypeScript 生成器与当前参数。导出结果包含每个方块的位置、尺寸和颜色{config.algorithm === 'neon_rain' || config.algorithm === 'brutalist_dusk' ? '，以及普通 / 发光材质标记和发光强度' : config.algorithm === 'neon_nexus' ? '，以及发光强度' : ''}，可直接接入实例渲染。</p>
+              {(config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' || config.algorithm === 'brutalist_dusk' || config.algorithm === 'neon_rain' || config.algorithm === 'neon_nexus' || config.algorithm === 'copper_metropolis') && (
+                <p className="text-[11px] leading-relaxed text-cyan-200/70">完整 TypeScript 生成器与当前参数。导出结果包含每个方块的位置、尺寸和颜色{config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' || config.algorithm === 'neon_rain' || config.algorithm === 'brutalist_dusk' ? '，以及普通 / 发光材质标记和发光强度' : config.algorithm === 'neon_nexus' ? '，以及发光强度' : ''}，可直接接入实例渲染。</p>
               )}
 
               <div className="space-y-2">
@@ -3402,7 +3771,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 </pre>
               </div>
 
-              {config.algorithm !== 'brutalist_dusk' && config.algorithm !== 'neon_rain' && config.algorithm !== 'neon_nexus' && config.algorithm !== 'copper_metropolis' && <div className="space-y-2 pt-2 border-t border-white/10">
+              {config.algorithm !== 'colossus_harbor' && config.algorithm !== 'titan_canyon' && config.algorithm !== 'astral_foundry' && config.algorithm !== 'aether_archipelago' && config.algorithm !== 'brutalist_dusk' && config.algorithm !== 'neon_rain' && config.algorithm !== 'neon_nexus' && config.algorithm !== 'copper_metropolis' && <div className="space-y-2 pt-2 border-t border-white/10">
                 <div className="flex justify-between items-center">
                   <span className="text-white font-semibold flex items-center gap-1">
                     <Icon icon="mdi:language-python" className="text-yellow-400 text-base" />

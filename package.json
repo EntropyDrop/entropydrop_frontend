@@ -12,7 +12,7 @@
     "check:space": "node --test test/space-page.test.cjs && npm --prefix ../entropydrop_space run check",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:terrain": "node --test test/copper-metropolis.test.cjs test/neon-rain.test.cjs test/brutalist-dusk.test.cjs",
+    "test:terrain": "node --test test/copper-metropolis.test.cjs test/neon-rain.test.cjs test/brutalist-dusk.test.cjs test/aether-archipelago.test.cjs test/astral-foundry.test.cjs test/titan-canyon.test.cjs test/colossus-harbor.test.cjs",
     "test:auth": "node --test test/auth-session.test.cjs",
     "test:collection": "node --test test/collection-page.test.cjs"
   },
