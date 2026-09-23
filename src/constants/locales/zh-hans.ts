@@ -1013,14 +1013,14 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         platform: 'WebGL 2 · 体素物理 · 甜甜圈地形',
         tagline: 'AI 辅助建造与自动控制的体素物理世界',
         description: '在无缝环面甜甜圈世界中自由雕刻体素。一键将结构实体化为物理刚体，借助 AI 辅助快速建造复杂机械，并挂载 AI 智能体实现全自动动力巡航与行为控制。',
-        primaryCta: '进入 Space 世界',
+        primaryCta: '开始游玩',
         secondaryCta: '核心特性',
         onlinePlayers: '人在线',
         onlineLoading: '正在获取在线人数…',
         onlineUnavailable: '在线人数暂不可用',
         stats: {
             scale: '0.125m (8×8×8) 微格',
-            physics: '60Hz 刚体物理 & BVH 缓存',
+            physics: '刚体物理 & BVH 缓存',
             programmable: 'AI 辅助建造 & 自动控制',
             torus: '无缝甜甜圈世界'
         },
@@ -1030,14 +1030,14 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             status: 'STANDBY // 60 FPS'
         },
         featuresTitle: '核心机制与玩法系统',
-        featuresSubtitle: '从 0.125m 八分微格精雕、3D 选区 Gizmo 与物理刚体，到 AI 辅助建造与全自动动力巡航，打造高自由度的物理沙盒。',
+        featuresSubtitle: '从微格精雕、3D 选区 Gizmo 与物理刚体，到 AI 辅助建造与全自动动力巡航，打造高自由度的物理沙盒。',
         features: [
             {
-                tag: '0.125m 八分微格',
+                tag: '微格精雕',
                 title: '双尺度微格雕刻与 3D 几何选区',
-                description: '标准方块（1.0m）快速构建地形骨架，勺子工具无损切换至 0.125m 微格（每方块 8×8×8 = 512 微格，1/512 体积）。支持空间三维 XYZ 坐标轴 Gizmo、多形状选区（立方体/圆柱/球体/楼梯/线型）与快捷键（F 填充 / P 换色），搭配 24 位全彩调色盘打造极致机械与微雕细节。',
-                badge: '1.0m / 0.125m (512格) // 全彩',
-                placeholderTitle: '0.125m 微格微雕与 3D 选区截图'
+                description: '标准方块快速构建地形骨架，勺子工具无损切换至精细微格。支持空间三维 XYZ 坐标轴 Gizmo、多形状选区（立方体/圆柱/球体/楼梯/线型）与快捷键（F 填充 / P 换色），搭配 24 位全彩调色盘打造极致机械与微雕细节。',
+                badge: '双尺度雕刻 // 全彩',
+                placeholderTitle: '微格精雕与 3D 选区截图'
             },
             {
                 tag: '体素物理引擎',
@@ -1076,8 +1076,8 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                 {
                     slot: '2',
                     name: '勺子 Spoon',
-                    badge: '0.125m 微格',
-                    desc: '无损切换至 0.125m 八分微格（8×8×8 = 512 微格），用于精细微雕与复杂机械构件细节打磨。',
+                    badge: '微格雕刻',
+                    desc: '无损切换至精细微格，用于精细微雕与复杂机械构件细节打磨。',
                     icon: 'pixelarticons:drop'
                 },
                 {

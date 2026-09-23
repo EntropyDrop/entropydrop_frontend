@@ -256,11 +256,7 @@ export function SpacePage({ current }: SpacePageProps) {
                 </div>
 
                 {/* Quick Specs Badges */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 py-1 max-w-4xl">
-                    <div className="border border-white/10 bg-black/40 p-3 flex flex-col gap-1">
-                        <span className="text-[10px] font-mono text-green-400 font-bold uppercase tracking-wider">SCALE</span>
-                        <span className={`text-xs font-bold text-white ${current.fontClass}`}>{data.stats.scale}</span>
-                    </div>
+                <div className="grid grid-cols-3 gap-2 sm:gap-4 max-w-xl">
                     <div className="border border-white/10 bg-black/40 p-3 flex flex-col gap-1">
                         <span className="text-[10px] font-mono text-green-400 font-bold uppercase tracking-wider">PHYSICS</span>
                         <span className={`text-xs font-bold text-white ${current.fontClass}`}>{data.stats.physics}</span>
@@ -284,18 +280,6 @@ export function SpacePage({ current }: SpacePageProps) {
                         <Icon icon="pixelarticons:play" className="text-xl" />
                         <span>{data.primaryCta}</span>
                         <Icon icon="pixelarticons:arrow-right" className="text-lg transition-transform group-hover:translate-x-1.5" />
-                    </a>
-                    <a href={spaceApiGuideUrl} target="_blank" rel="noopener noreferrer"
-                        className={`inline-flex min-h-12 items-center justify-center gap-2 border border-purple-400/35 bg-purple-500/10 px-5 py-3 text-sm text-purple-200 hover:bg-purple-500/20 no-underline ${current.fontClass}`}>
-                        <Icon icon="pixelarticons:script" className="text-lg" />
-                        <span>{data.agentSetup.guide}</span>
-                    </a>
-                    <a
-                        href="#space-features"
-                        className={`inline-flex min-h-12 items-center justify-center gap-2 border border-white/20 bg-white/5 px-5 py-3 text-sm text-white/80 transition-all hover:border-white/40 hover:bg-white/10 hover:text-white no-underline ${current.fontClass}`}
-                    >
-                        <Icon icon="pixelarticons:sliders" className="text-lg text-green-400" />
-                        <span>{data.secondaryCta}</span>
                     </a>
                 </div>
             </section>

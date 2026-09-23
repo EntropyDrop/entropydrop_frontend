@@ -1013,14 +1013,14 @@ Email: support@entropydrop.com`
         platform: 'WebGL 2 · Voxel Physics · Donut Terrain',
         tagline: 'AI-Assisted Building & Autonomous Control Voxel Universe',
         description: 'Sculpt voxels across a seamless torus donut world. Turn structures into dynamic rigid bodies with one click, use AI-assisted building to construct complex machinery, and mount intelligent AI for autonomous control, cruising, and physical interaction directly in your browser.',
-        primaryCta: 'Enter Space',
+        primaryCta: 'Play',
         secondaryCta: 'Core Features',
         onlinePlayers: 'players online',
         onlineLoading: 'Checking online players…',
         onlineUnavailable: 'Online count unavailable',
         stats: {
             scale: '0.125m (8×8×8) Micro Grid',
-            physics: '60Hz Voxel Physics & BVH Cache',
+            physics: 'Voxel Physics & BVH Cache',
             programmable: 'AI Building & Auto Control',
             torus: 'Seamless Donut World'
         },
@@ -1030,14 +1030,14 @@ Email: support@entropydrop.com`
             status: 'STANDBY // 60 FPS'
         },
         featuresTitle: 'Core Mechanics & Systems',
-        featuresSubtitle: 'From 0.125m micro-grid sculpting and 3D gizmo selection to rigid-body dynamics and AI-assisted autonomous control.',
+        featuresSubtitle: 'From micro-grid sculpting and 3D gizmo selection to rigid-body dynamics and AI-assisted autonomous control.',
         features: [
             {
-                tag: '0.125m MICRO GRID',
+                tag: 'MICRO GRID',
                 title: 'Dual-Scale Micro Sculpting & 3D Geometry',
-                description: 'Build terrain with 1.0m standard blocks, and switch losslessly to 0.125m micro voxels (8×8×8 = 512 microcells per block, 1/512 volume) with the Spoon. Features 3D XYZ axis gizmos, multi-shape selection (box, cylinder, sphere, stairs, line), batch shortcuts (F fill / P recolor), and a 24-bit TrueColor palette for intricate mechanical precision.',
-                badge: '1.0m / 0.125m (512 cells) // TrueColor',
-                placeholderTitle: '0.125m Micro-Grid Sculpting & 3D Selection Screenshot'
+                description: 'Build terrain with standard blocks, and switch losslessly to high-precision micro voxels with the Spoon. Features 3D XYZ axis gizmos, multi-shape selection (box, cylinder, sphere, stairs, line), batch shortcuts (F fill / P recolor), and a 24-bit TrueColor palette for intricate mechanical precision.',
+                badge: 'Dual Scale // TrueColor',
+                placeholderTitle: 'Micro-Grid Sculpting & 3D Selection Screenshot'
             },
             {
                 tag: 'VOXEL PHYSICS',
@@ -1076,8 +1076,8 @@ Email: support@entropydrop.com`
                 {
                     slot: '2',
                     name: 'Spoon',
-                    badge: '0.125m Micro Grid',
-                    desc: 'Losslessly subdivide standard blocks into 0.125m microcells (8×8×8 = 512 cells) for intricate sculpting and mechanical detail.',
+                    badge: 'Micro Grid',
+                    desc: 'Losslessly subdivide standard blocks into microcells for intricate sculpting and mechanical detail.',
                     icon: 'pixelarticons:drop'
                 },
                 {

@@ -41,4 +41,5 @@ export interface GenerationLogItem extends GenerationLogItemBrief {
     n_step?: number
     guidance?: number
     is_pro: boolean
+    pro_priority?: boolean
 }

@@ -1059,7 +1059,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                     {current.generate.licenseUnknownBadge}
                                                                 </span>
                                                             )}
-                                                            {item.is_pro && (
+                                                            {(item.pro_priority ?? item.is_pro) && (
                                                                 <span className="shrink-0 px-1 bg-yellow-500/20 text-yellow-500 text-[6px] lg:text-[7px] border border-yellow-500/30 flex items-center gap-0.5">
                                                                     <Icon icon="pixelarticons:zap" className="text-[6px]" />
                                                                     {current.generate.proTag}
