@@ -54,14 +54,6 @@ export function SpaceApiKeysPage({ current }: { current: LangData }) {
             <p className="m-0 text-sm text-white/65 leading-relaxed">{text.description}</p>
         </header>
 
-        {accountId
-            ? <KeyManager key={accountId} current={current} />
-            : <section className="border border-white/15 bg-white/[0.03] p-6 flex flex-col gap-3" aria-labelledby="space-keys-login">
-                <Icon icon="pixelarticons:lock" className="text-2xl text-green-300" />
-                <h2 id="space-keys-login" className="m-0 text-lg">{text.signInTitle}</h2>
-                <p className="m-0 text-sm text-white/65 leading-relaxed">{text.signInHelp}</p>
-            </section>}
-
         <section aria-labelledby="space-keys-guide" className="flex flex-col gap-4 border-t border-white/10 pt-6 pb-3">
             <h2 id="space-keys-guide" className="m-0 text-lg">{text.guideTitle}</h2>
             <p className="m-0 text-sm text-white/65 leading-relaxed">{text.guideHelp}</p>
@@ -85,6 +77,13 @@ export function SpaceApiKeysPage({ current }: { current: LangData }) {
                 {copyMessage && <span role="status" className="text-sm text-green-300">{copyMessage}</span>}
             </div>
         </section>
+        {accountId
+            ? <KeyManager key={accountId} current={current} />
+            : <section className="border border-white/15 bg-white/[0.03] p-6 flex flex-col gap-3" aria-labelledby="space-keys-login">
+                <Icon icon="pixelarticons:lock" className="text-2xl text-green-300" />
+                <h2 id="space-keys-login" className="m-0 text-lg">{text.signInTitle}</h2>
+                <p className="m-0 text-sm text-white/65 leading-relaxed">{text.signInHelp}</p>
+            </section>}
     </PageContainer>
 }
 
@@ -168,35 +167,37 @@ function KeyManager({ current }: { current: LangData }) {
     const date = (value: string | null) => value ? new Date(value).toLocaleString(current.lang === 'zh-hans' ? 'zh-CN' : 'en') : text.never
 
     return <>
-        <form onSubmit={event => { void create(event) }} className="flex flex-col gap-4 border border-green-500/20 bg-green-950/10 p-4 sm:p-6">
-            <h2 className="m-0 text-lg">{text.createTitle}</h2>
-            <label htmlFor="space-key-name" className="flex flex-col gap-2 text-sm">
-                {text.nameLabel}
-                <input id="space-key-name" required maxLength={80} value={name} disabled={busy} autoComplete="off"
-                    onChange={event => setName(event.target.value)} placeholder={text.namePlaceholder}
-                    className="min-w-0 w-full border border-white/20 bg-black/40 px-3 py-2.5 text-white outline-none focus:border-green-400 disabled:opacity-50" />
-            </label>
-            <div className="text-sm text-green-200">{text.fullPermissions}</div>
-            <p className="m-0 text-xs text-white/50 leading-relaxed">{text.permissionHelp}</p>
-            <button type="submit" disabled={busy || loading || !name.trim()} className={`${buttonClass} self-start bg-[#3c8527] border-green-500/30 hover:bg-[#489c30] text-white`}>
-                {busy ? text.working : text.create}
-            </button>
-        </form>
+        <details className="border border-white/15 p-4">
+            <summary className="cursor-pointer text-sm text-white/70">{text.createTitle}</summary>
+            <form onSubmit={event => { void create(event) }} className="flex flex-col gap-4 border border-green-500/20 bg-green-950/10 p-4 sm:p-6">
+                <label htmlFor="space-key-name" className="flex flex-col gap-2 text-sm">
+                    {text.nameLabel}
+                    <input id="space-key-name" required maxLength={80} value={name} disabled={busy} autoComplete="off"
+                        onChange={event => setName(event.target.value)} placeholder={text.namePlaceholder}
+                        className="min-w-0 w-full border border-white/20 bg-black/40 px-3 py-2.5 text-white outline-none focus:border-green-400 disabled:opacity-50" />
+                </label>
+                <div className="text-sm text-green-200">{text.fullPermissions}</div>
+                <p className="m-0 text-xs text-white/50 leading-relaxed">{text.permissionHelp}</p>
+                <button type="submit" disabled={busy || loading || !name.trim()} className={`${buttonClass} self-start bg-[#3c8527] border-green-500/30 hover:bg-[#489c30] text-white`}>
+                    {busy ? text.working : text.create}
+                </button>
+            </form>
 
-        {secret && <section aria-labelledby="space-key-secret-title" className="border border-green-400/40 bg-green-500/10 p-4 flex flex-col gap-3">
-            <h2 id="space-key-secret-title" className="m-0 text-base text-green-200">{text.secretTitle}</h2>
-            <p className="m-0 text-sm text-white/65">{text.secretHelp}</p>
-            <div className="flex flex-col sm:flex-row gap-2">
-                <input aria-label={text.secretLabel} readOnly value={secret.value} autoComplete="off" spellCheck={false}
-                    onFocus={event => event.currentTarget.select()} className="min-w-0 flex-1 bg-black/40 border border-white/20 px-3 py-2 font-mono text-sm" />
-                <button type="button" className={buttonClass} onClick={async () => {
-                    try { await navigator.clipboard.writeText(secret.value); setMessage(text.copied) }
-                    catch { setMessage(text.copyFailed) }
-                }}>{text.copy}</button>
-                <button type="button" className={buttonClass} onClick={() => setSecret(null)}>{text.dismiss}</button>
-            </div>
-        </section>}
+            {secret && <section aria-labelledby="space-key-secret-title" className="border border-green-400/40 bg-green-500/10 p-4 flex flex-col gap-3">
+                <h2 id="space-key-secret-title" className="m-0 text-base text-green-200">{text.secretTitle}</h2>
+                <p className="m-0 text-sm text-white/65">{text.secretHelp}</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                    <input aria-label={text.secretLabel} readOnly value={secret.value} autoComplete="off" spellCheck={false}
+                        onFocus={event => event.currentTarget.select()} className="min-w-0 flex-1 bg-black/40 border border-white/20 px-3 py-2 font-mono text-sm" />
+                    <button type="button" className={buttonClass} onClick={async () => {
+                        try { await navigator.clipboard.writeText(secret.value); setMessage(text.copied) }
+                        catch { setMessage(text.copyFailed) }
+                    }}>{text.copy}</button>
+                    <button type="button" className={buttonClass} onClick={() => setSecret(null)}>{text.dismiss}</button>
+                </div>
+            </section>}
 
+        </details>
         {error && <div role="alert" className="border border-red-400/30 bg-red-950/20 p-3 text-sm text-red-200">{error}</div>}
         {message && <div role="status" className="text-sm text-green-300">{message}</div>}
         <section className="flex flex-col gap-4" aria-labelledby="space-keys-list-title" aria-busy={loading}>

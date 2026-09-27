@@ -23,6 +23,7 @@ const LedgerPage = lazy(() => import('./pages/LedgerPage').then(m => ({ default:
 const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage').then(m => ({ default: m.DiscoveryPage })))
 const FigurePage = lazy(() => import('./pages/FigurePage').then(m => ({ default: m.FigurePage })))
 const CreditsPage = lazy(() => import('./pages/CreditsPage').then(m => ({ default: m.CreditsPage })))
+const SpaceAuthorizePage = lazy(() => import('./pages/SpaceAuthorizePage').then(m => ({ default: m.SpaceAuthorizePage })))
 const SpaceApiKeysPage = lazy(() => import('./pages/SpaceApiKeysPage').then(m => ({ default: m.SpaceApiKeysPage })))
 const SpaceLoginPage = lazy(() => import('./pages/SpaceLoginPage').then(m => ({ default: m.SpaceLoginPage })))
 const SpacePage = lazy(() => import('./pages/SpacePage').then(m => ({ default: m.SpacePage })))
@@ -141,6 +142,7 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
         <Route path="/space/app/*" element={<SpaceAppRedirect />} />
         <Route path="/space/intro" element={<SpacePage current={currentLangData} />} />
         <Route path="/space/login" element={<SpaceLoginPage current={currentLangData} />} />
+        <Route path="/space/authorize" element={<SpaceAuthorizePage current={currentLangData} />} />
         <Route path="/space/apikeys" element={<SpaceApiKeysPage current={currentLangData} />} />
         {import.meta.env.DEV && (
           <>
