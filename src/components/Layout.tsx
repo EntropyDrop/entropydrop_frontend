@@ -50,6 +50,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                 : []
 
     const isDiscoveryPage = location.pathname === '/skin/' || location.pathname === '/skin' || location.pathname === '/'
+    const pageOwnsGoogleSignIn = location.pathname === '/space/login' || location.pathname === '/space/authorize'
 
     // Keep <html lang> in sync with the current language
     useEffect(() => {
@@ -114,13 +115,13 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                     })}
                                 </div>
 
-                                <UserMenu
+                                {!pageOwnsGoogleSignIn && <UserMenu
                                     current={current}
                                     lang={lang}
                                     setLang={setLang}
                                     isAuto={isAuto}
                                     setIsAuto={setIsAuto}
-                                />
+                                />}
                             </div>
 
                             {/* Second-Level Sub-Navigation */}
