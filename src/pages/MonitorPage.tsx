@@ -178,7 +178,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [imageToSkinSettingLoading, setImageToSkinSettingLoading] = useState(false)
   const [isImageEditToSkinEnabled, setIsImageEditToSkinEnabled] = useState(true)
   const [imageEditToSkinSettingLoading, setImageEditToSkinSettingLoading] = useState(false)
-  const [modelPrices, setModelPrices] = useState<Record<string, { credits: number; is_pro: boolean; under_maintenance: boolean }>>({})
+  const [modelPrices, setModelPrices] = useState<Record<string, { credits: number; free_credits: number; pricing_tiers?: string[]; is_pro: boolean; under_maintenance: boolean }>>({})
   const [modelPricesLoading, setModelPricesLoading] = useState(false)
 
   // Gift Credits to All states
@@ -356,26 +356,26 @@ export function MonitorPage({ current }: MonitorPageProps) {
     }
   }
 
-  const updateModelPrice = async (modelName: string, value: number, isPro: boolean, underMaintenance: boolean) => {
+  const updateModelPrice = async (modelName: string, value: number, freeValue: number, isPro: boolean, underMaintenance: boolean) => {
     setModelPricesLoading(true)
     try {
       const response = await apiFetch('/api/monitor/model_prices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name: modelName, credits: value, is_pro: isPro, under_maintenance: underMaintenance })
+        body: JSON.stringify({ model_name: modelName, credits: value, free_credits: freeValue, is_pro: isPro, under_maintenance: underMaintenance })
       })
       if (response.ok) {
         const data = await response.json()
         setModelPrices(prev => ({
           ...prev,
-          [modelName]: { credits: data.credits, is_pro: data.is_pro, under_maintenance: data.under_maintenance }
+          [modelName]: { credits: data.credits, free_credits: data.free_credits, pricing_tiers: data.pricing_tiers, is_pro: data.is_pro, under_maintenance: data.under_maintenance }
         }))
         const maintenanceStr = data.under_maintenance ? (isZh ? ' (维护中)' : ' (Under Maintenance)') : ''
         setDeleteMessage({
           type: 'success',
           text: isZh 
-            ? `成功将模型 ${modelName} 配置更新为 ${data.credits} Credits${data.is_pro ? ' (PRO专属)' : ''}${maintenanceStr}。` 
-            : `Model ${modelName} config updated to ${data.credits} credits${data.is_pro ? ' (PRO Only)' : ''}${maintenanceStr}.`
+            ? `模型 ${modelName} 已更新：${data.pricing_tiers?.length ? '不限用户' : '免费用户'} ${data.free_credits} 积分，Pro ${data.credits} 积分${data.is_pro ? ' (PRO专属)' : ''}${maintenanceStr}。`
+            : `Model ${modelName} updated: ${data.pricing_tiers?.length ? 'All users' : 'Free'} ${data.free_credits} credits, Pro ${data.credits} credits${data.is_pro ? ' (PRO Only)' : ''}${maintenanceStr}.`
         })
       } else {
         const errData = await response.json().catch(() => ({}))
@@ -1390,7 +1390,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
                   {isZh ? '模型单独定价 • Model Specific Pricing' : 'Model Specific Pricing'}
                 </h3>
                 <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
-                  {isZh ? '设置特定模型每次生成单独消耗的 Credits。留空或未设置时默认使用全局单次生成消耗。' : 'Set custom generation cost in Credits for specific models. Uses global default cost if unset.'}
+                  {isZh ? 'SKING_DDJ_v101c 在生成列表中显示“不限用户”和“Pro 专属”两个选项，分别按此处价格扣分，共用维护开关。其他模型按免费用户和有效 Pro 订阅分别定价。' : 'SKING_DDJ_v101c has All users and Pro-only options in the generation list, each charged at its configured price. Both share the maintenance switch. Other models use Free and active Pro pricing.'}
                 </p>
               </div>
             </div>
@@ -1408,13 +1408,13 @@ export function MonitorPage({ current }: MonitorPageProps) {
               ) : (
                 <div className="flex flex-col gap-2">
                   {Object.keys(modelPrices).map((modelName) => (
-                    <div key={modelName} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-2.5 last:border-0 last:pb-0">
+                    <div key={modelName} className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-white/5 pb-2.5 last:border-0 last:pb-0">
                       <div className="flex flex-col min-w-0 flex-1">
                         <span className="text-white/80 text-xs truncate max-w-full sm:max-w-[300px]">
                           {modelName}
                         </span>
                         <div className="flex flex-row gap-1">
-                          {modelPrices[modelName]?.is_pro && (
+                          {modelPrices[modelName]?.is_pro && !modelPrices[modelName]?.pricing_tiers?.length && (
                             <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.5 rounded self-start mt-0.5 font-bold uppercase tracking-wider scale-90 origin-left">
                               PRO ONLY
                             </span>
@@ -1426,13 +1426,34 @@ export function MonitorPage({ current }: MonitorPageProps) {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3.5 self-end sm:self-auto shrink-0 flex-wrap sm:flex-nowrap justify-end">
-                        <div className="flex items-center gap-1">
-                          <span className="text-white/40 text-[10px] uppercase mr-1">Cost:</span>
+                      <div className="flex items-center gap-3.5 self-end xl:self-auto flex-wrap justify-end">
+                        <label className="flex items-center gap-1">
+                          <span className="text-white/40 text-[10px] uppercase mr-1">{modelPrices[modelName]?.pricing_tiers?.length ? (isZh ? '不限用户' : 'All users') : (isZh ? '免费用户' : 'Free')}:</span>
                           <input
                             type="number"
                             min="0"
                             max="1000"
+                            step="1"
+                            aria-label={`${modelName} ${modelPrices[modelName]?.pricing_tiers?.length ? (isZh ? '不限用户积分' : 'All users credits') : (isZh ? '免费用户积分' : 'Free credits')}`}
+                            value={modelPrices[modelName]?.free_credits ?? modelPrices[modelName]?.credits ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? 0 : (parseInt(e.target.value) || 0);
+                              setModelPrices(prev => ({
+                                ...prev,
+                                [modelName]: { ...prev[modelName], free_credits: val }
+                              }));
+                            }}
+                            className="w-16 px-2 py-0.5 text-center bg-black/40 border border-white/20 text-white text-xs focus:outline-none focus:border-blue-500/50"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <span className="text-white/40 text-[10px] uppercase mr-1">{modelPrices[modelName]?.pricing_tiers?.length ? (isZh ? 'Pro 专属' : 'Pro only') : 'Pro'}:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="1000"
+                            step="1"
+                            aria-label={`${modelName} ${isZh ? 'Pro 用户积分' : 'Pro credits'}`}
                             value={modelPrices[modelName]?.credits ?? ''}
                             onChange={(e) => {
                               const val = e.target.value === '' ? 0 : (parseInt(e.target.value) || 0);
@@ -1443,9 +1464,9 @@ export function MonitorPage({ current }: MonitorPageProps) {
                             }}
                             className="w-16 px-2 py-0.5 text-center bg-black/40 border border-white/20 text-white text-xs focus:outline-none focus:border-blue-500/50"
                           />
-                        </div>
+                        </label>
                         
-                        <div className="flex items-center gap-1.5">
+                        {!modelPrices[modelName]?.pricing_tiers?.length && <div className="flex items-center gap-1.5">
                           <span className="text-white/40 text-[10px] uppercase">{isZh ? 'PRO专属' : 'PRO ONLY'}:</span>
                           <button
                             onClick={() => {
@@ -1463,7 +1484,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
                           >
                             <div className="w-3 h-3 rounded-full bg-black" />
                           </button>
-                        </div>
+                        </div>}
 
                         <div className="flex items-center gap-1.5">
                           <span className="text-white/40 text-[10px] uppercase">{isZh ? '维护中' : 'MAINTENANCE'}:</span>
@@ -1488,8 +1509,9 @@ export function MonitorPage({ current }: MonitorPageProps) {
                         <button
                           onClick={() => updateModelPrice(
                             modelName, 
-                            modelPrices[modelName]?.credits || 0, 
-                            modelPrices[modelName]?.is_pro || false,
+                            modelPrices[modelName]?.credits ?? 0,
+                            modelPrices[modelName]?.free_credits ?? modelPrices[modelName]?.credits ?? 0,
+                            modelPrices[modelName]?.pricing_tiers?.length ? false : (modelPrices[modelName]?.is_pro || false),
                             modelPrices[modelName]?.under_maintenance || false
                           )}
                           className="px-2.5 py-0.5 bg-blue-500/20 border border-blue-500/40 text-blue-400 hover:bg-blue-500/30 hover:border-blue-500/50 transition-colors text-[10px] font-bold tracking-wide flex items-center gap-1 cursor-pointer disabled:opacity-50"

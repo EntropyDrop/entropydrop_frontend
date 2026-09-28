@@ -15,6 +15,7 @@ import type { GenerationLogItem } from '../types/log'
 import { showError } from '../utils/alert'
 import { apiFetch } from '../utils/api'
 import { formatDate } from '../utils/date'
+import { generationModelParams, preferredGenerationModel, type GenerationModelOption } from '../utils/generationModels'
 
 
 interface GeneratePageProps {
@@ -79,6 +80,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const location = useLocation()
     const [genMode, setGenMode] = useState<GenMode>('aigc_image_to_skin')
     const [modelVersion, setModelVersion] = useState<string>('unknown')
+    const [modelOptions, setModelOptions] = useState<Record<string, GenerationModelOption>>({})
     const [isGenerating, setIsGenerating] = useState(false)
     const [isPrivate, setIsPrivate] = useState(false)
     const [isPro, setIsPro] = useState(false)
@@ -120,14 +122,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
             if (!currentModel || currentModel === 'unknown') {
                 return
             }
-            const params = new URLSearchParams()
-            if (currentModel.includes(' + ')) {
-                const parts = currentModel.split(' + ')
-                params.append('aux_model_version', parts[0])
-                params.append('model_version', parts[1])
-            } else {
-                params.append('model_version', currentModel)
-            }
+            const params = generationModelParams(currentModel, modelOptions)
+            params.delete('pricing_tier') // Both options share the same model queue.
             if (genMode) {
                 params.append('mode', genMode)
             }
@@ -148,7 +144,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             fetchQueueStatus(modelVersion)
         }, 30000)
         return () => clearInterval(timer)
-    }, [modelVersion, genMode])
+    }, [modelVersion, genMode, modelOptions])
 
     const [queueToast, setQueueToast] = useState<{ message: string; isProUser: boolean } | null>(null)
     const queueToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -425,20 +421,15 @@ export function GeneratePage({ current }: GeneratePageProps) {
                     }
                 }
 
-                const imageToSkin: string[] = data.image_to_skin_models || []
+                const imageOptions: GenerationModelOption[] = data.image_to_skin_options
+                    || (data.image_to_skin_models || []).map((model: string) => ({ id: model, model_version: model }))
+                const options = Object.fromEntries(imageOptions.map(option => [option.id, option]))
+                const imageToSkin = imageOptions.map(option => option.id)
 
                 const formattedConfig = {
                     aigc_text_to_skin: textToSkin,
                     aigc_image_edit_to_skin: imageEditToSkin,
                     aigc_image_to_skin: imageToSkin
-                }
-
-                setModelsConfig(formattedConfig)
-                
-                // Set initial model version based on current genMode
-                const currentMode = genMode
-                if (formattedConfig[currentMode] && formattedConfig[currentMode].length > 0) {
-                    setModelVersion(formattedConfig[currentMode][0])
                 }
 
                 // Fetch credit costs for all unique models in parallel
@@ -449,18 +440,14 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 ]))
                 
                 const costs: Record<string, number> = {}
-                const proStates: Record<string, boolean> = {}
+                const proStates: Record<string, boolean> = Object.fromEntries(
+                    imageOptions.map(option => [option.id, option.pricing_tier === 'pro'])
+                )
                 const maintenanceStates: Record<string, boolean> = {}
                 await Promise.all(
                     allUniqueModels.map(async (m) => {
                         try {
-                            let url = ''
-                            if (m.includes(' + ')) {
-                                const parts = m.split(' + ')
-                                url = `/api/generation_credit_cost?aux_model_version=${encodeURIComponent(parts[0])}&model_version=${encodeURIComponent(parts[1])}`
-                            } else {
-                                url = `/api/generation_credit_cost?model_version=${encodeURIComponent(m)}`
-                            }
+                            const url = `/api/generation_credit_cost?${generationModelParams(m, options)}`
                             const res = await apiFetch(url)
                             if (res.ok) {
                                 const costData = await res.json()
@@ -476,14 +463,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 setModelCosts(costs)
                 setModelProStates(proStates)
                 setModelMaintenanceStates(maintenanceStates)
-
-                // Select first non-maintenance model if possible
-                const initialMode = genMode
-                const currentConfig = formattedConfig[initialMode] || []
-                const activeModel = currentConfig.find(m => !maintenanceStates[m]) || currentConfig[0]
-                if (activeModel) {
-                    setModelVersion(activeModel)
-                }
+                setModelOptions(options)
+                setModelsConfig(formattedConfig)
             }
         } catch (e) {
             console.error('Failed to fetch models', e)
@@ -494,12 +475,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         try {
             let url = '/api/generation_credit_cost'
             if (model && model !== 'unknown') {
-                if (model.includes(' + ')) {
-                    const parts = model.split(' + ')
-                    url = `/api/generation_credit_cost?aux_model_version=${encodeURIComponent(parts[0])}&model_version=${encodeURIComponent(parts[1])}`
-                } else {
-                    url = `/api/generation_credit_cost?model_version=${encodeURIComponent(model)}`
-                }
+                url = `/api/generation_credit_cost?${generationModelParams(model, modelOptions)}`
             }
             const response = await apiFetch(url)
             if (response.ok) {
@@ -519,6 +495,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         setIsPro(false)
         setCurrentUserId(null)
         setHistory([])
+        setModelCosts({})
         if (authSession) {
             fetchModels()
             fetchUserStatus()
@@ -536,7 +513,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         } else {
             setGenerationCreditCost(null)
         }
-    }, [authSession, modelVersion, modelCosts])
+    }, [authSession, modelVersion, modelCosts, modelOptions])
 
     const fetchUserStatus = async () => {
         try {
@@ -558,13 +535,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
     useEffect(() => {
         const currentMode = genMode
         const currentConfig = modelsConfig[currentMode] || []
-        if (currentConfig.length > 0) {
-            const activeModel = currentConfig.find(m => !modelMaintenanceStates[m]) || currentConfig[0]
-            setModelVersion(activeModel)
-        } else {
-            setModelVersion('unknown')
-        }
-    }, [genMode, modelsConfig, modelMaintenanceStates])
+        setModelVersion(preferredGenerationModel(currentConfig, modelOptions, isPro, modelProStates, modelMaintenanceStates))
+    }, [genMode, modelsConfig, modelOptions, isPro, modelProStates, modelMaintenanceStates])
 
     // Pagination state
 
@@ -750,13 +722,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 formData.append('edit_source_type', editSourceType)
             }
             if (modelVersion && modelVersion !== 'unknown') {
-                if (modelVersion.includes(' + ')) {
-                    const parts = modelVersion.split(' + ')
-                    formData.append('aux_model_version', parts[0])
-                    formData.append('model_version', parts[1])
-                } else {
-                    formData.append('model_version', modelVersion)
-                }
+                generationModelParams(modelVersion, modelOptions).forEach((value, key) => formData.append(key, value))
             }
             formData.append('seed', String(newSeed))
             if (nStep !== undefined) formData.append('n_step', String(nStep))
@@ -1292,6 +1258,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                  </span>
                                  <button
                                         type="button"
+                                        aria-label={current.generate.modelVersion}
+                                        aria-expanded={isModelDropdownOpen}
                                         onClick={() => {
                                             if (modelVersion !== 'unknown' && modelVersion) {
                                                 setIsModelDropdownOpen(!isModelDropdownOpen);
@@ -1302,12 +1270,15 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                     >
                                         <span className="flex items-center gap-1.5 min-w-0">
                                             <span className="truncate">
-                                                {modelVersion === 'unknown' ? current.generate.loadingModels : modelVersion}
+                                                {modelVersion === 'unknown' ? current.generate.loadingModels : (modelOptions[modelVersion]?.model_version || modelVersion)}
                                             </span>
                                             {modelVersion !== 'unknown' && modelVersion && modelProStates[modelVersion] && (
                                                 <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
-                                                    PRO
+                                                    PRO ONLY
                                                 </span>
+                                            )}
+                                            {modelOptions[modelVersion]?.pricing_tier === 'standard' && (
+                                                <span className="text-[9px] text-white/60 shrink-0">{current.lang === 'zh-hans' ? '不限用户' : 'ALL USERS'}</span>
                                             )}
                                             {modelVersion !== 'unknown' && modelVersion && modelMaintenanceStates[modelVersion] && (
                                                 <span className="text-[9px] bg-red-500/10 border border-red-500/20 text-red-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
@@ -1350,11 +1321,14 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                         className={`w-full flex items-center justify-between p-2 text-left text-white text-[11px] lg:text-xs transition-colors border-none bg-transparent ${isUnderMaintenance ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white/5 cursor-pointer'} ${current.fontClass} ${m === modelVersion ? 'bg-white/5 font-bold text-green-400' : ''}`}
                                                     >
                                                         <span className="flex items-center gap-1.5 min-w-0">
-                                                            <span className="truncate">{m}</span>
+                                                            <span className="truncate">{modelOptions[m]?.model_version || m}</span>
                                                             {modelProStates[m] && (
                                                                 <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
-                                                                    PRO
+                                                                    PRO ONLY
                                                                 </span>
+                                                            )}
+                                                            {modelOptions[m]?.pricing_tier === 'standard' && (
+                                                                <span className="text-[9px] text-white/60 shrink-0">{current.lang === 'zh-hans' ? '不限用户' : 'ALL USERS'}</span>
                                                             )}
                                                             {isUnderMaintenance && (
                                                                 <span className="text-[9px] bg-red-500/10 border border-red-500/20 text-red-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
@@ -1366,7 +1340,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                             {isUnderMaintenance ? (
                                                                 <span className="text-red-500">{current.monitor.underMaintenance}</span>
                                                             ) : (
-                                                                <>{modelCosts[m] !== undefined ? modelCosts[m] : (generationCreditCost !== null ? generationCreditCost : '...')} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" /></>
+                                                                <>{modelCosts[m] ?? '...'} <Icon icon="pixelarticons:zap" className="text-[#a6df7a]" /></>
                                                             )}
                                                         </span>
                                                     </button>
