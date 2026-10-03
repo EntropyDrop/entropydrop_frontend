@@ -28,7 +28,7 @@ const compiled = build({
     } }],
 }).then(result => result.outputFiles[0].text);
 
-async function mount(isPro) {
+async function mount(isPro, { imageOptions = options, maintenance = [], userStatusReady } = {}) {
     const dom = new JSDOM('<div id="root"></div>', { url: 'https://site.example.test/skin/generate' });
     const { window } = dom;
     window.localStorage.setItem('token', 'test-session');
@@ -52,17 +52,21 @@ async function mount(isPro) {
             let data;
             switch (url.pathname) {
                 case '/api/models': data = {
-                    image_to_skin_models: [model], image_to_skin_options: options,
+                    image_to_skin_models: [...new Set(imageOptions.map(option => option.model_version))],
+                    image_to_skin_options: imageOptions,
                     text_to_image_models: [], image_edit_models: [],
                 }; break;
-                case '/api/users/me': data = { id: 'test-user', is_pro: isPro }; break;
+                case '/api/users/me':
+                    await userStatusReady;
+                    data = { id: 'test-user', is_pro: isPro }; break;
                 case '/api/history': data = { items: [], total_pages: 0, page: 1 }; break;
                 case '/api/generate/queue_status': data = { queued_count: 0, processing_count: 0, total_queue_count: 0 }; break;
                 case '/api/generation_credit_cost': {
-                    assert.equal(url.searchParams.get('model_version'), model);
                     const tier = url.searchParams.get('pricing_tier');
-                    assert.ok(['pro', 'standard'].includes(tier));
-                    data = { credits: tier === 'pro' ? 4 : 12, is_pro: tier === 'pro', under_maintenance: false };
+                    const option = imageOptions.find(option => option.model_version === url.searchParams.get('model_version')
+                        && option.pricing_tier === tier);
+                    assert.ok(option, 'Cost requests identify an available model and pricing tier');
+                    data = { credits: tier === 'pro' ? 4 : 12, is_pro: tier === 'pro', under_maintenance: maintenance.includes(option.id) };
                     break;
                 }
                 default: throw new Error(`Unexpected request: ${url}`);
@@ -81,7 +85,7 @@ async function mount(isPro) {
     await React.act(() => root.render(React.createElement(MemoryRouter,
         { initialEntries: ['/skin/generate'] }, React.createElement(GeneratePage, { current }))));
     return {
-        node, requests, generationModelParams,
+        node, requests, current, generationModelParams,
         trigger: () => node.querySelector(`button[aria-label="${current.generate.modelVersion}"]`),
         click: button => React.act(() => button.click()),
         async close() {
@@ -95,11 +99,16 @@ async function mount(isPro) {
 }
 
 for (const isPro of [false, true]) {
-    test(`${isPro ? 'Pro' : 'Free'} users see both options with independent prices and the right default`, async () => {
+    test(`${isPro ? 'Pro' : 'Free'} users default to the first Pro option and ${isPro ? 'automatically use Pro pricing' : 'can choose all-users pricing'}`, async () => {
         const env = await mount(isPro);
         try {
             const trigger = env.trigger();
-            assert.match(trigger.textContent, isPro ? /PRO ONLY\s*4/ : /ALL USERS\s*12/);
+            assert.match(trigger.textContent, /PRO ONLY\s*4/);
+            if (!isPro) {
+                const subscribe = [...env.node.querySelectorAll('button')].find(button =>
+                    button.textContent.includes(env.current.generate.btnSubscribePro));
+                assert.ok(subscribe, 'Free user sees the Pro subscription action');
+            }
             await env.click(trigger);
             const entries = [...env.node.querySelectorAll('button')].filter(button =>
                 button !== trigger && button.textContent.startsWith(model));
@@ -109,8 +118,14 @@ for (const isPro of [false, true]) {
             assert.match(pro.textContent, /PRO ONLY\s*4/);
             assert.match(standard.textContent, /ALL USERS\s*12/);
             assert.equal(standard.disabled, false);
-            await env.click(isPro ? standard : pro);
-            assert.match(env.trigger().textContent, isPro ? /ALL USERS\s*12/ : /PRO ONLY\s*4/);
+            await env.click(standard);
+            assert.match(env.trigger().textContent, isPro ? /PRO ONLY\s*4/ : /ALL USERS\s*12/);
+            assert.equal(env.trigger().getAttribute('aria-expanded'), 'false');
+            if (!isPro) {
+                const generate = [...env.node.querySelectorAll('button')].find(button =>
+                    button.textContent.includes(env.current.generate.btnStart));
+                assert.ok(generate, 'Free user can select the unrestricted option');
+            }
             assert.ok(env.requests.filter(url => url.pathname.endsWith('/queue_status'))
                 .every(url => url.searchParams.get('model_version') === model && !url.searchParams.has('pricing_tier')));
 
@@ -128,3 +143,52 @@ for (const isPro of [false, true]) {
         } finally { await env.close(); }
     });
 }
+
+const secondModel = 'SKING_DDJ_v102';
+const secondOptions = ['pro', 'standard'].map(pricing_tier => ({
+    id: `${secondModel}:${pricing_tier}`, model_version: secondModel, pricing_tier,
+}));
+
+async function selectSecondStandard(env) {
+    await env.click(env.trigger());
+    const standard = [...env.node.querySelectorAll('button')].find(button =>
+        button.textContent.startsWith(secondModel) && button.textContent.includes('ALL USERS'));
+    assert.ok(standard);
+    await env.click(standard);
+}
+
+test('Pro users selecting another all-users model switch to that same model at Pro pricing', async () => {
+    const env = await mount(true, { imageOptions: [...options, ...secondOptions] });
+    try {
+        await selectSecondStandard(env);
+        assert.ok(env.trigger().textContent.startsWith(secondModel));
+        assert.match(env.trigger().textContent, /PRO ONLY\s*4/);
+    } finally { await env.close(); }
+});
+
+for (const unavailable of ['missing', 'maintenance']) {
+    test(`Pro users keep all-users pricing when the matching Pro option is ${unavailable}`, async () => {
+        const env = await mount(true, {
+            imageOptions: [...options, ...secondOptions.filter(option => unavailable !== 'missing' || option.pricing_tier !== 'pro')],
+            maintenance: unavailable === 'maintenance' ? [`${secondModel}:pro`] : [],
+        });
+        try {
+            await selectSecondStandard(env);
+            assert.ok(env.trigger().textContent.startsWith(secondModel));
+            assert.match(env.trigger().textContent, /ALL USERS\s*12/);
+        } finally { await env.close(); }
+    });
+}
+
+test('A pending Pro status switches the selected model to its matching Pro option when loaded', async () => {
+    let resolveUserStatus;
+    const userStatusReady = new Promise(resolve => { resolveUserStatus = resolve; });
+    const env = await mount(true, { imageOptions: [...options, ...secondOptions], userStatusReady });
+    try {
+        await selectSecondStandard(env);
+        assert.match(env.trigger().textContent, /ALL USERS\s*12/);
+        await React.act(async () => { resolveUserStatus(); });
+        assert.ok(env.trigger().textContent.startsWith(secondModel));
+        assert.match(env.trigger().textContent, /PRO ONLY\s*4/);
+    } finally { await env.close(); }
+});

@@ -22,13 +22,25 @@ export function generationModelParams(id: string, options: Record<string, Genera
 
 export function preferredGenerationModel(
     ids: string[],
-    options: Record<string, GenerationModelOption>,
-    isPro: boolean,
-    proOnly: Record<string, boolean>,
     maintenance: Record<string, boolean>,
 ) {
-    return ids.find(id => !maintenance[id] && (isPro || !(proOnly[id] || options[id]?.pricing_tier === 'pro')))
-        || ids.find(id => !maintenance[id])
+    return ids.find(id => !maintenance[id])
         || ids[0]
         || 'unknown'
+}
+
+export function resolveGenerationModel(
+    id: string,
+    options: Record<string, GenerationModelOption>,
+    isPro: boolean,
+    maintenance: Record<string, boolean>,
+) {
+    const selected = options[id]
+    if (!isPro || selected?.pricing_tier !== 'standard') return id
+
+    return Object.values(options).find(option =>
+        option.model_version === selected.model_version
+        && option.pricing_tier === 'pro'
+        && !maintenance[option.id]
+    )?.id || id
 }
