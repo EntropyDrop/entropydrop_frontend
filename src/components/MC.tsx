@@ -743,13 +743,18 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         return { isAlex: typeIsAlex, processedTexture: texture };
     }, [texture, updateTrigger]);
 
+    const slimDanceArms = isAlex && action === 'dance';
+
     // 3. 构建角色的几何参数和材质 (拆分以优化性能)
     const armConfig = useMemo(() => {
         const armWidth = isAlex ? 3 : 4;
+        // Slim dancing arms shrink across both axes of their cross-section.
+        // Keep the standard skin UV depth at 4 so side textures stay intact.
+        const armDepth = slimDanceArms ? 3 : 4;
         const armUVWidth = isAlex ? 3 : 4;
         const armPositionX = isAlex ? 5.5 : 6;
-        return { armWidth, armUVWidth, armPositionX };
-    }, [isAlex]);
+        return { armWidth, armDepth, armUVWidth, armPositionX };
+    }, [isAlex, slimDanceArms]);
 
     const uvMaps = useMemo(() => {
         const { armUVWidth } = armConfig;
@@ -829,7 +834,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         // materials here made opening and disposing MCModal unnecessarily expensive.
         if (mode !== 'voxel' && mode !== 'cute') return null;
 
-        const { armWidth } = armConfig;
+        const { armWidth, armDepth } = armConfig;
         const bodyVoxelGroup = createVoxelGroup(rawImageData, [shiftpos(uvMaps.body, 0, 16), 0.5, [8, isCute ? 8 : 12, 4]], showEdges, printMode, isCute);
         if (isCute && bodyVoxelGroup) {
             bodyVoxelGroup.children.forEach((child: any) => {
@@ -852,13 +857,20 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         }
 
         const limbH = isCute ? 4 : 6;
+        const createArmVoxels = (uvMap: Pos) => {
+            const group = createVoxelGroup(rawImageData, [uvMap, 0.5, [armWidth, limbH, 4]], showEdges, printMode, isCute);
+            // Compress the complete UV depth, including overlay and edge lines,
+            // to the rendered depth without discarding any skin pixels.
+            group.scale.z = (armDepth + 0.5) / 4.5;
+            return group;
+        };
         return {
             head: createVoxelGroup(rawImageData, [shiftpos(uvMaps.head, 32, 0), 1, [8, 8, 8]], showEdges, printMode, isCute),
             body: bodyVoxelGroup,
-            leftArm: createVoxelGroup(rawImageData, [shiftpos(uvMaps.leftArm, 16, 0), 0.5, [armWidth, limbH, 4]], showEdges, printMode, isCute),
-            leftArmLow: createVoxelGroup(rawImageData, [shiftpos(uvMaps.leftArmLow, 16, 0), 0.5, [armWidth, limbH, 4]], showEdges, printMode, isCute),
-            rightArm: createVoxelGroup(rawImageData, [shiftpos(uvMaps.rightArm, 0, 16), 0.5, [armWidth, limbH, 4]], showEdges, printMode, isCute),
-            rightArmLow: createVoxelGroup(rawImageData, [shiftpos(uvMaps.rightArmLow, 0, 16), 0.5, [armWidth, limbH, 4]], showEdges, printMode, isCute),
+            leftArm: createArmVoxels(shiftpos(uvMaps.leftArm, 16, 0)),
+            leftArmLow: createArmVoxels(shiftpos(uvMaps.leftArmLow, 16, 0)),
+            rightArm: createArmVoxels(shiftpos(uvMaps.rightArm, 0, 16)),
+            rightArmLow: createArmVoxels(shiftpos(uvMaps.rightArmLow, 0, 16)),
             leftLeg: createVoxelGroup(rawImageData, [shiftpos(uvMaps.leftLeg, -16, 0), 0.5, [4, limbH, 4]], showEdges, printMode, isCute),
             leftLegLow: createVoxelGroup(rawImageData, [shiftpos(uvMaps.leftLegLow, -16, 0), 0.5, [4, limbH, 4]], showEdges, printMode, isCute),
             rightLeg: createVoxelGroup(rawImageData, [shiftpos(uvMaps.rightLeg, 0, 16), 0.5, [4, limbH, 4]], showEdges, printMode, isCute),
@@ -929,17 +941,18 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             return edges;
         };
         const aw = armConfig.armWidth;
+        const ad = armConfig.armDepth;
         const limbH = isCute ? 4 : 6;
         return {
             head: createEdges(8, 8, 8),
             body: createBodyEdges(),
-            arm: createEdges(aw, limbH, 4),
-            armLow: createEdges(aw + 0.002, limbH, 4.002),
+            arm: createEdges(aw, limbH, ad),
+            armLow: createEdges(aw + 0.002, limbH, ad + 0.002),
             leg: createEdges(4, limbH, 4),
             legLow: createEdges(4.002, limbH, 4.002),
             rightLegLow: createEdges(4.003, limbH, 4.003)
         };
-    }, [armConfig.armWidth, isCute]);
+    }, [armConfig.armWidth, armConfig.armDepth, isCute]);
 
     useEffect(() => {
         return () => {
@@ -953,6 +966,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
     const charData = useMemo(() => ({
         armWidth: armConfig.armWidth,
+        armDepth: armConfig.armDepth,
         armPositionX: armConfig.armPositionX,
         uvMaps,
         mats,
@@ -1030,7 +1044,8 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             bodyScale: [cuteLimbScale, cuteLimbScale, 1] as [number, number, number],
             headPosY: 3.4,
             headScale: [1, 1, 1] as [number, number, number],
-            armScale: [cuteLimbScale, cuteLimbScale, 1] as [number, number, number],
+            // Uniform joint scaling keeps the slim forearm square as the elbow rotates.
+            armScale: [cuteLimbScale, cuteLimbScale, slimDanceArms ? cuteLimbScale : 1] as [number, number, number],
             legScale: [cuteLimbScale, cuteLimbScale, 1] as [number, number, number],
             shoulderPosY: 3.4,
             // Keep the inner edge aligned with the slim arm while letting a
@@ -1039,7 +1054,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             hipPosY: -3.4,
             hipPosX: 1.7,
         };
-    }, [isCute, armConfig.armPositionX, armConfig.armWidth]);
+    }, [isCute, armConfig.armPositionX, armConfig.armWidth, slimDanceArms]);
 
     return (
         <group ref={characterRef} onPointerLeave={() => onHoverEnd?.()}>
@@ -1088,7 +1103,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                 <group ref={setPartRef('left_arm')} position={[cuteConfig.shoulderPosX, cuteConfig.shoulderPosY, 0]} scale={cuteConfig.armScale} visible={visibleParts.leftArm !== false}>
                     <group position={[0, isCute ? -2 : -3, 0]}>
                         <mesh material={charData.mats.leftArm} onPointerDown={(e) => handle3DClick('leftArm', e, false, true)} onPointerMove={(e) => handle3DClick('leftArm', e)}>
-                            <boxGeometry args={[charData.armWidth, isCute ? 4 : 6, 4]} />
+                            <boxGeometry args={[charData.armWidth, isCute ? 4 : 6, charData.armDepth]} />
                             {showEdges && (
                                 <lineSegments geometry={coreEdgeGeometries.arm}>
                                     <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -1098,13 +1113,13 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.leftArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArm', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.leftArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e) => handle3DClick('leftArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
+                            <mesh material={charData.mats.leftArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e) => handle3DClick('leftArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, (isCute ? 4 : 6) + 0.5, charData.armDepth + 0.5]} /></mesh>
                         )}
                     </group>
                     <group ref={setPartRef('left_low_arm')} position={[0, isCute ? -4 : -6, 0]}>
                         <group position={[0, isCute ? -1.95 : -2.95, 0]}>
                             <mesh material={charData.mats.leftArmLow} onPointerDown={(e) => handle3DClick('leftArmLow', e, false, true)} onPointerMove={(e) => handle3DClick('leftArmLow', e)}>
-                                <boxGeometry args={[charData.armWidth + 0.002, isCute ? 4 : 6, 4.002]} />
+                                <boxGeometry args={[charData.armWidth + 0.002, isCute ? 4 : 6, charData.armDepth + 0.002]} />
                                 {showEdges && (
                                     <lineSegments geometry={coreEdgeGeometries.armLow}>
                                         <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -1114,7 +1129,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             {mode === 'voxel' || mode === 'cute' ? (
                                 <primitive object={charData.voxels!.leftArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArmLow', e, true)} />
                             ) : (
-                                <mesh material={charData.mats.leftArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
+                                <mesh material={charData.mats.leftArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, charData.armDepth + 0.502]} /></mesh>
                             )}
                         </group>
                     </group>
@@ -1124,7 +1139,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                 <group ref={setPartRef('right_arm')} position={[-cuteConfig.shoulderPosX, cuteConfig.shoulderPosY, 0]} scale={cuteConfig.armScale} visible={visibleParts.rightArm !== false}>
                     <group position={[0, isCute ? -2 : -3, 0]}>
                         <mesh material={charData.mats.rightArm} onPointerDown={(e) => handle3DClick('rightArm', e, false, true)} onPointerMove={(e) => handle3DClick('rightArm', e)}>
-                            <boxGeometry args={[charData.armWidth, isCute ? 4 : 6, 4]} />
+                            <boxGeometry args={[charData.armWidth, isCute ? 4 : 6, charData.armDepth]} />
                             {showEdges && (
                                 <lineSegments geometry={coreEdgeGeometries.arm}>
                                     <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -1134,13 +1149,13 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         {mode === 'voxel' || mode === 'cute' ? (
                             <primitive object={charData.voxels!.rightArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArm', e, true)} />
                         ) : (
-                            <mesh material={charData.mats.rightArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e) => handle3DClick('rightArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
+                            <mesh material={charData.mats.rightArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e) => handle3DClick('rightArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, (isCute ? 4 : 6) + 0.5, charData.armDepth + 0.5]} /></mesh>
                         )}
                     </group>
                     <group ref={setPartRef('right_low_arm')} position={[0, isCute ? -4 : -6, 0]}>
                         <group position={[0, isCute ? -1.95 : -2.95, 0]}>
                             <mesh material={charData.mats.rightArmLow} onPointerDown={(e) => handle3DClick('rightArmLow', e, false, true)} onPointerMove={(e) => handle3DClick('rightArmLow', e)}>
-                                <boxGeometry args={[charData.armWidth + 0.002, isCute ? 4 : 6, 4.002]} />
+                                <boxGeometry args={[charData.armWidth + 0.002, isCute ? 4 : 6, charData.armDepth + 0.002]} />
                                 {showEdges && (
                                     <lineSegments geometry={coreEdgeGeometries.armLow}>
                                         <lineBasicMaterial color="white" polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
@@ -1150,7 +1165,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             {mode === 'voxel' || mode === 'cute' ? (
                                 <primitive object={charData.voxels!.rightArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArmLow', e, true)} />
                             ) : (
-                                <mesh material={charData.mats.rightArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
+                                <mesh material={charData.mats.rightArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, charData.armDepth + 0.502]} /></mesh>
                             )}
                         </group>
                     </group>
