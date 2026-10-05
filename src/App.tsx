@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import english from './constants/locales/en'
 import { LoadingPlaceholder } from './components/LoadingPlaceholder'
 import { RouteLoadingSkeleton } from './components/RouteLoadingSkeleton'
 import { type LangKey, type LangData, loadLangData, SUPPORTED_LANGUAGES } from './constants/lang'
@@ -102,7 +103,7 @@ function RouteTransition({ children, current }: { children: ReactNode, current: 
   )
 }
 
-function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
+function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto, setIsAuto }: {
   currentLangData: LangData,
   lang: LangKey,
   setLang: (l: LangKey) => void,
@@ -111,6 +112,8 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
 }) {
   const location = useLocation()
   const isPolicyPage = ['/skin/privacy', '/skin/tos'].includes(location.pathname)
+  const isSpaceLandingPage = ['/space', '/space/intro', '/space/login'].includes(location.pathname)
+  const currentLangData = isSpaceLandingPage ? english : preferredLangData
 
   const routes = (
     <RouteTransition key={location.pathname} current={currentLangData}>
@@ -162,7 +165,7 @@ function AppContent({ currentLangData, lang, setLang, isAuto, setIsAuto }: {
   }
 
   return (
-    <Layout lang={lang} setLang={setLang} isAuto={isAuto} setIsAuto={setIsAuto} current={currentLangData}>
+    <Layout lang={isSpaceLandingPage ? 'en' : lang} setLang={setLang} isAuto={isSpaceLandingPage ? false : isAuto} setIsAuto={setIsAuto} current={currentLangData}>
       {routes}
     </Layout>
   )

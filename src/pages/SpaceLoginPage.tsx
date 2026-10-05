@@ -5,6 +5,7 @@ import { PageContainer } from '../components/PageContainer'
 import { apiFetch } from '../utils/api'
 import { refreshAuthSession } from '../utils/fetchInterceptor'
 import { isSpaceTokenValid, resolveSpaceDestination, spaceDestinationWithToken } from '../utils/spaceLogin'
+import { spaceEntranceWorldName } from '../utils/spaceWorlds'
 import type { LangData } from '../constants/lang'
 
 const defaultDestination = import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/'
@@ -19,6 +20,7 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
   const [error, setError] = useState('')
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
   const destination = resolveSpaceDestination(searchParams?.get('destination') || null, fallbackDestination, window.location.href).href
+  const worldName = spaceEntranceWorldName(new URL(destination).searchParams.get('world'))
   const silent = searchParams?.get('silent') === '1'
   const reauthenticate = searchParams?.get('reauth') === '1'
   const fontClass = current?.fontClass || ''
@@ -85,6 +87,12 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
         <p className="text-sm text-gray-300 max-w-sm m-0 leading-relaxed">
           Sign in to your EntropyDrop account before entering Space.
         </p>
+        {worldName && (
+          <span className="inline-flex items-center gap-2 border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-green-300">
+            <Icon icon="pixelarticons:globe" />
+            Entering {worldName}
+          </span>
+        )}
       </div>
 
       {checking ? (
@@ -97,6 +105,7 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
           <div className="flex justify-center my-1 scale-105">
             <GoogleSignInButton
               onSuccess={login}
+              locale="en"
               onError={() => setError('Google sign-in failed. Please try again.')}
               configErrorText="Google sign-in is temporarily unavailable."
               loadingText="Loading Google sign-in…"

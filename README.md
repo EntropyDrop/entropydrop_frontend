@@ -110,6 +110,21 @@ VITE_GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
 VITE_GTAG_ID=abc
 ```
 
+### Space world backgrounds
+
+`/space/intro` keeps its original heading, description, statistics and layout.
+The intro and login pages, including navigation and Google sign-in, use English.
+Nature (`nature`) and Copper Metropolis (`copper-metropolis`) provide a full-viewport
+background behind the page and navigation. Nature is shown initially; backgrounds
+change only when a world thumbnail is clicked or activated with the keyboard.
+Reduced-motion preferences disable transition fades. The original Play buttons include the
+current world name and preserve its selector through `/space/login` to the
+configured `VITE_SPACE_URL`. The Agent Prompt uses the same selected world.
+
+The supplied screenshots are encoded as responsive 960px/1920px WebP assets.
+The target backend must support the world: Copper Metropolis is currently enabled
+on development/test backends. Unsupported worlds never silently fall back to Nature.
+
 ### 3. Run Development Server
 Start the local server with hot-reload:
 ```bash

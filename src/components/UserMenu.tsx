@@ -520,6 +520,9 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         <GoogleSignInButton
                             onSuccess={handleGoogleSuccess}
                             onError={() => console.error('Google login error')}
+                            locale={current.lang === 'en' ? 'en' : 'zh-CN'}
+                            configErrorText={current.lang === 'en' ? 'Google sign-in unavailable' : 'Google 登录暂时不可用'}
+                            loadingText={current.lang === 'en' ? 'Loading Google sign-in…' : '正在加载 Google 登录…'}
                         />
                     </Suspense>
                 </>

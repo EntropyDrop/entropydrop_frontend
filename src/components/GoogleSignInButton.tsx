@@ -11,6 +11,7 @@ interface GoogleSignInButtonProps {
     onError: () => void
     configErrorText?: string
     loadingText?: string
+    locale?: string
 }
 
 export function GoogleSignInButton({
@@ -18,6 +19,7 @@ export function GoogleSignInButton({
     onError,
     configErrorText = 'Google 登录暂时不可用 / Google sign-in unavailable',
     loadingText = '正在加载 Google 登录… / Loading Google sign-in…',
+    locale,
 }: GoogleSignInButtonProps) {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
     const [clientId, setClientId] = useState(import.meta.env.VITE_GOOGLE_CLIENT_ID || '')
@@ -52,7 +54,7 @@ export function GoogleSignInButton({
     if (!clientId) return <span role="status">{loadingText}</span>
 
     return (
-        <GoogleOAuthProvider clientId={clientId} onScriptLoadError={onError}>
+        <GoogleOAuthProvider clientId={clientId} locale={locale} onScriptLoadError={onError}>
             <GoogleLogin
                 onSuccess={onSuccess}
                 onError={onError}

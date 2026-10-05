@@ -4,10 +4,13 @@ export function resolveSpaceDestination(candidate: string | null, fallback: stri
         const url = new URL(candidate || fallback, pageUrl);
         const page = new URL(pageUrl);
         const allowedOrigin = url.origin === defaultUrl.origin || url.origin === 'https://space.entropydrop.com';
+        // A configured same-origin app (including the development site's root)
+        // must retain its world selector. Other main-site paths remain blocked.
+        const configuredApp = url.origin === defaultUrl.origin && url.pathname === defaultUrl.pathname;
         const localMount = url.origin === page.origin && /^\/space\/app(?:\/|$)/.test(url.pathname);
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password
             || (!allowedOrigin && !localMount)
-            || (url.origin === page.origin && !localMount)) return defaultUrl;
+            || (url.origin === page.origin && !localMount && !configuredApp)) return defaultUrl;
         url.searchParams.delete('token');
         return url;
     } catch {

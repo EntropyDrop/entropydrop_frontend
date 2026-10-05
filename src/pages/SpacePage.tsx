@@ -3,6 +3,8 @@ import { Icon } from '@iconify/react'
 import { Link } from 'react-router-dom'
 
 import { PageContainer } from '../components/PageContainer'
+import { SpaceWorldBackground, SpaceWorldControls } from '../components/SpaceWorldCarousel'
+import { SPACE_ENTRANCE_WORLDS, spaceWorldLaunchUrl, type SpaceEntranceWorld } from '../utils/spaceWorlds'
 import { SEO } from '../components/SEO'
 import { type LangData } from '../constants/lang'
 import { API_BASE_URL, apiFetch } from '../utils/api'
@@ -88,7 +90,7 @@ function SpaceImageSlot({
                         {title}
                     </span>
                     <span className="font-mono text-[10px] text-white/40">
-                        待替换图片 · 建议尺寸 {recommendSize}
+                        Image placeholder · Recommended size {recommendSize}
                     </span>
                 </div>
             </div>
@@ -100,7 +102,10 @@ export function SpacePage({ current }: SpacePageProps) {
     const data = current.space_page
     const defaultSpaceUrl = import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/'
     const spaceAppUrl = import.meta.env.VITE_SPACE_URL || defaultSpaceUrl
-    const getSpaceLaunchUrl = () => `/space/login?destination=${encodeURIComponent(spaceAppUrl)}`
+    const [selectedWorld, setSelectedWorld] = useState<SpaceEntranceWorld>('nature')
+    const worldName = SPACE_ENTRANCE_WORLDS.find(world => world.slug === selectedWorld)!.name
+    const getSpaceLaunchUrl = () => spaceWorldLaunchUrl(spaceAppUrl, selectedWorld, window.location.href)
+
     const spaceStatusUrl = new URL(
         SPACE_STATUS_PATH,
         new URL(API_BASE_URL, window.location.href),
@@ -114,6 +119,7 @@ export function SpacePage({ current }: SpacePageProps) {
         .replaceAll('{guide}', agentGuideUrl)
         .replaceAll('{backend}', agentOrigin)
         .replaceAll('{keys_url}', apiKeysUrl)
+        .replaceAll('{world}', selectedWorld)
     const [agentCopyMessage, setAgentCopyMessage] = useState('')
     const [population, setPopulation] = useState<SpacePopulation | null>(null)
     const [populationStatus, setPopulationStatus] = useState<SpacePopulationStatus>('loading')
@@ -205,16 +211,19 @@ export function SpacePage({ current }: SpacePageProps) {
     ]
 
     return (
+        <>
+        <SpaceWorldBackground world={selectedWorld} />
         <PageContainer
             alignItems="items-start"
             height="h-full"
             gap="gap-10 sm:gap-14"
-            className="relative"
+            bg="bg-transparent"
+            className="relative space-world-page"
         >
             <SEO title={data.title} description={data.description} canonicalUrl="https://entropydrop.com/space/intro" />
 
             {/* ===================== HERO SECTION ===================== */}
-            <section className="flex flex-col gap-6 border-b border-white/10 pb-10 sm:pb-14 shrink-0 w-full">
+            <section className="space-world-hero flex flex-col gap-6 border-b border-white/10 pb-10 sm:pb-14 shrink-0 w-full">
                 {/* Eyebrow */}
                 <div className="flex items-center gap-2.5 flex-wrap">
                     <span className="inline-flex items-center gap-2 border border-green-500/40 bg-green-500/10 px-2.5 py-1 text-[11px] font-mono uppercase tracking-wider text-green-400">
@@ -278,10 +287,14 @@ export function SpacePage({ current }: SpacePageProps) {
                         className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${current.fontClass}`}
                     >
                         <Icon icon="pixelarticons:play" className="text-xl" />
-                        <span>{data.primaryCta}</span>
+                        <span>{data.primaryCta} · {worldName}</span>
                         <Icon icon="pixelarticons:arrow-right" className="text-lg transition-transform group-hover:translate-x-1.5" />
                     </a>
                 </div>
+                <SpaceWorldControls current={current} world={selectedWorld} onSelect={world => {
+                    setSelectedWorld(world)
+                    setAgentCopyMessage('')
+                }} />
             </section>
 
 
@@ -631,7 +644,7 @@ export function SpacePage({ current }: SpacePageProps) {
                             className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${current.fontClass}`}
                         >
                             <Icon icon="pixelarticons:play" className="text-xl" />
-                            <span>{data.primaryCta}</span>
+                            <span>{data.primaryCta} · {worldName}</span>
                             <Icon icon="pixelarticons:chevron-right" className="text-lg transition-transform group-hover:translate-x-1" />
                         </a>
                     </div>
@@ -661,5 +674,6 @@ export function SpacePage({ current }: SpacePageProps) {
                 </div>
             </section>
         </PageContainer>
+        </>
     )
 }

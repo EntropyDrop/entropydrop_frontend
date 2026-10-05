@@ -4,6 +4,13 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, useTexture, Stage, useFBX, useAnimations } from '@react-three/drei';
 import { ensureSkinVoxelModeConsistency, isSlim } from './utils';
 
+const CUTE_BODY_WIDTH = 8;
+const CUTE_BODY_HEIGHT = 8;
+const CUTE_BODY_TAPER = 0.3;
+const CUTE_LIMB_SCALE = 0.85;
+// The torso and arms use the same X/Y scale, so this is also the rendered side angle.
+const CUTE_ARM_TILT = Math.atan(CUTE_BODY_WIDTH * CUTE_BODY_TAPER / (2 * CUTE_BODY_HEIGHT));
+
 function DanceController({ action, partsRefs, fbxUrl }: { action: string, partsRefs: any, fbxUrl?: string }) {
     if (action !== 'dance') return null;
     return <DanceControllerInner key={fbxUrl} partsRefs={partsRefs} fbxUrl={fbxUrl} />;
@@ -650,11 +657,10 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
     useFrame(({ clock }) => {
         const t = clock.getElapsedTime() * 10;
-        const cuteArmTilt = 0.20;
         const refs = partsRefs.current;
-        const setRot = (name: string, x: number, y: number, z: number = 0) => {
+        const setRot = (name: string, x: number, y: number, z: number = 0, order: THREE.EulerOrder = 'XYZ') => {
             if ((refs as any)[name]) {
-                (refs as any)[name].rotation.set(x, y, z);
+                (refs as any)[name].rotation.set(x, y, z, order);
             }
         };
 
@@ -662,8 +668,8 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             if (isCute) {
                 const breath = Math.sin(t * 0.25) * 0.1;
                 const headTilt = isAlex ? Math.sin(t * 0.15) * 0.025 : 0;
-                setRot('left_arm', 0.05, 0, cuteArmTilt);
-                setRot('right_arm', 0.05, 0, -cuteArmTilt);
+                setRot('left_arm', 0, 0, CUTE_ARM_TILT);
+                setRot('right_arm', 0, 0, -CUTE_ARM_TILT);
                 setRot('left_low_arm', 0, 0, 0);
                 setRot('right_low_arm', 0, 0, 0);
                 setRot('left_leg', 0, isAlex ? 0.04 : 0, 0);
@@ -695,8 +701,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                 const swing = Math.sin(t * 0.5) * 0.5;
                 const roll = Math.sin(t * 0.5) * (isAlex ? 0.06 : 0.03);
                 const bob = Math.abs(Math.sin(t * 0.5)) * 0.2;
-                setRot('left_arm', -swing, 0, cuteArmTilt);
-                setRot('right_arm', swing, 0, -cuteArmTilt);
+                // Swing around the tilted arm's local X axis to preserve its front-view slope.
+                setRot('left_arm', -swing, 0, CUTE_ARM_TILT, 'ZYX');
+                setRot('right_arm', swing, 0, -CUTE_ARM_TILT, 'ZYX');
                 setRot('left_low_arm', 0, 0, 0);
                 setRot('right_low_arm', 0, 0, 0);
                 setRot('left_leg', swing, isAlex ? 0.04 : 0, 0);
@@ -835,20 +842,20 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         if (mode !== 'voxel' && mode !== 'cute') return null;
 
         const { armWidth, armDepth } = armConfig;
-        const bodyVoxelGroup = createVoxelGroup(rawImageData, [shiftpos(uvMaps.body, 0, 16), 0.5, [8, isCute ? 8 : 12, 4]], showEdges, printMode, isCute);
+        const bodyVoxelGroup = createVoxelGroup(rawImageData, [shiftpos(uvMaps.body, 0, 16), 0.5, [CUTE_BODY_WIDTH, isCute ? CUTE_BODY_HEIGHT : 12, 4]], showEdges, printMode, isCute);
         if (isCute && bodyVoxelGroup) {
             bodyVoxelGroup.children.forEach((child: any) => {
                 if (child instanceof THREE.Mesh && child.position) {
-                    const t = Math.max(0, Math.min(1, (child.position.y + 4) / 8));
-                    const scale = 1.0 - 0.3 * t;
+                    const t = Math.max(0, Math.min(1, (child.position.y + CUTE_BODY_HEIGHT / 2) / CUTE_BODY_HEIGHT));
+                    const scale = 1.0 - CUTE_BODY_TAPER * t;
                     child.position.x *= scale;
                     child.scale.x *= scale;
                 } else if (child instanceof THREE.LineSegments && child.geometry?.attributes?.position) {
                     const pos = child.geometry.attributes.position;
                     for (let i = 0; i < pos.count; i++) {
                         const vy = pos.getY(i);
-                        const t = Math.max(0, Math.min(1, (vy + 4) / 8));
-                        const scale = 1.0 - 0.3 * t;
+                        const t = Math.max(0, Math.min(1, (vy + CUTE_BODY_HEIGHT / 2) / CUTE_BODY_HEIGHT));
+                        const scale = 1.0 - CUTE_BODY_TAPER * t;
                         pos.setX(i, pos.getX(i) * scale);
                     }
                     pos.needsUpdate = true;
@@ -879,16 +886,16 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     }, [mode, rawImageData, armConfig, uvMaps, showEdges, printMode, isCute]);
 
     const bodyGeometry = useMemo(() => {
-        const h = isCute ? 8 : 12;
+        const h = isCute ? CUTE_BODY_HEIGHT : 12;
         const geo = isCute
-            ? new THREE.BoxGeometry(8, h, 4, 8, h, 4)
+            ? new THREE.BoxGeometry(CUTE_BODY_WIDTH, h, 4, 8, h, 4)
             : new THREE.BoxGeometry(8, h, 4);
         if (isCute) {
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
                 const y = pos.getY(i);
                 const t = Math.max(0, Math.min(1, (y + h / 2) / h));
-                const scale = 1.0 - 0.3 * t;
+                const scale = 1.0 - CUTE_BODY_TAPER * t;
                 pos.setX(i, pos.getX(i) * scale);
             }
             pos.needsUpdate = true;
@@ -898,16 +905,16 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     }, [isCute]);
 
     const bodyOverlayGeometry = useMemo(() => {
-        const h = isCute ? 8.5 : 12.5;
+        const h = isCute ? CUTE_BODY_HEIGHT + 0.5 : 12.5;
         const geo = isCute
-            ? new THREE.BoxGeometry(8.5, h, 4.5, 8, isCute ? 8 : 12, 4)
+            ? new THREE.BoxGeometry(CUTE_BODY_WIDTH + 0.5, h, 4.5, 8, CUTE_BODY_HEIGHT, 4)
             : new THREE.BoxGeometry(8.5, h, 4.5);
         if (isCute) {
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
                 const y = pos.getY(i);
                 const t = Math.max(0, Math.min(1, (y + h / 2) / h));
-                const scale = 1.0 - 0.3 * t;
+                const scale = 1.0 - CUTE_BODY_TAPER * t;
                 pos.setX(i, pos.getX(i) * scale);
             }
             pos.needsUpdate = true;
@@ -924,14 +931,14 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             return edges;
         };
         const createBodyEdges = () => {
-            const h = isCute ? 8 : 12;
-            const box = new THREE.BoxGeometry(8, h, 4);
+            const h = isCute ? CUTE_BODY_HEIGHT : 12;
+            const box = new THREE.BoxGeometry(CUTE_BODY_WIDTH, h, 4);
             if (isCute) {
                 const pos = box.attributes.position;
                 for (let i = 0; i < pos.count; i++) {
                     const y = pos.getY(i);
                     const t = Math.max(0, Math.min(1, (y + h / 2) / h));
-                    const scale = 1.0 - 0.3 * t;
+                    const scale = 1.0 - CUTE_BODY_TAPER * t;
                     pos.setX(i, pos.getX(i) * scale);
                 }
                 pos.needsUpdate = true;
@@ -1038,7 +1045,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                 hipPosX: 2,
             };
         }
-        const cuteLimbScale = 0.85;
+        const cuteLimbScale = CUTE_LIMB_SCALE;
+        const shoulderHalfWidth = CUTE_BODY_WIDTH * (1 - CUTE_BODY_TAPER) * cuteLimbScale / 2;
+        const armHalfWidth = armConfig.armWidth * cuteLimbScale / 2;
         return {
             bodyPosY: 8.5,
             bodyScale: [cuteLimbScale, cuteLimbScale, 1] as [number, number, number],
@@ -1047,10 +1056,9 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             // Uniform joint scaling keeps the slim forearm square as the elbow rotates.
             armScale: [cuteLimbScale, cuteLimbScale, slimDanceArms ? cuteLimbScale : 1] as [number, number, number],
             legScale: [cuteLimbScale, cuteLimbScale, 1] as [number, number, number],
-            shoulderPosY: 3.4,
-            // Keep the inner edge aligned with the slim arm while letting a
-            // strong arm's extra pixel extend outward from the shared torso.
-            shoulderPosX: 3.3 + ((armConfig.armWidth - 3) * cuteLimbScale) / 2,
+            shoulderPosY: CUTE_BODY_HEIGHT * cuteLimbScale / 2,
+            // Account for the rotated arm's width so its inner side follows the torso.
+            shoulderPosX: shoulderHalfWidth + armHalfWidth / Math.cos(CUTE_ARM_TILT),
             hipPosY: -3.4,
             hipPosX: 1.7,
         };
