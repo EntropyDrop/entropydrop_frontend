@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 
 import { PageContainer } from '../components/PageContainer'
 import { SpaceWorldBackground, SpaceWorldControls } from '../components/SpaceWorldCarousel'
-import { SPACE_ENTRANCE_WORLDS, spaceWorldLaunchUrl, type SpaceEntranceWorld } from '../utils/spaceWorlds'
+import { SPACE_DEFAULT_ENTRANCE_WORLD, SPACE_ENTRANCE_WORLDS, spaceWorldLaunchUrl, type SpaceEntranceWorld } from '../utils/spaceWorlds'
 import { SEO } from '../components/SEO'
 import { type LangData } from '../constants/lang'
 import { API_BASE_URL, apiFetch } from '../utils/api'
@@ -102,7 +102,7 @@ export function SpacePage({ current }: SpacePageProps) {
     const data = current.space_page
     const defaultSpaceUrl = import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/'
     const spaceAppUrl = import.meta.env.VITE_SPACE_URL || defaultSpaceUrl
-    const [selectedWorld, setSelectedWorld] = useState<SpaceEntranceWorld>('nature')
+    const [selectedWorld, setSelectedWorld] = useState<SpaceEntranceWorld>(SPACE_DEFAULT_ENTRANCE_WORLD)
     const worldName = SPACE_ENTRANCE_WORLDS.find(world => world.slug === selectedWorld)!.name
     const getSpaceLaunchUrl = () => spaceWorldLaunchUrl(spaceAppUrl, selectedWorld, window.location.href)
 

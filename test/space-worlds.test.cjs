@@ -29,7 +29,7 @@ function load(entry, pageUrl = 'https://entropydrop.com/space/intro', browser = 
     return module.exports;
 }
 
-for (const world of ['nature', 'copper-metropolis']) {
+for (const world of ['aether-archipelago', 'nature', 'copper-metropolis']) {
     test(`${world} survives login resolution and cross-origin token handoff`, () => {
         const { spaceWorldLaunchUrl } = load('src/utils/spaceWorlds.ts');
         const { resolveSpaceDestination, spaceDestinationWithToken } = load('src/utils/spaceLogin.ts');
@@ -61,11 +61,11 @@ for (const world of ['nature', 'copper-metropolis']) {
     });
 }
 
-test('configured development origin is preserved for both worlds', () => {
+test('configured development origin is preserved for all published worlds', () => {
     const { spaceWorldLaunchUrl } = load('src/utils/spaceWorlds.ts');
     const { resolveSpaceDestination } = load('src/utils/spaceLogin.ts');
     const target = 'https://space-dev-908123.entropydrop.com/';
-    for (const world of ['nature', 'copper-metropolis']) {
+    for (const world of ['aether-archipelago', 'nature', 'copper-metropolis']) {
         const launch = new URL(spaceWorldLaunchUrl(target, world, 'http://localhost:5173/space/intro'), 'http://localhost:5173');
         const resolved = resolveSpaceDestination(launch.searchParams.get('destination'), target, 'http://localhost:5173/space/login');
         assert.equal(resolved.origin, new URL(target).origin);
@@ -86,7 +86,7 @@ for (const locale of ['en', 'zh-hans']) {
         assert.ok(hero.textContent.includes('AI AGENT'));
         assert.ok(hero.textContent.includes('TORUS'));
         const images = [...dom.window.document.querySelectorAll('.space-world-background img')];
-        assert.equal(images.length, 2);
+        assert.equal(images.length, 3);
         assert.equal(hero.querySelector('.space-world-background'), null);
         assert.equal(dom.window.document.querySelector('.space-world-page').className.includes('bg-transparent'), true);
         images.forEach(image => {
@@ -99,9 +99,9 @@ for (const locale of ['en', 'zh-hans']) {
         assert.equal(dom.window.document.querySelector('.space-worlds-grid'), null);
         const play = hero.querySelector('a');
         assert.ok(play.textContent.includes(current.space_page.primaryCta));
-        assert.ok(play.textContent.includes('Nature'));
-        assert.equal(new URL(new URL(play.href, 'https://entropydrop.com').searchParams.get('destination')).searchParams.get('world'), 'nature');
-        assert.equal(hero.querySelectorAll('[aria-pressed]').length, 2);
+        assert.ok(play.textContent.includes('Aether Archipelago'));
+        assert.equal(new URL(new URL(play.href, 'https://entropydrop.com').searchParams.get('destination')).searchParams.get('world'), 'aether-archipelago');
+        assert.equal(hero.querySelectorAll('[aria-pressed]').length, 3);
         dom.window.close();
     });
 }
@@ -127,9 +127,9 @@ for (const reducedMotion of [false, true]) {
             await React.act(async () => {
                 for (const timer of timers.values()) timer.callback();
             });
-            assert.ok(browser.document.querySelector('.space-world-background .is-active').src.endsWith('space_world_nature.webp'));
+            assert.ok(browser.document.querySelector('.space-world-background .is-active').src.endsWith('space_world_aether.webp'));
             const controls = [...browser.document.querySelectorAll('.space-world-controls button')];
-            for (const [index, slug, image] of [[1, 'copper-metropolis', 'copper'], [0, 'nature', 'nature']]) {
+            for (const [index, slug, image] of [[2, 'copper-metropolis', 'copper'], [1, 'nature', 'nature'], [0, 'aether-archipelago', 'aether']]) {
                 await React.act(() => controls[index].click());
                 await React.act(async () => {
                     for (const timer of timers.values()) timer.callback();
@@ -157,7 +157,9 @@ for (const reducedMotion of [false, true]) {
 
 test('unknown world labels never imply a fallback to Nature', () => {
     const { spaceEntranceWorldName } = load('src/utils/spaceWorlds.ts');
-    assert.equal(spaceEntranceWorldName('default'), 'Nature');
+    assert.equal(spaceEntranceWorldName('default'), 'Aether Archipelago');
+    assert.equal(spaceEntranceWorldName(null), 'Aether Archipelago');
+    assert.equal(spaceEntranceWorldName('aether-archipelago'), 'Aether Archipelago');
     assert.equal(spaceEntranceWorldName('nature'), 'Nature');
     assert.equal(spaceEntranceWorldName('copper-metropolis'), 'Copper Metropolis');
     assert.equal(spaceEntranceWorldName('private-world-id'), null);
@@ -167,7 +169,7 @@ test('same-origin configured Space root preserves the world and blocks unrelated
     const { spaceWorldLaunchUrl } = load('src/utils/spaceWorlds.ts');
     const { resolveSpaceDestination, spaceDestinationWithToken } = load('src/utils/spaceLogin.ts');
     const origin = 'https://space-dev-908123.entropydrop.com';
-    for (const world of ['nature', 'copper-metropolis']) {
+    for (const world of ['aether-archipelago', 'nature', 'copper-metropolis']) {
         const launch = new URL(spaceWorldLaunchUrl(origin + '/', world, origin + '/space/intro'), origin);
         const target = resolveSpaceDestination(launch.searchParams.get('destination'), origin + '/', origin + '/space/login');
         assert.equal(target.searchParams.get('world'), world);

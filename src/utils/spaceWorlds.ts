@@ -1,4 +1,7 @@
+export const SPACE_DEFAULT_ENTRANCE_WORLD = 'aether-archipelago' as const
+
 export const SPACE_ENTRANCE_WORLDS = [
+    { slug: 'aether-archipelago', name: 'Aether Archipelago', image: '/images/space_world_aether.webp' },
     { slug: 'nature', name: 'Nature', image: '/images/space_world_nature.webp' },
     { slug: 'copper-metropolis', name: 'Copper Metropolis', image: '/images/space_world_copper.webp' },
 ] as const
@@ -16,6 +19,6 @@ export function spaceWorldLaunchUrl(spaceAppUrl: string, world: SpaceEntranceWor
 }
 
 export function spaceEntranceWorldName(world: string | null): string | null {
-    if (!world || world === 'default') return 'Nature'
+    if (!world || world === 'default') world = SPACE_DEFAULT_ENTRANCE_WORLD
     return SPACE_ENTRANCE_WORLDS.find(entry => entry.slug === world)?.name ?? null
 }
