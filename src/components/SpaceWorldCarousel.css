@@ -38,63 +38,114 @@
 }
 
 .space-world-controls {
-    position: absolute;
-    right: 10px;
-    bottom: 8px;
-    display: flex;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    width: min(100%, 560px);
+    padding-top: 8px;
 }
 
-.space-world-controls button {
-    width: 88px;
-    height: 50px;
+.space-world-choice {
+    display: grid;
+    grid-template-rows: auto 48px;
+    gap: 10px;
+    min-width: 0;
+}
+
+.space-world-select {
+    width: 100%;
     padding: 0;
     overflow: hidden;
     border: 2px solid #ffffff66;
     background: #101510;
     box-shadow: 0 2px 8px #0006;
+    color: white;
     opacity: 0.65;
     cursor: pointer;
     transition: opacity 150ms ease, border-color 150ms ease;
 }
 
-.space-world-controls button img {
+.space-world-select img {
     display: block;
     width: 100%;
-    height: 100%;
+    height: auto;
+    aspect-ratio: 960 / 554;
     object-fit: cover;
 }
 
-.space-world-controls button[aria-pressed='true'] {
+.space-world-name {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 4px;
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+.space-world-select[aria-pressed='true'] {
     border-color: #a6df7a;
     opacity: 1;
 }
 
-.space-world-controls button:hover {
+.space-world-select:hover {
     border-color: white;
     opacity: 1;
 }
 
-.space-world-controls button:focus-visible {
+.space-world-select:focus-visible,
+.space-world-play:focus-visible {
     outline: 2px solid #a6df7a;
     outline-offset: 3px;
     opacity: 1;
 }
 
+.space-world-play {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 8px;
+    border: 2px solid black;
+    background: #3c8527;
+    box-shadow: 4px 4px 0 #0009;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    text-decoration: none;
+    transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.space-world-play:hover {
+    background: #4ea632;
+    transform: translateY(-2px);
+}
+
+.space-world-play:active {
+    transform: translateY(2px);
+    box-shadow: none;
+}
+
 @media (max-width: 639px) {
-    .space-world-hero {
-        padding-bottom: 56px;
+    .space-world-controls {
+        gap: 8px;
     }
 
-    .space-world-controls button {
-        width: 70px;
-        height: 40px;
+    .space-world-name {
+        font-size: 10px;
+    }
+
+    .space-world-play {
+        gap: 4px;
+        font-size: 12px;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .space-world-background img,
-    .space-world-controls button {
+    .space-world-controls button,
+    .space-world-play {
         transition: none;
     }
 }

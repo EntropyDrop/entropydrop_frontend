@@ -22,6 +22,7 @@ interface SpacePopulation {
 type SpacePopulationStatus = 'loading' | 'ready' | 'unavailable'
 
 const SPACE_POPULATION_REFRESH_MS = 30_000
+const SPACE_WORLD_CAROUSEL_MS = 5_000
 const SPACE_STATUS_PATH = '/space/api/v2/status'
 
 interface SpaceImageSlotProps {
@@ -115,6 +116,7 @@ export function SpacePage({ current }: SpacePageProps) {
     const agentConnection = spaceAgentConnection(agentOrigin, selectedWorld)
     const agentPrompt = spaceAgentPrompt(agentConnection.origin, agentConnection.worldSelector)
     const [agentCopyMessage, setAgentCopyMessage] = useState('')
+    const [worldCarouselPaused, setWorldCarouselPaused] = useState(false)
     const [population, setPopulation] = useState<SpacePopulation | null>(null)
     const [populationStatus, setPopulationStatus] = useState<SpacePopulationStatus>('loading')
 
@@ -174,6 +176,19 @@ export function SpacePage({ current }: SpacePageProps) {
             document.removeEventListener('visibilitychange', refreshWhenVisible)
         }
     }, [spaceStatusUrl])
+
+    useEffect(() => {
+        if (worldCarouselPaused) return
+        const timer = window.setInterval(() => {
+            if (document.visibilityState === 'hidden') return
+            setSelectedWorld(world => {
+                const index = SPACE_ENTRANCE_WORLDS.findIndex(entry => entry.slug === world)
+                return SPACE_ENTRANCE_WORLDS[(index + 1) % SPACE_ENTRANCE_WORLDS.length].slug
+            })
+            setAgentCopyMessage('')
+        }, SPACE_WORLD_CAROUSEL_MS)
+        return () => window.clearInterval(timer)
+    }, [selectedWorld, worldCarouselPaused])
 
     // Pre-allocated image slots:
     const IMAGE_SLOTS = {
@@ -274,21 +289,16 @@ export function SpacePage({ current }: SpacePageProps) {
                     </div>
                 </div>
 
-                {/* Action Buttons */}
-                <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                    <a
-                        href={getSpaceLaunchUrl()}
-                        className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${current.fontClass}`}
-                    >
-                        <Icon icon="pixelarticons:play" className="text-xl" />
-                        <span>{data.primaryCta} · {worldName}</span>
-                        <Icon icon="pixelarticons:arrow-right" className="text-lg transition-transform group-hover:translate-x-1.5" />
-                    </a>
-                </div>
-                <SpaceWorldControls current={current} world={selectedWorld} onSelect={world => {
-                    setSelectedWorld(world)
-                    setAgentCopyMessage('')
-                }} />
+                <SpaceWorldControls
+                    current={current}
+                    world={selectedWorld}
+                    launchUrl={getSpaceLaunchUrl()}
+                    onPauseChange={setWorldCarouselPaused}
+                    onSelect={world => {
+                        setSelectedWorld(world)
+                        setAgentCopyMessage('')
+                    }}
+                />
             </section>
 
 

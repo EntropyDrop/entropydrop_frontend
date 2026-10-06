@@ -99,7 +99,8 @@ for (const locale of ['en', 'zh-hans']) {
         assert.equal(dom.window.document.querySelector('.space-worlds-grid'), null);
         const play = hero.querySelector('a');
         assert.ok(play.textContent.includes(current.space_page.primaryCta));
-        assert.ok(play.textContent.includes('Aether Archipelago'));
+        assert.ok(play.getAttribute('aria-label').includes('Aether Archipelago'));
+        assert.equal(play.closest('.space-world-choice').querySelector('button').getAttribute('aria-pressed'), 'true');
         assert.equal(new URL(new URL(play.href, 'https://entropydrop.com').searchParams.get('destination')).searchParams.get('world'), 'aether-archipelago');
         assert.equal(hero.querySelectorAll('[aria-pressed]').length, 3);
         dom.window.close();
@@ -107,10 +108,12 @@ for (const locale of ['en', 'zh-hans']) {
 }
 
 for (const reducedMotion of [false, true]) {
-    test(`manual world selection, both Play buttons and Agent Prompt stay synchronized (reduced motion: ${reducedMotion})`, async () => {
+    test(`5-second autoplay and manual selection keep Play and Agent Prompt in the active world (reduced motion: ${reducedMotion})`, async () => {
         const dom = new JSDOM('<div id="root"></div>', { url: 'https://entropydrop.com/space/intro', pretendToBeVisual: true });
         const browser = dom.window;
         browser.matchMedia = () => ({ matches: reducedMotion });
+        let visibility = 'visible';
+        Object.defineProperty(browser.document, 'visibilityState', { get: () => visibility, configurable: true });
         const timers = new Map();
         let nextTimer = 0;
         browser.setInterval = (callback, ms) => { timers.set(++nextTimer, { callback, ms }); return nextTimer; };
@@ -120,35 +123,60 @@ for (const reducedMotion of [false, true]) {
         global.IS_REACT_ACT_ENVIRONMENT = true;
         const current = load('src/constants/locales/en.ts').default;
         const { SpacePage } = load('src/pages/SpacePage.tsx', browser.location.href, browser);
+        const { spaceAgentPrompt } = load('../entropydrop_space/client/src/bootstrap/SpaceAgentGuide.ts');
         const reactRoot = createRoot(browser.document.getElementById('root'));
+        const carouselTimer = () => [...timers.values()].find(timer => timer.ms === 5000);
+        const verifyWorld = (slug, image) => {
+            const active = browser.document.querySelector('.space-world-select[aria-pressed="true"]');
+            assert.equal(browser.document.querySelectorAll('.space-world-select[aria-pressed="true"]').length, 1);
+            assert.ok(browser.document.querySelector('.space-world-background .is-active').src.endsWith(`space_world_${image}.webp`));
+            const heroPlay = browser.document.querySelector('.space-world-hero a');
+            assert.equal(heroPlay.parentElement, active.parentElement);
+            const playButtons = [...browser.document.querySelectorAll('a[href^="/space/login?"]')];
+            assert.equal(playButtons.length, 2);
+            for (const button of playButtons) {
+                const destination = new URL(new URL(button.href).searchParams.get('destination'));
+                assert.equal(destination.searchParams.get('world'), slug);
+            }
+            assert.equal(browser.document.querySelector('#space-agent-external pre').textContent, spaceAgentPrompt('https://api.example.test', slug));
+        };
+        const tick = async () => {
+            const timer = carouselTimer();
+            assert.ok(timer, 'autoplay uses a 5-second timer');
+            await React.act(() => timer.callback());
+        };
         try {
             await React.act(() => reactRoot.render(React.createElement(MemoryRouter, null, React.createElement(SpacePage, { current }))));
-            assert.equal([...timers.values()].some(timer => timer.ms === 12000), false);
-            await React.act(async () => {
-                for (const timer of timers.values()) timer.callback();
-            });
-            assert.ok(browser.document.querySelector('.space-world-background .is-active').src.endsWith('space_world_aether.webp'));
-            const controls = [...browser.document.querySelectorAll('.space-world-controls button')];
+            verifyWorld('aether-archipelago', 'aether');
+            for (const [slug, image] of [['nature', 'nature'], ['copper-metropolis', 'copper'], ['aether-archipelago', 'aether']]) {
+                await tick();
+                verifyWorld(slug, image);
+            }
+            const controls = [...browser.document.querySelectorAll('.space-world-select')];
             for (const [index, slug, image] of [[2, 'copper-metropolis', 'copper'], [1, 'nature', 'nature'], [0, 'aether-archipelago', 'aether']]) {
                 await React.act(() => controls[index].click());
-                await React.act(async () => {
-                    for (const timer of timers.values()) timer.callback();
-                });
                 assert.equal(controls[index].getAttribute('aria-pressed'), 'true');
-                assert.ok(browser.document.querySelector('.space-world-background .is-active').src.endsWith(`space_world_${image}.webp`));
-                const playButtons = [...browser.document.querySelectorAll('a[href^="/space/login?"]')];
-                assert.equal(playButtons.length, 2);
-                for (const button of playButtons) {
-                    const destination = new URL(new URL(button.href).searchParams.get('destination'));
-                    assert.equal(destination.searchParams.get('world'), slug);
-                }
-                const prompt = browser.document.querySelector('#space-agent-external pre');
-                const { spaceAgentPrompt } = load('../entropydrop_space/client/src/bootstrap/SpaceAgentGuide.ts');
-                assert.equal(prompt.textContent, spaceAgentPrompt('https://api.example.test', slug));
-                assert.equal([...timers.values()].some(timer => timer.ms === 12000), false);
+                verifyWorld(slug, image);
+                assert.ok(carouselTimer());
             }
+            const group = browser.document.querySelector('.space-world-controls');
+            await React.act(() => group.dispatchEvent(new browser.MouseEvent('mouseover', { bubbles: true, relatedTarget: browser.document.body })));
+            assert.equal(carouselTimer(), undefined, 'hover pauses autoplay while choosing Play');
+            await React.act(() => group.dispatchEvent(new browser.MouseEvent('mouseout', { bubbles: true, relatedTarget: browser.document.body })));
+            assert.ok(carouselTimer(), 'autoplay resumes after hover');
+            await React.act(() => controls[0].focus());
+            assert.equal(carouselTimer(), undefined, 'keyboard focus pauses autoplay');
+            await React.act(() => controls[0].blur());
+            assert.ok(carouselTimer(), 'autoplay resumes after focus leaves');
+            visibility = 'hidden';
+            await tick();
+            verifyWorld('aether-archipelago', 'aether');
+            visibility = 'visible';
+            await tick();
+            verifyWorld('nature', 'nature');
         } finally {
             await React.act(() => reactRoot.unmount());
+            assert.equal(timers.size, 0, 'unmount clears carousel and population timers');
             global.window = oldWindow; global.document = oldDocument;
             delete global.IS_REACT_ACT_ENVIRONMENT;
             dom.window.close();
