@@ -1,3 +1,5 @@
+import { spaceAgentOnboarding } from '@entropydrop/space/agent-guide'
+
 export default {
     lang: 'zh-hans',
     title: 'EntropyDrop',
@@ -1164,8 +1166,8 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             exampleLabel: '可以这样描述任务',
             availabilityLabel: '当前能力与后续扩展',
             sharedTitle: 'spaceAPI 接入 Agent，entityAPI 运行实体代码',
-            sharedDescription: '外部 Agent Build 根据公开 Skill，通过授权的 spaceAPI 请求查询和修改世界。实体编辑器 AI 助手生成组件脚本，由你检查并点击 Apply 应用；脚本通过 entityAPI（self / ctx）实现悬挂、转向和自动控制。HUD 与本页都是同一种外部 Agent 接入方式的入口。',
-            authNote: '模型 API Key 用于连接实体编辑器的 AI 助手；spaceAPI Key 为外部 Agent 授予完整 Space 权限，仍受世界成员资格、执行占用与配额约束。只授权可信的 Agent，不再使用时及时撤销连接。',
+            sharedDescription: '外部 Agent 通过 spaceAPI 建造世界；实体脚本通过 entityAPI（self / ctx）运行。',
+            authNote: '实体编辑器的 AI 助手使用你的模型 API Key。',
             cards: [
                 {
                     id: 'external',
@@ -1192,17 +1194,21 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             ],
         },
         agentSetup: {
-            title: '一键接入外部 Agent',
-            description: '复制 Prompt 给你的 AI Agent，打开它提供的授权链接并确认连接。Agent 会自动领取 API Key，无需手动创建或复制密钥。',
+            ...spaceAgentOnboarding,
+            title: 'Agent Build',
+            description: '用你的外部 Agent 建造场景与实体。',
+            steps: [
+                '复制 Prompt 给你的 Agent。',
+                '打开它提供的授权链接，核对配对码并确认。',
+                '告诉 Agent 要建造什么。运行浏览器内的实体时，保持 Space 在线。',
+            ],
+            note: '授权后 Agent 拥有完整 Space 权限。只授权可信的 Agent，可在 API Keys 撤销。这里无需模型 API Key。',
+            targetWorld: '目标世界',
             backend: '后端地址',
-            guide: 'spaceAPI · Agent 网络请求',
-            entityGuide: 'entityAPI · 实体代码参考',
-            copy: '复制接入 Prompt',
-            copied: '已复制！直接发送给你的 Agent 即可开始。',
-            copyFailed: '复制失败，请选中示例并手动复制。',
-            note: '公开文档与 Skill 无需登录。连接 Agent 时，需要在网站登录并明确授权。每个连接均拥有完整 Space 权限，可随时在 API Keys 页面撤销。',
-            example: '发送给 Agent 的开箱即用 Prompt',
-            prompt: '请先阅读 EntropyDrop Space 智能体技能规范：{guide}（后端地址：{backend}）。\n请根据技能规范发起网页授权，向我展示授权链接和配对码，等待我确认后自行领取密钥。如已有有效连接，请复用。目标世界：{world}。通过 GET /space/api/v2/worlds 解析世界 UUID，必要时通过 POST /space/api/v2/worlds/{world}/join 加入。位置、实体与地形请求必须使用同一世界 ID，不得使用其他世界的保存位置或悄悄回退到 Nature。随后协助我在这个世界中完成建造，并妥善保管凭证。',
+            copy: '复制 Agent Prompt',
+            copied: '已复制，发送给你的 Agent。',
+            copyFailed: '复制失败，请展开 Prompt 并手动复制。',
+            example: '查看 Prompt 与文档',
         },
         agentDevTitle: '核心技术与创作者生态',
         agentDevSubtitle: '结合安全脚本沙箱、实时体素物理与内置资源市场，构建高自由度可编程世界。',

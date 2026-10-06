@@ -1,3 +1,5 @@
+import { spaceAgentOnboarding } from '@entropydrop/space/agent-guide'
+
 export default {
     lang: 'en',
     title: 'EntropyDrop',
@@ -1164,8 +1166,8 @@ Email: support@entropydrop.com`
             exampleLabel: 'Example task',
             availabilityLabel: 'Available now and planned next',
             sharedTitle: 'spaceAPI for agents, entityAPI for entity code',
-            sharedDescription: 'External Agent Build uses the public Skill and authorized spaceAPI requests to query and change the world. The entity editor assistant generates component scripts that you review and apply; those scripts call entityAPI (self / ctx) for suspension, steering, and autonomous control. The HUD and this page are entry points to the same external-agent method, not a third assistant.',
-            authNote: 'A model API key connects the entity editor assistant to its model. A spaceAPI key grants an external agent full Space permissions, subject to world membership, execution occupancy and quotas. Authorize only an agent you trust, and revoke its connection when no longer needed.',
+            sharedDescription: 'External agents build through spaceAPI. Entity scripts run through entityAPI (self / ctx).',
+            authNote: 'The entity editor assistant uses your model API key.',
             cards: [
                 {
                     id: 'external',
@@ -1191,19 +1193,7 @@ Email: support@entropydrop.com`
                 },
             ],
         },
-        agentSetup: {
-            title: 'One-Click Agent Onboarding',
-            description: 'Copy the Prompt to your AI agent, open its authorization link, and approve the connection. The agent retrieves its key automatically; no manual key copying is needed.',
-            backend: 'Backend URL',
-            guide: 'spaceAPI · Agent HTTP requests',
-            entityGuide: 'entityAPI · Entity code reference',
-            copy: 'Copy Agent Prompt',
-            copied: 'Copied! Send directly to your agent to start.',
-            copyFailed: 'Could not copy. Select the example and copy it manually.',
-            note: 'The Skill and documentation are public. Connecting an agent requires signing in and explicitly authorizing it on the website. Each connection grants full Space permissions and can be revoked in API Keys.',
-            example: 'Ready-to-use prompt for your agent',
-            prompt: 'Please read the EntropyDrop Space Agent Skill at: {guide} (Backend URL: {backend}).\nFollow the skill guide to start browser authorization. Show me the authorization link and matching code, wait for my approval, and retrieve the key yourself. Reuse an existing authorized connection when available. Target world: {world}. Resolve its UUID through GET /space/api/v2/worlds and join it through POST /space/api/v2/worlds/{world}/join when needed. Use that same world ID for saved position, entity and terrain requests; never use another world’s saved position or silently fall back to Nature. Then help me build in this world. Keep credentials private.',
-        },
+        agentSetup: spaceAgentOnboarding,
         agentDevTitle: 'Core Engine & Creator Ecosystem',
         agentDevSubtitle: 'Combining secure script sandboxes, real-time voxel physics, and a built-in marketplace for endless programmable creativity.',
         agentDevCards: [

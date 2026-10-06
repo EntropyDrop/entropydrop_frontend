@@ -143,7 +143,8 @@ for (const reducedMotion of [false, true]) {
                     assert.equal(destination.searchParams.get('world'), slug);
                 }
                 const prompt = browser.document.querySelector('#space-agent-external pre');
-                assert.ok(prompt.textContent.includes(`Target world: ${slug}.`));
+                const { spaceAgentPrompt } = load('../entropydrop_space/client/src/bootstrap/SpaceAgentGuide.ts');
+                assert.equal(prompt.textContent, spaceAgentPrompt('https://api.example.test', slug));
                 assert.equal([...timers.values()].some(timer => timer.ms === 12000), false);
             }
         } finally {

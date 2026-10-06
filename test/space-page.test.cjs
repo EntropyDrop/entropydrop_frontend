@@ -6,7 +6,7 @@ const { join } = require('node:path');
 test('Space intro describes exactly two AI integrations in both languages', () => {
   for (const locale of ['en', 'zh-hans']) {
     const source = readFileSync(join(__dirname, `../src/constants/locales/${locale}.ts`), 'utf8');
-    const modes = source.split('        agentModes: {')[1].split('        agentSetup: {')[0];
+    const modes = source.split('        agentModes: {')[1].split('        agentSetup:')[0];
     assert.deepEqual([...modes.matchAll(/id: '([^']+)'/g)].map(match => match[1]), ['external', 'entity']);
     assert.match(modes, /AGENT BUILD/);
     assert.doesNotMatch(source, /\bAI BUILD\b/);
@@ -21,7 +21,7 @@ test('Space agent cards use a two-column layout and show the Agent Build entry',
   const source = readFileSync(join(__dirname, '../src/pages/SpacePage.tsx'), 'utf8');
   assert.match(source, /lg:grid-cols-2 gap-4">\s*\{data\.agentModes\.cards\.map/);
   const external = source.split('{isExternal ? (')[1].split(') : (')[0];
-  assert.match(external, /card\.entry/);
+  assert.match(external, /data\.agentSetup\.steps\.map/);
   assert.match(external, /navigator\.clipboard\.writeText\(agentPrompt\)/);
 });
 

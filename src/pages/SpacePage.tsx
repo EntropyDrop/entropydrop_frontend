@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '@iconify/react'
 import { Link } from 'react-router-dom'
+import { spaceAgentConnection, spaceAgentPrompt } from '@entropydrop/space/agent-guide'
 
 import { PageContainer } from '../components/PageContainer'
 import { SpaceWorldBackground, SpaceWorldControls } from '../components/SpaceWorldCarousel'
@@ -111,15 +112,8 @@ export function SpacePage({ current }: SpacePageProps) {
         new URL(API_BASE_URL, window.location.href),
     ).toString()
     const agentOrigin = new URL(import.meta.env.VITE_SPACE_API_BASE_URL || API_BASE_URL, window.location.href).origin
-    const agentGuideUrl = `${agentOrigin}/space/agent/SKILL.md`
-    const spaceApiGuideUrl = `${agentOrigin}/space/agent/spaceAPI.md`
-    const entityApiGuideUrl = `${agentOrigin}/space/agent/entityAPI.md`
-    const apiKeysUrl = new URL('/space/apikeys', window.location.href).toString()
-    const agentPrompt = data.agentSetup.prompt
-        .replaceAll('{guide}', agentGuideUrl)
-        .replaceAll('{backend}', agentOrigin)
-        .replaceAll('{keys_url}', apiKeysUrl)
-        .replaceAll('{world}', selectedWorld)
+    const agentConnection = spaceAgentConnection(agentOrigin, selectedWorld)
+    const agentPrompt = spaceAgentPrompt(agentConnection.origin, agentConnection.worldSelector)
     const [agentCopyMessage, setAgentCopyMessage] = useState('')
     const [population, setPopulation] = useState<SpacePopulation | null>(null)
     const [populationStatus, setPopulationStatus] = useState<SpacePopulationStatus>('loading')
@@ -501,16 +495,18 @@ export function SpacePage({ current }: SpacePageProps) {
                                     <span className="font-mono text-xs text-white/40">0{index + 1}</span>
                                 </div>
                                 <div className="flex flex-col gap-2">
-                                    <h3 className={`m-0 text-xl font-bold text-white ${current.fontClass}`}>{card.title}</h3>
+                                    <h3 className={`m-0 text-xl font-bold text-white ${current.fontClass}`}>{isExternal ? data.agentSetup.title : card.title}</h3>
                                     <span className="self-start border border-green-400/25 bg-green-400/5 px-2 py-1 text-xs leading-relaxed text-green-300">{card.status}</span>
                                 </div>
-                                <p className={`m-0 text-sm leading-relaxed text-white/80 ${current.fontClass}`}>{card.description}</p>
+                                <p className={`m-0 text-sm leading-relaxed text-white/80 ${current.fontClass}`}>{isExternal ? data.agentSetup.description : card.description}</p>
 
                                 {isExternal ? (
                                     <div className="flex flex-col gap-3 my-1">
-                                        <p className="m-0 text-sm leading-relaxed text-white/80">
-                                            <span className="text-purple-300">{data.agentModes.entryLabel}: </span>
-                                            {card.entry}
+                                        <ol className="m-0 pl-5 space-y-1 text-sm leading-relaxed text-white/80">
+                                            {data.agentSetup.steps.map(step => <li key={step}>{step}</li>)}
+                                        </ol>
+                                        <p className="m-0 text-sm text-white/80">
+                                            {data.agentSetup.targetWorld}: <strong>{worldName}</strong>
                                         </p>
                                         <button
                                             type="button"
@@ -535,10 +531,7 @@ export function SpacePage({ current }: SpacePageProps) {
                                             </div>
                                         ) : null}
 
-                                        <div className="text-xs text-white/75 break-all bg-black/50 p-2.5 border border-purple-400/20">
-                                            <span className="text-purple-300 font-mono">{data.agentSetup.backend}: </span>
-                                            <code className="text-purple-200">{agentOrigin}</code>
-                                        </div>
+                                        <p className="m-0 text-xs leading-relaxed text-white/60">{data.agentSetup.note}</p>
 
                                         <details className="text-xs text-white/80 group">
                                             <summary className="cursor-pointer text-purple-300 font-mono text-xs uppercase tracking-wider flex items-center gap-1.5 hover:text-purple-200 select-none py-1">
@@ -548,27 +541,16 @@ export function SpacePage({ current }: SpacePageProps) {
                                             <div className="relative mt-2">
                                                 <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed border border-purple-400/20 bg-black/70 p-3 max-h-48 overflow-y-auto text-purple-100/90">{agentPrompt}</pre>
                                             </div>
+                                            <p className="text-xs text-white/60 break-all">
+                                                {data.agentSetup.backend}: <code>{agentConnection.origin}</code>
+                                            </p>
+                                            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs">
+                                                <a href={agentConnection.spaceApiUrl} target="_blank" rel="noopener noreferrer" className="text-purple-300 underline">{data.agentSetup.guide}</a>
+                                                <a href={agentConnection.entityApiUrl} target="_blank" rel="noopener noreferrer" className="text-purple-300 underline">{data.agentSetup.entityGuide}</a>
+                                                <a href={agentConnection.skillUrl} target="_blank" rel="noopener noreferrer" className="text-purple-300 underline">Agent Skill</a>
+                                                <Link to="/space/apikeys" className="text-purple-300 underline">{current.nav.apiKeys}</Link>
+                                            </div>
                                         </details>
-
-                                        <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-                                            <a href={spaceApiGuideUrl} target="_blank" rel="noopener noreferrer"
-                                                className="inline-flex items-center border border-purple-400/40 bg-purple-950/30 px-2.5 py-1.5 text-purple-200 hover:bg-purple-500/20 no-underline">
-                                                {data.agentSetup.guide}
-                                            </a>
-                                            <a href={entityApiGuideUrl} target="_blank" rel="noopener noreferrer"
-                                                className="inline-flex items-center border border-purple-400/40 bg-purple-950/30 px-2.5 py-1.5 text-purple-200 hover:bg-purple-500/20 no-underline">
-                                                {data.agentSetup.entityGuide}
-                                            </a>
-                                            <Link to="/space/apikeys"
-                                                className="inline-flex items-center border border-white/20 bg-white/5 px-2.5 py-1.5 text-white/80 hover:bg-white/10 no-underline">
-                                                {current.nav.apiKeys}
-                                            </Link>
-                                        </div>
-
-                                        <div className="text-xs leading-relaxed text-white/70">
-                                            <span className="text-purple-300 font-medium">{data.agentModes.scopeLabel}: </span>
-                                            <span>{card.scope}</span>
-                                        </div>
                                     </div>
                                 ) : (
                                     <>
@@ -583,10 +565,10 @@ export function SpacePage({ current }: SpacePageProps) {
                                     </>
                                 )}
 
-                                <div className="mt-auto border-t border-white/10 pt-4 text-sm leading-relaxed">
+                                {!isExternal ? <div className="mt-auto border-t border-white/10 pt-4 text-sm leading-relaxed">
                                     <p className="m-0 mb-1 font-semibold text-white/85">{data.agentModes.availabilityLabel}</p>
                                     <p className="m-0 text-white/65">{card.availability}</p>
-                                </div>
+                                </div> : null}
                             </article>
                         )
                     })}
