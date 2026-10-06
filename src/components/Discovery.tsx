@@ -12,7 +12,6 @@ import {
     PerspectiveCamera
 } from 'three'
 import { Skin2D } from './utils'
-import { apiFetch } from '../utils/api'
 import type { GenerationLogItemBrief } from '../types/log'
 
 const DISCOVERY_SKIN_PREVIEW_SCALE = 4
@@ -29,23 +28,6 @@ type LoadedDiscoveryItem = {
     log: GenerationLogItemBrief
     tex: CanvasTexture
     slotIndex: number
-}
-
-function normalizeDiscoveryItem(item: unknown): GenerationLogItemBrief | null {
-    if (!item || typeof item !== 'object') return null
-
-    const raw = item as Record<string, unknown>
-    const id = typeof raw.id === 'string' ? raw.id.trim() : ''
-    const result = typeof raw.result === 'string' ? raw.result.trim() : ''
-    if (!id || !result) return null
-
-    return {
-        ...(raw as Partial<GenerationLogItemBrief>),
-        id,
-        result,
-        prompt: typeof raw.prompt === 'string' ? raw.prompt : '',
-        is_public: raw.is_public !== false,
-    }
 }
 
 function getSpiralPosition(n: number, radius: number): Vector3 {
@@ -68,10 +50,12 @@ function getSpiralPosition(n: number, radius: number): Vector3 {
 }
 
 export function Discovery({
+    items,
     selected,
     onSelect,
     onLoading
 }: {
+    items: GenerationLogItemBrief[] | null,
     selected?: GenerationLogItemBrief | null,
     onSelect?: (item: GenerationLogItemBrief | null) => void,
     onLoading?: (isLoading: boolean) => void
@@ -127,126 +111,116 @@ export function Discovery({
             cancelIdleCallback?: (handle: number) => void;
         };
         const textures = new Set<CanvasTexture>();
-        const controller = new AbortController();
         onLoading?.(true);
 
-        apiFetch('/api/discovery', {
-            signal: controller.signal,
-            skipGlobalError: true
-        })
-            .then(res => res.json())
-            .then(async (data: unknown) => {
-                if (!active) return;
+        if (items === null) {
+            return () => onLoading?.(false);
+        }
 
-                const rawItems = Array.isArray(data) ? data : [];
-                const discoveryItems = rawItems
-                    .map(normalizeDiscoveryItem)
-                    .filter((item): item is GenerationLogItemBrief => item !== null);
+        void (async () => {
+            if (!active) return;
 
-                if (rawItems.length !== discoveryItems.length) {
-                    console.warn(`Discovery skipped ${rawItems.length - discoveryItems.length} invalid item(s)`);
+            // Shuffle slots
+            const indices = Array.from({ length: DISCOVERY_SLOT_COUNT }, (_, i) => i);
+            for (let i = indices.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [indices[i], indices[j]] = [indices[j], indices[i]];
+            }
+
+            const queuedItems = items
+                .slice(0, DISCOVERY_SLOT_COUNT)
+                .map((log, index) => ({ log, slotIndex: indices[index] }));
+            let loadedBuffer: LoadedDiscoveryItem[] = [];
+
+            const updateState = () => {
+                if (loadedBuffer.length > 0) {
+                    // React may defer the updater until after this buffer is cleared.
+                    const batch = loadedBuffer;
+                    loadedBuffer = [];
+                    setLoadedItems(prev => {
+                        const currentIds = new Set(prev.map(p => p.log.id));
+                        const newItems = batch.filter(item => !currentIds.has(item.log.id));
+                        if (newItems.length === 0) return prev;
+                        return [...prev, ...newItems];
+                    });
                 }
+            };
 
-                // Shuffle slots
-                const indices = Array.from({ length: DISCOVERY_SLOT_COUNT }, (_, i) => i);
-                for (let i = indices.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [indices[i], indices[j]] = [indices[j], indices[i]];
-                }
+            const loadItems = async (items: typeof queuedItems) => {
+                for (let i = 0; i < items.length; i += DISCOVERY_LOAD_CONCURRENCY) {
+                    if (!active) break;
 
-                const queuedItems = discoveryItems
-                    .slice(0, DISCOVERY_SLOT_COUNT)
-                    .map((log, index) => ({ log, slotIndex: indices[index] }));
-                let loadedBuffer: LoadedDiscoveryItem[] = [];
-
-                const updateState = () => {
-                    if (loadedBuffer.length > 0) {
-                        setLoadedItems(prev => {
-                            const currentIds = new Set(prev.map(p => p.log.id));
-                            const newItems = loadedBuffer.filter(item => !currentIds.has(item.log.id));
-                            if (newItems.length === 0) return prev;
-                            return [...prev, ...newItems];
-                        });
-                        loadedBuffer = [];
+                    // Keep texture decoding and canvas rendering from competing
+                    // with interactions inside the detail modal.
+                    while (active && selectedRef.current) {
+                        await new Promise(resolve => window.setTimeout(resolve, 100));
                     }
-                };
+                    if (!active) break;
 
-                const loadItems = async (items: typeof queuedItems) => {
-                    for (let i = 0; i < items.length; i += DISCOVERY_LOAD_CONCURRENCY) {
-                        if (!active) break;
+                    const chunk = items.slice(i, i + DISCOVERY_LOAD_CONCURRENCY);
 
-                        // Keep texture decoding and canvas rendering from competing
-                        // with interactions inside the detail modal.
-                        while (active && selectedRef.current) {
-                            await new Promise(resolve => window.setTimeout(resolve, 100));
-                        }
-                        if (!active) break;
+                    await Promise.all(chunk.map(async ({ log, slotIndex }) => {
+                        try {
+                            const canvas = await Skin2D(log.result, { scale: DISCOVERY_SKIN_PREVIEW_SCALE });
+                            if (!active) return;
+                            const tex = new CanvasTexture(canvas);
+                            tex.magFilter = NearestFilter;
+                            tex.minFilter = NearestFilter;
+                            tex.generateMipmaps = false;
+                            textures.add(tex);
 
-                        const chunk = items.slice(i, i + DISCOVERY_LOAD_CONCURRENCY);
+                            loadedBuffer.push({ log, tex, slotIndex });
 
-                        await Promise.all(chunk.map(async ({ log, slotIndex }) => {
-                            try {
-                                const canvas = await Skin2D(log.result, { scale: DISCOVERY_SKIN_PREVIEW_SCALE });
-                                if (!active) return;
-                                const tex = new CanvasTexture(canvas);
-                                tex.magFilter = NearestFilter;
-                                tex.minFilter = NearestFilter;
-                                tex.generateMipmaps = false;
-                                textures.add(tex);
-
-                                loadedBuffer.push({ log, tex, slotIndex });
-
-                                if (loadedBuffer.length >= DISCOVERY_BATCH_SIZE) {
-                                    updateState();
-                                }
-                            } catch (err) {
-                                if (!active) return;
-                                console.warn("Failed to load skin for", log.result, err);
+                            if (loadedBuffer.length >= DISCOVERY_BATCH_SIZE) {
+                                updateState();
                             }
-                        }));
-
-                        if (active && i + DISCOVERY_LOAD_CONCURRENCY < items.length) {
-                            await new Promise(resolve => window.setTimeout(resolve, DISCOVERY_LOAD_DELAY_MS));
+                        } catch (err) {
+                            if (!active) return;
+                            console.warn("Failed to load skin for", log.result, err);
                         }
+                    }));
+
+                    if (active && i + DISCOVERY_LOAD_CONCURRENCY < items.length) {
+                        await new Promise(resolve => window.setTimeout(resolve, DISCOVERY_LOAD_DELAY_MS));
                     }
-
-                    updateState();
-                };
-
-                const initialItems = queuedItems.slice(0, DISCOVERY_INITIAL_ITEM_COUNT);
-                const remainingItems = queuedItems.slice(DISCOVERY_INITIAL_ITEM_COUNT);
-
-                await loadItems(initialItems);
-                if (!active) return;
-                onLoading?.(false);
-
-                if (remainingItems.length === 0) return;
-
-                const loadRemainingItems = () => {
-                    backgroundLoadId = null;
-                    if (active) void loadItems(remainingItems);
-                };
-
-                if (idleWindow.requestIdleCallback) {
-                    backgroundLoadUsesIdleCallback = true;
-                    backgroundLoadId = idleWindow.requestIdleCallback(loadRemainingItems, { timeout: 1200 });
-                } else {
-                    backgroundLoadId = window.setTimeout(
-                        loadRemainingItems,
-                        DISCOVERY_BACKGROUND_LOAD_DELAY_MS
-                    );
                 }
-            })
+
+                updateState();
+            };
+
+            const initialItems = queuedItems.slice(0, DISCOVERY_INITIAL_ITEM_COUNT);
+            const remainingItems = queuedItems.slice(DISCOVERY_INITIAL_ITEM_COUNT);
+
+            await loadItems(initialItems);
+            if (!active) return;
+            onLoading?.(false);
+
+            if (remainingItems.length === 0) return;
+
+            const loadRemainingItems = () => {
+                backgroundLoadId = null;
+                if (active) void loadItems(remainingItems);
+            };
+
+            if (idleWindow.requestIdleCallback) {
+                backgroundLoadUsesIdleCallback = true;
+                backgroundLoadId = idleWindow.requestIdleCallback(loadRemainingItems, { timeout: 1200 });
+            } else {
+                backgroundLoadId = window.setTimeout(
+                    loadRemainingItems,
+                    DISCOVERY_BACKGROUND_LOAD_DELAY_MS
+                );
+            }
+        })()
             .catch(err => {
                 if (!active) return;
                 if (err instanceof DOMException && err.name === 'AbortError') return;
-                console.error("Discovery fetch failed:", err);
+                console.error("Discovery texture loading failed:", err);
                 onLoading?.(false);
             });
 
         return () => {
             active = false;
-            controller.abort();
             if (backgroundLoadId !== null) {
                 if (backgroundLoadUsesIdleCallback && idleWindow.cancelIdleCallback) {
                     idleWindow.cancelIdleCallback(backgroundLoadId);
@@ -258,7 +232,7 @@ export function Discovery({
             textures.forEach(texture => texture.dispose());
             textures.clear();
         };
-    }, [onLoading])
+    }, [items, onLoading])
 
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);

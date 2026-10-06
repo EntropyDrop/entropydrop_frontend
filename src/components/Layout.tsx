@@ -4,6 +4,7 @@ import { useState, useEffect, lazy, Suspense, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { UserMenu } from './UserMenu'
 import { ErrorModal } from './ErrorModal'
+import { DiscoveryBackground } from './DiscoveryBackground'
 
 import { LoadingPlaceholder } from './LoadingPlaceholder'
 import { type LangKey, type LangData } from '../constants/lang'
@@ -12,7 +13,6 @@ import type { GenerationLogItem, GenerationLogItemBrief } from '../types/log'
 import { SPACE_NAV_ITEMS, SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS, TOP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from '../constants/nav'
 
 // Lazy load heavy components
-const DiscoveryScene = lazy(() => import('./DiscoveryScene').then(m => ({ default: m.DiscoveryScene })))
 const DiscoverySearch = lazy(() => import('./DiscoverySearch').then(m => ({ default: m.DiscoverySearch })))
 const MCModal = lazy(() => import('./MCModal').then(m => ({ default: m.MCModal })))
 
@@ -163,14 +163,13 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
             {/* Background scene */}
             <div className="absolute inset-0 z-0">
                 {isDiscoveryPage && is3DMode ? (
-                    <Suspense fallback={<LightweightBackground />}>
-                        <DiscoveryScene
-                            selected={selectedDiscoveryItem}
-                            onSelect={setSelectedDiscoveryItem}
-                            onLoading={setIsDiscoveryLoading}
-                            paused={selectedDiscoveryItem !== null}
-                        />
-                    </Suspense>
+                    <DiscoveryBackground
+                        fallback={<LightweightBackground />}
+                        selected={selectedDiscoveryItem}
+                        onSelect={setSelectedDiscoveryItem}
+                        onLoading={setIsDiscoveryLoading}
+                        paused={selectedDiscoveryItem !== null}
+                    />
                 ) : (
                     <LightweightBackground />
                 )}

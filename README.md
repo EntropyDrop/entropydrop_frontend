@@ -144,6 +144,15 @@ npm run preview
 
 Production releases to S3/CloudFront are managed by the backend deployment tools.
 
+### Pixel font subsets
+
+The site uses checked-in WOFF2 subsets: Latin/punctuation, Chinese UI copy, and
+remaining Unicode ranges loaded on demand. `src/styles/fonts.css` uses disjoint
+`unicode-range` values and preserves every character in the original font.
+After updating Chinese translations, regenerate the subsets with
+`python3 scripts/subset-fonts.py` (requires `fonttools[woff]`). Ordinary builds
+use the generated files directly and do not require Python.
+
 ### 5. Linting & Formatting
 Enforce code quality with ESLint:
 ```bash
