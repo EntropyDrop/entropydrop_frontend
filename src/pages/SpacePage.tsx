@@ -502,7 +502,7 @@ export function SpacePage({ current }: SpacePageProps) {
 
                                 {isExternal ? (
                                     <div className="flex flex-col gap-3 my-1">
-                                        <ol className="m-0 pl-5 space-y-1 text-sm leading-relaxed text-white/80">
+                                        <ol className="m-0 list-decimal pl-5 space-y-1 text-sm leading-relaxed text-white/80">
                                             {data.agentSetup.steps.map(step => <li key={step}>{step}</li>)}
                                         </ol>
                                         <p className="m-0 text-sm text-white/80">
