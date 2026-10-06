@@ -28,7 +28,7 @@ export function DiscoveryPage({ current }: { current: LangData }) {
     return <>
         <SEO title={current.nav.discover} description={current.subtitle} />
         {view === '3d' ? <>
-            <div className="absolute inset-0 z-0">
+            <div className="absolute inset-0 z-0 bg-[#111]">
                 <DiscoveryBackground fallback={null} selected={selected} onSelect={select} onLoading={setIsLoading} paused={selected !== null || search.isOpen} />
             </div>
             {isLoading && <LoadingPlaceholder current={current} className="top-24 sm:top-28 z-20" />}
