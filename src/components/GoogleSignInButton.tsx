@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { GoogleLogin, GoogleOAuthProvider } from '@react-oauth/google'
-import { API_BASE_URL } from '../utils/apiConfig'
+import { apiFetch } from '../utils/api'
 
 interface CredentialResponse {
     credential?: string
@@ -30,7 +30,7 @@ export function GoogleSignInButton({
         const controller = new AbortController()
         const timeout = window.setTimeout(() => controller.abort(), 5000)
         let active = true
-        void fetch(`${API_BASE_URL}/api/auth/config`, { signal: controller.signal, cache: 'no-store' })
+        void apiFetch('/api/auth/config', { auth: 'none', skipGlobalError: true, signal: controller.signal, cache: 'no-store' })
             .then(async response => {
                 if (!response.ok) throw new Error('Account configuration unavailable')
                 const data = await response.json()

@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "test:terrain": "node --test test/copper-metropolis.test.cjs test/neon-rain.test.cjs test/brutalist-dusk.test.cjs test/aether-archipelago.test.cjs test/astral-foundry.test.cjs test/titan-canyon.test.cjs test/colossus-harbor.test.cjs",
     "test:auth": "node --test test/auth-session.test.cjs",
-    "test:discovery": "node --test test/discovery-loading.test.cjs",
+    "test:discovery": "node --test test/discovery-loading.test.cjs test/skin-preview-cache.test.cjs",
+    "test:architecture": "node --test test/architecture.test.cjs",
     "test:collection": "node --test test/collection-page.test.cjs"
   },
   "dependencies": {

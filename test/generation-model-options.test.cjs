@@ -42,7 +42,8 @@ async function mount(isPro, { imageOptions = options, maintenance = [], userStat
     const module = { exports: {} };
     const context = vm.createContext({
         window, document: window.document, localStorage: window.localStorage,
-        URL, URLSearchParams, Headers, FormData, Response, DOMException, atob,
+        URL, URLSearchParams, Headers, FormData, Response, Request, AbortController, DOMException, atob,
+        CustomEvent: window.CustomEvent,
         Event: window.Event, setInterval, clearInterval, setTimeout, clearTimeout, console,
         require: name => name === 'generation-visuals' ? visuals : require(name),
         module, exports: module.exports,

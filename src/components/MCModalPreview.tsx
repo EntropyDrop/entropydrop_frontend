@@ -1,3 +1,4 @@
+import { request } from '../utils/httpClient'
 import { Icon } from '@iconify/react'
 import { Component, Suspense, useState, useRef, useEffect, type ErrorInfo, type ReactNode } from 'react'
 import { Canvas } from '@react-three/fiber'
@@ -112,7 +113,7 @@ export function MCModalPreview({
         e.preventDefault();
         if (!textureUrl) return;
         try {
-            const response = await fetch(textureUrl);
+            const response = await request(textureUrl);
             if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);

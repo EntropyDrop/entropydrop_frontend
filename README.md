@@ -153,6 +153,57 @@ After updating Chinese translations, regenerate the subsets with
 `python3 scripts/subset-fonts.py` (requires `fonttools[woff]`). Ordinary builds
 use the generated files directly and do not require Python.
 
+### Discover rendering and skin previews
+
+Discover bakes its static card positions and orientations, shares a plane geometry,
+and updates camera motion and material fades in one frame callback. Loaded cards
+use unlit materials and stop drawing their placeholder planes after fading in.
+Rendering pauses while the page is hidden or a modal covers it; reduced-motion
+preferences use demand rendering. The drawing pixel ratio is capped at 1.5.
+
+DOM thumbnails render when approaching the viewport and copy cached Canvas pixels
+directly, without PNG/Base64 encoding. Preview sizes and avatars share downloaded,
+decoded sources. The LRU caches retain at most 8 MiB of source pixels and 16 MiB
+of preview pixels, with 240 entries per cache and a five-minute TTL. Pending work
+is deduplicated, failed work is retryable, and account changes clear the caches
+and abort pending source requests. Active DOM and GPU copies have separate lifetimes.
+Run `npm run test:discovery` to check loading, rendering controls and cache behavior.
+
+### Architecture boundaries
+
+Discover owns its selection, URL parameters, search criteria and single detail modal.
+`Layout` owns shared navigation, the neutral background and global errors. Both
+Discover views use `pages/discovery/useDiscoverySearch`; `useDiscoverySelection`
+uses React Router so deep links and browser back/forward follow the same state.
+The renderer handles camera/texture work and does not update browser history.
+
+`utils/httpClient` handles authorization, one shared refresh, retry and global
+errors through explicit `request` calls. Importing `fetchInterceptor` only provides
+compatibility exports; it never patches native `fetch`. `authClient` restores the
+session in the background. Public gallery requests use `auth: 'none'`; personal
+profile requests wait for restoration.
+
+`utils/api` provides `apiFetch` for responses, `apiJson<T>` for JSON, and
+`apiResponseJson` when callers first inspect HTTP status. JSON decoding checks the
+request's account and cancellation signal again. Profile reads share a 15-second
+cache; Discover search opts into a 10-second cache. Other reads remain uncached.
+The query cache has an LRU limit of 32 completed entries and approximately 2 MiB
+of retained response text. Every consumer owns a cancellation lease; cancelling
+all consumers aborts the network request. Failures are retryable. Account changes,
+profile update events and successful writes invalidate cached queries.
+
+`hooks/useCurrentUser` owns profile loading for navigation, generation, collections,
+forum, credits, subscriptions and skin details. Force refresh notifies mounted
+consumers. `useLatestRequest` scopes concurrent search/detail work and cancels it
+on replacement or unmount. `mcmodal/useSkinDetails` loads ancestry and counts in
+parallel after the main detail arrives. Edit's license policy lives in
+`pages/edit/useSaveLicensePreview`.
+
+The forum separates `useForumData`, `useForumActions` and presentation components.
+Its editor, post detail and video form load only when opened. Run
+`npm run test:architecture` for request/cache isolation, URL navigation, stale
+responses, session restoration and feature-loading regressions.
+
 ### 5. Linting & Formatting
 Enforce code quality with ESLint:
 ```bash

@@ -1,3 +1,4 @@
+import { request } from '../utils/httpClient'
 import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
@@ -769,7 +770,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
 
   const downloadImage = async (url: string, filename: string) => {
     try {
-      const response = await fetch(url);
+      const response = await request(url);
       if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);

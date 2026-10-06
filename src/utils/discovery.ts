@@ -19,7 +19,7 @@ function normalizeDiscoveryItem(item: unknown): GenerationLogItemBrief | null {
 }
 
 export async function fetchDiscoveryItems(signal: AbortSignal): Promise<GenerationLogItemBrief[]> {
-    const response = await apiFetch('/api/discovery', { signal, skipGlobalError: true })
+    const response = await apiFetch('/api/discovery', { signal, skipGlobalError: true, auth: 'none' })
     if (!response.ok) throw new Error(`Discovery request failed (${response.status})`)
 
     const data: unknown = await response.json()

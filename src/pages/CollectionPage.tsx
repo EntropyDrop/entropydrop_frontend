@@ -1,3 +1,4 @@
+import { useCurrentUser } from '../hooks/useCurrentUser'
 import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
@@ -10,7 +11,7 @@ import { AnimatePresence } from 'framer-motion'
 import { MCModal } from '../components/MCModal'
 import { showError } from '../utils/alert'
 import { LoadingPlaceholder } from '../components/LoadingPlaceholder'
-import { apiFetch } from '../utils/api'
+import { apiFetch, apiResponseJson } from '../utils/api'
 import { CollectionUploadPicker } from '../components/CollectionUploadPicker'
 
 
@@ -54,9 +55,9 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const authSession = useAuthSession();
     const navigate = useNavigate()
     const { userId, collectionId: pathCollectionId } = useParams()
-    const [userStatus, setUserStatus] = useState<{ session: string; id: string; isPro: boolean } | null>(null)
-    const myUserId = userStatus?.session === authSession ? userStatus.id : null
-    const isPro = userStatus?.session === authSession ? userStatus.isPro : false
+    const { user: currentUser } = useCurrentUser()
+    const myUserId = currentUser ? String(currentUser.id) : null
+    const isPro = currentUser?.is_pro === true
     const [searchParams] = useSearchParams()
     const sharedId = searchParams.get('id')
     const [publicCollections, setPublicCollections] = useState<Collection[]>([])
@@ -122,7 +123,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
             }
             const response = await apiFetch(url, { signal });
             if (response.ok) {
-                const data = await response.json()
+                const data = await apiResponseJson(response)
                 if (signal?.aborted) return
                 if (isPublic === true) {
                     setPublicCollections(data.items)
@@ -151,20 +152,6 @@ export function CollectionPage({ current }: CollectionPageProps) {
         }
     }
 
-    const fetchUserStatus = async (signal: AbortSignal) => {
-        if (!authSession) return
-        try {
-            const res = await apiFetch('/api/users/me', { signal })
-            if (res.ok) {
-                const data = await res.json()
-                if (signal.aborted) return
-                setUserStatus({ session: authSession, id: String(data.id), isPro: Boolean(data.is_pro) })
-            }
-        } catch (e) {
-            if (!signal.aborted) console.error('Failed to fetch user status', e)
-        }
-    }
-
     const fetchItems = async (collectionId: number | string, page: number = 1, targetUserId?: string, signal?: AbortSignal) => {
         setIsLoading(true)
 
@@ -177,7 +164,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
             if (filterMode) url += `&mode=${filterMode}`
             const response = await apiFetch(url, { signal })
             if (response.ok) {
-                const data = await response.json()
+                const data = await apiResponseJson(response)
                 if (signal?.aborted) return
                 setItems(data.items)
                 setItemTotalPages(data.total_pages)
@@ -192,16 +179,10 @@ export function CollectionPage({ current }: CollectionPageProps) {
     }
 
     useEffect(() => {
-        const controller = new AbortController()
-        setUserStatus(null)
         setPublicCollections([])
         setPrivateCollections([])
         setOriginalCollections([])
         setItems([])
-        if (authSession) {
-            fetchUserStatus(controller.signal)
-        }
-        return () => controller.abort()
     }, [authSession])
 
     useEffect(() => {
@@ -220,7 +201,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                     return
                 }
 
-                const data = await response.json()
+                const data = await apiResponseJson(response)
                 if (isCancelled) return
                 const originalId = isPublic ? 'creations_public' : 'creations_private'
                 const loadedOriginal = originalCollections.find(collection => String(collection.id) === originalId)
@@ -435,7 +416,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                 body: formData
             });
             if (response.ok) {
-                const data = await response.json().catch(() => ({})) as UploadedCollectionItem;
+                const data = await apiResponseJson(response).catch(() => ({})) as UploadedCollectionItem;
                 if (isCustom) {
                     const linkResponse = await apiFetch('/api/collections/items', {
                         method: 'POST',
@@ -515,7 +496,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                     fetchItems(currentCollection.id, pageToFetch);
                 }
             } else {
-                const errorData = await response.json();
+                const errorData = await apiResponseJson(response);
                 showError(errorData.detail || current.collection.moveFailed);
             }
         } catch (e) {
@@ -648,7 +629,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                 }, 200);
                                 return;
                             }
-                            const err = await response.json().catch(() => ({}));
+                            const err = await apiResponseJson(response).catch(() => ({}));
                             const isCdnPending = typeof err?.detail === 'string' && (
                                 err.detail.includes('CDN withdrawal is pending') ||
                                 err.detail.toLowerCase().includes('cdn')

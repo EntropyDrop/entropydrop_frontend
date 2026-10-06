@@ -1,10 +1,11 @@
+import { useCurrentUser } from '../hooks/useCurrentUser'
 import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { motion } from 'framer-motion'
-import { apiFetch } from '../utils/api'
+import { apiFetch, apiResponseJson } from '../utils/api'
 import { SEO } from '../components/SEO'
 
 interface CreditsPageProps {
@@ -19,13 +20,9 @@ interface CreditLogEntry {
     timestamp: string
 }
 
-interface UserInfo {
-    credits: number
-}
-
 export function CreditsPage({ current }: CreditsPageProps) {
     const authSession = useAuthSession();
-    const [user, setUser] = useState<UserInfo | null>(null)
+    const { user, setUser } = useCurrentUser()
     const [items, setItems] = useState<CreditLogEntry[]>([])
     const [page, setPage] = useState(1)
     const [total, setTotal] = useState(0)
@@ -41,24 +38,12 @@ export function CreditsPage({ current }: CreditsPageProps) {
 
     const c = current.credits
 
-    const fetchUser = async () => {
-        try {
-            const res = await apiFetch('/api/users/me')
-            if (res.ok) {
-                const data = await res.json()
-                setUser(data)
-            }
-        } catch (e) {
-            console.error('Failed to fetch user', e)
-        }
-    }
-
     const fetchHistory = async (p = page) => {
         setIsLoading(true)
         try {
             const res = await apiFetch(`/api/users/me/credits/history?page=${p}&page_size=${pageSize}`)
             if (res.ok) {
-                const data = await res.json()
+                const data = await apiResponseJson(res)
                 setItems(data.items || [])
                 setTotal(data.total || 0)
             }
@@ -70,7 +55,6 @@ export function CreditsPage({ current }: CreditsPageProps) {
     }
 
     useEffect(() => {
-        setUser(null)
         setItems([])
     }, [authSession])
 
@@ -82,7 +66,6 @@ export function CreditsPage({ current }: CreditsPageProps) {
         }
 
         if (!authSession) return
-        fetchUser()
         fetchHistory(page)
     }, [authSession, page])
 
@@ -99,10 +82,10 @@ export function CreditsPage({ current }: CreditsPageProps) {
                 }),
             })
             if (!res.ok) {
-                const err = await res.json()
+                const err = await apiResponseJson(res)
                 throw new Error(err.detail || 'Failed to create order')
             }
-            const data = await res.json()
+            const data = await apiResponseJson(res)
 
             const width = 600
             const height = 700
@@ -130,8 +113,9 @@ export function CreditsPage({ current }: CreditsPageProps) {
                             body: JSON.stringify({ paypal_order_id: paypalOrderId }),
                         })
                         if (captureRes.ok) {
-                            const result = await captureRes.json()
-                            setUser({ credits: result.new_balance })
+                            const result = await apiResponseJson(captureRes)
+                            setUser(previous => previous ? { ...previous, credits: result.new_balance } : previous)
+                            window.dispatchEvent(new Event('user-updated'))
                             setPurchaseSuccess(true)
                             setCustomAmount(0)
                             fetchHistory(1)
@@ -139,7 +123,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
                         } else {
                             let errMsg = 'Payment confirmation failed'
                             try {
-                                const err = await captureRes.json()
+                                const err = await apiResponseJson(captureRes)
                                 errMsg = err.detail || errMsg
                             } catch (parseErr) {
                                 // ignore JSON parse error

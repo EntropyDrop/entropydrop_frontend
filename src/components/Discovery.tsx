@@ -8,21 +8,22 @@ import {
     CanvasTexture,
     NearestFilter,
     DoubleSide,
-    type Texture,
+    PlaneGeometry,
+    SRGBColorSpace,
     PerspectiveCamera
 } from 'three'
 import { Skin2D } from './utils'
+import { DiscoveryBlock } from './DiscoveryBlock'
+import { DISCOVERY_RADIUS, DISCOVERY_BLOCK_SIZE, DISCOVERY_SLOT_COUNT, DISCOVERY_SLOTS,
+    advanceDiscoveryFades, cameraSmoothing, type DiscoveryFade } from '../utils/discoveryGeometry'
 import type { GenerationLogItemBrief } from '../types/log'
 
 const DISCOVERY_SKIN_PREVIEW_SCALE = 4
-const DISCOVERY_SLOT_COUNT = 180
 const DISCOVERY_INITIAL_ITEM_COUNT = 24
 const DISCOVERY_LOAD_CONCURRENCY = 6
 const DISCOVERY_BATCH_SIZE = 2
 const DISCOVERY_LOAD_DELAY_MS = 70
 const DISCOVERY_BACKGROUND_LOAD_DELAY_MS = 350
-const DISCOVERY_BLOCK_SIZE = 3
-const DISCOVERY_RADIUS = 15
 
 type LoadedDiscoveryItem = {
     log: GenerationLogItemBrief
@@ -30,39 +31,31 @@ type LoadedDiscoveryItem = {
     slotIndex: number
 }
 
-function getSpiralPosition(n: number, radius: number): Vector3 {
-    const offsets = [0, Math.PI / 3, Math.PI / 3 * 2, Math.PI, Math.PI / 3 * 4, Math.PI / 3 * 5]
-    const count = 30
-    const offsetIdx = Math.floor(n / count)
-    const i = n % count
-    const offset = offsets[offsetIdx % offsets.length]
-
-    const t = i / (count - 1)
-    const theta = t * Math.PI * 2 * 2 + offset
-    const phiMin = Math.PI * (10 / 180)
-    const phiMax = Math.PI * (170 / 180)
-    const phi = phiMin + t * (phiMax - phiMin)
-
-    const x = Math.sin(phi) * Math.cos(theta) * radius
-    const y = Math.cos(phi) * radius
-    const z = Math.sin(phi) * Math.sin(theta) * radius
-    return new Vector3(x, y, z)
-}
-
 export function Discovery({
     items,
     selected,
     onSelect,
-    onLoading
+    onLoading,
+    reducedMotion = false
 }: {
     items: GenerationLogItemBrief[] | null,
     selected?: GenerationLogItemBrief | null,
     onSelect?: (item: GenerationLogItemBrief | null) => void,
-    onLoading?: (isLoading: boolean) => void
+    onLoading?: (isLoading: boolean) => void,
+    reducedMotion?: boolean
 }) {
     const groupRef = useRef<Group>(null!)
     const gl = useThree((state) => state.gl)
     const camera = useThree((state) => state.camera)
+    const invalidate = useThree((state) => state.invalidate)
+    const geometry = useMemo(() => new PlaneGeometry(DISCOVERY_BLOCK_SIZE, DISCOVERY_BLOCK_SIZE), [])
+    const fades = useRef(new Set<DiscoveryFade>())
+    const registerFade = useCallback((fade: DiscoveryFade) => {
+        fades.current.add(fade)
+        invalidate()
+        return () => { fades.current.delete(fade) }
+    }, [invalidate])
+    useEffect(() => () => geometry.dispose(), [geometry])
     const { width } = useThree((state) => state.size)
 
     useEffect(() => {
@@ -71,7 +64,7 @@ export function Discovery({
             // Desktop/larger viewports get the default 75
             const targetFov = width < 768 ? 95 : 75
             if (camera.fov !== targetFov) {
-                camera.fov = targetFov
+                Object.assign(camera, { fov: targetFov })
                 camera.updateProjectionMatrix()
             }
         }
@@ -79,28 +72,21 @@ export function Discovery({
 
     const focusedPosition = useRef<Vector3 | null>(null)
     const selectionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const [loadedItems, setLoadedItems] = useState<LoadedDiscoveryItem[]>([])
-    const isFirstRun = useRef(true);
+    const [loadedState, setLoadedState] = useState<{
+        source: GenerationLogItemBrief[] | null; data: LoadedDiscoveryItem[]
+    }>({ source: null, data: [] })
     const selectedRef = useRef(selected)
+    const onLoadingRef = useRef(onLoading)
 
     useEffect(() => {
         selectedRef.current = selected
-    }, [selected])
+        onLoadingRef.current = onLoading
+    }, [selected, onLoading])
 
     useEffect(() => {
-        const url = new URL(window.location.href);
-        if (isFirstRun.current) {
-            isFirstRun.current = false;
-            return;
-        }
-        if (!selected) {
-            focusedPosition.current = null;
-            url.searchParams.delete('id');
-        } else {
-            url.searchParams.set('id', selected.id);
-        }
-        window.history.replaceState({}, '', url.toString());
-    }, [selected])
+        if (!selected) focusedPosition.current = null;
+        invalidate()
+    }, [selected, invalidate])
 
     useEffect(() => {
         let active = true;
@@ -111,10 +97,10 @@ export function Discovery({
             cancelIdleCallback?: (handle: number) => void;
         };
         const textures = new Set<CanvasTexture>();
-        onLoading?.(true);
+        onLoadingRef.current?.(true);
 
         if (items === null) {
-            return () => onLoading?.(false);
+            return () => onLoadingRef.current?.(false);
         }
 
         void (async () => {
@@ -129,19 +115,22 @@ export function Discovery({
 
             const queuedItems = items
                 .slice(0, DISCOVERY_SLOT_COUNT)
-                .map((log, index) => ({ log, slotIndex: indices[index] }));
+                .map((log, index) => ({ log, slotIndex: indices[index] }))
+                // The first thumbnails should be in the initial camera view (+X).
+                .sort((a, b) => DISCOVERY_SLOTS[b.slotIndex].position.x - DISCOVERY_SLOTS[a.slotIndex].position.x);
             let loadedBuffer: LoadedDiscoveryItem[] = [];
 
             const updateState = () => {
-                if (loadedBuffer.length > 0) {
+                if (active && loadedBuffer.length > 0) {
                     // React may defer the updater until after this buffer is cleared.
                     const batch = loadedBuffer;
                     loadedBuffer = [];
-                    setLoadedItems(prev => {
+                    setLoadedState(state => {
+                        const prev = state.source === items ? state.data : [];
                         const currentIds = new Set(prev.map(p => p.log.id));
                         const newItems = batch.filter(item => !currentIds.has(item.log.id));
-                        if (newItems.length === 0) return prev;
-                        return [...prev, ...newItems];
+                        if (newItems.length === 0) return state;
+                        return { source: items, data: [...prev, ...newItems] };
                     });
                 }
             };
@@ -152,7 +141,7 @@ export function Discovery({
 
                     // Keep texture decoding and canvas rendering from competing
                     // with interactions inside the detail modal.
-                    while (active && selectedRef.current) {
+                    while (active && (selectedRef.current || document.hidden)) {
                         await new Promise(resolve => window.setTimeout(resolve, 100));
                     }
                     if (!active) break;
@@ -167,6 +156,7 @@ export function Discovery({
                             tex.magFilter = NearestFilter;
                             tex.minFilter = NearestFilter;
                             tex.generateMipmaps = false;
+                            tex.colorSpace = SRGBColorSpace;
                             textures.add(tex);
 
                             loadedBuffer.push({ log, tex, slotIndex });
@@ -193,7 +183,7 @@ export function Discovery({
 
             await loadItems(initialItems);
             if (!active) return;
-            onLoading?.(false);
+            onLoadingRef.current?.(false);
 
             if (remainingItems.length === 0) return;
 
@@ -216,7 +206,7 @@ export function Discovery({
                 if (!active) return;
                 if (err instanceof DOMException && err.name === 'AbortError') return;
                 console.error("Discovery texture loading failed:", err);
-                onLoading?.(false);
+                onLoadingRef.current?.(false);
             });
 
         return () => {
@@ -228,19 +218,11 @@ export function Discovery({
                     window.clearTimeout(backgroundLoadId);
                 }
             }
-            onLoading?.(false);
+            onLoadingRef.current?.(false);
             textures.forEach(texture => texture.dispose());
             textures.clear();
         };
-    }, [items, onLoading])
-
-    useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const id = urlParams.get('id');
-        if (id && onSelect) {
-            onSelect({ id, result: '', is_public: true, prompt: '' });
-        }
-    }, [onSelect])
+    }, [items])
 
     // Spherical coordinates for camera look direction
     const targetSpherical = useRef({ theta: Math.PI / 2, phi: Math.PI / 2 })
@@ -253,8 +235,7 @@ export function Discovery({
     const isDragging = useRef(false)
     const lastPointer = useRef({ x: 0, y: 0 })
     const dragSensitivity = 0.003
-    const autoRotateSpeed = 0.0008
-    const radius = DISCOVERY_RADIUS
+    const autoRotateSpeed = 0.048
     const dragDistance = useRef(0)
 
     // Convert spherical to a lookAt point on a unit sphere
@@ -276,6 +257,7 @@ export function Discovery({
             dragDistance.current = 0
             lastPointer.current = { x: e.clientX, y: e.clientY }
             dom.setPointerCapture(e.pointerId)
+            invalidate()
         }
 
         const onPointerMove = (e: PointerEvent) => {
@@ -293,61 +275,69 @@ export function Discovery({
             targetSpherical.current.theta += dx * dragSensitivity
             targetSpherical.current.phi -= dy * dragSensitivity
 
+            invalidate()
+
             // Clamp phi to avoid flipping (keep between 0.1 and PI-0.1)
             targetSpherical.current.phi = Math.max(0.1, Math.min(Math.PI - 0.1, targetSpherical.current.phi))
         }
 
         const onPointerUp = (e: PointerEvent) => {
             isDragging.current = false
-            dom.releasePointerCapture(e.pointerId)
+            if (dom.hasPointerCapture(e.pointerId)) dom.releasePointerCapture(e.pointerId)
         }
 
         dom.addEventListener('pointerdown', onPointerDown)
         dom.addEventListener('pointermove', onPointerMove)
         dom.addEventListener('pointerup', onPointerUp)
+        dom.addEventListener('pointercancel', onPointerUp)
 
         return () => {
             if (selectionTimeout.current) clearTimeout(selectionTimeout.current)
             dom.removeEventListener('pointerdown', onPointerDown)
             dom.removeEventListener('pointermove', onPointerMove)
             dom.removeEventListener('pointerup', onPointerUp)
+            dom.removeEventListener('pointercancel', onPointerUp)
         }
-    }, [gl])
+    }, [gl, invalidate])
 
     // Create all placeholder slots immediately, then fill them as textures finish rendering.
     const blocks = useMemo(() => {
+        const loadedItems = loadedState.source === items ? loadedState.data : [];
         const loadedBySlot = new Map(loadedItems.map(item => [item.slotIndex, item]));
 
-        return Array.from({ length: DISCOVERY_SLOT_COUNT }, (_, slotIndex) => {
+        return DISCOVERY_SLOTS.map(slot => {
+            const { slotIndex } = slot;
             const item = loadedBySlot.get(slotIndex);
             return {
                 slotIndex,
-                position: getSpiralPosition(slotIndex, radius),
-                size: DISCOVERY_BLOCK_SIZE,
+                slot,
+                position: slot.position,
                 texture: item?.tex ?? null,
                 data: item?.log ?? null
             };
         });
-    }, [loadedItems, radius])
+    }, [loadedState, items])
 
     // We don't need the raw texture loader here anymore since we use rendered texture from Skin2D
 
     const firstRun = useRef(true)
-    useFrame(() => {
+    useFrame((_, frameDelta) => {
+        const delta = Math.min(frameDelta, 0.05)
+        advanceDiscoveryFades(fades.current, delta)
         if (!groupRef.current) return
 
         // If focused on a block, compute target spherical from block position
         if (focusedPosition.current) {
-            const worldPos = focusedPosition.current.clone().applyMatrix4(groupRef.current.matrixWorld)
-            const dir = worldPos.clone().sub(camera.position).normalize()
+            const dir = lookAtDir.current.copy(focusedPosition.current)
+                .applyMatrix4(groupRef.current.matrixWorld).sub(camera.position).normalize()
             // Convert direction to spherical
             const focusTheta = Math.atan2(dir.x, dir.z)
             const focusPhi = Math.acos(Math.max(-1, Math.min(1, dir.y)))
             targetSpherical.current.theta = focusTheta
             targetSpherical.current.phi = focusPhi
-        } else if (!isDragging.current) {
+        } else if (!isDragging.current && !reducedMotion) {
             // Auto-rotate slowly when not dragging and not focused
-            targetSpherical.current.theta += autoRotateSpeed
+            targetSpherical.current.theta += autoRotateSpeed * delta
         }
 
         // Calculate target look direction vector from targetSpherical
@@ -363,8 +353,11 @@ export function Discovery({
         targetQuaternion.current.setFromRotationMatrix(lookAtMatrix.current)
 
         // Slerp current camera quaternion toward target
-        camera.quaternion.slerp(targetQuaternion.current, firstRun.current ? 1.0 : 0.08)
+        camera.quaternion.slerp(targetQuaternion.current, firstRun.current ? 1.0 : cameraSmoothing(delta))
         firstRun.current = false
+        if (reducedMotion && (fades.current.size > 0 || camera.quaternion.angleTo(targetQuaternion.current) > 0.0001)) {
+            invalidate()
+        }
     })
 
 
@@ -396,6 +389,7 @@ export function Discovery({
                 // closeModal()
             } else {
                 focusedPosition.current = selectedPosition
+                invalidate()
                 if (selectionTimeout.current) clearTimeout(selectionTimeout.current)
                 selectionTimeout.current = setTimeout(() => {
                     if (onSelect) onSelect(selectedData)
@@ -409,82 +403,13 @@ export function Discovery({
         <group ref={groupRef}>
             {/* Background sphere to capture clicks anywhere */}
             <mesh onClick={handleSceneClick}>
-                <sphereGeometry args={[radius * 2, 16, 16]} />
+                <sphereGeometry args={[DISCOVERY_RADIUS * 2, 16, 16]} />
                 <meshBasicMaterial transparent opacity={0} depthWrite={false} side={DoubleSide} />
             </mesh>
             {blocks.map((block) => (
-                <Block
-                    key={block.slotIndex}
-                    {...block}
-                />
+                <DiscoveryBlock key={block.slotIndex} slot={block.slot} texture={block.texture}
+                    geometry={geometry} registerFade={registerFade} />
             ))}
         </group >
-    )
-}
-
-
-function Block({ position, size, texture, slotIndex }: {
-    position: Vector3,
-    size: number,
-    texture: Texture | null,
-    slotIndex: number
-}) {
-    const groupRef = useRef<Group>(null!)
-    const [loadedOpacity, setLoadedOpacity] = useState(0)
-
-    useEffect(() => {
-        if (!texture) {
-            return
-        }
-
-        const duration = 500
-        const start = performance.now()
-        let frameId: number
-
-        const animate = (time: number) => {
-            const progress = Math.min((time - start) / duration, 1)
-            setLoadedOpacity(progress)
-            if (progress < 1) {
-                frameId = requestAnimationFrame(animate)
-            }
-        }
-        frameId = requestAnimationFrame(animate)
-        return () => cancelAnimationFrame(frameId)
-    }, [texture])
-
-    useFrame(() => {
-        if (groupRef.current) {
-            groupRef.current.lookAt(0, 0, 0)
-        }
-    })
-
-    const placeholderOpacity = texture ? Math.max(0.06, 0.28 * (1 - loadedOpacity)) : 0.28
-    const placeholderColor = slotIndex % 3 === 0 ? '#26372f' : slotIndex % 3 === 1 ? '#2c3340' : '#342f2b'
-
-    return (
-        <group
-            ref={groupRef}
-            position={position}
-        >
-            <mesh>
-                <planeGeometry args={[size, size]} />
-                <meshBasicMaterial
-                    color={placeholderColor}
-                    transparent
-                    opacity={placeholderOpacity}
-                    wireframe={!texture}
-                />
-            </mesh>
-            {texture && (
-                <mesh position={[0, 0, 0.015]}>
-                    <planeGeometry args={[size, size]} />
-                    <meshStandardMaterial
-                        map={texture}
-                        transparent
-                        opacity={loadedOpacity}
-                    />
-                </mesh>
-            )}
-        </group>
     )
 }

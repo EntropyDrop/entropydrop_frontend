@@ -1,6 +1,7 @@
 import { Icon } from '@iconify/react'
 import { useEffect, useState } from 'react'
 import { SkinAvatar } from './utils'
+import { CanvasImage } from './CanvasImage'
 
 interface SkinAvatarImageProps {
     textureUrl?: string | null
@@ -12,7 +13,7 @@ interface SkinAvatarImageProps {
 
 interface RenderedAvatarState {
     textureUrl: string
-    src: string
+    canvas: HTMLCanvasElement
 }
 
 export function SkinAvatarImage({
@@ -34,7 +35,7 @@ export function SkinAvatarImage({
                 if (!cancelled) {
                     setRenderedAvatar({
                         textureUrl,
-                        src: canvas.toDataURL('image/png'),
+                        canvas,
                     })
                 }
             })
@@ -48,19 +49,18 @@ export function SkinAvatarImage({
     }, [textureUrl])
 
     const currentRenderedAvatar = renderedAvatar
-    const avatarSrc = currentRenderedAvatar && currentRenderedAvatar.textureUrl === textureUrl
-        ? currentRenderedAvatar.src
+    const avatar = currentRenderedAvatar && currentRenderedAvatar.textureUrl === textureUrl
+        ? currentRenderedAvatar.canvas
         : null
-    const src = avatarSrc || fallbackSrc
 
     return (
         <div className={`${framed ? 'bg-[#555] border border-black' : 'bg-transparent'} overflow-hidden shrink-0 flex items-center justify-center ${className}`}>
-            {src ? (
+            {avatar ? <CanvasImage source={avatar} alt={alt} className="w-full h-full object-cover"
+                style={{ imageRendering: 'pixelated' }} /> : fallbackSrc ? (
                 <img
-                    src={src}
+                    src={fallbackSrc}
                     alt={alt}
                     className="w-full h-full object-cover"
-                    style={{ imageRendering: avatarSrc ? 'pixelated' : 'auto' }}
                 />
             ) : (
                 <Icon icon="pixelarticons:user" className="text-white/40 text-lg" />

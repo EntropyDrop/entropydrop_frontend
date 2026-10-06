@@ -1,5 +1,6 @@
 /** Stable across access-token refresh, different across account changes. */
 export function getAuthSessionKey(): string | null {
+    if (typeof localStorage === 'undefined') return null;
     const token = localStorage.getItem('token');
     if (!token) return null;
     try {

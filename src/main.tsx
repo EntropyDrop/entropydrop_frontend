@@ -1,4 +1,4 @@
-import { bootstrapAuthSession } from './utils/fetchInterceptor'
+import { bootstrapAuthSession } from './utils/authClient'
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -63,4 +63,5 @@ const renderApp = () => {
   )
 }
 
-void bootstrapAuthSession().finally(renderApp)
+renderApp()
+void bootstrapAuthSession()

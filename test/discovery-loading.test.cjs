@@ -37,15 +37,18 @@ const backgroundCode = compile('src/components/DiscoveryBackground.tsx', {
 const discoveryCode = compile('src/components/Discovery.tsx', {
     '@react-three/fiber': 'discovery-fiber-test', './utils': 'discovery-images-test',
 });
+const sceneCode = compile('src/components/DiscoveryScene.tsx', {
+    '@react-three/fiber': 'scene-canvas-test', '@react-three/drei': 'scene-stars-test', './Discovery': 'scene-discovery-test',
+});
 
 function environment(code, fetch, requireModule) {
-    const dom = new JSDOM('<div id="root"></div>', { url: 'https://app.example.test/skin/' });
+    const dom = new JSDOM('<div id="root"></div>', { url: 'https://app.example.test/skin/', pretendToBeVisual: true });
     const { window } = dom;
     const module = { exports: {} };
     const errors = [];
     vm.runInContext(code, vm.createContext({
         window, document: window.document, localStorage: window.localStorage,
-        URL, URLSearchParams, fetch, Headers, Response, AbortController, DOMException,
+        URL, URLSearchParams, fetch, Headers, Response, Request, FormData, Blob, AbortController, DOMException,
         console: { ...console, error: (...args) => errors.push(args), warn() {} },
         require: requireModule, module, exports: module.exports,
         performance, requestAnimationFrame: () => 0, cancelAnimationFrame: () => {},
@@ -71,6 +74,7 @@ async function mountBackground({ sceneReady = false, strict = false } = {}) {
     const data = deferred();
     const requests = [];
     let receivedProps;
+    let sceneMounts = 0, sceneUnmounts = 0;
     let rendererStarted = false;
     if (sceneReady) renderer.resolve();
     const env = environment(await backgroundCode, (url, options) => {
@@ -84,6 +88,7 @@ async function mountBackground({ sceneReady = false, strict = false } = {}) {
             });
         } };
         if (name === 'discovery-scene-test') return { DiscoveryScene(props) {
+            React.useEffect(() => { sceneMounts++; return () => { sceneUnmounts++; }; }, []);
             receivedProps = props;
             return React.createElement('div', null,
                 props.items === null ? 'data pending' : props.items.map(item => item.id).join(','));
@@ -96,7 +101,8 @@ async function mountBackground({ sceneReady = false, strict = false } = {}) {
     await React.act(() => env.root.render(strict ? React.createElement(React.StrictMode, null, element) : element));
     return { ...env, requests, data, renderer, props,
         get receivedProps() { return receivedProps; },
-        get rendererStarted() { return rendererStarted; } };
+        get rendererStarted() { return rendererStarted; },
+        get sceneMounts() { return sceneMounts; }, get sceneUnmounts() { return sceneUnmounts; } };
 }
 
 test('discovery data starts and can finish while the renderer download is still pending', async () => {
@@ -138,7 +144,7 @@ test('leaving discovery aborts its pending request without showing a global erro
     try {
         await React.act(() => env.root.render(null));
         assert.equal(env.requests[0].options.signal.aborted, true);
-        assert.equal(env.requests[0].options.skipGlobalError, true);
+        assert.equal(env.requests[0].options.skipGlobalError, undefined);
         await React.act(() => env.data.resolve(new Response('[]')));
         assert.equal(env.node.textContent, '');
         assert.equal(env.errors.length, 0);
@@ -161,11 +167,12 @@ test('six cached images completing together all reach the scene and release thei
     const THREE = require('three');
     const disposed = [];
     let surface;
+    let imageLoads = 0;
     function hostJsx(type, props, key) {
         if (typeof type !== 'string') return jsxRuntime.jsx(type, props, key);
-        return jsxRuntime.jsxs('div', type === 'meshStandardMaterial'
-            ? { 'data-texture': props.map.id }
-            : { children: props.children, ref: props.ref }, key);
+        return React.createElement('div', props.map
+            ? { 'data-texture': props.map.id, ref: props.ref, key }
+            : { ref: props.ref, key }, ...(Array.isArray(props.children) ? props.children : [props.children]));
     }
     const env = environment(await discoveryCode, () => { throw new Error('Scene must not fetch gallery data'); }, name => {
         if (name === 'three') return { ...THREE, CanvasTexture: class extends THREE.CanvasTexture {
@@ -173,9 +180,12 @@ test('six cached images completing together all reach the scene and release thei
         } };
         if (name === 'react/jsx-runtime') return { ...jsxRuntime, jsx: hostJsx, jsxs: hostJsx };
         if (name === 'discovery-fiber-test') return {
-            useFrame() {}, useThree: select => select({ gl: { domElement: surface }, camera: {}, size: { width: 1280 } }),
+            useFrame() {}, useThree: select => select({ gl: { domElement: surface }, camera: {},
+                size: { width: 1280 }, invalidate() {} }),
         };
-        if (name === 'discovery-images-test') return { Skin2D: async () => env.window.document.createElement('canvas') };
+        if (name === 'discovery-images-test') return { Skin2D: async () => {
+            imageLoads++; return env.window.document.createElement('canvas');
+        } };
         return require(name);
     });
     surface = env.window.document.createElement('canvas');
@@ -183,7 +193,66 @@ test('six cached images completing together all reach the scene and release thei
         const items = Array.from({ length: 6 }, (_, i) => ({ id: String(i), result: `/${i}.png`, prompt: '', is_public: true }));
         await React.act(() => env.root.render(React.createElement(env.Discovery, { items })));
         assert.equal(env.node.querySelectorAll('[data-texture]').length, 6);
-        await React.act(() => env.root.render(null));
+        await React.act(() => env.root.render(React.createElement(env.Discovery, { items, onLoading() {} })));
+        assert.equal(imageLoads, 6, 'callback changes must not reload or dispose existing textures');
+        const replacement = items.slice(0, 2).map(item => ({ ...item, id: `new-${item.id}` }));
+        await React.act(() => env.root.render(React.createElement(env.Discovery, { items: replacement })));
+        assert.equal(env.node.querySelectorAll('[data-texture]').length, 2, 'new gallery data must replace old slots');
         assert.equal(new Set(disposed).size, 6);
+        await React.act(() => env.root.render(null));
+        assert.equal(new Set(disposed).size, 8);
+    } finally { await env.close(); }
+});
+
+test('scene pauses when hidden or covered and reduced motion uses demand rendering', async () => {
+    let canvasProps;
+    const listeners = new Set();
+    let hidden = false;
+    let reducedMotion = false;
+    const env = environment(await sceneCode, () => {}, name => {
+        if (name === 'scene-canvas-test') return { Canvas(props) { canvasProps = props; return props.children; } };
+        if (name === 'scene-stars-test') return { Stars: () => null };
+        if (name === 'scene-discovery-test') return { Discovery: () => null };
+        return require(name);
+    });
+    Object.defineProperty(env.window.document, 'hidden', { get: () => hidden });
+    env.window.matchMedia = () => ({ matches: reducedMotion,
+        addEventListener: (event, listener) => listeners.add(listener),
+        removeEventListener: (event, listener) => listeners.delete(listener) });
+    const props = { items: [], selected: null, onSelect() {}, onLoading() {} };
+    try {
+        await React.act(() => env.root.render(React.createElement(env.DiscoveryScene, props)));
+        assert.equal(canvasProps.frameloop, 'always');
+        assert.deepEqual(Array.from(canvasProps.dpr), [1, 1.5]);
+        await React.act(() => { hidden = true; env.window.document.dispatchEvent(new env.window.Event('visibilitychange')); });
+        assert.equal(canvasProps.frameloop, 'never');
+        await React.act(() => { hidden = false; env.window.document.dispatchEvent(new env.window.Event('visibilitychange')); });
+        assert.equal(canvasProps.frameloop, 'always');
+        await React.act(() => { reducedMotion = true; listeners.forEach(listener => listener()); });
+        assert.equal(canvasProps.frameloop, 'demand');
+        await React.act(() => env.root.render(React.createElement(env.DiscoveryScene, { ...props, paused: true })));
+        assert.equal(canvasProps.frameloop, 'never');
+        await React.act(() => env.root.render(React.createElement(env.DiscoveryScene, props)));
+        assert.equal(canvasProps.frameloop, 'demand');
+    } finally { await env.close(); }
+    assert.equal(listeners.size, 0);
+});
+
+
+test('restoring an account rebuilds scene textures while keeping the public gallery request', async () => {
+    const env = await mountBackground({ sceneReady: true });
+    try {
+        await React.act(() => env.data.resolve(new Response(JSON.stringify([
+            { id: 'public', result: 'public.png', is_public: true, prompt: '' },
+        ]))));
+        assert.equal(env.sceneMounts, 1);
+        await React.act(() => {
+            env.window.localStorage.setItem('token', 'restored-account');
+            env.window.dispatchEvent(new env.window.Event('auth-token-updated'));
+        });
+        assert.equal(env.sceneMounts, 2); assert.equal(env.sceneUnmounts, 1);
+        assert.equal(env.requests.length, 1);
+        assert.equal(env.receivedProps.items[0].id, 'public');
+        assert.equal(env.errors.length, 0);
     } finally { await env.close(); }
 });

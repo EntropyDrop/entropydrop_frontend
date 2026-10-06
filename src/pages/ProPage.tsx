@@ -1,9 +1,10 @@
+import { useCurrentUser } from '../hooks/useCurrentUser'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
-import { apiFetch } from '../utils/api'
+import { apiFetch, apiResponseJson } from '../utils/api'
 import { activateSubscriptionWithRetry } from '../utils/subscription'
 import { SEO } from '../components/SEO'
 
@@ -27,7 +28,7 @@ declare global {
 
 export function ProPage({ current }: ProPageProps) {
     const navigate = useNavigate();
-    const [userProfile, setUserProfile] = useState<any>(null);
+    const { user: userProfile } = useCurrentUser();
     const [isProcessing, setIsProcessing] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
 
@@ -55,11 +56,11 @@ export function ProPage({ current }: ProPageProps) {
             });
 
             if (!res.ok) {
-                const err = await res.json();
+                const err = await apiResponseJson(res);
                 throw new Error(err.detail || 'Failed to create subscription');
             }
 
-            const data = await res.json(); // { approval_url, subscription_id }
+            const data = await apiResponseJson(res); // { approval_url, subscription_id }
 
             const width = 600;
             const height = 700;
@@ -87,10 +88,9 @@ export function ProPage({ current }: ProPageProps) {
                         if (activateRes.ok) {
                             window.dispatchEvent(new Event('user-updated'));
                             alert(current.pro.successMessage);
-                            fetchUserProfile();
                             navigate('/skin/');
                         } else {
-                            const err = await activateRes.json();
+                            const err = await apiResponseJson(activateRes);
                             alert(err.detail || 'Activation Failed');
                         }
                     } catch (e) {
@@ -107,37 +107,6 @@ export function ProPage({ current }: ProPageProps) {
         }
     };
 
-    const fetchUserProfile = async () => {
-        const token = localStorage.getItem('token');
-        if (!token) return;
-        try {
-            const res = await apiFetch('/api/users/me');
-            if (res.ok) {
-                const data = await res.json();
-                setUserProfile(data);
-            }
-        } catch (e) {
-            console.error('Failed to fetch user profile', e);
-        }
-    };
-
-    useEffect(() => {
-        fetchUserProfile();
-
-        const handleUserUpdate = () => {
-            fetchUserProfile();
-        };
-        const handleLogoutEvent = () => {
-            setUserProfile(null);
-        };
-        window.addEventListener('user-updated', handleUserUpdate);
-        window.addEventListener('logout', handleLogoutEvent);
-        return () => {
-            window.removeEventListener('user-updated', handleUserUpdate);
-            window.removeEventListener('logout', handleLogoutEvent);
-        };
-    }, []);
-
     const handleCancelSubscription = async () => {
         if (!confirm(current.pro.cancelConfirm)) return;
         setIsCancelling(true);
@@ -145,9 +114,9 @@ export function ProPage({ current }: ProPageProps) {
             const res = await apiFetch('/api/users/me/cancel_subscription', { method: 'POST' });
             if (res.ok) {
                 alert(current.pro.cancelSuccess);
-                fetchUserProfile();
+                window.dispatchEvent(new Event('user-updated'));
             } else {
-                const err = await res.json();
+                const err = await apiResponseJson(res);
                 alert(err.detail || current.pro.cancelFailed);
             }
         } catch (e) {

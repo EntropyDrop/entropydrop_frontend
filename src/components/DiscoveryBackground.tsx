@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { useAuthSession } from '../hooks/useAuthSession'
 import { fetchDiscoveryItems } from '../utils/discovery'
 import type { GenerationLogItemBrief } from '../types/log'
 
@@ -14,6 +15,7 @@ interface DiscoveryBackgroundProps {
 
 /** The request starts when the lightweight shell commits, even if the scene suspends. */
 export function DiscoveryBackground({ fallback, ...sceneProps }: DiscoveryBackgroundProps) {
+    const session = useAuthSession()
     const [items, setItems] = useState<GenerationLogItemBrief[] | null>(null)
 
     useEffect(() => {
@@ -32,7 +34,7 @@ export function DiscoveryBackground({ fallback, ...sceneProps }: DiscoveryBackgr
 
     return (
         <Suspense fallback={fallback}>
-            <DiscoveryScene {...sceneProps} items={items} />
+            <DiscoveryScene key={session ?? 'anonymous'} {...sceneProps} items={items} />
         </Suspense>
     )
 }

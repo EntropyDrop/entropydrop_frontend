@@ -1,4 +1,4 @@
-import { useAuthSession } from '../hooks/useAuthSession'
+import { useSaveLicensePreview } from './edit/useSaveLicensePreview'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { useState, useEffect, useRef, type ChangeEvent } from 'react'
@@ -9,7 +9,6 @@ import { Skin2D, isSlim, convertSkinLayout } from '../components/utils'
 import * as THREE from 'three'
 import { showAlert, showError } from '../utils/alert'
 import { apiFetch } from '../utils/api'
-import type { SkinLicense } from '../types/log'
 
 function isOverlayPixel(x: number, y: number): boolean {
     return (
@@ -175,11 +174,7 @@ interface EditPageProps {
     current: LangData
 }
 
-type SaveLicensePreview = SkinLicense['code'] | 'loading' | 'unavailable';
-type SelectableSaveLicense = 'cc-by-nc-4.0' | 'entropydrop-commercial-1.0';
-
 export function EditPage({ current }: EditPageProps) {
-    const authSession = useAuthSession();
     const location = useLocation();
     const navigate = useNavigate();
     const passedTextureUrl = location.state?.textureUrl;
@@ -216,92 +211,12 @@ export function EditPage({ current }: EditPageProps) {
     const [showOverlay, setShowOverlay] = useState(true);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isSavingToCreation, setIsSavingToCreation] = useState(false);
-    const [saveLicensePreview, setSaveLicensePreview] = useState<SaveLicensePreview>('loading');
-    const [selectedSaveLicense, setSelectedSaveLicense] = useState<SelectableSaveLicense>('cc-by-nc-4.0');
-    const [isProUser, setIsProUser] = useState(false);
+    const { saveLicensePreview, selectedSaveLicense, setSelectedSaveLicense, isProUser } = useSaveLicensePreview(parentSkinId);
     const [isLocalImport, setIsLocalImport] = useState(false);
     const [isAdjustPanelOpen, setIsAdjustPanelOpen] = useState(false);
     const [hsb, setHsb] = useState({ h: 0, s: 0, b: 0, c: 0 });
     const originalImageDataRef = useRef<ImageData | null>(null);
     const startHsbRef = useRef({ h: 0, s: 0, b: 0, c: 0 });
-
-    useEffect(() => {
-        let cancelled = false;
-        if (!authSession) {
-            setIsProUser(false);
-            setSaveLicensePreview('unavailable');
-            return;
-        }
-        setSaveLicensePreview('loading');
-
-        const loadSaveLicensePreview = async () => {
-            try {
-                const userRequest = apiFetch('/api/users/me', { skipGlobalError: true });
-                const parentRequest = parentSkinId
-                    ? apiFetch(`/api/logs/${parentSkinId}`, { skipGlobalError: true })
-                    : Promise.resolve(null);
-                const [userResponse, parentResponse] = await Promise.all([userRequest, parentRequest]);
-
-                if (!userResponse.ok || (parentResponse && !parentResponse.ok)) {
-                    if (!cancelled) setSaveLicensePreview('unavailable');
-                    return;
-                }
-
-                const userData = await userResponse.json();
-                const parentData = parentResponse ? await parentResponse.json() : null;
-                const userIsPro = userData?.is_pro === true;
-                if (!cancelled) setIsProUser(userIsPro);
-
-                if (!parentData) {
-                    const newWorkLicense: SaveLicensePreview = userIsPro
-                        ? 'entropydrop-commercial-1.0'
-                        : 'cc-by-nc-4.0';
-                    if (!cancelled) {
-                        setSaveLicensePreview(newWorkLicense);
-                        setSelectedSaveLicense(
-                            newWorkLicense === 'entropydrop-commercial-1.0'
-                                ? 'entropydrop-commercial-1.0'
-                                : 'cc-by-nc-4.0'
-                        );
-                    }
-                    return;
-                }
-
-                const parentLicense = parentData?.license?.code as SkinLicense['code'] | undefined;
-
-                let resolvedLicense: SaveLicensePreview;
-                if (parentLicense === 'entropydrop-commercial-1.0') {
-                    resolvedLicense = parentData?.creator?.id === userData?.id
-                        ? 'entropydrop-commercial-1.0'
-                        : 'cc-by-nc-4.0';
-                } else if (parentLicense === 'cc-by-nc-4.0' || parentLicense === 'unknown') {
-                    resolvedLicense = parentLicense;
-                } else {
-                    resolvedLicense = 'unavailable';
-                }
-
-                if (!cancelled) {
-                    setSaveLicensePreview(resolvedLicense);
-                    setSelectedSaveLicense(
-                        resolvedLicense === 'entropydrop-commercial-1.0'
-                            ? 'entropydrop-commercial-1.0'
-                            : 'cc-by-nc-4.0'
-                    );
-                }
-            } catch (error) {
-                console.error('Failed to resolve the saved skin license', error);
-                if (!cancelled) {
-                    setIsProUser(false);
-                    setSaveLicensePreview('unavailable');
-                }
-            }
-        };
-
-        loadSaveLicensePreview();
-        return () => {
-            cancelled = true;
-        };
-    }, [authSession, parentSkinId]);
 
     const handleHSBStart = () => {
         if (!ctx) return;

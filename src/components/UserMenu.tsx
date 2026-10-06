@@ -1,11 +1,11 @@
-import { useAuthSession } from '../hooks/useAuthSession'
+import { useCurrentUser } from '../hooks/useCurrentUser'
 import { Icon } from '@iconify/react'
 import { useState, useRef, useEffect, lazy, Suspense, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { type LangData, type LangKey, SUPPORTED_LANGUAGES } from '../constants/lang'
-import { apiFetch } from '../utils/api'
-import { revokeAuthSession } from '../utils/fetchInterceptor'
+import { apiFetch, apiResponseJson } from '../utils/api'
+import { revokeAuthSession } from '../utils/authClient'
 import { SPACE_NAV_ITEMS, SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS } from "../constants/nav"
 import { SkinAvatarImage } from './SkinAvatarImage'
 
@@ -23,23 +23,6 @@ interface UserMenuProps {
 const LANGUAGE_LABELS: Record<LangKey, string> = {
     'zh-hans': '简体中文',
     en: 'English',
-}
-
-interface UserInfo {
-    id: string;
-    username: string
-    picture: string
-    google_id: string
-    is_pro: boolean
-    is_admin: boolean
-    pro_expires_at: string
-    email: string
-    terms_agreed: boolean
-    pro_level: string
-    paypal_subscription_status?: string
-    skin_url?: string | null
-    skin_type?: string | null
-    credits?: number
 }
 
 interface GoogleCredentialResponse {
@@ -81,7 +64,7 @@ function getNotificationActionLabel(current: LangData, type: string) {
 export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenuProps) {
     const [isOpen, setIsOpen] = useState(false)
 
-    const [user, setUser] = useState<UserInfo | null>(null)
+    const { user, setUser } = useCurrentUser()
     const menuRef = useRef<HTMLDivElement>(null)
     const navigate = useNavigate()
 
@@ -124,12 +107,12 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 body: JSON.stringify({ username: tempNickname.trim() })
             })
             if (res.ok) {
-                const updatedUser = await res.json()
+                const updatedUser = await apiResponseJson(res)
                 setUser(updatedUser)
                 setProfileSuccess(current.user.profileDialog.nicknameUpdated)
                 window.dispatchEvent(new Event('user-updated'))
             } else {
-                const errData = await res.json()
+                const errData = await apiResponseJson(res)
                 setProfileError(errData?.detail || current.user.profileDialog.saveFailed)
             }
         } catch (err) {
@@ -154,12 +137,12 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             })
 
             if (res.ok) {
-                const updatedUser = await res.json()
+                const updatedUser = await apiResponseJson(res)
                 setUser(updatedUser)
                 setProfileSuccess(current.user.profileDialog.characterReset)
                 window.dispatchEvent(new Event('user-updated'))
             } else {
-                const errData = await res.json()
+                const errData = await apiResponseJson(res)
                 setProfileError(errData?.detail || current.user.profileDialog.resetFailed)
             }
         } catch (err) {
@@ -170,20 +153,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         }
     }
 
-    // Load user on mount
-    const authSession = useAuthSession()
     useEffect(() => {
-        setUser(previous => previous?.id === authSession ? previous : null)
-        const token = localStorage.getItem('token')
-        if (token) {
-            fetchUser()
-        }
-
-        const handleUserUpdate = () => {
-            fetchUser()
-        }
-        window.addEventListener('user-updated', handleUserUpdate)
-
         const handleLogoutEvent = () => {
             import('@react-oauth/google')
                 .then(({ googleLogout }) => googleLogout())
@@ -202,10 +172,9 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         window.addEventListener('logout', handleLogoutEvent)
 
         return () => {
-            window.removeEventListener('user-updated', handleUserUpdate)
             window.removeEventListener('logout', handleLogoutEvent)
         }
-    }, [authSession])
+    }, [navigate, setUser])
 
     const fetchNotifications = useCallback(async (page = notifPage) => {
         try {
@@ -213,7 +182,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 skipGlobalError: true
             })
             if (res.ok) {
-                const data = await res.json() as NotificationsResponse
+                const data = await apiResponseJson(res) as NotificationsResponse
                 setNotifications(data.notifications)
                 setUnreadCount(data.unread_count)
                 setTotalNotifs(data.total)
@@ -261,20 +230,6 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         }
     }, [user, notifPage, fetchNotifications])
 
-    const fetchUser = async () => {
-        try {
-            const res = await apiFetch('/api/users/me');
-            if (res.ok) {
-                const data = await res.json()
-                setUser(data)
-            } else if (!localStorage.getItem('token')) {
-                setUser(null)
-            }
-        } catch (e) {
-            console.error('Failed to fetch user', e)
-        }
-    }
-
     const handleGoogleSuccess = async (credentialResponse: GoogleCredentialResponse) => {
         try {
             const res = await apiFetch('/api/auth/google', {
@@ -282,7 +237,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 body: JSON.stringify({ token: credentialResponse.credential })
             })
             if (res.ok) {
-                const data = await res.json()
+                const data = await apiResponseJson(res)
                 localStorage.setItem('token', data.access_token)
                 window.dispatchEvent(new Event('auth-token-updated'))
                 setUser(data.user)
@@ -311,7 +266,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 method: 'POST'
             })
             if (res.ok) {
-                const data = await res.json()
+                const data = await apiResponseJson(res)
                 setUser(data)
             } else {
                 console.error('Failed to agree terms')

@@ -1,111 +1,15 @@
-import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@iconify/react'
-import { apiFetch } from '../utils/api'
 import type { LangData } from '../constants/lang'
 import { Skin2DImg } from './Skin2DImg'
 import type { GenerationLogItemBrief } from '../types/log'
+import type { DiscoverySearchController } from '../pages/discovery/useDiscoverySearch'
 
-type DiscoverySearchResult = GenerationLogItemBrief & {
-    name?: string
-    creator?: {
-        username?: string
-    }
-}
-
-function normalizeDiscoverySearchResult(item: unknown): DiscoverySearchResult | null {
-    if (!item || typeof item !== 'object') return null
-
-    const raw = item as Record<string, unknown>
-    const id = typeof raw.id === 'string' ? raw.id.trim() : ''
-    const result = typeof raw.result === 'string' ? raw.result.trim() : ''
-    if (!id || !result) return null
-
-    return {
-        ...(raw as Partial<DiscoverySearchResult>),
-        id,
-        result,
-        prompt: typeof raw.prompt === 'string' ? raw.prompt : '',
-        is_public: raw.is_public !== false,
-    }
-}
-
-interface DiscoverySearchProps {
-    current: LangData
-    onSelect: (item: GenerationLogItemBrief) => void
-    selectedItem?: GenerationLogItemBrief | null
-}
-
-export function DiscoverySearch({ current, onSelect, selectedItem }: DiscoverySearchProps) {
-    const [query, setQuery] = useState('')
-    const [isSearching, setIsSearching] = useState(false)
-    const [results, setResults] = useState<DiscoverySearchResult[]>([])
-    const [isOpen, setIsOpen] = useState(false)
-
-    const [page, setPage] = useState(1)
-    const [total, setTotal] = useState(0)
-
-    const PAGE_SIZE = 15;
-
-    const handleSearch = async (pageNum: number) => {
-        const trimmedQuery = query.trim()
-        if (!trimmedQuery) return
-
-        const hasChinese = /[\u4e00-\u9fa5]/.test(trimmedQuery)
-        const minLength = hasChinese ? 1 : 3
-        if (trimmedQuery.length < minLength) {
-            window.dispatchEvent(new CustomEvent('global-error', {
-                detail: {
-                    title: current.generate.notice || 'Notice',
-                    message: current.discovery.searchMinLengthWarning || 'Search query must be at least 3 characters'
-                }
-            }))
-            return
-        }
-
-        setIsSearching(true)
-        setIsOpen(true)
-
-        try {
-            const res = await apiFetch(`/api/discovery/search?q=${encodeURIComponent(trimmedQuery)}&page=${pageNum}&page_size=${PAGE_SIZE}`)
-            if (res.status === 429) {
-                // Rate limited
-                window.dispatchEvent(new CustomEvent('global-error', {
-                    detail: {
-                        title: current.discovery.rateLimitTitle || 'Rate Limited',
-                        message: current.discovery.rateLimitMessage || 'Please wait 1s before retrying'
-                    }
-                }))
-                setIsSearching(false)
-                return
-            }
-            if (res.ok) {
-                const data: unknown = await res.json()
-                const response = data && typeof data === 'object' ? data as Record<string, unknown> : {}
-                const rawItems = Array.isArray(response.items) ? response.items : []
-                const safeItems = rawItems
-                    .map(normalizeDiscoverySearchResult)
-                    .filter((item): item is DiscoverySearchResult => item !== null)
-
-                if (rawItems.length !== safeItems.length) {
-                    console.warn(`Discovery search skipped ${rawItems.length - safeItems.length} invalid item(s)`)
-                }
-
-                setResults(safeItems)
-                setTotal(typeof response.total === 'number' ? response.total : safeItems.length)
-                setPage(pageNum)
-            }
-        } catch (e) {
-            console.error('Search failed', e)
-        }
-        setIsSearching(false)
-    }
-
-    const totalPages = Math.ceil(total / PAGE_SIZE)
-
-    const token = localStorage.getItem('token')
-    if (!token) return null
-
+export function DiscoverySearch({ current, onSelect, selectedItem, search }: {
+    current: LangData; onSelect: (item: GenerationLogItemBrief) => void
+    selectedItem?: GenerationLogItemBrief | null; search: DiscoverySearchController
+}) {
+    const { query, setQuery, submittedQuery, isLoading: isSearching, items: results, isOpen, closeSearch, page, total, totalPages, handleSearch } = search
     return (
         <>
             <div className={`flex items-center gap-1 sm:gap-2 mr-2 ${current.fontClass}`}>
@@ -132,14 +36,14 @@ export function DiscoverySearch({ current, onSelect, selectedItem }: DiscoverySe
                     <div className="bg-[#121212] sm:border-2 border-white/10 sm:shadow-[0_0_50px_rgba(0,0,0,0.8)] w-full h-full sm:max-w-5xl sm:max-h-[85vh] flex flex-col relative animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <button
                             className="absolute top-4 right-4 text-white/50 hover:text-white p-2 cursor-pointer bg-black/60 backdrop-blur-md border border-white/10 z-20"
-                            onClick={() => setIsOpen(false)}
+                            onClick={() => closeSearch()}
                         >
                             <Icon icon="pixelarticons:close" className="text-2xl" />
                         </button>
 
                         <div className="flex gap-4 items-center p-4 sm:p-6 pb-4 border-b border-white/10">
                             <h2 className={`text-lg sm:text-2xl text-white m-0 ${current.fontClass}`}>
-                                {current.discovery.searchResult}: "{query}"
+                                {current.discovery.searchResult}: "{submittedQuery}"
                             </h2>
                             <span className={`text-white/50 text-xs ${current.fontClass}`}>({total})</span>
                         </div>

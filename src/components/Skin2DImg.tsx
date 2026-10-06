@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Skin2D } from "./utils"
+import { CanvasImage } from './CanvasImage'
 
 export function Skin2DImg({
     src,
@@ -15,16 +16,30 @@ export function Skin2DImg({
     showRawFallback?: boolean
 }) {
     const renderKey = `${src}|${scale}`
-    const [renderState, setRenderState] = useState<{ key: string; base64: string | null; error: boolean }>({
+    const placeholder = useRef<HTMLCanvasElement>(null)
+    const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined')
+    const [renderState, setRenderState] = useState<{ key: string; canvas: HTMLCanvasElement | null; error: boolean }>({
         key: '',
-        base64: null,
+        canvas: null,
         error: false
     })
 
     useEffect(() => {
+        if (visible || !placeholder.current) return
+        const observer = new IntersectionObserver(entries => {
+            if (entries.some(entry => entry.isIntersecting)) {
+                setVisible(true)
+                observer.disconnect()
+            }
+        }, { rootMargin: '200px' })
+        observer.observe(placeholder.current)
+        return () => observer.disconnect()
+    }, [visible, src])
+
+    useEffect(() => {
         let active = true
 
-        if (!src) {
+        if (!src || !visible) {
             return () => {
                 active = false
             }
@@ -34,7 +49,7 @@ export function Skin2DImg({
             if (!active) return
             setRenderState({
                 key: renderKey,
-                base64: result.toDataURL('image/png'),
+                canvas: result,
                 error: false
             })
         }).catch(err => {
@@ -42,7 +57,7 @@ export function Skin2DImg({
             console.error("Skin2D render failed", err)
             setRenderState({
                 key: renderKey,
-                base64: null,
+                canvas: null,
                 error: true
             })
         })
@@ -50,18 +65,16 @@ export function Skin2DImg({
         return () => {
             active = false
         }
-    }, [src, scale, renderKey]);
+    }, [src, scale, renderKey, visible]);
 
     const isCurrentRender = renderState.key === renderKey
-    const base64 = isCurrentRender ? renderState.base64 : null
+    const canvas = isCurrentRender ? renderState.canvas : null
     const error = isCurrentRender ? renderState.error : false
 
     if (!src) return null
-    if (!base64 && !error && !showRawFallback) return null
-
-    if (error) {
-        return <img src={src} crossOrigin="anonymous" alt="" className={className} style={style} />
-    }
-
-    return <img src={base64 || (showRawFallback ? src : undefined)} crossOrigin={base64 ? undefined : "anonymous"} alt="" className={className} style={style} />
+    if (!visible) return <canvas ref={placeholder} width={1} height={1} aria-hidden
+        className={className} style={{ ...style, opacity: 0 }} />
+    if (canvas) return <CanvasImage source={canvas} className={className} style={style} />
+    if (!error && !showRawFallback) return null
+    return <img src={src} crossOrigin="anonymous" alt="" className={className} style={style} decoding="async" loading="lazy" />
 }

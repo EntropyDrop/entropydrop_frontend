@@ -74,7 +74,8 @@ async function mount(fetch, { userId = 42, width = 1920 } = {}) {
     };
     const context = vm.createContext({
         window, localStorage: window.localStorage, document: window.document,
-        fetch, Headers, Response, AbortController, DOMException, atob, console,
+        fetch, Headers, Response, Request, URL, URLSearchParams, FormData, Blob, AbortController, DOMException, atob, console,
+        Event: window.Event, CustomEvent: window.CustomEvent, navigator: window.navigator,
         require: name => name === 'collection-visuals' ? visuals : require(name),
         module, exports: module.exports,
     });

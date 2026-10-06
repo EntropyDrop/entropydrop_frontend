@@ -1,20 +1,13 @@
 import { Icon } from '@iconify/react'
-import { useState, useEffect, lazy, Suspense, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { UserMenu } from './UserMenu'
 import { ErrorModal } from './ErrorModal'
-import { DiscoveryBackground } from './DiscoveryBackground'
 
-import { LoadingPlaceholder } from './LoadingPlaceholder'
 import { type LangKey, type LangData } from '../constants/lang'
-import type { GenerationLogItem, GenerationLogItemBrief } from '../types/log'
 
 import { SPACE_NAV_ITEMS, SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS, TOP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from '../constants/nav'
-
-// Lazy load heavy components
-const DiscoverySearch = lazy(() => import('./DiscoverySearch').then(m => ({ default: m.DiscoverySearch })))
-const MCModal = lazy(() => import('./MCModal').then(m => ({ default: m.MCModal })))
 
 interface LayoutProps {
     children: ReactNode
@@ -27,13 +20,7 @@ interface LayoutProps {
 
 export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: LayoutProps) {
     const location = useLocation()
-    const navigate = useNavigate()
-    const [selectedDiscoveryItem, setSelectedDiscoveryItem] = useState<GenerationLogItemBrief | null>(null)
     const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' })
-    const [isDiscoveryLoading, setIsDiscoveryLoading] = useState(false)
-    const [searchParams] = useSearchParams()
-    const is3DMode = searchParams.get('view') !== 'list'
-
     const isSpaceSection = location.pathname === '/space' || location.pathname.startsWith('/space/')
     const isFigureSection = location.pathname.startsWith('/figure')
     const isSkinSection = location.pathname.startsWith('/skin') || location.pathname === '/'
@@ -49,7 +36,6 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                 ? PUBLIC_NAV_ITEMS
                 : []
 
-    const isDiscoveryPage = location.pathname === '/skin/' || location.pathname === '/skin' || location.pathname === '/'
     const pageOwnsGoogleSignIn = location.pathname === '/space/login' || location.pathname === '/space/authorize'
 
     // Keep <html lang> in sync with the current language
@@ -157,53 +143,8 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                 </div>
             </div>
 
+            <div className="absolute inset-0 z-0"><LightweightBackground /></div>
             {children}
-            {isDiscoveryLoading && !(isDiscoveryPage && is3DMode) && <LoadingPlaceholder current={current} className="top-24 sm:top-28 z-20" />}
-
-            {/* Background scene */}
-            <div className="absolute inset-0 z-0">
-                {isDiscoveryPage && is3DMode ? (
-                    <DiscoveryBackground
-                        fallback={<LightweightBackground />}
-                        selected={selectedDiscoveryItem}
-                        onSelect={setSelectedDiscoveryItem}
-                        onLoading={setIsDiscoveryLoading}
-                        paused={selectedDiscoveryItem !== null}
-                    />
-                ) : (
-                    <LightweightBackground />
-                )}
-            </div>
-
-            {isDiscoveryPage && is3DMode && (
-                <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 z-30 pointer-events-auto shadow-2xl">
-                    <Suspense fallback={null}>
-                        <DiscoverySearch current={current} onSelect={setSelectedDiscoveryItem} selectedItem={selectedDiscoveryItem} />
-                    </Suspense>
-                </div>
-            )}
-
-            {selectedDiscoveryItem && (
-                <Suspense fallback={null}>
-                    <MCModal
-                        item={selectedDiscoveryItem as GenerationLogItem}
-                        closeModal={() => setSelectedDiscoveryItem(null)}
-                        textureUrl={selectedDiscoveryItem.result}
-                        current={current}
-                        onEdit={(texUrl, logId, isPublic) => {
-                            setSelectedDiscoveryItem(null);
-                            navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } });
-                        }}
-                        onAiEdit={(source: string, id: string, isPublic: boolean) => {
-                            setSelectedDiscoveryItem(null);
-                            navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic } });
-                        }}
-                        onItemSelect={(logId) => {
-                            setSelectedDiscoveryItem(prev => prev ? { ...prev, id: logId } : { id: logId, result: '', is_public: true, prompt: '' });
-                        }}
-                    />
-                </Suspense>
-            )}
 
             <ErrorModal
                 isOpen={errorModal.isOpen}

@@ -25,7 +25,7 @@ function environment(fetch, token = 'existing-token') {
     for (const name of ['logout', 'auth-token-updated', 'global-error']) window.addEventListener(name, () => events.push(name));
     const module = { exports: {} };
     const context = vm.createContext({ window, localStorage: window.localStorage, navigator: window.navigator,
-        alert: message => alerts.push(message), fetch: (...args) => window.fetch(...args), URL, URLSearchParams, Request, Response, Headers, AbortController, DOMException,
+        alert: message => alerts.push(message), fetch: (...args) => window.fetch(...args), URL, URLSearchParams, Request, Response, Headers, FormData, Blob, AbortController, DOMException,
         Event: window.Event, CustomEvent: window.CustomEvent, atob, console, require, module, exports: module.exports });
     return { dom, window, events, alerts, context, load(entry, base) {
         vm.runInContext(compile(entry, base), context);
@@ -46,8 +46,8 @@ for (const failure of [503, 'network', 'malformed']) {
             }
             return json({}, 401);
         });
-        env.load('src/utils/fetchInterceptor.ts');
-        const result = await env.window.fetch('https://api.example.test/skin/api/users/me');
+        env.request = env.load('src/utils/httpClient.ts').request;
+        const result = await env.request('https://api.example.test/skin/api/users/me');
         assert.equal(result.status, 503);
         assert.equal(env.window.localStorage.getItem('token'), 'existing-token');
         assert.equal(env.events.includes('logout'), false);
@@ -59,8 +59,8 @@ for (const failure of [503, 'network', 'malformed']) {
 
 test('explicit refresh rejection expires the session once', async () => {
     const env = environment(async () => json({}, 401));
-    env.load('src/utils/fetchInterceptor.ts');
-    await env.window.fetch('https://api.example.test/skin/api/users/me');
+    env.request = env.load('src/utils/httpClient.ts').request;
+    await env.request('https://api.example.test/skin/api/users/me');
     assert.equal(env.window.localStorage.getItem('token'), null);
     assert.equal(env.events.filter(e => e === 'logout').length, 1);
     assert.equal(env.alerts.length, 1);
@@ -82,11 +82,11 @@ test('concurrent 401 requests share refresh and retain POST bodies', async () =>
         retriedBodies.push(input instanceof Request ? await input.text() : init.body);
         return json({ ok: true });
     });
-    env.load('src/utils/fetchInterceptor.ts');
+    env.request = env.load('src/utils/httpClient.ts').request;
     const url = 'https://api.example.test/skin/api/submit';
     const results = await Promise.all([
-        env.window.fetch(new Request(url, { method: 'POST', body: 'first' })),
-        env.window.fetch(url, { method: 'POST', body: 'second' }),
+        env.request(new Request(url, { method: 'POST', body: 'first' })),
+        env.request(url, { method: 'POST', body: 'second' }),
     ]);
     assert.deepEqual(results.map(r => r.status), [200, 200]);
     assert.equal(refreshes, 1);
@@ -109,6 +109,7 @@ test('an earlier account response cannot populate the next account page', async 
     const env = environment(() => new Promise(resolve => { resolveResponse = resolve; }));
     const { apiFetch } = env.load('src/utils/api.ts');
     const pending = apiFetch('/api/users/me');
+    await new Promise(resolve => setTimeout(resolve, 0));
     env.window.localStorage.setItem('token', 'another-account');
     resolveResponse(json({ id: 'previous-account', credits: 100 }));
     await assert.rejects(pending, { name: 'AbortError' });
@@ -171,7 +172,7 @@ test('main-site refresh restores a legacy path-scoped session', async () => {
         calls.push({ url: String(url), credentials: init.credentials });
         return String(url).includes('/skin/api/auth/refresh') ? json({ access_token: 'restored' }) : json({}, 401);
     });
-    const { refreshAuthSession } = env.load('src/utils/fetchInterceptor.ts');
+    const { refreshAuthSession } = env.load('src/utils/authClient.ts');
     assert.equal((await refreshAuthSession()).token, 'restored');
     assert.deepEqual(calls, [
         { url: 'https://api.example.test/api/auth/refresh', credentials: 'include' },
@@ -190,7 +191,7 @@ for (const failure of [503, 'offline']) {
             }
             return json({}, 401);
         });
-        const { refreshAuthSession } = env.load('src/utils/fetchInterceptor.ts');
+        const { refreshAuthSession } = env.load('src/utils/authClient.ts');
         assert.equal((await refreshAuthSession()).terminal, false);
         assert.equal(env.window.localStorage.getItem('token'), 'existing-token');
         env.window.close();

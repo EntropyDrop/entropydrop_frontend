@@ -1,3 +1,6 @@
+import { useSkinDetails } from './mcmodal/useSkinDetails'
+import { useCurrentUser } from '../hooks/useCurrentUser'
+import { useAuthSession } from '../hooks/useAuthSession'
 import { Icon } from '@iconify/react'
 import { useCallback, useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -11,7 +14,7 @@ import { Skin2DImg } from './Skin2DImg'
 import { SkinAvatarImage } from './SkinAvatarImage'
 import { Skin2D, isSlim, convertSkinLayout } from './utils'
 import { showError } from '../utils/alert'
-import { apiFetch } from '../utils/api'
+import { apiFetch, apiResponseJson } from '../utils/api'
 import { formatDate } from '../utils/date'
 import { GoogleSignInButton } from './GoogleSignInButton'
 import { LoadingSpinner } from './LoadingPlaceholder'
@@ -53,13 +56,8 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
 
     const navigate = useNavigate();
-    const hasLoadedRef = useRef<string | null>(null);
-    const [item, setItem] = useState<GenerationLogItem>(initialItem);
-    const [isLoadingDetails, setIsLoadingDetails] = useState(true);
-    const [parentItem, setParentItem] = useState<GenerationLogItem | null>(null);
-    const [isParentDeleted, setIsParentDeleted] = useState(false);
-    const [isNotFound, setIsNotFound] = useState(false);
-
+    const { item, setItem, textureUrl, setTextureUrl, isLoadingDetails, parentItem, isParentDeleted, isNotFound,
+        derivedCount, relatedCollectionsCount, setRelatedCollectionsCount, loadDetails } = useSkinDetails(initialItem, initialTextureUrl);
     const handleEditImage = (src?: string) => {
         close();
         if (onAiEdit && src) {
@@ -72,7 +70,6 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         navigate('/skin/print', { state: { textureUrl, item } });
     };
 
-    const [textureUrl, setTextureUrl] = useState(initialTextureUrl);
     const [mode, setModeState] = useState<'voxel' | 'plane' | 'cute'>(() => {
         try {
             const saved = localStorage.getItem('mcmodal_mode');
@@ -137,103 +134,6 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const [modelType, setModelType] = useState<'steve' | 'alex'>('steve');
     const [isLiked, setIsLiked] = useState(false);
     const [likesCount, setLikesCount] = useState(0);
-    const [derivedCount, setDerivedCount] = useState<number | null>(null);
-    const [relatedCollectionsCount, setRelatedCollectionsCount] = useState<number | null>(null);
-
-    const loadDetails = useCallback(async (id: string, isInitial = false) => {
-        if (!id) {
-            setIsLoadingDetails(false);
-            return;
-        }
-        if (!isInitial) {
-            setIsLoadingDetails(true);
-            setDerivedCount(null);
-            setRelatedCollectionsCount(null);
-        }
-        setIsNotFound(false);
-        try {
-            const res = await apiFetch(`/api/logs/${id}`, { skipGlobalError: true });
-            if (res.status === 404 || res.status === 403) {
-                setIsNotFound(true);
-                setTextureUrl('');
-                setParentItem(null);
-                setIsParentDeleted(false);
-                return;
-            }
-            if (!res.ok) {
-                throw new Error(`Failed with status ${res.status}`);
-            }
-            const data = await res.json();
-            if (!data?.result) {
-                setIsNotFound(true);
-                setTextureUrl('');
-                setParentItem(null);
-                setIsParentDeleted(false);
-                return;
-            }
-            setItem(data);
-            setTextureUrl(data.result);
-            setIsNotFound(false);
-            hasLoadedRef.current = id;
-
-            if (data.parent) {
-                try {
-                    const parentRes = await apiFetch(`/api/logs/${data.parent}`, { skipGlobalError: true });
-                    if (parentRes.ok) {
-                        const parentData = await parentRes.json();
-                        setParentItem(parentData);
-                        setIsParentDeleted(false);
-                    } else if (parentRes.status === 404) {
-                        setParentItem(null);
-                        setIsParentDeleted(true);
-                    } else {
-                        setParentItem(null);
-                    }
-                } catch (e) {
-                    setParentItem(null);
-                }
-            } else {
-                setParentItem(null);
-                setIsParentDeleted(false);
-            }
-
-            const token = localStorage.getItem('token');
-            if (token) {
-                // Fetch derived skins count
-                apiFetch(`/api/logs/${id}/derived`)
-                    .then(res => res.ok ? res.json() : null)
-                    .then(data => {
-                        if (data) {
-                            setDerivedCount(data.items?.length ?? 0);
-                        }
-                    })
-                    .catch(e => console.error("Failed to fetch derived count", e));
-
-                // Fetch related collections count
-                apiFetch(`/api/logs/${id}/public_collections?page=1&page_size=1`)
-                    .then(res => res.ok ? res.json() : null)
-                    .then(data => {
-                        if (data) {
-                            setRelatedCollectionsCount(data.total ?? 0);
-                        }
-                    })
-                    .catch(e => console.error("Failed to fetch related collections count", e));
-            } else {
-                setDerivedCount(null);
-                setRelatedCollectionsCount(null);
-            }
-        } catch (err) {
-            console.error('Failed to fetch detail', err);
-        } finally {
-            setIsLoadingDetails(false);
-        }
-    }, [setItem, setTextureUrl, setParentItem, setDerivedCount, setRelatedCollectionsCount]);
-
-    useEffect(() => {
-        if (hasLoadedRef.current === initialItem.id) return;
-        loadDetails(initialItem.id, true);
-    }, [initialItem.id, loadDetails]);
-
     useEffect(() => {
         if (textureUrl) {
             const img = new Image();
@@ -242,6 +142,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
             img.onload = () => {
                 setModelType(isSlim(img) ? 'alex' : 'steve');
             };
+            return () => { img.onload = null; };
         }
     }, [textureUrl]);
     const [isFavorited, setIsFavorited] = useState(false);
@@ -259,8 +160,8 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const [isReportOpen, setIsReportOpen] = useState(false);
     const [isReportSubmitted, setIsReportSubmitted] = useState(false);
 
-    const [currentUser, setCurrentUser] = useState<any>(null);
-    const isLoggedIn = !!localStorage.getItem('token');
+    const { user: currentUser } = useCurrentUser();
+    const isLoggedIn = !!useAuthSession();
     const isOwner = Boolean(currentUser && item.creator?.id != null && String(item.creator.id) === String(currentUser.id));
     const isAuthor = Boolean(!item.id || isOwner);
     const canSetMinecraftSkin = Boolean(isOwner && item.result && item.is_public === true);
@@ -276,22 +177,6 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const [skinSuccess, setSkinSuccess] = useState(false);
     const [skinError, setSkinError] = useState('');
     const [isLicenseExpanded, setIsLicenseExpanded] = useState(false);
-
-    useEffect(() => {
-        if (!isLoggedIn) return;
-        const fetchCurrentUser = async () => {
-            try {
-                const res = await apiFetch('/api/users/me');
-                if (res.ok) {
-                    const data = await res.json();
-                    setCurrentUser(data);
-                }
-            } catch (err) {
-                console.error('Failed to fetch current user', err);
-            }
-        };
-        fetchCurrentUser();
-    }, [isLoggedIn]);
 
     const handleUpdateName = async () => {
         if (!editedName.trim()) return;
@@ -337,7 +222,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                     setSkinSuccess(false);
                 }, 2000);
             } else {
-                const errData = await res.json();
+                const errData = await apiResponseJson(res);
                 setSkinError(errData?.detail || current.mcmodal.setMyCharacterFailed);
             }
         } catch (err) {
@@ -580,7 +465,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
             try {
                 const res = await apiFetch(`/api/logs/${item.id}/collections`);
                 if (res.ok) {
-                    const data = await res.json();
+                    const data = await apiResponseJson(res);
                     setIsFavorited(data.length > 0);
                 }
             } catch (e) {
@@ -607,7 +492,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
             lastSidebarContext.current = { type: 'derived', id: item.id };
             try {
                 const res = await apiFetch(`/api/logs/${item.id}/derived`);
-                const data = await res.json();
+                const data = await apiResponseJson(res);
                 setCollections([{ id: 'derived', name: current.mcmodal.allDerived, item_count: data.items?.length || 0, is_public: true }]);
                 setItemsByCol({ 'derived': data.items || [] });
                 setExpandedCols(['derived']);
@@ -637,7 +522,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                 : `/api/logs/${currentId}/public_collections?page=${pageNum}&page_size=12`;
 
             const res = await apiFetch(url);
-            const data = await res.json();
+            const data = await apiResponseJson(res);
             const fetchedItems = data.items || [];
 
             setCollections(prev => {
@@ -746,7 +631,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                 body: JSON.stringify({ name: newCollectionName, is_public: activeTab === 'public' })
             });
             if (res.ok) {
-                const newCol = await res.json();
+                const newCol = await apiResponseJson(res);
                 setMyCollections(prev => [...prev, newCol]);
                 setMySelectedIds(prev => [...prev, newCol.id]);
                 setNewCollectionName('');
@@ -770,7 +655,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
             const url = `/api/collections/items?collection_id=${colId}&user_id=${fallbackId}&page=${pageNum}&page_size=12`;
             const res = await apiFetch(url);
-            const data = await res.json();
+            const data = await apiResponseJson(res);
 
             setItemsByCol(prev => ({
                 ...prev,
@@ -802,7 +687,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                 body: JSON.stringify({ token: credentialResponse.credential })
             })
             if (res.ok) {
-                const data = await res.json()
+                const data = await apiResponseJson(res)
                 localStorage.setItem('token', data.access_token)
                 location.reload()
             } else {
@@ -819,11 +704,12 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
 
     const handleItemSelect = async (logId: string) => {
-        await loadDetails(logId);
-        if (window.innerWidth < 1024) setShowSidebar(false);
         if (onItemSelect) {
             onItemSelect(logId);
+            return;
         }
+        await loadDetails(logId);
+        if (window.innerWidth < 1024) setShowSidebar(false);
     };
 
     const handleLike = async () => {
@@ -833,7 +719,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
             });
 
             if (response.ok) {
-                const data = await response.json();
+                const data = await apiResponseJson(response);
                 setIsLiked(data.action === 'liked');
                 setLikesCount(data.likes_count);
             }

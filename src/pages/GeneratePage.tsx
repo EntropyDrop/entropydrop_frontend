@@ -1,3 +1,5 @@
+import { useCurrentUser } from '../hooks/useCurrentUser'
+import { request } from '../utils/httpClient'
 import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect, useRef } from 'react'
@@ -13,7 +15,7 @@ import { MCModal } from '../components/MCModal'
 import { ConfirmModal } from '../components/ConfirmModal'
 import type { GenerationLogItem } from '../types/log'
 import { showError } from '../utils/alert'
-import { apiFetch } from '../utils/api'
+import { apiFetch, apiResponseJson } from '../utils/api'
 import { formatDate } from '../utils/date'
 import { generationModelParams, preferredGenerationModel, resolveGenerationModel, type GenerationModelOption } from '../utils/generationModels'
 
@@ -84,7 +86,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [modelMaintenanceStates, setModelMaintenanceStates] = useState<Record<string, boolean>>({})
     const [isGenerating, setIsGenerating] = useState(false)
     const [isPrivate, setIsPrivate] = useState(false)
-    const [isPro, setIsPro] = useState(false)
+    const { user: currentUser, refresh: refreshCurrentUser } = useCurrentUser()
+    const isPro = currentUser?.is_pro === true
     const modelVersion = resolveGenerationModel(selectedModelVersion, modelOptions, isPro, modelMaintenanceStates)
     const [generationCreditCost, setGenerationCreditCost] = useState<number | null>(null)
     // showResult state removed
@@ -105,13 +108,13 @@ export function GeneratePage({ current }: GeneratePageProps) {
     // editedImage state removed
     const [isSourcePrivate, setIsSourcePrivate] = useState(false)
     const [lastSubmittedId, setLastSubmittedId] = useState<string | null>(null)
-    const [isTextToSkinEnabled, setIsTextToSkinEnabled] = useState(true)
-    const [isImageToSkinEnabled, setIsImageToSkinEnabled] = useState(true)
-    const [isImageEditToSkinEnabled, setIsImageEditToSkinEnabled] = useState(true)
+    const isTextToSkinEnabled = currentUser?.text_to_skin_enabled !== false
+    const isImageToSkinEnabled = currentUser?.image_to_skin_enabled !== false
+    const isImageEditToSkinEnabled = currentUser?.image_edit_to_skin_enabled !== false
     const [infoModal, setInfoModal] = useState<{ isOpen: boolean; title: string; message: string; type?: 'info' | 'error' | 'success' }>({ isOpen: false, title: '', message: '' })
     const [isHistoryLoading, setIsHistoryLoading] = useState(false)
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
-    const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+    const currentUserId = currentUser?.id ?? null
     const [parentLogData, setParentLogData] = useState<GenerationLogItem | null>(null)
     const [isParentLoading, setIsParentLoading] = useState(false)
     const [parentLoadFailed, setParentLoadFailed] = useState(false)
@@ -131,7 +134,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             }
             const res = await apiFetch(`/api/generate/queue_status?${params.toString()}`, { skipGlobalError: true })
             if (res.ok) {
-                const data: QueueStatusData = await res.json()
+                const data: QueueStatusData = await apiResponseJson(res)
                 setQueueStatus(data)
             }
         } catch {
@@ -212,7 +215,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         apiFetch(`/api/logs/${sourceId}`, { skipGlobalError: true })
             .then(async (res) => {
                 if (!res.ok) throw new Error('Failed to fetch parent log')
-                const data = await res.json()
+                const data = await apiResponseJson(res)
                 if (!cancelled) {
                     setParentLogData(data)
                     setIsParentLoading(false)
@@ -322,7 +325,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                     setIsSourcePrivate(true);
                 }
                 try {
-                    const res = await fetch(location.state.sourceImage);
+                    const res = await request(location.state.sourceImage);
                     const blob = await res.blob();
                     const filename = location.state.sourceImage.split('/').pop() || 'source.jpg';
 
@@ -406,7 +409,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         try {
             const response = await apiFetch('/api/models')
             if (response.ok) {
-                const data = await response.json()
+                const data = await apiResponseJson(response)
                 
                 const textToSkin: string[] = []
                 for (const base of data.text_to_image_models || []) {
@@ -451,7 +454,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                             const url = `/api/generation_credit_cost?${generationModelParams(m, options)}`
                             const res = await apiFetch(url)
                             if (res.ok) {
-                                const costData = await res.json()
+                                const costData = await apiResponseJson(res)
                                 costs[m] = costData.credits
                                 proStates[m] = !!costData.is_pro
                                 maintenanceStates[m] = !!costData.under_maintenance
@@ -480,7 +483,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             }
             const response = await apiFetch(url)
             if (response.ok) {
-                const data = await response.json()
+                const data = await apiResponseJson(response)
                 setGenerationCreditCost(data.credits)
                 if (model && model !== 'unknown') {
                     setModelProStates(prev => ({ ...prev, [model]: !!data.is_pro }))
@@ -493,13 +496,10 @@ export function GeneratePage({ current }: GeneratePageProps) {
     }
 
     useEffect(() => {
-        setIsPro(false)
-        setCurrentUserId(null)
         setHistory([])
         setModelCosts({})
         if (authSession) {
             fetchModels()
-            fetchUserStatus()
         }
     }, [authSession])
 
@@ -515,23 +515,6 @@ export function GeneratePage({ current }: GeneratePageProps) {
             setGenerationCreditCost(null)
         }
     }, [authSession, modelVersion, modelCosts, modelOptions])
-
-    const fetchUserStatus = async () => {
-        try {
-            const res = await apiFetch('/api/users/me')
-            if (res.ok) {
-                const data = await res.json()
-                setCurrentUserId(data.id || null)
-                setIsPro(data.is_pro)
-                setIsTextToSkinEnabled(data.text_to_skin_enabled !== false)
-                setIsImageToSkinEnabled(data.image_to_skin_enabled !== false)
-                setIsImageEditToSkinEnabled(data.image_edit_to_skin_enabled !== false)
-                window.dispatchEvent(new Event('user-updated'))
-            }
-        } catch (e) {
-            console.error('Failed to fetch user status', e)
-        }
-    }
 
     useEffect(() => {
         const currentMode = genMode
@@ -550,7 +533,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         try {
             const response = await apiFetch(`/api/history?page=${page}&page_size=${itemsPerPage}`)
             if (response.ok) {
-                const data = await response.json()
+                const data = await apiResponseJson(response)
                 const mappedItems = data.items.map((item: GenerationLogItem) => {
                     const existing = history.find(p => p.id === item.id)
                     item.result_render_2d = existing?.result_render_2d || ''
@@ -573,7 +556,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                     }
                 })
             } else {
-                const errorData = await response.json().catch(() => ({ detail: `Error: ${response.status}` }))
+                const errorData = await apiResponseJson(response).catch(() => ({ detail: `Error: ${response.status}` }))
                 console.error('History API error:', errorData)
             }
         } catch (e) {
@@ -735,11 +718,11 @@ export function GeneratePage({ current }: GeneratePageProps) {
             })
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ detail: `${current.generate.serverError}: ${response.status}` }))
+                const errorData = await apiResponseJson(response).catch(() => ({ detail: `${current.generate.serverError}: ${response.status}` }))
                 throw new Error(errorData.detail || `${current.generate.serverError}: ${response.status}`)
             }
 
-            const data = await response.json()
+            const data = await apiResponseJson(response)
             const logId = data.id
 
             if (!logId) {
@@ -753,7 +736,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             } else {
                 setCurrentPage(1) // Switching to page 1 will trigger fetchHistory(1) automatically via useEffect
             }
-            fetchUserStatus() // Refresh quota
+            void refreshCurrentUser(true) // Refresh quota
             fetchQueueStatus() // Refresh queue status immediately
             //setInfoModal({ isOpen: true, title: current.generate.submitSuccess, message: current.generate.submitSuccessMsg, type: 'success' })
 
