@@ -30,6 +30,9 @@ const compiled = build({
 async function mount(isPro, { imageOptions = options, maintenance = [], userStatusReady, enableText = false } = {}) {
     const dom = new JSDOM('<div id="root"></div>', { url: 'https://site.example.test/skin/generate' });
     const { window } = dom;
+    window.HTMLCanvasElement.prototype.getContext = () => ({ fillRect() {}, drawImage() {} });
+    window.HTMLCanvasElement.prototype.toBlob = callback => callback(new Blob(['reference image'], { type: 'image/jpeg' }));
+    window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/jpeg;base64,cmVmZXJlbmNl';
     window.localStorage.setItem('token', 'test-session');
     const requests = [];
     const writes = [];
@@ -43,6 +46,9 @@ async function mount(isPro, { imageOptions = options, maintenance = [], userStat
     const context = vm.createContext({
         window, document: window.document, localStorage: window.localStorage,
         URL, URLSearchParams, Headers, FormData, Response, Request, AbortController, DOMException, atob,
+        File, Blob,
+        FileReader: class { readAsDataURL() { this.onload({ target: { result: 'data:image/jpeg;base64,cmVmZXJlbmNl' } }); } },
+        Image: class { width = 256; height = 256; set src(value) { this.onload(); } },
         CustomEvent: window.CustomEvent,
         Event: window.Event, setInterval, clearInterval, setTimeout, clearTimeout, console,
         require: name => name === 'generation-visuals' ? visuals : require(name),
@@ -203,21 +209,54 @@ test('A pending Pro status switches the selected model to its matching Pro optio
     } finally { await env.close(); }
 });
 
-test('generation requires public confirmation and keeps external reference permissions', async () => {
-    const env = await mount(true);
-    try {
-        const button = () => [...env.node.querySelectorAll('button')].find(node => node.textContent.includes(env.current.generate.btnStart));
-        assert.ok(env.node.textContent.includes(env.current.skinLicense.source));
-        assert.equal(button().disabled, true);
-        const consent = [...env.node.querySelectorAll('input[type="checkbox"]')].find(input => input.parentElement.textContent.includes(env.current.skinLicense.publicConsent));
-        await env.click(consent);
-        assert.equal(button().disabled, false);
-        const source = env.node.querySelector('select');
-        await React.act(() => { source.value = 'original'; source.dispatchEvent(new env.window.Event('change', { bubbles: true })); });
-        assert.ok(env.node.textContent.includes(env.current.skinLicense.commercial));
-        assert.equal(button().disabled, true, 'A changed source requires a new confirmation');
-    } finally { await env.close(); }
-});
+for (const isPro of [false, true]) {
+    test(`generation restores the compact ${isPro ? 'Pro' : 'Free'} license card with collapsed details`, async () => {
+        const env = await mount(isPro);
+        try {
+            assert.ok(env.node.textContent.includes(env.current.generate.licenseTitle));
+            assert.ok(env.node.textContent.includes(isPro ? env.current.generate.licenseCommercialSummary : env.current.generate.licenseNonCommercialSummary));
+            assert.equal(env.node.textContent.includes(env.current.skinLicense.sourceTitle), false);
+            assert.equal(env.node.textContent.includes(env.current.skinLicense.referenceConsent), false);
+            assert.equal(env.node.textContent.includes(env.current.skinLicense.yourRights), false);
+            assert.equal(env.node.querySelector('input[type="checkbox"]'), null);
+            assert.equal(env.node.querySelector('a[href="https://creativecommons.org/licenses/by-nc/4.0/"]'), null);
+            const details = [...env.node.querySelectorAll('button')].find(button => button.textContent.includes(env.current.generate.licenseViewDetails));
+            assert.equal(details.getAttribute('aria-expanded'), 'false');
+            await env.click(details);
+            assert.equal(details.getAttribute('aria-expanded'), 'true');
+            assert.ok(env.node.querySelector('a[href="https://creativecommons.org/licenses/by-nc/4.0/"]'));
+        } finally { await env.close(); }
+    });
+}
+
+for (const isPublic of [true, false]) {
+    test(`Pro image generation keeps source permissions without a source declaration (${isPublic ? 'public' : 'private'})`, async () => {
+        const env = await mount(true);
+        try {
+            const fileInput = env.node.querySelector('input[type="file"]');
+            Object.defineProperty(fileInput, 'files', { value: [new File(['reference'], 'reference.png', { type: 'image/png' })] });
+            await React.act(() => fileInput.dispatchEvent(new env.window.Event('change', { bubbles: true })));
+            if (!isPublic) {
+                await env.click([...env.node.querySelectorAll('input[type="radio"]')].find(input => input.closest('label').textContent.includes(env.current.generate.private)));
+            }
+            const preview = env.requests.filter(url => url.pathname === '/api/licenses/preview').at(-1);
+            assert.equal(preview.searchParams.get('source_rights'), 'external');
+            assert.equal(env.node.textContent.includes(env.current.generate.licenseCommercialSummary), false);
+            assert.equal(env.node.textContent.includes(env.current.generate.licenseProUpgradeHint), false);
+            assert.ok(env.node.textContent.includes(isPublic ? env.current.mcmodal.publicNonCommercialSummary : env.current.generate.licenseSourceSummary));
+            assert.equal(env.node.querySelector('select'), null);
+            const generate = [...env.node.querySelectorAll('button')].find(button => button.textContent.includes(env.current.generate.btnStart));
+            assert.equal(generate.disabled, false);
+            await env.click(generate);
+            assert.equal(env.writes.length, 1);
+            assert.ok(env.writes[0].get('file'));
+            assert.equal(env.writes[0].get('is_public'), String(isPublic));
+            assert.equal(env.writes[0].get('public_license_consent'), String(isPublic));
+            assert.equal(env.writes[0].has('source_rights'), false);
+            assert.equal(env.writes[0].has('requested_license'), false);
+        } finally { await env.close(); }
+    });
+}
 
 for (const [isPro, isPublic] of [[false, true], [true, true], [true, false]]) {
     test(`text generation submits ${isPro ? 'Pro' : 'Free'} ${isPublic ? 'public' : 'private'} visibility and consent`, async () => {
@@ -232,9 +271,6 @@ for (const [isPro, isPublic] of [[false, true], [true, true], [true, false]]) {
             if (!isPublic) {
                 const privateRadio = [...env.node.querySelectorAll('input[type="radio"]')].find(input => input.closest('label').textContent.includes(env.current.generate.private));
                 await env.click(privateRadio);
-            } else {
-                const consent = [...env.node.querySelectorAll('input[type="checkbox"]')].find(input => input.parentElement.textContent.includes(env.current.skinLicense.publicConsent));
-                await env.click(consent);
             }
             const generate = [...env.node.querySelectorAll('button')].find(button => button.textContent.includes(env.current.generate.btnStart));
             assert.equal(generate.disabled, false);

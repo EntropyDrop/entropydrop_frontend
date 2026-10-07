@@ -1,5 +1,5 @@
-import { useSkinLicensePolicy, type SourceRights } from '../hooks/useSkinLicensePolicy'
-import { SkinLicenseNotice, SourceRightsField, PublicLicenseConsent } from '../components/SkinLicenseNotice'
+import { useSkinLicensePolicy } from '../hooks/useSkinLicensePolicy'
+import { GeneratedLicenseCard } from '../components/GeneratedLicenseCard'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { request } from '../utils/httpClient'
 import { useAuthSession } from '../hooks/useAuthSession'
@@ -116,14 +116,10 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [infoModal, setInfoModal] = useState<{ isOpen: boolean; title: string; message: string; type?: 'info' | 'error' | 'success' }>({ isOpen: false, title: '', message: '' })
     const [isHistoryLoading, setIsHistoryLoading] = useState(false)
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
-    const [sourceRights, setSourceRights] = useState<SourceRights>('external')
-    const hasLocalReference = genMode !== 'aigc_text_to_skin' && !sourceId
+    const hasLocalReference = genMode !== 'aigc_text_to_skin' && !sourceId && imageFile !== null
     const licensePolicy = useSkinLicensePolicy({ operation: 'generate', parentId: sourceId,
-        sourceRights: hasLocalReference ? sourceRights : undefined, isPublic: !isPrivate })
+        sourceRights: hasLocalReference ? 'external' : undefined, isPublic: !isPrivate })
     const effectiveLicense = licensePolicy.code
-    const consentKey = JSON.stringify([licensePolicy.key, imagePreviewUrl, genMode])
-    const [acceptedConsentKey, setAcceptedConsentKey] = useState<string | null>(null)
-    const hasPublicConsent = acceptedConsentKey === consentKey
     useEffect(() => {
         if (sourceId && licensePolicy.policy) {
             setIsPrivate(licensePolicy.policy.parent_is_private)
@@ -513,7 +509,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
     }, [isGenerating])
 
     const handleGenerate = async () => {
-        if (isGenerating || modelVersion === 'unknown' || !modelVersion || !licensePolicy.ready || (!isPrivate && !hasPublicConsent)) return
+        if (isGenerating || modelVersion === 'unknown' || !modelVersion || !licensePolicy.ready) return
 
         const isModelMaintenance = modelMaintenanceStates[modelVersion]
         if (isModelMaintenance) {
@@ -599,8 +595,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             }
             formData.append('mode', genMode)
             formData.append('is_public', String(!isPrivate))
-            formData.append('public_license_consent', String(!isPrivate && hasPublicConsent))
-            if (hasLocalReference) formData.append('source_rights', sourceRights)
+            formData.append('public_license_consent', String(!isPrivate))
             if (sourceId) {
                 formData.append('parent', sourceId)
             }
@@ -632,7 +627,6 @@ export function GeneratePage({ current }: GeneratePageProps) {
             }
 
             setLastSubmittedId(logId)
-            setAcceptedConsentKey(null)
             setIsGenerating(false) // Unlock immediately
             if (currentPage === 1) {
                 fetchHistory(1) // Refresh immediately
@@ -663,8 +657,6 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const handleModeChange = (mode: GenMode) => {
         if (genMode !== mode) {
             setGenMode(mode)
-            setSourceRights('external')
-            setAcceptedConsentKey(null)
             setPrompt('')
             setImageFile(null)
             setImagePreviewUrl(null)
@@ -1038,8 +1030,6 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                         if (e.target.files && e.target.files[0]) {
                                                             const file = e.target.files[0];
                                                             setImageFile(null);
-                                                            setSourceRights('external');
-                                                            setAcceptedConsentKey(null);
                                                             const reader = new FileReader();
                                                             reader.onload = (ev) => {
                                                                 if (ev.target?.result) {
@@ -1388,14 +1378,9 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                     </div>
                                 )}
 
-                                {hasLocalReference && <>
-                                    <SourceRightsField current={current} value={sourceRights} onChange={setSourceRights} />
-                                    <p className="text-xs text-white/50 m-0">{current.skinLicense.referenceConsent}</p>
-                                </>}
-                                <SkinLicenseNotice current={current} code={effectiveLicense} isPublic={!isPrivate}
-                                    publicLicense={licensePolicy.policy?.public_license} />
-                                {!isPrivate && <PublicLicenseConsent current={current} checked={hasPublicConsent}
-                                    onChange={accepted => setAcceptedConsentKey(accepted ? consentKey : null)} />}
+                                <GeneratedLicenseCard key={licensePolicy.key} current={current} code={effectiveLicense}
+                                    isPublic={!isPrivate} isPro={isPro} hasParent={!!sourceId}
+                                    onUpgrade={() => navigate('/pro')} />
 
                                 {queueStatus && queueStatus.queued_count > 0 && (
                                     <div className={`mb-2.5 px-3 py-2 border flex flex-col gap-1.5 text-xs ${current.fontClass} transition-colors select-none bg-amber-950/30 border-amber-500/40 text-amber-300`}>
@@ -1444,7 +1429,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                           (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) ||
                                           (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) ||
                                           (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled) ||
-                                          ((!licensePolicy.ready || (!isPrivate && !hasPublicConsent)) && !(modelProStates[modelVersion] && !isPro))
+                                          (!licensePolicy.ready && !(modelProStates[modelVersion] && !isPro))
                                       }
                                       onClick={(() => {
                                           const isMaintenance = (genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled);
@@ -1454,7 +1439,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                           return shouldSubscribe ? () => navigate('/pro') : handleGenerate;
                                       })()}
                                       className={`py-3 lg:py-4 border-2 border-black cursor-pointer disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-xs lg:text-sm active:transform active:translate-y-0.5 w-full ${current.fontClass} ${
-                                          ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled) || ((!licensePolicy.ready || (!isPrivate && !hasPublicConsent)) && !(modelProStates[modelVersion] && !isPro)))
+                                          ((genMode === 'aigc_text_to_skin' && !isTextToSkinEnabled) || (genMode === 'aigc_image_to_skin' && !isImageToSkinEnabled) || (genMode === 'aigc_image_edit_to_skin' && !isImageEditToSkinEnabled) || (!licensePolicy.ready && !(modelProStates[modelVersion] && !isPro)))
                                               ? 'bg-gray-700 text-white/40 cursor-not-allowed border-black'
                                               : (modelVersion && modelProStates[modelVersion] && !isPro)
                                                   ? 'bg-gradient-to-r from-yellow-600 via-amber-500 to-yellow-600 hover:from-yellow-500 hover:to-amber-400 text-black font-bold border-yellow-400'

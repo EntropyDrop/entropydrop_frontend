@@ -198,8 +198,9 @@ consumers. `useLatestRequest` scopes concurrent search/detail work and cancels i
 on replacement or unmount. `mcmodal/useSkinDetails` loads ancestry and counts in
 parallel after the main detail arrives. Generation, editor saves and public
 Collection uploads preview backend license policy through `hooks/useSkinLicensePolicy`.
-Generation and editor saves share `components/SkinLicenseNotice`; public Collection
-uploads reuse the editor's rights confirmation copy.
+Generation uses the compact `components/GeneratedLicenseCard` with collapsed details;
+editor saves use `components/SkinLicenseNotice`, and public Collection uploads reuse
+the editor's rights confirmation copy.
 
 The forum separates `useForumData`, `useForumActions` and presentation components.
 Its editor, post detail and video form load only when opened. Run
@@ -235,8 +236,11 @@ over a new source declaration. Manual edits inherit the owner's existing grant,
 including after Pro expires; other users receive only the source's public license.
 Collections link existing records and never recalculate rights or change visibility.
 
-New public generations send `public_license_consent=true`. Manual public saves also
-send it after confirmation. Independent uploads send the legacy `license_consent`
+Generation has no source-category selector or separate consent checkbox. Submitting
+a public generation sends `public_license_consent=true`; private generation sends false.
+Local reference images default to source permissions on the backend, without an
+original-work declaration or a commercial upgrade. The preview uses the same rule.
+Manual public saves send it after confirmation. Independent uploads send the legacy `license_consent`
 submission flag; private Collection uploads need no separate confirmation UI.
 For older clients, an omitted public-consent field falls back to that legacy combined
 confirmation. An explicit `public_license_consent=false` always blocks public saving.

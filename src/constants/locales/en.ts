@@ -196,6 +196,8 @@ export default {
         licenseTitle: 'License for Generated Work',
         licenseCommercial: 'Creator Commercial License',
         licenseUnknown: 'Unknown License',
+        licenseSource: 'Source license',
+        licenseSourceSummary: 'The original license applies to this generation.',
         licenseCommercialBadge: 'Commercial',
         licenseNonCommercialBadge: 'CC BY-NC 4.0',
         licenseUnknownBadge: 'Unknown',

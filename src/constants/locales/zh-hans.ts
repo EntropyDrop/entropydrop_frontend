@@ -196,6 +196,8 @@ export default {
         licenseTitle: '生成作品使用许可',
         licenseCommercial: '生成者永久商用许可',
         licenseUnknown: '许可未知',
+        licenseSource: '来源许可',
+        licenseSourceSummary: '本次生成仍适用来源作品的许可。',
         licenseCommercialBadge: '商用',
         licenseNonCommercialBadge: 'CC BY-NC 4.0',
         licenseUnknownBadge: '未知',
