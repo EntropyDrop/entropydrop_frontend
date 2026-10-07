@@ -19,7 +19,7 @@ const compiled = build({
         export { useDiscoverySearch } from './src/pages/discovery/useDiscoverySearch';
         export { useSkinDetails } from './src/components/mcmodal/useSkinDetails';
         export { useForumData } from './src/pages/figure/useForumData';
-        export { resolveSaveLicense } from './src/pages/edit/useSaveLicensePreview';
+        export { useSkinLicensePolicy } from './src/hooks/useSkinLicensePolicy';
         export { DiscoveryPage } from './src/pages/DiscoveryPage';
         export { FigurePage } from './src/pages/FigurePage';
         export { Layout } from './src/components/Layout';
@@ -275,15 +275,29 @@ test('forum loads the editor only when the publish form opens', async () => {
     } finally { await env.close(); }
 });
 
-test('save-license policy preserves ownership and pro rules', async () => {
-    const env = await setup();
+test('license previews discard late source permissions and never enable saving on failures', async () => {
+    const late = deferred();
+    const env = await setup(async input => {
+        const url = new URL(input);
+        if (url.pathname === '/api/users/me') return json({ id: 'owner', is_pro: true });
+        if (url.searchParams.get('parent') === 'old') return late.promise;
+        if (url.searchParams.get('parent') === 'failed') return json({ detail: 'Denied' }, 403);
+        return json({ code: 'cc-by-nc-4.0', is_pro: true, parent_is_private: false, public_license: 'cc-by-nc-4.0' });
+    });
+    function Preview({ parent }) {
+        const policy = env.useSkinLicensePolicy({ operation: 'save', parentId: parent });
+        return React.createElement('button', { disabled: !policy.ready }, policy.code);
+    }
     try {
-        const user = { id: '42', is_pro: true };
-        assert.equal(env.resolveSaveLicense(user, null), 'entropydrop-commercial-1.0');
-        const parent = { ...skin('parent'), creator: { id: 42 }, license: { code: 'entropydrop-commercial-1.0' } };
-        assert.equal(env.resolveSaveLicense(user, parent), 'entropydrop-commercial-1.0');
-        assert.equal(env.resolveSaveLicense({ ...user, id: 'other' }, parent), 'cc-by-nc-4.0');
-        assert.equal(env.resolveSaveLicense(user, { ...parent, license: { code: 'unknown' } }), 'unknown');
+        await env.render(React.createElement(Preview, { parent: 'old' }));
+        assert.equal(env.node.querySelector('button').disabled, true);
+        await env.render(React.createElement(Preview, { parent: 'new' }));
+        assert.equal(env.node.textContent, 'cc-by-nc-4.0');
+        await React.act(() => late.resolve(json({ code: 'entropydrop-commercial-1.0', is_pro: true })));
+        assert.equal(env.node.textContent, 'cc-by-nc-4.0');
+        await env.render(React.createElement(Preview, { parent: 'failed' }));
+        assert.equal(env.node.textContent, 'unavailable');
+        assert.equal(env.node.querySelector('button').disabled, true);
     } finally { await env.close(); }
 });
 

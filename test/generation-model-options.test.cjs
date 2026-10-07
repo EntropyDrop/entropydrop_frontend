@@ -5,7 +5,6 @@ const vm = require('node:vm');
 const { build } = require('esbuild');
 const { JSDOM } = require('jsdom');
 const React = require('react');
-const { createRoot } = require('react-dom/client');
 const { MemoryRouter } = require('react-router-dom');
 
 const model = 'SKING_DDJ_v101c';
@@ -28,11 +27,12 @@ const compiled = build({
     } }],
 }).then(result => result.outputFiles[0].text);
 
-async function mount(isPro, { imageOptions = options, maintenance = [], userStatusReady } = {}) {
+async function mount(isPro, { imageOptions = options, maintenance = [], userStatusReady, enableText = false } = {}) {
     const dom = new JSDOM('<div id="root"></div>', { url: 'https://site.example.test/skin/generate' });
     const { window } = dom;
     window.localStorage.setItem('token', 'test-session');
     const requests = [];
+    const writes = [];
     const visuals = {
         Icon: ({ icon }) => React.createElement('svg', { 'data-icon': icon }),
         AnimatePresence: ({ children }) => children,
@@ -47,22 +47,28 @@ async function mount(isPro, { imageOptions = options, maintenance = [], userStat
         Event: window.Event, setInterval, clearInterval, setTimeout, clearTimeout, console,
         require: name => name === 'generation-visuals' ? visuals : require(name),
         module, exports: module.exports,
-        fetch: async input => {
+        fetch: async (input, init) => {
             const url = new URL(input);
             requests.push(url);
             let data;
             switch (url.pathname) {
                 case '/api/models': data = {
-                    image_to_skin_models: [...new Set(imageOptions.map(option => option.model_version))],
+                    image_to_skin_models: [...new Set(imageOptions.map(option => option.model_version)), ...(enableText ? ['sking_v73_flux_4b_000027000'] : [])],
                     image_to_skin_options: imageOptions,
-                    text_to_image_models: [], image_edit_models: [],
+                    text_to_image_models: enableText ? ['z_image'] : [], image_edit_models: [],
                 }; break;
+                case '/api/licenses/preview':
+                    data = { code: url.searchParams.get('source_rights') === 'external' ? 'source-license'
+                        : isPro ? 'entropydrop-commercial-1.0' : 'cc-by-nc-4.0',
+                        is_pro: isPro, parent_is_private: false, public_license: 'cc-by-nc-4.0' }; break;
                 case '/api/users/me':
                     await userStatusReady;
                     data = { id: 'test-user', is_pro: isPro }; break;
+                case '/api/generate': writes.push(init.body); data = { id: 'generated' }; break;
                 case '/api/history': data = { items: [], total_pages: 0, page: 1 }; break;
                 case '/api/generate/queue_status': data = { queued_count: 0, processing_count: 0, total_queue_count: 0 }; break;
                 case '/api/generation_credit_cost': {
+                    if (enableText && url.searchParams.has('aux_model_version')) { data = { credits: 4, is_pro: false, under_maintenance: false }; break; }
                     const tier = url.searchParams.get('pricing_tier');
                     const option = imageOptions.find(option => option.model_version === url.searchParams.get('model_version')
                         && option.pricing_tier === tier);
@@ -82,11 +88,12 @@ async function mount(isPro, { imageOptions = options, maintenance = [], userStat
     global.document = window.document;
     global.IS_REACT_ACT_ENVIRONMENT = true;
     const node = window.document.getElementById('root');
+    const { createRoot } = require('react-dom/client');
     const root = createRoot(node);
     await React.act(() => root.render(React.createElement(MemoryRouter,
         { initialEntries: ['/skin/generate'] }, React.createElement(GeneratePage, { current }))));
     return {
-        node, requests, current, generationModelParams,
+        node, window, requests, writes, current, generationModelParams,
         trigger: () => node.querySelector(`button[aria-label="${current.generate.modelVersion}"]`),
         click: button => React.act(() => button.click()),
         async close() {
@@ -109,6 +116,8 @@ for (const isPro of [false, true]) {
                 const subscribe = [...env.node.querySelectorAll('button')].find(button =>
                     button.textContent.includes(env.current.generate.btnSubscribePro));
                 assert.ok(subscribe, 'Free user sees the Pro subscription action');
+                assert.equal(subscribe.disabled, false);
+                assert.ok(subscribe.className.includes('from-yellow-600'));
             }
             await env.click(trigger);
             const entries = [...env.node.querySelectorAll('button')].filter(button =>
@@ -193,3 +202,49 @@ test('A pending Pro status switches the selected model to its matching Pro optio
         assert.match(env.trigger().textContent, /PRO ONLY\s*4/);
     } finally { await env.close(); }
 });
+
+test('generation requires public confirmation and keeps external reference permissions', async () => {
+    const env = await mount(true);
+    try {
+        const button = () => [...env.node.querySelectorAll('button')].find(node => node.textContent.includes(env.current.generate.btnStart));
+        assert.ok(env.node.textContent.includes(env.current.skinLicense.source));
+        assert.equal(button().disabled, true);
+        const consent = [...env.node.querySelectorAll('input[type="checkbox"]')].find(input => input.parentElement.textContent.includes(env.current.skinLicense.publicConsent));
+        await env.click(consent);
+        assert.equal(button().disabled, false);
+        const source = env.node.querySelector('select');
+        await React.act(() => { source.value = 'original'; source.dispatchEvent(new env.window.Event('change', { bubbles: true })); });
+        assert.ok(env.node.textContent.includes(env.current.skinLicense.commercial));
+        assert.equal(button().disabled, true, 'A changed source requires a new confirmation');
+    } finally { await env.close(); }
+});
+
+for (const [isPro, isPublic] of [[false, true], [true, true], [true, false]]) {
+    test(`text generation submits ${isPro ? 'Pro' : 'Free'} ${isPublic ? 'public' : 'private'} visibility and consent`, async () => {
+        const env = await mount(isPro, { enableText: true });
+        try {
+            await env.click([...env.node.querySelectorAll('button')].find(button => button.textContent.includes('Text to skin')));
+            const textarea = env.node.querySelector('textarea');
+            await React.act(() => {
+                Object.getOwnPropertyDescriptor(env.window.HTMLTextAreaElement.prototype, 'value').set.call(textarea, 'robot');
+                textarea.dispatchEvent(new env.window.Event('input', { bubbles: true }));
+            });
+            if (!isPublic) {
+                const privateRadio = [...env.node.querySelectorAll('input[type="radio"]')].find(input => input.closest('label').textContent.includes(env.current.generate.private));
+                await env.click(privateRadio);
+            } else {
+                const consent = [...env.node.querySelectorAll('input[type="checkbox"]')].find(input => input.parentElement.textContent.includes(env.current.skinLicense.publicConsent));
+                await env.click(consent);
+            }
+            const generate = [...env.node.querySelectorAll('button')].find(button => button.textContent.includes(env.current.generate.btnStart));
+            assert.equal(generate.disabled, false);
+            await env.click(generate);
+            assert.equal(env.writes.length, 1);
+            assert.equal(env.writes[0].get('mode'), 'aigc_text_to_skin');
+            assert.equal(env.writes[0].get('is_public'), String(isPublic));
+            assert.equal(env.writes[0].get('public_license_consent'), String(isPublic));
+            assert.equal(env.writes[0].has('source_rights'), false);
+            assert.equal(env.writes[0].has('requested_license'), false);
+        } finally { await env.close(); }
+    });
+}

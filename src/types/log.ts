@@ -7,7 +7,7 @@ export interface GenerationLogItemBrief {
 }
 
 export interface SkinLicense {
-    code: 'unknown' | 'cc-by-nc-4.0' | 'entropydrop-commercial-1.0'
+    code: 'unknown' | 'cc-by-nc-4.0' | 'entropydrop-commercial-1.0' | 'original-work' | 'source-license'
     public_license: 'cc-by-nc-4.0' | null
     version: number
     granted_at: string | null

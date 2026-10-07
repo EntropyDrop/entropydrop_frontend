@@ -16,7 +16,9 @@
     "test:auth": "node --test test/auth-session.test.cjs",
     "test:discovery": "node --test test/discovery-loading.test.cjs test/skin-preview-cache.test.cjs",
     "test:architecture": "node --test test/architecture.test.cjs",
-    "test:collection": "node --test test/collection-page.test.cjs"
+    "test:collection": "node --test test/collection-page.test.cjs",
+    "test:edit": "node --test test/edit-save.test.cjs",
+    "test:licenses": "node --test test/edit-save.test.cjs test/collection-page.test.cjs test/generation-model-options.test.cjs test/architecture.test.cjs"
   },
   "dependencies": {
     "@iconify-json/pixelarticons": "^1.2.5",

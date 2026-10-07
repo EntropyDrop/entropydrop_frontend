@@ -1,3 +1,5 @@
+import { SkinLicenseNotice } from '../components/SkinLicenseNotice'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { useSaveLicensePreview } from './edit/useSaveLicensePreview'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
@@ -211,7 +213,11 @@ export function EditPage({ current }: EditPageProps) {
     const [showOverlay, setShowOverlay] = useState(true);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isSavingToCreation, setIsSavingToCreation] = useState(false);
-    const { saveLicensePreview, selectedSaveLicense, setSelectedSaveLicense, isProUser } = useSaveLicensePreview(parentSkinId);
+    const importRequestRef = useRef(0);
+    const [pendingImport, setPendingImport] = useState<{ image: HTMLImageElement; requestId: number } | null>(null);
+    const [publicConfirmationKey, setPublicConfirmationKey] = useState<string | null>(null);
+    const { saveLicensePreview, isProUser, parentIsPrivate, policyKey } = useSaveLicensePreview(parentSkinId);
+    const sourceIsPrivate = parentIsPrivate ?? isParentPrivate;
     const [isLocalImport, setIsLocalImport] = useState(false);
     const [isAdjustPanelOpen, setIsAdjustPanelOpen] = useState(false);
     const [hsb, setHsb] = useState({ h: 0, s: 0, b: 0, c: 0 });
@@ -376,8 +382,9 @@ export function EditPage({ current }: EditPageProps) {
 
     const handleSaveToCreation = async (isPublic: boolean) => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas || !isSaveLicenseReady || (isPublic ? sourceIsPrivate : !isProUser)) return;
 
+        setPublicConfirmationKey(null);
         setIsSavingToCreation(true);
         canvas.toBlob(async (blob) => {
             if (!blob) {
@@ -392,12 +399,7 @@ export function EditPage({ current }: EditPageProps) {
             } else {
                 formData.append('license_consent', 'true');
             }
-            const requestedLicense = saveLicensePreview === 'entropydrop-commercial-1.0'
-                ? selectedSaveLicense
-                : saveLicensePreview;
-            if (requestedLicense === 'entropydrop-commercial-1.0' || requestedLicense === 'cc-by-nc-4.0') {
-                formData.append('requested_license', requestedLicense);
-            }
+            formData.append('public_license_consent', String(isPublic));
 
             const targetCol = isPublic ? 'creations_public' : 'creations_private';
             try {
@@ -708,65 +710,70 @@ export function EditPage({ current }: EditPageProps) {
     };
 
 
+    const confirmImport = () => {
+        if (!pendingImport || pendingImport.requestId !== importRequestRef.current || !ctx) return;
+        const img = pendingImport.image;
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        if (!tempCtx) return;
+        tempCanvas.width = img.width;
+        tempCanvas.height = img.height;
+        tempCtx.drawImage(img, 0, 0);
+
+        ctx.clearRect(0, 0, 64, 64);
+        if (img.height === 32) {
+            ctx.drawImage(img, 0, 0);
+            ctx.putImageData(tempCtx.getImageData(40, 16, 16, 16), 32, 48);
+            ctx.putImageData(tempCtx.getImageData(0, 16, 16, 16), 16, 48);
+        } else {
+            ctx.drawImage(img, 0, 0, 64, 64);
+        }
+
+        texture?.dispose();
+        const canvas = canvasRef.current;
+        if (canvas) {
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            tex.colorSpace = THREE.SRGBColorSpace;
+            setTexture(tex);
+        }
+        setUpdateTrigger(prev => prev + 1);
+        setIsEmptyModel(false);
+        setParentSkinId(null);
+        setIsParentPrivate(false);
+        setIsLocalImport(true);
+        setPublicConfirmationKey(null);
+        setBasedOnSkinRenderUrl(null);
+        setModelType(isSlim(img) ? 'alex' : 'steve');
+        const imageData = ctx.getImageData(0, 0, 64, 64);
+        setHistory({ list: [{ data: imageData, hsb: { h: 0, s: 0, b: 0, c: 0 }, kmeansK: Math.min(48, Math.max(2, getUniqueColors(imageData).length)) }], index: 0 });
+        setPendingImport(null);
+    };
+
     const handleImport = (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        // A canceled confirmation must still allow selecting the same file again.
+        e.target.value = '';
         if (!file) return;
-
-        // TODO Check if it is a valid 64x64 texture
+        const requestId = ++importRequestRef.current;
+        setPendingImport(null);
+        setIsDropdownOpen(false);
+        setPublicConfirmationKey(null);
         const reader = new FileReader();
         reader.onload = (event) => {
+            if (requestId !== importRequestRef.current) return;
             const img = new Image();
             img.onload = () => {
-                const isValidDimension = (img.width === 64 && (img.height === 64 || img.height === 32));
-                if (!isValidDimension) {
+                if (requestId !== importRequestRef.current) return;
+                if (img.width !== 64 || (img.height !== 64 && img.height !== 32)) {
                     showError(current.edit.invalidDimensions);
                     return;
                 }
-                if (!ctx) return;
-
-                const tempCanvas = document.createElement('canvas');
-                const tempCtx = tempCanvas.getContext('2d');
-                if (!tempCtx) return;
-                tempCanvas.width = img.width;
-                tempCanvas.height = img.height;
-                tempCtx.drawImage(img, 0, 0);
-
-                ctx.clearRect(0, 0, 64, 64);
-
-                if (img.width === 64 && img.height === 32) {
-                    ctx.drawImage(img, 0, 0);
-
-                    const armData = tempCtx.getImageData(40, 16, 16, 16);
-                    ctx.putImageData(armData, 32, 48);
-
-                    const legData = tempCtx.getImageData(0, 16, 16, 16);
-                    ctx.putImageData(legData, 16, 48);
-                } else {
-                    ctx.drawImage(img, 0, 0, 64, 64);
-                }
-
-                if (texture) {
-                    texture.dispose();
-                }
-                const canvas = canvasRef.current;
-                if (canvas) {
-                    const tex = new THREE.CanvasTexture(canvas);
-                    tex.magFilter = THREE.NearestFilter;
-                    tex.minFilter = THREE.NearestFilter;
-                    tex.colorSpace = THREE.SRGBColorSpace;
-                    setTexture(tex);
-                }
-                setUpdateTrigger(prev => prev + 1);
-                setIsEmptyModel(false);
-
-                setParentSkinId(null);
-                setIsParentPrivate(false);
-                setIsLocalImport(true);
-                setBasedOnSkinRenderUrl(null);
-                setModelType(isSlim(img) ? 'alex' : 'steve');
-                const imageData = ctx.getImageData(0, 0, 64, 64);
-                setHistory({ list: [{ data: imageData, hsb: { h: 0, s: 0, b: 0, c: 0 }, kmeansK: Math.min(48, Math.max(2, getUniqueColors(imageData).length)) }], index: 0 });
-                e.target.value = '';
+                setPendingImport({ image: img, requestId });
+            };
+            img.onerror = () => {
+                if (requestId === importRequestRef.current) showError(current.edit.invalidDimensions);
             };
             img.src = event.target?.result as string;
         };
@@ -806,36 +813,8 @@ export function EditPage({ current }: EditPageProps) {
         '#FFFFFF', '#D1D5DB', '#6B7280', '#4B5563', '#1F2937',
     ];
 
-    const effectiveSaveLicense = saveLicensePreview === 'entropydrop-commercial-1.0'
-        ? selectedSaveLicense
-        : saveLicensePreview;
-    const saveLicenseLabel = effectiveSaveLicense === 'entropydrop-commercial-1.0'
-        ? current.edit.saveLicenseCommercial
-        : effectiveSaveLicense === 'cc-by-nc-4.0'
-            ? 'CC BY-NC 4.0'
-            : effectiveSaveLicense === 'unknown'
-                ? current.edit.saveLicenseUnknown
-                : effectiveSaveLicense === 'loading'
-                    ? current.edit.saveLicenseLoading
-                    : current.edit.saveLicenseUnavailable;
-    const saveLicenseDescription = effectiveSaveLicense === 'entropydrop-commercial-1.0'
-        ? parentSkinId
-            ? current.edit.saveLicenseCommercialDescription
-            : current.edit.saveLicenseCommercialNewDescription
-        : effectiveSaveLicense === 'cc-by-nc-4.0'
-            ? current.edit.saveLicenseNonCommercialDescription
-            : effectiveSaveLicense === 'unknown'
-                ? current.edit.saveLicenseUnknownDescription
-                : effectiveSaveLicense === 'loading'
-                    ? current.edit.saveLicenseLoadingDescription
-                    : current.edit.saveLicenseUnavailableDescription;
-    const saveLicenseTone = effectiveSaveLicense === 'entropydrop-commercial-1.0'
-        ? 'border-emerald-500/25 bg-emerald-500/5 text-emerald-300'
-        : effectiveSaveLicense === 'cc-by-nc-4.0'
-            ? 'border-blue-500/25 bg-blue-500/5 text-blue-300'
-            : 'border-orange-500/25 bg-orange-500/5 text-orange-300';
-    const isSaveLicenseReady = effectiveSaveLicense !== 'loading' && effectiveSaveLicense !== 'unavailable';
-    const isPublicSaveDisabled = isSavingToCreation || isParentPrivate || !isSaveLicenseReady;
+    const isSaveLicenseReady = saveLicensePreview !== 'loading' && saveLicensePreview !== 'unavailable';
+    const isPublicSaveDisabled = isSavingToCreation || sourceIsPrivate || !isSaveLicenseReady;
     const isPrivateSaveDisabled = isSavingToCreation || !isProUser || !isSaveLicenseReady;
 
     return (
@@ -1137,48 +1116,14 @@ export function EditPage({ current }: EditPageProps) {
                                                             <div className="text-[10px] text-white/60 pb-1 border-b border-white/5 mb-1 font-pixel-hans">
                                                                 {current.edit.saveToCreations}
                                                             </div>
-                                                            <div className={`border p-2 flex flex-col gap-1.5 ${saveLicenseTone}`}>
-                                                                <div className="flex items-center gap-1.5 text-[9px] font-pixel-hans uppercase tracking-wider text-white/50">
-                                                                    <Icon icon="pixelarticons:shield" className="text-xs" />
-                                                                    <span>{current.edit.saveLicenseTitle}</span>
-                                                                </div>
-                                                                <div className="text-[10px] font-pixel-hans font-bold">
-                                                                    {saveLicenseLabel}
-                                                                </div>
-                                                                <p className="m-0 text-[9px] leading-relaxed text-white/55 font-pixel-hans">
-                                                                    {saveLicenseDescription}
-                                                                </p>
-                                                                {saveLicensePreview === 'entropydrop-commercial-1.0' && (
-                                                                    <div className="grid grid-cols-2 gap-1.5 pt-1" role="radiogroup" aria-label={current.edit.saveLicenseChoose}>
-                                                                        <button
-                                                                            type="button"
-                                                                            role="radio"
-                                                                            aria-checked={selectedSaveLicense === 'entropydrop-commercial-1.0'}
-                                                                            onClick={() => setSelectedSaveLicense('entropydrop-commercial-1.0')}
-                                                                            className={`p-1.5 border text-[9px] font-pixel-hans cursor-pointer transition-colors ${selectedSaveLicense === 'entropydrop-commercial-1.0'
-                                                                                ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-200'
-                                                                                : 'border-white/10 bg-black/20 text-white/50 hover:bg-white/5'
-                                                                                }`}
-                                                                        >
-                                                                            {current.edit.saveLicenseCommercialOption}
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            role="radio"
-                                                                            aria-checked={selectedSaveLicense === 'cc-by-nc-4.0'}
-                                                                            onClick={() => setSelectedSaveLicense('cc-by-nc-4.0')}
-                                                                            className={`p-1.5 border text-[9px] font-pixel-hans cursor-pointer transition-colors ${selectedSaveLicense === 'cc-by-nc-4.0'
-                                                                                ? 'border-blue-400/60 bg-blue-500/20 text-blue-200'
-                                                                                : 'border-white/10 bg-black/20 text-white/50 hover:bg-white/5'
-                                                                                }`}
-                                                                        >
-                                                                            CC BY-NC 4.0
-                                                                        </button>
-                                                                    </div>
-                                                                )}
-                                                            </div>
+                                                            {sourceIsPrivate ? <p className="text-xs text-white/60 m-0">
+                                                                {saveLicensePreview === 'unavailable' ? current.skinLicense.unavailableDescription : current.skinLicense.privateInherited}
+                                                            </p> : saveLicensePreview === 'source-license' ? <div className={`border border-white/15 bg-white/[0.03] p-3 flex flex-col gap-2 text-xs leading-relaxed ${current.fontClass}`}>
+                                                                <p className="m-0 text-white/80">{current.edit.publicSaveLicenseNotice}</p>
+                                                                <p className="m-0 text-white/55">{current.edit.privateSaveLicenseNotice}</p>
+                                                            </div> : <SkinLicenseNotice current={current} code={saveLicensePreview} />}
                                                             <button
-                                                                onClick={() => !isPublicSaveDisabled && handleSaveToCreation(true)}
+                                                                onClick={() => !isPublicSaveDisabled && setPublicConfirmationKey(policyKey)}
                                                                 disabled={isPublicSaveDisabled}
                                                                 className={`text-left p-1.5 text-[10px] flex items-center gap-1 transition-colors ${isPublicSaveDisabled
                                                                     ? 'opacity-40 cursor-not-allowed bg-white/5 border border-white/5 text-white/30'
@@ -1188,7 +1133,7 @@ export function EditPage({ current }: EditPageProps) {
                                                                 <Icon icon="pixelarticons:folder" className="text-[#4ea632]" />
                                                                 <span className={current.fontClass}>{current.edit.saveAsPublic}</span>
                                                             </button>
-                                                            {isParentPrivate && (
+                                                            {sourceIsPrivate && (
                                                                 <div className="text-[9px] text-yellow-500/80 px-1.5 py-0.5 font-pixel-hans">
                                                                     {current.edit.privateModelWarning}
                                                                 </div>
@@ -1335,6 +1280,15 @@ export function EditPage({ current }: EditPageProps) {
                     )}
                 </div>
 
+                <ConfirmModal isOpen={pendingImport !== null} current={current}
+                    title={current.edit.importRightsTitle} message={current.edit.importRightsMessage}
+                    confirmText={current.edit.confirmImport}
+                    onClose={() => { importRequestRef.current += 1; setPendingImport(null); }}
+                    onConfirm={confirmImport} />
+                <ConfirmModal isOpen={publicConfirmationKey === policyKey} current={current}
+                    title={current.skinLicense.publicTitle} message={current.edit.publicSaveRightsMessage}
+                    onClose={() => setPublicConfirmationKey(null)}
+                    onConfirm={() => { if (!isPublicSaveDisabled) void handleSaveToCreation(true); }} />
                 <canvas ref={canvasRef} style={{ display: 'none' }} />
             </div>
         </PageContainer>

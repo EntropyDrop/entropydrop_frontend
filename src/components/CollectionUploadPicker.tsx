@@ -8,7 +8,7 @@ export interface UploadTargetCollection {
     is_public: boolean
     item_count: number
     original_creation: boolean
-    user_id?: number
+    user_id?: number | string
 }
 
 interface CollectionUploadPickerProps {

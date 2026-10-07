@@ -234,23 +234,19 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     };
 
     const renderLicenseInfo = () => {
-        if (!item.id || !item.license) return null;
+        if (!item.id || !item.license || !item.is_public) return null;
 
-        const mainDescription = licenseCode === 'unknown'
+        const hasPublicLicense = publicLicense === 'cc-by-nc-4.0';
+        const isLicenseUnknown = !hasCreatorCommercialLicense && !hasPublicLicense;
+        const mainDescription = isLicenseUnknown
             ? current.mcmodal.licenseUnknownDescription
             : hasCreatorCommercialLicense
                 ? current.mcmodal.creatorCommercialDescription
-                : item.is_public
-                    ? current.mcmodal.publicNonCommercialDescription
-                    : current.mcmodal.privateLicenseDescription;
-
-        const hasDetailedNotices = (item.is_public && licenseCode === 'entropydrop-commercial-1.0') ||
-            (!item.is_public && publicLicense === 'cc-by-nc-4.0') ||
-            (publicLicense === 'cc-by-nc-4.0') ||
-            Boolean(current.mcmodal.thirdPartyRightsNotice);
+                : current.mcmodal.publicNonCommercialDescription;
+        const hasDetailedNotices = hasPublicLicense || Boolean(current.mcmodal.thirdPartyRightsNotice);
 
         return (
-            <div className={`border p-2.5 flex flex-col gap-2 transition-all ${licenseCode === 'unknown'
+            <div className={`border p-2.5 flex flex-col gap-2 transition-all ${isLicenseUnknown
                 ? 'bg-orange-500/5 border-orange-500/20'
                 : hasCreatorCommercialLicense
                     ? 'bg-emerald-500/5 border-emerald-500/20'
@@ -261,13 +257,13 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                         <Icon icon="pixelarticons:shield" className="text-sm shrink-0" />
                         <span>{current.mcmodal.licenseTitle}</span>
                     </div>
-                    <span className={`text-xs font-pixel-hans px-2 py-0.5 border font-bold ${licenseCode === 'unknown'
+                    <span className={`text-xs font-pixel-hans px-2 py-0.5 border font-bold ${isLicenseUnknown
                         ? 'text-orange-300 border-orange-500/30 bg-orange-500/10'
                         : hasCreatorCommercialLicense
                             ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10'
                             : 'text-blue-300 border-blue-500/30 bg-blue-500/10'
                         }`}>
-                        {licenseCode === 'unknown'
+                        {isLicenseUnknown
                             ? current.mcmodal.licenseUnknown
                             : hasCreatorCommercialLicense
                                 ? current.mcmodal.creatorCommercialLicense
@@ -275,20 +271,19 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                     </span>
                 </div>
 
-                {/* Key Summary / Main License Description - Always Exposed */}
                 <p className="m-0 text-xs leading-relaxed text-white/90 font-pixel-hans">
                     {mainDescription}
                 </p>
 
-                {/* Auxiliary Legal Notices & Terms - Collapsible */}
                 {hasDetailedNotices && (
                     <>
                         <button
                             type="button"
+                            aria-expanded={isLicenseExpanded}
                             onClick={() => setIsLicenseExpanded(prev => !prev)}
                             className="flex items-center justify-between text-[11px] text-white/50 hover:text-white/80 transition-colors pt-1.5 border-t border-white/5 cursor-pointer font-pixel-hans w-full text-left"
                         >
-                            <span>{isLicenseExpanded ? (current.mcmodal.licenseHideDetails || '收起详情') : (current.mcmodal.licenseViewDetails || '查看详情')}</span>
+                            <span>{isLicenseExpanded ? current.mcmodal.licenseHideDetails : current.mcmodal.licenseViewDetails}</span>
                             <Icon icon={isLicenseExpanded ? "pixelarticons:chevron-up" : "pixelarticons:chevron-down"} className="text-sm shrink-0" />
                         </button>
 
@@ -301,7 +296,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                     transition={{ duration: 0.2 }}
                                     className="flex flex-col gap-2 overflow-hidden pt-1"
                                 >
-                                    {item.is_public && licenseCode === 'entropydrop-commercial-1.0' && (
+                                    {hasPublicLicense && licenseCode === 'entropydrop-commercial-1.0' && (
                                         <p className="m-0 text-[11px] leading-relaxed text-amber-300/80 font-pixel-hans">
                                             {isOwner
                                                 ? current.mcmodal.publicDoesNotGrantCommercial
@@ -309,13 +304,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                         </p>
                                     )}
 
-                                    {!item.is_public && publicLicense === 'cc-by-nc-4.0' && (
-                                        <p className="m-0 text-[11px] leading-relaxed text-amber-300/80 font-pixel-hans">
-                                            {current.mcmodal.previousPublicLicense}
-                                        </p>
-                                    )}
-
-                                    {publicLicense === 'cc-by-nc-4.0' && (
+                                    {hasPublicLicense && (
                                         <a
                                             href="https://creativecommons.org/licenses/by-nc/4.0/"
                                             target="_blank"

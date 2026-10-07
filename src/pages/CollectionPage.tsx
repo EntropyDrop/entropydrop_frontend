@@ -1,3 +1,5 @@
+import { useSkinLicensePolicy } from '../hooks/useSkinLicensePolicy'
+import { useCollectionMoveTargets } from '../hooks/useCollectionMoveTargets'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
@@ -21,7 +23,7 @@ interface Collection {
     is_public: boolean
     item_count: number
     original_creation: boolean
-    user_id?: number
+    user_id?: number | string
     previews?: any[]
 }
 
@@ -32,6 +34,7 @@ interface CollectionItem {
     type: string
     log_id?: string
     data: {
+        is_public?: boolean
         url?: string
         preview?: string
         result?: string
@@ -51,6 +54,7 @@ interface CollectionPageProps {
     current: LangData
 }
 
+
 export function CollectionPage({ current }: CollectionPageProps) {
     const authSession = useAuthSession();
     const navigate = useNavigate()
@@ -62,9 +66,15 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const sharedId = searchParams.get('id')
     const [publicCollections, setPublicCollections] = useState<Collection[]>([])
     const [privateCollections, setPrivateCollections] = useState<Collection[]>([])
-    const allCustom = [...publicCollections, ...privateCollections];
     const [originalCollections, setOriginalCollections] = useState<Collection[]>([])
     const [currentCollection, setCurrentCollection] = useState<Collection | null>(null)
+    const canUploadToCurrentCollection = Boolean(currentCollection && authSession && myUserId &&
+        (!userId || userId === myUserId) &&
+        String(currentCollection.id) === String(pathCollectionId || sharedId) &&
+        String(currentCollection.user_id) === myUserId && (
+            ['creations_public', 'creations_private'].includes(String(currentCollection.id)) || !currentCollection.original_creation
+        ))
+    const [isLoadingCollection, setIsLoadingCollection] = useState(false)
     const [items, setItems] = useState<CollectionItem[]>([])
     const [selectedItem, setSelectedItem] = useState<CollectionItem | null>(null)
     const [isLoading, setIsLoading] = useState(false)
@@ -74,11 +84,24 @@ export function CollectionPage({ current }: CollectionPageProps) {
         title: string;
         message: string;
         onConfirm: () => void;
+        uploadIsPublic?: boolean;
     }>({ isOpen: false, title: '', message: '', onConfirm: () => { } })
+    const isUploadConfirmation = confirmModal.uploadIsPublic !== undefined;
+    const uploadPolicy = useSkinLicensePolicy({ operation: 'save',
+        isPublic: confirmModal.uploadIsPublic, enabled: confirmModal.isOpen && isUploadConfirmation })
     const [newCollectionName, setNewCollectionName] = useState('')
     const [isNewCollectionPublic, setIsNewCollectionPublic] = useState(true)
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false)
     const [itemToMove, setItemToMove] = useState<CollectionItem | null>(null)
+    const canMoveItem = isMoveModalOpen && canUploadToCurrentCollection && !!itemToMove && typeof itemToMove.data.is_public === 'boolean' &&
+        String(itemToMove.collection_id) === String(currentCollection?.id)
+    const moveCollections = useCollectionMoveTargets({
+        enabled: canMoveItem, sourceCollectionId: currentCollection?.id, skinIsPublic: itemToMove?.data.is_public,
+    })
+    useEffect(() => {
+        setIsMoveModalOpen(false)
+        setItemToMove(null)
+    }, [authSession, pathCollectionId, sharedId])
     const [isUploadPickerOpen, setIsUploadPickerOpen] = useState(false)
     const [uploadPickerTab, setUploadPickerTab] = useState<'public' | 'private'>('public')
     const [uploadPickerCollections, setUploadPickerCollections] = useState<Collection[]>([])
@@ -216,7 +239,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         is_public: isPublic,
                         item_count: 0,
                         original_creation: true,
-                        user_id: myUserId ? Number(myUserId) : undefined
+                        user_id: myUserId || undefined
                     }
 
                 setUploadPickerCollections([originalTarget, ...(data.items || [])])
@@ -268,21 +291,58 @@ export function CollectionPage({ current }: CollectionPageProps) {
 
         // 3. Handle data fetching based on params
         const controller = new AbortController()
+        setIsLoadingCollection(false)
         if (userId) {
             if (pathCollectionId) {
+                const ownerId = pathCollectionId === 'liked' || pathCollectionId === 'creations_private' ? myUserId : userId;
                 // If we are in a collection but currentCollection is not set or different
-                if (!currentCollection || String(currentCollection.id) !== String(pathCollectionId)) {
+                if (!currentCollection || String(currentCollection.id) !== String(pathCollectionId) || String(currentCollection.user_id) !== ownerId) {
                     const allCustom = [...publicCollections, ...privateCollections];
                     // Try to find it in loaded lists first
-                    const found = allCustom.find(c => String(c.id) === String(pathCollectionId)) ||
-                        originalCollections.find(c => String(c.id) === String(pathCollectionId));
+                    const found = [...allCustom, ...originalCollections].find(c =>
+                        String(c.id) === String(pathCollectionId) && String(c.user_id) === ownerId);
 
                     if (found) {
                         setCurrentCollection(found);
                     } else {
-                        // If not found (e.g. direct link), we might need to fetch its info or just set a placeholder
-                        // The items fetch will use the userId from the URL anyway
-                        setCurrentCollection({ id: pathCollectionId, name: '...', is_public: true, item_count: 0 } as any);
+                        setCurrentCollection(null);
+                        const defaultName = pathCollectionId === 'liked' ? current.collection.myLikes
+                            : pathCollectionId === 'creations_public' ? current.collection.creationsPublic
+                            : pathCollectionId === 'creations_private' ? current.collection.creationsPrivate : null;
+                        if (defaultName) {
+                            setCurrentCollection({
+                                id: pathCollectionId, name: defaultName, item_count: 0, original_creation: true,
+                                is_public: pathCollectionId === 'creations_public',
+                                user_id: pathCollectionId === 'creations_public' ? userId : myUserId,
+                            });
+                        } else {
+                            setIsLoadingCollection(true);
+                            // A direct link has no cached collection metadata. Resolve its owner and
+                            // visibility before allowing uploads, including collections on later pages.
+                            const loadCollection = async () => {
+                                const baseUrl = userId === myUserId ? '/api/collections' : `/api/users/${userId}/collections`;
+                                let page = 1;
+                                let totalPages = 1;
+                                do {
+                                    const response = await apiFetch(`${baseUrl}?page=${page}&page_size=100&show_original_creation=false`, { signal: controller.signal });
+                                    if (!response.ok) return;
+                                    const data = await apiResponseJson(response);
+                                    if (controller.signal.aborted) return;
+                                    const collection = (data.items as Collection[]).find(candidate => String(candidate.id) === String(pathCollectionId));
+                                    if (collection) {
+                                        setCurrentCollection(collection);
+                                        return;
+                                    }
+                                    totalPages = data.total_pages;
+                                    page += 1;
+                                } while (page <= totalPages);
+                            };
+                            void loadCollection().catch(error => {
+                                if (!controller.signal.aborted) console.error('Failed to load collection details', error);
+                            }).finally(() => {
+                                if (!controller.signal.aborted) setIsLoadingCollection(false);
+                            });
+                        }
                     }
                 }
                 fetchItems(pathCollectionId, itemPage, userId, controller.signal);
@@ -403,6 +463,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         const finalBlob = await processFile();
         formData.append('file', finalBlob, file.name);
         formData.append('license_consent', 'true');
+        formData.append('public_license_consent', String(collection.is_public));
 
         try {
             let uploadColId = collection.id;
@@ -445,16 +506,25 @@ export function CollectionPage({ current }: CollectionPageProps) {
         }
     };
 
-    const confirmUploadItem = (file: File, collection: Collection) => {
+    const prepareUpload = (file: File, collection: Collection) => {
         if (file.size > 512 * 1024) {
             showError(current.collection.fileTooLarge);
+            return;
+        }
+        if (!collection.is_public && !isPro) {
+            showError(current.collection.privateQuotaExceeded);
+            return;
+        }
+        if (!collection.is_public) {
+            void uploadConfirmedItem(file, collection);
             return;
         }
 
         setConfirmModal({
             isOpen: true,
             title: current.collection.uploadLicenseTitle,
-            message: current.collection.uploadLicenseMessage,
+            message: `${current.edit.importRightsMessage}\n\n${current.edit.publicSaveRightsMessage}`,
+            uploadIsPublic: true,
             onConfirm: () => {
                 void uploadConfirmedItem(file, collection);
             }
@@ -468,7 +538,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         e.target.value = '';
         if (!file || !collection) return;
 
-        confirmUploadItem(file, collection)
+        prepareUpload(file, collection)
     };
 
     const handleHomeUploadItem = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -478,11 +548,12 @@ export function CollectionPage({ current }: CollectionPageProps) {
         if (!file || !collection) return
 
         setIsUploadPickerOpen(false)
-        confirmUploadItem(file, collection)
+        prepareUpload(file, collection)
     }
 
     const handleMoveItem = async (targetCollectionId: string | number) => {
-        if (!itemToMove) return;
+        if (!itemToMove || !canMoveItem || moveCollections.status !== 'ready' ||
+            !moveCollections.targets.some(collection => String(collection.id) === String(targetCollectionId))) return;
         try {
             const response = await apiFetch(`/api/collections/items/${itemToMove.id}/move`, {
                 method: 'POST',
@@ -1170,9 +1241,9 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                             >
                                                 <Icon icon="pixelarticons:close" className="text-xs" />
                                             </button>
-                                            {currentCollection && !['liked', 'creations_public', 'creations_private'].includes(String(currentCollection.id)) && (
+                                            {canUploadToCurrentCollection && currentCollection && !currentCollection.original_creation && typeof item.data.is_public === 'boolean' && (
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); setItemToMove(item); setIsMoveModalOpen(true); }}
+                                                    onClick={(e) => { e.stopPropagation(); moveCollections.reload(); setItemToMove(item); setIsMoveModalOpen(true); }}
                                                     className="absolute top-2 right-2 p-1 bg-green-900/40 hover:bg-green-600 text-white/60 hover:text-white border border-white/10 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
                                                     title={current.collection.moveToCollection}
                                                 >
@@ -1180,6 +1251,14 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                 </button>
                                             )}
                                             <div className="absolute inset-0 bg-green-500/0 group-hover:bg-green-500/5 transition-colors pointer-events-none" />
+                                            {typeof item.data.is_public === 'boolean' && (
+                                                <span className={`absolute bottom-2 right-2 z-10 flex items-center gap-1 border bg-black/75 px-1.5 py-0.5 text-[9px] uppercase pointer-events-none ${current.fontClass} ${item.data.is_public
+                                                    ? 'border-blue-400/30 text-blue-300'
+                                                    : 'border-orange-400/30 text-orange-300'}`}>
+                                                    <Icon icon={item.data.is_public ? 'pixelarticons:earth' : 'pixelarticons:lock'} className="text-[10px]" />
+                                                    {item.data.is_public ? current.collection.public : current.collection.private}
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="flex flex-col gap-0.5 px-1 pb-2">
                                             <span className={`text-white/80 text-[11px] sm:text-xs truncate ${current.fontClass}`}>{item.name}</span>
@@ -1255,10 +1334,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                 </button>
                             )}
 
-                            {currentCollection && authSession && (
-                                ['creations_public', 'creations_private'].includes(String(currentCollection.id)) ||
-                                (!currentCollection.original_creation && myUserId && String(currentCollection.user_id) === String(myUserId))
-                            ) && (
+                            {canUploadToCurrentCollection && (
                                 <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
                                     <input
                                         id="upload-item-input"
@@ -1430,7 +1506,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                 id: selectedItem.log_id || '',
                                 prompt: selectedItem.name,
                                 result: selectedItem.data.result || selectedItem.data.url || '',
-                                is_public: currentCollection?.is_public ?? true
+                                is_public: selectedItem.data.is_public === true
                             } as any}
                             current={current}
                             textureUrl={selectedItem.data.result || selectedItem.data.url || ''}
@@ -1443,27 +1519,37 @@ export function CollectionPage({ current }: CollectionPageProps) {
                 </AnimatePresence>
 
                 {/* Move Item Modal */}
-                {isMoveModalOpen && itemToMove && (
+                {canMoveItem && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-auto">
-                        <div className="w-full max-w-sm bg-[#1a1a1a] border-2 border-white/10 p-6 flex flex-col gap-6 shadow-2xl">
+                        <div role="dialog" aria-modal="true" aria-label={current.collection.moveToCollection} className="w-full max-w-sm bg-[#1a1a1a] border-2 border-white/10 p-6 flex flex-col gap-6 shadow-2xl">
                             <h3 className={`text-white text-xl m-0 ${current.fontClass}`}>
                                 {current.collection.moveToCollection}
                             </h3>
 
                             <div className="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar">
-                                {allCustom.filter(c => c.id !== currentCollection?.id && c.is_public === currentCollection?.is_public)
-                                    .map(col => (
-                                        <button
-                                            key={col.id}
-                                            onClick={() => handleMoveItem(col.id)}
-                                            className="flex items-center gap-3 p-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm cursor-pointer transition-colors"
-                                        >
-                                            <Icon icon="pixelarticons:folder" className="text-lg text-white/40" />
-                                            <span className="flex-1 text-left">{col.name}</span>
-                                            <Icon icon={col.is_public ? "pixelarticons:bullseye" : "pixelarticons:lock"} className="text-white/20" />
+                                {moveCollections.status === 'loading' && (
+                                    <p role="status" className={`m-0 py-4 text-center text-xs text-white/40 ${current.fontClass}`}>{current.mcmodal.loading}</p>
+                                )}
+                                {moveCollections.status === 'error' && (
+                                    <div className={`flex flex-col gap-2 text-xs ${current.fontClass}`}>
+                                        <p role="alert" className="m-0 text-white/60">{current.collection.moveCollectionsLoadFailed}</p>
+                                        <button type="button" onClick={moveCollections.reload} className="cursor-pointer self-center px-3 py-2 text-white/80 hover:text-white underline underline-offset-2">
+                                            {current.collection.retry}
                                         </button>
-                                    ))}
-                                {allCustom.filter(c => c.id !== currentCollection?.id && c.is_public === currentCollection?.is_public).length === 0 && (
+                                    </div>
+                                )}
+                                {moveCollections.targets.map(col => (
+                                    <button
+                                        key={col.id}
+                                        onClick={() => handleMoveItem(col.id)}
+                                        className="flex items-center gap-3 p-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm cursor-pointer transition-colors"
+                                    >
+                                        <Icon icon="pixelarticons:folder" className="text-lg text-white/40" />
+                                        <span className="flex-1 text-left">{col.name}</span>
+                                        <Icon icon={col.is_public ? "pixelarticons:bullseye" : "pixelarticons:lock"} className="text-white/20" />
+                                    </button>
+                                ))}
+                                {moveCollections.status === 'ready' && moveCollections.targets.length === 0 && (
                                     <div className="text-white/40 text-xs text-center py-4">
                                         {current.collection.noCollectionAvailable}
                                     </div>
@@ -1488,7 +1574,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                 {/* Confirm Prompt Modal */}
                 {confirmModal.isOpen && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-auto">
-                        <div className="w-full max-w-sm bg-[#1a1a1a] border-2 border-white/10 p-6 flex flex-col gap-6 shadow-2xl">
+                        <div role="dialog" aria-modal="true" aria-label={confirmModal.title} className="w-full max-w-sm bg-[#1a1a1a] border-2 border-white/10 p-6 flex flex-col gap-6 shadow-2xl">
                             <h3 className={`text-white text-xl m-0 ${current.fontClass}`}>
                                 {confirmModal.title}
                             </h3>
@@ -1496,6 +1582,15 @@ export function CollectionPage({ current }: CollectionPageProps) {
                             <p className={`text-white/60 text-sm whitespace-pre-wrap ${current.fontClass}`}>
                                 {confirmModal.message}
                             </p>
+
+                            {isUploadConfirmation && !uploadPolicy.ready && (
+                                <p role={uploadPolicy.code === 'unavailable' ? 'alert' : 'status'}
+                                    className={`m-0 text-xs text-white/55 ${current.fontClass}`}>
+                                    {uploadPolicy.code === 'unavailable'
+                                        ? current.skinLicense.unavailableDescription
+                                        : current.skinLicense.loading}
+                                </p>
+                            )}
 
                             <div className="flex gap-3 justify-end mt-1">
                                 <button
@@ -1506,10 +1601,12 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                 </button>
                                 <button
                                     onClick={() => {
+                                        if (isUploadConfirmation && !uploadPolicy.ready) return;
                                         confirmModal.onConfirm();
                                         setConfirmModal({ ...confirmModal, isOpen: false });
                                     }}
-                                    className={`px-6 py-2 bg-red-800 hover:bg-red-600 text-white border-2 border-black cursor-pointer text-xs transition-all active:translate-y-0.5 ${current.fontClass}`}
+                                    disabled={isUploadConfirmation && !uploadPolicy.ready}
+                                    className={`disabled:opacity-40 disabled:cursor-not-allowed px-6 py-2 bg-red-800 hover:bg-red-600 text-white border-2 border-black cursor-pointer text-xs transition-all active:translate-y-0.5 ${current.fontClass}`}
                                 >
                                     {current.modal.confirm}
                                 </button>
@@ -1517,7 +1614,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         </div>
                     </div>
                 )}
-                {isLoading && <LoadingPlaceholder current={current} />}
+                {(isLoading || isLoadingCollection) && <LoadingPlaceholder current={current} />}
         </PageContainer>
     )
 }

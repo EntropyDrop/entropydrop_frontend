@@ -196,13 +196,56 @@ profile update events and successful writes invalidate cached queries.
 forum, credits, subscriptions and skin details. Force refresh notifies mounted
 consumers. `useLatestRequest` scopes concurrent search/detail work and cancels it
 on replacement or unmount. `mcmodal/useSkinDetails` loads ancestry and counts in
-parallel after the main detail arrives. Edit's license policy lives in
-`pages/edit/useSaveLicensePreview`.
+parallel after the main detail arrives. Generation, editor saves and public
+Collection uploads preview backend license policy through `hooks/useSkinLicensePolicy`.
+Generation and editor saves share `components/SkinLicenseNotice`; public Collection
+uploads reuse the editor's rights confirmation copy.
 
 The forum separates `useForumData`, `useForumActions` and presentation components.
 Its editor, post detail and video form load only when opened. Run
 `npm run test:architecture` for request/cache isolation, URL navigation, stale
 responses, session restoration and feature-loading regressions.
+
+### Skin permissions and public sharing
+
+Generation, editor saves and public Collection uploads use `GET /api/licenses/preview`.
+The backend recomputes the same policy on submission. Account usage rights and
+`public_license` are separate snapshots: public sharing uses CC BY-NC 4.0 and
+never overwrites the creator's rights. Private saving grants no new public license.
+
+Fresh AI generation follows the plan at creation, subject to source restrictions.
+Editor imports and public Collection uploads confirm the right to upload and edit
+without asking for a source category or sending `source_rights`. New uploads are recorded as
+`source-license`, subject to source permissions, with no EntropyDrop commercial grant.
+Public Collection uploads reuse the editor's confirmation copy for upload, editing
+and sharing under CC BY-NC 4.0. Private uploads submit directly without a rights
+notice, confirmation dialog or license preview request; the backend still validates
+upload permissions and quotas. Direct collection links resolve ownership and
+visibility before enabling uploads, including folders on later collection pages.
+Collection item responses expose the skin's visibility as `data.is_public`, derived
+from its source log. Cards, detail previews and move permissions use that value,
+independently of the containing folder. The Move to Collection dialog loads every
+page of the owner's custom collections: public skins can move to either visibility,
+while private skins can only move to private folders. The backend enforces the same
+rule without changing skin visibility or licenses. The current folder is excluded,
+and failed destination loads can be retried.
+Editor imports confirm before loading the skin; public saving confirms sharing separately.
+Known parents always take precedence
+over a new source declaration. Manual edits inherit the owner's existing grant,
+including after Pro expires; other users receive only the source's public license.
+Collections link existing records and never recalculate rights or change visibility.
+
+New public generations send `public_license_consent=true`. Manual public saves also
+send it after confirmation. Independent uploads send the legacy `license_consent`
+submission flag; private Collection uploads need no separate confirmation UI.
+For older clients, an omitted public-consent field falls back to that legacy combined
+confirmation. An explicit `public_license_consent=false` always blocks public saving.
+Existing private edits inherit directly. Visibility conversion remains unavailable.
+Historical records are not relabeled. Deploy the matching backend and frontend
+changes together; the new permission codes fit the existing string columns and
+require no data migration. Run `npm run test:licenses` for the UI flows and stale
+preview protections; backend policy and API coverage lives in `tests/test_licenses.py`
+and `tests/test_skin_license_policy.py` alongside existing collection/generation tests.
 
 ### 5. Linting & Formatting
 Enforce code quality with ESLint:
