@@ -195,7 +195,7 @@ export function SpacePage({ current }: SpacePageProps) {
         FEATURE_VOXEL: '/images/space_feature_drone.png',
         FEATURE_PHYSICS: '/images/space_feature_vehicle.png',
         FEATURE_AI: '/images/space_feature_entity_editor.png',
-        FEATURE_TORUS: '/images/space_feature_torus.png',
+        FEATURE_TORUS: '/images/space_world_copper.webp',
     }
 
     const featureIcons = [

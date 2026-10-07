@@ -8,7 +8,7 @@ const DiscoveryScene = lazy(() => import('./DiscoveryScene').then(module => ({ d
 interface DiscoveryBackgroundProps {
     selected: GenerationLogItemBrief | null
     onSelect: (item: GenerationLogItemBrief | null) => void
-    onLoading: (isLoading: boolean) => void
+    onLoading?: (isLoading: boolean) => void
     paused?: boolean
     fallback: ReactNode
 }

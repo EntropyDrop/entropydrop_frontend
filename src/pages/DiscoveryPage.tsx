@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { DiscoveryBackground } from '../components/DiscoveryBackground'
@@ -19,7 +19,6 @@ export function DiscoveryPage({ current }: { current: LangData }) {
     const { view, selected, select, setView } = useDiscoverySelection()
     const search = useDiscoverySearch(view, current)
     const authSession = useAuthSession()
-    const [isLoading, setIsLoading] = useState(false)
     const closeModal = () => {
         const id = selected?.id
         select(null)
@@ -29,9 +28,8 @@ export function DiscoveryPage({ current }: { current: LangData }) {
         <SEO title={current.nav.discover} description={current.subtitle} />
         {view === '3d' ? <>
             <div className="absolute inset-0 z-0 bg-[#111]">
-                <DiscoveryBackground fallback={null} selected={selected} onSelect={select} onLoading={setIsLoading} paused={selected !== null || search.isOpen} />
+                <DiscoveryBackground fallback={null} selected={selected} onSelect={select} paused={selected !== null || search.isOpen} />
             </div>
-            {isLoading && <LoadingPlaceholder current={current} className="top-24 sm:top-28 z-20" />}
             <div className="absolute top-16 right-4 sm:top-auto sm:bottom-8 sm:right-8 z-30 pointer-events-auto">
                 <button onClick={() => setView('list')} className={`px-3 py-1.5 bg-black/60 backdrop-blur-md hover:bg-black/85 text-white border border-white/10 flex items-center gap-1.5 text-xs transition-colors cursor-pointer ${current.fontClass}`}>
                     <Icon icon="pixelarticons:list" className="text-base" /><span>{current.discovery.modeList}</span>

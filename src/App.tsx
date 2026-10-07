@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, lazy, Suspense, type ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation, Navigate, matchPath } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import english from './constants/locales/en'
 import { LoadingPlaceholder } from './components/LoadingPlaceholder'
@@ -47,6 +47,10 @@ const getStoredIsAuto = (): boolean => {
   return stored !== null ? JSON.parse(stored) : true
 }
 
+function isDiscoveryPath(pathname: string) {
+  return pathname === '/' || matchPath('/skin/', pathname) !== null
+}
+
 function FigureRedirect() {
   const location = useLocation()
   const target = `/figure/showcase${location.search}${location.hash}`
@@ -81,15 +85,20 @@ function RouteReadySignal({ children, onReady }: { children: ReactNode, onReady:
   return children
 }
 
-function RouteTransition({ children, current }: { children: ReactNode, current: LangData }) {
+function RouteTransition({ children, current, showLoadingSkeleton = true }: {
+  children: ReactNode,
+  current: LangData,
+  showLoadingSkeleton?: boolean
+}) {
   const [isRouteReady, setIsRouteReady] = useState(false)
   const [showSkeleton, setShowSkeleton] = useState(false)
   const markRouteReady = useCallback(() => setIsRouteReady(true), [])
 
   useEffect(() => {
+    if (!showLoadingSkeleton) return
     const timeout = window.setTimeout(() => setShowSkeleton(true), 150)
     return () => window.clearTimeout(timeout)
-  }, [])
+  }, [showLoadingSkeleton])
 
   return (
     <>
@@ -98,7 +107,7 @@ function RouteTransition({ children, current }: { children: ReactNode, current: 
           {children}
         </RouteReadySignal>
       </Suspense>
-      {!isRouteReady && showSkeleton && <RouteLoadingSkeleton current={current} />}
+      {showLoadingSkeleton && !isRouteReady && showSkeleton && <RouteLoadingSkeleton current={current} />}
     </>
   )
 }
@@ -116,7 +125,7 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
   const currentLangData = isSpaceLandingPage ? english : preferredLangData
 
   const routes = (
-    <RouteTransition key={location.pathname} current={currentLangData}>
+    <RouteTransition key={location.pathname} current={currentLangData} showLoadingSkeleton={!isDiscoveryPath(location.pathname)}>
       <Routes>
         <Route path="/" element={<Navigate to="/skin/" replace />} />
         <Route path="/skin/" element={<DiscoveryPage current={currentLangData} />} />
@@ -209,7 +218,7 @@ function App() {
   }, [lang])
 
   if (!currentLangData) {
-    return <LoadingPlaceholder />
+    return isDiscoveryPath(window.location.pathname) ? null : <LoadingPlaceholder />
   }
 
   const handleSetIsAuto = (auto: boolean) => {

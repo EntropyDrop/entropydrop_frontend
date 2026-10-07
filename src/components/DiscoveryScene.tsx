@@ -8,7 +8,7 @@ interface DiscoverySceneProps {
     items: GenerationLogItemBrief[] | null
     selected: GenerationLogItemBrief | null
     onSelect: (item: GenerationLogItemBrief | null) => void
-    onLoading: (isLoading: boolean) => void
+    onLoading?: (isLoading: boolean) => void
     paused?: boolean
 }
 
