@@ -1,3 +1,4 @@
+import type { LangData } from '../constants/lang'
 import { request } from '../utils/httpClient'
 import { Icon } from '@iconify/react'
 import { Component, Suspense, useState, useRef, useEffect, type ErrorInfo, type ReactNode } from 'react'
@@ -25,7 +26,7 @@ interface MCModalPreviewProps {
     onEdit?: () => void;
     onPrint?: () => void;
     downloadFilename?: string;
-    current: any;
+    current: LangData;
     fbxUrl?: string;
     setFbxUrl?: (url: string) => void;
 }
@@ -209,10 +210,10 @@ export function MCModalPreview({
                 <div className="flex justify-between items-end">
                     <div className="flex flex-col gap-2 pointer-events-auto">
                         <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 flex flex-col lg:flex-row gap-1">
-                            {['idle', 'walk', 'dance'].map((a) => (
+                            {(['idle', 'walk', 'dance'] as const).map((a) => (
                                 <button
                                     key={a}
-                                    onClick={() => setAction(a as any)}
+                                    onClick={() => setAction(a)}
                                     className={`px-4 py-1.5 text-[10px] font-pixel-hans text-left transition-all cursor-pointer uppercase ${action === a ? 'bg-white/10 text-[#4ea632]' : 'text-white/40 hover:text-white'}`}
                                 >
                                     {a === action && <span className="mr-1 inline-block w-1 h-1 bg-[#4ea632]" />}

@@ -7,7 +7,7 @@ interface PagePlaceholderProps {
 }
 
 export function PagePlaceholder({ titleKey, current }: PagePlaceholderProps) {
-    const title = (current.nav as any)[titleKey]
+    const title = current.nav[titleKey]
     const buildingText = current.placeholder.building
     const soonText = current.placeholder.soon
 

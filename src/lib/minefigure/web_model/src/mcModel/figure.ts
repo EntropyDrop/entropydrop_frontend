@@ -176,10 +176,10 @@ export async function buildFigure(
 
     const reg = new TokenRegistry();
     const firstResult = results.length;
-    let cutters: Array<{ geometry: any; visual?: any; label: string; color: string }> = [];
-    let block: any;
-    let decorGeoms: any;
-    let halves: any = null;
+    let cutters: ReturnType<typeof buildHead>['cutters'] = [];
+    let block: ReturnType<typeof buildHead>['block'] | undefined;
+    let decorGeoms: ReturnType<typeof buildHead>['decorGeoms'] = [];
+    let halves: Awaited<ReturnType<typeof buildLimb>>['halves'] | null = null;
 
     if (task.id === 'head') {
       const headRes = buildHead(workPixels, width, reg, opts);
@@ -225,6 +225,7 @@ export async function buildFigure(
         cuttersAttached = true;
       }
     } else {
+      if (!block) throw new Error(`Missing geometry for ${task.id}`);
       let geometry;
       try {
         geometry = await buildPartGeometry(block, decorGeoms, reg.tokens, cutters);

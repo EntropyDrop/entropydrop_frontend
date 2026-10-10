@@ -1,6 +1,6 @@
 import { request } from '../utils/httpClient'
 import { PageContainer } from '../components/PageContainer';
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
@@ -288,7 +288,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
 
   const isZh = current.lang === 'zh-hans'
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const response = await apiFetch('/api/monitor/stats')
       if (response.ok) {
@@ -300,12 +300,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
       } else {
         setError(current.monitor.failedFetchStats)
       }
-    } catch (e) {
+    } catch {
       setError(current.monitor.connectionError)
     } finally {
       setLoading(false)
     }
-  }
+  }, [current.monitor.adminAccessRequired, current.monitor.failedFetchStats, current.monitor.connectionError])
 
   const fetchBackendInstances = async () => {
     setBackendInstancesLoading(true)
@@ -385,7 +385,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
           text: errData.detail || current.monitor.operationFailed
         })
       }
-    } catch (e) {
+    } catch {
       setDeleteMessage({
         type: 'error',
         text: current.monitor.networkError
@@ -439,7 +439,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
           text: errData.detail || current.monitor.operationFailed
         })
       }
-    } catch (e) {
+    } catch {
       setDeleteMessage({
         type: 'error',
         text: current.monitor.networkError
@@ -493,7 +493,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
           text: errData.detail || current.monitor.operationFailed
         })
       }
-    } catch (e) {
+    } catch {
       setDeleteMessage({
         type: 'error',
         text: current.monitor.networkError
@@ -556,7 +556,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
           text: errData.detail || current.monitor.operationFailed
         })
       }
-    } catch (e) {
+    } catch {
       setDeleteMessage({
         type: 'error',
         text: current.monitor.networkError
@@ -616,7 +616,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
           text: errData.detail || current.monitor.operationFailed
         })
       }
-    } catch (e) {
+    } catch {
       setDeleteMessage({
         type: 'error',
         text: current.monitor.networkError
@@ -634,7 +634,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
     fetchModelPrices()
     const timer = setInterval(fetchStats, 3000)
     return () => clearInterval(timer)
-  }, [])
+  }, [fetchStats])
 
   useEffect(() => {
     fetchBackendInstances()
@@ -696,7 +696,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
     setShowSkingDdjModal(true)
   }
 
-  const fetchSubAudits = async (p = subAuditPage, filter = subAuditStatusFilter, query = subAuditSearch) => {
+  const fetchSubAudits = useCallback(async (p = subAuditPage, filter = subAuditStatusFilter, query = subAuditSearch) => {
     setLoadingSubAudit(true)
     try {
       let url = `/api/monitor/subscription-credit-audits?page=${p}&page_size=15&status_filter=${filter}`
@@ -715,11 +715,11 @@ export function MonitorPage({ current }: MonitorPageProps) {
     } finally {
       setLoadingSubAudit(false)
     }
-  }
+  }, [subAuditPage, subAuditStatusFilter, subAuditSearch])
 
   useEffect(() => {
     fetchSubAudits(subAuditPage, subAuditStatusFilter, subAuditSearch)
-  }, [subAuditPage, subAuditStatusFilter, subAuditSearch])
+  }, [subAuditPage, subAuditStatusFilter, subAuditSearch, fetchSubAudits])
 
   const handleSubAuditSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -758,7 +758,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
           text: data.detail || (isZh ? '补发失败' : 'Failed to compensate credits'),
         })
       }
-    } catch (e) {
+    } catch {
       setSubAuditMessage({
         type: 'error',
         text: isZh ? '网络请求失败，请稍后重试' : 'Network error, please try again',
@@ -851,7 +851,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
           })
         }
       }
-    } catch (e) {
+    } catch {
       setDeleteMessage({
         type: 'error',
         text: isZh ? '网络连接错误，删除操作失败。' : 'Connection error. Deletion failed.'
@@ -899,7 +899,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
           })
         }
       }
-    } catch (e) {
+    } catch {
       setDeleteMessage({
         type: 'error',
         text: isZh ? '网络连接错误，删除操作失败。' : 'Connection error. Deletion failed.'
@@ -931,7 +931,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
           text: errData.detail || (current.monitor.deleteUserFailed + response.status)
         })
       }
-    } catch (e) {
+    } catch {
       setDeleteMessage({
         type: 'error',
         text: current.monitor.networkError

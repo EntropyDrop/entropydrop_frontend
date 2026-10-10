@@ -1,5 +1,6 @@
+import type { PayPalButtons } from '../types/paypal'
 import { Icon } from '@iconify/react'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { type LangData } from '../constants/lang'
 import { apiFetch } from '../utils/api'
 import { activateSubscriptionWithRetry } from '../utils/subscription'
@@ -26,81 +27,50 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
     const [isProcessing, setIsProcessing] = useState(false);
 
     const paypalButtonRef = useRef<HTMLDivElement>(null);
-    const renderedButtonRef = useRef<any>(null);
+    const renderedButtonRef = useRef<PayPalButtons | null>(null);
 
     useEffect(() => {
-        if (isOpen && (orderId || isSubscription)) {
-            fetchClientId();
-        }
-    }, [isOpen, orderId, isSubscription]);
-
-    const fetchClientId = async () => {
-        try {
+        if (!isOpen || (!orderId && !isSubscription)) return;
+        const controller = new AbortController();
+        let script: HTMLScriptElement | undefined;
+        const loadClient = async () => {
             setIsLoadingClient(true);
-            const response = await apiFetch('/api/orders/paypal/config');
-            if (response.ok) {
+            try {
+                const response = await apiFetch('/api/orders/paypal/config', { signal: controller.signal });
+                if (!response.ok) throw new Error('Failed to load PayPal config');
                 const data = await response.json();
+                if (controller.signal.aborted) return;
                 setClientId(data.client_id);
-                
-                // Determine which plan ID to use based on the tierKey
-                if (isSubscription) {
-                    if (tierKey === 'pro_max') {
-                        setPlanId(data.pro_max_plan_id);
-                    } else {
-                        setPlanId(data.pro_plus_plan_id);
-                    }
+                if (isSubscription) setPlanId(tierKey === 'pro_max' ? data.pro_max_plan_id : data.pro_plus_plan_id);
+                if (window.paypal) {
+                    setIsSdkLoaded(true);
+                    return;
                 }
-                
-                loadPayPalSdk(data.client_id);
+                script = document.createElement('script');
+                script.src = `https://www.paypal.com/sdk/js?client-id=${data.client_id}&currency=USD${isSubscription ? '&vault=true&intent=subscription' : ''}`;
+                script.async = true;
+                script.onload = () => { if (!controller.signal.aborted) setIsSdkLoaded(true); };
+                document.body.appendChild(script);
+            } catch (error) {
+                if (!controller.signal.aborted) console.error('Failed to load PayPal', error);
+            } finally {
+                if (!controller.signal.aborted) setIsLoadingClient(false);
             }
-        } catch (e) {
-            console.error("Failed to fetch client id/plan id", e);
-        } finally {
-            setIsLoadingClient(false);
-        }
-    };
-
-    const loadPayPalSdk = (id: string) => {
-        if (window.paypal) {
-            setIsSdkLoaded(true);
-            return;
-        }
-
-        const script = document.createElement('script');
-        let sdkUrl = `https://www.paypal.com/sdk/js?client-id=${id}&currency=USD`;
-        if (isSubscription) {
-            sdkUrl += '&vault=true&intent=subscription';
-        }
-        script.src = sdkUrl;
-        script.async = true;
-        script.onload = () => {
-            setIsSdkLoaded(true);
         };
-        document.body.appendChild(script);
-    };
-
-    useEffect(() => {
-        if (isSdkLoaded && paypalButtonRef.current && clientId && isOpen && (orderId || isSubscription) && !isLoadingClient) {
-            renderPaypalButtons();
-        }
-
+        void loadClient();
         return () => {
-            if (renderedButtonRef.current && renderedButtonRef.current.close) {
-                try {
-                    renderedButtonRef.current.close().catch(() => { });
-                } catch (e) { }
-                renderedButtonRef.current = null;
-            }
-        }
-    }, [isSdkLoaded, clientId, isOpen, orderId, isLoadingClient]);
+            controller.abort();
+            if (script) script.onload = null;
+        };
+    }, [isOpen, orderId, isSubscription, tierKey]);
 
-    const renderPaypalButtons = () => {
+    const renderPaypalButtons = useCallback(() => {
         if (!window.paypal || !paypalButtonRef.current) return;
 
         if (renderedButtonRef.current && renderedButtonRef.current.close) {
             try {
                 renderedButtonRef.current.close().catch(() => { });
-            } catch (e) { }
+            } catch { /* The SDK may already have removed this button. */ }
             renderedButtonRef.current = null;
         }
 
@@ -108,7 +78,7 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
 
         if (isSubscription) {
             renderedButtonRef.current = window.paypal.Buttons({
-                createSubscription: async (_: any, actions: any) => {
+                createSubscription: async (_, actions) => {
                     const token = localStorage.getItem('token');
                     if (!token) return;
                     setIsProcessing(true);
@@ -124,11 +94,11 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
                         ...(userId ? { custom_id: userId } : {})
                     });
                 },
-                onApprove: async (data: any, _actions: any) => {
+                onApprove: async (data) => {
                     const token = localStorage.getItem('token');
                     if (!token) return;
                     try {
-                        const activateRes = await activateSubscriptionWithRetry(data.subscriptionID);
+                        const activateRes = await activateSubscriptionWithRetry(data.subscriptionID || '');
 
                         if (activateRes.ok) {
                             window.dispatchEvent(new Event('user-updated'));
@@ -137,14 +107,14 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
                             const err = await activateRes.json();
                             alert(err.detail || 'Activation Failed');
                         }
-                    } catch (e) {
+                    } catch {
                         alert('Payment Confirmation Failed');
                     } finally {
                         setIsProcessing(false);
                     }
                 },
                 onCancel: () => setIsProcessing(false),
-                onError: (err: any) => { console.error('PayPal Error:', err); setIsProcessing(false); }
+                onError: (err) => { console.error('PayPal Error:', err); setIsProcessing(false); }
             });
         } else {
             renderedButtonRef.current = window.paypal.Buttons({
@@ -166,13 +136,13 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
                         const paypalData = await paypalRes.json();
                         return paypalData.id;
 
-                    } catch (e: any) {
-                        alert(e.message);
+                    } catch (e) {
+                        alert(e instanceof Error ? e.message : 'Failed to create PayPal order');
                         setIsProcessing(false);
                         throw e;
                     }
                 },
-                onApprove: async (data: any, _actions: any) => {
+                onApprove: async (data) => {
                     const token = localStorage.getItem('token');
                     if (!token) return;
 
@@ -194,7 +164,7 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
                             const err = await captureRes.json();
                             alert(err.detail || 'Capture Failed');
                         }
-                    } catch (e) {
+                    } catch {
                         alert('Payment Confirmation Failed');
                     } finally {
                         setIsProcessing(false);
@@ -203,7 +173,7 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
                 onCancel: () => {
                     setIsProcessing(false);
                 },
-                onError: (err: any) => {
+                onError: (err) => {
                     console.error('PayPal Error:', err);
                     setIsProcessing(false);
                 }
@@ -211,7 +181,22 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
         }
 
         renderedButtonRef.current.render(paypalButtonRef.current);
-    };
+    }, [isSubscription, isUpgrade, existingSubscriptionId, planId, userId, onSuccess, orderId]);
+
+    useEffect(() => {
+        if (isSdkLoaded && paypalButtonRef.current && clientId && isOpen && (orderId || isSubscription) && !isLoadingClient) {
+            renderPaypalButtons();
+        }
+
+        return () => {
+            if (renderedButtonRef.current && renderedButtonRef.current.close) {
+                try {
+                    renderedButtonRef.current.close().catch(() => { });
+                } catch { /* The SDK may already have removed this button. */ }
+                renderedButtonRef.current = null;
+            }
+        }
+    }, [isSdkLoaded, clientId, isOpen, orderId, isLoadingClient, isSubscription, renderPaypalButtons]);
 
     if (!isOpen) return null;
 

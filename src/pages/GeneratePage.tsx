@@ -4,7 +4,7 @@ import { useCurrentUser } from '../hooks/useCurrentUser'
 import { request } from '../utils/httpClient'
 import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Icon } from '@iconify/react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
@@ -128,7 +128,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
     }, [sourceId, licensePolicy.policy])
     const [queueStatus, setQueueStatus] = useState<QueueStatusData | null>(null)
 
-    const fetchQueueStatus = async (overrideModel?: string) => {
+    const fetchQueueStatus = useCallback(async (overrideModel?: string) => {
         try {
             const currentModel = overrideModel ?? modelVersion
             if (!currentModel || currentModel === 'unknown') {
@@ -147,7 +147,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         } catch {
             // Ignore queue status error
         }
-    }
+    }, [modelVersion, modelOptions, genMode])
 
     useEffect(() => {
         if (!modelVersion || modelVersion === 'unknown') return
@@ -156,7 +156,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             fetchQueueStatus(modelVersion)
         }, 30000)
         return () => clearInterval(timer)
-    }, [modelVersion, genMode, modelOptions])
+    }, [modelVersion, fetchQueueStatus])
 
     const [queueToast, setQueueToast] = useState<{ message: string; isProUser: boolean } | null>(null)
     const queueToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -371,7 +371,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         }
     }
 
-    const fetchGenerationCreditCost = async (model?: string) => {
+    const fetchGenerationCreditCost = useCallback(async (model?: string) => {
         try {
             let url = '/api/generation_credit_cost'
             if (model && model !== 'unknown') {
@@ -389,7 +389,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         } catch (e) {
             console.error('Failed to fetch generation credit cost', e)
         }
-    }
+    }, [modelOptions])
 
     useEffect(() => {
         setHistory([])
@@ -410,7 +410,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
         } else {
             setGenerationCreditCost(null)
         }
-    }, [authSession, modelVersion, modelCosts, modelOptions])
+    }, [authSession, modelVersion, modelCosts, fetchGenerationCreditCost])
 
     useEffect(() => {
         const currentMode = genMode
@@ -423,18 +423,26 @@ export function GeneratePage({ current }: GeneratePageProps) {
     const [currentPage, setCurrentPage] = useState(1)
     const itemsPerPage = 6
 
-    const fetchHistory = async (page: number) => {
-        if (isHistoryLoading) return
+    const historyRequestRef = useRef<AbortController | null>(null)
+    const historyRendersRef = useRef(new Map<string, string>())
+    useEffect(() => {
+        historyRendersRef.current.clear()
+        return () => historyRequestRef.current?.abort()
+    }, [authSession])
+
+    const fetchHistory = useCallback(async (page: number) => {
+        historyRequestRef.current?.abort()
+        const controller = new AbortController()
+        historyRequestRef.current = controller
         setIsHistoryLoading(true)
         try {
-            const response = await apiFetch(`/api/history?page=${page}&page_size=${itemsPerPage}`)
+            const response = await apiFetch(`/api/history?page=${page}&page_size=${itemsPerPage}`, { signal: controller.signal })
             if (response.ok) {
                 const data = await apiResponseJson(response)
-                const mappedItems = data.items.map((item: GenerationLogItem) => {
-                    const existing = history.find(p => p.id === item.id)
-                    item.result_render_2d = existing?.result_render_2d || ''
-                    return item
-                })
+                if (controller.signal.aborted) return
+                const mappedItems = data.items.map((item: GenerationLogItem) => ({
+                    ...item, result_render_2d: historyRendersRef.current.get(item.result) || '',
+                }))
 
                 setHistory(mappedItems)
                 setTotalPages(data.total_pages)
@@ -446,6 +454,8 @@ export function GeneratePage({ current }: GeneratePageProps) {
                     if (!item.result) return;
                     try {
                         const render = (await Skin2D(item.result)).toDataURL('image/png')
+                        if (controller.signal.aborted) return
+                        historyRendersRef.current.set(item.result, render)
                         setHistory(prev => prev.map(p => p.id === item.id ? { ...p, result_render_2d: render } : p))
                     } catch (e) {
                         console.error('Failed to render 2D skin for item:', item.id, e)
@@ -456,17 +466,17 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 console.error('History API error:', errorData)
             }
         } catch (e) {
-            console.error('Failed to fetch history', e)
+            if (!controller.signal.aborted) console.error('Failed to fetch history', e)
         } finally {
-            setIsHistoryLoading(false)
+            if (!controller.signal.aborted) setIsHistoryLoading(false)
         }
-    }
+    }, [itemsPerPage])
 
     useEffect(() => {
         if (authSession) {
             fetchHistory(currentPage)
         }
-    }, [authSession, currentPage])
+    }, [authSession, currentPage, fetchHistory])
 
     const hasActiveTask = history.some(item => ['pending', 'processing', 'pending_skin', 'processing_skin'].includes(item.status || ''))
 
@@ -477,7 +487,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             }, 30000)
             return () => clearInterval(timer)
         }
-    }, [authSession, hasActiveTask, currentPage])
+    }, [authSession, hasActiveTask, currentPage, fetchHistory])
 
     useEffect(() => {
         if (lastSubmittedId && history.length > 0) {
@@ -495,7 +505,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
             }
 
         }
-    }, [history, lastSubmittedId])
+    }, [history, lastSubmittedId, current.generate.generationFailed])
 
     useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -637,15 +647,15 @@ export function GeneratePage({ current }: GeneratePageProps) {
             fetchQueueStatus() // Refresh queue status immediately
             //setInfoModal({ isOpen: true, title: current.generate.submitSuccess, message: current.generate.submitSuccessMsg, type: 'success' })
 
-        } catch (e: any) {
+        } catch (e) {
             console.error(e)
             // setInfoModal({ isOpen: true, title: current.generate.submitFailed, message: current.generate.submitFailedMsg + e.message, type: 'error' })
             setIsGenerating(false)
         }
     }
 
-    const selectHistory = (item: any) => {
-        if (['pending', 'processing', 'pending_skin', 'processing_skin'].includes(item.status)) return
+    const selectHistory = (item: GenerationLogItem) => {
+        if (['pending', 'processing', 'pending_skin', 'processing_skin'].includes(item.status ?? '')) return
         if (item.status === 'failed') {
             showError(current.generate.generationFailed + (item.error_msg || 'Unknown Error'))
             return

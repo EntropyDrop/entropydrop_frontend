@@ -15,13 +15,15 @@ if (gtagId) {
   script.src = `https://www.googletagmanager.com/gtag/js?id=${gtagId}`
   document.head.appendChild(script)
 
-  const dataLayer = (window as any).dataLayer = (window as any).dataLayer || []
-  const gtag = function () {
+  const dataLayer = window.dataLayer = window.dataLayer || []
+  const gtag: NonNullable<Window['gtag']> = function () {
+    // Keep Google's SDK queue format: https://developers.google.com/tag-platform/devguides/datalayer
+    // eslint-disable-next-line prefer-rest-params -- gtag commands require IArguments rather than an Array.
     dataLayer.push(arguments)
   }
-  ;(window as any).gtag = gtag
-  ;(gtag as any)('js', new Date())
-  ;(gtag as any)('config', gtagId)
+  ;window.gtag = gtag
+  ;gtag('js', new Date())
+  ;gtag('config', gtagId)
 }
 
 addCollection(pixelarticons)

@@ -15,7 +15,7 @@ export function PrivacyPolicyPage({ current }: PrivacyPolicyPageProps) {
                 </h1>
 
                 <div className="flex flex-col gap-10">
-                    {data.sections.map((sec: any, index: number) => (
+                    {data.sections.map((sec, index) => (
                         <div key={index}>
                             <h2 className="text-xl font-bold mb-4">{sec.title}</h2>
                             <p className="text-gray-800 whitespace-pre-wrap text-base">

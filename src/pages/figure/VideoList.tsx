@@ -1,10 +1,11 @@
+import type { CurrentUser } from '../../hooks/useCurrentUser'
 import { Icon } from '@iconify/react'
 import type { YoutubeVideo } from './types'
 import type { LangData } from '../../constants/lang'
 
 interface VideoListProps {
     youtubeVideos: YoutubeVideo[]
-    currentUser: any
+    currentUser: CurrentUser | null
     handleDeleteVideo: (videoId: string) => void
     current: LangData
 }

@@ -21,12 +21,6 @@ interface Plan {
     popular?: boolean;
 }
 
-declare global {
-    interface Window {
-        paypal: any;
-    }
-}
-
 export function ProPage({ current }: ProPageProps) {
     const navigate = useNavigate();
     const { user: userProfile } = useCurrentUser();
@@ -38,7 +32,7 @@ export function ProPage({ current }: ProPageProps) {
         { key: 'pro_max', duration: current.pro.plansData.pro_max, price: 20 }
     ];
 
-    const handleSubscribe = async (tier: any, _isUpgrade: boolean = false) => {
+    const handleSubscribe = async (tier: Pick<Plan, 'key'>) => {
         const token = localStorage.getItem('token');
         if (!token) {
             alert(current.common.authRequired);
@@ -94,7 +88,7 @@ export function ProPage({ current }: ProPageProps) {
                             const err = await apiResponseJson(activateRes);
                             alert(err.detail || 'Activation Failed');
                         }
-                    } catch (e) {
+                    } catch {
                         alert('Payment Confirmation Failed');
                     } finally {
                         setIsProcessing(false);
@@ -102,8 +96,8 @@ export function ProPage({ current }: ProPageProps) {
                 }
             }, 1000);
 
-        } catch (e: any) {
-            alert(e.message || 'Payment initialization failed');
+        } catch (e) {
+            alert(e instanceof Error ? e.message : 'Payment initialization failed');
             setIsProcessing(false);
         }
     };
@@ -120,7 +114,7 @@ export function ProPage({ current }: ProPageProps) {
                 const err = await apiResponseJson(res);
                 alert(err.detail || current.pro.cancelFailed);
             }
-        } catch (e) {
+        } catch {
             alert(current.common.connectError);
         } finally {
             setIsCancelling(false);
@@ -320,7 +314,7 @@ export function ProPage({ current }: ProPageProps) {
                                                  } else {
                                                      // Find the plan data to pass it directly
                                                      const planData = plans.find(p => p.key === tier.key) || { key: tier.key, price: tier.key === 'pro_max' ? 20 : 8 };
-                                                     handleSubscribe(planData, isUpgrade);
+                                                     handleSubscribe(planData);
                                                  }
                                              }}
                                              disabled={isCancelling || isProcessing || isLowerTier}

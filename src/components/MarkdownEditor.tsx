@@ -107,9 +107,9 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
 
             return fileUrl
 
-        } catch (err: any) {
+        } catch (err) {
             console.error(err)
-            alert(err.message || 'Failed to upload image')
+            alert(err instanceof Error ? err.message : 'Failed to upload image')
             throw err
         } finally {
             setUploadState({ isUploading: false, progress: 0 })
@@ -127,7 +127,7 @@ export function MarkdownEditor({ value, onChange, placeholder, current }: Markdo
                 editorRef.current.focus()
                 editorRef.current.insertMarkdown(`![image](${url})`)
             }
-        } catch (err) {
+        } catch {
             // Error is handled inside uploadImageFile
         }
     }

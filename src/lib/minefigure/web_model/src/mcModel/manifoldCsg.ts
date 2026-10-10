@@ -1,3 +1,4 @@
+import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import * as THREE from 'three';
 import { getManifold } from '../manifoldRuntime.js';
 import type { MaterialToken } from '../types/index.js';
@@ -5,7 +6,7 @@ import type { CutterWithToken } from './csg.js';
 import { CUT_TOKEN } from './tokens.js';
 
 /** Keep material seams as property vertices, while welding their topology. */
-function toSolid(wasm: any, geometry: THREE.BufferGeometry, tokens: MaterialToken[]): any {
+function toSolid(wasm: ManifoldToplevel, geometry: THREE.BufferGeometry, tokens: MaterialToken[]): Manifold {
   const position = geometry.getAttribute('position');
   const color = geometry.getAttribute('color');
   const index = geometry.getIndex();
@@ -42,12 +43,12 @@ function toSolid(wasm: any, geometry: THREE.BufferGeometry, tokens: MaterialToke
   return wasm.Manifold.ofMesh(mesh);
 }
 
-function requireValid(solid: any, stage: string): void {
+function requireValid(solid: Manifold, stage: string): void {
   const status = solid.status();
   if (status !== 'NoError') throw new Error(`${stage}失败：${status}`);
 }
 
-function toGeometry(solid: any): THREE.BufferGeometry | null {
+function toGeometry(solid: Manifold): THREE.BufferGeometry | null {
   const mesh = solid.getMesh();
   if (!mesh.triVerts.length) return null;
   const positions = new Float32Array(mesh.triVerts.length * 3);
@@ -76,8 +77,8 @@ export async function buildClosedPartGeometry(
   cutters: CutterWithToken[],
 ): Promise<THREE.BufferGeometry | null> {
   const wasm = await getManifold();
-  const owned = new Set<any>();
-  const keep = (solid: any) => { owned.add(solid); return solid; };
+  const owned = new Set<Manifold>();
+  const keep = (solid: Manifold) => { owned.add(solid); return solid; };
   try {
     const inputs = [block, ...(decor ?? [])].map(geometry => {
       const solid = keep(toSolid(wasm, geometry, tokens));

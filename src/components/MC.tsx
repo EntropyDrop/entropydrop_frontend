@@ -1,6 +1,9 @@
+import type { RefObject } from 'react';
+import type { OrbitControls as OrbitControlsInstance } from 'three-stdlib';
+import type { SkinImageSource } from '../utils/skin2dRenderer';
 import { useMemo, useRef, useEffect, Suspense } from 'react';
 import * as THREE from 'three';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, type ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, useTexture, Stage, useFBX, useAnimations } from '@react-three/drei';
 import { ensureSkinVoxelModeConsistency, isSlim } from './utils';
 import { EditorLighting } from './EditorLighting';
@@ -12,12 +15,12 @@ const CUTE_LIMB_SCALE = 0.85;
 // The torso and arms use the same X/Y scale, so this is also the rendered side angle.
 const CUTE_ARM_TILT = Math.atan(CUTE_BODY_WIDTH * CUTE_BODY_TAPER / (2 * CUTE_BODY_HEIGHT));
 
-function DanceController({ action, partsRefs, fbxUrl }: { action: string, partsRefs: any, fbxUrl?: string }) {
+function DanceController({ action, partsRefs, fbxUrl }: { action: string, partsRefs: RefObject<Record<string, THREE.Object3D | null>>, fbxUrl?: string }) {
     if (action !== 'dance') return null;
     return <DanceControllerInner key={fbxUrl} partsRefs={partsRefs} fbxUrl={fbxUrl} />;
 }
 
-function DanceControllerInner({ partsRefs, fbxUrl = '/fbx/Thriller Part 3.fbx' }: { partsRefs: any, fbxUrl?: string }) {
+function DanceControllerInner({ partsRefs, fbxUrl = '/fbx/Thriller Part 3.fbx' }: { partsRefs: RefObject<Record<string, THREE.Object3D | null>>, fbxUrl?: string }) {
     const fbx = useFBX(fbxUrl);
     const { actions } = useAnimations(fbx.animations, fbx);
     const initialPosRef = useRef<THREE.Vector3 | null>(null);
@@ -64,12 +67,13 @@ function DanceControllerInner({ partsRefs, fbxUrl = '/fbx/Thriller Part 3.fbx' }
         if (clipAction) {
             clipAction.reset().play();
         }
+        const parts = partsRefs.current;
         return () => {
             if (clipAction) clipAction.stop();
             // Reset rotation and position of all parts when exiting dance mode
             Object.values(mapping).forEach((refName) => {
-                if (partsRefs.current && (partsRefs.current as any)[refName]) {
-                    const mcPart = (partsRefs.current as any)[refName] as THREE.Object3D;
+                const mcPart = parts[refName];
+                if (mcPart) {
                     mcPart.quaternion.set(0, 0, 0, 1);
                     if (refName === 'body') {
                         mcPart.position.set(0, 10, 0);
@@ -91,8 +95,8 @@ function DanceControllerInner({ partsRefs, fbxUrl = '/fbx/Thriller Part 3.fbx' }
                 });
             }
 
-            if (bone && partsRefs.current && (partsRefs.current as any)[refName]) {
-                const mcPart = (partsRefs.current as any)[refName] as THREE.Object3D;
+            const mcPart = partsRefs.current[refName];
+            if (bone && mcPart) {
 
                 // 1. Get the absolute world rotation of the FBX bone
                 const fbxWorldQuat = new THREE.Quaternion();
@@ -134,24 +138,19 @@ function DanceControllerInner({ partsRefs, fbxUrl = '/fbx/Thriller Part 3.fbx' }
 
 // --- Helper functions extracted outside the component to avoid repeated rendering ---
 
-type Pos = {
-    right?: [number, number, number, number],
-    front?: [number, number, number, number],
-    left?: [number, number, number, number],
-    top?: [number, number, number, number],
-    bottom?: [number, number, number, number, number?, number?],
-    back?: [number, number, number, number]
-};
 type FaceName = 'right' | 'front' | 'left' | 'top' | 'bottom' | 'back';
-function shiftpos(pos: Pos
-    , x: number, y: number) {
-    const res: any = {};
-    Object.keys(pos).map(i => {
-        res[i] = [...(pos as any)[i]];
-        res[i][0] += x;
-        res[i][1] += y;
-    });
-    return res as Pos;
+type FaceUV = [number, number, number, number, number?, number?];
+type Pos = Partial<Record<FaceName, FaceUV>>;
+type VoxelPixel = { x: number; y: number; z: number; color: number; u: number; v: number };
+type VoxelCell = Pick<VoxelPixel, 'x' | 'y' | 'z'> & Partial<Record<FaceName | `${FaceName}_u` | `${FaceName}_v`, number>>;
+type CharacterPart = 'head' | 'body' | 'leftArm' | 'leftArmLow' | 'rightArm' | 'rightArmLow' | 'leftLeg' | 'leftLegLow' | 'rightLeg' | 'rightLegLow';
+
+function shiftpos(pos: Pos, x: number, y: number): Pos {
+    const result: Pos = {};
+    for (const [face, uv] of Object.entries(pos) as [FaceName, FaceUV][]) {
+        result[face] = [uv[0] + x, uv[1] + y, ...uv.slice(2)] as FaceUV;
+    }
+    return result;
 }
 
 function uvTo3d(imageData: ImageData | null, pos: Pos, targetBoxHeight?: number) {
@@ -160,13 +159,13 @@ function uvTo3d(imageData: ImageData | null, pos: Pos, targetBoxHeight?: number)
     const source_box_height = pos.front![3];
     const box_height = targetBoxHeight ?? source_box_height;
 
-    const result = {} as Pos;
+    const result: Partial<Record<FaceName, VoxelPixel[]>> = {};
     if (!imageData) return result;
 
     const data = imageData.data;
     const width = imageData.width;
 
-    for (const [face, uv] of Object.entries(pos)) {
+    for (const [face, uv] of Object.entries(pos) as [FaceName, FaceUV][]) {
         const [u, v, w, h, x_flip, y_flip] = uv;
         const startX = Math.floor(u);
         const startY = Math.floor(v);
@@ -177,7 +176,8 @@ function uvTo3d(imageData: ImageData | null, pos: Pos, targetBoxHeight?: number)
             ? targetBoxHeight
             : faceHeight;
 
-        (result as any)[face] = [];
+        const pixels: VoxelPixel[] = [];
+        result[face] = pixels;
 
         for (let y = 0; y < outputHeight; y++) {
             const sampledY = isVerticalSide && outputHeight !== faceHeight
@@ -196,14 +196,13 @@ function uvTo3d(imageData: ImageData | null, pos: Pos, targetBoxHeight?: number)
 
                 if (a < 255) continue;
 
-                (result as any)[face].push({
+                pixels.push({
                     ...(face === 'front' ? { z: box_depth / 2, x: x - box_width / 2 + 1, y: box_height / 2 - y }
                         : face === 'back' ? { z: -box_depth / 2 + 1, x: -x + box_width / 2, y: box_height / 2 - y }
                             : face === 'left' ? { z: -x + box_depth / 2, y: box_height / 2 - y, x: box_width / 2 }
                                 : face === 'right' ? { z: -box_depth / 2 + x + 1, y: box_height / 2 - y, x: -box_width / 2 + 1 }
                                     : face === 'top' ? { y: box_height / 2, x: x - box_width / 2 + 1, z: -box_depth / 2 + y + 1 }
-                                        : face === 'bottom' ? { y: -box_height / 2 + 1, x: x - box_width / 2 + 1, z: -y + box_depth / 2 }
-                                            : {}),
+                                        : { y: -box_height / 2 + 1, x: x - box_width / 2 + 1, z: -y + box_depth / 2 }),
                     color: (r << 16) + (g << 8) + b,
                     u: startX + readX,
                     v: startY + readY
@@ -216,11 +215,11 @@ function uvTo3d(imageData: ImageData | null, pos: Pos, targetBoxHeight?: number)
 
 function createFaceMaterials(texture: THREE.Texture, textureSize: number, uvMap: Pos, missingColor?: { [face: string]: number }, litMaterials = false) {
     const Material = litMaterials ? THREE.MeshLambertMaterial : THREE.MeshBasicMaterial;
-    const order = ['left', 'right', 'top', 'bottom', 'front', 'back'];
+    const order = ['left', 'right', 'top', 'bottom', 'front', 'back'] as const;
     const materials = [];
 
     for (const face of order) {
-        const uv = (uvMap as any)[face];
+        const uv = uvMap[face];
         if (!uv) {
             if (missingColor && missingColor[face] !== undefined) {
                 materials.push(new Material({ color: missingColor[face] }));
@@ -264,11 +263,11 @@ function createFaceMaterials(texture: THREE.Texture, textureSize: number, uvMap:
 function createCuteFaceMaterials(imageData: ImageData | null, texture: THREE.Texture, textureSize: number, uvMap: Pos, missingColor?: { [face: string]: number }, litMaterials = false) {
     const Material = litMaterials ? THREE.MeshLambertMaterial : THREE.MeshBasicMaterial;
     if (!imageData) return createFaceMaterials(texture, textureSize, uvMap, missingColor, litMaterials);
-    const order = ['left', 'right', 'top', 'bottom', 'front', 'back'];
+    const order = ['left', 'right', 'top', 'bottom', 'front', 'back'] as const;
     const materials = [];
 
     for (const face of order) {
-        const uv = (uvMap as any)[face];
+        const uv = uvMap[face];
         if (!uv) {
             if (missingColor && missingColor[face] !== undefined) {
                 materials.push(new Material({ color: missingColor[face] }));
@@ -399,7 +398,7 @@ function sampleLimbSectionColor(imageData: ImageData | null, upperMap: Pos, lowe
 }
 
 // Generate 3D voxel group based on pixel data (for performance, we do not generate meshes in bulk in JSX, but reuse native logic to generate Groups)
-function createVoxelGroup(imageData: ImageData | null, cfg: any, showEdges = false, isCute = false, litMaterials = false) {
+function createVoxelGroup(imageData: ImageData | null, cfg: [Pos, number, [number, number, number]], showEdges = false, isCute = false, litMaterials = false) {
     const Material = litMaterials ? THREE.MeshLambertMaterial : THREE.MeshBasicMaterial;
     const group = new THREE.Group();
     const [uvMap, extra_voxel, size] = cfg;
@@ -415,9 +414,10 @@ function createVoxelGroup(imageData: ImageData | null, cfg: any, showEdges = fal
     const voxel = uvTo3d(imageData, uvMap, targetHeight);
 
     // 将不同面的体素像素按 3D 坐标聚合
-    const grid: { [key: string]: any } = {};
-    Object.keys(voxel).forEach((face) => {
-        for (const i of (voxel as any)[face]) {
+    const grid: Record<string, VoxelCell> = {};
+    Object.entries(voxel).forEach(([key, pixels]) => {
+        const face = key as FaceName;
+        for (const i of pixels) {
             const key = `${i.x}_${i.y}_${i.z}`;
             if (!grid[key]) {
                 grid[key] = { x: i.x, y: i.y, z: i.z };
@@ -428,7 +428,7 @@ function createVoxelGroup(imageData: ImageData | null, cfg: any, showEdges = fal
         }
     });
 
-    Object.values(grid).forEach((cell: any) => {
+    Object.values(grid).forEach((cell) => {
         const { x, y, z, left, right, top, bottom, front, back } = cell;
 
         // 找出一个该体素上存在的颜色作为缺损面的保底颜色
@@ -438,9 +438,9 @@ function createVoxelGroup(imageData: ImageData | null, cfg: any, showEdges = fal
         // 0: +x (对应 left), 1: -x (对应 right)
         // 2: +y (对应 top), 3: -y (对应 bottom)
         // 4: +z (对应 front), 5: -z (对应 back)
-        const materials = [
+        const materials = ([
             'left', 'right', 'top', 'bottom', 'front', 'back'
-        ].map(faceName => {
+        ] as const).map(faceName => {
             const color = cell[faceName];
             return new Material({
                 color: color !== undefined ? color : anyColor,
@@ -478,7 +478,7 @@ function createVoxelGroup(imageData: ImageData | null, cfg: any, showEdges = fal
             edgesMap[key].faces.push({ normal });
         };
 
-        Object.values(grid).forEach((cell: any) => {
+        Object.values(grid).forEach((cell) => {
             const { x, y, z } = cell;
             const px = (x - 0.5) * scale_x;
             const py = (y - 0.5) * scale_y;
@@ -576,10 +576,10 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     const armSegmentHeight = useUnifiedArms ? 12 : isCute ? 4 : 6;
 
     // Refs
-    const characterRef = useRef(null);
-    const partsRefs = useRef({});
-    const setPartRef = (name: string) => (ref: any) => {
-        if (ref) (partsRefs.current as any)[name] = ref;
+    const characterRef = useRef<THREE.Group>(null);
+    const partsRefs = useRef<Record<string, THREE.Object3D | null>>({});
+    const setPartRef = (name: string) => (ref: THREE.Group | null) => {
+        partsRefs.current[name] = ref;
     };
 
     const isMouseDownOnMesh = useRef(false);
@@ -590,15 +590,15 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         return () => window.removeEventListener('mouseup', handleMouseUp);
     }, []);
 
-    const resolvePixelCoords = (part: string, e: any, isOverlay = false): [number, number] | null => {
+    const resolvePixelCoords = (part: CharacterPart, e: ThreeEvent<PointerEvent>, isOverlay = false): [number, number] | null => {
         const actualIsOverlay = showOverlay ? isOverlay : false;
 
         if (e.object?.userData?.cell && actualIsOverlay) {
             const cell = e.object.userData.cell;
             const faceIndex = (e.face && typeof e.face.materialIndex === 'number')
                 ? e.face.materialIndex
-                : (e.face ? Math.floor(e.faceIndex / 2) : 0);
-            const faces = ['left', 'right', 'top', 'bottom', 'front', 'back'];
+                : (e.face ? Math.floor((e.faceIndex ?? 0) / 2) : 0);
+            const faces = ['left', 'right', 'top', 'bottom', 'front', 'back'] as const;
             const faceName = faces[faceIndex];
             const u_px = cell[`${faceName}_u`];
             const v_px = cell[`${faceName}_v`];
@@ -607,16 +607,16 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
         const faceIndex = (e.face && typeof e.face.materialIndex === 'number')
             ? e.face.materialIndex
-            : (e.face ? Math.floor(e.faceIndex / 2) : 0);
-        const faces = ['left', 'right', 'top', 'bottom', 'front', 'back'];
+            : (e.face ? Math.floor((e.faceIndex ?? 0) / 2) : 0);
+        const faces = ['left', 'right', 'top', 'bottom', 'front', 'back'] as const;
         const faceName = faces[faceIndex] as FaceName;
-        const uvConfig = (charData.uvMaps as any)[part];
+        const uvConfig = charData.uvMaps[part];
         if (!uvConfig) return null;
-        let uvMap = (uvConfig as any)[faceName];
+        let uvMap = uvConfig[faceName];
         if (!uvMap) return null;
 
         if (actualIsOverlay) {
-            const mockUv: any = {};
+            const mockUv: Pos = {};
             mockUv[faceName] = uvMap;
             if (part === 'head') uvMap = shiftpos(mockUv, 32, 0)[faceName];
             else if (part === 'body') uvMap = shiftpos(mockUv, 0, 16)[faceName];
@@ -624,6 +624,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
             else if (part.includes('Leg')) uvMap = shiftpos(mockUv, part.includes('left') ? -16 : 0, part.includes('left') ? 0 : 16)[faceName];
         }
 
+        if (!uvMap) return null;
         const [u, v, w, h, x_flip, y_flip] = uvMap;
         const uvCoords = e.uv;
         if (!uvCoords) return null;
@@ -634,7 +635,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         return [Math.floor(u + u_val * w), Math.floor(v + (1 - v_val) * h)];
     };
 
-    const handle3DClick = (part: string, e: any, isOverlay = false, isDown = false) => {
+    const handle3DClick = (part: CharacterPart, e: ThreeEvent<PointerEvent>, isOverlay = false, isDown = false) => {
         // Check if the part is visible before interaction
         const basePart = part.replace('Low', '') as keyof VisibleParts;
         if (visibleParts[basePart] === false) return;
@@ -663,99 +664,21 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         if (coords) onPaint(coords[0], coords[1]);
     };
 
-    useFrame(({ clock }) => {
-        const t = clock.getElapsedTime() * 10;
-        const refs = partsRefs.current;
-        const setRot = (name: string, x: number, y: number, z: number = 0, order: THREE.EulerOrder = 'XYZ') => {
-            if ((refs as any)[name]) {
-                (refs as any)[name].rotation.set(x, y, z, order);
-            }
-        };
-
-        if (action === 'idle') {
-            if (isCute) {
-                const breath = Math.sin(t * 0.25) * 0.1;
-                const headTilt = isAlex ? Math.sin(t * 0.15) * 0.025 : 0;
-                setRot('left_arm', 0, 0, CUTE_ARM_TILT);
-                setRot('right_arm', 0, 0, -CUTE_ARM_TILT);
-                setRot('left_low_arm', 0, 0, 0);
-                setRot('right_low_arm', 0, 0, 0);
-                setRot('left_leg', 0, isAlex ? 0.04 : 0, 0);
-                setRot('right_leg', 0, isAlex ? -0.04 : 0, 0);
-                setRot('head', 0, 0, headTilt);
-                setRot('body', 0, 0, 0);
-                if ((refs as any)['body']) {
-                    (refs as any)['body'].position.set(0, cuteConfig.bodyPosY + breath, 0);
-                }
-            } else {
-                setRot('left_arm', 0, 0, 0);
-                setRot('right_arm', 0, 0, 0);
-                setRot('left_low_arm', 0, 0, 0);
-                setRot('right_low_arm', 0, 0, 0);
-                setRot('left_leg', 0, 0, 0);
-                setRot('right_leg', 0, 0, 0);
-                setRot('head', 0, 0, 0);
-                setRot('body', 0, 0, 0);
-                if ((refs as any)['body']) {
-                    (refs as any)['body'].position.set(0, 10, 0);
-                }
-            }
-            if (characterRef.current) {
-                (characterRef.current as any).position.set(0, 0, 0);
-                (characterRef.current as any).rotation.set(0, 0, 0);
-            }
-        } else if (action === 'walk' || action === 'walking') {
-            if (isCute) {
-                const swing = Math.sin(t * 0.5) * 0.5;
-                const roll = Math.sin(t * 0.5) * (isAlex ? 0.06 : 0.03);
-                const bob = Math.abs(Math.sin(t * 0.5)) * 0.2;
-                // Swing around the tilted arm's local X axis to preserve its front-view slope.
-                setRot('left_arm', -swing, 0, CUTE_ARM_TILT, 'ZYX');
-                setRot('right_arm', swing, 0, -CUTE_ARM_TILT, 'ZYX');
-                setRot('left_low_arm', 0, 0, 0);
-                setRot('right_low_arm', 0, 0, 0);
-                setRot('left_leg', swing, isAlex ? 0.04 : 0, 0);
-                setRot('right_leg', -swing, isAlex ? -0.04 : 0, 0);
-                setRot('head', 0, 0, -roll * 0.5);
-                setRot('body', 0, 0, roll);
-                if ((refs as any)['body']) {
-                    (refs as any)['body'].position.set(0, cuteConfig.bodyPosY + bob, 0);
-                }
-            } else {
-                const swing = Math.sin(t * 0.5) * 0.8;
-                setRot('left_arm', -swing, 0, 0);
-                setRot('right_arm', swing, 0, 0);
-                setRot('left_low_arm', 0, 0, 0);
-                setRot('right_low_arm', 0, 0, 0);
-                setRot('left_leg', swing, 0, 0);
-                setRot('right_leg', -swing, 0, 0);
-                setRot('head', 0, 0, 0);
-                setRot('body', 0, 0, 0);
-                if ((refs as any)['body']) {
-                    (refs as any)['body'].position.set(0, 10, 0);
-                }
-            }
-            if (characterRef.current) {
-                (characterRef.current as any).position.y = 0;
-                (characterRef.current as any).rotation.x = 0;
-            }
-        } else if (action === 'dance') {
-            // FBX animation driven by DanceController
-        }
-    });
-
     // 2. 纹理和身型处理 (Steve or Alex)
-    const { isAlex, processedTexture } = useMemo(() => {
-        texture.magFilter = THREE.NearestFilter;
-        texture.minFilter = THREE.NearestFilter;
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.needsUpdate = true;
+    const processedTexture = useMemo(() => {
+        const copy = texture.clone();
+        copy.magFilter = THREE.NearestFilter;
+        copy.minFilter = THREE.NearestFilter;
+        copy.colorSpace = THREE.SRGBColorSpace;
+        copy.needsUpdate = true;
+        return copy;
+    }, [texture]);
+    useEffect(() => () => processedTexture.dispose(), [processedTexture]);
 
-        let typeIsAlex = true;
-        if (texture.image) {
-            typeIsAlex = isSlim((texture as any).image);
-        }
-        return { isAlex: typeIsAlex, processedTexture: texture };
+    const isAlex = useMemo(() => {
+        // The editor mutates the canvas pixels in place, so its revision is an input.
+        void updateTrigger;
+        return texture.image ? isSlim(texture.image as SkinImageSource) : true;
     }, [texture, updateTrigger]);
 
     const slimDanceArms = isAlex && action === 'dance';
@@ -802,8 +725,10 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     }, [armConfig, useUnifiedArms]);
 
     const rawImageData = useMemo(() => {
-        const img = processedTexture.image as any;
-        if (!img || !img.complete || img.width <= 0) return null;
+        // Re-read pixels when the editor updates the existing canvas.
+        void updateTrigger;
+        const img = processedTexture.image as SkinImageSource & { complete?: boolean };
+        if (!img || img.complete === false || img.width <= 0) return null;
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = img.width;
         tempCanvas.height = img.height;
@@ -815,7 +740,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     }, [processedTexture, updateTrigger]);
 
     const mats = useMemo(() => {
-        const createMat = (map: Pos, missing?: any) => {
+        const createMat = (map: Pos, missing?: Partial<Record<FaceName, number>>) => {
             if (isCute && rawImageData) {
                 return createCuteFaceMaterials(rawImageData, processedTexture, 64, map, missing, litMaterials);
             }
@@ -859,7 +784,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         const { armWidth, armDepth } = armConfig;
         const bodyVoxelGroup = createVoxelGroup(rawImageData, [shiftpos(uvMaps.body, 0, 16), 0.5, [CUTE_BODY_WIDTH, isCute ? CUTE_BODY_HEIGHT : 12, 4]], showEdges, isCute, litMaterials);
         if (isCute && bodyVoxelGroup) {
-            bodyVoxelGroup.children.forEach((child: any) => {
+            bodyVoxelGroup.children.forEach((child) => {
                 if (child instanceof THREE.Mesh && child.position) {
                     const t = Math.max(0, Math.min(1, (child.position.y + CUTE_BODY_HEIGHT / 2) / CUTE_BODY_HEIGHT));
                     const scale = 1.0 - CUTE_BODY_TAPER * t;
@@ -986,45 +911,44 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         };
     }, [bodyGeometry, bodyOverlayGeometry, coreEdgeGeometries]);
 
-    const charData = useMemo(() => ({
+    const charData = {
         armWidth: armConfig.armWidth,
         armDepth: armConfig.armDepth,
         armPositionX: armConfig.armPositionX,
         uvMaps,
         mats,
         voxels
-    }), [armConfig, uvMaps, mats, voxels]);
+    };
 
     // 4. 清理资源，防止内存泄漏和 WebGL Context Lost
     useEffect(() => {
         return () => {
             if (mats) {
-                Object.values(mats).forEach((matList: any) => {
-                    matList.forEach((m: THREE.Material) => {
-                        if ((m as any).map) (m as any).map.dispose();
+                Object.values(mats).forEach((matList) => {
+                    matList.forEach((m: THREE.Material & { map?: THREE.Texture | null }) => {
+                        if (m.map) m.map.dispose();
                         m.dispose();
                     });
                 });
             }
             if (voxels) {
                 Object.values(voxels).forEach((group: THREE.Group) => {
-                    group.traverse((obj: any) => {
-                        if (obj.isMesh) {
+                    group.traverse((obj) => {
+                        if (obj instanceof THREE.Mesh) {
                             obj.geometry.dispose();
                             if (Array.isArray(obj.material)) {
-                                obj.material.forEach((m: THREE.Material) => {
-                                    if ((m as any).map) (m as any).map.dispose();
+                                obj.material.forEach((m: THREE.Material & { map?: THREE.Texture | null }) => {
+                                    if (m.map) m.map.dispose();
                                     m.dispose();
                                 });
                             } else {
                                 if (obj.material.map) obj.material.map.dispose();
                                 obj.material.dispose();
                             }
-                        } else if (obj.type === 'LineSegments') {
+                        } else if (obj instanceof THREE.LineSegments) {
                             obj.geometry.dispose();
-                            if (obj.material) {
-                                obj.material.dispose();
-                            }
+                            const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+                            materials.forEach(material => material.dispose());
                         }
                     });
                 });
@@ -1036,10 +960,10 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
     useEffect(() => {
         if (!mats) return;
 
-        Object.values(mats).forEach((matList: any) => {
-            matList.forEach((m: THREE.Material) => {
-                if ((m as any).map) {
-                    (m as any).map.needsUpdate = true;
+        Object.values(mats).forEach((matList) => {
+            matList.forEach((m: THREE.Material & { map?: THREE.Texture | null }) => {
+                if (m.map) {
+                    m.map.needsUpdate = true;
                 }
             });
         });
@@ -1079,6 +1003,87 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
         };
     }, [isCute, armConfig.armPositionX, armConfig.armWidth, slimDanceArms]);
 
+    useFrame(({ clock }) => {
+        const t = clock.getElapsedTime() * 10;
+        const refs = partsRefs.current;
+        const setRot = (name: string, x: number, y: number, z: number = 0, order: THREE.EulerOrder = 'XYZ') => {
+            if (refs[name]) {
+                refs[name].rotation.set(x, y, z, order);
+            }
+        };
+
+        if (action === 'idle') {
+            if (isCute) {
+                const breath = Math.sin(t * 0.25) * 0.1;
+                const headTilt = isAlex ? Math.sin(t * 0.15) * 0.025 : 0;
+                setRot('left_arm', 0, 0, CUTE_ARM_TILT);
+                setRot('right_arm', 0, 0, -CUTE_ARM_TILT);
+                setRot('left_low_arm', 0, 0, 0);
+                setRot('right_low_arm', 0, 0, 0);
+                setRot('left_leg', 0, isAlex ? 0.04 : 0, 0);
+                setRot('right_leg', 0, isAlex ? -0.04 : 0, 0);
+                setRot('head', 0, 0, headTilt);
+                setRot('body', 0, 0, 0);
+                if (refs['body']) {
+                    refs['body'].position.set(0, cuteConfig.bodyPosY + breath, 0);
+                }
+            } else {
+                setRot('left_arm', 0, 0, 0);
+                setRot('right_arm', 0, 0, 0);
+                setRot('left_low_arm', 0, 0, 0);
+                setRot('right_low_arm', 0, 0, 0);
+                setRot('left_leg', 0, 0, 0);
+                setRot('right_leg', 0, 0, 0);
+                setRot('head', 0, 0, 0);
+                setRot('body', 0, 0, 0);
+                if (refs['body']) {
+                    refs['body'].position.set(0, 10, 0);
+                }
+            }
+            if (characterRef.current) {
+                characterRef.current.position.set(0, 0, 0);
+                characterRef.current.rotation.set(0, 0, 0);
+            }
+        } else if (action === 'walk' || action === 'walking') {
+            if (isCute) {
+                const swing = Math.sin(t * 0.5) * 0.5;
+                const roll = Math.sin(t * 0.5) * (isAlex ? 0.06 : 0.03);
+                const bob = Math.abs(Math.sin(t * 0.5)) * 0.2;
+                // Swing around the tilted arm's local X axis to preserve its front-view slope.
+                setRot('left_arm', -swing, 0, CUTE_ARM_TILT, 'ZYX');
+                setRot('right_arm', swing, 0, -CUTE_ARM_TILT, 'ZYX');
+                setRot('left_low_arm', 0, 0, 0);
+                setRot('right_low_arm', 0, 0, 0);
+                setRot('left_leg', swing, isAlex ? 0.04 : 0, 0);
+                setRot('right_leg', -swing, isAlex ? -0.04 : 0, 0);
+                setRot('head', 0, 0, -roll * 0.5);
+                setRot('body', 0, 0, roll);
+                if (refs['body']) {
+                    refs['body'].position.set(0, cuteConfig.bodyPosY + bob, 0);
+                }
+            } else {
+                const swing = Math.sin(t * 0.5) * 0.8;
+                setRot('left_arm', -swing, 0, 0);
+                setRot('right_arm', swing, 0, 0);
+                setRot('left_low_arm', 0, 0, 0);
+                setRot('right_low_arm', 0, 0, 0);
+                setRot('left_leg', swing, 0, 0);
+                setRot('right_leg', -swing, 0, 0);
+                setRot('head', 0, 0, 0);
+                setRot('body', 0, 0, 0);
+                if (refs['body']) {
+                    refs['body'].position.set(0, 10, 0);
+                }
+            }
+            if (characterRef.current) {
+                characterRef.current.position.y = 0;
+                characterRef.current.rotation.x = 0;
+            }
+        } else if (action === 'dance') {
+            // FBX animation driven by DanceController
+        }
+    });
+
     return (
         <group ref={characterRef} onPointerLeave={() => onHoverEnd?.()}>
             <Suspense fallback={null}>
@@ -1095,7 +1100,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                         )}
                     </mesh>
                     {mode === 'voxel' || mode === 'cute' ? (
-                        <primitive object={charData.voxels!.body} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('body', e, true, true)} onPointerMove={(e: any) => handle3DClick('body', e, true)} />
+                        <primitive object={charData.voxels!.body} visible={showOverlay} onPointerDown={(e: ThreeEvent<PointerEvent>) => handle3DClick('body', e, true, true)} onPointerMove={(e: ThreeEvent<PointerEvent>) => handle3DClick('body', e, true)} />
                     ) : (
                         <mesh castShadow={litMaterials} receiveShadow={litMaterials} geometry={bodyOverlayGeometry} material={charData.mats.bodyOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('body', e, true, true)} onPointerMove={(e) => handle3DClick('body', e, true)} />
                     )}
@@ -1113,7 +1118,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             )}
                         </mesh>
                         {mode === 'voxel' || mode === 'cute' ? (
-                            <primitive object={charData.voxels!.head} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('head', e, true, true)} onPointerMove={(e: any) => handle3DClick('head', e, true)} />
+                            <primitive object={charData.voxels!.head} visible={showOverlay} onPointerDown={(e: ThreeEvent<PointerEvent>) => handle3DClick('head', e, true, true)} onPointerMove={(e: ThreeEvent<PointerEvent>) => handle3DClick('head', e, true)} />
                         ) : (
                             <mesh castShadow={litMaterials} receiveShadow={litMaterials} material={charData.mats.headOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('head', e, true, true)} onPointerMove={(e) => handle3DClick('head', e, true)}>
                                 <boxGeometry args={[9, 9, 9]} />
@@ -1134,7 +1139,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             )}
                         </mesh>
                         {mode === 'voxel' || mode === 'cute' ? (
-                            <primitive object={charData.voxels!.leftArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArm', e, true)} />
+                            <primitive object={charData.voxels!.leftArm} visible={showOverlay} onPointerDown={(e: ThreeEvent<PointerEvent>) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e: ThreeEvent<PointerEvent>) => handle3DClick('leftArm', e, true)} />
                         ) : (
                             <mesh castShadow={litMaterials} receiveShadow={litMaterials} material={charData.mats.leftArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArm', e, true, true)} onPointerMove={(e) => handle3DClick('leftArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, armSegmentHeight + 0.5, charData.armDepth + 0.5]} /></mesh>
                         )}
@@ -1151,7 +1156,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                                     )}
                                 </mesh>
                                 {mode === 'voxel' || mode === 'cute' ? (
-                                    <primitive object={charData.voxels!.leftArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftArmLow', e, true)} />
+                                    <primitive object={charData.voxels!.leftArmLow} visible={showOverlay} onPointerDown={(e: ThreeEvent<PointerEvent>) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e: ThreeEvent<PointerEvent>) => handle3DClick('leftArmLow', e, true)} />
                                 ) : (
                                     <mesh castShadow={litMaterials} receiveShadow={litMaterials} material={charData.mats.leftArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, charData.armDepth + 0.502]} /></mesh>
                                 )}
@@ -1172,7 +1177,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             )}
                         </mesh>
                         {mode === 'voxel' || mode === 'cute' ? (
-                            <primitive object={charData.voxels!.rightArm} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArm', e, true)} />
+                            <primitive object={charData.voxels!.rightArm} visible={showOverlay} onPointerDown={(e: ThreeEvent<PointerEvent>) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e: ThreeEvent<PointerEvent>) => handle3DClick('rightArm', e, true)} />
                         ) : (
                             <mesh castShadow={litMaterials} receiveShadow={litMaterials} material={charData.mats.rightArmOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArm', e, true, true)} onPointerMove={(e) => handle3DClick('rightArm', e, true)}><boxGeometry args={[charData.armWidth + 0.5, armSegmentHeight + 0.5, charData.armDepth + 0.5]} /></mesh>
                         )}
@@ -1189,7 +1194,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                                     )}
                                 </mesh>
                                 {mode === 'voxel' || mode === 'cute' ? (
-                                    <primitive object={charData.voxels!.rightArmLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightArmLow', e, true)} />
+                                    <primitive object={charData.voxels!.rightArmLow} visible={showOverlay} onPointerDown={(e: ThreeEvent<PointerEvent>) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e: ThreeEvent<PointerEvent>) => handle3DClick('rightArmLow', e, true)} />
                                 ) : (
                                     <mesh castShadow={litMaterials} receiveShadow={litMaterials} material={charData.mats.rightArmLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightArmLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightArmLow', e, true)}><boxGeometry args={[charData.armWidth + 0.502, (isCute ? 4 : 6) + 0.502, charData.armDepth + 0.502]} /></mesh>
                                 )}
@@ -1210,7 +1215,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             )}
                         </mesh>
                         {mode === 'voxel' || mode === 'cute' ? (
-                            <primitive object={charData.voxels!.leftLeg} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftLeg', e, true)} />
+                            <primitive object={charData.voxels!.leftLeg} visible={showOverlay} onPointerDown={(e: ThreeEvent<PointerEvent>) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e: ThreeEvent<PointerEvent>) => handle3DClick('leftLeg', e, true)} />
                         ) : (
                             <mesh castShadow={litMaterials} receiveShadow={litMaterials} material={charData.mats.leftLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLeg', e, true, true)} onPointerMove={(e) => handle3DClick('leftLeg', e, true)}><boxGeometry args={[4.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
                         )}
@@ -1226,7 +1231,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                                 )}
                             </mesh>
                             {mode === 'voxel' || mode === 'cute' ? (
-                                <primitive object={charData.voxels!.leftLegLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('leftLegLow', e, true)} />
+                                <primitive object={charData.voxels!.leftLegLow} visible={showOverlay} onPointerDown={(e: ThreeEvent<PointerEvent>) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e: ThreeEvent<PointerEvent>) => handle3DClick('leftLegLow', e, true)} />
                             ) : (
                                 <mesh castShadow={litMaterials} receiveShadow={litMaterials} material={charData.mats.leftLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('leftLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('leftLegLow', e, true)}><boxGeometry args={[4.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
                             )}
@@ -1246,7 +1251,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                             )}
                         </mesh>
                         {mode === 'voxel' || mode === 'cute' ? (
-                            <primitive object={charData.voxels!.rightLeg} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightLeg', e, true)} />
+                            <primitive object={charData.voxels!.rightLeg} visible={showOverlay} onPointerDown={(e: ThreeEvent<PointerEvent>) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e: ThreeEvent<PointerEvent>) => handle3DClick('rightLeg', e, true)} />
                         ) : (
                             <mesh castShadow={litMaterials} receiveShadow={litMaterials} material={charData.mats.rightLegOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLeg', e, true, true)} onPointerMove={(e) => handle3DClick('rightLeg', e, true)}><boxGeometry args={[4.5, (isCute ? 4 : 6) + 0.5, 4.5]} /></mesh>
                         )}
@@ -1262,7 +1267,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
                                 )}
                             </mesh>
                             {mode === 'voxel' || mode === 'cute' ? (
-                                <primitive object={charData.voxels!.rightLegLow} visible={showOverlay} onPointerDown={(e: any) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e: any) => handle3DClick('rightLegLow', e, true)} />
+                                <primitive object={charData.voxels!.rightLegLow} visible={showOverlay} onPointerDown={(e: ThreeEvent<PointerEvent>) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e: ThreeEvent<PointerEvent>) => handle3DClick('rightLegLow', e, true)} />
                             ) : (
                                 <mesh castShadow={litMaterials} receiveShadow={litMaterials} material={charData.mats.rightLegLowOverlay} visible={showOverlay} onPointerDown={(e) => handle3DClick('rightLegLow', e, true, true)} onPointerMove={(e) => handle3DClick('rightLegLow', e, true)}><boxGeometry args={[4.502, (isCute ? 4 : 6) + 0.502, 4.502]} /></mesh>
                             )}
@@ -1276,7 +1281,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 
 export function MC({ textureUrl, texture, mode = 'voxel', action = 'idle', visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, litMaterials = false, unifiedArms = false, onPaint, onPaintEnd, onHover, onHoverEnd, flatLighting = false }: { textureUrl?: string, texture?: THREE.Texture, mode?: 'voxel' | 'plane' | 'cute', action?: 'idle' | 'walk' | 'walking' | 'dance', visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, litMaterials?: boolean, unifiedArms?: boolean, onPaint?: (x: number, y: number) => void, onPaintEnd?: () => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void, flatLighting?: boolean }) {
     const isPaintingRef = useRef(false);
-    const controlsRef = useRef<any>(null);
+    const controlsRef = useRef<OrbitControlsInstance>(null);
 
     useEffect(() => {
         const handleMouseUp = () => {

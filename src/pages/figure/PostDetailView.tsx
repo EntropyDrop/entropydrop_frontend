@@ -1,3 +1,4 @@
+import type { CurrentUser } from '../../hooks/useCurrentUser'
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@iconify/react'
@@ -23,7 +24,7 @@ interface PostDetailViewProps {
     handleLikePost: (postId: string, e: React.MouseEvent) => void
     handleCommentReply: (parentCommentId: string, replyText: string) => void
     current: LangData
-    currentUser: any
+    currentUser: CurrentUser | null
     handleDeletePost: (postId: string) => void
     handleUpdatePostCategory: (postId: string, newCategory: 'discussions' | 'showcase') => void
     handleUpdatePostTitle: (postId: string, newTitle: string) => void

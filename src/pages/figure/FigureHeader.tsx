@@ -1,11 +1,13 @@
+import type { ForumPost } from './types'
+import type { CurrentUser } from '../../hooks/useCurrentUser'
 import { Icon } from '@iconify/react'
 import type { LangData } from '../../constants/lang'
 
 interface FigureHeaderProps {
     activeCategory: string
-    selectedPost: any
+    selectedPost: ForumPost | null
     isCreateFormOpen: boolean
-    currentUser: any
+    currentUser: CurrentUser | null
     searchInput: string
     setSearchInput: (val: string) => void
     setSearchQuery: (val: string) => void

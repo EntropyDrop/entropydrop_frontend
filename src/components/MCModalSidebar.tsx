@@ -1,3 +1,4 @@
+import type { LangData } from '../constants/lang'
 import { Icon } from '@iconify/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { GenerationLogItem } from '../types/log'
@@ -49,7 +50,7 @@ interface MCModalSidebarProps {
     itemsPageByCol: { [id: string]: number };
     itemsTotalPagesByCol: { [id: string]: number };
     onLoadMoreItems: (colId: string) => void;
-    current: any;
+    current: LangData;
 }
 
 export function MCModalSidebar({

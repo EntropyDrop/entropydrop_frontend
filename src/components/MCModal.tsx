@@ -1,3 +1,4 @@
+import type { LangData } from '../constants/lang'
 import { useSkinDetails } from './mcmodal/useSkinDetails'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { useAuthSession } from '../hooks/useAuthSession'
@@ -47,7 +48,7 @@ export interface MCModalProps {
     closeModal: () => void
     onEdit?: (textureUrl: string, id: string, isPublic: boolean, name: string) => void
     onAiEdit?: (source: string, id: string, isPublic: boolean) => void
-    current: any // Use any temporarily to avoid import loops if needed, or LangData
+    current: LangData
     onItemSelect?: (logId: string) => void
 }
 
@@ -385,10 +386,10 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
 
     useEffect(() => {
-        if (item && item.is_public === false) {
+        if (item.is_public === false) {
             setActiveTab('private');
         }
-    }, [item?.is_public]);
+    }, [item.is_public]);
 
     const [showSidebar, setShowSidebar] = useState(false);
     const [sidebarType, setSidebarType] = useState<'author' | 'containing' | 'derived'>('author');
@@ -465,13 +466,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         fetchFavorited();
     }, [item.id, isLoggedIn]);
 
-    useEffect(() => {
-        if (showSidebar) {
-            fetchCollections();
-        }
-    }, [showSidebar, sidebarType, item.id, item.creator?.id]);
-
-    const fetchCollections = async (pageNum: number = 1) => {
+    const fetchCollections = useCallback(async (pageNum: number = 1) => {
         if (sidebarType === 'derived') {
             const isSame = lastSidebarContext.current?.type === sidebarType && lastSidebarContext.current?.id === item.id;
             if (isSame) return;
@@ -529,7 +524,13 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         } finally {
             setIsLoadingNav(false);
         }
-    };
+    }, [sidebarType, item.id, item.creator?.id, current.mcmodal.allDerived]);
+
+    useEffect(() => {
+        if (showSidebar) {
+            fetchCollections();
+        }
+    }, [showSidebar, sidebarType, item.id, item.creator?.id, fetchCollections]);
 
     const toggleSidebar = (type: 'author' | 'containing' | 'derived') => {
         if (showSidebar && sidebarType === type) {
@@ -540,13 +541,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         }
     };
 
-    useEffect(() => {
-        if (isDropdownOpen) {
-            fetchMyCollections(1);
-        }
-    }, [isDropdownOpen, item.id, activeTab]);
-
-    const fetchMyCollections = async (pageNum: number = 1) => {
+    const fetchMyCollections = useCallback(async (pageNum: number = 1) => {
         const isInitial = pageNum === 1;
         if (isInitial) {
             setIsLoadingMyCollections(true);
@@ -575,7 +570,13 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                 setIsLoadingMyCollections(false);
             }
         }
-    };
+    }, [activeTab, item.id]);
+
+    useEffect(() => {
+        if (isDropdownOpen) {
+            fetchMyCollections(1);
+        }
+    }, [isDropdownOpen, item.id, activeTab, fetchMyCollections]);
 
     const handleToggleMyCollection = (id: string) => {
         setMySelectedIds(prev =>
@@ -670,7 +671,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         }
     };
 
-    const handleGoogleSuccess = async (credentialResponse: any) => {
+    const handleGoogleSuccess = async (credentialResponse: { credential?: string }) => {
         try {
             const res = await apiFetch('/api/auth/google', {
                 method: 'POST',
@@ -947,7 +948,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                     {isLoggedIn && (
                                                         <>
                                                             <span className="px-2 py-0.5 bg-[#4ea632]/20 text-[#4ea632] text-[10px] font-pixel-hans border border-[#4ea632]/30">
-                                                                {!item.id ? 'UPLOADED' : (item.mode === 'aigc_text_to_skin' || (item.mode as any) === 'text') ? 'TEXT TO SKIN' : (item.mode === 'aigc_image_to_skin' || (item.mode as any) === 'image') ? 'IMAGE TO SKIN' : item.mode?.replace('aigc_', '').replaceAll('_', ' ').toUpperCase()}
+                                                                {!item.id ? 'UPLOADED' : (item.mode === 'aigc_text_to_skin' || String(item.mode) === 'text') ? 'TEXT TO SKIN' : (item.mode === 'aigc_image_to_skin' || String(item.mode) === 'image') ? 'IMAGE TO SKIN' : item.mode?.replace('aigc_', '').replaceAll('_', ' ').toUpperCase()}
                                                             </span>
 
                                                             <span className={`px-3 py-1 rounded-full text-[10px] font-pixel-hans flex items-center gap-2 border ${item.is_public ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-orange-500/10 text-orange-400 border-orange-500/20'}`}>
@@ -1439,7 +1440,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                                 </div>
                                                             ) : (
                                                                 <div className="flex flex-col p-1 gap-0.5">
-                                                                    {(current.mcmodal.reasons as string[]).map((reason: string) => (
+                                                                    {current.mcmodal.reasons.map((reason) => (
                                                                         <div
                                                                             key={reason}
                                                                             onClick={() => submitReport(reason)}

@@ -61,10 +61,10 @@ export function Skin3DModal({ isOpen, onClose, textureUrl, current }: Skin3DModa
                 <div className="p-3 border-t border-white/10 flex justify-between items-center bg-black/20">
                     {/* Actions */}
                     <div className="flex gap-1 bg-black/40 p-1 border border-white/5">
-                        {['idle', 'walk'].map((a) => (
+                        {(['idle', 'walk'] as const).map((a) => (
                             <button
                                 key={a}
-                                onClick={() => setAction(a as any)}
+                                onClick={() => setAction(a)}
                                 className={`px-3 py-1 text-[10px] uppercase transition-all cursor-pointer ${action === a ? 'bg-[#3c8527] text-white' : 'text-white/40 hover:text-white'}`}
                             >
                                 {a}

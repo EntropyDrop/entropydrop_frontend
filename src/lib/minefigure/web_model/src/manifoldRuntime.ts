@@ -1,17 +1,17 @@
 import Module from 'manifold-3d';
 
-let runtime: Promise<any> | null = null;
+let runtime: Promise<Awaited<ReturnType<typeof Module>>> | null = null;
 
 /** Share a single WASM runtime, including concurrent model requests. */
-export function getManifold(): Promise<any> {
+export function getManifold(): Promise<Awaited<ReturnType<typeof Module>>> {
   if (!runtime) {
     runtime = (async () => {
-      const options: any = {};
+      let options: Parameters<typeof Module>[0];
       if (typeof window !== 'undefined') {
         const wasm = await import('manifold-3d/manifold.wasm?url');
-        options.locateFile = (path: string) => path.endsWith('.wasm') ? wasm.default : path;
+        options = { locateFile: () => wasm.default };
       }
-      const module = await (Module as any)(options);
+      const module = await Module(options);
       module.setup();
       return module;
     })().catch(error => {

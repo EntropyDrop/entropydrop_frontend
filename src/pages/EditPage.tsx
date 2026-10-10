@@ -70,7 +70,7 @@ function runKMeansQuantization(imageData: ImageData, k: number): KMeansResult {
         return { imageData, palette };
     }
 
-    let centroids: { r: number; g: number; b: number }[] = [];
+    const centroids: { r: number; g: number; b: number }[] = [];
     const step = uniqueColors.length / k;
     for (let i = 0; i < k; i++) {
         const index = Math.min(Math.floor(i * step), uniqueColors.length - 1);
@@ -78,7 +78,7 @@ function runKMeansQuantization(imageData: ImageData, k: number): KMeansResult {
     }
 
     const maxIterations = 15;
-    let assignments = new Array(uniqueColors.length).fill(-1);
+    const assignments = new Array(uniqueColors.length).fill(-1);
 
     for (let iter = 0; iter < maxIterations; iter++) {
         let changed = false;
@@ -257,7 +257,8 @@ export function EditPage({ current }: EditPageProps) {
 
             // RGB to HSL
             const max = Math.max(r, g, bv), min = Math.min(r, g, bv);
-            let hVal = 0, sVal = 0, lVal = (max + min) / 2;
+            let hVal = 0, sVal = 0;
+            const lVal = (max + min) / 2;
 
             if (max !== min) {
                 const d = max - min;
@@ -274,8 +275,8 @@ export function EditPage({ current }: EditPageProps) {
             let adjustedH = (hVal + (dh / 360)) % 1;
             if (adjustedH < 0) adjustedH += 1;
 
-            let adjustedS = Math.max(0, Math.min(1, sVal + (ds / 100)));
-            let adjustedL = Math.max(0, Math.min(1, lVal + (db / 100)));
+            const adjustedS = Math.max(0, Math.min(1, sVal + (ds / 100)));
+            const adjustedL = Math.max(0, Math.min(1, lVal + (db / 100)));
 
             // HSL to RGB
             let nr, ng, nb;
@@ -380,7 +381,7 @@ export function EditPage({ current }: EditPageProps) {
             const currentPalette = getUniqueColors(imgData);
             setKmeansPalette(currentPalette);
         }
-    }, [updateTrigger]);
+    }, [updateTrigger, ctx, isAdjustPanelOpen]);
 
     const handleSaveToCreation = async (isPublic: boolean) => {
         const canvas = canvasRef.current;

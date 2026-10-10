@@ -1,7 +1,7 @@
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { motion } from 'framer-motion'
@@ -38,7 +38,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
 
     const c = current.credits
 
-    const fetchHistory = async (p = page) => {
+    const fetchHistory = useCallback(async (p = page) => {
         setIsLoading(true)
         try {
             const res = await apiFetch(`/api/users/me/credits/history?page=${p}&page_size=${pageSize}`)
@@ -52,7 +52,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
         } finally {
             setIsLoading(false)
         }
-    }
+    }, [page, pageSize])
 
     useEffect(() => {
         setItems([])
@@ -67,7 +67,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
 
         if (!authSession) return
         fetchHistory(page)
-    }, [authSession, page])
+    }, [authSession, page, fetchHistory])
 
     const handlePay = async () => {
         if (customAmount < 1 || isProcessing) return
@@ -125,7 +125,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
                             try {
                                 const err = await apiResponseJson(captureRes)
                                 errMsg = err.detail || errMsg
-                            } catch (parseErr) {
+                            } catch {
                                 // ignore JSON parse error
                             }
                             if (errMsg !== 'Payment not completed') {
@@ -139,8 +139,8 @@ export function CreditsPage({ current }: CreditsPageProps) {
                     }
                 }
             }, 500)
-        } catch (e: any) {
-            alert(e.message)
+        } catch (e) {
+            alert(e instanceof Error ? e.message : 'Failed to create order')
             setIsProcessing(false)
         }
     }
@@ -173,7 +173,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
 
     const formatActionName = (action: string) => {
         const key = actionLabels[action]
-        if (key && key in c) return (c as any)[key] as string
+        if (key && key in c) return c[key]
         return action
     }
 

@@ -16,6 +16,13 @@ const moduleRef = { exports: {} };
 const frameCallbacks = [];
 vm.runInNewContext(code, {
     module: moduleRef, exports: moduleRef.exports,
+    document: { createElement() {
+        let source;
+        return { getContext: () => ({
+            drawImage(image) { source = image; },
+            getImageData() { return source.pixels; },
+        }) };
+    } },
     require: name => {
         if (name === 'react') return { ...React, useMemo: fn => fn(), useRef: value => ({ current: value }), useEffect() {} };
         if (name === '@react-three/fiber') return { Canvas: 'canvas', useFrame: callback => frameCallbacks.push(callback) };
@@ -118,4 +125,30 @@ test('editor lighting follows camera rotation and stays still when the camera st
     assert.ok(findAll(tree, node => node.type === 'ambientLight' || node.type === 'hemisphereLight').length > 0);
     assert.equal(findAll(MC({ litMaterials: false, flatLighting: true }), node => node.type === lighting.type).length, 0, 'The lighting switch removes the camera light');
     assert.equal(findAll(MC({}), node => node.type === lighting.type).length, 0, 'Other previews keep their existing lighting');
+});
+
+
+test('model previews configure their own texture without changing the caller texture', () => {
+    const texture = new THREE.Texture({ width: 64, height: 64, complete: false });
+    const before = { mag: texture.magFilter, min: texture.minFilter, color: texture.colorSpace };
+    const tree = MinecraftCharacterInner({ texture, mode: 'plane' });
+    const face = findAll(tree, node => node.type === 'mesh')[0].props.material.find(material => material.map).map;
+    assert.notEqual(face, texture);
+    assert.equal(face.magFilter, THREE.NearestFilter);
+    assert.equal(face.colorSpace, THREE.SRGBColorSpace);
+    assert.deepEqual({ mag: texture.magFilter, min: texture.minFilter, color: texture.colorSpace }, before);
+});
+
+test('canvas-backed editor textures produce voxel overlays and refresh after pixel edits', () => {
+    const pixels = { width: 64, height: 64, data: new Uint8ClampedArray(64 * 64 * 4) };
+    const offset = (8 * 64 + 40) * 4; // Front of the head overlay.
+    const texture = new THREE.Texture({ width: 64, height: 64, pixels });
+    for (const [revision, color] of [[1, [255, 0, 0, 255]], [2, [0, 255, 0, 255]]]) {
+        pixels.data.set(color, offset);
+        const tree = MinecraftCharacterInner({ texture, mode: 'voxel', updateTrigger: revision });
+        const overlays = findAll(tree, node => node.type === 'primitive' && node.props.object instanceof THREE.Group);
+        const head = overlays.map(node => node.props.object).find(group => group.children.length === 1);
+        assert.ok(head, 'Canvas images do not have HTMLImageElement.complete');
+        assert.equal(head.children[0].material[4].color.getHex(), revision === 1 ? 0xff0000 : 0x00ff00);
+    }
 });

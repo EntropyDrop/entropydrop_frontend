@@ -4,7 +4,7 @@ import { useCurrentUser } from '../hooks/useCurrentUser'
 import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, useEffectEvent } from 'react'
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
 import { SEO } from '../components/SEO'
@@ -25,7 +25,7 @@ interface Collection {
     item_count: number
     original_creation: boolean
     user_id?: number | string
-    previews?: any[]
+    previews?: Pick<CollectionItem, 'id' | 'data'>[]
 }
 
 interface CollectionItem {
@@ -39,7 +39,7 @@ interface CollectionItem {
         url?: string
         preview?: string
         result?: string
-        [key: string]: any
+        result_render_2d?: string
     }
 }
 
@@ -172,7 +172,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         return () => controller.abort()
     }, [authSession, myUserId, userId])
 
-    const fetchCollections = async (page: number = 1, targetUserId?: string, isPublic?: boolean, signal?: AbortSignal) => {
+    const fetchCollections = useCallback(async (page: number = 1, targetUserId?: string, isPublic?: boolean, signal?: AbortSignal) => {
         const isMe = !targetUserId || targetUserId === myUserId;
         // If we don't specify isPublic, we might be fetching for someone else or initial load
         // But for "independent" UI, we should specify.
@@ -197,8 +197,8 @@ export function CollectionPage({ current }: CollectionPageProps) {
                     setPrivateColPage(data.page)
                 } else {
                     // Fallback: split them if we didn't specify filter
-                    setPublicCollections(data.items.filter((c: any) => c.is_public))
-                    setPrivateCollections(data.items.filter((c: any) => !c.is_public))
+                    setPublicCollections(data.items.filter((c: Collection) => c.is_public))
+                    setPrivateCollections(data.items.filter((c: Collection) => !c.is_public))
                     // This fallback isn't ideal for total pages, but isMe fetch usually specifies isPublic now.
                 }
 
@@ -212,15 +212,13 @@ export function CollectionPage({ current }: CollectionPageProps) {
         } finally {
             if (!signal?.aborted) setIsLoading(false)
         }
-    }
+    }, [myUserId])
 
-    const fetchItems = async (collectionId: number | string, page: number = 1, targetUserId?: string, signal?: AbortSignal) => {
+    const fetchItems = useCallback(async (collectionId: number | string, page: number = 1, targetUserId?: string, signal?: AbortSignal) => {
         setIsLoading(true)
 
         try {
-            const allCustom = [...publicCollections, ...privateCollections];
-            const col = allCustom.find(c => c.id === collectionId) || originalCollections.find(c => c.id === collectionId) || currentCollection;
-            const uid = targetUserId || col?.user_id || userId;
+            const uid = targetUserId || (collectionId === 'liked' || collectionId === 'creations_private' ? myUserId : userId);
             let url = `/api/collections/items?collection_id=${collectionId}&user_id=${uid}&page=${page}&page_size=24`
             if (filterName) url += `&name=${encodeURIComponent(filterName)}`
             if (filterMode) url += `&mode=${filterMode}`
@@ -238,7 +236,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         } finally {
             if (!signal?.aborted) setIsLoading(false)
         }
-    }
+    }, [myUserId, userId, filterName, filterMode])
 
     useEffect(() => {
         setPublicCollections([])
@@ -317,18 +315,15 @@ export function CollectionPage({ current }: CollectionPageProps) {
         uploadPickerTab
     ])
 
+    // Cache updates do not trigger route loads; read the latest metadata when a route loads.
+    const findRouteCollection = useEffectEvent((id: string, ownerId: string) =>
+        [currentCollection, ...publicCollections, ...privateCollections, ...originalCollections].find(collection =>
+            collection && String(collection.id) === id && String(collection.user_id) === ownerId));
+
     useEffect(() => {
         // Resolve ownership first so an early public-only response cannot
         // overwrite the owner's liked and private collections.
         if (!authSession || !myUserId) return;
-
-        // 1. Handle legacy ?id= shared links
-        if (sharedId) {
-            // Redirect to the new format if we can, but we don't know the userId.
-            // For now, let it handle via the sharedId effect below or just redirect to myUserId if it's mine?
-            // Actually, let's just let the sharedId effect run as is for compatibility, 
-            // but it would be better to redirect if we knew the owner.
-        }
 
         // 2. Handle automatic redirect to /skin/collection/{myUserId}
         if (!userId && myUserId) {
@@ -342,12 +337,8 @@ export function CollectionPage({ current }: CollectionPageProps) {
         if (userId) {
             if (pathCollectionId) {
                 const ownerId = pathCollectionId === 'liked' || pathCollectionId === 'creations_private' ? myUserId : userId;
-                // If we are in a collection but currentCollection is not set or different
-                if (!currentCollection || String(currentCollection.id) !== String(pathCollectionId) || String(currentCollection.user_id) !== ownerId) {
-                    const allCustom = [...publicCollections, ...privateCollections];
-                    // Try to find it in loaded lists first
-                    const found = [...allCustom, ...originalCollections].find(c =>
-                        String(c.id) === String(pathCollectionId) && String(c.user_id) === ownerId);
+                {
+                    const found = findRouteCollection(pathCollectionId, ownerId);
 
                     if (found) {
                         setCurrentCollection(found);
@@ -395,7 +386,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                 fetchItems(pathCollectionId, itemPage, userId, controller.signal);
             } else {
                 // List view
-                if (currentCollection) setCurrentCollection(null);
+                setCurrentCollection(null);
                 if (userId === myUserId) {
                     fetchCollections(publicColPage, userId, true, controller.signal);
                     fetchCollections(privateColPage, userId, false, controller.signal);
@@ -405,25 +396,25 @@ export function CollectionPage({ current }: CollectionPageProps) {
             }
         }
         return () => controller.abort()
-    }, [authSession, userId, pathCollectionId, myUserId, publicColPage, privateColPage, itemPage, filterName, filterMode]);
+    }, [authSession, userId, pathCollectionId, myUserId, publicColPage, privateColPage, itemPage, fetchItems, fetchCollections, navigate, current.collection.myLikes, publicCreationsName, current.collection.creationsPrivate]);
 
     useEffect(() => {
         const controller = new AbortController()
         if (sharedId && authSession) {
-            setCurrentCollection({ id: sharedId, name: current.collection.publicCollection, is_public: true, item_count: 0 } as any);
+            setCurrentCollection({ id: sharedId, name: current.collection.publicCollection, is_public: true, item_count: 0, original_creation: false });
             fetchItems(sharedId, 1, undefined, controller.signal);
         }
         return () => controller.abort()
-    }, [authSession, sharedId]);
+    }, [authSession, sharedId, current.collection.publicCollection, fetchItems]);
 
-    const renderPreviewStack = (previews?: any[]) => {
+    const renderPreviewStack = (previews?: Pick<CollectionItem, 'id' | 'data'>[]) => {
         if (!previews || previews.length === 0) return null;
         return (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                {previews.slice(0, 3).map((item: any, idx: number) => (
+                {previews.slice(0, 3).map((item, idx) => (
                     <Skin2DImg
                         key={idx}
-                        src={item.data.result || item.data.url}
+                        src={item.data.result || item.data.url || ''}
                         className="absolute w-[85%] h-[85%] object-contain drop-shadow-2xl transition-transform group-hover:scale-105"
                         style={{
                             transform: `translate(${idx * 40 - (previews.length - 1) * 20}px, ${idx * 10 - (previews.length - 1) * 6}px)`,
@@ -693,7 +684,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         })
     }
 
-    const handleDeleteItem = async (e: React.MouseEvent, id: any) => {
+    const handleDeleteItem = async (e: React.MouseEvent, id: CollectionItem['id']) => {
         e.stopPropagation()
 
         const pageToFetch = (items.length - 1 === 0 && itemPage > 1) ? itemPage - 1 : itemPage;
@@ -1018,7 +1009,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                 <div className="flex flex-col gap-4">
                                     <div className="flex items-center gap-4">
                                         <span className={`text-white/20 text-[10px] uppercase tracking-widest font-bold ${current.fontClass}`}>
-                                            {(current.collection as any).labelDefault}
+                                            {current.collection.labelDefault}
                                         </span>
                                         <div className="h-px flex-1 bg-white/5" />
                                     </div>
@@ -1107,7 +1098,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                     <div className="flex items-center gap-4">
                                         <div className="flex items-center gap-2">
                                             <span className={`text-white/20 text-[10px] uppercase tracking-widest font-bold ${current.fontClass}`}>
-                                                {(current.collection as any).labelPublic}
+                                                {current.collection.labelPublic}
                                             </span>
                                             {publicColTotalPages > 1 && (
                                                 <div className="flex items-center gap-2 ml-2">
@@ -1199,7 +1190,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                     <div className="flex items-center gap-4">
                                         <div className="flex items-center gap-2">
                                             <span className={`text-white/20 text-[10px] uppercase tracking-widest font-bold ${current.fontClass}`}>
-                                                {(current.collection as any).labelPrivate}
+                                                {current.collection.labelPrivate}
                                             </span>
                                             {privateColTotalPages > 1 && (
                                                 <div className="flex items-center gap-2 ml-2">
@@ -1299,7 +1290,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                         <div className="aspect-square bg-white/5 border border-white/10 group-hover:bg-white/10 group-hover:border-green-500/30 transition-all flex items-center justify-center relative overflow-hidden">
                                             <div onClick={() => setSelectedItem(item)} className="w-[80%] h-[80%] flex items-center justify-center cursor-pointer group-hover:scale-110 transition-transform">
                                                 <Skin2DImg
-                                                    src={item.data.result_render_2d || item.data.result || item.data.url || item.data.preview}
+                                                    src={item.data.result_render_2d || item.data.result || item.data.url || item.data.preview || ''}
                                                     className="w-full h-full object-contain drop-shadow-lg"
                                                 />
                                             </div>
@@ -1576,9 +1567,18 @@ export function CollectionPage({ current }: CollectionPageProps) {
                             item={{
                                 id: selectedItem.log_id || '',
                                 prompt: selectedItem.name,
+                                name: selectedItem.name,
+                                mode: 'human_upload',
+                                source: '',
+                                creator: { id: '', username: '' },
+                                timestamp: '',
+                                likes_count: 0,
+                                is_liked: false,
+                                model_version: '',
+                                is_pro: false,
                                 result: selectedItem.data.result || selectedItem.data.url || '',
                                 is_public: selectedItem.data.is_public === true
-                            } as any}
+                            }}
                             current={current}
                             textureUrl={selectedItem.data.result || selectedItem.data.url || ''}
                             closeModal={() => setSelectedItem(null)}

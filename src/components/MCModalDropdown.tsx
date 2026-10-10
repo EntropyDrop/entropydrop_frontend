@@ -1,3 +1,4 @@
+import type { LangData } from '../constants/lang'
 import { Icon } from '@iconify/react'
 import { motion } from 'framer-motion'
 import type { Collection } from './MCModal'
@@ -12,12 +13,12 @@ interface MCModalDropdownProps {
     setNewCollectionName: (s: string) => void;
     setActiveTab: (t: 'public' | 'private') => void;
     handleToggleMyCollection: (id: string) => void;
-    handleCreateCollection: (e: any) => void;
+    handleCreateCollection: (e: React.MouseEvent<HTMLButtonElement>) => void;
     handleSaveMyCollection: () => void;
     isItemPublic?: boolean;
     hasMore?: boolean;
     onLoadMore?: () => void;
-    current: any;
+    current: LangData;
 }
 
 export function MCModalDropdown({
@@ -92,7 +93,7 @@ export function MCModalDropdown({
                         {hasMore && (
                             <div className="p-2 text-center border-t border-white/5 mt-1">
                                 <button 
-                                    onClick={(e) => { e.stopPropagation(); onLoadMore && onLoadMore(); }}
+                                    onClick={(e) => { e.stopPropagation(); onLoadMore?.(); }}
                                     className="text-[10px] font-pixel-hans text-[#4ea632] hover:text-[#5fc63d] cursor-pointer"
                                 >
                                     {current.orders.loadMore}
