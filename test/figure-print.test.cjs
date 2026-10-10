@@ -10,6 +10,10 @@ const code = buildSync({
         export * from './src/pages/figure/print/figureEngine';
         export { FIGURE_MODELS, getOrderPrintModel, getPrintModelProfile } from './src/pages/figure/print/figureModels';
         export { composeMergedPages } from './src/lib/minefigure/web_sticker/src/sticker/mergedComposer.js';
+        export { generateParts, disposeStickerParts } from './src/lib/minefigure/web_sticker/src/sticker/stickerCore.js';
+        export { resizeCanvasNearest } from './src/lib/minefigure/web_sticker/src/sticker/rasterTransform.js';
+        export { getAssemblyCutterSource } from './src/lib/minefigure/web_sticker/src/sticker/assemblySettings.js';
+        export { getUntaperedCuteTorsoCanvas } from './src/lib/minefigure/web_sticker/src/sticker/characterShape.js';
         export { projectHeightRuler } from './src/pages/figure/print/heightRuler';
         export { drawStickerInfo } from './src/pages/figure/print/stickerInfo';
         export { createPreviewPart } from './src/pages/figure/print/previewParts';
@@ -22,7 +26,7 @@ const code = buildSync({
         export { buildFigure } from './src/lib/minefigure/web_model/src/mcModel/figure';
         export { createCanvas, processSkin, resolveVoxelConsistency } from './src/lib/minefigure/web_sticker/src/sticker/skinHelper.js';
         export { generatePageCutterSVG } from './src/lib/minefigure/web_sticker/src/sticker/vectorTracer.js';
-        export { normalizeAssemblySettings, validateStickerAssemblySettings, assemblySockets, MODEL_MM_PER_UNIT } from './src/lib/minefigure/shared/assemblySettings.js';
+        export { normalizeAssemblySettings, validateStickerAssemblySettings, assemblySockets, MODEL_MM_PER_UNIT, ASSEMBLY_HOLES, assemblyFaceSize, stickerHoleCircle } from './src/lib/minefigure/shared/assemblySettings.js';
     `, resolveDir: path.resolve(__dirname, '..'), loader: 'ts' },
     bundle: true, platform: 'node', format: 'cjs', write: false,
     external: ['three', 'three/*', 'manifold-3d', 'manifold-3d/*'],
@@ -303,6 +307,8 @@ test('tiered loading creates fast preview sticker first and generates full 4200x
         assert.equal(output.fullCutterUrl, undefined);
         assert.equal(output.parts.length, 8);
         assert.equal(output.modelType, 'cute10');
+        const previewUrl = output.previewStickerUrl;
+        assert.equal(previewUrl, output.stickerUrl);
 
         // On demand full asset generation
         const full = await engine.generateFullFigureAssets(output, controller.signal, () => {});
@@ -315,6 +321,7 @@ test('tiered loading creates fast preview sticker first and generates full 4200x
         assert.equal(output.fullStickerUrl, full.stickerUrl);
         assert.equal(output.fullCutterUrl, full.cutterUrl);
         assert.equal(output.cutterUrl, full.cutterUrl);
+        assert.equal(output.previewStickerUrl, previewUrl, 'full downloads retain the lightweight screen preview');
 
         // Subsequent call returns cached assets immediately
         const cached = await engine.generateFullFigureAssets(output, controller.signal, () => {});
@@ -329,6 +336,130 @@ test('cancelled generation stops before allocating a model', async () => {
     const controller = new AbortController();
     controller.abort();
     await assert.rejects(engine.generateFigure(null, controller.signal, () => assert.fail('cancelled progress')), error => error.name === 'AbortError');
+});
+
+test('model-only order previews skip sticker rasters and export URLs', async () => {
+    const output = await engine.generateFigure(skinCanvas(), new AbortController().signal, () => {}, undefined, { generateStickers: false, modelType: 'cute7' });
+    try {
+        assert.equal(output.parts.length, 8);
+        assert.equal(output.modelType, 'cute7');
+        assert.equal(output.stickerUrl, '');
+        assert.equal(output.cutterUrl, '');
+        assert.equal(output.fullStickerUrl, undefined);
+    } finally { engine.disposeFigure(output); }
+});
+
+for (const [slim, modelScale] of [[false, 1], [true, 1.5]]) test(`outer-only ${slim ? 'slim' : 'classic'} stickers preserve the complete generator's surface pixels`, () => {
+    const skin = engine.processSkin(skinCanvas(false, slim), 0.5);
+    engine.resolveVoxelConsistency(skin);
+    const options = { cuteMode: true, modelScale };
+    const all = engine.generateParts(skin, 0.5, options);
+    const outer = engine.generateParts(skin, 0.5, { ...options, outerOnly: true });
+    try {
+        assert.equal(Object.keys(outer).length, 72);
+        assert.ok(Object.keys(all).length > Object.keys(outer).length);
+        for (const [key, canvas] of Object.entries(outer)) {
+            assert.match(key, /^\d\/\d\/(0|core)$/);
+            assert.equal(canvas.width, all[key].width, key);
+            assert.equal(canvas.height, all[key].height, key);
+            assert.deepEqual(Buffer.from(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data),
+                Buffer.from(all[key].getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data), key);
+        }
+    } finally { engine.disposeStickerParts(all); engine.disposeStickerParts(outer); }
+});
+
+test('packed RGBA copies preserve transparent colors and exact nearest-neighbor boundary sampling', () => {
+    const source = engine.createCanvas(3, 2);
+    const pixels = Uint8ClampedArray.from({ length: 24 }, (_, index) => index * 11 % 256);
+    source.getContext('2d').putImageData({ data: pixels }, 0, 0);
+    for (const [width, height] of [[4, 5], [6, 4], [3, 2]]) {
+        const resized = engine.resizeCanvasNearest(source, width, height);
+        const actual = resized.getContext('2d').getImageData(0, 0, width, height).data;
+        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+            const sx = Math.floor(((2 * x + 1) * 3 - 1) / (2 * width));
+            const sy = Math.floor(((2 * y + 1) * 2 - 1) / (2 * height));
+            assert.deepEqual(Array.from(actual.slice((y * width + x) * 4, (y * width + x + 1) * 4)),
+                Array.from(pixels.slice((sy * 3 + sx) * 4, (sy * 3 + sx + 1) * 4)));
+        }
+    }
+});
+
+for (const slim of [false, true]) test(`lightweight ${slim ? 'slim' : 'classic'} sticker rasters keep physical socket positions and proportions`, () => {
+    const skin = engine.processSkin(skinCanvas(false, slim), 0.5);
+    engine.resolveVoxelConsistency(skin);
+    const settings = engine.normalizeAssemblySettings({}, true, 1.5);
+    const parts = engine.generateParts(skin, 0.5, { cuteMode: true, modelScale: 1.5, outerOnly: true, rasterScale: 0.2 });
+    try {
+        assert.equal(Object.keys(parts).length, 72);
+        for (const [key, canvas] of Object.entries(parts)) {
+            const [part, face] = key.split('/').map(Number);
+            const size = engine.assemblyFaceSize(part, face, slim, true, 1.5);
+            assert.equal(canvas.width, Math.floor(size.width * 0.2), key);
+            assert.equal(canvas.height, Math.floor(size.height * 0.2), key);
+            assert.equal(engine.getAssemblyCutterSource(canvas), undefined, 'preview must not retain full cutting sources');
+            assert.equal(engine.getUntaperedCuteTorsoCanvas(canvas), undefined, 'preview must not retain taper cutting sources');
+        }
+        for (const hole of engine.ASSEMBLY_HOLES) {
+            const [part, face] = hole.face.split('/').map(Number);
+            const size = engine.assemblyFaceSize(part, face, slim, true, 1.5);
+            const circle = engine.stickerHoleCircle(hole, size.width, size.height, settings);
+            const core = parts[`${hole.face}/core`];
+            const decor = parts[`${hole.face}/0`];
+            const cx = circle.cx * core.width / size.width;
+            const cy = circle.cy * core.height / size.height;
+            const radius = circle.radius * 0.2;
+            const masks = [core, decor].map(canvas => canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data);
+            const alpha = (x, y) => Math.max(...masks.map(mask => mask[(Math.floor(y) * core.width + Math.floor(x)) * 4 + 3]));
+            assert.equal(alpha(cx, cy), 0, hole.id);
+            assert.equal(alpha(cx + radius * 0.7, cy), 0, `${hole.id} radius`);
+            assert.equal(alpha(cx + radius + 2, cy), 255, `${hole.id} outer edge`);
+        }
+    } finally { engine.disposeStickerParts(parts); }
+});
+
+for (const [slim, modelScale] of [[false, 1], [false, 1.5], [true, 1], [true, 1.5]]) test(`lightweight sheet keeps all 36 faces on A4 (${slim ? 'slim' : 'classic'}, scale ${modelScale})`, async () => {
+    const skin = engine.processSkin(skinCanvas(false, slim), 0.5);
+    const pages = await engine.composeMergedPages(skin, { cuteMode: true, modelScale, preview: true });
+    try {
+        const page = pages[0];
+        assert.equal(pages.length, 1);
+        assert.equal(page.pageCanvas.width, 840);
+        assert.equal(page.pageCanvas.height, 1188);
+        assert.equal(page.faceCount, 36);
+        assert.equal(page.isPreview, true);
+        assert.equal(page.cutterCanvas, null);
+        assert.deepEqual(Array.from(page.cutterLayers), []);
+        assert.deepEqual(Array.from(page.cutterTraceOptions.vectorPaths), []);
+        assert.ok(page.infoArea.height > 0);
+        assert.ok(page.infoArea.y + page.infoArea.height <= page.pageCanvas.height);
+    } finally { for (const page of pages) page.pageCanvas.width = page.pageCanvas.height = 1; }
+});
+
+test('sticker preparation can be cancelled between parts before allocating an A4 page', async () => {
+    const controller = new AbortController();
+    const updates = [];
+    const skin = engine.processSkin(skinCanvas(), 0.5);
+    await assert.rejects(engine.composeMergedPages(skin, { cuteMode: true, modelScale: 1.5, preview: true, signal: controller.signal }, percent => {
+        updates.push(percent);
+        if (percent > 5) controller.abort();
+    }), error => error.name === 'AbortError');
+    assert.ok(updates.at(-1) < 20, 'cancelled before page composition');
+});
+
+test('historical Cute A4 sheets retain their raster seams and analytic hole cuts', async () => {
+    const skin = engine.processSkin(skinCanvas(), 0.5);
+    const pages = await engine.composeMergedPages(skin, { cuteMode: true, modelScale: 1, preview: false });
+    try {
+        const page = pages[0];
+        assert.equal(page.pageCanvas.width, 4200);
+        assert.equal(page.pageCanvas.height, 5940);
+        assert.equal(page.faceCount, 36);
+        assert.ok(page.cutterTraceOptions.vectorPaths.length > 0, 'legacy group layout must include its analytic hole and taper paths');
+        assert.ok(page.cutterLayers.some(canvas => canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
+            .some((value, index) => index % 4 === 3 && value > 128)), 'non-vector faces retain their independent cutter masks');
+    } finally {
+        for (const page of pages) for (const canvas of [page.pageCanvas, page.cutterCanvas, ...page.cutterLayers]) if (canvas) canvas.width = canvas.height = 1;
+    }
 });
 
 test('cancelling during a build suppresses stale progress and prevents publishing old exports', async () => {

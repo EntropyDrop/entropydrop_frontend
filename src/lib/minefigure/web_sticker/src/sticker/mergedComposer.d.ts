@@ -9,4 +9,4 @@ export interface StickerPage {
     infoArea: { x: number; y: number; width: number; height: number };
     faceCount: number;
 }
-export function composeMergedPages(skin: ProcessedSkin, options: { alphaThreshold: number; cuteMode: boolean; modelScale?: number; preview?: boolean; assemblySettings: AssemblySettings }, onProgress?: (percent: number, message: string) => void): Promise<StickerPage[]>;
+export function composeMergedPages(skin: ProcessedSkin, options: { alphaThreshold: number; cuteMode: boolean; modelScale?: number; preview?: boolean; assemblySettings: AssemblySettings; signal?: AbortSignal }, onProgress?: (percent: number, message: string) => void): Promise<StickerPage[]>;

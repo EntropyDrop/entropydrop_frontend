@@ -1172,6 +1172,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         ]
     },
     mcmodal: {
+        print: '3D 打印',
         previewUnavailable: '无法预览',
         editName: '编辑名称',
         noName: '无名称',

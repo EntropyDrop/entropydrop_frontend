@@ -2,7 +2,7 @@
 
 import { createCanvas, resolveVoxelConsistency } from './skinHelper.js';
 import { PART_PIXELS_PER_UNIT } from '../../../shared/assemblySettings.js';
-import { generateParts, pasteWithDilate, DILATE_TIMES } from './stickerCore.js';
+import { generateParts, disposeStickerParts, pasteWithDilate, DILATE_TIMES } from './stickerCore.js';
 import { PAGE_WIDTH, PAGE_HEIGHT, PADDING, SAFE_WIDTH, scaleImage } from './pageComposer.js';
 import { renderSkinPreview } from './previewRenderer.js';
 import { normalizeAssemblySettings, shouldSplitLimb } from './assemblySettings.js';
@@ -27,6 +27,27 @@ const PARTS = [
 
 export const STICKER_FONT_FAMILY = '"Fusion-Pixel-Zh-Hans", monospace';
 
+// MessageChannel yields to input/rendering without background timer throttling.
+async function yieldToPage(signal) {
+  await new Promise(resolve => {
+    if (typeof MessageChannel === 'undefined') { setTimeout(resolve, 0); return; }
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      channel.port2.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
+  signal?.throwIfAborted();
+}
+
+function disposeFaceImages(groups) {
+  const canvases = new Set(groups.flatMap(group => group.rows.flatMap(row =>
+    row.faces.flatMap(face => face.pieces.flatMap(piece => [piece.image, piece.coreImage, piece.decorImage])))));
+  for (const canvas of canvases) if (canvas) canvas.width = canvas.height = 1;
+}
+
 function text(ctx, value, x, y, size, { align = 'left' } = {}) {
   ctx.save();
   ctx.font = `${Math.max(12, Math.round(size / 12) * 12)}px ${STICKER_FONT_FAMILY}`;
@@ -44,7 +65,7 @@ function crop(canvas, y, height) {
 }
 
 function createLayoutConfig(preview = false) {
-  const scale = preview ? 0.25 : 1;
+  const scale = preview ? 0.2 : 1;
   return {
     preview: !!preview,
     scale,
@@ -78,6 +99,7 @@ function combineFace(parts, partIndex, faceIndex, scale, split, layoutConfig) {
   ctx.drawImage(core, 0, 0);
   ctx.drawImage(decor, 0, 0);
   const image = scaleImage(combined, scale);
+  combined.width = combined.height = 1;
 
   if (layoutConfig?.preview) {
     if (!split || faceIndex < 2) {
@@ -95,6 +117,14 @@ function combineFace(parts, partIndex, faceIndex, scale, split, layoutConfig) {
     };
   }
 
+  if (!split || faceIndex < 2) {
+    const vectorPaths = traceCuteTorsoCutterPaths([core, decor], image.width, image.height, { exclusiveCore: true })
+      ?? traceAssemblyHoleCutterPaths([core, decor], image.width, image.height, { exclusiveCore: true, scale });
+    if (vectorPaths) {
+      return { faceIndex, width: image.width, height: image.height, pieces: [{ image, vectorPaths, y: 0 }] };
+    }
+  }
+
   const coreImage = scaleImage(core, scale);
   const decorImage = scaleImage(decor, scale);
   // Assign printed pixels to one layer. In particular, alphaThreshold=1 can
@@ -107,9 +137,7 @@ function combineFace(parts, partIndex, faceIndex, scale, split, layoutConfig) {
   }
   coreCtx.putImageData(corePixels, 0, 0);
   if (!split || faceIndex < 2) {
-    const vectorPaths = traceCuteTorsoCutterPaths([core, decor], image.width, image.height, { exclusiveCore: true })
-      ?? traceAssemblyHoleCutterPaths([core, decor], image.width, image.height, { exclusiveCore: true, scale });
-    return { faceIndex, width: image.width, height: image.height, pieces: [{ image, coreImage, decorImage, vectorPaths, y: 0 }] };
+    return { faceIndex, width: image.width, height: image.height, pieces: [{ image, coreImage, decorImage, y: 0 }] };
   }
 
   // Equivalent to the legacy rotate90 + splitLimb, displayed upright: omit
@@ -206,12 +234,19 @@ function prepareCompactSheet(groups, startY, maxBottom, layoutConfig) {
   return groupsBottom <= maxBottom ? { compactRows, groupsBottom } : null;
 }
 
-function drawFace(printCtx, cutterCtx, layerContexts, face, x, y, vectorPaths, layoutConfig) {
+function drawFace(printCtx, layerContexts, face, x, y, vectorPaths, layoutConfig) {
   for (const piece of face.pieces) {
     const pieceY = y + piece.y;
+    if (layoutConfig.preview) {
+      // Screen previews only need the face colors and socket holes. Print bleed
+      // and independent cutter masks are generated when an export is requested.
+      printCtx.fillStyle = '#f0f0f0';
+      printCtx.fillRect(x, pieceY, piece.image.width, piece.image.height);
+      printCtx.drawImage(piece.image, x, pieceY);
+      continue;
+    }
     pasteWithDilate(printCtx, piece.image, [x, pieceY], layoutConfig.dilateTimes, [240, 240, 240, 255]);
-    if (!cutterCtx) continue;
-    cutterCtx.drawImage(piece.image, x, pieceY);
+    if (!layerContexts.length) continue;
     if (piece.vectorPaths) {
       vectorPaths.push(...translateCutterPaths(piece.vectorPaths, x, pieceY));
     } else if (piece.coreImage && piece.decorImage) {
@@ -221,14 +256,13 @@ function drawFace(printCtx, cutterCtx, layerContexts, face, x, y, vectorPaths, l
   }
 }
 
-function drawGroup(printCtx, cutterCtx, layerContexts, group, x, y, height, vectorPaths, layoutConfig) {
+function drawGroup(printCtx, layerContexts, group, x, y, height, vectorPaths, layoutConfig) {
   const scale = layoutConfig?.scale ?? 1;
   const inset = layoutConfig?.inset ?? INSET;
   const titleHeight = layoutConfig?.titleHeight ?? TITLE_HEIGHT;
   const labelHeight = layoutConfig?.labelHeight ?? LABEL_HEIGHT;
   const faceGap = layoutConfig?.faceGap ?? FACE_GAP;
   const rowGap = layoutConfig?.rowGap ?? ROW_GAP;
-  const dilateTimes = layoutConfig?.dilateTimes ?? DILATE_TIMES;
 
   printCtx.save();
   printCtx.strokeStyle = '#d4dde6';
@@ -242,19 +276,7 @@ function drawGroup(printCtx, cutterCtx, layerContexts, group, x, y, height, vect
     let faceX = x + Math.floor((group.width - row.width) / 2);
     for (const face of row.faces) {
       text(printCtx, FACE_LABELS[face.faceIndex], faceX + face.width / 2, rowY, Math.round(40 * scale), { align: 'center' });
-      for (const piece of face.pieces) {
-        const pieceY = rowY + labelHeight + piece.y;
-        pasteWithDilate(printCtx, piece.image, [faceX, pieceY], dilateTimes, [240, 240, 240, 255]);
-        if (cutterCtx) {
-          cutterCtx.drawImage(piece.image, faceX, pieceY);
-          if (piece.vectorPaths) {
-            vectorPaths.push(...translateCutterPaths(piece.vectorPaths, faceX, pieceY));
-          } else if (layerContexts && piece.coreImage && piece.decorImage) {
-            layerContexts[0].drawImage(piece.coreImage, faceX, pieceY);
-            layerContexts[1].drawImage(piece.decorImage, faceX, pieceY);
-          }
-        }
-      }
+      drawFace(printCtx, layerContexts, face, faceX, rowY + labelHeight, vectorPaths, layoutConfig);
       faceX += face.width + faceGap;
     }
     rowY += row.height + rowGap;
@@ -296,79 +318,107 @@ function drawCharacterGuides(ctx, skin, groupsBottom, cuteMode, layoutConfig) {
 }
 
 /** Preserve physical sticker scale, fixed-size sockets and gray bleed. */
-export async function composeMergedPages(skin, { alphaThreshold = 0.5, cuteMode = false, modelScale = 1, assemblySettings: inputSettings, preview = false } = {}, onProgress = null) {
+export async function composeMergedPages(skin, { alphaThreshold = 0.5, cuteMode = false, modelScale = 1, assemblySettings: inputSettings, preview = false, signal } = {}, onProgress = null) {
+  signal?.throwIfAborted();
   const assemblySettings = normalizeAssemblySettings(inputSettings, cuteMode, modelScale);
   const layoutConfig = createLayoutConfig(preview);
   onProgress?.(5, preview ? '正在快速生成预览贴纸...' : '正在准备内外层合并实验模式...');
   resolveVoxelConsistency(skin);
-  const parts = generateParts(skin, alphaThreshold, { cuteMode, modelScale, assemblySettings });
-  const scale = (542 * layoutConfig.scale) / (9 * PART_PIXELS_PER_UNIT);
+  const rasterScale = preview ? 0.2 : 1;
+  const parts = generateParts(skin, alphaThreshold, { cuteMode, modelScale, assemblySettings, outerOnly: true, rasterScale });
+  const scale = (542 * layoutConfig.scale) / (9 * PART_PIXELS_PER_UNIT * rasterScale);
   const groupWidth = Math.floor((layoutConfig.safeWidth - layoutConfig.groupGap) / 2);
-  const groups = PARTS.map((part) => prepareGroup({ ...part, split: shouldSplitLimb(part.index, assemblySettings) }, parts, scale, groupWidth, layoutConfig, modelScale > 1));
-  const rowHeights = [0, 2, 4].map((index) => Math.max(groups[index].height, groups[index + 1].height));
-  const startY = layoutConfig.padding + Math.round(180 * layoutConfig.scale);
-  const maxBottom = layoutConfig.pageHeight - layoutConfig.padding - layoutConfig.rowGap - Math.round(436 * layoutConfig.scale);
-  const compactSheet = cuteMode && modelScale > 1 ? prepareCompactSheet(groups, startY, maxBottom, layoutConfig) : null;
-  const groupsBottom = compactSheet?.groupsBottom ?? startY + rowHeights.reduce((sum, height) => sum + height, 0) + layoutConfig.groupGap * 2;
-  if (groupsBottom > layoutConfig.pageHeight - layoutConfig.padding) {
-    throw new Error('合并后的部件超出单张 A4，已保留实际尺寸并停止生成');
-  }
-
-  const pageCanvas = createCanvas(layoutConfig.pageWidth, layoutConfig.pageHeight);
-  const cutterCanvas = preview ? null : createCanvas(layoutConfig.pageWidth, layoutConfig.pageHeight);
-  const cutterLayers = preview ? [] : [createCanvas(layoutConfig.pageWidth, layoutConfig.pageHeight), createCanvas(layoutConfig.pageWidth, layoutConfig.pageHeight)];
-  const layerContexts = cutterLayers.map((canvas) => canvas.getContext('2d'));
-  const vectorPaths = [];
-  const printCtx = pageCanvas.getContext('2d');
-  const cutterCtx = cutterCanvas ? cutterCanvas.getContext('2d') : null;
-  printCtx.fillStyle = '#ffffff';
-  printCtx.fillRect(0, 0, layoutConfig.pageWidth, layoutConfig.pageHeight);
-
-  if (compactSheet) {
-    let rowY = startY;
-    for (const [index, row] of compactSheet.compactRows.entries()) {
-      onProgress?.(20 + index / compactSheet.compactRows.length * 65, '正在排版 CUTE-10cm 贴纸...');
-      if (!preview) await new Promise((resolve) => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(resolve) : setTimeout(resolve, 0));
-      let faceX = layoutConfig.padding + Math.floor((layoutConfig.safeWidth - row.width) / 2);
-      for (const { face, title } of row.items) {
-        text(printCtx, title, faceX + face.width / 2, rowY, 34 * layoutConfig.scale, { align: 'center' });
-        text(printCtx, FACE_LABELS[face.faceIndex], faceX + face.width / 2, rowY + Math.round(40 * layoutConfig.scale), 34 * layoutConfig.scale, { align: 'center' });
-        drawFace(printCtx, cutterCtx, layerContexts, face, faceX, rowY + layoutConfig.compactLabelHeight, vectorPaths, layoutConfig);
-        faceX += face.width + layoutConfig.faceGap;
-      }
-      rowY += row.height + layoutConfig.rowGap;
+  const groups = [];
+  try {
+    for (const [index, part] of PARTS.entries()) {
+      await yieldToPage(signal);
+      onProgress?.(5 + (index + 1) / PARTS.length * 10, '正在准备贴纸部件...');
+      signal?.throwIfAborted();
+      groups.push(prepareGroup({ ...part, split: shouldSplitLimb(part.index, assemblySettings) }, parts, scale, groupWidth, layoutConfig, modelScale > 1));
     }
-  } else {
-    let rowY = startY;
-    for (let row = 0; row < 3; row++) {
-      onProgress?.(20 + row * 20, preview ? '正在排版预览贴纸...' : `正在排版合并贴纸：第 ${row + 1} / 3 组...`);
-      if (!preview) await new Promise((resolve) => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(resolve) : setTimeout(resolve, 0));
-      for (let col = 0; col < 2; col++) {
-        drawGroup(printCtx, cutterCtx, layerContexts, groups[row * 2 + col], layoutConfig.padding + col * (groupWidth + layoutConfig.groupGap), rowY, rowHeights[row], vectorPaths, layoutConfig);
-      }
-      rowY += rowHeights[row] + layoutConfig.groupGap;
+  } catch (error) {
+    disposeFaceImages(groups);
+    throw error;
+  } finally {
+    disposeStickerParts(parts);
+  }
+  const pageCanvases = [];
+  let complete = false;
+  try {
+    const rowHeights = [0, 2, 4].map((index) => Math.max(groups[index].height, groups[index + 1].height));
+    const startY = layoutConfig.padding + Math.round(180 * layoutConfig.scale);
+    const maxBottom = layoutConfig.pageHeight - layoutConfig.padding - layoutConfig.rowGap - Math.round(436 * layoutConfig.scale);
+    const compactSheet = cuteMode && modelScale > 1 ? prepareCompactSheet(groups, startY, maxBottom, layoutConfig) : null;
+    const groupsBottom = compactSheet?.groupsBottom ?? startY + rowHeights.reduce((sum, height) => sum + height, 0) + layoutConfig.groupGap * 2;
+    if (groupsBottom > layoutConfig.pageHeight - layoutConfig.padding) {
+      throw new Error('合并后的部件超出单张 A4，已保留实际尺寸并停止生成');
     }
-  }
 
-  if (!preview) {
-    onProgress?.(90, '正在渲染完整角色正面与背面参考图...');
-    await new Promise((resolve) => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(resolve) : setTimeout(resolve, 0));
+    const pageCanvas = createCanvas(layoutConfig.pageWidth, layoutConfig.pageHeight);
+    // Cutting uses the two independent masks plus analytic hole/taper paths.
+    // A third full A4 mask would never be read by generatePageCutterSVG.
+    const cutterLayers = preview ? [] : [createCanvas(layoutConfig.pageWidth, layoutConfig.pageHeight), createCanvas(layoutConfig.pageWidth, layoutConfig.pageHeight)];
+    pageCanvases.push(pageCanvas, ...cutterLayers);
+    const layerContexts = cutterLayers.map((canvas) => canvas.getContext('2d'));
+    const vectorPaths = [];
+    const printCtx = pageCanvas.getContext('2d');
+    printCtx.fillStyle = '#ffffff';
+    printCtx.fillRect(0, 0, layoutConfig.pageWidth, layoutConfig.pageHeight);
+
+    if (compactSheet) {
+      let rowY = startY;
+      for (const [index, row] of compactSheet.compactRows.entries()) {
+        onProgress?.(20 + index / compactSheet.compactRows.length * 65, '正在排版 CUTE-10cm 贴纸...');
+        await yieldToPage(signal);
+        let faceX = layoutConfig.padding + Math.floor((layoutConfig.safeWidth - row.width) / 2);
+        for (const { face, title } of row.items) {
+          text(printCtx, title, faceX + face.width / 2, rowY, 34 * layoutConfig.scale, { align: 'center' });
+          text(printCtx, FACE_LABELS[face.faceIndex], faceX + face.width / 2, rowY + Math.round(40 * layoutConfig.scale), 34 * layoutConfig.scale, { align: 'center' });
+          drawFace(printCtx, layerContexts, face, faceX, rowY + layoutConfig.compactLabelHeight, vectorPaths, layoutConfig);
+          faceX += face.width + layoutConfig.faceGap;
+        }
+        rowY += row.height + layoutConfig.rowGap;
+      }
+    } else {
+      let rowY = startY;
+      for (let row = 0; row < 3; row++) {
+        onProgress?.(20 + row * 20, preview ? '正在排版预览贴纸...' : `正在排版合并贴纸：第 ${row + 1} / 3 组...`);
+        await yieldToPage(signal);
+        for (let col = 0; col < 2; col++) {
+          drawGroup(printCtx, layerContexts, groups[row * 2 + col], layoutConfig.padding + col * (groupWidth + layoutConfig.groupGap), rowY, rowHeights[row], vectorPaths, layoutConfig);
+        }
+        rowY += rowHeights[row] + layoutConfig.groupGap;
+      }
+    }
+
+    if (!preview) {
+      onProgress?.(90, '正在渲染完整角色正面与背面参考图...');
+      await yieldToPage(signal);
+    }
+    const infoY = groupsBottom + layoutConfig.rowGap;
+    const infoArea = preview
+      ? { x: layoutConfig.padding, y: infoY, width: layoutConfig.safeWidth, height: layoutConfig.pageHeight - layoutConfig.padding - infoY }
+      : drawCharacterGuides(printCtx, skin, groupsBottom, cuteMode, layoutConfig);
+    onProgress?.(100, preview ? '预览贴纸已生成' : '合并完成：全部部件已排入 1 张 A4！');
+    signal?.throwIfAborted();
+    complete = true;
+    return [{
+      pageIdx: 0,
+      pageCanvas,
+      cutterCanvas: null,
+      cutterLayers,
+      cutterTraceOptions: { vectorPaths },
+      infoArea,
+      layoutMode: 'merged',
+      cuteMode,
+      modelScale,
+      assemblySettings,
+      title: `A4 1 · 全部部件（${cuteMode ? 'Cute · ' : ''}实验）`,
+      faceCount: 36,
+      isPreview: !!preview,
+    }];
+  } finally {
+    disposeFaceImages(groups);
+    if (!complete) for (const canvas of pageCanvases) canvas.width = canvas.height = 1;
   }
-  const infoArea = drawCharacterGuides(printCtx, skin, groupsBottom, cuteMode, layoutConfig);
-  onProgress?.(100, preview ? '预览贴纸已生成' : '合并完成：全部部件已排入 1 张 A4！');
-  return [{
-    pageIdx: 0,
-    pageCanvas,
-    cutterCanvas,
-    cutterLayers,
-    cutterTraceOptions: { vectorPaths },
-    infoArea,
-    layoutMode: 'merged',
-    cuteMode,
-    modelScale,
-    assemblySettings,
-    title: `A4 1 · 全部部件（${cuteMode ? 'Cute · ' : ''}实验）`,
-    faceCount: 36,
-    isPreview: !!preview,
-  }];
 }

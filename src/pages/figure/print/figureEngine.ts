@@ -51,10 +51,10 @@ function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 
 // Serialize builds across route changes as both WASM and the guide renderer are shared.
 let queue: Promise<unknown> = Promise.resolve()
-export function generateFigure(source: HTMLImageElement, signal: AbortSignal, onProgress: (progress: number) => void, info?: StickerInfo, options?: { fullRes?: boolean; modelType?: PrintModelType }): Promise<FigureOutput> {
+export function generateFigure(source: HTMLImageElement, signal: AbortSignal, onProgress: (progress: number) => void, info?: StickerInfo, options?: { fullRes?: boolean; modelType?: PrintModelType; generateStickers?: boolean }): Promise<FigureOutput> {
     const job = queue.catch(() => {}).then(async () => {
         signal.throwIfAborted()
-        await loadStickerFont(info)
+        if (options?.generateStickers !== false) await loadStickerFont(info)
         signal.throwIfAborted()
         const skin = processSkin(source, 0.5)
         resolveVoxelConsistency(skin)
@@ -72,7 +72,13 @@ export function generateFigure(source: HTMLImageElement, signal: AbortSignal, on
             parts = model.results
             signal.throwIfAborted()
 
-            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, modelScale, assemblySettings, preview: !isFull }, percent => {
+            if (options?.generateStickers === false) {
+                onProgress(100)
+                signal.throwIfAborted()
+                return { parts, modelType, isSlim: skin.isSlim, stickerUrl: '', cutterUrl: '', source, info }
+            }
+
+            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, modelScale, assemblySettings, preview: !isFull, signal }, percent => {
                 if (!signal.aborted) onProgress(isFull ? (65 + Math.round(percent * 0.3)) : (75 + Math.round(percent * 0.2)))
             })
             const page = pages[0]
@@ -139,7 +145,7 @@ export function generateFullFigureAssets(output: FigureOutput, signal: AbortSign
         const urls: string[] = []
         try {
             onProgress(10)
-            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, modelScale, assemblySettings, preview: false }, percent => {
+            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, modelScale, assemblySettings, preview: false, signal }, percent => {
                 if (!signal.aborted) onProgress(10 + Math.round(percent * 0.6))
             })
             const page = pages[0]

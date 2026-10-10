@@ -1172,6 +1172,7 @@ Email: support@entropydrop.com`
         ]
     },
     mcmodal: {
+        print: '3D Print',
         previewUnavailable: 'Preview unavailable',
         editName: 'Edit Name',
         noName: 'No Name',

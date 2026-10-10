@@ -13,6 +13,9 @@ export function resizeCanvasNearest(source, width, height) {
   const pixels = ctx.createImageData(width, height);
   const input = source.getContext('2d', { willReadFrequently: true })
     .getImageData(0, 0, source.width, source.height).data;
+  // Copy the four RGBA bytes together without creating per-pixel arrays.
+  const inputPixels = new Uint32Array(input.buffer, input.byteOffset, input.byteLength / 4);
+  const outputPixels = new Uint32Array(pixels.data.buffer, pixels.data.byteOffset, pixels.data.byteLength / 4);
   const xs = new Uint32Array(width);
   for (let x = 0; x < width; x++) {
     xs[x] = Math.floor(((2 * x + 1) * source.width - 1) / (2 * width));
@@ -20,12 +23,7 @@ export function resizeCanvasNearest(source, width, height) {
   for (let y = 0; y < height; y++) {
     const sy = Math.floor(((2 * y + 1) * source.height - 1) / (2 * height));
     for (let x = 0; x < width; x++) {
-      const from = (sy * source.width + xs[x]) * 4;
-      const to = (y * width + x) * 4;
-      pixels.data[to] = input[from];
-      pixels.data[to + 1] = input[from + 1];
-      pixels.data[to + 2] = input[from + 2];
-      pixels.data[to + 3] = input[from + 3];
+      outputPixels[y * width + x] = inputPixels[sy * source.width + xs[x]];
     }
   }
   ctx.putImageData(pixels, 0, 0);

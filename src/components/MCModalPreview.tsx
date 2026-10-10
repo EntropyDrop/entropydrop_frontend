@@ -296,14 +296,14 @@ export function MCModalPreview({
                         </div>
 
                         {onPrint && (
-                            <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 w-36">
+                            <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 w-32">
                                 <button
                                     type="button"
                                     onClick={onPrint}
-                                    className="w-full px-3 py-1.5 bg-[#3c8527] hover:bg-[#4ea632] text-white font-pixel-hans text-[10px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors group border-none outline-none"
+                                    className="w-full px-2 py-1.5 bg-[#3c8527] hover:bg-[#4ea632] text-white font-pixel-hans text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer transition-colors group border-none outline-none"
                                 >
                                     <Icon icon="pixelarticons:box" className="text-sm shrink-0" />
-                                    <span>{current.figurePrint.title}</span>
+                                    <span>{current.mcmodal?.print || '3D PRINT'}</span>
                                     <span className="ml-0.5 px-1 py-0.5 bg-amber-400 group-hover:bg-amber-300 text-[#1a1200] font-pixel-hans text-[8px] font-bold leading-none tracking-wider select-none shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-colors">
                                         NEW
                                     </span>
@@ -312,10 +312,10 @@ export function MCModalPreview({
                         )}
 
                         {/* Download Button */}
-                        <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 w-36">
+                        <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 w-32">
                             <button
                                 onClick={handleDownload}
-                                className="w-full px-3 py-1.5 bg-[#38598b] hover:bg-[#4a6bb4] text-white font-pixel-hans text-[10px] uppercase flex items-center justify-center gap-2 transition-all cursor-pointer border-none outline-none"
+                                className="w-full px-2 py-1.5 bg-[#38598b] hover:bg-[#4a6bb4] text-white font-pixel-hans text-[10px] uppercase flex items-center justify-center gap-2 transition-all cursor-pointer border-none outline-none"
                                 title="Download Texture"
                             >
                                 <Icon icon="pixelarticons:download" className="text-sm shrink-0" />

@@ -23,6 +23,15 @@ Local adaptations:
 - Uncovered voxel step walls, socket walls, and connectors use bare white.
   Skin colors stay on faces with corresponding stickers; assembly guides use
   the same white fallback, including transparent core texels.
+- Merged sticker sheets generate only the outer layer and complementary core.
+  RGBA resampling copies whole pixels, preparation yields between parts, and
+  temporary rasters are released after use. SVG export retains independent
+  cutter masks and analytic hole/taper paths; it does not need a combined A4
+  cutter bitmap. Model-only order previews skip sticker generation.
+- Screen sticker previews use small face rasters and an 840×1188 sheet, without
+  print bleed, cutter sources or duplicate 3D guide images. Socket positions
+  still map from physical export coordinates. Downloads keep the full
+  4200×5940 sheet, guides, bleed and cutting geometry.
 
 No device clients, settings UI, 3MF exporter, or original standalone app UI are
 included. Run `npm run test:figure` for the integration's geometry/export checks.

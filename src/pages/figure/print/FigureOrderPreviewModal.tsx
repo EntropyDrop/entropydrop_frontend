@@ -47,7 +47,7 @@ export function FigureOrderPreviewModal({ textureUrl, current, modelType = 'cute
                 controller.signal.throwIfAborted()
                 if (source.width !== 64 || ![32, 64].includes(source.height)) throw new Error('Invalid skin dimensions')
                 // Reuse the print engine, including its white, non-sticker surfaces.
-                result = await generateFigure(source, controller.signal, () => {}, undefined, { modelType })
+                result = await generateFigure(source, controller.signal, () => {}, undefined, { modelType, generateStickers: false })
                 if (controller.signal.aborted) { disposeFigure(result); result = null; return }
                 setOutput(result)
             } catch {

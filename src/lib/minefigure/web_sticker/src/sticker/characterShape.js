@@ -53,8 +53,10 @@ export function taperCuteTorso(geometry) {
 }
 
 /** Unfold the tapered torso into flat faces, preserving the length of each seam. */
-export function transformCuteSticker(canvas, partIndex, faceIndex, modelScale = 1) {
-  if (partIndex === 0) return modelScale === 1 ? canvas : resizeCanvasNearest(canvas, Math.floor(canvas.width * modelScale), Math.floor(canvas.height * modelScale));
+export function transformCuteSticker(canvas, partIndex, faceIndex, modelScale = 1, { targetSize, retainCutterSource = true } = {}) {
+  if (partIndex === 0) return targetSize
+    ? resizeCanvasNearest(canvas, targetSize.width, targetSize.height)
+    : modelScale === 1 ? canvas : resizeCanvasNearest(canvas, Math.floor(canvas.width * modelScale), Math.floor(canvas.height * modelScale));
   const isTorso = partIndex === 1;
   const isVertical = faceIndex >= 2;
   const isSide = faceIndex >= 4;
@@ -63,12 +65,14 @@ export function transformCuteSticker(canvas, partIndex, faceIndex, modelScale = 
   const heightScale = isVertical
     ? CUTE_SCALE * (isTorso && isSide ? Math.hypot(1, 8 * CUTE_TAPER / (2 * CUTE_HEIGHT)) : 1)
     : 1;
-  const width = Math.max(1, Math.floor(Math.floor(canvas.width * widthScale) * modelScale));
-  const height = Math.max(1, Math.floor(Math.floor(canvas.height * heightScale) * modelScale));
+  const width = targetSize?.width ?? Math.max(1, Math.floor(Math.floor(canvas.width * widthScale) * modelScale));
+  const height = targetSize?.height ?? Math.max(1, Math.floor(Math.floor(canvas.height * heightScale) * modelScale));
   const out = createCanvas(width, height);
   const source = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
   const ctx = out.getContext('2d');
   const pixels = ctx.createImageData(width, height);
+  const sourcePixels = new Uint32Array(source.buffer, source.byteOffset, source.byteLength / 4);
+  const targetPixels = new Uint32Array(pixels.data.buffer, pixels.data.byteOffset, pixels.data.byteLength / 4);
   for (let y = 0; y < height; y++) {
     const rowWidth = taper ? cuteTorsoWidthFactor(1 - (y + 0.5) / height) : 1;
     const sy = Math.min(canvas.height - 1, Math.floor((y + 0.5) * canvas.height / height));
@@ -76,12 +80,10 @@ export function transformCuteSticker(canvas, partIndex, faceIndex, modelScale = 
       const u = ((x + 0.5) / width - 0.5) / rowWidth + 0.5;
       if (u < 0 || u >= 1) continue;
       const sx = Math.min(canvas.width - 1, Math.floor(u * canvas.width));
-      const from = (sy * canvas.width + sx) * 4;
-      const to = (y * width + x) * 4;
-      pixels.data.set(source.subarray(from, from + 4), to);
+      targetPixels[y * width + x] = sourcePixels[sy * canvas.width + sx];
     }
   }
   ctx.putImageData(pixels, 0, 0);
-  if (taper) untaperedTorsoCanvases.set(out, canvas);
+  if (taper && retainCutterSource) untaperedTorsoCanvases.set(out, canvas);
   return out;
 }

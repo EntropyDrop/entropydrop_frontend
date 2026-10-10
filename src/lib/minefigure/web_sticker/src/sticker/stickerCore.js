@@ -5,9 +5,9 @@
 
 import { createCanvas } from './skinHelper.js';
 import { resizeCanvasNearest } from './rasterTransform.js';
-import { CUTE_HEIGHT, cuteSourceRow, transformCuteSticker } from './characterShape.js';
-import { normalizeAssemblySettings, punchAssemblyHoles } from './assemblySettings.js';
-import { PART_PIXELS_PER_UNIT } from '../../../shared/assemblySettings.js';
+import { CUTE_HEIGHT, cuteSourceRow, transformCuteSticker, getUntaperedCuteTorsoCanvas } from './characterShape.js';
+import { normalizeAssemblySettings, punchAssemblyHoles, getAssemblyCutterSource } from './assemblySettings.js';
+import { PART_PIXELS_PER_UNIT, assemblyFaceSize } from '../../../shared/assemblySettings.js';
 
 export const OUTPUT_SCALE = PART_PIXELS_PER_UNIT;
 export const DILATE_TIMES = 6;
@@ -123,7 +123,9 @@ export function pasteWithDilate(pgCtx, img, offset, dilateTimes, bgColor = [0, 0
   let newY = offset[1];
 
   for (let i = 0; i < dilateTimes; i++) {
-    cur = crossDilateWithPadding(cur);
+    const next = crossDilateWithPadding(cur);
+    if (cur !== img) cur.width = cur.height = 1;
+    cur = next;
     newX -= 1;
     newY -= 1;
   }
@@ -139,9 +141,11 @@ export function pasteWithDilate(pgCtx, img, offset, dilateTimes, bgColor = [0, 0
     bgCtx.drawImage(cur, 0, 0);
 
     pgCtx.drawImage(bgCanvas, newX, newY);
+    bgCanvas.width = bgCanvas.height = 1;
   } else {
     pgCtx.drawImage(cur, newX, newY);
   }
+  if (cur !== img) cur.width = cur.height = 1;
 }
 
 /**
@@ -177,7 +181,9 @@ export function splitLimb(pgCtx, tmp, offset, dilateTimes, bgColor = [0, 0, 0, 0
  * @param {number} [alphaThreshold=0.5]
  * @returns {Record<string, HTMLCanvasElement>} Map of 'partIdx/faceIdx/layerName' -> Canvas
  */
-export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, modelScale = 1, assemblySettings: inputSettings } = {}) {
+export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, modelScale = 1, assemblySettings: inputSettings, outerOnly = false, rasterScale = 1 } = {}) {
+  if (!Number.isFinite(rasterScale) || rasterScale <= 0 || rasterScale > 1) throw new Error('Invalid sticker raster scale');
+  const outputScale = OUTPUT_SCALE * rasterScale;
   const assemblySettings = normalizeAssemblySettings(inputSettings, cuteMode, modelScale);
   const isSlim = skin.isSlim;
   const threshVal = (alphaThreshold !== null && alphaThreshold !== undefined)
@@ -320,10 +326,12 @@ export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, mo
       const decorScaleH = (size[1] + (partIdx === 0 ? 1 : 0.5)) / size[1];
 
       const maxDz = size[2] - (isSlim && (faceIdx === 4 || faceIdx === 5) && (partIdx === 2 || partIdx === 3) ? 1 : 0);
-      const outW = Math.floor(size[0] * decorScaleW * OUTPUT_SCALE);
-      const outH = Math.floor(size[1] * decorScaleH * OUTPUT_SCALE);
+      const outW = Math.max(1, Math.floor(size[0] * decorScaleW * outputScale));
+      const outH = Math.max(1, Math.floor(size[1] * decorScaleH * outputScale));
 
-      for (let dz = 0; dz < maxDz; dz++) {
+      // Merged sheets use only the outer face and its complementary core.
+      // Keep deeper slices available for callers that explicitly need them.
+      for (let dz = 0; dz < (outerOnly ? 1 : maxDz); dz++) {
         // Build small slice
         const sliceSmall = createCanvas(size[0], size[1]);
         const sCtx = sliceSmall.getContext('2d');
@@ -395,8 +403,8 @@ export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, mo
 
         // Carve out center hollow box for inner layers (dz != 0)
         if (dz !== 0) {
-          const coreBoxW = size[0] * OUTPUT_SCALE;
-          const coreBoxH = size[1] * OUTPUT_SCALE;
+          const coreBoxW = size[0] * outputScale;
+          const coreBoxH = size[1] * outputScale;
           const x0 = Math.floor((outW - coreBoxW) / 2);
           const y0 = Math.floor((outH - coreBoxH) / 2);
           const x1 = Math.floor((outW + coreBoxW) / 2);
@@ -409,8 +417,8 @@ export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, mo
 
       // Generate base CORE layer
       // Crop core from base skin
-      const coreW = size[0] * OUTPUT_SCALE;
-      const coreH = size[1] * OUTPUT_SCALE;
+      const coreW = Math.max(1, Math.floor(size[0] * outputScale));
+      const coreH = Math.max(1, Math.floor(size[1] * outputScale));
 
       // Extract base face pixels
       const baseSmall = createCanvas(size[0], size[1]);
@@ -493,11 +501,33 @@ export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, mo
   if (cuteMode) {
     for (const [key, canvas] of Object.entries(partsData)) {
       const [partIndex, faceIndex] = key.split('/').map(Number);
-      partsData[key] = transformCuteSticker(canvas, partIndex, faceIndex, modelScale);
+      // Round the physical export size first so the lightweight version keeps
+      // the same Cute proportions instead of accumulating scaling roundoff.
+      const size = rasterScale === 1 ? undefined : assemblyFaceSize(partIndex, faceIndex, isSlim, cuteMode, modelScale);
+      const transformed = transformCuteSticker(canvas, partIndex, faceIndex, modelScale, {
+        targetSize: size && { width: Math.max(1, Math.floor(size.width * rasterScale)), height: Math.max(1, Math.floor(size.height * rasterScale)) },
+        retainCutterSource: rasterScale === 1,
+      });
+      partsData[key] = transformed;
+      // Tapered torso paths still need their original rectangular source.
+      if (transformed !== canvas && getUntaperedCuteTorsoCanvas(transformed) !== canvas) canvas.width = canvas.height = 1;
     }
   }
   // Punch after resizing: standard and Cute faces use the same millimetres.
-  punchAssemblyHoles(partsData, assemblySettings);
+  punchAssemblyHoles(partsData, assemblySettings, { rasterScale, cuteMode, isSlim, modelScale, retainCutterSources: rasterScale === 1 });
 
   return partsData;
+}
+
+/** Release face rasters and the retained sources used by analytic cut paths. */
+export function disposeStickerParts(parts) {
+  const canvases = new Set();
+  function collect(canvas) {
+    if (!canvas || canvases.has(canvas)) return;
+    canvases.add(canvas);
+    collect(getUntaperedCuteTorsoCanvas(canvas));
+    collect(getAssemblyCutterSource(canvas)?.canvas);
+  }
+  Object.values(parts).forEach(collect);
+  for (const canvas of canvases) canvas.width = canvas.height = 1;
 }
