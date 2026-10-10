@@ -109,14 +109,20 @@ export function createCanvas(width, height) {
       save: () => {},
       restore: () => {},
       beginPath: () => {},
+      rect: () => {},
+      clip: () => {},
       arc: () => {},
       fill: () => {},
+      stroke: () => {},
+      strokeRect: () => {},
       translate: () => {},
       scale: () => {},
       rotate: () => {},
       fillText: () => {},
+      measureText: (txt = '') => ({ width: String(txt).length * 10 }),
     }),
     toDataURL: () => 'data:image/png;base64,',
+    toBlob: (cb) => cb && cb(new Blob(['mock'])),
   };
 }
 

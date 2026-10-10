@@ -1,11 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { PageContainer } from '../components/PageContainer'
 import { SEO } from '../components/SEO'
 import type { LangData } from '../constants/lang'
 import { request } from '../utils/httpClient'
-import { disposeFigure, exportPartStl, generateFigure, type FigureOutput, type PrintPartId } from './figure/print/figureEngine'
+import { disposeFigure, exportPartStl, generateFigure, generateFullFigureAssets, type FigureOutput, type PrintPartId } from './figure/print/figureEngine'
 import { FigurePreview } from './figure/print/FigurePreview'
 import { FigureDownloadDialog } from './figure/print/FigureDownloadDialog'
 import { downloadUrl } from './figure/print/download'
@@ -52,11 +52,13 @@ export function FigurePrintPage({ current }: { current: LangData }) {
     const [output, setOutput] = useState<FigureOutput | null>(null)
     const [progress, setProgress] = useState(0)
     const [busy, setBusy] = useState(!!textureUrl)
+    const [busyLabel, setBusyLabel] = useState<string | null>(null)
     const [failure, setFailure] = useState<Failure | null>(null)
     const [retry, setRetry] = useState(0)
     const [previewFailed, setPreviewFailed] = useState(false)
     const [pendingDownload, setPendingDownload] = useState<{ output: FigureOutput; target: DownloadTarget } | null>(null)
     const [commissionSource, setCommissionSource] = useState<FigureSkinSource | null>(null)
+    const downloadAbortRef = useRef<AbortController | null>(null)
     const canDownload = !!output && !busy
     const closeDownload = useCallback(() => setPendingDownload(null), [])
     const onPreviewError = useCallback(() => setPreviewFailed(true), [])
@@ -72,6 +74,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
             setPreviewFailed(false)
             setProgress(0)
             setBusy(!!textureUrl)
+            setBusyLabel(null)
             if (!textureUrl) return
             let stage: Failure = 'loadFailed'
             try {
@@ -97,6 +100,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
         void Promise.resolve().then(() => { if (!controller.signal.aborted) return generate() })
         return () => {
             controller.abort()
+            downloadAbortRef.current?.abort()
             if (result) disposeFigure(result)
         }
     }, [textureUrl, retry, stickerInfo, model])
@@ -105,24 +109,58 @@ export function FigurePrintPage({ current }: { current: LangData }) {
         if (output && !busy) setPendingDownload({ output, target })
     }
 
-    const completeDownload = useCallback(() => {
+    const completeDownload = useCallback(async () => {
         // A completed request must never download a replaced/disposed model.
         if (!pendingDownload || pendingDownload.output !== output || busy) return
         const target = pendingDownload.target
+        const activeOutput = output
+        setPendingDownload(null)
         try {
             if (target.kind === 'part') {
-                const part = output.parts.find(part => part.id === target.id)
+                const part = activeOutput.parts.find(part => part.id === target.id)
                 if (!part) return
                 const url = URL.createObjectURL(exportPartStl(part))
                 downloadUrl(url, `${model.id}_${part.id}.stl`)
                 setTimeout(() => URL.revokeObjectURL(url), 1000)
             } else {
-                downloadUrl(target.kind === 'sticker' ? output.stickerUrl : output.cutterUrl,
-                    target.kind === 'sticker' ? `${model.id}_sticker_A4.png` : `${model.id}_sticker_cut_A4.svg`)
+                let stickerUrl = activeOutput.fullStickerUrl
+                let cutterUrl = activeOutput.fullCutterUrl || activeOutput.cutterUrl
+                const needsFull = !stickerUrl || !cutterUrl || activeOutput.isPreviewSticker
+                if (needsFull && activeOutput.source && typeof generateFullFigureAssets === 'function') {
+                    downloadAbortRef.current?.abort()
+                    const controller = new AbortController()
+                    downloadAbortRef.current = controller
+                    setBusy(true)
+                    setBusyLabel(t.generatingFull || t.generating)
+                    setProgress(0)
+                    try {
+                        const full = await generateFullFigureAssets(activeOutput, controller.signal, setProgress)
+                        if (controller.signal.aborted) return
+                        stickerUrl = full.stickerUrl
+                        cutterUrl = full.cutterUrl
+                        setOutput({ ...activeOutput, ...full, isPreviewSticker: false })
+                    } finally {
+                        if (!controller.signal.aborted) {
+                            setBusy(false)
+                            setBusyLabel(null)
+                        }
+                    }
+                } else if (!stickerUrl || !cutterUrl) {
+                    stickerUrl = activeOutput.stickerUrl
+                    cutterUrl = activeOutput.cutterUrl
+                }
+                if (target.kind === 'sticker') {
+                    if (stickerUrl) downloadUrl(stickerUrl, `${model.id}_sticker_A4.png`)
+                } else {
+                    if (cutterUrl) downloadUrl(cutterUrl, `${model.id}_sticker_cut_A4.svg`)
+                }
             }
-        } catch (error) { console.error(error); setFailure('exportFailed') }
-        setPendingDownload(null)
-    }, [pendingDownload, output, busy, model])
+        } catch (error: unknown) {
+            if (error instanceof Error && error.name === 'AbortError') return
+            console.error(error)
+            setFailure('exportFailed')
+        }
+    }, [pendingDownload, output, busy, model, t.generatingFull, t.generating])
 
     if (production.active && !production.data) return <PageContainer className={current.fontClass}><p role={production.failed ? 'alert' : 'status'} className="text-sm text-white/65">{production.failed ? t.productionSourceFailed : t.productionSourceLoading}</p>{production.failed && <button type="button" className={buttonClass} onClick={production.retry}>{t.retry}</button>}<Link to="/figure/manage" className="text-xs text-[#a6df7a] underline">{t.backToManagement}</Link></PageContainer>
 
@@ -159,7 +197,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
             </div>
         </header>
         {failure && <div role="alert" className="flex flex-wrap items-center gap-3 border border-red-400/25 bg-red-400/10 p-3 text-xs text-red-200 shrink-0"><span className="flex-1">{t[failure]}</span>{textureUrl && !busy && <button type="button" className={buttonClass} onClick={production.active ? production.retry : () => setRetry(value => value + 1)}>{t.retry}</button>}</div>}
-        {busy && <div role="status" className="shrink-0"><div className="flex justify-between text-xs text-white/60 mb-2"><span>{t.generating}</span><span>{progress}%</span></div><div role="progressbar" aria-label={t.generating} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} className="h-1 bg-white/10"><div className="h-full bg-[#4ea632] transition-[width]" style={{ width: `${progress}%` }} /></div></div>}
+        {busy && <div role="status" className="shrink-0"><div className="flex justify-between text-xs text-white/60 mb-2"><span>{busyLabel || t.generating}</span><span>{progress}%</span></div><div role="progressbar" aria-label={busyLabel || t.generating} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} className="h-1 bg-white/10"><div className="h-full bg-[#4ea632] transition-[width]" style={{ width: `${progress}%` }} /></div></div>}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 lg:min-h-[430px] max-lg:flex-none">
             <section className="flex flex-col min-h-0 border border-white/10 bg-[#101510]/75">
                 <div className="flex items-center justify-between gap-3 p-3 border-b border-white/10 text-sm">

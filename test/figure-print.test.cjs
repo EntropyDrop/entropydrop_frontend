@@ -26,7 +26,7 @@ const code = buildSync({
     external: ['three', 'three/*', 'manifold-3d', 'manifold-3d/*'],
 }).outputFiles[0].text;
 const moduleRef = { exports: {} };
-vm.runInNewContext(code, { module: moduleRef, exports: moduleRef.exports, require: name => name === 'manifold-3d' ? async options => (await import('manifold-3d')).default(options) : require(name), console, setTimeout, clearTimeout, Blob, URL, AbortController, DOMException });
+vm.runInNewContext(code, { module: moduleRef, exports: moduleRef.exports, require: name => name === 'manifold-3d' ? async options => (await import('manifold-3d')).default(options) : require(name), console, setTimeout, clearTimeout, requestAnimationFrame: callback => setTimeout(callback, 0), Blob, URL, AbortController, DOMException });
 const engine = moduleRef.exports;
 
 function skinCanvas(legacy = false, slim = false) {
@@ -287,6 +287,36 @@ test('sticker annotations stay in reserved whitespace and cannot enter the cutti
         assert.ok(line.y + 38 <= area.y + area.height);
     }
     assert.equal(engine.generatePageCutterSVG(page, { includeBackground: false }), before);
+});
+
+test('tiered loading creates fast preview sticker first and generates full 4200x5940 assets on demand', async () => {
+    const controller = new AbortController();
+    const info = { name: 'Tiered Hero', publisher: 'Tester', publisherId: '1', sourceId: 'skin1', sourceUrl: 'http://localhost/skin1', labels: { publisher: 'Maker', userId: 'ID', source: 'Skin' } };
+    const output = await engine.generateFigure(skinCanvas(), controller.signal, () => {}, info);
+    try {
+        assert.equal(output.isPreviewSticker, true);
+        assert.ok(output.stickerUrl);
+        assert.equal(output.cutterUrl, '');
+        assert.equal(output.fullStickerUrl, undefined);
+        assert.equal(output.fullCutterUrl, undefined);
+        assert.equal(output.parts.length, 8);
+
+        // On demand full asset generation
+        const full = await engine.generateFullFigureAssets(output, controller.signal, () => {});
+        assert.ok(full.stickerUrl);
+        assert.ok(full.cutterUrl);
+        assert.equal(output.isPreviewSticker, false);
+        assert.equal(output.fullStickerUrl, full.stickerUrl);
+        assert.equal(output.fullCutterUrl, full.cutterUrl);
+        assert.equal(output.cutterUrl, full.cutterUrl);
+
+        // Subsequent call returns cached assets immediately
+        const cached = await engine.generateFullFigureAssets(output, controller.signal, () => {});
+        assert.equal(cached.stickerUrl, full.stickerUrl);
+        assert.equal(cached.cutterUrl, full.cutterUrl);
+    } finally {
+        engine.disposeFigure(output);
+    }
 });
 
 test('cancelled generation stops before allocating a model', async () => {

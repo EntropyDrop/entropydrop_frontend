@@ -178,6 +178,7 @@ export default {
         "empty": "Choose a skin from your collections or Discover, then open 3D Printing from its preview.",
         "stickerEmpty": "Your matching stickers will appear here.",
         "generating": "Generating model and stickers…",
+        "generatingFull": "Generating full-resolution sticker and cutter…",
         "retry": "Retry",
         "loadFailed": "Could not load this skin. Try again or choose another skin.",
         "invalidSkin": "This skin must be a valid 64×64 or 64×32 PNG. Please choose another skin.",

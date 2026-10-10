@@ -17,6 +17,12 @@ export interface FigureOutput {
     isSlim: boolean
     stickerUrl: string
     cutterUrl: string
+    previewStickerUrl?: string
+    fullStickerUrl?: string
+    fullCutterUrl?: string
+    isPreviewSticker?: boolean
+    source?: HTMLImageElement
+    info?: StickerInfo
 }
 
 export function disposeParts(parts: FigurePart[]) {
@@ -28,8 +34,13 @@ export function disposeParts(parts: FigurePart[]) {
 
 export function disposeFigure(output: FigureOutput) {
     disposeParts(output.parts)
-    URL.revokeObjectURL(output.stickerUrl)
-    URL.revokeObjectURL(output.cutterUrl)
+    const revoked = new Set<string>()
+    for (const url of [output.stickerUrl, output.previewStickerUrl, output.fullStickerUrl, output.cutterUrl, output.fullCutterUrl]) {
+        if (url && !revoked.has(url)) {
+            URL.revokeObjectURL(url)
+            revoked.add(url)
+        }
+    }
 }
 
 function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -38,7 +49,7 @@ function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 
 // Serialize builds across route changes as both WASM and the guide renderer are shared.
 let queue: Promise<unknown> = Promise.resolve()
-export function generateFigure(source: HTMLImageElement, signal: AbortSignal, onProgress: (progress: number) => void, info?: StickerInfo): Promise<FigureOutput> {
+export function generateFigure(source: HTMLImageElement, signal: AbortSignal, onProgress: (progress: number) => void, info?: StickerInfo, options?: { fullRes?: boolean }): Promise<FigureOutput> {
     const job = queue.catch(() => {}).then(async () => {
         signal.throwIfAborted()
         await loadStickerFont(info)
@@ -49,35 +60,108 @@ export function generateFigure(source: HTMLImageElement, signal: AbortSignal, on
         let parts: FigurePart[] = []
         const urls: string[] = []
         try {
+            const isFull = !!options?.fullRes
             const model = await buildFigure(Float32Array.from(skin.data, channel => channel / 255), skin.width, {
                 parts: Object.fromEntries(PRINT_PARTS.map(id => [id, true])),
                 decor: true, cuteMode: true, isAlex: skin.isSlim, fillTransparentBase: false, assemblySettings,
-            }, (_message, done, total) => { if (!signal.aborted) onProgress(Math.round(done / total * 65)) })
+            }, (_message, done, total) => { if (!signal.aborted) onProgress(Math.round(done / total * (isFull ? 65 : 75))) })
             parts = model.results
             signal.throwIfAborted()
-            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, assemblySettings }, percent => {
-                if (!signal.aborted) onProgress(65 + Math.round(percent * 0.3))
+
+            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, assemblySettings, preview: !isFull }, percent => {
+                if (!signal.aborted) onProgress(isFull ? (65 + Math.round(percent * 0.3)) : (75 + Math.round(percent * 0.2)))
             })
             const page = pages[0]
             try {
                 signal.throwIfAborted()
-                const svg = generatePageCutterSVG(page, { includeBackground: false })
+                let cutterUrl = ''
+                if (isFull) {
+                    const svg = generatePageCutterSVG(page, { includeBackground: false })
+                    cutterUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+                    urls.push(cutterUrl)
+                }
                 if (info) drawStickerInfo(page.pageCanvas, page.infoArea, info)
+                const png = await canvasBlob(page.pageCanvas)
+                signal.throwIfAborted()
+                const stickerUrl = URL.createObjectURL(png)
+                urls.push(stickerUrl)
+                onProgress(100)
+                return {
+                    parts,
+                    isSlim: skin.isSlim,
+                    stickerUrl,
+                    cutterUrl,
+                    previewStickerUrl: isFull ? undefined : stickerUrl,
+                    fullStickerUrl: isFull ? stickerUrl : undefined,
+                    fullCutterUrl: isFull ? cutterUrl : undefined,
+                    isPreviewSticker: !isFull,
+                    source,
+                    info,
+                }
+            } finally {
+                for (const p of pages) {
+                    for (const canvas of [p.pageCanvas, p.cutterCanvas, ...p.cutterLayers].filter(Boolean)) canvas.width = canvas.height = 1
+                }
+            }
+        } catch (error) {
+            disposeParts(parts)
+            urls.forEach(url => URL.revokeObjectURL(url))
+            throw error
+        } finally {
+            skin.canvas.width = skin.canvas.height = 1
+            disposePreviewRenderer()
+        }
+    })
+    queue = job
+    return job
+}
+
+/** Generates 4200x5940 high-resolution sticker PNG and cutter SVG on demand when downloading. */
+export function generateFullFigureAssets(output: FigureOutput, signal: AbortSignal, onProgress: (progress: number) => void): Promise<{ stickerUrl: string; cutterUrl: string }> {
+    if (output.fullStickerUrl && (output.fullCutterUrl || output.cutterUrl)) {
+        return Promise.resolve({ stickerUrl: output.fullStickerUrl, cutterUrl: (output.fullCutterUrl || output.cutterUrl)! })
+    }
+    const source = output.source
+    if (!source) return Promise.reject(new Error('Source image is unavailable'))
+    const job = queue.catch(() => {}).then(async () => {
+        signal.throwIfAborted()
+        await loadStickerFont(output.info)
+        signal.throwIfAborted()
+        const skin = processSkin(source, 0.5)
+        resolveVoxelConsistency(skin)
+        const assemblySettings = validateStickerAssemblySettings(normalizeAssemblySettings({}, true), skin.isSlim, true)
+        const urls: string[] = []
+        try {
+            onProgress(10)
+            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, assemblySettings, preview: false }, percent => {
+                if (!signal.aborted) onProgress(10 + Math.round(percent * 0.6))
+            })
+            const page = pages[0]
+            try {
+                signal.throwIfAborted()
+                onProgress(75)
+                const svg = generatePageCutterSVG(page, { includeBackground: false })
+                if (output.info) drawStickerInfo(page.pageCanvas, page.infoArea, output.info)
+                onProgress(90)
                 const png = await canvasBlob(page.pageCanvas)
                 signal.throwIfAborted()
                 const stickerUrl = URL.createObjectURL(png)
                 urls.push(stickerUrl)
                 const cutterUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
                 urls.push(cutterUrl)
+                output.fullStickerUrl = stickerUrl
+                output.fullCutterUrl = cutterUrl
+                output.cutterUrl = cutterUrl
+                output.stickerUrl = stickerUrl
+                output.isPreviewSticker = false
                 onProgress(100)
-                return { parts, isSlim: skin.isSlim, stickerUrl, cutterUrl }
+                return { stickerUrl, cutterUrl }
             } finally {
-                for (const page of pages) {
-                    for (const canvas of [page.pageCanvas, page.cutterCanvas, ...page.cutterLayers]) canvas.width = canvas.height = 1
+                for (const p of pages) {
+                    for (const canvas of [p.pageCanvas, p.cutterCanvas, ...p.cutterLayers].filter(Boolean)) canvas.width = canvas.height = 1
                 }
             }
         } catch (error) {
-            disposeParts(parts)
             urls.forEach(url => URL.revokeObjectURL(url))
             throw error
         } finally {

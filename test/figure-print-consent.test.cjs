@@ -76,6 +76,7 @@ async function withPage(options, check) {
             if (name.endsWith('/print/FigureCommissionDialog')) return { FigureCommissionDialog: ({ source, model }) => React.createElement('aside', { 'data-source-id': source.id, 'data-model-id': model.id }, 'commission') };
             if (name.endsWith('/print/figureEngine')) return {
                 generateFigure: (_image, _signal, _progress, info) => { generatedInfo.push(info); return generation.promise.then(() => ({ parts: ids.map(id => ({ id })), stickerUrl: 'blob:sticker', cutterUrl: 'blob:cutter' })); },
+                generateFullFigureAssets: async output => ({ stickerUrl: output.fullStickerUrl || output.stickerUrl, cutterUrl: output.fullCutterUrl || output.cutterUrl }),
                 disposeFigure() {}, exportPartStl: part => part,
             };
             if (name.endsWith('/print/download')) return { downloadUrl: (...args) => downloads.push(args) };

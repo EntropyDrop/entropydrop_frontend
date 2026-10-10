@@ -178,6 +178,7 @@ export default {
         "empty": "从收藏夹或发现页选择皮肤，在预览中点击“3D 打印”开始制作。",
         "stickerEmpty": "配套贴纸将在这里显示。",
         "generating": "正在生成模型和贴纸…",
+        "generatingFull": "正在生成高清贴纸与切片…",
         "retry": "重试",
         "loadFailed": "皮肤加载失败，请重试或选择其他皮肤。",
         "invalidSkin": "皮肤须为有效的 64×64 或 64×32 PNG，请选择其他皮肤。",
