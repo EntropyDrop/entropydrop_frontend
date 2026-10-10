@@ -4,8 +4,15 @@ import type { FigurePart } from './figureEngine'
 export function createPreviewPart(part: FigurePart) {
     const content = new THREE.Group()
     const meshes = part.meshes.map(({ geometry }) => {
-        const material = new THREE.MeshBasicMaterial({ vertexColors: !!geometry.getAttribute('color'), toneMapped: false })
+        if (!geometry.getAttribute('normal')) geometry.computeVertexNormals()
+        const hasColor = !!geometry.getAttribute('color')
+        const material = new THREE.MeshLambertMaterial({
+            vertexColors: hasColor,
+            ...(hasColor ? {} : { color: '#ffffff' }),
+        })
         const mesh = new THREE.Mesh(geometry, material)
+        mesh.castShadow = true
+        mesh.receiveShadow = true
         content.add(mesh)
         return mesh
     })

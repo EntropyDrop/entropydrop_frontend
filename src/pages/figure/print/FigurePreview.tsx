@@ -32,7 +32,10 @@ export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, 
         catch { onError(); return }
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
         renderer.outputColorSpace = THREE.SRGBColorSpace
-        renderer.toneMapping = THREE.NoToneMapping
+        renderer.toneMapping = THREE.ACESFilmicToneMapping
+        renderer.toneMappingExposure = 1.0
+        renderer.shadowMap.enabled = true
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap
         renderer.domElement.style.touchAction = 'none'
         renderer.domElement.tabIndex = 0
         container.appendChild(renderer.domElement)
@@ -67,6 +70,42 @@ export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, 
         const grid = new THREE.GridHelper(80, 40, '#3a493d', '#242c27')
         grid.position.y = bounds.min.y - 0.1
         scene.add(grid)
+
+        // Lighting rig configured to match EditPage (ambient + hemisphere + view-locked key directional shadow light)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.18)
+        scene.add(ambientLight)
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0xdce5f0, 0.28)
+        scene.add(hemiLight)
+
+        const lightRig = new THREE.Group()
+        scene.add(lightRig)
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2.8)
+        dirLight.position.set(-12, 14, 44)
+        dirLight.castShadow = true
+        dirLight.shadow.mapSize.set(1024, 1024)
+        dirLight.shadow.camera.left = -30
+        dirLight.shadow.camera.right = 30
+        dirLight.shadow.camera.top = 30
+        dirLight.shadow.camera.bottom = -30
+        dirLight.shadow.camera.near = 1
+        dirLight.shadow.camera.far = 140
+        dirLight.shadow.normalBias = 0.05
+        dirLight.shadow.bias = -0.0005
+        lightRig.add(dirLight)
+        lightRig.add(dirLight.target)
+        dirLight.target.position.set(0, 0, 0)
+
+        const shadowFloor = new THREE.Mesh(
+            new THREE.PlaneGeometry(80, 80),
+            new THREE.ShadowMaterial({ opacity: 0.35 })
+        )
+        shadowFloor.rotation.x = -Math.PI / 2
+        shadowFloor.position.y = bounds.min.y - 0.1
+        shadowFloor.receiveShadow = true
+        scene.add(shadowFloor)
+
         // Register the gizmo first so it can suspend OrbitControls before a drag starts.
         const transform = new TransformControls(camera, renderer.domElement)
         transform.setMode('translate')
@@ -80,6 +119,8 @@ export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, 
         controls.maxDistance = 180
         const render = () => {
             assembly.updateGuides()
+            lightRig.position.copy(center)
+            lightRig.quaternion.copy(camera.quaternion)
             renderer.render(scene, camera)
             updateBounds()
             const { width, height } = container.getBoundingClientRect()
@@ -100,6 +141,7 @@ export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, 
             bounds.getCenter(center)
             bounds.getSize(size)
             grid.position.y = bounds.min.y - 0.1
+            shadowFloor.position.y = bounds.min.y - 0.1
             // Leave room for the toolbar and ruler captions when fitting the preview.
             const { height } = container.getBoundingClientRect()
             const paddingScale = Math.max(1, height / Math.max(height - 80, height / 2, 1))
@@ -147,7 +189,7 @@ export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, 
             const rect = renderer.domElement.getBoundingClientRect()
             raycaster.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), camera)
             const hit = raycaster.intersectObjects(selectable.filter(mesh => owners.get(mesh)?.pivot.visible), false)[0]
-            const preview = hit ? owners.get(hit.object as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>) : undefined
+            const preview = hit ? owners.get(hit.object as THREE.Mesh<THREE.BufferGeometry, THREE.Material>) : undefined
             if (!preview) { clearSelection(); return }
             transform.attach(preview.pivot)
             setSelected({ parts, item: preview })
@@ -196,6 +238,11 @@ export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, 
             transform.dispose()
             controls.dispose()
             assembly.dispose()
+            shadowFloor.geometry.dispose()
+            shadowFloor.material.dispose()
+            ambientLight.dispose()
+            hemiLight.dispose()
+            dirLight.dispose()
             grid.geometry.dispose()
             ;(Array.isArray(grid.material) ? grid.material : [grid.material]).forEach(material => material.dispose())
             renderer.domElement.removeEventListener('webglcontextlost', contextLost)

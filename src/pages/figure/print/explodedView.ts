@@ -9,7 +9,7 @@ export interface AssemblyItem {
     key: string
     label: AssemblyLabel
     pivot: THREE.Group
-    meshes: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[]
+    meshes: THREE.Mesh<THREE.BufferGeometry, THREE.Material>[]
     assembled: THREE.Vector3
     exploded: THREE.Vector3
     explodedRotation: THREE.Quaternion
@@ -102,7 +102,10 @@ export function createAssemblyPreview(parts: FigurePart[], isSlim: boolean) {
         const geometry = new THREE.ExtrudeGeometry(ring, { depth: length, bevelEnabled: false, curveSegments: 24 })
             .rotateX(-Math.PI / 2).translate(0, -length / 2, 0)
         ownedGeometries.push(geometry)
-        const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: '#dbece6', toneMapped: false }))
+        const material = new THREE.MeshLambertMaterial({ color: '#dbece6' })
+        const mesh = new THREE.Mesh(geometry, material)
+        mesh.castShadow = true
+        mesh.receiveShadow = true
         const pivot = new THREE.Group()
         pivot.add(mesh)
         const assembled = start.clone().lerp(end, 0.5)
