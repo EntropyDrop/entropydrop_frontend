@@ -15,6 +15,7 @@ import { showError } from '../utils/alert'
 import { LoadingPlaceholder } from '../components/LoadingPlaceholder'
 import { apiFetch, apiResponseJson } from '../utils/api'
 import { CollectionUploadPicker } from '../components/CollectionUploadPicker'
+import { SkinAvatarImage } from '../components/SkinAvatarImage'
 
 
 interface Collection {
@@ -54,6 +55,12 @@ interface CollectionPageProps {
     current: LangData
 }
 
+interface CollectionOwner {
+    id: string
+    username: string | null
+    picture: string | null
+    skin_url: string | null
+}
 
 export function CollectionPage({ current }: CollectionPageProps) {
     const authSession = useAuthSession();
@@ -61,6 +68,19 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const { userId, collectionId: pathCollectionId } = useParams()
     const { user: currentUser } = useCurrentUser()
     const myUserId = currentUser ? String(currentUser.id) : null
+    const isOwnCollectionPage = Boolean(myUserId && (!userId || userId === myUserId))
+    const isOtherCollectionPage = Boolean(userId && userId !== myUserId)
+    const [ownerSnapshot, setOwnerSnapshot] = useState<{
+        session: string; userId: string; profile: CollectionOwner
+    } | null>(null)
+    const collectionOwner = ownerSnapshot?.session === authSession && ownerSnapshot?.userId === userId
+        ? ownerSnapshot.profile : null
+    const ownerName = collectionOwner?.username?.trim() || userId || ''
+    const pageTitle = isOtherCollectionPage
+        ? current.collection.ownerTitle.replace('{name}', () => ownerName)
+        : current.collection.title
+    const pageSubtitle = isOtherCollectionPage ? current.collection.ownerSubtitle : current.collection.subtitle
+    const publicCreationsName = isOtherCollectionPage ? current.collection.ownerCreations : current.collection.creationsPublic
     const isPro = currentUser?.is_pro === true
     const [searchParams] = useSearchParams()
     const sharedId = searchParams.get('id')
@@ -68,12 +88,12 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const [privateCollections, setPrivateCollections] = useState<Collection[]>([])
     const [originalCollections, setOriginalCollections] = useState<Collection[]>([])
     const [currentCollection, setCurrentCollection] = useState<Collection | null>(null)
-    const canUploadToCurrentCollection = Boolean(currentCollection && authSession && myUserId &&
-        (!userId || userId === myUserId) &&
+    const canManageCurrentCollection = Boolean(currentCollection && authSession && isOwnCollectionPage &&
         String(currentCollection.id) === String(pathCollectionId || sharedId) &&
-        String(currentCollection.user_id) === myUserId && (
-            ['creations_public', 'creations_private'].includes(String(currentCollection.id)) || !currentCollection.original_creation
-        ))
+        String(currentCollection.user_id) === myUserId)
+    const canUploadToCurrentCollection = Boolean(currentCollection && canManageCurrentCollection && (
+        ['creations_public', 'creations_private'].includes(String(currentCollection.id)) || !currentCollection.original_creation
+    ))
     const [isLoadingCollection, setIsLoadingCollection] = useState(false)
     const [items, setItems] = useState<CollectionItem[]>([])
     const [selectedItem, setSelectedItem] = useState<CollectionItem | null>(null)
@@ -132,6 +152,25 @@ export function CollectionPage({ current }: CollectionPageProps) {
     const [filterMode, setFilterMode] = useState('')
     const [searchInput, setSearchInput] = useState('')
     const [modeInput, setModeInput] = useState('')
+
+    useEffect(() => {
+        if (!authSession || !myUserId || !userId || userId === myUserId) return
+        const controller = new AbortController()
+        const loadOwner = async () => {
+            const response = await apiFetch(`/api/users/${encodeURIComponent(userId)}/profile`, {
+                signal: controller.signal, auth: 'required', skipGlobalError: true,
+            })
+            if (!response.ok) return
+            const profile: CollectionOwner = await apiResponseJson(response)
+            if (!controller.signal.aborted && String(profile.id) === userId) {
+                setOwnerSnapshot({ session: authSession, userId, profile })
+            }
+        }
+        void loadOwner().catch(error => {
+            if (!controller.signal.aborted) console.error('Failed to load collection owner', error)
+        })
+        return () => controller.abort()
+    }, [authSession, myUserId, userId])
 
     const fetchCollections = async (page: number = 1, targetUserId?: string, isPublic?: boolean, signal?: AbortSignal) => {
         const isMe = !targetUserId || targetUserId === myUserId;
@@ -206,7 +245,15 @@ export function CollectionPage({ current }: CollectionPageProps) {
         setPrivateCollections([])
         setOriginalCollections([])
         setItems([])
-    }, [authSession])
+        setCurrentCollection(null)
+        setPublicColPage(1)
+        setPrivateColPage(1)
+        setItemPage(1)
+        setIsCreateModalOpen(false)
+        setIsRenameModalOpen(false)
+        setIsUploadPickerOpen(false)
+        setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
+    }, [authSession, userId])
 
     useEffect(() => {
         if (!isUploadPickerOpen) return
@@ -307,7 +354,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                     } else {
                         setCurrentCollection(null);
                         const defaultName = pathCollectionId === 'liked' ? current.collection.myLikes
-                            : pathCollectionId === 'creations_public' ? current.collection.creationsPublic
+                            : pathCollectionId === 'creations_public' ? publicCreationsName
                             : pathCollectionId === 'creations_private' ? current.collection.creationsPrivate : null;
                         if (defaultName) {
                             setCurrentCollection({
@@ -782,45 +829,62 @@ export function CollectionPage({ current }: CollectionPageProps) {
         )
     }
 
+    const collectionName = currentCollection?.id === 'creations_public' ? publicCreationsName : currentCollection?.name
     const collectionTitle = currentCollection
-        ? `${currentCollection.name} | ${current.nav.collection}`
-        : current.nav.collection;
-    const isOwnCollectionPage = Boolean(myUserId && (!userId || String(userId) === String(myUserId)))
+        ? `${collectionName} | ${pageTitle}`
+        : pageTitle;
 
     return (
         <PageContainer className="relative">
-            <SEO title={collectionTitle} description={current.collection.subtitle} />
+            <SEO title={collectionTitle} description={pageSubtitle} />
 
                 {/* Header */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-white/10 pb-6 shrink-0 w-full">
-                    <div className="w-full md:w-auto">
-                        <div className="flex items-center gap-2 mb-1 w-full">
-                            {currentCollection && (
-                                <button
-                                    onClick={() => {
-                                        const uid = (userId || myUserId)!;
-                                        setFilterName('');
-                                        setFilterMode('');
-                                        setSearchInput('');
-                                        setModeInput('');
-                                        setItemPage(1);
-                                        navigate(`/skin/collection/${uid}`);
-                                    }}
-                                    className="p-1 hover:bg-white/10 text-white/40 hover:text-white transition-colors cursor-pointer shrink-0"
-                                >
-                                    <Icon icon="pixelarticons:arrow-left" className="text-xl" />
-                                </button>
+                    <div className="flex items-center gap-3 sm:gap-4 w-full min-w-0 md:flex-1">
+                        {isOtherCollectionPage && (
+                            <SkinAvatarImage
+                                textureUrl={collectionOwner?.skin_url}
+                                fallbackSrc={collectionOwner?.picture}
+                                alt={ownerName}
+                                className="w-12 h-12 sm:w-16 sm:h-16 border border-white/10"
+                                framed={false}
+                            />
+                        )}
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2 mb-1 w-full">
+                                {currentCollection && (
+                                    <button
+                                        onClick={() => {
+                                            const uid = (userId || myUserId)!;
+                                            setFilterName('');
+                                            setFilterMode('');
+                                            setSearchInput('');
+                                            setModeInput('');
+                                            setItemPage(1);
+                                            navigate(`/skin/collection/${uid}`);
+                                        }}
+                                        className="p-1 hover:bg-white/10 text-white/40 hover:text-white transition-colors cursor-pointer shrink-0"
+                                    >
+                                        <Icon icon="pixelarticons:arrow-left" className="text-xl" />
+                                    </button>
+                                )}
+                                <h2 className={`text-white text-2xl sm:text-3xl m-0 truncate ${current.fontClass}`}>
+                                    {currentCollection ? collectionName : pageTitle}
+                                </h2>
+                            </div>
+                            <p className={`text-white/40 text-sm ${current.fontClass}`}>
+                                {currentCollection
+                                    ? `${totalItems}`
+                                    : pageSubtitle
+                                }
+                            </p>
+                            {isOtherCollectionPage && (
+                                <p className={`mt-1 text-white/50 text-xs break-all ${current.fontClass}`}>
+                                    {currentCollection && <span>{ownerName} · </span>}
+                                    <span>{current.collection.userId}: {userId}</span>
+                                </p>
                             )}
-                            <h2 className={`text-white text-2xl sm:text-3xl m-0 truncate ${current.fontClass}`}>
-                                {currentCollection ? currentCollection.name : current.collection.title}
-                            </h2>
                         </div>
-                        <p className={`text-white/40 text-sm ${current.fontClass}`}>
-                            {currentCollection
-                                ? `${totalItems}`
-                                : current.collection.subtitle
-                            }
-                        </p>
                     </div>
 
                     <div className="flex flex-col items-stretch md:items-end gap-3 w-full md:w-auto">
@@ -959,13 +1023,13 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                         <div className="h-px flex-1 bg-white/5" />
                                     </div>
                                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-                                        {originalCollections.map((col) => {
+                                        {originalCollections.filter(col => isOwnCollectionPage || col.is_public).map((col) => {
                                             const isLiked = col.id === 'liked';
                                             const isPubCreations = col.id === 'creations_public';
                                             const isPrivCreations = col.id === 'creations_private';
 
                                             const localizedName = isLiked ? current.collection.myLikes
-                                                : isPubCreations ? current.collection.creationsPublic
+                                                : isPubCreations ? publicCreationsName
                                                     : isPrivCreations ? current.collection.creationsPrivate
                                                         : col.name;
 
@@ -1091,27 +1155,29 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                         {col.item_count}
                                                     </span>
 
-                                                    <div className="absolute top-2 left-2 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity z-20">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setCollectionToRename(col);
-                                                                setRenameCollectionName(col.name);
-                                                                setIsRenameModalOpen(true);
-                                                            }}
-                                                            className="p-1 bg-blue-900/40 hover:bg-blue-600 text-white/60 hover:text-white border border-white/10"
-                                                            title={current.collection.btnRename}
-                                                        >
-                                                            <Icon icon="pixelarticons:edit" className="text-xs" />
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => handleDeleteCollection(e, col.id)}
-                                                            className="p-1 bg-red-900/40 hover:bg-red-600 text-white/60 hover:text-white border border-white/10"
-                                                            title={current.collection.btnDelete}
-                                                        >
-                                                            <Icon icon="pixelarticons:trash" className="text-xs" />
-                                                        </button>
-                                                    </div>
+                                                    {isOwnCollectionPage && String(col.user_id) === myUserId && (
+                                                        <div className="absolute top-2 left-2 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity z-20">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setCollectionToRename(col);
+                                                                    setRenameCollectionName(col.name);
+                                                                    setIsRenameModalOpen(true);
+                                                                }}
+                                                                className="p-1 bg-blue-900/40 hover:bg-blue-600 text-white/60 hover:text-white border border-white/10"
+                                                                title={current.collection.btnRename}
+                                                            >
+                                                                <Icon icon="pixelarticons:edit" className="text-xs" />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => handleDeleteCollection(e, col.id)}
+                                                                className="p-1 bg-red-900/40 hover:bg-red-600 text-white/60 hover:text-white border border-white/10"
+                                                                title={current.collection.btnDelete}
+                                                            >
+                                                                <Icon icon="pixelarticons:trash" className="text-xs" />
+                                                            </button>
+                                                        </div>
+                                                    )}
 
                                                     <div className="absolute inset-0 bg-green-500/0 group-hover:bg-green-500/5 transition-colors pointer-events-none" />
                                                 </div>
@@ -1128,7 +1194,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                             )}
 
                             {/* Custom Collections - Private */}
-                            {privateCollections.length > 0 && (
+                            {isOwnCollectionPage && privateCollections.length > 0 && (
                                 <div className="flex flex-col gap-4">
                                     <div className="flex items-center gap-4">
                                         <div className="flex items-center gap-2">
@@ -1181,27 +1247,29 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                         {col.item_count}
                                                     </span>
 
-                                                    <div className="absolute top-2 left-2 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity z-20">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setCollectionToRename(col);
-                                                                setRenameCollectionName(col.name);
-                                                                setIsRenameModalOpen(true);
-                                                            }}
-                                                            className="p-1 bg-blue-900/40 hover:bg-blue-600 text-white/60 hover:text-white border border-white/10"
-                                                            title={current.collection.btnRename}
-                                                        >
-                                                            <Icon icon="pixelarticons:edit" className="text-xs" />
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => handleDeleteCollection(e, col.id)}
-                                                            className="p-1 bg-red-900/40 hover:bg-red-600 text-white/60 hover:text-white border border-white/10"
-                                                            title={current.collection.btnDelete}
-                                                        >
-                                                            <Icon icon="pixelarticons:trash" className="text-xs" />
-                                                        </button>
-                                                    </div>
+                                                    {isOwnCollectionPage && String(col.user_id) === myUserId && (
+                                                        <div className="absolute top-2 left-2 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity z-20">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setCollectionToRename(col);
+                                                                    setRenameCollectionName(col.name);
+                                                                    setIsRenameModalOpen(true);
+                                                                }}
+                                                                className="p-1 bg-blue-900/40 hover:bg-blue-600 text-white/60 hover:text-white border border-white/10"
+                                                                title={current.collection.btnRename}
+                                                            >
+                                                                <Icon icon="pixelarticons:edit" className="text-xs" />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => handleDeleteCollection(e, col.id)}
+                                                                className="p-1 bg-red-900/40 hover:bg-red-600 text-white/60 hover:text-white border border-white/10"
+                                                                title={current.collection.btnDelete}
+                                                            >
+                                                                <Icon icon="pixelarticons:trash" className="text-xs" />
+                                                            </button>
+                                                        </div>
+                                                    )}
 
                                                     <div className="absolute inset-0 bg-green-500/0 group-hover:bg-green-500/5 transition-colors pointer-events-none" />
                                                 </div>
@@ -1235,12 +1303,15 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                     className="w-full h-full object-contain drop-shadow-lg"
                                                 />
                                             </div>
-                                            <button
-                                                onClick={(e) => handleDeleteItem(e, item.id)}
-                                                className="absolute top-2 left-2 p-1 bg-red-900/40 hover:bg-red-600 text-white/60 hover:text-white border border-white/10 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
-                                            >
-                                                <Icon icon="pixelarticons:close" className="text-xs" />
-                                            </button>
+                                            {canManageCurrentCollection && (
+                                                <button
+                                                    onClick={(e) => handleDeleteItem(e, item.id)}
+                                                    title={current.collection.btnDelete}
+                                                    className="absolute top-2 left-2 p-1 bg-red-900/40 hover:bg-red-600 text-white/60 hover:text-white border border-white/10 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
+                                                >
+                                                    <Icon icon="pixelarticons:close" className="text-xs" />
+                                                </button>
+                                            )}
                                             {canUploadToCurrentCollection && currentCollection && !currentCollection.original_creation && typeof item.data.is_public === 'boolean' && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); moveCollections.reload(); setItemToMove(item); setIsMoveModalOpen(true); }}
@@ -1511,7 +1582,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                             current={current}
                             textureUrl={selectedItem.data.result || selectedItem.data.url || ''}
                             closeModal={() => setSelectedItem(null)}
-                            onEdit={(texUrl, logId, isPublic) => navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic } })}
+                            onEdit={(texUrl, logId, isPublic, name) => navigate('/skin/edit', { state: { textureUrl: texUrl, passedLogId: logId, isPublic, name } })}
 
                             onAiEdit={(source: string, id: string, isPublic: boolean) => navigate('/skin/generate', { state: { sourceImage: source, sourceId: id, mode: 'aigc_image_edit_to_skin', isPublic } })}
                         />

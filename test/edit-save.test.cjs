@@ -37,7 +37,11 @@ async function mount({ isPro = true, parent = null, previewFails = false, confir
     window.HTMLCanvasElement.prototype.toBlob = callback => callback(new Blob(['skin'], { type: 'image/png' }));
     window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/png;base64,c2tpbg==';
     const visuals = {
-        Icon: ({ icon }) => React.createElement('svg', { 'data-icon': icon }), MC: () => null,
+        Icon: ({ icon }) => React.createElement('svg', { 'data-icon': icon }),
+        MC: ({ flatLighting, litMaterials, unifiedArms }) => React.createElement('div', {
+            'data-model-preview': true, 'data-flat-lighting': flatLighting, 'data-lit-materials': litMaterials,
+            'data-unified-arms': unifiedArms,
+        }),
         CanvasTexture: class { dispose() {} }, NearestFilter: 1, SRGBColorSpace: 'srgb',
         Skin2D: () => new Promise(resolve => imageLoads.push(() => resolve(window.document.createElement('canvas')))),
         isSlim: () => false, convertSkinLayout() {},
@@ -70,7 +74,7 @@ async function mount({ isPro = true, parent = null, previewFails = false, confir
     const previous = { window: global.window, document: global.document, act: global.IS_REACT_ACT_ENVIRONMENT };
     global.window = window; global.document = window.document; global.IS_REACT_ACT_ENVIRONMENT = true;
     const root = createRoot(window.document.getElementById('root'));
-    const state = parent ? { textureUrl: 'https://cdn.example.test/skin.png', passedLogId: parent.id, isPublic: parent.is_public } : undefined;
+    const state = parent ? { textureUrl: 'https://cdn.example.test/skin.png', passedLogId: parent.id, isPublic: parent.is_public, name: parent.name } : undefined;
     await React.act(() => root.render(React.createElement(MemoryRouter,
         { initialEntries: [{ pathname: '/skin/edit', state }] }, React.createElement(EditPage, { current }))));
     await React.act(async () => { await new Promise(resolve => setImmediate(resolve)); });
@@ -104,7 +108,7 @@ async function mount({ isPro = true, parent = null, previewFails = false, confir
 
 async function click(env, text) {
     const button = [...env.node.querySelectorAll('button')].find(node =>
-        node.textContent === text || [...node.children].some(child => child.textContent === text));
+        node.title === text || node.textContent === text || [...node.children].some(child => child.textContent === text));
     assert.ok(button, `Missing button: ${text}`);
     assert.equal(button.disabled, false);
     await React.act(async () => {
@@ -191,9 +195,12 @@ test('canceling replacement import preserves the current skin and its inherited 
     const env = await mount({ parent: { id: 'private-parent', is_public: false,
         creator: { id: '42' }, license: { code: 'entropydrop-commercial-1.0' } } });
     try {
+        const badge = env.node.querySelector('[title="private-parent"]').parentElement.parentElement;
+        assert.equal(badge.querySelector('button'), null, 'Source attribution cannot be dismissed');
         await env.pickImport();
         assert.ok(env.node.textContent.includes(env.current.edit.importRightsMessage));
         await click(env, env.current.modal.cancel);
+        assert.ok(env.node.querySelector('[title="private-parent"]'));
         await click(env, env.current.edit.collect);
         await click(env, env.current.edit.saveAsPrivate);
         assert.equal(env.writes[0].body.get('parent'), 'private-parent');
@@ -210,5 +217,73 @@ test('a failed permission preview disables both saves', async () => {
             assert.equal([...env.node.querySelectorAll('button')].find(node => node.textContent.includes(label)).disabled, true);
         }
         assert.equal(env.writes.length, 0);
+    } finally { await env.close(); }
+});
+
+for (const isPublic of [false, true]) {
+    test(`named edits submit the trimmed name with source permissions when saving ${isPublic ? 'publicly' : 'privately'}`, async () => {
+        const env = await mount({ parent: { id: 'named-parent', name: '  森林冒险家 v2  ', is_public: true,
+            creator: { id: '42' }, license: { code: 'entropydrop-commercial-1.0' } } });
+        try {
+            await click(env, env.current.edit.collect);
+            const input = env.node.querySelector('input[type="text"]');
+            assert.equal(input.value, '  森林冒险家 v2  ');
+            assert.equal(input.maxLength, 100);
+            assert.ok(input.closest('label').textContent.includes(env.current.edit.nameLabel));
+            await click(env, isPublic ? env.current.edit.saveAsPublic : env.current.edit.saveAsPrivate);
+            if (isPublic) await click(env, env.current.modal.confirm);
+            assert.equal(env.writes.length, 1);
+            assert.equal(env.writes[0].body.get('name'), '森林冒险家 v2');
+            assert.equal(env.writes[0].body.get('parent'), 'named-parent');
+            assert.equal(env.writes[0].body.get('public_license_consent'), String(isPublic));
+        } finally { await env.close(); }
+    });
+}
+
+test('replacement imports use the file name only after confirmation, and blank names retain server fallback', async () => {
+    const env = await mount({ parent: { id: 'named-parent', name: '   ', is_public: false,
+        creator: { id: '42' }, license: { code: 'entropydrop-commercial-1.0' } } });
+    try {
+        await click(env, env.current.edit.collect);
+        await click(env, env.current.edit.saveAsPrivate);
+        assert.equal(env.writes[0].body.has('name'), false);
+        await env.pickImport();
+        await click(env, env.current.modal.cancel);
+        await click(env, env.current.edit.collect);
+        assert.equal(env.node.querySelector('input[type="text"]').value, '   ');
+        await env.pickImport();
+        await click(env, env.current.edit.confirmImport);
+        assert.equal(env.node.querySelector('[title="named-parent"]'), null);
+        await click(env, env.current.edit.collect);
+        assert.equal(env.node.querySelector('input[type="text"]').value, 'skin');
+        await click(env, env.current.edit.saveAsPrivate);
+        assert.equal(env.writes[1].body.get('name'), 'skin');
+        assert.equal(env.writes[1].body.has('parent'), false);
+    } finally { await env.close(); }
+});
+
+test('editor lighting starts enabled and toggles without clearing source attribution', async () => {
+    const env = await mount({ parent: { id: 'lighting-parent', is_public: false,
+        creator: { id: '42' }, license: { code: 'entropydrop-commercial-1.0' } } });
+    try {
+        await click(env, env.current.edit.adjust);
+        const toggle = env.node.querySelector('[role="switch"]');
+        const preview = env.node.querySelector('[data-model-preview]');
+        assert.equal(toggle.getAttribute('aria-checked'), 'true');
+        assert.equal(preview.dataset.flatLighting, 'false');
+        assert.equal(preview.dataset.litMaterials, 'true');
+        assert.equal(preview.dataset.unifiedArms, 'true');
+        await click(env, env.current.edit.lighting);
+        assert.equal(toggle.getAttribute('aria-checked'), 'false');
+        assert.equal(preview.dataset.flatLighting, 'true');
+        assert.equal(preview.dataset.litMaterials, 'false');
+        await click(env, env.current.edit.adjust);
+        await click(env, env.current.edit.adjust);
+        assert.equal(env.node.querySelector('[role="switch"]').getAttribute('aria-checked'), 'false');
+        await click(env, env.current.edit.lighting);
+        assert.equal(preview.dataset.litMaterials, 'true');
+        await click(env, env.current.edit.collect);
+        await click(env, env.current.edit.saveAsPrivate);
+        assert.equal(env.writes[0].body.get('parent'), 'lighting-parent');
     } finally { await env.close(); }
 });

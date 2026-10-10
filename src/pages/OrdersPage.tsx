@@ -1,24 +1,35 @@
 import { useAuthSession } from '../hooks/useAuthSession'
+import { useLatestRequest } from '../hooks/useLatestRequest'
+import { useOrderPayment } from '../hooks/useOrderPayment'
+import { OrderKitDetails } from './figure/print/KitSpecificationsDetails'
+import type { OrderStickerRecord } from './figure/print/orderSticker'
+import type { KitSpecificationRecord } from './figure/print/kitSpecifications'
+import { groupOrderItems } from './figure/print/orderItems'
+import { FIGURE_MODELS, getFigureModelName } from './figure/print/figureModels'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { lazy, Suspense, useCallback, useState, useEffect } from 'react'
+import { FigureOrderStatus } from '../components/FigureOrderStatus';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
+import { countries } from '../constants/countries'
 import { Skin2DImg } from '../components/Skin2DImg';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { apiFetch } from '../utils/api';
-import { PayModal } from '../components/PayModal';
+import { apiFetch, apiResponseJson } from '../utils/api';
 import { Skin3DModal } from '../components/Skin3DModal';
 import { formatDate } from '../utils/date';
+
+const FigureOrderPreviewModal = lazy(() => import('./figure/print/FigureOrderPreviewModal').then(module => ({ default: module.FigureOrderPreviewModal })))
 
 interface OrdersPageProps {
     current: LangData
 }
 
-interface OrderItem {
+interface OrderItem extends KitSpecificationRecord, OrderStickerRecord {
     id: string;
     order_id: string;
     skin_url?: string;
+    refer_log_id?: string | null;
     model_type: string;
     price: number;
     created_at: string;
@@ -34,18 +45,28 @@ interface Order {
     total_price: number;
     created_at: string;
     paid_at?: string;
+    goods_status?: string;
+    figure_review_status?: string;
+    figure_review_reason?: string;
+    refund_status?: string;
+    tracking_number?: string;
     items?: OrderItem[];
     address?: {
+        recipient_name?: string;
         country: string;
         state: string;
         city: string;
         detail_address: string;
         phone: string;
+        zip_code?: string;
     }
 }
 
 export function OrdersPage({ current }: OrdersPageProps) {
     const authSession = useAuthSession();
+    const [searchParams] = useSearchParams();
+    const linkedOrder = searchParams.get("order");
+    const ordersRequests = useLatestRequest();
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
@@ -66,46 +87,38 @@ export function OrdersPage({ current }: OrdersPageProps) {
         type: 'info'
     });
 
-    const [payModalConfig, setPayModalConfig] = useState<{
-        isOpen: boolean;
-        orderId: string | null;
-        totalPrice: number | null;
-    }>({
-        isOpen: false,
-        orderId: null,
-        totalPrice: null
-    });
-
     const [skin3DModalConfig, setSkin3DModalConfig] = useState<{
         isOpen: boolean;
         textureUrl: string | null;
+        modelType?: string;
     }>({
         isOpen: false,
         textureUrl: null
     });
 
-    useEffect(() => {
-        setOrders([]);
-        setPage(1);
-        if (authSession) fetchOrders();
-    }, [authSession]);
+    const closePreview = useCallback(() => setSkin3DModalConfig({ isOpen: false, textureUrl: null }), []);
+    const figurePreview = FIGURE_MODELS.some(model => model.orderModelType === skin3DModalConfig.modelType);
 
-    const fetchOrders = async (pageNum = 1, append = false) => {
+    const fetchOrders = useCallback(async (pageNum = 1, append = false) => {
         const token = authSession;
         if (!token) {
             navigate('/skin/');
             return;
         }
 
+        const ticket = ordersRequests.begin();
         try {
+            setError(null);
             if (append) {
                 setLoadingMore(true);
             } else {
                 setLoading(true);
             }
-            const response = await apiFetch(`/api/orders?page=${pageNum}&page_size=10`);
+            const response = await apiFetch(linkedOrder ? `/api/orders/${encodeURIComponent(linkedOrder)}` : `/api/orders?page=${pageNum}&page_size=10`, { signal: ticket.signal });
             if (response.ok) {
-                const data = await response.json();
+                const result = await apiResponseJson(response);
+                if (!ticket.isCurrent()) return;
+                const data = linkedOrder ? { items: [result], total_pages: 1 } : result;
                 if (append) {
                     setOrders(prev => [...prev, ...data.items]);
                 } else {
@@ -114,15 +127,34 @@ export function OrdersPage({ current }: OrdersPageProps) {
                 setHasMore(pageNum < data.total_pages);
                 setPage(pageNum);
             } else {
-                setError('Failed to fetch orders');
+                if (ticket.isCurrent()) setError('Failed to fetch orders');
             }
-        } catch (e) {
-            setError('Network error');
+        } catch {
+            if (ticket.isCurrent()) setError('Network error');
         } finally {
-            setLoading(false);
-            setLoadingMore(false);
+            if (ticket.isCurrent()) {
+                setLoading(false);
+                setLoadingMore(false);
+            }
         }
-    };
+    }, [authSession, linkedOrder, navigate, ordersRequests]);
+
+    const { pay, processingOrderId } = useOrderPayment({
+        authSession, current,
+        onSuccess: () => {
+            setModalConfig({ isOpen: true, title: current.orders.tip, message: current.modal.paySuccess, type: 'success' });
+            void fetchOrders();
+        },
+        onError: message => setModalConfig({ isOpen: true, title: current.modal.payOrder, message, type: 'error' }),
+    });
+
+    useEffect(() => {
+        closePreview();
+        setOrders([]);
+        setPage(1);
+        if (authSession) fetchOrders();
+        return () => ordersRequests.cancel();
+    }, [authSession, linkedOrder, closePreview, fetchOrders, ordersRequests]);
 
     const handleCancelOrder = (orderId: string) => {
         setModalConfig({
@@ -145,26 +177,16 @@ export function OrdersPage({ current }: OrdersPageProps) {
             } else {
                 setModalConfig({ isOpen: true, title: current.orders.cancelFailed, message: current.orders.operationFailed, type: 'error' });
             }
-        } catch (e) {
+        } catch {
             setModalConfig({ isOpen: true, title: current.orders.networkTitle, message: current.orders.networkError, type: 'error' });
         }
     };
 
-    const handleAddToOrder = async () => {
+    const handleDeleteOrderItem = (itemId: string, quantity: number) => {
         setModalConfig({
             isOpen: true,
-            title: current.orders.addToPendingOrderTitle,
-            message: current.orders.addToPendingOrderHint,
-            type: 'info',
-            onConfirm: () => navigate('/skin/'),
-        });
-    };
-
-    const handleDeleteOrderItem = (itemId: string) => {
-        setModalConfig({
-            isOpen: true,
-            title: current.orders.deleteOrder,
-            message: current.orders.confirmDelete,
+            title: quantity > 1 ? current.orders.removeOne : current.orders.deleteItem,
+            message: quantity > 1 ? current.orders.confirmRemoveOne : current.orders.confirmDelete,
             type: 'error',
             onConfirm: () => executeDeleteOrderItem(itemId)
         });
@@ -181,7 +203,7 @@ export function OrdersPage({ current }: OrdersPageProps) {
             } else {
                 setModalConfig({ isOpen: true, title: current.orders.deleteFailed, message: current.orders.operationFailed, type: 'error' });
             }
-        } catch (e) {
+        } catch {
             setModalConfig({ isOpen: true, title: current.orders.networkTitle, message: current.orders.networkError, type: 'error' });
         }
     };
@@ -208,7 +230,7 @@ export function OrdersPage({ current }: OrdersPageProps) {
                 const data = await response.json();
                 setModalConfig({ isOpen: true, title: current.orders.deleteFailed, message: data.detail || current.orders.operationFailed, type: 'error' });
             }
-        } catch (e) {
+        } catch {
             setModalConfig({ isOpen: true, title: current.orders.networkTitle, message: current.orders.networkError, type: 'error' });
         }
     };
@@ -226,7 +248,9 @@ export function OrdersPage({ current }: OrdersPageProps) {
             'paid': current.orders.statuses.paid,
             'shipping': current.orders.statuses.shipping,
             'completed': current.orders.statuses.completed,
-            'cancelled': current.orders.statuses.cancelled
+            'cancelled': current.orders.statuses.cancelled,
+            'refund_pending': current.figureManagement.statuses.refund_pending,
+            'refunded': current.figureManagement.statuses.refunded
         };
         const displayStatus = textMap[status] || status;
         const style = styleMap[status] || 'bg-white/10 text-white border-white/20';
@@ -256,24 +280,13 @@ export function OrdersPage({ current }: OrdersPageProps) {
                 onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false, onConfirm: undefined }))}
                 current={current}
             />
-            <PayModal
-                isOpen={payModalConfig.isOpen}
-                orderId={payModalConfig.orderId}
-                totalPrice={payModalConfig.totalPrice}
-                current={current}
-                onClose={() => setPayModalConfig(prev => ({ ...prev, isOpen: false }))}
-                onSuccess={() => {
-                    setPayModalConfig(prev => ({ ...prev, isOpen: false }));
-                    setModalConfig({ isOpen: true, title: current.orders.tip, message: current.modal.paySuccess, type: 'success' });
-                    fetchOrders();
-                }}
-            />
-            <Skin3DModal
+            {!figurePreview && <Skin3DModal
                 isOpen={skin3DModalConfig.isOpen}
-                onClose={() => setSkin3DModalConfig(prev => ({ ...prev, isOpen: false }))}
+                onClose={closePreview}
                 textureUrl={skin3DModalConfig.textureUrl}
                 current={current}
-            />
+            />}
+            {figurePreview && skin3DModalConfig.isOpen && skin3DModalConfig.textureUrl && <Suspense fallback={null}><FigureOrderPreviewModal key={skin3DModalConfig.textureUrl} textureUrl={skin3DModalConfig.textureUrl} current={current} onClose={closePreview} /></Suspense>}
 
                 {/* Header */}
                 <div className="flex justify-between items-end border-b border-white/10 pb-4 shrink-0">
@@ -281,6 +294,7 @@ export function OrdersPage({ current }: OrdersPageProps) {
                         <h2 className={`text-white text-xl sm:text-2xl m-0 ${current.fontClass}`}>
                             {current.user.orders}
                         </h2>
+                        {linkedOrder && <Link to="/skin/orders" className="text-xs text-[#a6df7a] underline">{current.figureManagement.filters.all}</Link>}
                     </div>
                     <div className="text-[10px] text-white/40 flex items-center gap-1">
                         <Icon icon="pixelarticons:mail" />
@@ -336,44 +350,52 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-3">
+                                    {order.order_type === "print" && <FigureOrderStatus current={current} order={order} />}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-white/5 pt-3">
                                         <div className="flex flex-col gap-1.5">
                                             <span className="text-white/60 text-xs flex items-center gap-1">
                                                 <Icon icon="pixelarticons:box" className="text-xs" />
-                                                {order.order_type === 'subscription' ? current.orders.subscription : current.orders.orderItems}
+                                                {order.order_type === 'subscription' ? current.orders.subscription : `${current.orders.orderItems} (${order.items?.length ?? 0})`}
                                             </span>
                                             <div className="flex flex-col gap-1.5 pl-4 mt-1">
-                                                {order.items?.map((item) => (
-                                                    <div key={item.id} className="flex gap-2 items-center text-[10px] text-white/40 bg-white/5 p-1.5 relative group">
+                                                {groupOrderItems(order.items ?? []).map(({ item, ids, quantity, subtotal }) => (
+                                                    <div key={item.id} className="text-[10px] text-white/40 bg-white/5 p-2 relative group">
+                                                        <div className="flex gap-2 items-center">
                                                         {item.skin_url && (
-                                                            <div
-                                                                onClick={() => setSkin3DModalConfig({ isOpen: true, textureUrl: item.skin_url! })}
+                                                            <button type="button" aria-label={current.orders.preview}
+                                                                onClick={() => setSkin3DModalConfig({ isOpen: true, textureUrl: item.skin_url!, modelType: item.model_type })}
                                                                 className="cursor-pointer shrink-0 w-14 h-14"
                                                             >
                                                                 <Skin2DImg src={item.skin_url} className="w-14 h-14 object-cover bg-black/40 border border-white/5 shrink-0" />
-                                                            </div>
+                                                            </button>
                                                         )}
-                                                        <div className="flex-1">
+                                                        <div className="flex-1 min-w-0 space-y-1">
                                                             {order.order_type === 'subscription' ? (
-                                                                <div>{(current.orders.subscriptions as any)[item.model_type || ''] || item.model_type}</div>
+                                                                <div>{current.orders.subscriptions[item.model_type as keyof typeof current.orders.subscriptions] || item.model_type}</div>
                                                             ) : (
-                                                                <div>{item.model_type} (${item.price})</div>
+                                                                <><div className="text-white/80">{item.kit_specifications_snapshot?.product_name || item.kit_specifications_current?.product_name || getFigureModelName(item.model_type)}</div><div>{current.orders.quantity}: {quantity} × ${item.price.toFixed(2)}</div><div>{current.orders.subtotal}: ${subtotal.toFixed(2)}</div></>
                                                             )}
                                                         </div>
                                                         {order.status === 'pending_payment' && order.order_type !== 'subscription' && (
                                                             <button
-                                                                onClick={() => handleDeleteOrderItem(item.id)}
-                                                                className="absolute w-8 h-8 justify-center items-center border border-white/10 hover:bg-white/10 flex right-4 top-4 text-white-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-white-600 text-[9px]"
-                                                                title={current.orders.deleteItem}
+                                                                disabled={processingOrderId === order.id}
+                                                                onClick={() => handleDeleteOrderItem(ids[ids.length - 1], quantity)}
+                                                                className="w-8 h-8 shrink-0 justify-center items-center border border-white/10 hover:bg-white/10 flex text-white/60 cursor-pointer text-[9px] disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                title={quantity > 1 ? current.orders.removeOne : current.orders.deleteItem}
+                                                                aria-label={quantity > 1 ? current.orders.removeOne : current.orders.deleteItem}
                                                             >
-                                                                <Icon icon="pixelarticons:close" className="text-xs" />
+                                                                <Icon icon={quantity > 1 ? "pixelarticons:minus" : "pixelarticons:close"} className="text-xs" />
                                                             </button>
                                                         )}
+                                                        </div>
+                                                        {order.order_type !== 'subscription' && <OrderKitDetails item={item} current={current} />}
                                                     </div>
                                                 ))}
                                                 {order.order_type !== 'subscription' && (
                                                     <button
-                                                        onClick={() => handleAddToOrder()}
+                                                        onClick={() => navigate('/figure/3dprint')}
+                                                        aria-label={current.figurePrint.commissionOrder.title}
+                                                        title={current.figurePrint.commissionOrder.title}
                                                         className="mt-1  w-8 h-8 self-end justify-center items-center flex items-center gap-1 text-blue-400 hover:text-blue-300 text-[9px] cursor-pointer bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
                                                     >
                                                         <Icon icon="pixelarticons:plus" className="text-xs" />
@@ -388,9 +410,12 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                                     <Icon icon="pixelarticons:book-open" className="text-xs" />
                                                     {current.orders.shippingAddress}
                                                 </span>
-                                                <div className="text-[10px] text-white/40 flex flex-col gap-0.5 pl-4">
+                                                <div className="text-[10px] text-white/40 flex flex-col gap-0.5 pl-4 break-words">
+                                                    {order.address.recipient_name && <div className="break-words text-white/80">{order.address.recipient_name}</div>}
+                                                    <div>{countries.find(country => country.code === order.address?.country)?.[current.lang === 'zh-hans' ? 'zhName' : 'name'] || order.address.country}</div>
                                                     <div>{order.address.state} {order.address.city}</div>
                                                     <div className="text-white/60">{order.address.detail_address}</div>
+                                                    {order.address.zip_code && <div>{order.address.zip_code}</div>}
                                                     <div className="text-white/30">{order.address.phone}</div>
                                                 </div>
                                             </div>
@@ -401,16 +426,19 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                     {order.status === 'pending_payment' && (
                                         <div className="flex justify-end gap-2 border-t border-white/5 pt-3 mt-1">
                                             <button
+                                                disabled={processingOrderId === order.id}
                                                 onClick={() => handleCancelOrder(order.id)}
-                                                className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-500 text-[10px] border border-red-500/30 cursor-pointer transition-colors"
+                                                className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-500 text-[10px] border border-red-500/30 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 {current.orders.cancelOrder}
                                             </button>
                                             <button
-                                                onClick={() => setPayModalConfig({ isOpen: true, orderId: order.id, totalPrice: order.total_price })}
-                                                className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-black text-[10px] font-bold cursor-pointer transition-colors"
+                                                onClick={() => void pay(order.id)}
+                                                disabled={processingOrderId !== null}
+                                                className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-black text-[10px] font-bold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                                             >
-                                                {current.orders.payNow}
+                                                {processingOrderId === order.id && <Icon icon="pixelarticons:reload" className="animate-spin" />}
+                                                {processingOrderId === order.id ? current.credits.waitingPayment : current.orders.payNow}
                                             </button>
                                         </div>
                                     )}

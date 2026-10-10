@@ -12,7 +12,8 @@ const projectRoot = path.resolve(__dirname, '..');
 const compiled = build({
     stdin: {
         contents: `export { CollectionPage } from './src/pages/CollectionPage';
-            export { default as current } from './src/constants/locales/en';`,
+            export { default as current } from './src/constants/locales/en';
+            export { default as chinese } from './src/constants/locales/zh-hans';`,
         resolveDir: projectRoot,
         loader: 'tsx',
     },
@@ -58,20 +59,20 @@ function collections(url, userId = 42) {
     });
 }
 
-async function mount(fetch, { userId = 42, width = 1920, collectionId } = {}) {
+async function mount(fetch, { userId = 42, width = 1920, collectionId, loggedIn = true, locale = 'en' } = {}) {
     const initialPath = `/skin/collection/${userId}${collectionId ? `/${collectionId}` : ''}`;
     const dom = new JSDOM('<div id="root"></div>', {
         url: `https://app.example.test${initialPath}`,
     });
     const { window } = dom;
     window.innerWidth = width;
-    window.localStorage.setItem('token', 'existing-token');
+    if (loggedIn) window.localStorage.setItem('token', 'existing-token');
     const module = { exports: {} };
     const visuals = {
         Icon: ({ icon }) => React.createElement('svg', { 'data-icon': icon }),
         AnimatePresence: ({ children }) => children,
         motion: { div: ({ children, initial, animate, exit, transition, ...props }) => React.createElement('div', props, children) },
-        SEO: () => null, Skin2DImg: () => null,
+        SEO: ({ title }) => React.createElement('span', { 'data-page-title': title }), Skin2DImg: () => null,
         MCModal: ({ item }) => React.createElement('div', { 'data-modal-skin-public': String(item.is_public) }),
         LoadingPlaceholder: () => null,
     };
@@ -86,7 +87,8 @@ async function mount(fetch, { userId = 42, width = 1920, collectionId } = {}) {
         module, exports: module.exports,
     });
     vm.runInContext(await compiled, context);
-    const { CollectionPage, current } = module.exports;
+    const { CollectionPage } = module.exports;
+    const current = locale === 'zh-hans' ? module.exports.chinese : module.exports.current;
     const previous = { window: global.window, document: global.document,
         act: global.IS_REACT_ACT_ENVIRONMENT };
     global.window = window;
@@ -592,5 +594,129 @@ test('Free accounts cannot choose a file for private upload', async () => {
         const choose = [...picker.querySelectorAll('button')].find(button => button.textContent === env.current.collection.chooseImage);
         assert.equal(choose.disabled, true);
         assert.equal(writes.length, 0);
+    } finally { await env.close(); }
+});
+
+function visitorFetch(input) {
+    const url = new URL(input);
+    if (url.pathname === '/api/users/me') return Promise.resolve(json({ id: 42, is_pro: true }));
+    if (url.pathname === '/api/users/99/profile') return Promise.resolve(json({
+        id: '99', username: 'Alex', picture: 'https://cdn.example.test/alex.png', skin_url: null,
+    }));
+    if (url.pathname === '/api/collections/items') return Promise.resolve(json({
+        items: [{ id: 'item-99', collection_id: 'creations_public', name: 'Alex skin', type: 'human_upload',
+            data: { result: 'skin.png', is_public: true } }], page: 1, total_pages: 1, total: 1,
+    }));
+    if (url.pathname === '/api/users/99/collections') return Promise.resolve(collections(url, 99));
+    if (url.pathname === '/api/collections') return Promise.resolve(collections(url));
+    throw new Error(`Unexpected visitor request: ${url}`);
+}
+
+function assertNoManagement(env) {
+    const buttons = [...env.node.querySelectorAll('button')];
+    assert.equal(buttons.some(button => [env.current.collection.upload, env.current.collection.btnNew]
+        .includes(button.textContent)), false);
+    assert.equal(buttons.some(button => [env.current.collection.btnRename, env.current.collection.btnDelete,
+        env.current.collection.moveToCollection].includes(button.title)), false);
+    assert.equal(env.node.querySelector('input[type="file"]'), null);
+}
+
+for (const locale of ['en', 'zh-hans']) {
+    for (const collectionId of [undefined, 'creations_public', '99-true-1']) {
+        test(`${locale} visitor ${collectionId || 'list'} shows the owner and hides management actions`, async () => {
+            const env = await mount(visitorFetch, { userId: 99, collectionId, locale });
+            try {
+                const title = env.current.collection.ownerTitle.replace('{name}', 'Alex');
+                assert.ok(env.node.querySelector('[data-page-title]').getAttribute('data-page-title').includes(title));
+                if (!collectionId) assert.equal(env.node.querySelector('h2').textContent, title);
+                assert.ok(env.node.textContent.includes('Alex'));
+                assert.ok(env.node.textContent.includes(`${env.current.collection.userId}: 99`));
+                assert.equal(env.node.querySelector('img[alt="Alex"]').getAttribute('src'), 'https://cdn.example.test/alex.png');
+                assert.equal(env.node.textContent.includes(env.current.collection.title), false);
+                assert.equal(env.node.textContent.includes(env.current.collection.subtitle), false);
+                assert.equal(env.node.textContent.includes(env.current.collection.creationsPublic), false);
+                assert.equal(env.node.textContent.includes(env.current.collection.creationsPrivate), false);
+                assertNoManagement(env);
+            } finally { await env.close(); }
+        });
+    }
+}
+
+test('own management remains available and navigating to another owner clears private content', async () => {
+    const pending = deferred();
+    const env = await mount(input => {
+        if (new URL(input).pathname === '/api/users/99/collections') return pending.promise;
+        return visitorFetch(input);
+    });
+    try {
+        assertOwnDefaults(env);
+        assert.equal(env.node.querySelector('h2').textContent, env.current.collection.title);
+        assert.ok([...env.node.querySelectorAll('button')].some(button => button.textContent === env.current.collection.btnNew));
+        assert.ok([...env.node.querySelectorAll('button')].some(button => button.textContent === env.current.collection.upload));
+        assert.ok(env.node.querySelector(`button[title="${env.current.collection.btnRename}"]`));
+        await env.navigate('/skin/collection/99');
+        assertNoManagement(env);
+        assert.equal(env.node.textContent.includes('custom-42'), false);
+        assert.equal(env.node.textContent.includes(env.current.collection.creationsPrivate), false);
+        assert.equal(env.node.textContent.includes(env.current.collection.myLikes), false);
+        await React.act(() => pending.resolve(collections(new URL('https://api.example.test/api/users/99/collections?page=1&is_public=true'), 99)));
+        assert.ok(env.node.textContent.includes('custom-99'));
+        await env.navigate('/skin/collection/42');
+        assertOwnDefaults(env);
+        assert.equal(env.node.querySelector('h2').textContent, env.current.collection.title);
+        assert.equal(env.node.textContent.includes('Alex'), false);
+    } finally { await env.close(); }
+});
+
+test('switching owners cancels pending profiles and ignores late responses', async () => {
+    const pending = deferred();
+    let oldSignal;
+    const env = await mount((input, options) => {
+        const url = new URL(input);
+        if (url.pathname === '/api/users/99/profile') {
+            oldSignal = options.signal;
+            return pending.promise;
+        }
+        if (url.pathname === '/api/users/100/profile') return Promise.resolve(json({ id: '100', username: 'Steve' }));
+        if (url.pathname === '/api/users/100/collections') return Promise.resolve(collections(url, 100));
+        return visitorFetch(input);
+    }, { userId: 99 });
+    try {
+        assertNoManagement(env);
+        await env.navigate('/skin/collection/100');
+        assert.equal(oldSignal.aborted, true);
+        assert.equal(env.node.querySelector('h2').textContent, "Steve's Collections");
+        await React.act(() => pending.resolve(json({ id: '99', username: 'Late Alex' })));
+        assert.equal(env.node.querySelector('h2').textContent, "Steve's Collections");
+        assert.equal(env.node.textContent.includes('Late Alex'), false);
+    } finally { await env.close(); }
+});
+
+for (const profileResponse of [
+    () => new Response('{}', { status: 503 }),
+    () => json({ id: '99', username: null, picture: null, skin_url: null }),
+]) {
+    test('missing owner details fall back to the user ID while public collections remain usable', async () => {
+        const env = await mount(input => new URL(input).pathname === '/api/users/99/profile'
+            ? Promise.resolve(profileResponse()) : visitorFetch(input), { userId: 99 });
+        try {
+            assert.equal(env.node.querySelector('h2').textContent, "99's Collections");
+            assert.ok(env.node.querySelector('[data-icon="pixelarticons:user"]'));
+            assert.ok(env.node.textContent.includes('custom-99'));
+            assertNoManagement(env);
+        } finally { await env.close(); }
+    });
+}
+
+test('guests still see the login requirement and do not request another user’s data', async () => {
+    const requests = [];
+    const env = await mount(input => {
+        requests.push(input);
+        return visitorFetch(input);
+    }, { userId: 99, loggedIn: false });
+    try {
+        assert.ok(env.node.textContent.includes(env.current.collection.loginPrompt));
+        assert.equal(requests.length, 0);
+        assertNoManagement(env);
     } finally { await env.close(); }
 });

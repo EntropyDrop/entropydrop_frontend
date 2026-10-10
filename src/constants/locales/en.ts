@@ -1,6 +1,200 @@
 import { spaceAgentOnboarding } from '@entropydrop/space/agent-guide'
+import { FIGURE_PRINT_TERMS } from '../figurePrintTerms'
 
 export default {
+    figureManagement: {
+        "title": "Figure management",
+        "subtitle": "Review paid orders before production. Rejection refunds the entire order, including every kit.",
+        "restricted": "Administrator access is required.",
+        "loading": "Loading orders…",
+        "refresh": "Refresh",
+        "empty": "No orders in this queue.",
+        "failed": "Could not load orders. Please retry.",
+        "actionFailed": "The update could not be confirmed. Refresh the order before trying again.",
+        "filters": {
+                "review": "Awaiting review",
+                "production": "Production",
+                "shipping": "Shipping",
+                "refunds": "Refunds",
+                "all": "All orders"
+        },
+        "statuses": {
+                "awaiting_review": "Awaiting human review",
+                "awaiting_stock": "Awaiting human review",
+                "preparing": "Approved · Ready for production",
+                "printing": "In production",
+                "shipping": "Shipped",
+                "completed": "Completed",
+                "rejected": "Rejected",
+                "refund_pending": "Refund in progress",
+                "refunded": "Refunded",
+                "pending_payment": "Awaiting payment",
+                "cancelled": "Cancelled",
+                "paid": "Paid"
+        },
+        "refunds": {
+                "queued": "Refund queued",
+                "pending": "Waiting for PayPal confirmation",
+                "completed": "Full refund completed",
+                "failed": "Refund failed · Action required",
+                "manual_review": "Refund needs manual reconciliation"
+        },
+        "order": "Order",
+        "customer": "Customer ID",
+        "placed": "Ordered",
+        "address": "Ship to",
+        "noAddress": "No shipping address snapshot",
+        "source": "Source skin",
+        "publisher": "Publisher ID",
+        "license": "Source license",
+        "publicLicense": "Public license",
+        "parent": "Parent skin",
+        "unknown": "Unknown",
+        "snapshot": "At purchase",
+        "currentSource": "Current metadata · No purchase snapshot",
+        "reviewedBy": "Reviewed by",
+        "reason": "Reason",
+        "tracking": "Carrier and tracking number",
+        "approve": "Approve for production",
+        "reject": "Reject and refund",
+        "start": "Start production",
+        "ship": "Mark as shipped",
+        "complete": "Mark as completed",
+        "sync": "Sync refund",
+        "preview": "Preview skin",
+        "prepare": "Open 3D Printing",
+        "refundId": "PayPal refund ID",
+        "approveHint": "Confirm that you have checked every skin and the permissions needed to fulfill this order. Approval allows production.",
+        "approveCheck": "I have reviewed all items and approve this order for production.",
+        "rejectHint": "The whole order will be rejected and a full refund requested. The customer will receive your reason in their website mailbox.",
+        "reasonPlaceholder": "Explain why this order cannot be produced…",
+        "shippingHint": "Enter the carrier and tracking number. The customer will receive a mailbox notification.",
+        "startHint": "Mark this approved order as in production.",
+        "completeHint": "Confirm that delivery has been completed.",
+        "confirm": "Confirm",
+        "cancel": "Cancel",
+        "saving": "Saving…",
+        "previous": "Previous",
+        "next": "Next",
+        "reviewPending": "Production will begin only after manual approval.",
+        "notifications": {
+                "figure_approved": "Your figure order was approved for production.",
+                "figure_rejected": "Your figure order was rejected. A full refund has been requested.",
+                "figure_refunded": "Your figure order has been fully refunded.",
+                "figure_refund_delayed": "Your figure refund needs further processing. Production remains cancelled.",
+                "figure_shipped": "Your figure order has shipped.",
+                "figure_completed": "Your figure order is complete."
+        }
+},
+    figurePrint: {
+        nonCommercialTitle: 'Downloads for personal, non-commercial use',
+        existingRights: 'Pro does not automatically include commercial use of this download service. Source licenses and existing valid permissions remain in effect.',
+        acceptTerms: 'I have read and agree to the 3D Printing Download Service Terms, including the non-commercial use restriction.',
+        downloadConfirmTitle: 'Confirm before downloading',
+        downloadConsentHint: 'Sign in to download. Confirm the separate terms before your first download; the same version does not require repeated confirmation.',
+        checkingConsent: 'Checking your agreement status…',
+        loginForDownload: 'Sign in so we can save your agreement record. After signing in, click the file you want to download again.',
+        loggingIn: 'Signing in…',
+        downloadLoginFailed: 'Sign-in was not completed. Please try again.',
+        consentRecordNotice: 'By clicking “Agree and download”, you save the agreement version and acceptance time to your account. Later downloads under the same version do not require confirmation again.',
+        consentLoadFailed: 'Could not check your agreement status. Nothing was downloaded. Please retry.',
+        consentSaveFailed: 'Could not save your agreement. Nothing was downloaded. Please retry.',
+        consentVersionMismatch: 'The terms have changed. Reload the page to read and accept the current version.',
+        reloadTerms: 'Reload page',
+        savingConsent: 'Saving…',
+        agreeAndDownload: 'Agree and download',
+        "title": "3D Printing",
+        "description": "Turn your skin into a figure and a matching sticker sheet.",
+        modelType: 'Model',
+        "chooseCollection": "Choose from collections",
+        "discoverSkins": "Discover skins",
+        commission: 'Order a Figure Kit',
+        commissionIntro: 'Make it yourself with the files below, or',
+        loginForCommission: 'After signing in, click “Order a Figure Kit” again to continue.',
+        source: 'Skin source',
+        publisher: 'Published by',
+        sourceUnavailable: 'Source unavailable · reopen a skin from collections or Discover',
+        unnamedSkin: 'Untitled skin',
+        unknownPublisher: 'Unknown publisher',
+        sourceParent: 'Based on another skin',
+        productionSourceLoading: 'Loading saved order data…',
+        productionSourceFailed: 'Could not load production data. Check administrator access, order approval and the saved sticker data.',
+        backToManagement: 'Back to figure orders',
+        stickerInfo: {
+            publisher: 'Published by',
+            userId: 'User ID',
+            source: 'Skin',
+        },
+        commissionOrder: {
+            shipTo: 'Ship to:',
+            change: 'Change',
+            noAddress: 'No address, please add',
+            createFailed: 'Failed to create order',
+            title: 'Order a Figure Kit',
+            specificationsUnavailable: 'Kit specifications are unavailable. Please try again later.',
+            productName: 'Product name',
+            customSkinId: 'Custom skin ID',
+            dimensions: 'Approx. dimensions',
+            contentsTitle: 'Kit contents',
+            shipping: 'Shipping',
+            freeShipping: 'Free',
+            production: 'Estimated production',
+            productionTime: '3 days after approval',
+            delivery: 'Estimated transit',
+            deliveryTime: '2 weeks',
+            loading: 'Checking availability…',
+            unavailable: 'Out of stock. Ordering is temporarily unavailable.',
+            failed: 'Could not load order details. Please retry.',
+            signIn: 'Sign in to choose a shipping address and place your order.',
+            loginFailed: 'Sign-in failed. Please retry.',
+            price: 'One kit',
+            quantity: 'Quantity',
+            total: 'Total',
+            limitReached: 'An unpaid order can contain up to 10 kits. Reduce the quantity or update your unpaid order.',
+            checkout: 'Add to order',
+            submitting: 'Adding to order…',
+            approval: 'Paid orders are reviewed before production. Rejected orders receive a full refund and a reason in your mailbox.',
+        },
+        "model": "Model preview",
+        "stickers": "A4 sticker sheet",
+        "resetView": "Reset view",
+        "resetPositions": "Reset positions",
+        assembly: {
+            toggle: 'Exploded view',
+            legend: 'Assembly connections',
+            neck: 'Long joint ×1 · Head ↔ Torso',
+            hips: 'Short joint ×2 · Torso ↔ Legs',
+            tubes: 'PTFE tubes ×2 · Arms ↔ Torso · Length {length} mm · Ø4 mm · Non-printed',
+            parts: {
+                leftHipJoint: 'Left leg · Short joint',
+                rightHipJoint: 'Right leg · Short joint',
+                leftTube: 'Left arm · PTFE tube (non-printed)',
+                rightTube: 'Right arm · PTFE tube (non-printed)',
+            },
+        },
+        "exportSvg": "Download cutting SVG",
+        "downloadSticker": "Download sticker PNG",
+        "stickerAlt": "A4 sticker sheet for all figure parts",
+        "empty": "Choose a skin from your collections or Discover, then open 3D Printing from its preview.",
+        "stickerEmpty": "Your matching stickers will appear here.",
+        "generating": "Generating model and stickers…",
+        "retry": "Retry",
+        "loadFailed": "Could not load this skin. Try again or choose another skin.",
+        "invalidSkin": "This skin must be a valid 64×64 or 64×32 PNG. Please choose another skin.",
+        "buildFailed": "Could not generate the figure. Try again or choose another skin.",
+        "exportFailed": "Could not export this part. Please try again.",
+        "previewFailed": "3D preview is unavailable in this browser. The STL downloads are still available.",
+        "parts": {
+            "head": "Head",
+            "torso": "Torso",
+            "leftArm": "Left arm",
+            "rightArm": "Right arm",
+            "leftLeg": "Left leg",
+            "rightLeg": "Right leg",
+            "shortConnector": "Short joint",
+            "longConnector": "Long joint"
+        }
+    },
     skinLicense: {
         yourRights: "Your usage rights",
         sharing: "Sharing",
@@ -38,10 +232,10 @@ export default {
     subtitle: 'Open-Source Manufacturer',
     fontClass: 'font-pixel-hans',
     nav: {
+        figurePrint: "3D Printing",
         discover: 'Discover',
         generate: 'Generate',
         edit: 'Edit',
-        print: '3D Print',
         collection: 'Collections',
         pro: 'Pro',
         public: 'Public',
@@ -226,6 +420,10 @@ export default {
     },
     collection: {
         title: 'My Collections',
+        ownerTitle: "{name}'s Collections",
+        ownerSubtitle: 'Public creations and collections',
+        ownerCreations: 'Public Creations',
+        userId: 'User ID',
         subtitle: 'Manage every block of inspiration',
         btnNew: 'New Collection',
         typeCollection: 'Collection',
@@ -310,11 +508,12 @@ export default {
         export: 'Download',
         collect: 'Save',
         saveToCreations: 'Save to Original Creations',
+        nameLabel: 'Skin name',
+        namePlaceholder: 'Enter a name (optional)',
         saveAsPublic: 'Save as Public',
         saveAsPrivate: 'Save as Private',
         saving: 'Saving...',
         privateModelWarning: 'Private model remains private',
-        exitReference: 'Exit Reference Model',
         saveSuccess: 'Saved to creations',
         saveFailed: 'Failed to save',
         saveLicenseTitle: 'License after saving',
@@ -337,6 +536,7 @@ export default {
         brightness: 'Brightness',
         contrast: 'Contrast',
         adjust: 'Adjust',
+        lighting: 'Lighting & shadows',
         kmeans: 'K-Means Quantization',
         kmeansClusters: 'Target Colors (K)',
         kmeansDescription: 'Merge similar colors using K-Means to make skin colors cleaner and more pixelated.',
@@ -413,9 +613,24 @@ export default {
         payTime: 'Paid Time',
         shippingFee: 'Shipping Fee',
         orderItems: 'Items',
+        quantity: 'Quantity',
+        closePreview: 'Close',
+        subtotal: 'Subtotal',
+        stickerSkinName: 'Saved skin name',
+        legacyStickerSnapshot: 'Sticker data recovered from available legacy records; it may differ from the original order date.',
+        stickerSnapshotIncomplete: 'Sticker data is incomplete and requires manual review before preparation.',
+        kitDetails: 'Kit details (per kit)',
+        currentKitSpecifications: 'Specifications were not recorded when this order was placed. Current catalog information is shown for reference.',
+        kitSpecificationsUnavailable: 'No kit specifications were recorded for this order.',
+        preview: 'Preview model',
+        removeOne: 'Remove one',
+        confirmRemoveOne: 'Remove one kit from this order?',
         subscription: 'Subscription',
         cancelOrder: 'Cancel Order',
         payNow: 'Pay Now',
+        openingPayment: 'Opening PayPal checkout…',
+        popupBlocked: 'Please allow pop-ups for this website, then click Pay Now again.',
+        paymentFailed: 'Unable to complete payment. Please check your order status and try again.',
         deleteOrder: 'Delete Order',
         loadMore: 'Load More',
         confirmCancel: 'Are you sure you want to cancel this order?',
@@ -430,8 +645,6 @@ export default {
         operationFailed: 'Operation failed',
         networkTitle: 'Network Error',
         addToOrderFailed: 'Failed to add to order',
-        addToPendingOrderTitle: 'Continue Shopping',
-        addToPendingOrderHint: 'Continue shopping and your items will be automatically merged into unpaid orders with the same address.',
         deleteItem: 'Delete item',
         statuses: {
             pending_payment: 'Pending',
@@ -449,7 +662,45 @@ export default {
         shippingAddress: 'Shipping Address',
         totalAmount: 'Total Amount'
     },
+    figurePrintTerms: {
+        title: '3D Printing Download Service Terms',
+        versionLabel: 'Version',
+        effectiveDateLabel: 'Effective',
+        backToPrint: 'Go to 3D printing',
+        summary: 'This website’s 3D printing download service is for personal, non-commercial making. Unless separately agreed, STL, sticker PNG, and cutting SVG files obtained through this service may not be used to sell files or printed products, provide paid printing, or promote a business.',
+        sections: [
+            {
+                title: '1. Scope and acceptance',
+                content: `These terms are between Shanghai EqualRank Technology Co., Ltd. (EntropyDrop) and users of this website’s 3D printing download service. They supplement the EntropyDrop Terms of Service for the new model conversion, part STL, sticker PNG, and cutting SVG downloads at /figure/3dprint. Custom physical product orders remain subject to their order terms.
+
+Previews do not require sign-in. Downloads require sign-in. If your account has not accepted the current version, read these terms in the download confirmation dialog, especially the non-commercial restriction and the treatment of existing permissions, actively check the agreement box, and click “Agree and download”. Downloading proceeds only after the confirmation is saved. Later downloads under the same version do not require repeated confirmation. If you do not agree, do not download through this page. Not using this service does not constitute acceptance of its separate terms.`
+            },
+            {
+                title: '2. Non-commercial use',
+                content: `This service is for personal, non-commercial making. Unless separately agreed, you agree not to use it to sell digital files or printed products, operate a paid printing business, promote a business, or for other commercial purposes. You also agree not to use STL, sticker PNG, cutting SVG files obtained through this service, or modified versions of those files, for those purposes.
+
+Paying for Pro does not automatically include commercial use of this download service.`
+            },
+            {
+                title: '3. Source content and files',
+                content: `Source skins retain their existing licenses, including valid CC licenses, author permissions, or commercial licenses already held by an account. You must have permission for the conversion and making involved and continue to follow applicable attribution, non-commercial, and other source conditions. Uploading, converting, downloading, or checking the agreement box does not transfer ownership, remove upstream restrictions, or grant the Platform rights beyond its actual authorization.
+
+These terms govern your use of this website’s service. They do not replace source licenses or license every output under a new non-commercial copyright license, revoke valid permissions, or automatically bind third parties who obtain content elsewhere. A file format does not itself give the Platform all rights in the file.`
+            },
+            {
+                title: '4. Version, effective date, and updates',
+                content: `From the effective date shown on this page, this version applies to use of the service after your active acceptance. The general Terms of Service govern general matters, and these terms govern matters specific to this service, without reducing existing valid permissions or promised benefits.
+
+Updates will identify their version and effective date and request your acceptance of the new version before downloading. They will not retroactively revoke existing valid permissions. We save the latest accepted version and a server-recorded acceptance time to your account to confirm the service agreement, avoid repeated confirmation of the same version, and handle related disputes. The corresponding version of the full terms will be retained. Repeating acceptance of the same version does not change its original acceptance time. This is not a record of individual downloads. Our Privacy Policy applies to the processing of this information.`
+            },
+        ],
+    },
     pro: {
+        printServiceNotice: {
+            beforeTerms: 'This website’s 3D printing download service is for personal, non-commercial use under ',
+            terms: 'separate terms',
+            afterTerms: '.',
+        },
         title: 'Pro Subscription',
         benefits: 'Unlock Pro Benefits',
         plans: 'Choose Your Plan',
@@ -500,7 +751,7 @@ export default {
                 private: '1,000 private skins limit',
                 priority: 'High priority queue',
                 experimental: 'Early access to new features',
-                commercial: 'Skins generated during subscription enjoy permanent commercial license'
+                commercial: 'Skins generated during subscription enjoy permanent commercial license.'
             },
             pro_max: {
                 title: 'Pro-Max',
@@ -514,7 +765,7 @@ export default {
                 private: '5,000 private skins limit',
                 priority: 'High priority queue',
                 experimental: 'Early access to new features',
-                commercial: 'Skins generated during subscription enjoy permanent commercial license'
+                commercial: 'Skins generated during subscription enjoy permanent commercial license.'
             }
         }
     },
@@ -554,70 +805,33 @@ export default {
         processingPayment: 'Processing Payment...',
         paypalProratedDifference: 'PayPal will calculate the prorated difference'
     },
-    print: {
-        title: '3D printed Pixel-Style Collectible Figurine',
-        description: 'Product combines 3D printed white model + HD color restoration stickers for pixel-perfect replication.',
-        priceLabel: 'Unified Price',
-        shippingLabel: 'Shipping',
-        freeShipping: 'Free Global Shipping',
-        deliveryTime: '2-4 weeks delivery',
-        trackingLabel: 'Tracking',
-        fullTracking: 'Full Trackable',
-        realTimeUpdates: 'Real-time updates',
-        dimensionsLabel: 'Dimensions',
-        modelMaterialLabel: 'White Model',
-        modelMaterial: 'PLA, TPU',
-        modelMaterialDesc: 'High-Precision Printing',
-        stickerMaterialLabel: 'Stickers',
-        stickerMaterial: 'Photo-Grade Adhesive Waterproof Paper',
-        stickerMaterialDesc: 'Accurate Colors / Matte Texture',
-        features: {
-            articulated: { title: 'Flexible & Articulated', desc: 'Multi-joint free adjustment, unlock infinite poses' },
-            precision: { title: 'High-Precision Printing', desc: '3D printed high-precision white model, restoring every detail' },
-            clarity: { title: 'HD Image Quality', desc: 'HD adhesive sticker, pixel details fully revealed' },
-            color: { title: 'Color Restoration', desc: 'High color saturation, using photo-grade printers and paper' }
-        },
-        discoverSkins: 'Discover Skins',
-        fromCollection: 'Choose from Collections',
-        uploadLocal: 'Upload Local Skin',
-        itemInfo: 'Item Info',
-        specs: 'Specifications',
-        type: 'Type',
-        shipTo: 'Ship to:',
-        change: 'Change',
-        noAddress: 'No address, please add',
-        continue: 'Continue',
-        uploadFailed: 'Failed to upload custom model',
-        infoMissing: 'Model info missing, please try again',
-        selectAddress: 'Please select shipping address',
-        createFailed: 'Failed to create order',
-        modelNameLabel: 'Model Name',
-        materialLabel: 'Material',
-        materialDetail: '3D Printed Base(PLA); 3D Printed Joint(TPU); Stickers',
-        dimensionsDetail: 'approx. 50×12.5×100 mm',
-        soldOutNotice: 'Sorry, this model has reached its production capacity limit and temporarily cannot be ordered (does not affect submitted orders).',
-        ecoMaterial: 'Eco Material',
-        oneToOne: '1:1 Replica',
-        whiteModelSticker: 'White Model + Stickers',
-        soldOut: 'Sold out / Capacity full (Try again tomorrow)',
-        fileTooLarge: 'File too large, max support 512KB',
-        ageWarning: '14+ Adult collectible, not a toy for children',
-        promoLabels: {
-            video: 'Video',
-            style1: 'Style 1',
-            style2: 'Style 2',
-            style3: 'Style 3'
-        },
-        loginPrompt: 'Login to use 3D print features',
-    },
     address: {
+        requiredFields: 'Fields marked * are required.',
+        recipientName: 'Recipient full name',
+        completeAddress: 'Complete the recipient name and shipping address before adding this kit.',
+        selectState: 'Select a state or province',
+        validation: {
+            required: 'Please fill in this field.',
+            country_invalid: 'Please select a country or region from the list.',
+            state_invalid: 'Please select a valid state or province.',
+            postal_unused: 'This destination does not use a postal code. Please clear this field.',
+            postal_format: 'Enter a valid postal code, for example {example}.',
+            street_length: 'The address must fit into two lines of at most 300 characters each.',
+            too_long: 'Use at most {limit} characters.',
+        },
         managerTitle: 'Shipping Address',
         addAddress: 'Add Address',
         editAddress: 'Edit Address',
-        country: 'Country',
-        zipCode: 'Zip/Postal',
-        phone: 'Contact Phone',
-        state: 'State/Prov',
+        deleteAddress: 'Delete Address',
+        country: 'Country or region',
+        searchCountry: 'Search by name or country code',
+        noMatchingCountries: 'No matching countries or regions',
+        zipCode: 'ZIP / postal code',
+        phone: 'Contact phone',
+        phonePrefix: 'Calling code',
+        phoneNumber: 'Phone number',
+        selectPhonePrefix: 'Select code',
+        state: 'State / province / region',
         city: 'City',
         detailAddress: 'Address',
         setDefault: 'Set as default',
@@ -626,7 +840,7 @@ export default {
         addNew: 'Add New',
         noAddresses: 'No addresses',
         maxAddresses: 'Maximum 10 addresses allowed',
-        fillAllFields: 'Please fill in all fields',
+        fillAllFields: 'Please enter a country or region, city, address and contact phone.',
         saveFailed: 'Save failed',
         confirmDelete: 'Are you sure to delete this address?'
     },
@@ -641,7 +855,15 @@ export default {
     termsOfService: {
         title: 'EntropyDrop Terms of Service',
         lastUpdatedLabel: 'Last updated',
-        lastUpdated: 'August 30, 2026',
+        lastUpdated: FIGURE_PRINT_TERMS.effectiveDate,
+        additionalServices: {
+            title: 'This update: separate service terms and existing rights',
+            content: `New or specific services may have separate terms. We will provide the full text at the relevant entry point and before use, identify its version and effective date, and prominently disclose important provisions such as commercial-use restrictions. Where separate acceptance is required, accepting the general terms, holding a subscription, or continuing to use other services does not replace it.
+
+3D printing conversion and part STL, sticker PNG, and cutting SVG downloads are governed by the separate terms linked below and are generally for personal, non-commercial use. A Pro skin’s perpetual commercial license does not automatically include commercial use of this new download service. Source licenses and existing valid permissions remain in effect.
+
+Separate terms address only matters within the relevant service’s scope and do not modify CC or other source licenses or the code’s AGPL license. We will honor relevant benefits already expressly promised in subscriptions, orders, or separate agreements purchased before the effective date under their original valid terms. Checking a separate agreement box does not waive existing benefits. Adverse changes to existing core subscription benefits will be handled under applicable terms and law, without retroactive reduction through this addition.`,
+        },
         sections: [
             {
                 title: '1. Acceptance and Scope',
@@ -816,7 +1038,7 @@ Email: support@entropydrop.com`
     privacyPolicy: {
         title: 'EntropyDrop Privacy Policy',
         lastUpdatedLabel: 'Last updated',
-        lastUpdated: 'August 30, 2026',
+        lastUpdated: FIGURE_PRINT_TERMS.effectiveDate,
         sections: [
             {
                 title: '1. Scope and Controller',
@@ -831,6 +1053,7 @@ This Policy applies to the EntropyDrop website, AI generation services, AI Agent
 • Browsing and access data: IP address, browser and device type, language, page visits, timestamps, network data, and error information, used to deliver pages, protect security, rate-limit requests, troubleshoot failures, and improve the Services;
 • Google Sign-In data: Google ID, email address, account name, and avatar, used to create and authenticate accounts, send notices, and manage accounts;
 • Profile data: display name, avatar, game character skin, and character model type, used for author attribution, community profiles, and Space characters;
+• 3D printing download agreement data: account identifier, latest accepted terms version, and server-recorded acceptance time, used to confirm the service agreement, avoid repeated confirmation of the same version, and handle related disputes. This does not include a history of individual downloads and is subject to this Policy’s retention and user-rights provisions;
 • AI generation, editing, and license data: prompts, source images, outputs, intermediate results, model versions, parameters, seeds, visibility settings, license type and version, grant timestamp, commercial licensee, upload-license confirmation, and feedback, used to complete generations, store history, display and enforce licenses, record grants, charge Credits, recover from failures, and improve models;
 • AI Agent and API data: conversations, instructions, context, files, and objects you choose to provide; tool calls and returned results; generated code; execution and action records; API-key identifiers; request and response metadata; usage, quotas, errors, and audit logs, used to understand requests, perform tasks, provide APIs, bill usage, debug failures, audit security, and prevent abuse;
 • Community data: posts, comments, images, video links, collections, likes, reports, and notifications, used to provide community interaction, display content, and address violations;
@@ -1378,7 +1601,8 @@ Email: support@entropydrop.com`
                 },
                 stats: {
                     net: 'Net Flow',
-                    paypal: 'PayPal Revenue',
+                    paypal: 'PayPal Net Inflow',
+                    paypalNote: 'After refunds, reversals and PayPal fees',
                     aws: 'AWS Bills',
                     sync: 'Sync Mode'
                 },

@@ -2,8 +2,9 @@ import { useCurrentUser } from '../hooks/useCurrentUser'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
+import { FIGURE_PRINT_TERMS } from '../constants/figurePrintTerms'
 import { apiFetch, apiResponseJson } from '../utils/api'
 import { activateSubscriptionWithRetry } from '../utils/subscription'
 import { SEO } from '../components/SEO'
@@ -293,7 +294,14 @@ export function ProPage({ current }: ProPageProps) {
                                     </div>
                                     <div className="flex items-start gap-3">
                                         <Icon icon="pixelarticons:briefcase" className={`text-lg mt-0.5 ${tier.styles.icon}`} />
-                                        <span className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>{tier.perks.commercial}</span>
+                                        <div className={`text-xs text-white/70 leading-relaxed ${current.fontClass}`}>
+                                            <span>{tier.perks.commercial}</span>
+                                            {tier.key !== 'free' && <>{' '}
+                                                {current.pro.printServiceNotice.beforeTerms}
+                                                <Link to={FIGURE_PRINT_TERMS.path} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-white">{current.pro.printServiceNotice.terms}</Link>
+                                                {current.pro.printServiceNotice.afterTerms}
+                                            </>}
+                                        </div>
                                     </div>
                                     <div className="flex items-start gap-3">
                                         <Icon icon="pixelarticons:flag" className={`text-lg mt-0.5 ${tier.styles.icon}`} />

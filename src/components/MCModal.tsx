@@ -18,6 +18,7 @@ import { apiFetch, apiResponseJson } from '../utils/api'
 import { formatDate } from '../utils/date'
 import { GoogleSignInButton } from './GoogleSignInButton'
 import { LoadingSpinner } from './LoadingPlaceholder'
+import { createFigureSource } from '../pages/figure/print/figureSource'
 
 
 export interface Collection {
@@ -44,7 +45,7 @@ export interface MCModalProps {
     textureUrl: string
     item: GenerationLogItem
     closeModal: () => void
-    onEdit?: (textureUrl: string, id: string, isPublic: boolean) => void
+    onEdit?: (textureUrl: string, id: string, isPublic: boolean, name: string) => void
     onAiEdit?: (source: string, id: string, isPublic: boolean) => void
     current: any // Use any temporarily to avoid import loops if needed, or LangData
     onItemSelect?: (logId: string) => void
@@ -67,7 +68,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
     const handlePrint = () => {
         close();
-        navigate('/skin/print', { state: { textureUrl, item } });
+        navigate('/figure/3dprint', { state: { textureUrl, name: item.name || 'skin.png', source: createFigureSource(item) } });
     };
 
     const [mode, setModeState] = useState<'voxel' | 'plane' | 'cute'>(() => {
@@ -910,7 +911,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                 setFbxUrl={setFbxUrl}
                                                 convertModel={convertModel}
                                                 togglePart={togglePart}
-                                                onEdit={onEdit ? () => onEdit(textureUrl, item.id, item.is_public === true) : undefined}
+                                                onEdit={onEdit ? () => onEdit(textureUrl, item.id, item.is_public === true, item.name) : undefined}
                                                 onPrint={handlePrint}
                                                 downloadFilename={item.id ? `skin_${item.id.toString().substring(0, 8)}.png` : 'skin.png'}
                                                 current={current}

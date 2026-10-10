@@ -187,6 +187,7 @@ export function EditPage({ current }: EditPageProps) {
     const [basedOnSkinRenderUrl, setBasedOnSkinRenderUrl] = useState<string | null>(null);
     const [parentSkinId, setParentSkinId] = useState<string | null>(location.state?.passedLogId || null);
     const [isParentPrivate, setIsParentPrivate] = useState(location.state?.isPublic === false);
+    const [skinName, setSkinName] = useState(() => typeof location.state?.name === 'string' ? location.state.name.slice(0, 100) : '');
 
 
     // Undo/Redo state
@@ -214,12 +215,13 @@ export function EditPage({ current }: EditPageProps) {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isSavingToCreation, setIsSavingToCreation] = useState(false);
     const importRequestRef = useRef(0);
-    const [pendingImport, setPendingImport] = useState<{ image: HTMLImageElement; requestId: number } | null>(null);
+    const [pendingImport, setPendingImport] = useState<{ image: HTMLImageElement; requestId: number; name: string } | null>(null);
     const [publicConfirmationKey, setPublicConfirmationKey] = useState<string | null>(null);
     const { saveLicensePreview, isProUser, parentIsPrivate, policyKey } = useSaveLicensePreview(parentSkinId);
     const sourceIsPrivate = parentIsPrivate ?? isParentPrivate;
     const [isLocalImport, setIsLocalImport] = useState(false);
     const [isAdjustPanelOpen, setIsAdjustPanelOpen] = useState(false);
+    const [lightingEnabled, setLightingEnabled] = useState(true);
     const [hsb, setHsb] = useState({ h: 0, s: 0, b: 0, c: 0 });
     const originalImageDataRef = useRef<ImageData | null>(null);
     const startHsbRef = useRef({ h: 0, s: 0, b: 0, c: 0 });
@@ -393,6 +395,7 @@ export function EditPage({ current }: EditPageProps) {
             }
             const formData = new FormData();
             formData.append('file', blob, 'skin.png');
+            if (skinName.trim()) formData.append('name', skinName.trim());
             formData.append('mode', isLocalImport ? 'human_upload' : 'human_edit');
             if (parentSkinId) {
                 formData.append('parent', parentSkinId);
@@ -743,6 +746,7 @@ export function EditPage({ current }: EditPageProps) {
         setParentSkinId(null);
         setIsParentPrivate(false);
         setIsLocalImport(true);
+        setSkinName(pendingImport.name);
         setPublicConfirmationKey(null);
         setBasedOnSkinRenderUrl(null);
         setModelType(isSlim(img) ? 'alex' : 'steve');
@@ -770,7 +774,7 @@ export function EditPage({ current }: EditPageProps) {
                     showError(current.edit.invalidDimensions);
                     return;
                 }
-                setPendingImport({ image: img, requestId });
+                setPendingImport({ image: img, requestId, name: file.name.replace(/\.png$/i, '').slice(0, 100) });
             };
             img.onerror = () => {
                 if (requestId === importRequestRef.current) showError(current.edit.invalidDimensions);
@@ -869,7 +873,7 @@ export function EditPage({ current }: EditPageProps) {
 
                         {!isEmptyModel && texture && (
                             <>
-                                <MC texture={texture} updateTrigger={updateTrigger} mode={previewMode} action={previewAction} visibleParts={visibleParts} showOverlay={showOverlay} onPaint={paintPixel} onPaintEnd={handlePaintEnd} onHover={handleHover} onHoverEnd={handleHoverEnd} flatLighting={true} />
+                                <MC texture={texture} updateTrigger={updateTrigger} mode={previewMode} action={previewAction} visibleParts={visibleParts} showOverlay={showOverlay} onPaint={paintPixel} onPaintEnd={handlePaintEnd} onHover={handleHover} onHoverEnd={handleHoverEnd} flatLighting={!lightingEnabled} litMaterials={lightingEnabled} unifiedArms />
                                 {/* Floating Tools on Left-Center (Desktop) or Bottom-Left Above Palette (Mobile) */}
                                 <div className="absolute z-20 flex flex-col items-start gap-1.5 pointer-events-auto lg:left-4 lg:top-1/2 lg:-translate-y-1/2 max-lg:bottom-20 max-lg:left-4">
                                     <button
@@ -917,13 +921,26 @@ export function EditPage({ current }: EditPageProps) {
                                     </div>
 
                                     {isAdjustPanelOpen && (
-                                        <div className="absolute left-16 top-0 z-30 bg-black/90 backdrop-blur-lg p-4 border border-white/10 flex flex-col gap-4 min-w-[240px] max-w-[300px] shadow-2xl animate-in slide-in-from-left-4 fade-in duration-300 pointer-events-auto">
+                                        <div className="absolute left-16 lg:top-1/2 lg:-translate-y-1/2 max-lg:bottom-0 z-30 bg-black/90 backdrop-blur-lg p-4 border border-white/10 flex flex-col gap-4 w-[240px] max-h-[calc(100dvh-18rem)] overflow-y-auto custom-scrollbar shadow-2xl animate-in slide-in-from-left-4 fade-in duration-300 pointer-events-auto">
                                             <div className="flex justify-between items-center mb-1">
                                                 <span className={`text-[10px] text-white/40 uppercase tracking-widest ${current.fontClass}`}>{current.edit.adjust}</span>
                                                 <button onClick={() => setIsAdjustPanelOpen(false)} className="text-white/30 hover:text-white transition-colors cursor-pointer">
                                                     <Icon icon="pixelarticons:close" className="text-sm" />
                                                 </button>
                                             </div>
+
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-checked={lightingEnabled}
+                                                onClick={() => setLightingEnabled(enabled => !enabled)}
+                                                className={`flex items-center justify-between gap-3 border-b border-white/10 pb-3 text-xs text-white cursor-pointer ${current.fontClass}`}
+                                            >
+                                                {current.edit.lighting}
+                                                <span aria-hidden="true" className={`w-8 h-4 border p-0.5 transition-colors ${lightingEnabled ? 'bg-[#3c8527] border-[#4ea632]' : 'bg-white/5 border-white/30'}`}>
+                                                    <span className={`block h-2 w-2 bg-white transition-transform ${lightingEnabled ? 'translate-x-4' : ''}`} />
+                                                </span>
+                                            </button>
 
                                             {/* HSB Color Adjust Section */}
                                             <div className="flex flex-col gap-3">
@@ -1056,7 +1073,7 @@ export function EditPage({ current }: EditPageProps) {
                                 </div>
 
                                 {/* Floating Controls Top Right */}
-                                <div className="absolute top-4 right-4 z-20 flex gap-1.5 bg-black/60 backdrop-blur-md p-1 border border-white/10 items-center">
+                                <div className="absolute top-4 right-4 z-40 flex gap-1.5 bg-black/60 backdrop-blur-md p-1 border border-white/10 items-center">
                                     {!isEmptyModel && (
                                         <>
                                             <button
@@ -1111,11 +1128,15 @@ export function EditPage({ current }: EditPageProps) {
                                                 </button>
 
                                                 {isDropdownOpen && (
-                                                    <div className="absolute top-full right-0 mt-1 z-30 bg-[#121212] border border-white/10 p-2 flex flex-col gap-1 w-64 shadow-lg">
+                                                    <div className="absolute top-full right-0 mt-1 z-30 bg-[#121212] border border-white/10 p-2 flex flex-col gap-1 w-64 max-h-[calc(100dvh-15rem)] overflow-y-auto shadow-lg">
                                                         <div className="flex flex-col gap-2 p-1">
                                                             <div className="text-[10px] text-white/60 pb-1 border-b border-white/5 mb-1 font-pixel-hans">
                                                                 {current.edit.saveToCreations}
                                                             </div>
+                                                            <label className={`flex flex-col gap-1.5 text-xs text-white/70 ${current.fontClass}`}>
+                                                                {current.edit.nameLabel}
+                                                                <input type="text" value={skinName} onChange={event => setSkinName(event.target.value)} disabled={isSavingToCreation} maxLength={100} placeholder={current.edit.namePlaceholder} className="w-full min-w-0 border border-white/20 bg-black/30 px-2 py-2 text-xs text-white outline-none focus:border-[#84c96b] disabled:opacity-50" />
+                                                            </label>
                                                             {sourceIsPrivate ? <p className="text-xs text-white/60 m-0">
                                                                 {saveLicensePreview === 'unavailable' ? current.skinLicense.unavailableDescription : current.skinLicense.privateInherited}
                                                             </p> : saveLicensePreview === 'source-license' ? <div className={`border border-white/15 bg-white/[0.03] p-3 flex flex-col gap-2 text-xs leading-relaxed ${current.fontClass}`}>
@@ -1261,21 +1282,6 @@ export function EditPage({ current }: EditPageProps) {
                                     {parentSkinId.substring(0, 8).toUpperCase()}
                                 </span>
                             </div>
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setParentSkinId(null);
-                                    setIsParentPrivate(false);
-                                    setIsLocalImport(false);
-                                    setBasedOnSkinRenderUrl(null);
-                                    setIsEmptyModel(true);
-                                    setTexture(null);
-                                }}
-                                className="p-1 hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors cursor-pointer border border-transparent hover:border-white/10 flex items-center justify-center ml-1"
-                                title={current.edit.exitReference}
-                            >
-                                <Icon icon="pixelarticons:close" className="text-base" />
-                            </button>
                         </div>
                     )}
                 </div>

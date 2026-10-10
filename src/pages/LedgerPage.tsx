@@ -168,10 +168,11 @@ export function LedgerPage({ current }: LedgerPageProps) {
     const stats = [
         {
             label: pageData.stats.paypal,
-            value: ledger.summaries.paypal.revenue || ledger.summaries.paypal.total,
+            value: ledger.summaries.paypal.total,
             sub: `${pageData.sync.records}: ${ledger.summaries.paypal.count}`,
+            note: pageData.stats.paypalNote,
             icon: 'pixelarticons:dollar',
-            color: 'text-green-500',
+            color: ledger.summaries.paypal.total_value < 0 ? 'text-red-400' : 'text-green-500',
         },
         {
             label: pageData.stats.aws,
@@ -250,6 +251,7 @@ export function LedgerPage({ current }: LedgerPageProps) {
                         <div className="flex flex-col gap-1 min-w-0">
                             <span className={`text-xl sm:text-2xl font-bold tabular-nums truncate ${stat.color}`}>{stat.value}</span>
                             <span className="text-[10px] text-white/35 truncate">{stat.sub}</span>
+                            {stat.note && <span className="text-[10px] text-white/50 leading-relaxed">{stat.note}</span>}
                         </div>
                     </div>
                 ))}

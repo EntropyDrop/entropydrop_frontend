@@ -41,7 +41,7 @@ export function DiscoveryPage({ current }: { current: LangData }) {
         </> : <DiscoveryListView current={current} search={search} selectedItem={selected} onSelect={select} onView3D={() => setView('3d')} />}
         {selected && <Suspense fallback={<LoadingPlaceholder current={current} />}>
             <MCModal key={selected.id} item={selected as GenerationLogItem} textureUrl={selected.result} current={current} closeModal={closeModal}
-                onEdit={(textureUrl, passedLogId, isPublic) => navigate('/skin/edit', { state: { textureUrl, passedLogId, isPublic } })}
+                onEdit={(textureUrl, passedLogId, isPublic, name) => navigate('/skin/edit', { state: { textureUrl, passedLogId, isPublic, name } })}
                 onAiEdit={(sourceImage, sourceId, isPublic) => navigate('/skin/generate', { state: { sourceImage, sourceId, mode: 'aigc_image_edit_to_skin', isPublic } })}
                 onItemSelect={id => select({ id, result: '', is_public: true, prompt: '' })} />
         </Suspense>}

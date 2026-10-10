@@ -202,15 +202,6 @@ export function MCModalPreview({
                                 <Icon icon="pixelarticons:edit" className="text-sm" />
                                 EDIT
                             </button>
-                            {onPrint && false && (
-                                <button
-                                    onClick={() => onPrint?.()}
-                                    className="px-3 py-1.5 text-[10px] font-pixel-hans transition-all cursor-pointer text-[#e09f3e] hover:text-white flex items-center gap-1"
-                                >
-                                    <Icon icon="pixelarticons:box" className="text-sm" />
-                                    3D PRINT
-                                </button>
-                            )}
                         </div>
                     </div>
                 </div>
@@ -302,6 +293,19 @@ export function MCModalPreview({
                                 <div onClick={() => togglePart('leftLeg')} className={`w-2 h-6 cursor-pointer border-2 transition-colors ${visibleParts.leftLeg ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
                             </div>
                         </div>
+
+                        {onPrint && (
+                            <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 w-full">
+                                <button type="button" onClick={onPrint} className="relative w-full px-4 py-1.5 bg-[#3c8527] hover:bg-[#4ea632] text-white font-pixel-hans text-[10px] flex items-center justify-center gap-2 cursor-pointer transition-colors group">
+                                    <Icon icon="pixelarticons:box" className="text-sm shrink-0" />
+                                    <span>{current.figurePrint.title}</span>
+                                    <span className="absolute -top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-[#140f02]/95 border border-amber-400/80 text-amber-300 font-pixel-hans text-[8px] leading-none tracking-wider shadow-[0_0_8px_rgba(251,191,36,0.45)] group-hover:border-amber-300 group-hover:text-amber-200 group-hover:shadow-[0_0_12px_rgba(251,191,36,0.6)] transition-all pointer-events-none select-none">
+                                        <span className="w-1 h-1 bg-amber-400 group-hover:bg-amber-300 animate-pulse shrink-0" />
+                                        <span>NEW</span>
+                                    </span>
+                                </button>
+                            </div>
+                        )}
 
                         {/* Download Button */}
                         <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 flex flex-row">

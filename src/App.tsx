@@ -5,12 +5,12 @@ import english from './constants/locales/en'
 import { LoadingPlaceholder } from './components/LoadingPlaceholder'
 import { RouteLoadingSkeleton } from './components/RouteLoadingSkeleton'
 import { type LangKey, type LangData, loadLangData, SUPPORTED_LANGUAGES } from './constants/lang'
+import { FIGURE_PRINT_TERMS } from './constants/figurePrintTerms'
 
 // Lazy load pages
 const CollectionPage = lazy(() => import('./pages/CollectionPage').then(m => ({ default: m.CollectionPage })))
 const GeneratePage = lazy(() => import('./pages/GeneratePage').then(m => ({ default: m.GeneratePage })))
 const EditPage = lazy(() => import('./pages/EditPage').then(m => ({ default: m.EditPage })))
-const PrintPage = lazy(() => import('./pages/PrintPage').then(m => ({ default: m.PrintPage })))
 const OrdersPage = lazy(() => import('./pages/OrdersPage').then(m => ({ default: m.OrdersPage })))
 const ProPage = lazy(() => import('./pages/ProPage').then(m => ({ default: m.ProPage })))
 const PublicPage = lazy(() => import('./pages/PublicPage').then(m => ({ default: m.PublicPage })))
@@ -22,6 +22,9 @@ const FinancialsPage = lazy(() => import('./pages/FinancialsPage').then(m => ({ 
 const FixedAssetsPage = lazy(() => import('./pages/FixedAssetsPage').then(m => ({ default: m.FixedAssetsPage })))
 const LedgerPage = lazy(() => import('./pages/LedgerPage').then(m => ({ default: m.LedgerPage })))
 const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage').then(m => ({ default: m.DiscoveryPage })))
+const FigurePrintPage = lazy(() => import('./pages/FigurePrintPage').then(m => ({ default: m.FigurePrintPage })))
+const FigurePrintTermsPage = lazy(() => import('./pages/FigurePrintTermsPage').then(m => ({ default: m.FigurePrintTermsPage })))
+const FigureManagePage = lazy(() => import('./pages/FigureManagePage').then(m => ({ default: m.FigureManagePage })))
 const FigurePage = lazy(() => import('./pages/FigurePage').then(m => ({ default: m.FigurePage })))
 const CreditsPage = lazy(() => import('./pages/CreditsPage').then(m => ({ default: m.CreditsPage })))
 const SpaceAuthorizePage = lazy(() => import('./pages/SpaceAuthorizePage').then(m => ({ default: m.SpaceAuthorizePage })))
@@ -120,7 +123,7 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
   setIsAuto: (a: boolean) => void
 }) {
   const location = useLocation()
-  const isPolicyPage = ['/skin/privacy', '/skin/tos'].includes(location.pathname)
+  const isPolicyPage = ['/skin/privacy', '/skin/tos', FIGURE_PRINT_TERMS.path].includes(location.pathname.replace(/\/$/, ''))
   const isSpaceLandingPage = ['/space', '/space/intro', '/space/login'].includes(location.pathname)
   const currentLangData = isSpaceLandingPage ? english : preferredLangData
 
@@ -132,7 +135,7 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
         <Route path="/skin/generate" element={<GeneratePage current={currentLangData} />} />
         <Route path="/credits" element={<CreditsPage current={currentLangData} />} />
         <Route path="/skin/edit" element={<EditPage current={currentLangData} />} />
-        <Route path="/skin/print" element={<PrintPage current={currentLangData} />} />
+        <Route path="/skin/print" element={<Navigate to="/figure/3dprint" replace />} />
         <Route path="/skin/collection" element={<CollectionPage current={currentLangData} />} />
         <Route path="/skin/collection/:userId" element={<CollectionPage current={currentLangData} />} />
         <Route path="/skin/collection/:userId/:collectionId" element={<CollectionPage current={currentLangData} />} />
@@ -149,6 +152,9 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
         <Route path="/public/ledger" element={<LedgerPage current={currentLangData} />} />
         <Route path="/skin/open/*" element={<LegacyOpenRedirect />} />
         <Route path="/figure" element={<FigureRedirect />} />
+        <Route path="/figure/3dprint" element={<FigurePrintPage current={currentLangData} />} />
+        <Route path={FIGURE_PRINT_TERMS.path} element={<FigurePrintTermsPage current={currentLangData} />} />
+        <Route path="/figure/manage" element={<FigureManagePage current={currentLangData} />} />
         <Route path="/figure/:category" element={<FigurePage current={currentLangData} />} />
         <Route path="/space/app" element={<SpaceAppRedirect />} />
         <Route path="/space/app/*" element={<SpaceAppRedirect />} />

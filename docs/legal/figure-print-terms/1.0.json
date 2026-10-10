@@ -1,0 +1,51 @@
+{
+  "version": "1.0",
+  "effectiveDate": "2026-10-09",
+  "path": "/figure/3dprint/terms",
+  "languages": {
+    "en": {
+      "title": "3D Printing Download Service Terms",
+      "summary": "This website’s 3D printing download service is for personal, non-commercial making. Unless separately agreed, STL, sticker PNG, and cutting SVG files obtained through this service may not be used to sell files or printed products, provide paid printing, or promote a business.",
+      "sections": [
+        {
+          "title": "1. Scope and acceptance",
+          "content": "These terms are between Shanghai EqualRank Technology Co., Ltd. (EntropyDrop) and users of this website’s 3D printing download service. They supplement the EntropyDrop Terms of Service for the new model conversion, part STL, sticker PNG, and cutting SVG downloads at /figure/3dprint. Custom physical product orders remain subject to their order terms.\n\nPreviews do not require sign-in. Downloads require sign-in. If your account has not accepted the current version, read these terms in the download confirmation dialog, especially the non-commercial restriction and the treatment of existing permissions, actively check the agreement box, and click “Agree and download”. Downloading proceeds only after the confirmation is saved. Later downloads under the same version do not require repeated confirmation. If you do not agree, do not download through this page. Not using this service does not constitute acceptance of its separate terms."
+        },
+        {
+          "title": "2. Non-commercial use",
+          "content": "This service is for personal, non-commercial making. Unless separately agreed, you agree not to use it to sell digital files or printed products, operate a paid printing business, promote a business, or for other commercial purposes. You also agree not to use STL, sticker PNG, cutting SVG files obtained through this service, or modified versions of those files, for those purposes.\n\nPaying for Pro does not automatically include commercial use of this download service."
+        },
+        {
+          "title": "3. Source content and files",
+          "content": "Source skins retain their existing licenses, including valid CC licenses, author permissions, or commercial licenses already held by an account. You must have permission for the conversion and making involved and continue to follow applicable attribution, non-commercial, and other source conditions. Uploading, converting, downloading, or checking the agreement box does not transfer ownership, remove upstream restrictions, or grant the Platform rights beyond its actual authorization.\n\nThese terms govern your use of this website’s service. They do not replace source licenses or license every output under a new non-commercial copyright license, revoke valid permissions, or automatically bind third parties who obtain content elsewhere. A file format does not itself give the Platform all rights in the file."
+        },
+        {
+          "title": "4. Version, effective date, and updates",
+          "content": "From the effective date shown on this page, this version applies to use of the service after your active acceptance. The general Terms of Service govern general matters, and these terms govern matters specific to this service, without reducing existing valid permissions or promised benefits.\n\nUpdates will identify their version and effective date and request your acceptance of the new version before downloading. They will not retroactively revoke existing valid permissions. We save the latest accepted version and a server-recorded acceptance time to your account to confirm the service agreement, avoid repeated confirmation of the same version, and handle related disputes. The corresponding version of the full terms will be retained. Repeating acceptance of the same version does not change its original acceptance time. This is not a record of individual downloads. Our Privacy Policy applies to the processing of this information."
+        }
+      ]
+    },
+    "zh-hans": {
+      "title": "3D 打印下载服务条款",
+      "summary": "本站 3D 打印下载服务仅供个人非商业制作。未经另行约定，不得将通过本服务取得的 STL、贴纸 PNG 或切割 SVG 用于销售文件、销售打印成品、收费代打或商业推广。",
+      "sections": [
+        {
+          "title": "1. 适用范围与确认",
+          "content": "本条款由上海齐秩科技有限公司（EntropyDrop）与使用本站 3D 打印下载服务的用户订立，是《EntropyDrop 服务条款》对该新增服务的补充，适用于 /figure/3dprint 页面提供的模型转换、部件 STL、贴纸 PNG 和切割 SVG 下载。定制实物订单仍适用其订单规则。\n\n预览无需登录。下载需要登录；当您的账户尚未同意当前版本时，请在下载确认弹窗中阅读本条款，尤其是非商业用途限制及既有授权的处理，并主动勾选后点击“同意并下载”。确认保存成功后方可下载，同一版本后续下载无需重复确认。若不同意，请勿通过本页面下载。未使用该服务，不视为已同意其独立条款。"
+        },
+        {
+          "title": "2. 非商业用途限制",
+          "content": "本服务面向个人非商业制作。在没有另行约定的情况下，您同意不以销售数字文件、销售打印成品、经营收费代打业务、商业推广或其他商业目的使用本服务，也不将通过本服务取得的 STL、贴纸 PNG、切割 SVG 及其修改版本用于上述目的。\n\n支付 Pro 订阅费用不自动获得本下载服务的商业用途权益。"
+        },
+        {
+          "title": "3. 源内容与文件",
+          "content": "源皮肤继续适用其原有许可，包括有效的 CC 许可、作者授权或账户已取得的商业许可。您应有权进行相应转换和制作，并继续遵守署名、非商业等原许可条件。上传、转换、下载或勾选同意均不会转移内容所有权、清除上游限制，或使平台获得超出实际授权范围的权利。\n\n本条款约定的是您使用本站服务的义务，不将源皮肤或所有输出统一改为新的非商业版权许可，不撤销您依法取得的许可，也不自动约束从其他渠道取得相关内容的第三方。输出文件的格式本身不会使平台取得其全部权利。"
+        },
+        {
+          "title": "4. 版本、生效与更新",
+          "content": "本版本自页面标明的生效日期起，适用于您主动同意后使用本服务的行为。一般事项适用总服务条款；本服务的特别事项适用本条款，但不得据此减损既有有效授权和已承诺权益。\n\n后续更新将标明版本和生效日期，并在下载前重新征求您对新版本的同意；新版不追溯撤销既有有效授权。我们会在您的账户中保存最近一次同意的协议版本和服务端记录的同意时间，用于确认服务约定、避免同版本重复确认及处理相关争议；对应版本的条款全文会予以保留。重复确认同一版本不会改变首次记录的同意时间。该记录不代表逐次下载记录，相关信息处理适用《隐私政策》。"
+        }
+      ]
+    }
+  }
+}

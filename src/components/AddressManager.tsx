@@ -1,11 +1,14 @@
 import { Icon } from '@iconify/react'
 import { useState, useEffect } from 'react';
 import { type LangData } from '../constants/lang';
-import { countries } from '../constants/countries';
+import { countries, defaultPhonePrefix, phonePrefixes, splitContactPhone } from '../constants/countries';
 import { apiFetch } from '../utils/api';
+import { addressLimits, addressRule, normalizeAddress, validateAddress, type AddressErrors, type AddressField } from '../constants/shippingAddress';
+import { CountrySelect } from './CountrySelect';
 
 interface Address {
     id: string;
+    recipient_name: string;
     country: string;
     phone: string;
     zip_code: string;
@@ -20,15 +23,19 @@ interface AddressManagerProps {
     onClose: () => void;
     current: LangData;
     onSelect?: (address: Address) => void;
+    onDelete?: (id: string) => void;
+    onUpdate?: (address: Address) => void;
 }
 
-export function AddressManager({ isOpen, onClose, current, onSelect }: AddressManagerProps) {
+export function AddressManager({ isOpen, onClose, current, onSelect, onDelete, onUpdate }: AddressManagerProps) {
     const [addresses, setAddresses] = useState<Address[]>([]);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingAddress, setEditingAddress] = useState<Address | null>(null);
     const [loading, setLoading] = useState(false);
+    const [errors, setErrors] = useState<AddressErrors>({});
 
     // Form states
+    const [recipientName, setRecipientName] = useState('');
     const [country, setCountry] = useState('CN');
     const [phonePrefix, setPhonePrefix] = useState('+86');
     const [phoneNumber, setPhoneNumber] = useState('');
@@ -37,6 +44,9 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
     const [city, setCity] = useState('');
     const [detailAddress, setDetailAddress] = useState('');
     const [isDefault, setIsDefault] = useState(false);
+    const rule = addressRule(country);
+    const showState = Boolean(rule?.state_visible || state);
+    const showPostal = Boolean(rule?.postal_visible || zipCode);
 
     useEffect(() => {
         if (isOpen) {
@@ -60,6 +70,8 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
     };
 
     const resetForm = () => {
+        setErrors({});
+        setRecipientName('');
         setCountry('CN');
         setPhonePrefix('+86');
         setPhoneNumber('');
@@ -81,26 +93,16 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
     };
 
     const handleEditClick = (address: Address) => {
+        setErrors({});
         setEditingAddress(address);
-        setCountry(address.country);
-        // Split phone by space or look up prefix
-        const foundCountry = countries.find(c => address.phone.startsWith(c.prefix));
-        if (foundCountry) {
-            setPhonePrefix(foundCountry.prefix);
-            setPhoneNumber(address.phone.replace(foundCountry.prefix, '').trim());
-        } else {
-            // Fallback: assume first component is prefix if space separated
-            const parts = address.phone.split(' ');
-            if (parts.length > 1) {
-                setPhonePrefix(parts[0]);
-                setPhoneNumber(parts.slice(1).join(' '));
-            } else {
-                setPhonePrefix('');
-                setPhoneNumber(address.phone);
-            }
-        }
-        setZipCode(address.zip_code);
-        setState(address.state);
+        const normalized = normalizeAddress(address);
+        setRecipientName(normalized.recipient_name);
+        setCountry(normalized.country);
+        const phone = splitContactPhone(address.phone, address.country);
+        setPhonePrefix(phone.prefix);
+        setPhoneNumber(phone.number);
+        setZipCode(normalized.zip_code);
+        setState(normalized.state);
         setCity(address.city);
         setDetailAddress(address.detail_address);
         setIsDefault(address.is_default);
@@ -108,21 +110,18 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
     };
 
     const handleSave = async () => {
-        if (!state || !city || !detailAddress || !phoneNumber) {
-            alert(current.address.fillAllFields);
+        const phone = phoneNumber.trim().startsWith('+')
+            ? splitContactPhone(phoneNumber, country)
+            : { prefix: phonePrefix, number: phoneNumber.trim() };
+        const fullPhone = [phone.prefix, phone.number].filter(Boolean).join(' ');
+        const address = normalizeAddress({ recipient_name: recipientName, country, phone: phoneNumber.trim() ? fullPhone : '', zip_code: zipCode, state, city, detail_address: detailAddress });
+        const fieldErrors = validateAddress(address);
+        if (Object.keys(fieldErrors).length) {
+            setErrors(fieldErrors);
             return;
         }
-
-        const fullPhone = `${phonePrefix} ${phoneNumber}`;
-        const payload = {
-            country,
-            phone: fullPhone,
-            zip_code: zipCode,
-            state,
-            city,
-            detail_address: detailAddress,
-            is_default: isDefault
-        };
+        setErrors({});
+        const payload = { ...address, is_default: isDefault };
 
         try {
             const url = editingAddress 
@@ -132,16 +131,22 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
 
             const response = await apiFetch(url, {
                 method: method,
+                skipGlobalError: true,
                 body: JSON.stringify(payload)
             });
 
             if (response.ok) {
+                if (editingAddress) onUpdate?.({ ...editingAddress, ...payload });
                 setIsFormOpen(false);
                 resetForm();
                 fetchAddresses();
             } else {
                 const err = await response.json();
-                alert(err.detail || current.address.saveFailed);
+                if (err.detail?.code === 'invalid_shipping_address' && err.detail.fields) {
+                    setErrors(err.detail.fields);
+                } else {
+                    alert(typeof err.detail === 'string' ? err.detail : current.address.saveFailed);
+                }
             }
         } catch (e) {
             console.error('Save failed', e);
@@ -156,7 +161,10 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
                 method: 'DELETE'
             });
             if (response.ok) {
-                fetchAddresses();
+                // Apply the confirmed deletion even if refreshing the address list fails.
+                setAddresses(previous => previous.filter(address => address.id !== id));
+                onDelete?.(id);
+                void fetchAddresses();
                 if (editingAddress?.id === id) {
                     setIsFormOpen(false);
                     resetForm();
@@ -167,12 +175,30 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
         }
     };
 
-    const handleCountryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const selectedCode = e.target.value;
+    const handleCountryChange = (selectedCode: string) => {
         setCountry(selectedCode);
-        const found = countries.find(c => c.code === selectedCode);
-        if (found) {
-            setPhonePrefix(found.prefix);
+        setState('');
+        setZipCode('');
+        setErrors({});
+        setPhonePrefix(defaultPhonePrefix(selectedCode));
+    };
+
+    const fieldError = (field: AddressField) => {
+        const code = errors[field];
+        if (!code) return null;
+        const message = current.address.validation[code] || current.address.saveFailed;
+        return <p id={`shipping-error-${field}`} role="alert" className="m-0 text-xs text-red-300">{message.replace('{example}', rule?.postal_example || '').replace('{limit}', String(addressLimits[field]))}</p>;
+    };
+    const accessibility = (field: AddressField) => ({ 'aria-invalid': Boolean(errors[field]), 'aria-describedby': errors[field] ? `shipping-error-${field}` : undefined });
+    const requiredMark = <span aria-hidden="true"> *</span>;
+    const selectAddress = (address: Address) => {
+        if (!onSelect) return;
+        const fieldErrors = validateAddress(address);
+        if (Object.keys(fieldErrors).length) {
+            handleEditClick(address);
+            setErrors(fieldErrors);
+        } else {
+            onSelect(address);
         }
     };
 
@@ -180,7 +206,7 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-auto">
-            <div className="w-full max-w-lg bg-[#1a1a1a] border-2 border-white/10 p-6 flex flex-col gap-4 shadow-2xl maxHeight-[80vh] overflow-y-auto custom-scrollbar">
+            <div className="w-full max-w-lg bg-[#1a1a1a] border-2 border-white/10 p-6 flex flex-col gap-4 shadow-2xl max-h-[85dvh] overflow-y-auto custom-scrollbar">
                 <div className="flex justify-between items-center border-b border-white/10 pb-2">
                     <h3 className={`text-white text-lg m-0 ${current.fontClass}`}>
                         {current.address.managerTitle}
@@ -191,90 +217,61 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
                 </div>
 
                 {isFormOpen ? (
-                    <div className="flex flex-col gap-3 animate-in fade-in duration-200">
+                    <form noValidate onSubmit={event => { event.preventDefault(); void handleSave(); }} className="flex flex-col gap-3 animate-in fade-in duration-200">
                         <h4 className="text-white/80 text-sm font-bold">
                             {editingAddress ? current.address.editAddress : current.address.addAddress}
                         </h4>
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="flex flex-col gap-1">
-                                <label className="text-white/60 text-xs">{current.address.country}</label>
-                                <select 
-                                    value={country} 
-                                    onChange={handleCountryChange}
-                                    className="bg-white/5 border border-white/10 p-2 text-white text-xs focus:outline-none focus:border-green-500/30"
-                                >
-                                    {countries.map(c => (
-                                        <option key={c.code} value={c.code} className="bg-[#1a1a1a]">
-                                            {current.lang === 'zh-hans' ? c.zhName : c.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="flex flex-col gap-1">
-                                <label className="text-white/60 text-xs">{current.address.zipCode}</label>
-                                <input 
-                                    type="text" 
-                                    value={zipCode} 
-                                    onChange={e => setZipCode(e.target.value)}
-                                    className="bg-white/5 border border-white/10 p-2 text-white text-xs"
-                                />
+                        <p className="m-0 text-xs text-white/50">{current.address.requiredFields}</p>
+                        <div className="flex flex-col gap-1">
+                            <label htmlFor="shipping-recipient" className="text-white/60 text-xs">{current.address.recipientName}{requiredMark}</label>
+                            <input {...accessibility('recipient_name')} id="shipping-recipient" name="recipient_name" type="text" autoComplete="shipping name" required
+                                maxLength={addressLimits.recipient_name} value={recipientName} onChange={event => setRecipientName(event.target.value)}
+                                className="w-full min-w-0 border border-white/10 bg-white/5 p-2 text-xs text-white focus:border-green-500/30 focus:outline-none" />
+                            {fieldError('recipient_name')}
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label htmlFor="shipping-country" className="text-white/60 text-xs">{current.address.country}{requiredMark}</label>
+                            <CountrySelect id="shipping-country" value={country} onChange={handleCountryChange} current={current}
+                                invalid={Boolean(errors.country)} describedBy={errors.country ? 'shipping-error-country' : undefined} />
+                            {fieldError('country')}
+                        </div>
+                        <div className={`grid gap-3 ${showState ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            {showState && <div className="flex min-w-0 flex-col gap-1">
+                                <label htmlFor="shipping-state" className="text-white/60 text-xs">{current.address.state}{rule?.state_required && requiredMark}</label>
+                                {rule?.states ? <select {...accessibility('state')} id="shipping-state" name="state" autoComplete="shipping address-level1" required={rule.state_required} value={state} onChange={event => setState(event.target.value)} className="w-full min-w-0 bg-white/5 border border-white/10 p-2 text-white text-xs">
+                                    <option value="" className="bg-[#1a1a1a]">{current.address.selectState}</option>
+                                    {state && !rule.states[state] && <option value={state} className="bg-[#1a1a1a]">{state}</option>}
+                                    {Object.entries(rule.states).map(([code, name]) => <option key={code} value={code} className="bg-[#1a1a1a]">{name} ({code})</option>)}
+                                </select> : <input {...accessibility('state')} id="shipping-state" name="state" type="text" autoComplete="shipping address-level1" maxLength={addressLimits.state} required={rule?.state_required} value={state} onChange={event => setState(event.target.value)} className="w-full min-w-0 bg-white/5 border border-white/10 p-2 text-white text-xs" />}
+                                {fieldError('state')}
+                            </div>}
+                            <div className="flex min-w-0 flex-col gap-1">
+                                <label htmlFor="shipping-city" className="text-white/60 text-xs">{current.address.city}{rule?.city_required && requiredMark}</label>
+                                <input {...accessibility('city')} id="shipping-city" name="city" type="text" autoComplete="shipping address-level2" maxLength={addressLimits.city} required={rule?.city_required} value={city} onChange={event => setCity(event.target.value)} className="w-full min-w-0 bg-white/5 border border-white/10 p-2 text-white text-xs" />
+                                {fieldError('city')}
                             </div>
                         </div>
-
                         <div className="flex flex-col gap-1">
-                             <label className="text-white/60 text-xs">{current.address.phone}</label>
+                            <label htmlFor="shipping-street" className="text-white/60 text-xs">{current.address.detailAddress}{requiredMark}</label>
+                            <textarea {...accessibility('detail_address')} id="shipping-street" name="detail_address" autoComplete="shipping street-address" maxLength={addressLimits.detail_address} required value={detailAddress} onChange={event => setDetailAddress(event.target.value)} className="w-full min-w-0 bg-white/5 border border-white/10 p-2 text-white text-xs h-16 resize-none" />
+                            {fieldError('detail_address')}
+                        </div>
+                        {showPostal && <div className="flex flex-col gap-1">
+                            <label htmlFor="shipping-postal-code" className="text-white/60 text-xs">{current.address.zipCode}{rule?.postal_required && requiredMark}</label>
+                            <input {...accessibility('zip_code')} id="shipping-postal-code" name="zip_code" type="text" autoComplete="shipping postal-code" maxLength={addressLimits.zip_code} required={rule?.postal_required} placeholder={rule?.postal_example} value={zipCode} onChange={event => setZipCode(event.target.value)} className="w-full min-w-0 bg-white/5 border border-white/10 p-2 text-white text-xs" />
+                            {fieldError('zip_code')}
+                        </div>}
+                        <div className="flex flex-col gap-1">
+                            <label htmlFor="shipping-phone" className="text-white/60 text-xs">{current.address.phone}{requiredMark}</label>
                             <div className="flex gap-2">
-                                <select 
-                                    value={phonePrefix} 
-                                    onChange={e => setPhonePrefix(e.target.value)}
-                                    className="bg-white/5 border border-white/10 p-2 text-white text-xs w-24"
-                                >
-                                    {countries.map(c => (
-                                        <option key={c.code} value={c.prefix} className="bg-[#1a1a1a]">
-                                            {c.prefix}
-                                        </option>
-                                    ))}
+                                <select aria-label={current.address.phonePrefix} name="phone_prefix" autoComplete="shipping tel-country-code" value={phonePrefix} onChange={event => setPhonePrefix(event.target.value)} className="bg-white/5 border border-white/10 p-2 text-white text-xs w-28 shrink-0">
+                                    <option value="" className="bg-[#1a1a1a]">{current.address.selectPhonePrefix}</option>
+                                    {phonePrefix && !phonePrefixes.includes(phonePrefix) && <option value={phonePrefix}>{phonePrefix}</option>}
+                                    {phonePrefixes.map(prefix => <option key={prefix} value={prefix} className="bg-[#1a1a1a]">{prefix}</option>)}
                                 </select>
-                                <input 
-                                    type="text" 
-                                    placeholder="Phone Number"
-                                    value={phoneNumber} 
-                                    onChange={e => setPhoneNumber(e.target.value)}
-                                    className="bg-white/5 border border-white/10 p-2 text-white text-xs flex-1"
-                                />
+                                <input {...accessibility('phone')} id="shipping-phone" name="phone" type="tel" inputMode="tel" autoComplete="shipping tel-national" placeholder={current.address.phoneNumber} maxLength={44} required value={phoneNumber} onChange={event => setPhoneNumber(event.target.value)} className="min-w-0 bg-white/5 border border-white/10 p-2 text-white text-xs flex-1" />
                             </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="flex flex-col gap-1">
-                                 <label className="text-white/60 text-xs">{current.address.state}</label>
-                                <input 
-                                    type="text" 
-                                    value={state} 
-                                    onChange={e => setState(e.target.value)}
-                                    className="bg-white/5 border border-white/10 p-2 text-white text-xs"
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1">
-                                 <label className="text-white/60 text-xs">{current.address.city}</label>
-                                <input 
-                                    type="text" 
-                                    value={city} 
-                                    onChange={e => setCity(e.target.value)}
-                                    className="bg-white/5 border border-white/10 p-2 text-white text-xs"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col gap-1">
-                             <label className="text-white/60 text-xs">{current.address.detailAddress}</label>
-                            <textarea 
-                                value={detailAddress} 
-                                onChange={e => setDetailAddress(e.target.value)}
-                                className="bg-white/5 border border-white/10 p-2 text-white text-xs h-16 resize-none"
-                            />
+                            {fieldError('phone')}
                         </div>
 
                         <label className="flex items-center gap-2 cursor-pointer mt-1">
@@ -289,19 +286,19 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
 
                         <div className="flex gap-2 justify-end mt-2">
                             <button 
-                                onClick={() => setIsFormOpen(false)}
+                                type="button" onClick={() => setIsFormOpen(false)}
                                 className="px-4 py-1 bg-white/5 hover:bg-white/10 text-white/60 border border-white/10 text-xs cursor-pointer"
                             >
                                  {current.modal.cancel}
                             </button>
                             <button 
-                                onClick={handleSave}
+                                type="submit"
                                 className="px-4 py-1 bg-[#3c8527] hover:bg-[#4ea632] text-white border border-black text-xs cursor-pointer"
                             >
                                  {current.address.save}
                             </button>
                         </div>
-                    </div>
+                    </form>
                 ) : (
                     <div className="flex flex-col gap-3 animate-in fade-in duration-200">
                         <div className="flex justify-between items-center">
@@ -324,11 +321,11 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
                                  {current.address.noAddresses}
                             </div>
                         ) : (
-                            <div className="flex flex-col gap-2 maxHeight-[40vh] overflow-y-auto custom-scrollbar">
+                            <div className="flex flex-col gap-2 max-h-[40dvh] overflow-y-auto custom-scrollbar">
                                 {addresses.map(addr => (
                                     <div 
                                         key={addr.id} 
-                                        onClick={() => onSelect && onSelect(addr)}
+                                        onClick={() => selectAddress(addr)}
                                         className={`p-3 border border-white/5 hover:border-green-500/30 bg-white/5 flex flex-col gap-1 relative group ${onSelect ? 'cursor-pointer' : ''}`}
                                     >
                                         <div className="flex justify-between items-start">
@@ -343,12 +340,14 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
                                             </span>
                                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button 
+                                                    aria-label={current.address.editAddress}
                                                     onClick={(e) => { e.stopPropagation(); handleEditClick(addr); }}
                                                     className="text-white/40 hover:text-white cursor-pointer"
                                                 >
                                                     <Icon icon="pixelarticons:edit" className="text-sm" />
                                                 </button>
                                                 <button 
+                                                    aria-label={current.address.deleteAddress}
                                                     onClick={(e) => { e.stopPropagation(); handleDelete(addr.id); }}
                                                     className="text-white/40 hover:text-red-500 cursor-pointer"
                                                 >
@@ -356,6 +355,7 @@ export function AddressManager({ isOpen, onClose, current, onSelect }: AddressMa
                                                 </button>
                                             </div>
                                         </div>
+                                        {addr.recipient_name && <div className="break-words text-xs text-white/80">{addr.recipient_name}</div>}
                                         <div className="text-white/60 text-xs">{addr.detail_address}</div>
                                         <div className="text-white/40 text-[10px]">{addr.phone} | {addr.zip_code}</div>
                                     </div>

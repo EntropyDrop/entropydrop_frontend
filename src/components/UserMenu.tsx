@@ -1,3 +1,4 @@
+import { FigureOrderNotification } from './FigureOrderNotification'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { Icon } from '@iconify/react'
 import { useState, useRef, useEffect, lazy, Suspense, useCallback } from 'react'
@@ -37,6 +38,8 @@ interface NotificationInfo {
     type: string
     postId?: string | number
     postTitle?: string
+    orderId?: string
+    message?: string
     createdAt: string
     isRead: boolean
 }
@@ -336,7 +339,9 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                 key={n.id}
                                                 onClick={async () => {
                                                     setIsNotifOpen(false);
-                                                    if (n.type === 'daily_login' || n.type === 'monthly_login' || n.type === 'subscription_grant' || n.type === 'system_gift') {
+                                                    if (n.orderId) {
+                                                        navigate(`/skin/orders?order=${encodeURIComponent(n.orderId)}`);
+                                                    } else if (n.type === 'daily_login' || n.type === 'monthly_login' || n.type === 'subscription_grant' || n.type === 'system_gift') {
                                                         navigate('/credits');
                                                     } else if (n.postId) {
                                                         navigate(`/figure?postId=${n.postId}`);
@@ -368,7 +373,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                 />
                                                 <div className="flex-1 flex flex-col gap-0.5 min-w-0">
                                                     <p className="text-[11px] text-white/90 leading-tight m-0 break-words">
-                                                        {n.type === 'daily_login' || n.type === 'monthly_login' || n.type === 'subscription_grant' || n.type === 'system_gift' ? (
+                                                        {n.orderId ? <FigureOrderNotification current={current} notification={n} /> : n.type === 'daily_login' || n.type === 'monthly_login' || n.type === 'subscription_grant' || n.type === 'system_gift' ? (
                                                             <span>
                                                                 {n.type === 'daily_login'
                                                                     ? (current.lang === 'zh-hans' ? '每日登录奖励已到账！' : 'Daily login reward received!')
@@ -574,6 +579,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             </div>
 
 
+                            {user.is_admin && <button onClick={() => { setIsOpen(false); navigate('/figure/manage'); }} className={`w-full px-4 py-3 text-left text-[#a6df7a] hover:bg-white/10 text-xs cursor-pointer flex items-center gap-3 ${current.fontClass}`}><Icon icon="pixelarticons:box" />{current.figureManagement.title}</button>}
                             <button
                                 onClick={() => { setIsOpen(false); navigate('/skin/orders'); }}
                                 className={`w-full px-4 py-3 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}

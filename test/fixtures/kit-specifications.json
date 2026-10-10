@@ -1,0 +1,12 @@
+{
+  "product_name": "CUTE-7cm DIY kit",
+  "dimensions": "Approx. 7 × 4.5 × 2.8 cm",
+  "materials": [
+    {"name": "Pre-cut sticker sheet", "quantity": 1, "description": null},
+    {"name": "White 3D printed body parts", "quantity": 6, "description": "One each: head, torso, left arm, right arm, left leg and right leg."},
+    {"name": "Long joint", "quantity": 1, "description": null},
+    {"name": "Short joint", "quantity": 2, "description": null},
+    {"name": "PTFE tube", "quantity": 2, "description": "Outer diameter 4 mm × length 12 mm. Non-printed."}
+  ],
+  "assembly_note": "Assembly and sticker application are not included. Assemble the parts and apply the stickers yourself."
+}

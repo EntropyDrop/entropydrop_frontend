@@ -13,14 +13,18 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:terrain": "node --test test/copper-metropolis.test.cjs test/neon-rain.test.cjs test/brutalist-dusk.test.cjs test/aether-archipelago.test.cjs test/astral-foundry.test.cjs test/titan-canyon.test.cjs test/colossus-harbor.test.cjs",
+    "test:figure": "node --test test/figure-print.test.cjs test/figure-print-consent.test.cjs test/figure-print-commission.test.cjs test/figure-manage.test.cjs test/figure-orders.test.cjs",
     "test:auth": "node --test test/auth-session.test.cjs",
+    "test:ledger": "node --test test/ledger-page.test.cjs",
     "test:discovery": "node --test test/discovery-loading.test.cjs test/skin-preview-cache.test.cjs",
     "test:architecture": "node --test test/architecture.test.cjs",
     "test:collection": "node --test test/collection-page.test.cjs",
-    "test:edit": "node --test test/edit-save.test.cjs",
-    "test:licenses": "node --test test/edit-save.test.cjs test/collection-page.test.cjs test/generation-model-options.test.cjs test/architecture.test.cjs"
+    "test:edit": "node --test test/edit-save.test.cjs test/editor-model.test.cjs",
+    "test:licenses": "node --test test/edit-save.test.cjs test/collection-page.test.cjs test/generation-model-options.test.cjs test/architecture.test.cjs",
+    "test:address": "node --test test/address-manager.test.cjs"
   },
   "dependencies": {
+    "@entropydrop/space": "file:../entropydrop_space/client",
     "@iconify-json/pixelarticons": "^1.2.5",
     "@iconify/react": "^6.0.2",
     "@mdxeditor/editor": "^4.0.2",
@@ -29,7 +33,9 @@
     "@react-three/fiber": "^9.5.0",
     "@tailwindcss/vite": "^4.2.1",
     "@types/three": "^0.183.1",
+    "countries-list": "3.4.1",
     "framer-motion": "^12.35.2",
+    "manifold-3d": "^3.5.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
@@ -37,8 +43,7 @@
     "recharts": "^3.8.1",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
-    "three": "^0.183.2",
-    "@entropydrop/space": "file:../entropydrop_space/client"
+    "three": "^0.183.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

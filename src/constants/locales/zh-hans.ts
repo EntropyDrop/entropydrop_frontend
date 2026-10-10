@@ -1,6 +1,200 @@
 import { spaceAgentOnboarding } from '@entropydrop/space/agent-guide'
+import { FIGURE_PRINT_TERMS } from '../figurePrintTerms'
 
 export default {
+    figureManagement: {
+        "title": "手办管理",
+        "subtitle": "付款后人工审核，通过后才会生产。拒绝将退回整笔订单的款项，包含该订单内全部套件。",
+        "restricted": "此页面仅管理员可访问。",
+        "loading": "正在加载订单…",
+        "refresh": "刷新",
+        "empty": "当前队列没有订单。",
+        "failed": "订单加载失败，请重试。",
+        "actionFailed": "未能确认操作结果，请刷新订单后再试。",
+        "filters": {
+                "review": "待审核",
+                "production": "生产中",
+                "shipping": "已发货",
+                "refunds": "退款",
+                "all": "全部订单"
+        },
+        "statuses": {
+                "awaiting_review": "待人工审核",
+                "awaiting_stock": "待人工审核",
+                "preparing": "审核通过 · 待生产",
+                "printing": "生产中",
+                "shipping": "已发货",
+                "completed": "已完成",
+                "rejected": "审核未通过",
+                "refund_pending": "退款处理中",
+                "refunded": "已退款",
+                "pending_payment": "待付款",
+                "cancelled": "已取消",
+                "paid": "已付款"
+        },
+        "refunds": {
+                "queued": "等待发起退款",
+                "pending": "等待 PayPal 确认退款",
+                "completed": "已完成全额退款",
+                "failed": "退款失败 · 需要处理",
+                "manual_review": "退款需要人工核对"
+        },
+        "order": "订单",
+        "customer": "用户 ID",
+        "placed": "下单时间",
+        "address": "收货信息",
+        "noAddress": "没有收货信息快照",
+        "source": "来源皮肤",
+        "publisher": "发布者 ID",
+        "license": "来源许可",
+        "publicLicense": "公开许可",
+        "parent": "父级皮肤",
+        "unknown": "未知",
+        "snapshot": "下单时信息",
+        "currentSource": "当前信息 · 无下单快照",
+        "reviewedBy": "审核人",
+        "reason": "原因",
+        "tracking": "物流公司及单号",
+        "approve": "通过审核",
+        "reject": "拒绝并退款",
+        "start": "开始生产",
+        "ship": "标记已发货",
+        "complete": "标记已完成",
+        "sync": "同步退款状态",
+        "preview": "预览皮肤",
+        "prepare": "打开 3D 打印",
+        "refundId": "PayPal 退款单号",
+        "approveHint": "请核查订单内每个皮肤及制作所需的许可，通过后此订单方可进入生产。",
+        "approveCheck": "我已审核全部项目，确认此订单可以生产。",
+        "rejectHint": "将拒绝整笔订单并发起全额退款，用户会在网站邮箱收到你填写的原因。",
+        "reasonPlaceholder": "请说明此订单无法制作的原因…",
+        "shippingHint": "填写物流公司和单号，用户将收到站内信通知。",
+        "startHint": "将此已审核通过的订单标记为生产中。",
+        "completeHint": "请确认此订单已经完成交付。",
+        "confirm": "确认",
+        "cancel": "取消",
+        "saving": "正在保存…",
+        "previous": "上一页",
+        "next": "下一页",
+        "reviewPending": "人工审核通过后才会开始生产。",
+        "notifications": {
+                "figure_approved": "你的手办订单已通过审核，可以开始生产。",
+                "figure_rejected": "你的手办订单未通过审核，已申请全额退款。",
+                "figure_refunded": "你的手办订单已完成全额退款。",
+                "figure_refund_delayed": "你的手办退款需要进一步处理，生产仍已取消。",
+                "figure_shipped": "你的手办订单已发货。",
+                "figure_completed": "你的手办订单已完成。"
+        }
+},
+    figurePrint: {
+        nonCommercialTitle: '下载服务仅限个人非商业用途',
+        existingRights: 'Pro 不自动包含本下载服务的商业用途权益；原皮肤许可与既有有效授权继续有效。',
+        acceptTerms: '我已阅读并同意《3D 打印下载服务条款》，同意遵守本服务的非商业用途限制。',
+        downloadConfirmTitle: '下载前确认',
+        downloadConsentHint: '下载需要登录。首次下载前确认独立条款，同一版本无需重复确认。',
+        checkingConsent: '正在检查协议确认状态…',
+        loginForDownload: '请先登录，以便保存您的协议确认记录。登录完成后，再点击需要下载的文件。',
+        loggingIn: '正在登录…',
+        downloadLoginFailed: '登录未完成，请重试。',
+        consentRecordNotice: '点击“同意并下载”后，我们会在您的账户中保存协议版本和同意时间。同一版本后续下载无需重复确认。',
+        consentLoadFailed: '无法读取协议确认状态，尚未下载。请重试。',
+        consentSaveFailed: '协议确认未保存成功，尚未下载。请重试。',
+        consentVersionMismatch: '协议版本已更新，请刷新页面阅读当前版本后重新确认。',
+        reloadTerms: '刷新页面',
+        savingConsent: '正在保存…',
+        agreeAndDownload: '同意并下载',
+        "title": "3D 打印",
+        "description": "把皮肤变成手办，并生成配套贴纸。",
+        modelType: '型号',
+        "chooseCollection": "从收藏夹选择",
+        "discoverSkins": "发现皮肤",
+        commission: '委托制作',
+        commissionIntro: '使用下方文件自行制作，或',
+        loginForCommission: '登录完成后，再次点击“委托制作”继续。',
+        source: '皮肤来源',
+        publisher: '发布者',
+        sourceUnavailable: '暂无来源信息，请从收藏夹或发现页重新打开皮肤',
+        unnamedSkin: '未命名皮肤',
+        unknownPublisher: '发布者未知',
+        sourceParent: '基于其他皮肤制作',
+        productionSourceLoading: '正在读取订单保存的制作数据…',
+        productionSourceFailed: '无法读取制作数据，请检查管理员权限、订单审核状态和已保存的贴纸信息。',
+        backToManagement: '返回手办订单',
+        stickerInfo: {
+            publisher: '发布者',
+            userId: '用户 ID',
+            source: '皮肤',
+        },
+        commissionOrder: {
+            shipTo: '配送至:',
+            change: '修改',
+            noAddress: '暂无地址，请添加',
+            createFailed: '下单失败',
+            title: '委托制作',
+            specificationsUnavailable: '套件规格暂不可用，请稍后重试。',
+            productName: '产品名称',
+            customSkinId: '定制皮肤 ID',
+            dimensions: '大约尺寸',
+            contentsTitle: '物料清单',
+            shipping: '运费',
+            freeShipping: '包邮',
+            production: '预计制作时间',
+            productionTime: '审核通过后 3 天',
+            delivery: '预计运输时间',
+            deliveryTime: '2 周',
+            loading: '正在查询可售状态…',
+            unavailable: '当前库存不足，暂时无法购买。',
+            failed: '下单信息加载失败，请重试。',
+            signIn: '登录后选择收货地址并下单。',
+            loginFailed: '登录失败，请重试。',
+            price: '一套',
+            quantity: '数量',
+            total: '合计',
+            limitReached: '每个待付款订单最多 10 套，请减少数量或调整已有待付款订单。',
+            checkout: '加入订单',
+            submitting: '正在加入订单…',
+            approval: '付款后进行人工审核，审核通过才会生产。未通过的订单将全额退款，并通过站内信告知原因。',
+        },
+        "model": "模型预览",
+        "stickers": "A4 贴纸",
+        "resetView": "重置视角",
+        "resetPositions": "重置位置",
+        assembly: {
+            toggle: '爆炸图',
+            legend: '装配连接关系',
+            neck: '长连接件 ×1 · 头部 ↔ 躯干',
+            hips: '短连接件 ×2 · 躯干 ↔ 双腿',
+            tubes: 'PTFE 管 ×2 · 双臂 ↔ 躯干 · 长 {length} mm · 外径 4 mm · 非打印',
+            parts: {
+                leftHipJoint: '左腿 · 短连接件',
+                rightHipJoint: '右腿 · 短连接件',
+                leftTube: '左臂 · 特氟龙管（非打印）',
+                rightTube: '右臂 · 特氟龙管（非打印）',
+            },
+        },
+        "exportSvg": "下载切割 SVG",
+        "downloadSticker": "下载贴纸 PNG",
+        "stickerAlt": "所有手办部件的 A4 贴纸",
+        "empty": "从收藏夹或发现页选择皮肤，在预览中点击“3D 打印”开始制作。",
+        "stickerEmpty": "配套贴纸将在这里显示。",
+        "generating": "正在生成模型和贴纸…",
+        "retry": "重试",
+        "loadFailed": "皮肤加载失败，请重试或选择其他皮肤。",
+        "invalidSkin": "皮肤须为有效的 64×64 或 64×32 PNG，请选择其他皮肤。",
+        "buildFailed": "模型或贴纸生成失败，请重试或换一个皮肤。",
+        "exportFailed": "部件导出失败，请重试。",
+        "previewFailed": "当前浏览器无法显示 3D 预览，仍可下载 STL 部件。",
+        "parts": {
+            "head": "头部",
+            "torso": "躯干",
+            "leftArm": "左臂",
+            "rightArm": "右臂",
+            "leftLeg": "左腿",
+            "rightLeg": "右腿",
+            "shortConnector": "短连接件",
+            "longConnector": "长连接件"
+        }
+    },
     skinLicense: {
         yourRights: "你的使用权限",
         sharing: "共享状态",
@@ -38,10 +232,10 @@ export default {
     subtitle: '',
     fontClass: 'font-pixel-hans',
     nav: {
+        figurePrint: "3D 打印",
         discover: '发现',
         generate: '生成',
         edit: '编辑',
-        print: '3D打印',
         collection: '收藏',
         pro: 'Pro订阅',
         public: '公开',
@@ -226,6 +420,10 @@ export default {
     },
     collection: {
         title: '我的收藏',
+        ownerTitle: '{name}的收藏',
+        ownerSubtitle: '公开创作与收藏夹',
+        ownerCreations: '公开创作',
+        userId: '用户 ID',
         subtitle: '管理你保存的每一个方块灵感',
         btnNew: '新建收藏夹',
         typeCollection: '收藏夹',
@@ -310,11 +508,12 @@ export default {
         export: '下载',
         collect: '保存',
         saveToCreations: '保存到我的创作',
+        nameLabel: '皮肤名称',
+        namePlaceholder: '输入名称（可选）',
         saveAsPublic: '保存为公开',
         saveAsPrivate: '保存为私有',
         saving: '保存中...',
         privateModelWarning: '私有模型编辑后强制保持私有',
-        exitReference: '退出当前引用的模型',
         saveSuccess: '保存到我的创作成功',
         saveFailed: '保存失败',
         saveLicenseTitle: '保存后的使用许可',
@@ -337,6 +536,7 @@ export default {
         brightness: '亮度',
         contrast: '对比度',
         adjust: '调整',
+        lighting: '光影',
         kmeans: 'K-Means 减色',
         kmeansClusters: '目标颜色数 (K)',
         kmeansDescription: '通过聚类算法合并相似颜色，使皮肤色彩更干净、像素化更纯粹。',
@@ -413,9 +613,24 @@ export default {
         payTime: '支付时间',
         shippingFee: '运费',
         orderItems: '订购项目',
+        quantity: '数量',
+        closePreview: '关闭',
+        subtotal: '小计',
+        stickerSkinName: '保存的皮肤名称',
+        legacyStickerSnapshot: '贴纸信息由现存历史记录补存，可能与最初下单时不同。',
+        stickerSnapshotIncomplete: '贴纸信息不完整，请人工核对后准备制作。',
+        kitDetails: '套件详情（每套）',
+        currentKitSpecifications: '该订单下单时未保存规格，以下为当前产品信息，仅供参考。',
+        kitSpecificationsUnavailable: '该订单未记录套件规格。',
+        preview: '预览模型',
+        removeOne: '减少一套',
+        confirmRemoveOne: '从该订单中减少一套？',
         subscription: '订阅套餐',
         cancelOrder: '取消订单',
         payNow: '立即支付',
+        openingPayment: '正在打开 PayPal 支付…',
+        popupBlocked: '请允许此网站打开弹窗，然后重新点击“立即支付”。',
+        paymentFailed: '未能完成支付，请检查订单状态后重试。',
         deleteOrder: '删除订单',
         loadMore: '加载更多',
         confirmCancel: '确定要取消此订单吗？',
@@ -430,8 +645,6 @@ export default {
         operationFailed: '操作未能完成',
         networkTitle: '网络错误',
         addToOrderFailed: '加入订单失败',
-        addToPendingOrderTitle: '继续选购产品',
-        addToPendingOrderHint: '继续选购产品，将自动合并到相同地址的未支付订单中。',
         deleteItem: '删除此项',
         statuses: {
             pending_payment: '待支付',
@@ -449,7 +662,45 @@ export default {
         shippingAddress: '收货地址',
         totalAmount: '支付总额'
     },
+    figurePrintTerms: {
+        title: '3D 打印下载服务条款',
+        versionLabel: '版本',
+        effectiveDateLabel: '生效日期',
+        backToPrint: '前往 3D 打印页',
+        summary: '本站 3D 打印下载服务仅供个人非商业制作。未经另行约定，不得将通过本服务取得的 STL、贴纸 PNG 或切割 SVG 用于销售文件、销售打印成品、收费代打或商业推广。',
+        sections: [
+            {
+                title: '1. 适用范围与确认',
+                content: `本条款由上海齐秩科技有限公司（EntropyDrop）与使用本站 3D 打印下载服务的用户订立，是《EntropyDrop 服务条款》对该新增服务的补充，适用于 /figure/3dprint 页面提供的模型转换、部件 STL、贴纸 PNG 和切割 SVG 下载。定制实物订单仍适用其订单规则。
+
+预览无需登录。下载需要登录；当您的账户尚未同意当前版本时，请在下载确认弹窗中阅读本条款，尤其是非商业用途限制及既有授权的处理，并主动勾选后点击“同意并下载”。确认保存成功后方可下载，同一版本后续下载无需重复确认。若不同意，请勿通过本页面下载。未使用该服务，不视为已同意其独立条款。`
+            },
+            {
+                title: '2. 非商业用途限制',
+                content: `本服务面向个人非商业制作。在没有另行约定的情况下，您同意不以销售数字文件、销售打印成品、经营收费代打业务、商业推广或其他商业目的使用本服务，也不将通过本服务取得的 STL、贴纸 PNG、切割 SVG 及其修改版本用于上述目的。
+
+支付 Pro 订阅费用不自动获得本下载服务的商业用途权益。`
+            },
+            {
+                title: '3. 源内容与文件',
+                content: `源皮肤继续适用其原有许可，包括有效的 CC 许可、作者授权或账户已取得的商业许可。您应有权进行相应转换和制作，并继续遵守署名、非商业等原许可条件。上传、转换、下载或勾选同意均不会转移内容所有权、清除上游限制，或使平台获得超出实际授权范围的权利。
+
+本条款约定的是您使用本站服务的义务，不将源皮肤或所有输出统一改为新的非商业版权许可，不撤销您依法取得的许可，也不自动约束从其他渠道取得相关内容的第三方。输出文件的格式本身不会使平台取得其全部权利。`
+            },
+            {
+                title: '4. 版本、生效与更新',
+                content: `本版本自页面标明的生效日期起，适用于您主动同意后使用本服务的行为。一般事项适用总服务条款；本服务的特别事项适用本条款，但不得据此减损既有有效授权和已承诺权益。
+
+后续更新将标明版本和生效日期，并在下载前重新征求您对新版本的同意；新版不追溯撤销既有有效授权。我们会在您的账户中保存最近一次同意的协议版本和服务端记录的同意时间，用于确认服务约定、避免同版本重复确认及处理相关争议；对应版本的条款全文会予以保留。重复确认同一版本不会改变首次记录的同意时间。该记录不代表逐次下载记录，相关信息处理适用《隐私政策》。`
+            },
+        ],
+    },
     pro: {
+        printServiceNotice: {
+            beforeTerms: '本站 3D 打印下载服务仅限个人非商业用途，另适用',
+            terms: '独立条款',
+            afterTerms: '。',
+        },
         title: 'Pro 订阅',
         benefits: '解锁 Pro 专属权益',
         plans: '选择您的订阅计划',
@@ -500,7 +751,7 @@ export default {
                 private: '1,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
                 experimental: '优先体验新功能',
-                commercial: '订阅期内生成的皮肤拥有永久商用许可'
+                commercial: '订阅期内生成的皮肤拥有永久商用许可。'
             },
             pro_max: {
                 title: 'Pro-Max',
@@ -514,7 +765,7 @@ export default {
                 private: '5,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
                 experimental: '优先体验新功能',
-                commercial: '订阅期内生成的皮肤拥有永久商用许可'
+                commercial: '订阅期内生成的皮肤拥有永久商用许可。'
             }
         }
     },
@@ -554,70 +805,33 @@ export default {
         processingPayment: '支付处理中...',
         paypalProratedDifference: '由 PayPal 自动计算补收差价'
     },
-    print: {
-        title: '3D打印像素风收藏手办',
-        description: '产品为 3D 打印高精白模 + 高清色彩还原贴纸，像素级复刻你的专属桌面摆件。',
-        priceLabel: '统一售价',
-        shippingLabel: '配送服务',
-        freeShipping: '全球包邮',
-        deliveryTime: '2-4 周可送达',
-        trackingLabel: '快递跟踪',
-        fullTracking: '全程可跟踪',
-        realTimeUpdates: '物流实时更新',
-        dimensionsLabel: '外形尺寸',
-        modelMaterialLabel: '白模材质',
-        modelMaterial: 'PLA、TPU',
-        modelMaterialDesc: '高精度打印',
-        stickerMaterialLabel: '贴纸材质',
-        stickerMaterial: '影像级背胶防水纸',
-        stickerMaterialDesc: '色彩准确 / 哑光质感',
-        features: {
-            articulated: { title: '灵活可动', desc: '多关节自由调节，轻松解锁无限动作' },
-            precision: { title: '高精度打印', desc: '3D打印高精度白模，精细还原每个细节' },
-            clarity: { title: '高清画质', desc: '高清材质背胶贴纸，像素细节分毫毕现' },
-            color: { title: '色彩还原', desc: '高色彩饱和，使用影像级打印机和打印纸' }
-        },
-        discoverSkins: '发现皮肤',
-        fromCollection: '从收藏中选择',
-        uploadLocal: '上传本地皮肤',
-        itemInfo: '商品信息',
-        specs: '规格参数',
-        type: '类型',
-        shipTo: '配送至:',
-        change: '修改',
-        noAddress: '暂无地址，请添加',
-        continue: '继续',
-        uploadFailed: '上传定制模型文件失败',
-        infoMissing: '模型信息丢失，请重试',
-        selectAddress: '请选择收货地址',
-        createFailed: '下单失败',
-        modelNameLabel: '模型名称',
-        materialLabel: '材质',
-        materialDetail: '3D 打印底座(PLA)；3D 打印关节(TPU)；贴纸',
-        dimensionsDetail: '约 50×12.5×100 mm',
-        soldOutNotice: '抱歉，该模型当前已达产能上限，暂时无法下单 (不影响您已提交的订单)',
-        ecoMaterial: '环保材质',
-        oneToOne: '1:1 还原',
-        whiteModelSticker: '白模+贴纸',
-        soldOut: '该模型已售罄 / 产能全满 (明天再来尝试)',
-        fileTooLarge: '文件太大，最大支持 512KB',
-        ageWarning: '14+ 成人收藏摆件，非儿童玩具',
-        promoLabels: {
-            video: '视频演示',
-            style1: '款式展示 1',
-            style2: '款式展示 2',
-            style3: '款式展示 3'
-        },
-        loginPrompt: '登录以使用 3D 打印功能',
-    },
     address: {
+        requiredFields: '标有 * 的项目为必填项。',
+        recipientName: '收件人姓名',
+        completeAddress: '请先补全收件人姓名和收货地址，再添加套件。',
+        selectState: '请选择省或州',
+        validation: {
+            required: '请填写此项。',
+            country_invalid: '请从列表中选择国家或地区。',
+            state_invalid: '请选择有效的省或州。',
+            postal_unused: '该目的地不使用邮编，请清空此项。',
+            postal_format: '请输入有效邮编，例如 {example}。',
+            street_length: '详细地址需能分为两行，每行不超过 300 个字符。',
+            too_long: '最多填写 {limit} 个字符。',
+        },
         managerTitle: '收货地址管理',
         addAddress: '新增地址',
         editAddress: '修改地址',
-        country: '国家',
+        deleteAddress: '删除地址',
+        country: '国家或地区',
+        searchCountry: '输入名称或国家代码搜索',
+        noMatchingCountries: '没有匹配的国家或地区',
         zipCode: '邮编',
         phone: '联系电话',
-        state: '州/省',
+        phonePrefix: '电话区号',
+        phoneNumber: '电话号码',
+        selectPhonePrefix: '选择区号',
+        state: '省 / 州 / 地区',
         city: '城市',
         detailAddress: '详细地址',
         setDefault: '设为默认地址',
@@ -626,7 +840,7 @@ export default {
         addNew: '新增地址',
         noAddresses: '暂无地址',
         maxAddresses: '最多只能存储10个地址',
-        fillAllFields: '请填写完整信息',
+        fillAllFields: '请填写国家或地区、城市、详细地址和联系电话。',
         saveFailed: '保存失败',
         confirmDelete: '确定删除该地址吗？'
     },
@@ -641,7 +855,15 @@ export default {
     termsOfService: {
         title: 'EntropyDrop 服务条款',
         lastUpdatedLabel: '最后更新',
-        lastUpdated: '2026年8月30日',
+        lastUpdated: FIGURE_PRINT_TERMS.effectiveDate,
+        additionalServices: {
+            title: '本次更新：新增服务的独立条款与既有权益',
+            content: `新增或特定服务可适用单独公布的条款。我们会在相关入口及使用前提供可访问的全文，标明版本、生效日期，并显著提示商业用途限制等重要内容；需要单独同意的，不以同意总协议、既有订阅或继续使用其他服务替代。
+
+3D 打印转换及部件 STL、贴纸 PNG、切割 SVG 下载适用下列独立条款，原则上仅限个人非商业用途。Pro 皮肤永久商用许可不自动包含该新增下载服务的商业用途权益；原皮肤许可和已取得的有效授权继续有效。
+
+独立条款只在其适用服务范围内处理特别事项，不修改源内容的 CC 等许可或代码的 AGPL 许可。对于生效前已购买的订阅、订单及另行约定中已经明确承诺的相关权益，仍按原有效约定履行；单独勾选不构成放弃既有权益。涉及既有订阅核心权益的不利变更，将依法依约另行处理，不以本次新增条款追溯减损。`,
+        },
         sections: [
             {
                 title: '1. 条款确认与服务范围',
@@ -816,7 +1038,7 @@ Space 市场未来可能允许用户使用 Credits 获取虚拟物品、资源�
     privacyPolicy: {
         title: 'EntropyDrop 隐私政策',
         lastUpdatedLabel: '最后更新',
-        lastUpdated: '2026年8月30日',
+        lastUpdated: FIGURE_PRINT_TERMS.effectiveDate,
         sections: [
             {
                 title: '1. 适用范围与处理者',
@@ -831,6 +1053,7 @@ Space 市场未来可能允许用户使用 Credits 获取虚拟物品、资源�
 • 浏览与访问：IP 地址、浏览器和设备类型、语言、页面访问、时间、网络及错误信息，用于加载页面、安全防护、限流、故障排查和服务优化；
 • Google 登录：Google ID、电子邮箱、账号名称和头像，用于创建账号、身份验证、通知和账号管理；
 • 个人资料：昵称、头像、游戏角色皮肤及角色模型类型，用于展示作者身份、社区资料和 Space 角色；
+• 3D 打印下载协议确认：账户标识、最近同意的协议版本和服务端记录的同意时间，用于确认服务约定、避免同版本重复确认及处理相关争议；该记录不包含逐次下载历史，按本政策的保存期限和用户权利规则处理；
 • AI 生成、编辑与许可：提示词、源图片、生成结果、中间结果、模型版本、参数、随机种子、公开状态、许可类型、许可版本、授权时间、商业许可对象、上传许可确认和反馈，用于完成生成、保存历史、展示及执行许可、记录授权、计费、故障恢复和模型改进；
 • AI Agent 与 API：对话、指令、您选择提供的上下文、文件和对象、工具调用及返回结果、生成代码、执行或操作记录、API 密钥标识、请求与响应元数据、用量、配额、错误和审计日志，用于理解请求、执行任务、提供接口、计费、调试、安全审计和防止滥用；
 • 社区：帖子、评论、图片、视频链接、收藏、点赞、举报和通知，用于提供社区互动、展示内容和处理违规；
@@ -1394,7 +1617,8 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                 },
                 stats: {
                     net: '净流入',
-                    paypal: 'PayPal 收入',
+                    paypal: 'PayPal 净流入',
+                    paypalNote: '已扣除退款、撤销款项及 PayPal 手续费',
                     aws: 'AWS 账单',
                     sync: '同步机制'
                 },
