@@ -296,27 +296,30 @@ export function MCModalPreview({
                         </div>
 
                         {onPrint && (
-                            <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 w-full">
-                                <button type="button" onClick={onPrint} className="relative w-full px-4 py-1.5 bg-[#3c8527] hover:bg-[#4ea632] text-white font-pixel-hans text-[10px] flex items-center justify-center gap-2 cursor-pointer transition-colors group">
+                            <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 w-36">
+                                <button
+                                    type="button"
+                                    onClick={onPrint}
+                                    className="w-full px-3 py-1.5 bg-[#3c8527] hover:bg-[#4ea632] text-white font-pixel-hans text-[10px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors group border-none outline-none"
+                                >
                                     <Icon icon="pixelarticons:box" className="text-sm shrink-0" />
                                     <span>{current.figurePrint.title}</span>
-                                    <span className="absolute -top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-[#140f02]/95 border border-amber-400/80 text-amber-300 font-pixel-hans text-[8px] leading-none tracking-wider shadow-[0_0_8px_rgba(251,191,36,0.45)] group-hover:border-amber-300 group-hover:text-amber-200 group-hover:shadow-[0_0_12px_rgba(251,191,36,0.6)] transition-all pointer-events-none select-none">
-                                        <span className="w-1 h-1 bg-amber-400 group-hover:bg-amber-300 animate-pulse shrink-0" />
-                                        <span>NEW</span>
+                                    <span className="ml-0.5 px-1 py-0.5 bg-amber-400 group-hover:bg-amber-300 text-[#1a1200] font-pixel-hans text-[8px] font-bold leading-none tracking-wider select-none shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-colors">
+                                        NEW
                                     </span>
                                 </button>
                             </div>
                         )}
 
                         {/* Download Button */}
-                        <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 flex flex-row">
+                        <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 w-36">
                             <button
                                 onClick={handleDownload}
-                                className="px-5 py-1.5 bg-[#38598b] hover:bg-[#4a6bb4] text-white font-pixel-hans text-[10px] uppercase flex items-center gap-2 transition-all cursor-pointer border-none outline-none"
+                                className="w-full px-3 py-1.5 bg-[#38598b] hover:bg-[#4a6bb4] text-white font-pixel-hans text-[10px] uppercase flex items-center justify-center gap-2 transition-all cursor-pointer border-none outline-none"
                                 title="Download Texture"
                             >
-                                <Icon icon="pixelarticons:download" className="text-sm" />
-                                DOWNLOAD
+                                <Icon icon="pixelarticons:download" className="text-sm shrink-0" />
+                                <span>DOWNLOAD</span>
                             </button>
                         </div>
                     </div>
