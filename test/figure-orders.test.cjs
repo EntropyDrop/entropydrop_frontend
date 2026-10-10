@@ -81,12 +81,13 @@ async function fixture(check, options = {}) {
     }
 }
 
-test('orders show combined quantity, unit price and subtotal for kits with separate snapshots', async () => fixture(async () => {
+test('orders show combined quantity, unit price and subtotal for kits with separate snapshots', async () => fixture(async e => {
     assert.ok(document.body.textContent.includes('Items (4)'));
     assert.ok(document.body.textContent.includes('Quantity: 3 × $40.00'));
     assert.ok(document.body.textContent.includes('Subtotal: $120.00'));
     assert.ok(document.body.textContent.includes('Quantity: 1 × $60.00'));
     assert.equal(document.querySelectorAll('img').length, 2);
+    assert.ok(e.button(e.en.figurePrint.commissionOrder.title));
 }));
 
 test('orders show the complete saved shipping address including country and alphanumeric postal code', async () => fixture(async () => {
@@ -106,6 +107,7 @@ test('Pay Now opens the checkout immediately, then confirms payment once and ref
     assert.equal(e.button(e.en.credits.waitingPayment).disabled, true);
     assert.equal(e.button(e.en.orders.removeOne).disabled, true);
     assert.equal(e.button(e.en.orders.cancelOrder).disabled, true);
+    assert.equal(e.button(e.en.figurePrint.commissionOrder.title).disabled, true);
     assert.equal(e.requests.some(request => request.url.endsWith('/paypal/config') || request.url.endsWith('/pay')), false);
     e.popup.closed = true;
     await e.tick(); await e.tick();
@@ -115,6 +117,7 @@ test('Pay Now opens the checkout immediately, then confirms payment once and ref
     assert.ok(document.body.textContent.includes(e.en.modal.paySuccess));
     assert.equal(e.requests.filter(request => request.url.startsWith('/api/orders?')).length, 2);
     assert.equal(e.button(e.en.orders.payNow), undefined);
+    assert.equal(e.button(e.en.figurePrint.commissionOrder.title), undefined);
     assert.equal(e.timers.size, 0);
 }));
 

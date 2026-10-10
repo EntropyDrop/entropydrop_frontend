@@ -8,7 +8,6 @@ export const TOP_NAV_ITEMS = [
 
 export const SPACE_NAV_ITEMS = [
     { key: 'spaceIntro', icon: 'pixelarticons:book-open', path: '/space/intro' },
-    { key: 'apiKeys', icon: 'pixelarticons:lock', path: '/space/apikeys' },
 ] as const
 
 export const SKIN_NAV_ITEMS = [

@@ -25,10 +25,13 @@ test('Space agent cards use a two-column layout and show the Agent Build entry',
   assert.match(external, /navigator\.clipboard\.writeText\(agentPrompt\)/);
 });
 
-test('main-site API-key instructions follow the shared Agent Prompt contract', () => {
-  const source = readFileSync(join(__dirname, '../src/pages/SpaceApiKeysPage.tsx'), 'utf8');
-  assert.match(source, /spaceAgentPrompt\(connection\.origin\)/);
-  assert.doesNotMatch(source, /spaceAgentPrompt\(connection\.origin,/);
+test('main site does not expose /space/apikeys route or page', () => {
+  const { existsSync } = require('node:fs');
+  assert.equal(existsSync(join(__dirname, '../src/pages/SpaceApiKeysPage.tsx')), false);
+  const appSource = readFileSync(join(__dirname, '../src/App.tsx'), 'utf8');
+  assert.doesNotMatch(appSource, /\/space\/apikeys/);
+  const introSource = readFileSync(join(__dirname, '../src/pages/SpacePage.tsx'), 'utf8');
+  assert.doesNotMatch(introSource, /\/space\/apikeys/);
 });
 
 test('Space welcome page does not expose offline mode entries', () => {

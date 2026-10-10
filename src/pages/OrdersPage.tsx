@@ -264,7 +264,6 @@ export function OrdersPage({ current }: OrdersPageProps) {
 
     return (
         <PageContainer
-            maxWidth="max-w-4xl"
             gap="gap-4"
             overflow="overflow-hidden"
             animate="animate-in fade-in zoom-in duration-300"
@@ -391,12 +390,13 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                                         {order.order_type !== 'subscription' && <OrderKitDetails item={item} current={current} />}
                                                     </div>
                                                 ))}
-                                                {order.order_type !== 'subscription' && (
+                                                {order.status === 'pending_payment' && order.order_type !== 'subscription' && (
                                                     <button
+                                                        disabled={processingOrderId === order.id}
                                                         onClick={() => navigate('/figure/3dprint')}
                                                         aria-label={current.figurePrint.commissionOrder.title}
                                                         title={current.figurePrint.commissionOrder.title}
-                                                        className="mt-1  w-8 h-8 self-end justify-center items-center flex items-center gap-1 text-blue-400 hover:text-blue-300 text-[9px] cursor-pointer bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                                                        className="mt-1  w-8 h-8 self-end justify-center items-center flex items-center gap-1 text-blue-400 hover:text-blue-300 text-[9px] cursor-pointer bg-white/5 border border-white/10 hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         <Icon icon="pixelarticons:plus" className="text-xs" />
                                                     </button>

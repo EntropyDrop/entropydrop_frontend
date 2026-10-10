@@ -28,7 +28,6 @@ const FigureManagePage = lazy(() => import('./pages/FigureManagePage').then(m =>
 const FigurePage = lazy(() => import('./pages/FigurePage').then(m => ({ default: m.FigurePage })))
 const CreditsPage = lazy(() => import('./pages/CreditsPage').then(m => ({ default: m.CreditsPage })))
 const SpaceAuthorizePage = lazy(() => import('./pages/SpaceAuthorizePage').then(m => ({ default: m.SpaceAuthorizePage })))
-const SpaceApiKeysPage = lazy(() => import('./pages/SpaceApiKeysPage').then(m => ({ default: m.SpaceApiKeysPage })))
 const SpaceLoginPage = lazy(() => import('./pages/SpaceLoginPage').then(m => ({ default: m.SpaceLoginPage })))
 const SpacePage = lazy(() => import('./pages/SpacePage').then(m => ({ default: m.SpacePage })))
 const TerrainLabPage = import.meta.env.DEV
@@ -161,7 +160,6 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
         <Route path="/space/intro" element={<SpacePage current={currentLangData} />} />
         <Route path="/space/login" element={<SpaceLoginPage current={currentLangData} />} />
         <Route path="/space/authorize" element={<SpaceAuthorizePage current={currentLangData} />} />
-        <Route path="/space/apikeys" element={<SpaceApiKeysPage current={currentLangData} />} />
         {import.meta.env.DEV && (
           <>
             <Route path="/space/terrain-lab" element={<TerrainLabPage />} />

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '@iconify/react'
-import { Link } from 'react-router-dom'
 import { spaceAgentConnection, spaceAgentPrompt } from '@entropydrop/space/agent-guide'
 
 import { PageContainer } from '../components/PageContainer'
@@ -558,7 +557,6 @@ export function SpacePage({ current }: SpacePageProps) {
                                                 <a href={agentConnection.spaceApiUrl} target="_blank" rel="noopener noreferrer" className="text-purple-300 underline">{data.agentSetup.guide}</a>
                                                 <a href={agentConnection.entityApiUrl} target="_blank" rel="noopener noreferrer" className="text-purple-300 underline">{data.agentSetup.entityGuide}</a>
                                                 <a href={agentConnection.skillUrl} target="_blank" rel="noopener noreferrer" className="text-purple-300 underline">Agent Skill</a>
-                                                <Link to="/space/apikeys" className="text-purple-300 underline">{current.nav.apiKeys}</Link>
                                             </div>
                                         </details>
                                     </div>

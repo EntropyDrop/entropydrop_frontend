@@ -1252,7 +1252,7 @@ Email: support@entropydrop.com`
         "nameHelp": "This name is supplied by the requesting agent. Check the pairing code to identify your request.",
         "permissions": "Full Space access",
         "permissionHelp": "This connection can read your saved position, create and edit unoccupied world entities, start or stop them, and build terrain. World membership, execution occupancy and quotas still apply.",
-        "keyHelp": "Your agent will receive its own API key automatically. The key remains valid until you revoke it in API Keys.",
+        "keyHelp": "Your agent will receive its own API key automatically. The key remains valid without copying credentials.",
         "expires": "Request expires",
         "approve": "Authorize agent",
         "deny": "Deny",
@@ -1459,7 +1459,10 @@ Email: support@entropydrop.com`
                 },
             ],
         },
-        agentSetup: spaceAgentOnboarding,
+        agentSetup: {
+            ...spaceAgentOnboarding,
+            note: 'Authorization grants full Space access. Only approve agents you trust. No model API key is needed here.',
+        },
         agentDevTitle: 'Core Engine & Creator Ecosystem',
         agentDevSubtitle: 'Combining secure script sandboxes, real-time voxel physics, and a built-in marketplace for endless programmable creativity.',
         agentDevCards: [

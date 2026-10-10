@@ -76,7 +76,6 @@ export function SpaceAuthorizePage({ current }: { current: LangData }) {
             {loginError && <p role="alert" className="text-sm text-red-300">{loginError}</p>}
         </section> : code ? <Consent key={`${session}:${code}`} code={code} current={current} /> : null}
         <nav className="flex flex-wrap gap-5 text-sm">
-            <Link to="/space/apikeys" className="text-green-300 underline underline-offset-4">{text.manage}</Link>
             <Link to="/space/intro" className="text-white/60 underline underline-offset-4">{text.back}</Link>
         </nav>
     </PageContainer>
