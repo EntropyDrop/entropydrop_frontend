@@ -12,7 +12,7 @@ import { downloadUrl } from './figure/print/download'
 import { figureSourcePath, figureSourceUrl, readFigureSource, type FigureSkinSource } from './figure/print/figureSource'
 import { orderStickerInfo } from './figure/print/orderSticker'
 import { useOrderProductionSource } from './figure/print/useOrderProductionSource'
-import { FIGURE_MODELS, type FigureModel } from './figure/print/figureModels'
+import { getOrderPrintModel, FIGURE_MODELS, type FigureModel } from './figure/print/figureModels'
 import { FigureKitPrice } from './figure/print/FigureKitPrice'
 
 const FigureCommissionDialog = lazy(() => import('./figure/print/FigureCommissionDialog').then(m => ({ default: m.FigureCommissionDialog })))
@@ -37,6 +37,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
     const location = useLocation()
     const production = useOrderProductionSource(location.search || '')
     const savedSticker = production.data?.sticker_snapshot
+    const printModelType = production.active ? getOrderPrintModel(savedSticker?.model_name) : model.id
     const state = location.state as PrintSource | null
     const textureUrl = production.active ? production.data?.skin_url || '' : typeof state?.textureUrl === 'string' ? state.textureUrl : ''
     const source = useMemo(() => production.active ? savedSticker ? { id: savedSticker.skin_id, name: savedSticker.skin_name, publisher: savedSticker.publisher_name, publisherId: savedSticker.publisher_id, parentId: '', publicLicense: '' } : null : readFigureSource(state?.source), [production.active, savedSticker, state?.source])
@@ -86,7 +87,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
                 stage = 'invalidSkin'
                 if (source.width !== 64 || ![32, 64].includes(source.height)) throw new Error('Invalid skin dimensions')
                 stage = 'buildFailed'
-                result = await generateFigure(source, controller.signal, setProgress, stickerInfo)
+                result = await generateFigure(source, controller.signal, setProgress, stickerInfo, { modelType: printModelType })
                 if (controller.signal.aborted) { disposeFigure(result); result = null; return }
                 setOutput(result)
             } catch (error) {
@@ -103,7 +104,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
             downloadAbortRef.current?.abort()
             if (result) disposeFigure(result)
         }
-    }, [textureUrl, retry, stickerInfo, model])
+    }, [textureUrl, retry, stickerInfo, printModelType])
 
     function requestDownload(target: DownloadTarget) {
         if (output && !busy) setPendingDownload({ output, target })
@@ -120,7 +121,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
                 const part = activeOutput.parts.find(part => part.id === target.id)
                 if (!part) return
                 const url = URL.createObjectURL(exportPartStl(part))
-                downloadUrl(url, `${model.id}_${part.id}.stl`)
+                downloadUrl(url, `${printModelType}_${part.id}.stl`)
                 setTimeout(() => URL.revokeObjectURL(url), 1000)
             } else {
                 let stickerUrl = activeOutput.fullStickerUrl
@@ -150,9 +151,9 @@ export function FigurePrintPage({ current }: { current: LangData }) {
                     cutterUrl = activeOutput.cutterUrl
                 }
                 if (target.kind === 'sticker') {
-                    if (stickerUrl) downloadUrl(stickerUrl, `${model.id}_sticker_A4.png`)
+                    if (stickerUrl) downloadUrl(stickerUrl, `${printModelType}_sticker_A4.png`)
                 } else {
-                    if (cutterUrl) downloadUrl(cutterUrl, `${model.id}_sticker_cut_A4.svg`)
+                    if (cutterUrl) downloadUrl(cutterUrl, `${printModelType}_sticker_cut_A4.svg`)
                 }
             }
         } catch (error: unknown) {
@@ -160,7 +161,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
             console.error(error)
             setFailure('exportFailed')
         }
-    }, [pendingDownload, output, busy, model, t.generatingFull, t.generating])
+    }, [pendingDownload, output, busy, printModelType, t.generatingFull, t.generating])
 
     if (production.active && !production.data) return <PageContainer className={current.fontClass}><p role={production.failed ? 'alert' : 'status'} className="text-sm text-white/65">{production.failed ? t.productionSourceFailed : t.productionSourceLoading}</p>{production.failed && <button type="button" className={buttonClass} onClick={production.retry}>{t.retry}</button>}<Link to="/figure/manage" className="text-xs text-[#a6df7a] underline">{t.backToManagement}</Link></PageContainer>
 
@@ -182,10 +183,10 @@ export function FigurePrintPage({ current }: { current: LangData }) {
             <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
                     <div className="flex items-center gap-3"><Icon icon="pixelarticons:box" className="text-[#71bc56] text-2xl" /><h2 className="text-xl sm:text-2xl m-0">{t.title}</h2></div>
-                    <label className="flex items-center gap-2 text-xs text-white/60">{t.modelType}<span className="relative inline-flex"><select aria-label={t.modelType} value={model.id} disabled={production.active} onChange={event => {
+                    <label className="flex items-center gap-2 text-xs text-white/60">{t.modelType}<span className="relative inline-flex"><select aria-label={t.modelType} value={printModelType} disabled={production.active} onChange={event => {
                         const selected = FIGURE_MODELS.find(item => item.id === event.target.value)
                         if (selected) { setCommissionSource(null); setPendingDownload(null); setModel(selected) }
-                    }} className="h-9 appearance-none rounded-none border border-white/15 bg-white/5 pl-3 pr-8 py-0 text-xs text-white/80 cursor-pointer hover:bg-white/10 hover:text-white transition-colors focus:outline-none focus:border-[#84c96b]">{FIGURE_MODELS.map(item => <option key={item.id} value={item.id} className="bg-[#182018]">{item.name}</option>)}</select><Icon icon="pixelarticons:chevron-down" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs" /></span></label>
+                    }} className="h-9 appearance-none rounded-none border border-white/15 bg-white/5 pl-3 pr-8 py-0 text-xs text-white/80 cursor-pointer hover:bg-white/10 hover:text-white transition-colors focus:outline-none focus:border-[#84c96b]">{production.active && printModelType === 'cute7' && <option value="cute7" className="bg-[#182018]">CUTE-7cm</option>}{FIGURE_MODELS.map(item => <option key={item.id} value={item.id} className="bg-[#182018]">{item.name}</option>)}</select><Icon icon="pixelarticons:chevron-down" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs" /></span></label>
                 </div>
             </div>
             <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-x-3 gap-y-2">
@@ -209,7 +210,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
                     </div>
                 </div>
                 <div className="relative flex-1 min-h-[320px] lg:min-h-[240px] bg-[radial-gradient(ellipse_at_center,#263323_0%,#111711_75%)]">
-                    {output ? <><FigurePreview parts={output.parts} isSlim={output.isSlim} assemblyLabels={t.assembly} resetLabel={t.resetView} resetPositionsLabel={t.resetPositions} partLabels={t.parts} onError={onPreviewError} />{previewFailed && <p className="absolute inset-x-4 bottom-3 text-xs bg-black/70 p-3">{t.previewFailed}</p>}</> : <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center text-white/35"><Icon icon="pixelarticons:box" className={`text-5xl ${busy ? 'animate-pulse' : ''}`} /><p className="text-sm m-0">{busy ? t.generating : t.empty}</p></div>}
+                    {output ? <><FigurePreview modelType={output.modelType} parts={output.parts} isSlim={output.isSlim} assemblyLabels={t.assembly} resetLabel={t.resetView} resetPositionsLabel={t.resetPositions} partLabels={t.parts} onError={onPreviewError} />{previewFailed && <p className="absolute inset-x-4 bottom-3 text-xs bg-black/70 p-3">{t.previewFailed}</p>}</> : <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center text-white/35"><Icon icon="pixelarticons:box" className={`text-5xl ${busy ? 'animate-pulse' : ''}`} /><p className="text-sm m-0">{busy ? t.generating : t.empty}</p></div>}
                     {!production.active && <Link to="/skin/edit" state={{ textureUrl, name, passedLogId: source?.id, isPublic: source?.isPublic }} className={`${buttonClass} absolute left-3 top-3 z-10 !py-1.5 !bg-black/50`}><Icon icon="pixelarticons:edit" />{current.nav.edit}</Link>}
                 </div>
                 {output && <div className="p-3 border-t border-white/10"><div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{output.parts.map(part => <button type="button" key={part.id} disabled={!canDownload} onClick={() => requestDownload({ kind: 'part', id: part.id })} className={`${buttonClass} !px-2`} aria-label={`${partLabel(part.id)} STL`}><Icon icon="pixelarticons:download" className="shrink-0" /><span>{partLabel(part.id)}<span className="block text-[9px] text-white/35 mt-0.5">STL</span></span></button>)}</div></div>}

@@ -1,6 +1,7 @@
 /** Experimental A4 layout: print core/decor together, cut their masks separately. */
 
 import { createCanvas, resolveVoxelConsistency } from './skinHelper.js';
+import { PART_PIXELS_PER_UNIT } from '../../../shared/assemblySettings.js';
 import { generateParts, pasteWithDilate, DILATE_TIMES } from './stickerCore.js';
 import { PAGE_WIDTH, PAGE_HEIGHT, PADDING, SAFE_WIDTH, scaleImage } from './pageComposer.js';
 import { renderSkinPreview } from './previewRenderer.js';
@@ -57,6 +58,7 @@ function createLayoutConfig(preview = false) {
     inset: Math.round(INSET * scale),
     titleHeight: Math.round(TITLE_HEIGHT * scale),
     labelHeight: Math.round(LABEL_HEIGHT * scale),
+    compactLabelHeight: Math.round(88 * scale),
     splitGap: Math.round(SPLIT_GAP * scale),
     dilateTimes: preview ? 1 : DILATE_TIMES,
   };
@@ -135,13 +137,30 @@ function combineFace(parts, partIndex, faceIndex, scale, split, layoutConfig) {
   };
 }
 
-function prepareGroup(part, parts, scale, width, layoutConfig) {
+function prepareGroup(part, parts, scale, width, layoutConfig, allowReflow = false) {
   const faceGap = layoutConfig?.faceGap ?? FACE_GAP;
   const inset = layoutConfig?.inset ?? INSET;
   const labelHeight = layoutConfig?.labelHeight ?? LABEL_HEIGHT;
   const titleHeight = layoutConfig?.titleHeight ?? TITLE_HEIGHT;
   const rowGap = layoutConfig?.rowGap ?? ROW_GAP;
-  const rows = part.rows.map((indices) => {
+  let faceRows = part.rows;
+  const faceWidth = face => Math.floor(parts[`${part.index}/${face}/0`].width * scale);
+  const maxWidth = width - inset * 2;
+  if (allowReflow && faceRows.some(row => row.reduce((sum, face) => sum + faceWidth(face), 0) + faceGap * (row.length - 1) > maxWidth)) {
+    faceRows = [[]];
+    let occupiedWidth = 0;
+    for (const face of part.rows.flat()) {
+      let row = faceRows[faceRows.length - 1];
+      if (row.length && occupiedWidth + faceGap + faceWidth(face) > maxWidth) {
+        row = [];
+        faceRows.push(row);
+        occupiedWidth = 0;
+      }
+      occupiedWidth += (row.length ? faceGap : 0) + faceWidth(face);
+      row.push(face);
+    }
+  }
+  const rows = faceRows.map((indices) => {
     const faces = indices.map((face) => combineFace(parts, part.index, face, scale, part.split, layoutConfig));
     const rowWidth = faces.reduce((sum, face) => sum + face.width, 0) + faceGap * (faces.length - 1);
     if (rowWidth > width - inset * 2) throw new Error(`${part.title} 超出 A4 布局，已保留原尺寸并停止生成`);
@@ -151,6 +170,55 @@ function prepareGroup(part, parts, scale, width, layoutConfig) {
     ...part, rows, width,
     height: titleHeight + rows.reduce((sum, row) => sum + row.height, 0) + rowGap * (rows.length - 1) + inset,
   };
+}
+
+/** Pack complete faces at their existing scale, including split-piece gaps. */
+function prepareCompactSheet(groups, startY, maxBottom, layoutConfig) {
+  const { safeWidth, faceGap, rowGap, compactLabelHeight } = layoutConfig;
+  const faces = groups.flatMap(group => group.rows.flatMap(row => row.faces.map(face => ({
+    face, title: group.title, height: face.height + compactLabelHeight,
+  }))));
+  const ordered = faces.map((item, order) => ({ ...item, order })).sort((a, b) =>
+    b.height - a.height || b.face.width - a.face.width || a.order - b.order);
+  const compactRows = [];
+  for (const item of ordered) {
+    if (item.face.width > safeWidth) return null;
+    let bestRow = null;
+    let bestWaste = Infinity;
+    // Height decreases in this order, so fitting an existing row adds no height.
+    for (const row of compactRows) {
+      const width = row.width + faceGap + item.face.width;
+      const waste = safeWidth - width;
+      if (waste >= 0 && waste < bestWaste) {
+        bestRow = row;
+        bestWaste = waste;
+      }
+    }
+    if (!bestRow) {
+      bestRow = { items: [], width: 0, height: item.height };
+      compactRows.push(bestRow);
+    }
+    bestRow.width += (bestRow.items.length ? faceGap : 0) + item.face.width;
+    bestRow.items.push(item);
+  }
+  const groupsBottom = startY + compactRows.reduce((sum, row) => sum + row.height, 0)
+    + rowGap * Math.max(0, compactRows.length - 1);
+  return groupsBottom <= maxBottom ? { compactRows, groupsBottom } : null;
+}
+
+function drawFace(printCtx, cutterCtx, layerContexts, face, x, y, vectorPaths, layoutConfig) {
+  for (const piece of face.pieces) {
+    const pieceY = y + piece.y;
+    pasteWithDilate(printCtx, piece.image, [x, pieceY], layoutConfig.dilateTimes, [240, 240, 240, 255]);
+    if (!cutterCtx) continue;
+    cutterCtx.drawImage(piece.image, x, pieceY);
+    if (piece.vectorPaths) {
+      vectorPaths.push(...translateCutterPaths(piece.vectorPaths, x, pieceY));
+    } else if (piece.coreImage && piece.decorImage) {
+      layerContexts[0].drawImage(piece.coreImage, x, pieceY);
+      layerContexts[1].drawImage(piece.decorImage, x, pieceY);
+    }
+  }
 }
 
 function drawGroup(printCtx, cutterCtx, layerContexts, group, x, y, height, vectorPaths, layoutConfig) {
@@ -227,19 +295,21 @@ function drawCharacterGuides(ctx, skin, groupsBottom, cuteMode, layoutConfig) {
   return { x: infoX, y, width: pageWidth - padding - infoX, height: height + labelHeight };
 }
 
-/** Keep the legacy 27.1mm head scale, holes, gray bleed and limb split geometry. */
-export async function composeMergedPages(skin, { alphaThreshold = 0.5, cuteMode = false, assemblySettings: inputSettings, preview = false } = {}, onProgress = null) {
-  const assemblySettings = normalizeAssemblySettings(inputSettings, cuteMode);
+/** Preserve physical sticker scale, fixed-size sockets and gray bleed. */
+export async function composeMergedPages(skin, { alphaThreshold = 0.5, cuteMode = false, modelScale = 1, assemblySettings: inputSettings, preview = false } = {}, onProgress = null) {
+  const assemblySettings = normalizeAssemblySettings(inputSettings, cuteMode, modelScale);
   const layoutConfig = createLayoutConfig(preview);
   onProgress?.(5, preview ? '正在快速生成预览贴纸...' : '正在准备内外层合并实验模式...');
   resolveVoxelConsistency(skin);
-  const parts = generateParts(skin, alphaThreshold, { cuteMode, assemblySettings });
-  const scale = (542 * layoutConfig.scale) / parts['0/0/0'].width;
+  const parts = generateParts(skin, alphaThreshold, { cuteMode, modelScale, assemblySettings });
+  const scale = (542 * layoutConfig.scale) / (9 * PART_PIXELS_PER_UNIT);
   const groupWidth = Math.floor((layoutConfig.safeWidth - layoutConfig.groupGap) / 2);
-  const groups = PARTS.map((part) => prepareGroup({ ...part, split: shouldSplitLimb(part.index, assemblySettings) }, parts, scale, groupWidth, layoutConfig));
+  const groups = PARTS.map((part) => prepareGroup({ ...part, split: shouldSplitLimb(part.index, assemblySettings) }, parts, scale, groupWidth, layoutConfig, modelScale > 1));
   const rowHeights = [0, 2, 4].map((index) => Math.max(groups[index].height, groups[index + 1].height));
   const startY = layoutConfig.padding + Math.round(180 * layoutConfig.scale);
-  const groupsBottom = startY + rowHeights.reduce((sum, height) => sum + height, 0) + layoutConfig.groupGap * 2;
+  const maxBottom = layoutConfig.pageHeight - layoutConfig.padding - layoutConfig.rowGap - Math.round(436 * layoutConfig.scale);
+  const compactSheet = cuteMode && modelScale > 1 ? prepareCompactSheet(groups, startY, maxBottom, layoutConfig) : null;
+  const groupsBottom = compactSheet?.groupsBottom ?? startY + rowHeights.reduce((sum, height) => sum + height, 0) + layoutConfig.groupGap * 2;
   if (groupsBottom > layoutConfig.pageHeight - layoutConfig.padding) {
     throw new Error('合并后的部件超出单张 A4，已保留实际尺寸并停止生成');
   }
@@ -254,14 +324,30 @@ export async function composeMergedPages(skin, { alphaThreshold = 0.5, cuteMode 
   printCtx.fillStyle = '#ffffff';
   printCtx.fillRect(0, 0, layoutConfig.pageWidth, layoutConfig.pageHeight);
 
-  let rowY = startY;
-  for (let row = 0; row < 3; row++) {
-    onProgress?.(20 + row * 20, preview ? '正在排版预览贴纸...' : `正在排版合并贴纸：第 ${row + 1} / 3 组...`);
-    if (!preview) await new Promise((resolve) => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(resolve) : setTimeout(resolve, 0));
-    for (let col = 0; col < 2; col++) {
-      drawGroup(printCtx, cutterCtx, layerContexts, groups[row * 2 + col], layoutConfig.padding + col * (groupWidth + layoutConfig.groupGap), rowY, rowHeights[row], vectorPaths, layoutConfig);
+  if (compactSheet) {
+    let rowY = startY;
+    for (const [index, row] of compactSheet.compactRows.entries()) {
+      onProgress?.(20 + index / compactSheet.compactRows.length * 65, '正在排版 CUTE-10cm 贴纸...');
+      if (!preview) await new Promise((resolve) => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(resolve) : setTimeout(resolve, 0));
+      let faceX = layoutConfig.padding + Math.floor((layoutConfig.safeWidth - row.width) / 2);
+      for (const { face, title } of row.items) {
+        text(printCtx, title, faceX + face.width / 2, rowY, 34 * layoutConfig.scale, { align: 'center' });
+        text(printCtx, FACE_LABELS[face.faceIndex], faceX + face.width / 2, rowY + Math.round(40 * layoutConfig.scale), 34 * layoutConfig.scale, { align: 'center' });
+        drawFace(printCtx, cutterCtx, layerContexts, face, faceX, rowY + layoutConfig.compactLabelHeight, vectorPaths, layoutConfig);
+        faceX += face.width + layoutConfig.faceGap;
+      }
+      rowY += row.height + layoutConfig.rowGap;
     }
-    rowY += rowHeights[row] + layoutConfig.groupGap;
+  } else {
+    let rowY = startY;
+    for (let row = 0; row < 3; row++) {
+      onProgress?.(20 + row * 20, preview ? '正在排版预览贴纸...' : `正在排版合并贴纸：第 ${row + 1} / 3 组...`);
+      if (!preview) await new Promise((resolve) => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(resolve) : setTimeout(resolve, 0));
+      for (let col = 0; col < 2; col++) {
+        drawGroup(printCtx, cutterCtx, layerContexts, groups[row * 2 + col], layoutConfig.padding + col * (groupWidth + layoutConfig.groupGap), rowY, rowHeights[row], vectorPaths, layoutConfig);
+      }
+      rowY += rowHeights[row] + layoutConfig.groupGap;
+    }
   }
 
   if (!preview) {
@@ -279,6 +365,7 @@ export async function composeMergedPages(skin, { alphaThreshold = 0.5, cuteMode 
     infoArea,
     layoutMode: 'merged',
     cuteMode,
+    modelScale,
     assemblySettings,
     title: `A4 1 · 全部部件（${cuteMode ? 'Cute · ' : ''}实验）`,
     faceCount: 36,

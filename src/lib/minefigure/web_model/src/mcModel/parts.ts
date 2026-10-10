@@ -69,6 +69,10 @@ export function buildHead(
 
   // All callers use the sticker's circular socket, including callers without
   // explicit assembly settings. Zero diameter leaves the bottom closed.
+  const scale = opts.modelScale ?? 1;
+  if (scale !== 1) for (const geometry of [block, ...decorGeoms]) {
+    geometry.translate(0, 0, -headHeight).scale(scale, scale, scale).translate(0, 0, headHeight);
+  }
   return { block, decorGeoms, cutters: assemblyCutters(0, [0, 0, headHeight], opts) };
 }
 
@@ -125,8 +129,8 @@ export function buildTorso(
     : [];
 
   if (cute) {
-    shapeCuteGeometry(block, true);
-    for (const geometry of decorGeoms) shapeCuteGeometry(geometry, true, true);
+    shapeCuteGeometry(block, true, false, opts.modelScale);
+    for (const geometry of decorGeoms) shapeCuteGeometry(geometry, true, true, opts.modelScale);
   }
   return { block, decorGeoms, cutters: assemblyCutters(1, position, opts) };
 }
@@ -256,23 +260,24 @@ export async function buildLimb(
 ): Promise<LimbBuildResult> {
   const includeDecor = opts.decor !== false;
   const [lx, ly, lz] = spec.position;
-  const splitZ = lz + 0.01;
+  const modelScale = opts.modelScale ?? 1;
+  const splitZ = lz + 0.01 * modelScale;
   const isArm = spec.name.endsWith('_arm');
   const cute = !!opts.cuteMode;
-  const settings = normalizeAssemblySettings(opts.assemblySettings, cute);
+  const settings = normalizeAssemblySettings(opts.assemblySettings, cute, modelScale);
   const split = isArm ? settings.splitArms : settings.splitLegs;
 
   // split cutters (port of split_limb, with obj.location = (0,0,0))
   const upperSplit: CutterWithToken & { label: string; color: string } = {
-    geometry: boxAt([lx, ly, splitZ - 50], [100, 100, 100.01], 0),
-    visual: boxAt([lx, ly, splitZ], [18, 18, 0.02], 0),
+    geometry: boxAt([lx, ly, splitZ - 50], [100, 100, 100 + 0.01 * modelScale], 0),
+    visual: boxAt([lx, ly, splitZ], [18 * modelScale, 18 * modelScale, 0.02 * modelScale], 0),
     token: CUT_TOKEN,
     label: '拆分平面（上半）',
     color: CUTTER_COLORS.split,
   };
   const lowerSplit: CutterWithToken & { label: string; color: string } = {
-    geometry: boxAt([lx, ly, splitZ + 50], [100, 100, 100.01], 0),
-    visual: boxAt([lx, ly, splitZ], [18, 18, 0.02], 0),
+    geometry: boxAt([lx, ly, splitZ + 50], [100, 100, 100 + 0.01 * modelScale], 0),
+    visual: boxAt([lx, ly, splitZ], [18 * modelScale, 18 * modelScale, 0.02 * modelScale], 0),
     token: CUT_TOKEN,
     label: '拆分平面（下半）',
     color: CUTTER_COLORS.split,
@@ -283,10 +288,10 @@ export async function buildLimb(
   const depth = settings.holeDepths[joint.id] / MODEL_MM_PER_UNIT;
   const jointRadius = DEFAULT_ASSEMBLY_HOLE_DIAMETER_MM / MODEL_MM_PER_UNIT / 2;
   // Measure the same requested depth from each actual split face; do not count
-  // the cutter's outside extension or the 0.01-unit split gap as hole depth.
+  // the cutter's outside extension or the scaled split gap as hole depth.
   const makeJoint = (upper: boolean): CutterWithToken & { label: string; color: string } => {
     const side = upper ? 1 : -1;
-    const surfaceZ = splitZ + side * 0.005;
+    const surfaceZ = splitZ + side * 0.005 * modelScale;
     const outside = 0.3;
     return {
       geometry: cylinderZ([lx, ly, surfaceZ + side * (depth - outside) / 2], jointRadius, depth + outside),
@@ -299,16 +304,19 @@ export async function buildLimb(
   const lowerJoint = makeJoint(false);
   const connectorCutters = assemblyCutters(partIndex, spec.position, { ...opts, assemblySettings: settings });
   const upperCutters = [upperSplit, upperJoint, ...connectorCutters];
-  const lowerCutters = [lowerSplit, lowerJoint];
+  // An adjustable shoulder socket can cross the split or move into the lower
+  // half. Apply the same finite cutters to both halves so the opening matches
+  // the sticker at every allowed position.
+  const lowerCutters = [lowerSplit, lowerJoint, ...(isArm ? connectorCutters : [])];
 
   const allDecor = includeDecor
     ? createDecorCubes(spec.position, spec.entitySize, spec.faceOffsets, spec.decorScale, spec.decorOffset, pixels, width, reg)
     : [];
-  if (cute) for (const geometry of allDecor) shapeCuteGeometry(geometry, false, true);
+  if (cute) for (const geometry of allDecor) shapeCuteGeometry(geometry, false, true, modelScale);
 
   const build = async (cutters: CutterWithToken[]) => {
     const block = createSolidBlock(spec.position, spec.entitySize, spec.faceOffsets, pixels, width, reg);
-    if (cute) shapeCuteGeometry(block);
+    if (cute) shapeCuteGeometry(block, false, false, modelScale);
     try {
       // Both halves start from the complete outer solid. Filtering cubes by
       // their centre drops portions of voxels that cross the split plane.

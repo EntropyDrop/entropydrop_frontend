@@ -100,7 +100,7 @@ export async function buildFigure(
     ? !!opts.isAlex
     : (pxAt(pixels, width, 51, 16, [0, 0, 0, 0])[3] ?? 1) < 1.0; // load_skin() check: pixels[16][51][3] < 1.0
   opts = { ...opts, isAlex };
-  if (opts.assemblySettings) opts.assemblySettings = validateAssemblySettings(opts.assemblySettings, isAlex, !!opts.cuteMode);
+  if (opts.assemblySettings) opts.assemblySettings = validateAssemblySettings(opts.assemblySettings, isAlex, !!opts.cuteMode, opts.modelScale);
 
   // close see-through holes on a working clone (never mutate caller's pixels in place)
   const workPixels = new Float32Array(pixels);
@@ -150,7 +150,8 @@ export async function buildFigure(
       let position: Vec3 = [0, 0, 0];
       if (hasBodyParts) {
         // Place beside the figure footprint on the ground
-        position = task.isShort ? [0, 8.5, -17] : [0, -8.5, -17];
+        const offset = 8.5 * (opts.modelScale ?? 1);
+        position = task.isShort ? [0, offset, -17] : [0, -offset, -17];
       } else if (requested.shortConnector && requested.longConnector) {
         position = task.isShort ? [0, 3, 0] : [0, -3, 0];
       } else {
@@ -252,7 +253,7 @@ export async function buildFigure(
     if (opts.cuteMode) {
       const partIndices: Record<string, number> = { head: 0, torso: 1, leftArm: 2, rightArm: 3, leftLeg: 4, rightLeg: 5 };
       const partIndex = partIndices[task.id];
-      if (partIndex !== undefined) placeCuteParts(results.slice(firstResult), partIndex, isAlex);
+      if (partIndex !== undefined) placeCuteParts(results.slice(firstResult), partIndex, isAlex, opts.modelScale);
     }
     await new Promise((resolve) => setTimeout(resolve, 0)); // keep UI responsive
   }

@@ -8,6 +8,8 @@ const THREE = require('three');
 const code = buildSync({
     stdin: { contents: `
         export * from './src/pages/figure/print/figureEngine';
+        export { FIGURE_MODELS, getOrderPrintModel, getPrintModelProfile } from './src/pages/figure/print/figureModels';
+        export { composeMergedPages } from './src/lib/minefigure/web_sticker/src/sticker/mergedComposer.js';
         export { projectHeightRuler } from './src/pages/figure/print/heightRuler';
         export { drawStickerInfo } from './src/pages/figure/print/stickerInfo';
         export { createPreviewPart } from './src/pages/figure/print/previewParts';
@@ -143,7 +145,7 @@ for (const slim of [false, true]) test(`exploded Cute assembly maps every joint 
         assemblySettings: engine.normalizeAssemblySettings({}, true),
     });
     const before = await Promise.all(model.results.map(async part => Buffer.from(await engine.exportPartStl(part).arrayBuffer())));
-    const assembly = engine.createAssemblyPreview(model.results, slim);
+    const assembly = engine.createAssemblyPreview(model.results, slim, 'cute7');
     const { items } = assembly;
     const head = items.find(item => item.key === 'head');
     const arm = items.find(item => item.key === 'leftArm');
@@ -273,7 +275,7 @@ test('sticker annotations stay in reserved whitespace and cannot enter the cutti
         name: '很长的皮肤名称'.repeat(200), publisher: 'A\nB', publisherId: 'maker456', sourceId: 'skin123', sourceUrl: 'https://entropydrop.com/skin/?id=skin123', publicLicense: 'CC BY-NC 4.0',
         labels: { publisher: 'Publisher', userId: 'User ID', source: 'Skin' },
     });
-    assert.equal(drawn[0].text, 'EntropyDrop · CUTE-7cm');
+    assert.equal(drawn[0].text, 'EntropyDrop · CUTE-10cm');
     assert.ok(drawn[1].text.endsWith('…'));
     assert.ok(drawn.some(line => line.text === 'Publisher: A B'));
     assert.ok(drawn.some(line => line.text === 'User ID: maker456'));
@@ -300,11 +302,15 @@ test('tiered loading creates fast preview sticker first and generates full 4200x
         assert.equal(output.fullStickerUrl, undefined);
         assert.equal(output.fullCutterUrl, undefined);
         assert.equal(output.parts.length, 8);
+        assert.equal(output.modelType, 'cute10');
 
         // On demand full asset generation
         const full = await engine.generateFullFigureAssets(output, controller.signal, () => {});
         assert.ok(full.stickerUrl);
         assert.ok(full.cutterUrl);
+        const svg = await (await fetch(full.cutterUrl)).text();
+        assert.match(svg, /width="210mm"/);
+        assert.match(svg, /height="297mm"/);
         assert.equal(output.isPreviewSticker, false);
         assert.equal(output.fullStickerUrl, full.stickerUrl);
         assert.equal(output.fullCutterUrl, full.cutterUrl);
@@ -432,21 +438,21 @@ test('sticker headings use the stored brand and model instead of current catalog
 });
 
 
-test('7 cm ruler shares the STL scale and doubles its screen height when zooming twice as close', () => {
+test('10 cm ruler shares the STL scale and doubles its screen height when zooming twice as close', () => {
     const bounds = new THREE.Box3(new THREE.Vector3(-4, 0, -2), new THREE.Vector3(4, 24, 2));
     const camera = new THREE.PerspectiveCamera(35, 1.5, 0.1, 1000);
     camera.position.set(0, 12, 60); camera.lookAt(0, 12, 0);
     const far = engine.projectHeightRuler(bounds, 0, camera, 900, 600);
     const pixels = far.labels[0].y - far.labels.at(-1).y;
-    const expected = (70 / engine.MODEL_MM_PER_UNIT) * 600 / (2 * 60 * Math.tan(35 * Math.PI / 360));
+    const expected = (100 / engine.MODEL_MM_PER_UNIT) * 600 / (2 * 60 * Math.tan(35 * Math.PI / 360));
     assert.ok(Math.abs(pixels - expected) < 1e-8);
-    assert.equal(far.labels.length, 8);
+    assert.equal(far.labels.length, 11);
     camera.position.z = 30;
     const close = engine.projectHeightRuler(bounds, 0, camera, 900, 600);
     assert.ok(Math.abs(close.labels[0].y - close.labels.at(-1).y - pixels * 2) < 1e-8);
     const expanded = bounds.clone(); expanded.max.y = 80;
     const exploded = engine.projectHeightRuler(expanded, 0, camera, 900, 600);
-    assert.ok(Math.abs(exploded.labels[0].y - exploded.labels.at(-1).y - pixels * 2) < 1e-8, 'exploding the parts must not stretch the 7 cm reference');
+    assert.ok(Math.abs(exploded.labels[0].y - exploded.labels.at(-1).y - pixels * 2) < 1e-8, 'exploding the parts must not stretch the 10 cm reference');
 });
 
 test('ruler remains on the camera-facing right across orbit angles and hides behind-camera data', () => {
@@ -460,4 +466,52 @@ test('ruler remains on the camera-facing right across orbit angles and hides beh
     camera.lookAt(camera.position.clone().multiplyScalar(2));
     assert.equal(engine.projectHeightRuler(bounds, 0, camera, 900, 600), null);
     assert.equal(engine.projectHeightRuler(bounds, 0, camera, 0, 0), null);
+});
+
+for (const slim of [false, true]) test(`cute10 uses fixed 7.8 mm shoulder sockets and four short joints for ${slim ? 'slim' : 'classic'} arms`, async () => {
+    const settings = engine.validateStickerAssemblySettings(engine.normalizeAssemblySettings({}, true, 1.5), slim, true, 1.5);
+    assert.equal(settings.holeDepths.torsoLeftArm, 7);
+    assert.equal(settings.holeDepths.leftArm, 10);
+    for (const index of [1, 2, 3]) {
+        const sockets = engine.assemblySockets(index, settings, slim, true, 1.5);
+        for (const socket of sockets) assert.ok(Math.abs(socket.radius * 2 * engine.MODEL_MM_PER_UNIT - 7.8) < 1e-8);
+    }
+    const skin = engine.processSkin(skinCanvas(false, slim), 0.5);
+    const model = await engine.buildFigure(Float32Array.from(skin.data, channel => channel / 255), 64, {
+        parts: Object.fromEntries(engine.PRINT_PARTS.map(id => [id, true])),
+        decor: true, cuteMode: true, modelScale: 1.5, isAlex: slim, fillTransparentBase: false, assemblySettings: settings,
+    });
+    const assembly = engine.createAssemblyPreview(model.results, slim);
+    try {
+        assert.equal(assembly.items.length, 11);
+        assert.equal(assembly.items.some(item => item.tubeLengthMm || /Tube/.test(item.key)), false);
+        assert.equal(assembly.connections.length, 5);
+        const short = assembly.items.find(item => item.key === 'shortConnector');
+        for (const key of ['rightHipJoint', 'leftShoulderJoint', 'rightShoulderJoint']) {
+            const joint = assembly.items.find(item => item.key === key);
+            assert.equal(joint.meshes[0].geometry, short.meshes[0].geometry);
+            assert.notEqual(joint.meshes[0].material, short.meshes[0].material);
+        }
+        assert.deepEqual(Array.from(assembly.connections.slice(3), link => [link.from.item.key, link.item.key, link.to.item.key]), [
+            ['torso', 'leftShoulderJoint', 'leftArm'], ['torso', 'rightShoulderJoint', 'rightArm'],
+        ]);
+        assembly.setExploded(true);
+        assert.ok(assembly.items.every(item => item.pivot.visible));
+        const head = model.results.find(part => part.id === 'head');
+        head.exportGeometry.computeBoundingBox();
+        const size = head.exportGeometry.boundingBox.getSize(new THREE.Vector3());
+        assert.ok(Math.abs(size.z * engine.MODEL_MM_PER_UNIT - 8 * 1.5 * engine.MODEL_MM_PER_UNIT) < 1e-4, 'head geometry is enlarged before sockets are cut');
+    } finally {
+        assembly.dispose();
+        engine.disposeParts(model.results);
+    }
+});
+
+test('saved order models preserve cute7 and select cute10 only for its saved model name', () => {
+    assert.equal(engine.FIGURE_MODELS.length, 1);
+    assert.equal(engine.FIGURE_MODELS[0].id, 'cute10');
+    assert.equal(engine.getOrderPrintModel('CUTE-10cm DIY kit'), 'cute10');
+    assert.equal(engine.getOrderPrintModel('CUTE-7cm'), 'cute7');
+    assert.equal(engine.getOrderPrintModel(), 'cute7');
+    assert.equal(engine.getPrintModelProfile().modelScale, 1.5);
 });

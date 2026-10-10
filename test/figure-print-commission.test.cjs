@@ -87,12 +87,12 @@ test('commissioning creates one unpaid Cute order from its source and address, t
         assert.equal(document.body.textContent.includes('300 kits'), false);
         assert.equal(document.body.textContent.includes('Available stock'), false);
         assert.ok(document.body.textContent.includes(env.en.figurePrint.commissionOrder.approval));
-        for (const label of ['Free', '3 days', '2 weeks', 'CUTE-7cm DIY kit', kitSpecifications.assembly_note]) {
+        for (const label of ['Free', '3 days', '2 weeks', 'CUTE-10cm DIY kit', kitSpecifications.assembly_note]) {
             assert.ok(document.body.textContent.includes(label));
         }
         const details = Object.fromEntries(Array.from(document.querySelectorAll('dt')).map(term => [term.textContent, term.nextElementSibling.textContent]));
         const t = env.en.figurePrint.commissionOrder;
-        assert.equal(details[t.productName], 'CUTE-7cm DIY kit');
+        assert.equal(details[t.productName], 'CUTE-10cm DIY kit');
         assert.equal(details[t.customSkinId], 'skin-a');
         assert.equal(details[t.dimensions], kitSpecifications.dimensions);
         assert.deepEqual(Array.from(document.querySelectorAll('li')).map(item => item.textContent), kitSpecifications.materials.map(material => `${material.name} ×${material.quantity}${material.description ? ` — ${material.description}` : ''}`));
@@ -195,7 +195,7 @@ test('kit details come from the catalog response, including future model specifi
         assert.ok(document.body.textContent.includes(specifications.dimensions));
         assert.ok(document.body.textContent.includes('New part ×2'));
         assert.ok(document.body.textContent.includes(specifications.assembly_note));
-        assert.equal(document.body.textContent.includes('7 × 4.5 × 2.8 cm'), false);
+        assert.equal(document.body.textContent.includes('10 × 6.7 × 4.1 cm'), false);
         assert.equal(env.submit().disabled, false);
     });
 });

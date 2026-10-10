@@ -6,16 +6,19 @@ import type { FigurePart, PrintPartId } from './figureEngine'
 import type { LangData } from '../../../constants/lang'
 import { ARM_TUBE_LENGTH_MM, createAssemblyPreview, type AssemblyItem } from './explodedView'
 import { projectHeightRuler } from './heightRuler'
+import { DEFAULT_PRINT_MODEL, getPrintModelProfile, type PrintModelType } from './figureModels'
 
-export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, partLabels, assemblyLabels, onError }: {
+export function FigurePreview({ parts, isSlim, modelType = DEFAULT_PRINT_MODEL, resetLabel, resetPositionsLabel, partLabels, assemblyLabels, onError }: {
     parts: FigurePart[]
     isSlim: boolean
+    modelType?: PrintModelType
     resetLabel: string
     resetPositionsLabel: string
     partLabels: Record<PrintPartId, string>
     assemblyLabels: LangData['figurePrint']['assembly']
     onError: () => void
 }) {
+    const { heightCm } = getPrintModelProfile(modelType)
     const host = useRef<HTMLDivElement>(null)
     const ruler = useRef<SVGSVGElement>(null)
     const reset = useRef<() => void>(() => {})
@@ -44,7 +47,7 @@ export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, 
         const world = new THREE.Group()
         world.rotation.x = -Math.PI / 2
         scene.add(world)
-        const assembly = createAssemblyPreview(parts, isSlim)
+        const assembly = createAssemblyPreview(parts, isSlim, modelType)
         const previews = assembly.items
         let isExploded = false
         const selectable = previews.flatMap(preview => preview.meshes)
@@ -124,7 +127,7 @@ export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, 
             renderer.render(scene, camera)
             updateBounds()
             const { width, height } = container.getBoundingClientRect()
-            const projected = projectHeightRuler(bounds, rulerBaseY, camera, width, height)
+            const projected = projectHeightRuler(bounds, rulerBaseY, camera, width, height, heightCm)
             rulerElement.style.visibility = projected ? 'visible' : 'hidden'
             if (!projected) return
             rulerElement.setAttribute('viewBox', `0 0 ${width} ${height}`)
@@ -251,16 +254,16 @@ export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, 
             renderer.domElement.remove()
             rulerElement.style.visibility = 'hidden'
         }
-    }, [parts, isSlim, onError])
+    }, [parts, isSlim, modelType, heightCm, onError])
     const selectedLabel = selectedItem ? (selectedItem.label in partLabels
         ? partLabels[selectedItem.label as PrintPartId]
         : !exploded && selectedItem.label === 'leftHipJoint' ? partLabels.shortConnector
         : assemblyLabels.parts[selectedItem.label as keyof typeof assemblyLabels.parts]) : ''
     return <div className="relative h-full">
         <div ref={host} className="absolute inset-0" />
-        <svg ref={ruler} aria-label="7 cm" role="img" className="pointer-events-none absolute inset-0 h-full w-full overflow-hidden text-white/70" style={{ visibility: 'hidden' }}>
+        <svg ref={ruler} aria-label={`${heightCm} cm`} role="img" className="pointer-events-none absolute inset-0 h-full w-full overflow-hidden text-white/70" style={{ visibility: 'hidden' }}>
             <path fill="none" stroke="currentColor" strokeWidth="1" />
-            {Array.from({ length: 8 }, (_, index) => <text key={index} dominantBaseline="middle" fill="currentColor" stroke="#111711" strokeWidth="3" strokeLinejoin="round" paintOrder="stroke" className="text-[10px]">{index === 7 ? '7 cm' : index}</text>)}
+            {Array.from({ length: heightCm + 1 }, (_, index) => <text key={index} dominantBaseline="middle" fill="currentColor" stroke="#111711" strokeWidth="3" strokeLinejoin="round" paintOrder="stroke" className="text-[10px]">{index === heightCm ? `${heightCm} cm` : index}</text>)}
         </svg>
         <div className="absolute top-3 left-24 right-3 flex flex-wrap justify-end gap-2">
             <button type="button" aria-pressed={exploded} onClick={() => toggleExploded.current()} className={`border px-3 py-1.5 text-xs cursor-pointer ${exploded ? 'border-[#84c96b]/50 bg-[#3c8527] text-white' : 'border-white/15 bg-black/50 text-white/70 hover:text-white'}`}>{assemblyLabels.toggle}</button>
@@ -271,7 +274,7 @@ export function FigurePreview({ parts, isSlim, resetLabel, resetPositionsLabel, 
             <div aria-label={assemblyLabels.legend}>
                 <div className="text-[#9bd278]">{assemblyLabels.neck}</div>
                 <div className="text-[#8cbbe8]">{assemblyLabels.hips}</div>
-                <div className="text-[#e9c37b]">{assemblyLabels.tubes.replace('{length}', String(ARM_TUBE_LENGTH_MM))}</div>
+                <div className="text-[#e9c37b]">{modelType === 'cute7' ? assemblyLabels.tubes.replace('{length}', String(ARM_TUBE_LENGTH_MM)) : assemblyLabels.shoulders}</div>
             </div>
             {selectedItem && <div className="mt-1 flex flex-wrap items-center gap-3 border-t border-white/15 pt-1 text-xs" role="status"><span className="text-white/80">{selectedLabel}</span><span className="text-red-400">X</span><span className="text-green-400">Y</span><span className="text-blue-400">Z</span></div>}
         </div>

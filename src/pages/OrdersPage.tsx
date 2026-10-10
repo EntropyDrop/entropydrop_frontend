@@ -5,7 +5,7 @@ import { OrderKitDetails } from './figure/print/KitSpecificationsDetails'
 import type { OrderStickerRecord } from './figure/print/orderSticker'
 import type { KitSpecificationRecord } from './figure/print/kitSpecifications'
 import { groupOrderItems } from './figure/print/orderItems'
-import { FIGURE_MODELS, getFigureModelName } from './figure/print/figureModels'
+import { getOrderPrintModel, FIGURE_MODELS, getFigureModelName } from './figure/print/figureModels'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { lazy, Suspense, useCallback, useState, useEffect } from 'react'
@@ -91,6 +91,7 @@ export function OrdersPage({ current }: OrdersPageProps) {
         isOpen: boolean;
         textureUrl: string | null;
         modelType?: string;
+        modelName?: string;
     }>({
         isOpen: false,
         textureUrl: null
@@ -285,7 +286,7 @@ export function OrdersPage({ current }: OrdersPageProps) {
                 textureUrl={skin3DModalConfig.textureUrl}
                 current={current}
             />}
-            {figurePreview && skin3DModalConfig.isOpen && skin3DModalConfig.textureUrl && <Suspense fallback={null}><FigureOrderPreviewModal key={skin3DModalConfig.textureUrl} textureUrl={skin3DModalConfig.textureUrl} current={current} onClose={closePreview} /></Suspense>}
+            {figurePreview && skin3DModalConfig.isOpen && skin3DModalConfig.textureUrl && <Suspense fallback={null}><FigureOrderPreviewModal key={`${skin3DModalConfig.textureUrl}-${skin3DModalConfig.modelName}`} modelType={getOrderPrintModel(skin3DModalConfig.modelName)} textureUrl={skin3DModalConfig.textureUrl} current={current} onClose={closePreview} /></Suspense>}
 
                 {/* Header */}
                 <div className="flex justify-between items-end border-b border-white/10 pb-4 shrink-0">
@@ -362,7 +363,7 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                                         <div className="flex gap-2 items-center">
                                                         {item.skin_url && (
                                                             <button type="button" aria-label={current.orders.preview}
-                                                                onClick={() => setSkin3DModalConfig({ isOpen: true, textureUrl: item.skin_url!, modelType: item.model_type })}
+                                                                onClick={() => setSkin3DModalConfig({ isOpen: true, textureUrl: item.skin_url!, modelType: item.model_type, modelName: item.sticker_snapshot?.model_name || item.kit_specifications_snapshot?.product_name })}
                                                                 className="cursor-pointer shrink-0 w-14 h-14"
                                                             >
                                                                 <Skin2DImg src={item.skin_url} className="w-14 h-14 object-cover bg-black/40 border border-white/5 shrink-0" />

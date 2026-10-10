@@ -6,8 +6,8 @@ import { CUT_TOKEN, CUTTER_COLORS } from './tokens.js';
 
 /** Construct the same millimetre sockets that are punched into the print masks. */
 export function assemblyCutters(partIndex: number, center: Vec3, opts: BuildOptions): Array<CutterWithToken & { label: string; color: string }> {
-  const settings = normalizeAssemblySettings(opts.assemblySettings, !!opts.cuteMode);
-  return assemblySockets(partIndex, settings, !!opts.isAlex, !!opts.cuteMode).map(socket => {
+  const settings = normalizeAssemblySettings(opts.assemblySettings, !!opts.cuteMode, opts.modelScale);
+  return assemblySockets(partIndex, settings, !!opts.isAlex, !!opts.cuteMode, opts.modelScale).map(socket => {
     const geometry = new THREE.CylinderGeometry(socket.radius, socket.radius, socket.length, 96);
     const rotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...socket.normal));
     geometry.applyQuaternion(rotation);

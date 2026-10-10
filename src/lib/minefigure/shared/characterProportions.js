@@ -3,6 +3,12 @@ export const CUTE_HEIGHT = 8;
 export const CUTE_SCALE = 0.85;
 export const CUTE_TAPER = 0.3;
 export const CUTE_ARM_TILT = Math.atan(8 * CUTE_TAPER / (2 * CUTE_HEIGHT));
+export const MODEL_TYPES = ['standard', 'cute7', 'cute10'];
+
+export function getModelProfile(modelType = 'standard') {
+  if (!MODEL_TYPES.includes(modelType)) throw new Error(`未知 model type：${modelType}`);
+  return { cuteMode: modelType !== 'standard', modelScale: modelType === 'cute10' ? 1.5 : 1 };
+}
 
 export function cuteTorsoWidthFactor(t) {
   return 1 - CUTE_TAPER * Math.max(0, Math.min(1, t));

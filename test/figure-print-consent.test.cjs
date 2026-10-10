@@ -75,7 +75,7 @@ async function withPage(options, check) {
             if (name.endsWith('/print/FigurePreview')) return { FigurePreview: () => React.createElement('div', null, 'preview') };
             if (name.endsWith('/print/FigureCommissionDialog')) return { FigureCommissionDialog: ({ source, model }) => React.createElement('aside', { 'data-source-id': source.id, 'data-model-id': model.id }, 'commission') };
             if (name.endsWith('/print/figureEngine')) return {
-                generateFigure: (_image, _signal, _progress, info) => { generatedInfo.push(info); return generation.promise.then(() => ({ parts: ids.map(id => ({ id })), stickerUrl: 'blob:sticker', cutterUrl: 'blob:cutter' })); },
+                generateFigure: (_image, _signal, _progress, info, options) => { generatedInfo.push({ ...info, generatedModelType: options?.modelType }); return generation.promise.then(() => ({ parts: ids.map(id => ({ id })), stickerUrl: 'blob:sticker', cutterUrl: 'blob:cutter' })); },
                 generateFullFigureAssets: async output => ({ stickerUrl: output.fullStickerUrl || output.stickerUrl, cutterUrl: output.fullCutterUrl || output.cutterUrl }),
                 disposeFigure() {}, exportPartStl: part => part,
             };
@@ -135,13 +135,14 @@ for (const lang of ['zh', 'en']) {
             assert.equal(env.generatedInfo[0].sourceUrl, 'https://entropydrop.com/skin/?id=skin123');
             assert.equal(env.generatedInfo[0].publisher, source.publisher);
             assert.equal(env.generatedInfo[0].publisherId, source.publisherId);
+            assert.equal(env.generatedInfo[0].generatedModelType, 'cute10');
             await env.click(env.button(env.current.figurePrint.commission));
             assert.equal(env.node.querySelector('aside').dataset.sourceId, source.id);
-            assert.equal(env.node.querySelector('aside').dataset.modelId, 'cute');
+            assert.equal(env.node.querySelector('aside').dataset.modelId, 'cute10');
             const models = env.node.querySelector('select');
             assert.equal(models.getAttribute('aria-label'), env.current.figurePrint.modelType);
-            assert.equal(models.value, 'cute');
-            assert.deepEqual(Array.from(models.options).map(option => option.textContent), ['CUTE-7cm']);
+            assert.equal(models.value, 'cute10');
+            assert.deepEqual(Array.from(models.options).map(option => option.textContent), ['CUTE-10cm']);
             assert.ok(env.requests.every(request => request.url.includes('/model-stock')), 'opening commissioning must not accept the download terms');
         });
     });
@@ -260,7 +261,7 @@ test('production reloads the saved order image and exact sticker text even with 
         await env.finish();
         assert.deepEqual(env.imageRequests, [productionSource.skin_url]);
         assert.deepEqual(JSON.parse(JSON.stringify(env.generatedInfo[0])), {
-            brand: savedSticker.brand, modelName: savedSticker.model_name,
+            generatedModelType: 'cute10', brand: savedSticker.brand, modelName: savedSticker.model_name,
             name: savedSticker.skin_name, publisher: savedSticker.publisher_name, publisherId: savedSticker.publisher_id,
             sourceId: savedSticker.skin_id, sourceUrl: savedSticker.source_url,
             labels: { publisher: 'Published by', userId: 'User ID', source: 'Skin' },
@@ -317,5 +318,16 @@ for (const [reason, server] of [
 ]) test(`order button never invents a price on ${reason}`, async () => {
     await withPage({ server }, async env => {
         assert.equal(env.button(env.current.figurePrint.commission).textContent, env.current.figurePrint.commission);
+    });
+});
+
+
+test('production retains cute7 geometry and filenames for a historical kit', async () => {
+    const historical = { ...productionSource, sticker_snapshot: { ...savedSticker, model_name: 'CUTE-7cm' } };
+    await withPage({ search: '?order=order-a&item=kit-a', server: { production: historical } }, async env => {
+        await env.finish();
+        assert.equal(env.generatedInfo[0].generatedModelType, 'cute7');
+        assert.equal(env.node.querySelector('select').value, 'cute7');
+        assert.equal(env.node.querySelector('select').selectedOptions[0].textContent, 'CUTE-7cm');
     });
 });

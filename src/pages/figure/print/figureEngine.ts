@@ -1,3 +1,4 @@
+import { DEFAULT_PRINT_MODEL, getPrintModelProfile, type PrintModelType } from './figureModels'
 import * as THREE from 'three'
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js'
 import { buildFigure } from '../../../lib/minefigure/web_model/src/mcModel/figure'
@@ -14,6 +15,7 @@ export const PRINT_PARTS = ['head', 'torso', 'leftArm', 'rightArm', 'leftLeg', '
 export type PrintPartId = typeof PRINT_PARTS[number]
 export interface FigureOutput {
     parts: FigurePart[]
+    modelType?: PrintModelType
     isSlim: boolean
     stickerUrl: string
     cutterUrl: string
@@ -49,26 +51,28 @@ function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 
 // Serialize builds across route changes as both WASM and the guide renderer are shared.
 let queue: Promise<unknown> = Promise.resolve()
-export function generateFigure(source: HTMLImageElement, signal: AbortSignal, onProgress: (progress: number) => void, info?: StickerInfo, options?: { fullRes?: boolean }): Promise<FigureOutput> {
+export function generateFigure(source: HTMLImageElement, signal: AbortSignal, onProgress: (progress: number) => void, info?: StickerInfo, options?: { fullRes?: boolean; modelType?: PrintModelType }): Promise<FigureOutput> {
     const job = queue.catch(() => {}).then(async () => {
         signal.throwIfAborted()
         await loadStickerFont(info)
         signal.throwIfAborted()
         const skin = processSkin(source, 0.5)
         resolveVoxelConsistency(skin)
-        const assemblySettings = validateStickerAssemblySettings(normalizeAssemblySettings({}, true), skin.isSlim, true)
+        const modelType = options?.modelType ?? DEFAULT_PRINT_MODEL
+        const { modelScale } = getPrintModelProfile(modelType)
+        const assemblySettings = validateStickerAssemblySettings(normalizeAssemblySettings({}, true, modelScale), skin.isSlim, true, modelScale)
         let parts: FigurePart[] = []
         const urls: string[] = []
         try {
             const isFull = !!options?.fullRes
             const model = await buildFigure(Float32Array.from(skin.data, channel => channel / 255), skin.width, {
                 parts: Object.fromEntries(PRINT_PARTS.map(id => [id, true])),
-                decor: true, cuteMode: true, isAlex: skin.isSlim, fillTransparentBase: false, assemblySettings,
+                decor: true, cuteMode: true, modelScale, isAlex: skin.isSlim, fillTransparentBase: false, assemblySettings,
             }, (_message, done, total) => { if (!signal.aborted) onProgress(Math.round(done / total * (isFull ? 65 : 75))) })
             parts = model.results
             signal.throwIfAborted()
 
-            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, assemblySettings, preview: !isFull }, percent => {
+            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, modelScale, assemblySettings, preview: !isFull }, percent => {
                 if (!signal.aborted) onProgress(isFull ? (65 + Math.round(percent * 0.3)) : (75 + Math.round(percent * 0.2)))
             })
             const page = pages[0]
@@ -88,6 +92,7 @@ export function generateFigure(source: HTMLImageElement, signal: AbortSignal, on
                 onProgress(100)
                 return {
                     parts,
+                    modelType,
                     isSlim: skin.isSlim,
                     stickerUrl,
                     cutterUrl,
@@ -100,7 +105,7 @@ export function generateFigure(source: HTMLImageElement, signal: AbortSignal, on
                 }
             } finally {
                 for (const p of pages) {
-                    for (const canvas of [p.pageCanvas, p.cutterCanvas, ...p.cutterLayers].filter(Boolean)) canvas.width = canvas.height = 1
+                    for (const canvas of [p.pageCanvas, p.cutterCanvas, ...p.cutterLayers]) if (canvas) canvas.width = canvas.height = 1
                 }
             }
         } catch (error) {
@@ -129,11 +134,12 @@ export function generateFullFigureAssets(output: FigureOutput, signal: AbortSign
         signal.throwIfAborted()
         const skin = processSkin(source, 0.5)
         resolveVoxelConsistency(skin)
-        const assemblySettings = validateStickerAssemblySettings(normalizeAssemblySettings({}, true), skin.isSlim, true)
+        const { modelScale } = getPrintModelProfile(output.modelType)
+        const assemblySettings = validateStickerAssemblySettings(normalizeAssemblySettings({}, true, modelScale), skin.isSlim, true, modelScale)
         const urls: string[] = []
         try {
             onProgress(10)
-            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, assemblySettings, preview: false }, percent => {
+            const pages = await composeMergedPages(skin, { alphaThreshold: 0.5, cuteMode: true, modelScale, assemblySettings, preview: false }, percent => {
                 if (!signal.aborted) onProgress(10 + Math.round(percent * 0.6))
             })
             const page = pages[0]
@@ -158,7 +164,7 @@ export function generateFullFigureAssets(output: FigureOutput, signal: AbortSign
                 return { stickerUrl, cutterUrl }
             } finally {
                 for (const p of pages) {
-                    for (const canvas of [p.pageCanvas, p.cutterCanvas, ...p.cutterLayers].filter(Boolean)) canvas.width = canvas.height = 1
+                    for (const canvas of [p.pageCanvas, p.cutterCanvas, ...p.cutterLayers]) if (canvas) canvas.width = canvas.height = 1
                 }
             }
         } catch (error) {

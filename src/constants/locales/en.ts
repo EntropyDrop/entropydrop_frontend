@@ -164,10 +164,13 @@ export default {
             legend: 'Assembly connections',
             neck: 'Long joint ×1 · Head ↔ Torso',
             hips: 'Short joint ×2 · Torso ↔ Legs',
+            shoulders: 'Short joint ×2 · Torso ↔ Arms',
             tubes: 'PTFE tubes ×2 · Arms ↔ Torso · Length {length} mm · Ø4 mm · Non-printed',
             parts: {
                 leftHipJoint: 'Left leg · Short joint',
                 rightHipJoint: 'Right leg · Short joint',
+                leftShoulderJoint: 'Left arm · Short joint',
+                rightShoulderJoint: 'Right arm · Short joint',
                 leftTube: 'Left arm · PTFE tube (non-printed)',
                 rightTube: 'Right arm · PTFE tube (non-printed)',
             },

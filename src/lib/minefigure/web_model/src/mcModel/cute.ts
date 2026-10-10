@@ -20,14 +20,15 @@ export function resampleCutePixels(pixels: Float32Array, width: number): void {
 }
 
 /** Shape local solids before CSG so socket cylinders retain circular sections. */
-export function shapeCuteGeometry(geometry: THREE.BufferGeometry, torso = false, decor = false): void {
+export function shapeCuteGeometry(geometry: THREE.BufferGeometry, torso = false, decor = false, modelScale = 1): void {
   const positions = geometry.getAttribute('position');
   const height = CUTE_HEIGHT + (decor ? 0.5 : 0);
   for (let i = 0; i < positions.count; i++) {
     const z = positions.getZ(i);
     const t = Math.max(0, Math.min(1, (z + height / 2) / height));
-    positions.setY(i, positions.getY(i) * CUTE_SCALE * (torso ? cuteTorsoWidthFactor(t) : 1));
-    positions.setZ(i, z * CUTE_SCALE);
+    positions.setX(i, positions.getX(i) * modelScale);
+    positions.setY(i, positions.getY(i) * CUTE_SCALE * (torso ? cuteTorsoWidthFactor(t) : 1) * modelScale);
+    positions.setZ(i, z * CUTE_SCALE * modelScale);
   }
   positions.needsUpdate = true;
   geometry.computeVertexNormals();
@@ -35,10 +36,10 @@ export function shapeCuteGeometry(geometry: THREE.BufferGeometry, torso = false,
   geometry.computeBoundingSphere();
 }
 
-export function cuteModelPose(partIndex: number, isAlex: boolean): { position: Vec3; rotationX: number } {
+export function cuteModelPose(partIndex: number, isAlex: boolean, modelScale = 1): { position: Vec3; rotationX: number } {
   const pose = getCutePartPose(partIndex, isAlex);
   return {
-    position: [pose.position[2], pose.position[0], pose.position[1] + CUTE_ORIGIN_Z],
+    position: [pose.position[2] * modelScale, pose.position[0] * modelScale, pose.position[1] * modelScale + CUTE_ORIGIN_Z],
     rotationX: pose.rotationZ,
   };
 }
@@ -58,8 +59,8 @@ export function cuteShoulderAnchor(isLeft: boolean, isAlex: boolean): { center: 
 }
 
 /** Bake assembly poses into both preview and export meshes, including cutters. */
-export function placeCuteParts(parts: FigurePart[], partIndex: number, isAlex: boolean): void {
-  const { position, rotationX } = cuteModelPose(partIndex, isAlex);
+export function placeCuteParts(parts: FigurePart[], partIndex: number, isAlex: boolean, modelScale = 1): void {
+  const { position, rotationX } = cuteModelPose(partIndex, isAlex, modelScale);
   const geometries = new Set<THREE.BufferGeometry>();
   for (const part of parts) {
     part.printUp = [0, -Math.sin(rotationX), Math.cos(rotationX)];

@@ -58,7 +58,7 @@ async function fixture(check, options = {}) {
             } };
             if (name.endsWith('/components/Skin2DImg')) return { Skin2DImg: ({ src }) => React.createElement('img', { src }) };
             if (name.endsWith('/components/Skin3DModal')) return { Skin3DModal: ({ isOpen, textureUrl }) => isOpen ? React.createElement('div', { 'data-preview': 'legacy' }, textureUrl) : null };
-            if (name.endsWith('/print/FigureOrderPreviewModal')) return { FigureOrderPreviewModal: ({ textureUrl, onClose }) => React.createElement('div', { 'data-preview': 'figure' }, textureUrl, React.createElement('button', { onClick: onClose }, 'Close preview')) };
+            if (name.endsWith('/print/FigureOrderPreviewModal')) return { FigureOrderPreviewModal: ({ textureUrl, modelType, onClose }) => React.createElement('div', { 'data-preview': 'figure', 'data-model': modelType }, textureUrl, React.createElement('button', { onClick: onClose }, 'Close preview')) };
             if (name === 'react-router-dom') return { useNavigate: () => navigate, useSearchParams: () => [new URLSearchParams()], Link: ({ to, children, ...props }) => React.createElement('a', { href: to, ...props }, children) };
             return require(name);
         },
@@ -227,6 +227,7 @@ test('Cute orders open the print preview from the saved snapshot; older models r
     await e.click(document.querySelectorAll('[aria-label="Preview model"]')[0]);
     assert.ok(document.querySelector('[data-preview="figure"]').textContent.includes('/snapshot-0.png'));
     assert.equal(document.querySelector('[data-preview="legacy"]'), null);
+    assert.equal(document.querySelector('[data-preview="figure"]').dataset.model, 'cute10');
     await e.click(e.button('Close preview'));
     await e.click(document.querySelectorAll('[aria-label="Preview model"]')[1]);
     assert.ok(document.querySelector('[data-preview="legacy"]').textContent.includes('/legacy.png'));
@@ -242,7 +243,8 @@ test('order kit details display purchased dimensions and materials per kit', asy
     assert.ok(detail.textContent.includes(kitSpecifications.dimensions));
     assert.ok(detail.textContent.includes('skin-a'));
     assert.ok(detail.textContent.includes('White 3D printed body parts ×6'));
-    assert.ok(detail.textContent.includes('PTFE tube ×2'));
+    assert.ok(detail.textContent.includes('Short joint ×4'));
+    assert.equal(detail.textContent.includes('PTFE'), false);
     assert.equal(detail.textContent.includes(e.en.orders.currentKitSpecifications), false);
 }));
 

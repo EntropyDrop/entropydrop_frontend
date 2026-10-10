@@ -48,6 +48,7 @@ export interface BuildOptions {
   headOnly?: boolean;
   isAlex?: boolean;
   cuteMode?: boolean;
+  modelScale?: number;
   /** Fill missing base texels from neighbours; false leaves an untextured white surface. */
   fillTransparentBase?: boolean;
   assemblySettings?: AssemblySettings;

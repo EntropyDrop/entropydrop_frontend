@@ -164,10 +164,13 @@ export default {
             legend: '装配连接关系',
             neck: '长连接件 ×1 · 头部 ↔ 躯干',
             hips: '短连接件 ×2 · 躯干 ↔ 双腿',
+            shoulders: '短连接件 ×2 · 躯干 ↔ 双臂',
             tubes: 'PTFE 管 ×2 · 双臂 ↔ 躯干 · 长 {length} mm · 外径 4 mm · 非打印',
             parts: {
                 leftHipJoint: '左腿 · 短连接件',
                 rightHipJoint: '右腿 · 短连接件',
+                leftShoulderJoint: '左臂 · 短连接件',
+                rightShoulderJoint: '右臂 · 短连接件',
                 leftTube: '左臂 · 特氟龙管（非打印）',
                 rightTube: '右臂 · 特氟龙管（非打印）',
             },

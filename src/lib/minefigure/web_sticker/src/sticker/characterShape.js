@@ -1,5 +1,6 @@
 /** Cute proportions from entropydrop_frontend/src/components/MC.tsx. */
 import { createCanvas } from './skinHelper.js';
+import { resizeCanvasNearest } from './rasterTransform.js';
 import { CUTE_HEIGHT, CUTE_SCALE, CUTE_TAPER, cuteSourceRow, cuteTorsoWidthFactor } from '../../../shared/characterProportions.js';
 export { CUTE_HEIGHT, CUTE_SCALE, CUTE_TAPER, CUTE_ARM_TILT, cuteSourceRow, getCutePartPose } from '../../../shared/characterProportions.js';
 
@@ -52,8 +53,8 @@ export function taperCuteTorso(geometry) {
 }
 
 /** Unfold the tapered torso into flat faces, preserving the length of each seam. */
-export function transformCuteSticker(canvas, partIndex, faceIndex) {
-  if (partIndex === 0) return canvas;
+export function transformCuteSticker(canvas, partIndex, faceIndex, modelScale = 1) {
+  if (partIndex === 0) return modelScale === 1 ? canvas : resizeCanvasNearest(canvas, Math.floor(canvas.width * modelScale), Math.floor(canvas.height * modelScale));
   const isTorso = partIndex === 1;
   const isVertical = faceIndex >= 2;
   const isSide = faceIndex >= 4;
@@ -62,8 +63,8 @@ export function transformCuteSticker(canvas, partIndex, faceIndex) {
   const heightScale = isVertical
     ? CUTE_SCALE * (isTorso && isSide ? Math.hypot(1, 8 * CUTE_TAPER / (2 * CUTE_HEIGHT)) : 1)
     : 1;
-  const width = Math.max(1, Math.floor(canvas.width * widthScale));
-  const height = Math.max(1, Math.floor(canvas.height * heightScale));
+  const width = Math.max(1, Math.floor(Math.floor(canvas.width * widthScale) * modelScale));
+  const height = Math.max(1, Math.floor(Math.floor(canvas.height * heightScale) * modelScale));
   const out = createCanvas(width, height);
   const source = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
   const ctx = out.getContext('2d');

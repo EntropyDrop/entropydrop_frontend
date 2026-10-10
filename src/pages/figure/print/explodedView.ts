@@ -3,8 +3,9 @@ import { assemblySockets, MODEL_MM_PER_UNIT, normalizeAssemblySettings, type Hol
 import { cuteModelPose } from '../../../lib/minefigure/web_model/src/mcModel/cute'
 import type { FigurePart, PrintPartId } from './figureEngine'
 import { createPreviewPart } from './previewParts'
+import { DEFAULT_PRINT_MODEL, getPrintModelProfile, type PrintModelType } from './figureModels'
 
-export type AssemblyLabel = PrintPartId | 'leftHipJoint' | 'rightHipJoint' | 'leftTube' | 'rightTube'
+export type AssemblyLabel = PrintPartId | 'leftHipJoint' | 'rightHipJoint' | 'leftShoulderJoint' | 'rightShoulderJoint' | 'leftTube' | 'rightTube'
 export interface AssemblyItem {
     key: string
     label: AssemblyLabel
@@ -30,7 +31,7 @@ function socketPosition(socket: Socket, exploded: boolean) {
 }
 
 /** Separate preview instances own their poses/materials, never the exported STL geometry. */
-export function createAssemblyPreview(parts: FigurePart[], isSlim: boolean) {
+export function createAssemblyPreview(parts: FigurePart[], isSlim: boolean, modelType: PrintModelType = DEFAULT_PRINT_MODEL) {
     const items: AssemblyItem[] = parts.map(part => {
         const preview = createPreviewPart(part)
         return { key: part.id, label: part.id as PrintPartId, pivot: preview.pivot, meshes: preview.meshes,
@@ -38,15 +39,16 @@ export function createAssemblyPreview(parts: FigurePart[], isSlim: boolean) {
             explodedRotation: new THREE.Quaternion(), explodedOnly: false }
     })
     const byId = new Map(items.map(item => [item.key, item]))
-    const settings = normalizeAssemblySettings({}, true)
+    const { modelScale } = getPrintModelProfile(modelType)
+    const settings = normalizeAssemblySettings({}, true, modelScale)
     const sockets = new Map<HoleId, Socket>()
     for (const [id, index] of Object.entries(PART_INDICES)) {
         const item = byId.get(id)
         const part = parts.find(part => part.id === id)
         if (!item || !part) continue
-        const pose = cuteModelPose(index, isSlim)
+        const pose = cuteModelPose(index, isSlim, modelScale)
         const rotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pose.rotationX)
-        for (const socket of assemblySockets(index, settings, isSlim, true)) {
+        for (const socket of assemblySockets(index, settings, isSlim, true, modelScale)) {
             const depth = settings.holeDepths[socket.id] / MODEL_MM_PER_UNIT
             const normal = new THREE.Vector3(...socket.normal)
             const surface = new THREE.Vector3(...socket.center).addScaledVector(normal, depth - socket.length / 2)
@@ -54,24 +56,29 @@ export function createAssemblyPreview(parts: FigurePart[], isSlim: boolean) {
             sockets.set(socket.id, { item, anchor: surface.sub(item.assembled), normal: normal.applyQuaternion(rotation) })
         }
     }
-    byId.get('head')?.exploded.add(new THREE.Vector3(0, 0, 9))
-    byId.get('leftLeg')?.exploded.add(new THREE.Vector3(0, 2, -8))
-    byId.get('rightLeg')?.exploded.add(new THREE.Vector3(0, -2, -8))
+    byId.get('head')?.exploded.add(new THREE.Vector3(0, 0, 9 * modelScale))
+    byId.get('leftLeg')?.exploded.add(new THREE.Vector3(0, 2 * modelScale, -8 * modelScale))
+    byId.get('rightLeg')?.exploded.add(new THREE.Vector3(0, -2 * modelScale, -8 * modelScale))
     for (const [id, hole] of [['leftArm', 'torsoLeftArm'], ['rightArm', 'torsoRightArm']] as const) {
         const normal = sockets.get(hole)?.normal
-        if (normal) byId.get(id)?.exploded.addScaledVector(normal, 8)
+        if (normal) byId.get(id)?.exploded.addScaledVector(normal, 8 * modelScale)
     }
 
-    // A single short-joint STL is printed twice, once for each hip.
+    // Reuse one printable short-joint geometry for hips and cute10 shoulders.
     const shortPart = parts.find(part => part.id === 'shortConnector')
     const leftJoint = byId.get('shortConnector')
     if (shortPart && leftJoint) {
         leftJoint.label = 'leftHipJoint'
-        const preview = createPreviewPart(shortPart)
-        const rightJoint: AssemblyItem = { key: 'rightHipJoint', label: 'rightHipJoint', pivot: preview.pivot, meshes: preview.meshes,
-            assembled: preview.initialPosition, exploded: preview.initialPosition.clone(), explodedRotation: new THREE.Quaternion(), explodedOnly: true }
-        items.push(rightJoint)
-        byId.set(rightJoint.key, rightJoint)
+        const extraJoints = modelType === 'cute10'
+            ? ['rightHipJoint', 'leftShoulderJoint', 'rightShoulderJoint'] as const
+            : ['rightHipJoint'] as const
+        for (const key of extraJoints) {
+            const preview = createPreviewPart(shortPart)
+            const joint: AssemblyItem = { key, label: key, pivot: preview.pivot, meshes: preview.meshes,
+                assembled: preview.initialPosition, exploded: preview.initialPosition.clone(), explodedRotation: new THREE.Quaternion(), explodedOnly: true }
+            items.push(joint)
+            byId.set(key, joint)
+        }
     }
     const ownedGeometries: THREE.BufferGeometry[] = []
     const connections: { from: Socket; to: Socket; item: AssemblyItem; color: string }[] = []
@@ -87,7 +94,10 @@ export function createAssemblyPreview(parts: FigurePart[], isSlim: boolean) {
     connect('torsoLeftLeg', 'leftLeg', 'shortConnector', '#8cbbe8')
     connect('torsoRightLeg', 'rightLeg', 'rightHipJoint', '#8cbbe8')
 
-    for (const [fromId, toId, key] of [['torsoLeftArm', 'leftArm', 'leftTube'], ['torsoRightArm', 'rightArm', 'rightTube']] as const) {
+    if (modelType === 'cute10') {
+        connect('torsoLeftArm', 'leftArm', 'leftShoulderJoint', '#e9c37b')
+        connect('torsoRightArm', 'rightArm', 'rightShoulderJoint', '#e9c37b')
+    } else for (const [fromId, toId, key] of [['torsoLeftArm', 'leftArm', 'leftTube'], ['torsoRightArm', 'rightArm', 'rightTube']] as const) {
         const from = sockets.get(fromId), to = sockets.get(toId)
         if (!from || !to) continue
         // Purchased tubes keep their specified dimensions in either preview pose.

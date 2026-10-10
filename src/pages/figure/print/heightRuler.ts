@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { MODEL_MM_PER_UNIT } from '../../../lib/minefigure/shared/assemblySettings.js'
 
-/** Project a fixed 70 mm reference into the preview, using the STL export scale. */
-export function projectHeightRuler(bounds: THREE.Box3, baseY: number, camera: THREE.PerspectiveCamera, width: number, height: number) {
+/** Project a model-height reference into the preview, using the STL export scale. */
+export function projectHeightRuler(bounds: THREE.Box3, baseY: number, camera: THREE.PerspectiveCamera, width: number, height: number, heightCm = 10) {
     if (bounds.isEmpty() || width <= 0 || height <= 0) return null
     camera.updateMatrixWorld()
     const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0)
@@ -13,7 +13,7 @@ export function projectHeightRuler(bounds: THREE.Box3, baseY: number, camera: TH
     const offset = (Math.abs(right.x) * size.x + Math.abs(right.z) * size.z) / 2 + 2
     const base = bounds.getCenter(new THREE.Vector3()).addScaledVector(right, offset)
     base.y = baseY
-    const ticks = Array.from({ length: 15 }, (_, index) => {
+    const ticks = Array.from({ length: heightCm * 2 + 1 }, (_, index) => {
         const point = base.clone().add(new THREE.Vector3(0, index * 5 / MODEL_MM_PER_UNIT, 0)).project(camera)
         return { x: (point.x + 1) * width / 2, y: (1 - point.y) * height / 2, z: point.z, major: index % 2 === 0 }
     })

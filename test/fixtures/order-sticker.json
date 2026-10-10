@@ -2,12 +2,16 @@
   "schema_version": 1,
   "origin": "order",
   "brand": "EntropyDrop",
-  "model_name": "CUTE-7cm",
+  "model_name": "CUTE-10cm",
   "skin_id": "saved-skin",
   "skin_name": "Original skin name",
   "publisher_id": "saved-maker",
   "publisher_name": "Original maker name",
   "source_url": "https://entropydrop.com/skin/?id=saved-skin",
-  "labels": { "publisher": "Published by", "user_id": "User ID", "source": "Skin" },
+  "labels": {
+    "publisher": "Published by",
+    "user_id": "User ID",
+    "source": "Skin"
+  },
   "missing_fields": []
 }

@@ -4,6 +4,7 @@
  */
 
 import { createCanvas } from './skinHelper.js';
+import { resizeCanvasNearest } from './rasterTransform.js';
 import { CUTE_HEIGHT, cuteSourceRow, transformCuteSticker } from './characterShape.js';
 import { normalizeAssemblySettings, punchAssemblyHoles } from './assemblySettings.js';
 import { PART_PIXELS_PER_UNIT } from '../../../shared/assemblySettings.js';
@@ -176,8 +177,8 @@ export function splitLimb(pgCtx, tmp, offset, dilateTimes, bgColor = [0, 0, 0, 0
  * @param {number} [alphaThreshold=0.5]
  * @returns {Record<string, HTMLCanvasElement>} Map of 'partIdx/faceIdx/layerName' -> Canvas
  */
-export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, assemblySettings: inputSettings } = {}) {
-  const assemblySettings = normalizeAssemblySettings(inputSettings, cuteMode);
+export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, modelScale = 1, assemblySettings: inputSettings } = {}) {
+  const assemblySettings = normalizeAssemblySettings(inputSettings, cuteMode, modelScale);
   const isSlim = skin.isSlim;
   const threshVal = (alphaThreshold !== null && alphaThreshold !== undefined)
     ? (alphaThreshold <= 1.0 ? alphaThreshold * 255 : Number(alphaThreshold))
@@ -388,11 +389,9 @@ export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, as
         }
         sCtx.putImageData(sImgData, 0, 0);
 
-        // Scale up to output_size with nearest-neighbor (BOX)
-        const sliceOut = createCanvas(outW, outH);
+        // Use the same explicit pixel sampling in every browser.
+        const sliceOut = resizeCanvasNearest(sliceSmall, outW, outH);
         const outCtx = sliceOut.getContext('2d', { willReadFrequently: true });
-        outCtx.imageSmoothingEnabled = false;
-        outCtx.drawImage(sliceSmall, 0, 0, outW, outH);
 
         // Carve out center hollow box for inner layers (dz != 0)
         if (dz !== 0) {
@@ -412,9 +411,6 @@ export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, as
       // Crop core from base skin
       const coreW = size[0] * OUTPUT_SCALE;
       const coreH = size[1] * OUTPUT_SCALE;
-      const coreCanvas = createCanvas(coreW, coreH);
-      const coreCtx = coreCanvas.getContext('2d', { willReadFrequently: true });
-      coreCtx.imageSmoothingEnabled = false;
 
       // Extract base face pixels
       const baseSmall = createCanvas(size[0], size[1]);
@@ -446,7 +442,8 @@ export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, as
         baseCtx.putImageData(flipped, 0, 0);
       }
 
-      coreCtx.drawImage(baseSmall, 0, 0, coreW, coreH);
+      const coreCanvas = resizeCanvasNearest(baseSmall, coreW, coreH);
+      const coreCtx = coreCanvas.getContext('2d', { willReadFrequently: true });
 
       // Mask core against slice 0 alpha
       const slice0 = partsData[`${partIdx}/${faceIdx}/0`];
@@ -496,7 +493,7 @@ export function generateParts(skin, alphaThreshold = 0.5, { cuteMode = false, as
   if (cuteMode) {
     for (const [key, canvas] of Object.entries(partsData)) {
       const [partIndex, faceIndex] = key.split('/').map(Number);
-      partsData[key] = transformCuteSticker(canvas, partIndex, faceIndex);
+      partsData[key] = transformCuteSticker(canvas, partIndex, faceIndex, modelScale);
     }
   }
   // Punch after resizing: standard and Cute faces use the same millimetres.
