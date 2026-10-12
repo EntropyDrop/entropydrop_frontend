@@ -3,6 +3,24 @@ import { FIGURE_PRINT_TERMS } from '../figurePrintTerms'
 
 export default {
     figureManagement: {
+        "ordersTab": "Order management",
+        "models": {
+                "title": "Model settings",
+                "hint": "Set available stock and unit price for each model type. Stock excludes units already reserved for payment; 0 stops new purchases. Prices are in USD and apply to new orders. Refresh discards unsaved edits.",
+                "loading": "Loading model settings…",
+                "empty": "No figure models are configured.",
+                "loadFailed": "Could not load model settings. Please retry.",
+                "modelType": "Model type",
+                "stock": "Available stock",
+                "price": "Unit price (USD)",
+                "save": "Save",
+                "reset": "Reset",
+                "saved": "Model settings saved.",
+                "invalidStock": "Enter a whole stock quantity from 0 to 2,147,483,647.",
+                "invalidPrice": "Enter a price from $0.01 to $999,999.99, with at most two decimal places.",
+                "conflict": "Stock or price has changed. Refresh to load the latest values before editing again.",
+                "saveFailed": "The update could not be confirmed. Refresh to check the latest values before trying again."
+        },
         "title": "Figure management",
         "subtitle": "Review paid orders before production. Rejection refunds the entire order, including every kit.",
         "restricted": "Administrator access is required.",

@@ -3,6 +3,24 @@ import { FIGURE_PRINT_TERMS } from '../figurePrintTerms'
 
 export default {
     figureManagement: {
+        "ordersTab": "订单管理",
+        "models": {
+                "title": "型号设置",
+                "hint": "按 model type 设置可售库存和单价。库存不包含已为支付预留的数量，设为 0 后停止新购买。价格以美元计价，仅用于新建订单。刷新会丢弃未保存的修改。",
+                "loading": "正在加载型号设置…",
+                "empty": "尚未配置手办型号。",
+                "loadFailed": "无法加载型号设置，请重试。",
+                "modelType": "型号（model type）",
+                "stock": "可售库存",
+                "price": "单价（美元）",
+                "save": "保存",
+                "reset": "重置",
+                "saved": "型号设置已保存。",
+                "invalidStock": "请输入 0 至 2,147,483,647 之间的整数库存。",
+                "invalidPrice": "请输入 $0.01 至 $999,999.99 之间的价格，最多保留两位小数。",
+                "conflict": "库存或价格已发生变化，请刷新获取最新数值后重新修改。",
+                "saveFailed": "无法确认修改是否已保存，请刷新检查最新数值后重试。"
+        },
         "title": "手办管理",
         "subtitle": "付款后人工审核，通过后才会生产。拒绝将退回整笔订单的款项，包含该订单内全部套件。",
         "restricted": "此页面仅管理员可访问。",

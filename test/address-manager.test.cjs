@@ -76,7 +76,9 @@ for (const lang of ['en', 'zh']) test(`${lang}: country or region selection supp
     await e.click(e.countryInput());
     assert.equal(document.querySelectorAll('[role="option"]').length, 252);
     await e.key('Escape');
-    assert.equal(e.field('phone_prefix').value, '+86');
+    assert.equal(e.field('country').value, 'US');
+    assert.equal(e.countryInput().value, lang === 'en' ? 'United States' : '美国');
+    assert.equal(e.field('phone_prefix').value, '+1');
     await e.fill('phone', '5550100');
     for (const [country, prefix] of [['HK', '+852'], ['MO', '+853'], ['TW', '+886'], ['IN', '+91'], ['AE', '+971'], ['BS', '+1'], ['US', '+1'], ['CA', '+1'], ['XK', '+383'], ['VA', '+39'], ['BQ', '+599'], ['CW', '+599'], ['SJ', '+47']]) {
         await e.fill('country', country);
@@ -226,7 +228,7 @@ for (const lang of ['en', 'zh']) test(`${lang}: countries filter by English, Chi
     for (const [query, codes] of [['united states', ['US']], ['美国', ['UM', 'US']], [' hk ', ['HK']], ['aland islands', ['AX']]]) {
         await e.filterCountry(query);
         assert.deepEqual([...document.querySelectorAll('[role="option"]')].map(option => option.dataset.countryCode), codes);
-        assert.equal(e.field('country').value, 'CN', 'filtering alone must not change the saved country');
+        assert.equal(e.field('country').value, 'US', 'filtering alone must not change the saved country');
     }
     await e.filterCountry('united');
     assert.deepEqual([...document.querySelectorAll('[role="option"]')].map(option => option.dataset.countryCode), ['AE', 'GB', 'US']);
@@ -255,20 +257,21 @@ test('unmatched searches, Escape, Tab and outside clicks preserve the selected c
     assert.ok(document.body.textContent.includes(e.current.address.noMatchingCountries));
     assert.equal(document.querySelectorAll('[role="option"]').length, 0);
     await e.key('Enter');
-    assert.equal(e.field('country').value, 'CN');
+    assert.equal(e.field('country').value, 'US');
     await e.key('Escape');
-    assert.equal(e.countryInput().value, 'China');
+    assert.equal(e.countryInput().value, 'United States');
     await e.filterCountry('Japan'); await e.key('Tab');
-    assert.equal(e.countryInput().value, 'China');
+    assert.equal(e.countryInput().value, 'United States');
     await e.filterCountry('Japan');
     await React.act(async () => document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true })));
     assert.equal(document.querySelector('[role="listbox"]'), null);
-    assert.equal(e.field('country').value, 'CN');
-    assert.equal(e.field('phone_prefix').value, '+86');
+    assert.equal(e.field('country').value, 'US');
+    assert.equal(e.field('phone_prefix').value, '+1');
 }));
 
 test('reselecting the same country preserves the rest of the address', async () => fixture({}, async e => {
     await e.add();
+    await e.fill('country', 'CN');
     await e.fill('state', 'Beijing'); await e.fill('zip_code', '100000');
     await e.fill('country', 'CN');
     assert.equal(e.field('state').value, 'Beijing');

@@ -36,8 +36,8 @@ export function AddressManager({ isOpen, onClose, current, onSelect, onDelete, o
 
     // Form states
     const [recipientName, setRecipientName] = useState('');
-    const [country, setCountry] = useState('CN');
-    const [phonePrefix, setPhonePrefix] = useState('+86');
+    const [country, setCountry] = useState('US');
+    const [phonePrefix, setPhonePrefix] = useState('+1');
     const [phoneNumber, setPhoneNumber] = useState('');
     const [zipCode, setZipCode] = useState('');
     const [state, setState] = useState('');
@@ -72,8 +72,8 @@ export function AddressManager({ isOpen, onClose, current, onSelect, onDelete, o
     const resetForm = () => {
         setErrors({});
         setRecipientName('');
-        setCountry('CN');
-        setPhonePrefix('+86');
+        setCountry('US');
+        setPhonePrefix('+1');
         setPhoneNumber('');
         setZipCode('');
         setState('');

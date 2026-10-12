@@ -14,6 +14,7 @@ import { OrderKitDetails } from './figure/print/KitSpecificationsDetails'
 import type { OrderStickerRecord } from './figure/print/orderSticker'
 import type { KitSpecificationRecord } from './figure/print/kitSpecifications'
 import { getFigureModelName } from './figure/print/figureModels'
+import { FigureModelSettings } from './figure/FigureModelSettings'
 
 type Source = { skin_id: string; name?: string; publisher_id?: string; publisher_name?: string; parent_id?: string; license?: string; public_license?: string; is_public?: boolean }
 type Item = KitSpecificationRecord & OrderStickerRecord & { id: string; model_type: string; skin_url?: string; refer_log_id?: string; source_snapshot?: Source; source_current?: Source }
@@ -33,8 +34,22 @@ export function FigureManagePage({ current }: { current: LangData }) {
     const session = useAuthSession()
     return <PageContainer bg="bg-[#151915]" gap="gap-5" className={current.fontClass}>
         <header><h1 className="m-0 text-xl">{current.figureManagement.title}</h1><p className="mb-0 text-xs leading-relaxed text-white/55">{current.figureManagement.subtitle}</p></header>
-        {user?.is_admin && session ? <FigureOrderQueue key={`${user.id}:${session}`} current={current} /> : <p role="status" className="text-sm text-white/60">{current.figureManagement.restricted}</p>}
+        {user?.is_admin && session ? <FigureManagement key={`${user.id}:${session}`} current={current} /> : <p role="status" className="text-sm text-white/60">{current.figureManagement.restricted}</p>}
     </PageContainer>
+}
+
+function FigureManagement({ current }: { current: LangData }) {
+    const [section, setSection] = useState<'orders' | 'models'>('orders')
+    const [modelsOpened, setModelsOpened] = useState(false)
+    const t = current.figureManagement
+    return <>
+        <nav className="flex gap-2" aria-label={t.title}>
+            <button type="button" aria-pressed={section === 'orders'} onClick={() => setSection('orders')} className={`${button} ${section === 'orders' ? 'border-[#84c96b]/70 text-[#a6df7a]' : 'text-white/60'}`}>{t.ordersTab}</button>
+            <button type="button" aria-pressed={section === 'models'} onClick={() => { setModelsOpened(true); setSection('models') }} className={`${button} ${section === 'models' ? 'border-[#84c96b]/70 text-[#a6df7a]' : 'text-white/60'}`}>{t.models.title}</button>
+        </nav>
+        <section hidden={section !== 'orders'} aria-label={t.ordersTab} className="space-y-5"><FigureOrderQueue current={current} /></section>
+        {modelsOpened && <section hidden={section !== 'models'} aria-label={t.models.title}><FigureModelSettings current={current} /></section>}
+    </>
 }
 
 function FigureOrderQueue({ current }: { current: LangData }) {
