@@ -19,7 +19,7 @@ import type { GenerationLogItem } from '../types/log'
 import { showError } from '../utils/alert'
 import { apiFetch, apiResponseJson } from '../utils/api'
 import { formatDate } from '../utils/date'
-import { generationModelParams, preferredGenerationModel, resolveGenerationModel, type GenerationModelOption } from '../utils/generationModels'
+import { generationModelLabel, generationModelParams, preferredGenerationModel, resolveGenerationModel, type GenerationModelOption } from '../utils/generationModels'
 
 
 interface GeneratePageProps {
@@ -307,24 +307,29 @@ export function GeneratePage({ current }: GeneratePageProps) {
             if (response.ok) {
                 const data = await apiResponseJson(response)
                 
-                const textToSkin: string[] = []
+                const textOptions: GenerationModelOption[] = []
                 for (const base of data.text_to_image_models || []) {
                     for (const lora of data.image_to_skin_models || []) {
-                        textToSkin.push(`${base} + ${lora}`)
+                        textOptions.push({ id: `${base} + ${lora}`, model_version: lora, aux_model_version: base })
                     }
                 }
 
-                const imageEditToSkin: string[] = []
+                const editOptions: GenerationModelOption[] = []
                 for (const base of data.image_edit_models || []) {
                     for (const lora of data.image_to_skin_models || []) {
-                        imageEditToSkin.push(`${base} + ${lora}`)
+                        editOptions.push({ id: `${base} + ${lora}`, model_version: lora, aux_model_version: base })
                     }
                 }
 
                 const imageOptions: GenerationModelOption[] = data.image_to_skin_options
                     || (data.image_to_skin_models || []).map((model: string) => ({ id: model, model_version: model }))
-                const options = Object.fromEntries(imageOptions.map(option => [option.id, option]))
+                const textToSkinOptions: GenerationModelOption[] = data.text_to_skin_options || textOptions
+                const imageEditToSkinOptions: GenerationModelOption[] = data.image_edit_to_skin_options || editOptions
+                const allOptions = [...imageOptions, ...textToSkinOptions, ...imageEditToSkinOptions]
+                const options = Object.fromEntries(allOptions.map(option => [option.id, option]))
                 const imageToSkin = imageOptions.map(option => option.id)
+                const textToSkin = textToSkinOptions.map(option => option.id)
+                const imageEditToSkin = imageEditToSkinOptions.map(option => option.id)
 
                 const formattedConfig = {
                     aigc_text_to_skin: textToSkin,
@@ -341,7 +346,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 
                 const costs: Record<string, number> = {}
                 const proStates: Record<string, boolean> = Object.fromEntries(
-                    imageOptions.map(option => [option.id, option.pricing_tier === 'pro'])
+                    allOptions.map(option => [option.id, option.pricing_tier === 'pro'])
                 )
                 const maintenanceStates: Record<string, boolean> = {}
                 await Promise.all(
@@ -1163,7 +1168,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                     >
                                         <span className="flex items-center gap-1.5 min-w-0">
                                             <span className="truncate">
-                                                {modelVersion === 'unknown' ? current.generate.loadingModels : (modelOptions[modelVersion]?.model_version || modelVersion)}
+                                                {modelVersion === 'unknown' ? current.generate.loadingModels : generationModelLabel(modelVersion, modelOptions)}
                                             </span>
                                             {modelVersion !== 'unknown' && modelVersion && modelProStates[modelVersion] && (
                                                 <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
@@ -1171,7 +1176,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                 </span>
                                             )}
                                             {modelOptions[modelVersion]?.pricing_tier === 'standard' && (
-                                                <span className="text-[9px] text-white/60 shrink-0">{current.lang === 'zh-hans' ? '不限用户' : 'ALL USERS'}</span>
+                                                <span className="text-[9px] text-white/60 shrink-0">{modelProStates[modelVersion] ? 'FREE' : (current.lang === 'zh-hans' ? '不限用户' : 'ALL USERS')}</span>
                                             )}
                                             {modelVersion !== 'unknown' && modelVersion && modelMaintenanceStates[modelVersion] && (
                                                 <span className="text-[9px] bg-red-500/10 border border-red-500/20 text-red-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
@@ -1214,14 +1219,14 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                         className={`w-full flex items-center justify-between p-2 text-left text-white text-[11px] lg:text-xs transition-colors border-none bg-transparent ${isUnderMaintenance ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white/5 cursor-pointer'} ${current.fontClass} ${m === modelVersion ? 'bg-white/5 font-bold text-green-400' : ''}`}
                                                     >
                                                         <span className="flex items-center gap-1.5 min-w-0">
-                                                            <span className="truncate">{modelOptions[m]?.model_version || m}</span>
+                                                            <span className="truncate">{generationModelLabel(m, modelOptions)}</span>
                                                             {modelProStates[m] && (
                                                                 <span className="text-[9px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
                                                                     PRO ONLY
                                                                 </span>
                                                             )}
                                                             {modelOptions[m]?.pricing_tier === 'standard' && (
-                                                                <span className="text-[9px] text-white/60 shrink-0">{current.lang === 'zh-hans' ? '不限用户' : 'ALL USERS'}</span>
+                                                                <span className="text-[9px] text-white/60 shrink-0">{modelProStates[m] ? 'FREE' : (current.lang === 'zh-hans' ? '不限用户' : 'ALL USERS')}</span>
                                                             )}
                                                             {isUnderMaintenance && (
                                                                 <span className="text-[9px] bg-red-500/10 border border-red-500/20 text-red-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">

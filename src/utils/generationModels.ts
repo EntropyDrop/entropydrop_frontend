@@ -1,6 +1,7 @@
 export interface GenerationModelOption {
     id: string
     model_version: string
+    aux_model_version?: string
     pricing_tier?: 'standard' | 'pro'
 }
 
@@ -9,6 +10,7 @@ export function generationModelParams(id: string, options: Record<string, Genera
     const params = new URLSearchParams()
     if (option) {
         params.set('model_version', option.model_version)
+        if (option.aux_model_version) params.set('aux_model_version', option.aux_model_version)
         if (option.pricing_tier) params.set('pricing_tier', option.pricing_tier)
     } else if (id.includes(' + ')) {
         const [aux, model] = id.split(' + ')
@@ -18,6 +20,12 @@ export function generationModelParams(id: string, options: Record<string, Genera
         params.set('model_version', id)
     }
     return params
+}
+
+export function generationModelLabel(id: string, options: Record<string, GenerationModelOption>) {
+    const option = options[id]
+    if (!option) return id
+    return option.aux_model_version ? `${option.aux_model_version} + ${option.model_version}` : option.model_version
 }
 
 export function preferredGenerationModel(
@@ -40,6 +48,7 @@ export function resolveGenerationModel(
 
     return Object.values(options).find(option =>
         option.model_version === selected.model_version
+        && option.aux_model_version === selected.aux_model_version
         && option.pricing_tier === 'pro'
         && !maintenance[option.id]
     )?.id || id

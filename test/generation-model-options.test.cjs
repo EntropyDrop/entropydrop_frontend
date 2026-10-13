@@ -27,7 +27,8 @@ const compiled = build({
     } }],
 }).then(result => result.outputFiles[0].text);
 
-async function mount(isPro, { imageOptions = options, maintenance = [], userStatusReady, enableText = false } = {}) {
+async function mount(isPro, { imageOptions = options, maintenance = [], userStatusReady, enableText = false,
+    textOptions, editOptions, modelPolicies = {} } = {}) {
     const dom = new JSDOM('<div id="root"></div>', { url: 'https://site.example.test/skin/generate' });
     const { window } = dom;
     window.HTMLCanvasElement.prototype.getContext = () => ({ fillRect() {}, drawImage() {} });
@@ -61,6 +62,7 @@ async function mount(isPro, { imageOptions = options, maintenance = [], userStat
                 case '/api/models': data = {
                     image_to_skin_models: [...new Set(imageOptions.map(option => option.model_version)), ...(enableText ? ['sking_v73_flux_4b_000027000'] : [])],
                     image_to_skin_options: imageOptions,
+                    text_to_skin_options: textOptions, image_edit_to_skin_options: editOptions,
                     text_to_image_models: enableText ? ['z_image'] : [], image_edit_models: [],
                 }; break;
                 case '/api/licenses/preview':
@@ -74,12 +76,16 @@ async function mount(isPro, { imageOptions = options, maintenance = [], userStat
                 case '/api/history': data = { items: [], total_pages: 0, page: 1 }; break;
                 case '/api/generate/queue_status': data = { queued_count: 0, processing_count: 0, total_queue_count: 0 }; break;
                 case '/api/generation_credit_cost': {
-                    if (enableText && url.searchParams.has('aux_model_version')) { data = { credits: 4, is_pro: false, under_maintenance: false }; break; }
+                    if (enableText && !textOptions && url.searchParams.has('aux_model_version')) { data = { credits: 4, is_pro: false, under_maintenance: false }; break; }
                     const tier = url.searchParams.get('pricing_tier');
-                    const option = imageOptions.find(option => option.model_version === url.searchParams.get('model_version')
-                        && option.pricing_tier === tier);
+                    const option = [...imageOptions, ...(textOptions || []), ...(editOptions || [])].find(option => option.model_version === url.searchParams.get('model_version')
+                        && (option.aux_model_version ?? null) === url.searchParams.get('aux_model_version')
+                        && (option.pricing_tier ?? null) === tier);
                     assert.ok(option, 'Cost requests identify an available model and pricing tier');
-                    data = { credits: tier === 'pro' ? 4 : 12, is_pro: tier === 'pro', under_maintenance: maintenance.includes(option.id) };
+                    const policy = modelPolicies[option.model_version] || {};
+                    const proPrice = tier === 'pro' || (!tier && isPro);
+                    data = { credits: proPrice ? (policy.proCredits ?? 4) : (policy.freeCredits ?? 12),
+                        is_pro: !!policy.proOnly || tier === 'pro', under_maintenance: maintenance.includes(option.id) };
                     break;
                 }
                 default: throw new Error(`Unexpected request: ${url}`);
@@ -164,6 +170,69 @@ const secondModel = 'SKING_DDJ_v102';
 const secondOptions = ['pro', 'standard'].map(pricing_tier => ({
     id: `${secondModel}:${pricing_tier}`, model_version: secondModel, pricing_tier,
 }));
+
+for (const isPro of [false, true]) {
+    for (const proOnly of [false, true]) {
+        test(`Equal-price models have one entry for ${isPro ? 'Pro' : 'Free'} users, Pro only ${proOnly}`, async () => {
+            const imageOptions = [model, secondModel].map(model_version => ({ id: model_version, model_version }));
+            const modelPolicies = Object.fromEntries([model, secondModel].map(name => [name, { freeCredits: 4, proCredits: 4, proOnly }]));
+            const env = await mount(isPro, { imageOptions, modelPolicies });
+            try {
+                const trigger = env.trigger();
+                assert.equal(trigger.textContent.includes('PRO ONLY'), proOnly);
+                assert.equal(trigger.textContent.includes('ALL USERS'), false);
+                await env.click(trigger);
+                const entries = [...env.node.querySelectorAll('button')].filter(button => button !== trigger
+                    && [model, secondModel].some(name => button.textContent.startsWith(name)));
+                assert.equal(entries.length, 2);
+                for (const name of [model, secondModel]) {
+                    assert.equal(entries.filter(button => button.textContent.startsWith(name)).length, 1);
+                }
+                const subscribe = [...env.node.querySelectorAll('button')].some(button => button.textContent.includes(env.current.generate.btnSubscribePro));
+                assert.equal(subscribe, proOnly && !isPro);
+            } finally { await env.close(); }
+        });
+    }
+}
+
+test('Pro-only switch restricts the standard entry without labeling it as all users', async () => {
+    const env = await mount(false, { modelPolicies: { [model]: { proOnly: true } } });
+    try {
+        await env.click(env.trigger());
+        const standard = [...env.node.querySelectorAll('button')].find(button => button.textContent.startsWith(model)
+            && button.textContent.includes('FREE'));
+        assert.ok(standard);
+        assert.ok(standard.textContent.includes('PRO ONLY'));
+        assert.equal(standard.textContent.includes('ALL USERS'), false);
+        await env.click(standard);
+        assert.ok([...env.node.querySelectorAll('button')].some(button => button.textContent.includes(env.current.generate.btnSubscribePro)));
+    } finally { await env.close(); }
+});
+
+for (const [aux, modeLabel, optionKey] of [['z_image', 'Text to skin', 'textOptions'], ['flux_4b', 'Image Edit to skin', 'editOptions']]) {
+    test(`${aux} combined model keeps its own Pro option, label and request parameters`, async () => {
+        const combinedOptions = options.map(option => ({ ...option, id: `${aux} + ${option.id}`, aux_model_version: aux }));
+        const env = await mount(true, { [optionKey]: combinedOptions });
+        try {
+            const mode = [...env.node.querySelectorAll('button')].find(button => button.textContent.includes(modeLabel));
+            assert.ok(mode);
+            await env.click(mode);
+            assert.ok(env.trigger().textContent.startsWith(`${aux} + ${model}`));
+            await env.click(env.trigger());
+            const entries = [...env.node.querySelectorAll('button')].filter(button => button !== env.trigger()
+                && button.textContent.startsWith(`${aux} + ${model}`));
+            assert.equal(entries.length, 2);
+            await env.click(entries.find(button => button.textContent.includes('ALL USERS')));
+            assert.ok(env.trigger().textContent.startsWith(`${aux} + ${model}`));
+            assert.match(env.trigger().textContent, /PRO ONLY\s*4/);
+            const lookup = Object.fromEntries(combinedOptions.map(option => [option.id, option]));
+            const params = env.generationModelParams(`${aux} + ${model}:pro`, lookup);
+            assert.equal(params.get('model_version'), model);
+            assert.equal(params.get('aux_model_version'), aux);
+            assert.equal(params.get('pricing_tier'), 'pro');
+        } finally { await env.close(); }
+    });
+}
 
 async function selectSecondStandard(env) {
     await env.click(env.trigger());
