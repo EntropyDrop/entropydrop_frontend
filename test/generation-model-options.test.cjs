@@ -174,7 +174,9 @@ const secondOptions = ['pro', 'standard'].map(pricing_tier => ({
 for (const isPro of [false, true]) {
     for (const proOnly of [false, true]) {
         test(`Equal-price models have one entry for ${isPro ? 'Pro' : 'Free'} users, Pro only ${proOnly}`, async () => {
-            const imageOptions = [model, secondModel].map(model_version => ({ id: model_version, model_version }));
+            const imageOptions = [model, secondModel].map(model_version => proOnly
+                ? { id: `${model_version}:pro`, model_version, pricing_tier: 'pro' }
+                : { id: model_version, model_version });
             const modelPolicies = Object.fromEntries([model, secondModel].map(name => [name, { freeCredits: 4, proCredits: 4, proOnly }]));
             const env = await mount(isPro, { imageOptions, modelPolicies });
             try {
@@ -195,19 +197,28 @@ for (const isPro of [false, true]) {
     }
 }
 
-test('Pro-only switch restricts the standard entry without labeling it as all users', async () => {
-    const env = await mount(false, { modelPolicies: { [model]: { proOnly: true } } });
-    try {
-        await env.click(env.trigger());
-        const standard = [...env.node.querySelectorAll('button')].find(button => button.textContent.startsWith(model)
-            && button.textContent.includes('FREE'));
-        assert.ok(standard);
-        assert.ok(standard.textContent.includes('PRO ONLY'));
-        assert.equal(standard.textContent.includes('ALL USERS'), false);
-        await env.click(standard);
-        assert.ok([...env.node.querySelectorAll('button')].some(button => button.textContent.includes(env.current.generate.btnSubscribePro)));
-    } finally { await env.close(); }
-});
+for (const isPro of [false, true]) {
+    for (const staleCatalog of [false, true]) {
+        test(`Pro-only models show only Pro pricing for ${isPro ? 'Pro' : 'Free'} users, stale catalog ${staleCatalog}`, async () => {
+            const imageOptions = staleCatalog ? options : options.filter(option => option.pricing_tier === 'pro');
+            const env = await mount(isPro, { imageOptions, modelPolicies: { [model]: { proOnly: true } } });
+            try {
+                const trigger = env.trigger();
+                assert.match(trigger.textContent, /PRO ONLY\s*4/);
+                await env.click(trigger);
+                const entries = [...env.node.querySelectorAll('button')].filter(button => button !== trigger
+                    && button.textContent.startsWith(model));
+                assert.equal(entries.length, 1);
+                assert.match(entries[0].textContent, /PRO ONLY\s*4/);
+                assert.equal(entries[0].textContent.includes('ALL USERS'), false);
+                assert.equal(entries[0].textContent.includes('FREE'), false);
+                await env.click(entries[0]);
+                const subscribe = [...env.node.querySelectorAll('button')].some(button => button.textContent.includes(env.current.generate.btnSubscribePro));
+                assert.equal(subscribe, !isPro);
+            } finally { await env.close(); }
+        });
+    }
+}
 
 for (const [aux, modeLabel, optionKey] of [['z_image', 'Text to skin', 'textOptions'], ['flux_4b', 'Image Edit to skin', 'editOptions']]) {
     test(`${aux} combined model keeps its own Pro option, label and request parameters`, async () => {

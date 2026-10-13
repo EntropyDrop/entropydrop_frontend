@@ -369,7 +369,10 @@ export function GeneratePage({ current }: GeneratePageProps) {
                 setModelProStates(proStates)
                 setModelMaintenanceStates(maintenanceStates)
                 setModelOptions(options)
-                setModelsConfig(formattedConfig)
+                // A model may become Pro-only between loading the catalog and its prices.
+                setModelsConfig(Object.fromEntries(Object.entries(formattedConfig).map(([mode, ids]) => [
+                    mode, ids.filter(id => options[id]?.pricing_tier !== 'standard' || !proStates[id])
+                ])))
             }
         } catch (e) {
             console.error('Failed to fetch models', e)
@@ -1176,7 +1179,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                 </span>
                                             )}
                                             {modelOptions[modelVersion]?.pricing_tier === 'standard' && (
-                                                <span className="text-[9px] text-white/60 shrink-0">{modelProStates[modelVersion] ? 'FREE' : (current.lang === 'zh-hans' ? '不限用户' : 'ALL USERS')}</span>
+                                                <span className="text-[9px] text-white/60 shrink-0">{current.lang === 'zh-hans' ? '不限用户' : 'ALL USERS'}</span>
                                             )}
                                             {modelVersion !== 'unknown' && modelVersion && modelMaintenanceStates[modelVersion] && (
                                                 <span className="text-[9px] bg-red-500/10 border border-red-500/20 text-red-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">
@@ -1226,7 +1229,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                                                 </span>
                                                             )}
                                                             {modelOptions[m]?.pricing_tier === 'standard' && (
-                                                                <span className="text-[9px] text-white/60 shrink-0">{modelProStates[m] ? 'FREE' : (current.lang === 'zh-hans' ? '不限用户' : 'ALL USERS')}</span>
+                                                                <span className="text-[9px] text-white/60 shrink-0">{current.lang === 'zh-hans' ? '不限用户' : 'ALL USERS'}</span>
                                                             )}
                                                             {isUnderMaintenance && (
                                                                 <span className="text-[9px] bg-red-500/10 border border-red-500/20 text-red-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider scale-90 shrink-0">

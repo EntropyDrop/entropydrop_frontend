@@ -1391,7 +1391,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
                   {isZh ? '模型单独定价 • Model Specific Pricing' : 'Model Specific Pricing'}
                 </h3>
                 <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
-                  {isZh ? '所有模型统一设置 Free / Pro 价格、Pro 专属和维护开关。生成列表仅在 Free 与 Pro 价格不同时显示两个同名选项；Pro 专属和维护开关对整个模型生效。' : 'Every model uses Free / Pro prices, a Pro-only switch and a maintenance switch. Generation lists two options with the same name only when the prices differ. Both switches apply to the entire model.'}
+                  {isZh ? '所有模型统一设置 Free / Pro 价格、Pro 专属和维护开关。开启 Pro 专属时仅显示 Pro 档；关闭时，价格相同显示一档，不同显示两档。维护开关对整个模型生效。' : 'Every model uses Free / Pro prices, a Pro-only switch and a maintenance switch. Pro-only models show only the Pro option. Otherwise, equal prices show one option and different prices show two. Maintenance applies to the entire model.'}
                 </p>
               </div>
             </div>
