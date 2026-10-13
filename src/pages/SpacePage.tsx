@@ -283,8 +283,8 @@ export function SpacePage({ current }: SpacePageProps) {
                         <span className={`text-xs font-bold text-blue-300 ${current.fontClass}`}>{data.stats.programmable}</span>
                     </div>
                     <div className="border border-white/10 bg-black/40 p-3 flex flex-col gap-1">
-                        <span className="text-[10px] font-mono text-yellow-400 font-bold uppercase tracking-wider">TORUS</span>
-                        <span className={`text-xs font-bold text-yellow-300 ${current.fontClass}`}>{data.stats.torus}</span>
+                        <span className="text-[10px] font-mono text-yellow-400 font-bold uppercase tracking-wider">WORLDS</span>
+                        <span className={`text-xs font-bold text-yellow-300 ${current.fontClass}`}>{data.stats.worlds}</span>
                     </div>
                 </div>
 
@@ -452,10 +452,10 @@ export function SpacePage({ current }: SpacePageProps) {
                                         {shortcut.key}
                                     </kbd>
                                     <div className="flex flex-col gap-0.5 min-w-0">
-                                        <span className={`text-xs font-bold text-white/90 truncate ${current.fontClass}`}>
+                                        <span className={`text-xs font-bold text-white/90 ${current.fontClass}`}>
                                             {shortcut.label}
                                         </span>
-                                        <span className={`text-[11px] text-white/50 leading-tight line-clamp-2 ${current.fontClass}`}>
+                                        <span className={`text-[11px] text-white/50 leading-relaxed ${current.fontClass}`}>
                                             {shortcut.desc}
                                         </span>
                                     </div>

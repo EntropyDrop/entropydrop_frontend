@@ -112,18 +112,22 @@ VITE_GTAG_ID=abc
 
 ### Space world backgrounds
 
-`/space/intro` keeps its original heading, description, statistics and layout.
-The intro and login pages, including navigation and Google sign-in, use English.
-Nature (`nature`) and Copper Metropolis (`copper-metropolis`) provide a full-viewport
-background behind the page and navigation. Nature is shown initially; backgrounds
-change only when a world thumbnail is clicked or activated with the keyboard.
-Reduced-motion preferences disable transition fades. The original Play buttons include the
-current world name and preserve its selector through `/space/login` to the
-configured `VITE_SPACE_URL`. The Agent Prompt uses the same selected world.
+`/space/intro` describes the current WebGPU client, AssemblyScript/WebAssembly
+controllers, seven creative tools, and the Items / Color Sets backpack.
+The intro and login pages, including navigation and Google sign-in, use English;
+the intro copy is also maintained in the Chinese locale.
+Aether Archipelago (`aether-archipelago`), Nature (`nature`), and Copper Metropolis
+(`copper-metropolis`) provide full-viewport backgrounds behind the page and navigation.
+Aether is shown initially. The intro rotates worlds every five seconds and supports
+manual selection and pausing; reduced-motion preferences disable transition fades.
+Play buttons include the current world name and preserve its selector through
+`/space/login` to the configured `VITE_SPACE_URL`. The Agent Prompt uses the same
+selected world.
 
 The supplied screenshots are encoded as responsive 960px/1920px WebP assets.
-The target backend must support the world: Copper Metropolis is currently enabled
-on development/test backends. Unsupported worlds never silently fall back to Nature.
+The target backend must support the selected world. All three worlds are available
+in production, with data isolated from development. Unsupported worlds never silently
+fall back to Nature. Playing requires a desktop browser with WebGPU and GPU acceleration.
 
 ### 3. Run Development Server
 Start the local server with hot-reload:

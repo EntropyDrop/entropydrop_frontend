@@ -18,7 +18,7 @@ const compiled = build({
     supported: { 'dynamic-import': false },
     external: ['react', 'react/jsx-runtime', 'react-dom', 'react-router-dom'],
     plugins: [{ name: 'print-page-boundaries', setup(build) {
-        build.onResolve({ filter: /^@iconify\/react$|\/components\/(PageContainer|SEO|GoogleSignInButton)$|\/utils\/(httpClient|api|authClient|authSession)$|\/hooks\/useAuthSession$|\/print\/(figureEngine|FigurePreview|FigureCommissionDialog|download)$/ },
+        build.onResolve({ filter: /^@iconify\/react$|\/components\/(PageContainer|SEO|GoogleSignInButton)$|\/utils\/(httpClient|api|authClient|authSession)$|\/hooks\/(useAuthSession|useCurrentUser)$|\/print\/(figureEngine|FigurePreview|FigureCommissionDialog|download)$/ },
             args => ({ path: args.path, external: true }));
     } }],
 }).then(result => result.outputFiles[0].text);
@@ -54,6 +54,7 @@ async function withPage(options, check) {
             if (name.endsWith('/utils/authClient')) return { waitForAuthReady: async () => {} };
             if (name.endsWith('/utils/authSession')) return { getAuthSessionKey: () => session };
             if (name.endsWith('/hooks/useAuthSession')) return { useAuthSession: () => React.useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener); }, () => session) };
+            if (name.endsWith('/hooks/useCurrentUser')) return { useCurrentUser: () => ({ user: options.guest ? null : { id: session, is_pro: options.isPro === true } }) };
             if (name.endsWith('/utils/api')) return {
                 apiResponseJson: response => response.json(),
                 apiFetch: async (url, init = {}) => {
@@ -331,3 +332,40 @@ test('production retains cute7 geometry and filenames for a historical kit', asy
         assert.equal(env.node.querySelector('select').selectedOptions[0].textContent, 'CUTE-7cm');
     });
 });
+
+test('non-pro users see the Pro support prompt banner and can dismiss it', async () => {
+    await withPage({ isPro: false }, async env => {
+        const proLink = env.node.querySelector('a[href="/pro"]');
+        assert.ok(proLink, 'Pro support link should be present for non-pro user');
+        assert.equal(proLink.textContent, env.current.figurePrint.proSupportAction);
+        assert.ok(env.node.textContent.includes(env.current.figurePrint.proSupportPrompt));
+
+        const dismissBtn = env.node.querySelector(`button[aria-label="${env.current.figurePrint.dismissProPrompt}"]`);
+        assert.ok(dismissBtn, 'Dismiss button should be present');
+        await env.click(dismissBtn);
+        assert.equal(env.node.querySelector('a[href="/pro"]'), null, 'Prompt should be dismissed');
+    });
+});
+
+test('guests see the Pro support prompt banner', async () => {
+    await withPage({ guest: true }, async env => {
+        const proLink = env.node.querySelector('a[href="/pro"]');
+        assert.ok(proLink, 'Pro support link should be present for guest');
+        assert.ok(env.node.textContent.includes(env.current.figurePrint.proSupportPrompt));
+    });
+});
+
+test('Pro members do not see the Pro support prompt banner', async () => {
+    await withPage({ isPro: true }, async env => {
+        assert.equal(env.node.querySelector('a[href="/pro"]'), null, 'Pro support link should NOT be present for Pro member');
+        assert.ok(!env.node.textContent.includes(env.current.figurePrint.proSupportPrompt));
+    });
+});
+
+test('production orders do not display the Pro support banner', async () => {
+    await withPage({ search: '?order=order-a&item=kit-a', isPro: false, server: { production: productionSource } }, async env => {
+        await env.finish();
+        assert.equal(env.node.querySelector('a[href="/pro"]'), null, 'Pro support link should NOT be present in production order view');
+    });
+});
+

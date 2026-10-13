@@ -128,6 +128,9 @@ export default {
         "discoverSkins": "Discover skins",
         commission: 'Order a Figure Kit',
         commissionIntro: 'Make it yourself with the files below, or',
+        proSupportPrompt: 'If this 3D printing tool helps you, consider subscribing to Pro to support our ongoing development!',
+        proSupportAction: 'Subscribe to Pro',
+        dismissProPrompt: 'Dismiss notice',
         loginForCommission: 'After signing in, click “Order a Figure Kit” again to continue.',
         source: 'Skin source',
         publisher: 'Published by',
@@ -1335,9 +1338,9 @@ Email: support@entropydrop.com`
     space_page: {
         title: 'EntropyDrop Space',
         eyebrow: 'PLAYABLE PROTOTYPE',
-        platform: 'WebGL 2 · Voxel Physics · Donut Terrain',
-        tagline: 'AI-Assisted Building & Autonomous Control Voxel Universe',
-        description: 'Sculpt voxels across a seamless torus donut world. Turn structures into dynamic rigid bodies with one click, use AI-assisted building to construct complex machinery, and mount intelligent AI for autonomous control, cruising, and physical interaction directly in your browser.',
+        platform: 'WebGPU · Voxel Physics · Multiplayer Worlds',
+        tagline: 'Build, Program & Explore Voxel Worlds Together',
+        description: 'Explore Aether Archipelago, Nature, and Copper Metropolis with other players. Sculpt terrain, assemble physical machines, add visual details, and use AI to help write their control scripts. World edits and entities are saved online.',
         primaryCta: 'Play',
         secondaryCta: 'Core Features',
         worldCarousel: { label: 'World background', select: 'Show {world}' },
@@ -1346,9 +1349,9 @@ Email: support@entropydrop.com`
         onlineUnavailable: 'Online count unavailable',
         stats: {
             scale: '0.125m (8×8×8) Micro Grid',
-            physics: 'Voxel Physics & BVH Cache',
-            programmable: 'AI Building & Auto Control',
-            torus: 'Seamless Donut World'
+            physics: 'Voxel Rigid Bodies',
+            programmable: 'AI Building & Scripting',
+            worlds: '3 Persistent Worlds'
         },
         heroPreview: {
             title: 'Space Realtime Viewport',
@@ -1356,95 +1359,106 @@ Email: support@entropydrop.com`
             status: 'STANDBY // 60 FPS'
         },
         featuresTitle: 'Core Mechanics & Systems',
-        featuresSubtitle: 'From micro-grid sculpting and 3D gizmo selection to rigid-body dynamics and AI-assisted autonomous control.',
+        featuresSubtitle: 'Sculpt at two scales, assemble moving machines, and program them with AI assistance.',
         features: [
             {
                 tag: 'MICRO GRID',
                 title: 'Dual-Scale Micro Sculpting & 3D Geometry',
-                description: 'Build terrain with standard blocks, and switch losslessly to high-precision micro voxels with the Spoon. Features 3D XYZ axis gizmos, multi-shape selection (box, cylinder, sphere, stairs, line), batch shortcuts (F fill / P recolor), and a 24-bit TrueColor palette for intricate mechanical precision.',
+                description: 'Build with 1 m blocks and carve 0.125 m micro voxels. Shape selections with 3D handles, fill or recolor them in batches, and paint with solid colors, gradients, or emissive materials. The Modeling tool adds movable, rotatable, and resizable visual decoration cubes to entity components.',
                 badge: 'Dual Scale // TrueColor',
                 placeholderTitle: 'Micro-Grid Sculpting & 3D Selection Screenshot'
             },
             {
                 tag: 'VOXEL PHYSICS',
-                title: 'Entityization & Voxel Physics',
-                description: 'Box-select voxels and press G to turn them into rigid bodies with automatic center of mass and inertia tensor calculation. Use the interactive Wrench to drag and carry entities with collision bypass, and right-click to toggle runtime scripts. Powered by 2×2×2m partitioned BVH collision caching and dynamic body sleep/wake optimization.',
+                title: 'Build & Move Physical Machines',
+                description: 'Select world blocks and press G to assemble a rigid body. Use the Wrench to stop and lift an entity, or drag its handles to move and rotate it. Right-click with the Wrench or open the nameplate menu for playback, copying, programming, and other entity actions.',
                 badge: 'RigidBody // G Key / Wrench Drag',
                 placeholderTitle: 'Box Selection Entityization & Physics Collision Screenshot'
             },
             {
                 tag: 'AI BUILDING & AUTO CONTROL',
                 title: 'AI-Assisted Building & Autonomous Control',
-                description: 'Open AGENT BUILD in the HUD to connect an external agent, then describe structures or entities to build through spaceAPI. Aim at an entity and press C to open the editor, generating entityAPI controller code for autonomous hovering, waypoint cruising, and attitude stabilization in seconds.',
+                description: 'Open AGENT BUILD to connect an external agent and build through spaceAPI. Aim at an entity and press C to edit its components or ask the assistant for AssemblyScript controller code. Review and apply the code, then run the entity to try its behavior.',
                 badge: 'AI Building & Auto-Pilot // C Key',
                 placeholderTitle: 'AI Building & Autonomous Control Terminal Screenshot'
             },
             {
-                tag: 'DONUT TERRAIN & ULTRA HDR',
-                title: 'Seamless Donut Terrain with Ultra HDR',
-                description: 'Explore a seamless Torus donut topology with an Ultra HDR cinematic pipeline, including 4096² soft morning shadows, dynamic layered clouds, atmospheric sun shafts, and multi-tier distant LOD up to 4000m continuous view distance.',
-                badge: 'Torus // Ultra HDR',
-                placeholderTitle: 'Seamless Donut Terrain Screenshot'
+                tag: 'WORLDS & WEBGPU',
+                title: 'Three Worlds to Explore & Build In',
+                description: 'Start among the floating islands of Aether Archipelago, explore Nature, or build in Copper Metropolis. Each world keeps its own terrain edits and entities on a seamless torus. WebGPU rendering brings lighting, atmospheric effects, and distant terrain to a supported desktop browser.',
+                badge: 'Torus // WebGPU',
+                placeholderTitle: 'Copper Metropolis World Screenshot'
             }
         ],
         toolsGuide: {
             eyebrow: 'CREATOR TOOLKIT',
             title: 'Core Creative Tools & Essential Controls',
-            subtitle: 'Seamlessly transition across dual scales, precision 3D gizmos, intuitive physical handling, and code-driven mechanics.',
+            subtitle: 'Use keys 1–7 to switch tools, E for your backpack, and I to edit the active color and material.',
             tools: [
                 {
                     slot: '1',
-                    name: 'Shovel',
-                    badge: 'Standard Blocks',
-                    desc: 'Place and carve 1.0m standard blocks for rapid architectural foundation and macro terrain layout.',
-                    icon: 'pixelarticons:chart-bar'
-                },
-                {
-                    slot: '2',
-                    name: 'Spoon',
-                    badge: 'Micro Grid',
-                    desc: 'Losslessly subdivide standard blocks into microcells for intricate sculpting and mechanical detail.',
-                    icon: 'pixelarticons:drop'
-                },
-                {
-                    slot: '3',
                     name: 'Selector',
-                    badge: '3D Gizmo',
-                    desc: 'Interactive XYZ coordinate handles, Shift+1..5 shape masks (box, cylinder, sphere, stairs, line), and arrow key 3D rotation.',
+                    badge: '3D Selection',
+                    desc: 'Select terrain or component blocks, resize with XYZ handles, and choose box, cylinder, sphere, stairs, or line shapes. Tab switches between standard and micro selection.',
                     icon: 'pixelarticons:scale'
                 },
                 {
-                    slot: '4',
-                    name: 'Wrench',
-                    badge: 'Physical Handling',
-                    desc: 'Left-click & hold to drag entities with collision bypass protection; right-click to instantly start or stop runtime scripts.',
-                    icon: 'pixelarticons:sliders'
-                },
-                {
-                    slot: '5',
+                    slot: '2',
                     name: 'Hammer',
-                    badge: 'Modular Assembly',
-                    desc: 'Spawn entities on terrain or install subcomponents directly onto stopped machines with arrow-key orientation.',
+                    badge: 'Build Items',
+                    desc: 'Place an Item from your backpack, or Shift-click a stopped entity to attach components. Arrow keys rotate the preview; successful placement switches to the Wrench.',
                     icon: 'pixelarticons:box'
                 },
                 {
+                    slot: '3',
+                    name: 'Wrench',
+                    badge: 'Move & Rotate',
+                    desc: 'Hold left-click to stop and lift an entity, drag its axes or rotation handles, and scroll to adjust distance. Right-click opens the entity action menu.',
+                    icon: 'pixelarticons:sliders'
+                },
+                {
+                    slot: '4',
+                    name: 'Shovel',
+                    badge: 'Standard Blocks',
+                    desc: 'Left-click to remove and right-click to place 1 m blocks for terrain and large structures.',
+                    icon: 'pixelarticons:chart-bar'
+                },
+                {
+                    slot: '5',
+                    name: 'Spoon',
+                    badge: 'Micro Grid',
+                    desc: 'Carve and place 0.125 m micro voxels on an 8×8×8 grid for fine shapes and mechanical details.',
+                    icon: 'pixelarticons:drop'
+                },
+                {
                     slot: '6',
-                    name: 'Palette',
-                    badge: '24-bit TrueColor',
-                    desc: 'Full RGB color picker with 9 preset swatches and recent color tracking for precision surface texturing.',
+                    name: 'Brush',
+                    badge: 'Color & Material',
+                    desc: 'Paint surfaces or recolor a two-point region. Tab switches standard/micro scale; I opens solid colors, gradients, and emissive material settings.',
                     icon: 'pixelarticons:paint-bucket'
+                },
+                {
+                    slot: '7',
+                    name: 'Modeling',
+                    badge: 'Visual Details',
+                    desc: 'Add decoration cubes to an entity component, then move, rotate, or resize them with handles or exact values. These details are visual only and do not add collision geometry.',
+                    icon: 'pixelarticons:edit'
                 }
             ],
             shortcutsTitle: 'Essential Shortcuts Quick Reference',
             shortcuts: [
                 { key: 'G', label: 'Entityize RigidBody', desc: 'Turn selection into an independent physical rigid body' },
                 { key: 'C', label: 'Entity AI & Terminal', desc: 'Open code editor and natural-language AI programming terminal' },
-                { key: 'F', label: 'Fill Selection', desc: 'Instantly fill the current selection with the active color' },
+                { key: 'F', label: 'Fill / Fly', desc: 'Fill an active Selector region; otherwise toggle flight' },
                 { key: 'P', label: 'Recolor Selection', desc: 'Batch replace all existing voxels in the selection with active color' },
-                { key: 'Shift+1..5', label: 'Selection Shapes', desc: 'Switch between Box, Cylinder, Sphere, Stairs, and Line masks' },
+                { key: 'Shift+1..5', label: 'Selection Shapes', desc: 'With Selector active: box, cylinder, sphere, stairs, or line' },
                 { key: 'Arrow Keys', label: '3D Axis Rotation', desc: 'Rotate yaw and pitch for selection masks or Hammer blueprints' },
                 { key: 'V', label: 'Mount Vehicle', desc: 'Aim at a vehicle pilot seat and press V to board and drive' },
-                { key: 'B / E', label: 'Backpack & Market', desc: 'Open 3-tab modal for blocks, blueprint shapes, and cloud marketplace' }
+                { key: 'E', label: 'Backpack & Market', desc: 'Open Items and Color Sets; browse or publish to the Market' },
+                { key: 'R', label: 'Copy Selection', desc: 'Copy selected terrain and enclosed entities as one Item' },
+                { key: 'Tab', label: 'Selection / Brush Scale', desc: 'Switch Selector or Brush between standard and micro blocks' },
+                { key: 'I', label: 'Color & Material', desc: 'Edit the active palette color, gradient, and material' },
+                { key: 'F3', label: 'Camera View', desc: 'Cycle first-person, rear third-person, and front third-person views' }
             ]
         },
         agentModes: {
@@ -1453,10 +1467,10 @@ Email: support@entropydrop.com`
             scopeLabel: 'Intended scope',
             entryLabel: 'Where to start',
             exampleLabel: 'Example task',
-            availabilityLabel: 'Available now and planned next',
+            availabilityLabel: 'Current capabilities',
             sharedTitle: 'spaceAPI for agents, entityAPI for entity code',
-            sharedDescription: 'External agents build through spaceAPI. Entity scripts run through entityAPI (self / ctx).',
-            authNote: 'The entity editor assistant uses your model API key.',
+            sharedDescription: 'External agents build through spaceAPI. Each component runs an AssemblyScript controller compiled to WebAssembly and uses entityAPI through self / ctx.',
+            authNote: 'Connect your own model API key in the editor assistant’s Setup panel. Without a key, a built-in local compiler handles supported behavior requests.',
             cards: [
                 {
                     id: 'external',
@@ -1475,10 +1489,10 @@ Email: support@entropydrop.com`
                     title: 'Entity programming agent',
                     status: 'Script assistant available',
                     scope: 'The current entity and all its components',
-                    description: 'Generate and refine controller scripts for one entity and its components while developing a vehicle or machine. Review the generated code and apply it in the editor.',
+                    description: 'Generate and refine AssemblyScript controller code for individual components of a vehicle or machine. Review the generated code and choose Apply; the editor compiles it and reports errors.',
                     entry: 'Aim at an entity, press C, and open the editor’s AI assistant.',
                     example: 'Generate steering and suspension-damping controller code for this off-road vehicle.',
-                    availability: 'Generate a component script and choose Apply today. Editing all properties and enforcing entity-scoped API access are planned extensions.',
+                    availability: 'Apply generated code to the selected component. The editor also exposes component names, physical properties, saved defaults, live runtime state, and execution status. Stop the entity before editing.',
                 },
             ],
         },
@@ -1491,8 +1505,8 @@ Email: support@entropydrop.com`
         agentDevCards: [
             {
                 icon: 'pixelarticons:code',
-                title: 'AI Agent Control & QuickJS Realtime Sandbox',
-                desc: 'Instantly transforms building instructions and motion intents into precise dynamical control logic, safely driving thrusters, pivots, and sensor loops inside isolated QuickJS WebAssembly sandboxes.'
+                title: 'AssemblyScript & WebAssembly Controllers',
+                desc: 'Write a controller for each component or use the assistant to generate one. Scripts compile to WebAssembly and use entityAPI to read sensors, retain state, and control forces and motion.'
             },
             {
                 icon: 'pixelarticons:sliders',
@@ -1501,12 +1515,12 @@ Email: support@entropydrop.com`
             },
             {
                 icon: 'pixelarticons:folder',
-                title: 'Space Marketplace & Blueprint Hub',
-                desc: 'Built-in resource marketplace supporting one-click publishing and downloading of programmable rigid bodies, micro-voxel assemblies, and palette presets for instant cross-world reuse.'
+                title: 'Shared Items & Community Market',
+                desc: 'Keep terrain blocks and complete entities together in reusable Items, with Color Sets stored separately. Your backpack stays in this browser; publish to or download from the Market to share creations.'
             }
         ],
-        closingTitle: 'An infinite voxel universe is ready for you.',
-        closingSubtitle: 'No downloads or installations required. Launch into the WebGL 2 voxel universe directly inside your modern desktop browser.',
+        closingTitle: 'Choose a world and start building.',
+        closingSubtitle: 'Play directly in a desktop browser with WebGPU and GPU acceleration enabled. Use a keyboard and mouse to explore, build, and program.',
         communityLinks: {
             github: 'GitHub Repository',
             discord: 'Discord Community'

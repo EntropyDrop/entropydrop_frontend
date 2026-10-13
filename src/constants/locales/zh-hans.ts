@@ -128,6 +128,9 @@ export default {
         "discoverSkins": "发现皮肤",
         commission: '委托制作',
         commissionIntro: '使用下方文件自行制作，或',
+        proSupportPrompt: '如果 3D 打印工具对你有帮助，欢迎订阅 Pro 支持我们持续开发！',
+        proSupportAction: '订阅 Pro 支持',
+        dismissProPrompt: '关闭提示',
         loginForCommission: '登录完成后，再次点击“委托制作”继续。',
         source: '皮肤来源',
         publisher: '发布者',
@@ -1335,9 +1338,9 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
     space_page: {
         title: 'EntropyDrop Space',
         eyebrow: '可游玩原型',
-        platform: 'WebGL 2 · 体素物理 · 甜甜圈地形',
-        tagline: 'AI 辅助建造与自动控制的体素物理世界',
-        description: '在无缝环面甜甜圈世界中自由雕刻体素。一键将结构实体化为物理刚体，借助 AI 辅助快速建造复杂机械，并挂载 AI 智能体实现全自动动力巡航与行为控制。',
+        platform: 'WebGPU · 体素物理 · 多人世界',
+        tagline: '一起建造、编程与探索体素世界',
+        description: '与其他玩家一起探索 Aether Archipelago、Nature 和 Copper Metropolis。雕刻地形、组装物理机械、添加外观细节，并借助 AI 编写控制脚本。世界中的地形修改和实体会在线保存。',
         primaryCta: '开始游玩',
         secondaryCta: '核心特性',
         worldCarousel: { label: '世界背景轮播', select: '切换至 {world}' },
@@ -1346,9 +1349,9 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         onlineUnavailable: '在线人数暂不可用',
         stats: {
             scale: '0.125m (8×8×8) 微格',
-            physics: '刚体物理 & BVH 缓存',
-            programmable: 'AI 辅助建造 & 自动控制',
-            torus: '无缝甜甜圈世界'
+            physics: '体素刚体物理',
+            programmable: 'AI 建造与脚本编程',
+            worlds: '3 个持久化世界'
         },
         heroPreview: {
             title: 'Space 实时运行视口',
@@ -1356,95 +1359,106 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             status: 'STANDBY // 60 FPS'
         },
         featuresTitle: '核心机制与玩法系统',
-        featuresSubtitle: '从微格精雕、3D 选区 Gizmo 与物理刚体，到 AI 辅助建造与全自动动力巡航，打造高自由度的物理沙盒。',
+        featuresSubtitle: '在两种尺度上雕刻，组装可运动的机械，并借助 AI 编写控制程序。',
         features: [
             {
                 tag: '微格精雕',
                 title: '双尺度微格雕刻与 3D 几何选区',
-                description: '标准方块快速构建地形骨架，勺子工具无损切换至精细微格。支持空间三维 XYZ 坐标轴 Gizmo、多形状选区（立方体/圆柱/球体/楼梯/线型）与快捷键（F 填充 / P 换色），搭配 24 位全彩调色盘打造极致机械与微雕细节。',
+                description: '使用 1 m 标准方块搭建结构，以 0.125 m 微格雕刻细节。通过 3D 手柄调整选区，批量填充或换色，并使用纯色、渐变与自发光材质涂装。建模工具还可为实体组件添加能够移动、旋转和缩放的外观装饰方体。',
                 badge: '双尺度雕刻 // 全彩',
                 placeholderTitle: '微格精雕与 3D 选区截图'
             },
             {
                 tag: '体素物理引擎',
-                title: '一键实体化与体素物理',
-                description: '框选连通体素按 G 键一键实体化为物理刚体，自动计算质心与惯性张量；使用扳手工具左键流畅拖拽搬运实体并智能旁路碰撞，右键即时启停动力脚本。底层结合 2×2×2m 分区 BVH 碰撞合并与实体休眠唤醒机制，兼顾高频碰撞模拟与丝滑运行帧率。',
+                title: '组装与操控物理机械',
+                description: '选中世界方块后按 G 组装为物理刚体。使用扳手停止并提起实体，或拖动手柄进行移动和旋转。扳手右键或实体名牌菜单可打开启停、复制、编程等实体操作。',
                 badge: 'RigidBody // G 键 / 扳手交互',
                 placeholderTitle: '框选实体化刚体与物理碰撞截图'
             },
             {
                 tag: 'AI 辅助建造 & 自动控制',
                 title: 'AI 辅助建造与自主运动控制',
-                description: '点击 HUD 中的 AGENT BUILD 接入外部 Agent，通过 spaceAPI 按自然语言需求建造场景与实体；对准实体按 C 呼出终端，通过自然语言即时生成 entityAPI 控制脚本，实现自主悬停、航向巡航、姿态平稳与传感器闭环控制。',
+                description: '打开 AGENT BUILD 接入外部 Agent，通过 spaceAPI 建造场景与实体。对准实体按 C 编辑组件，或请助手生成 AssemblyScript 控制脚本。检查并应用代码后，启动实体验证其行为。',
                 badge: 'AI 建造 & 自动驾驶 // C 键',
                 placeholderTitle: 'AI 辅助建造与自动控制终端截图'
             },
             {
-                tag: '甜甜圈地形与影视光影',
-                title: '无缝甜甜圈地形与 Ultra HDR 光影',
-                description: '探索无缝环面甜甜圈拓扑，搭载 Ultra 级 HDR 影视光影管线（4096² 柔和长阴影、分层动态体积云、丁达尔光束与接触遮蔽）与长达 4000m 的多层级远景 LOD，尽显壮丽世界风貌。',
-                badge: 'Torus // Ultra HDR',
-                placeholderTitle: '无缝甜甜圈地形截图'
+                tag: '多人世界与 WebGPU',
+                title: '三个可探索与建造的世界',
+                description: '从 Aether Archipelago 的浮空群岛出发，探索 Nature，或在 Copper Metropolis 中建造。每个世界均采用无缝环面拓扑，独立保存地形修改和实体。WebGPU 渲染为支持的桌面浏览器带来光照、大气效果与远景地形。',
+                badge: 'Torus // WebGPU',
+                placeholderTitle: 'Copper Metropolis 世界截图'
             }
         ],
         toolsGuide: {
             eyebrow: '创作者工具箱',
             title: '核心建造工具与常用快捷键',
-            subtitle: '无缝切换微雕刻度、精准空间几何选区、直观物理搬运与代码驱动。',
+            subtitle: '按 1–7 切换工具，E 打开背包，I 编辑当前颜色与材质。',
             tools: [
                 {
                     slot: '1',
-                    name: '铲子 Shovel',
-                    badge: '标准方块',
-                    desc: '放置与挖掘 1.0m 标准方块，适合快速搭建建筑地基与大尺度地形结构。',
-                    icon: 'pixelarticons:chart-bar'
-                },
-                {
-                    slot: '2',
-                    name: '勺子 Spoon',
-                    badge: '微格雕刻',
-                    desc: '无损切换至精细微格，用于精细微雕与复杂机械构件细节打磨。',
-                    icon: 'pixelarticons:drop'
-                },
-                {
-                    slot: '3',
                     name: '选区工具 Selector',
-                    badge: '3D Gizmo',
-                    desc: 'XYZ 坐标轴拖动缩放，Shift+1..5 切换立方体/圆柱/球体/楼梯/线型掩膜，方向键 3D 旋转。',
+                    badge: '3D 选区',
+                    desc: '选择地形或组件方块，使用 XYZ 手柄调整范围，支持方块、圆柱、球体、楼梯与线型。Tab 切换标准方块与微格选区。',
                     icon: 'pixelarticons:scale'
                 },
                 {
-                    slot: '4',
-                    name: '扳手 Wrench',
-                    badge: '物理操控',
-                    desc: '左键按住拖拽搬运实体（移动时碰撞旁路保护，释放即刻恢复物理），右键即时启停动力脚本。',
-                    icon: 'pixelarticons:sliders'
-                },
-                {
-                    slot: '5',
+                    slot: '2',
                     name: '锤子 Hammer',
-                    badge: '模块化拼装',
-                    desc: '点击地面生成实体，或在停止的实体上安装子组件；方向键调整旋转角度，快速组合机械。',
+                    badge: '物品建造',
+                    desc: '放置背包中的物品，或按住 Shift 点击已停止的实体以安装组件。方向键旋转预览；成功放置后自动切换至扳手。',
                     icon: 'pixelarticons:box'
                 },
                 {
+                    slot: '3',
+                    name: '扳手 Wrench',
+                    badge: '移动与旋转',
+                    desc: '按住左键停止并提起实体，拖动坐标轴或旋转手柄调整姿态，滚轮调节距离。右键打开实体操作菜单。',
+                    icon: 'pixelarticons:sliders'
+                },
+                {
+                    slot: '4',
+                    name: '铲子 Shovel',
+                    badge: '标准方块',
+                    desc: '左键移除、右键放置 1 m 标准方块，适合搭建地形与大型结构。',
+                    icon: 'pixelarticons:chart-bar'
+                },
+                {
+                    slot: '5',
+                    name: '勺子 Spoon',
+                    badge: '微格雕刻',
+                    desc: '在 8×8×8 网格中雕刻和放置 0.125 m 微格，打磨精细造型与机械细节。',
+                    icon: 'pixelarticons:drop'
+                },
+                {
                     slot: '6',
-                    name: '调色盘 Palette',
-                    badge: '24-bit 全彩',
-                    desc: '自由 RGB 拾色器与 9 色快捷槽位，记录最近使用色，搭配笔刷实现体素表面精准涂装。',
+                    name: '笔刷 Brush',
+                    badge: '颜色与材质',
+                    desc: '涂装表面或为两点选区批量换色。Tab 切换标准方块与微格尺度，I 打开纯色、渐变与自发光材质设置。',
                     icon: 'pixelarticons:paint-bucket'
+                },
+                {
+                    slot: '7',
+                    name: '建模 Modeling',
+                    badge: '外观细节',
+                    desc: '为实体组件添加装饰方体，通过手柄或精确数值移动、旋转和缩放。装饰仅影响外观，不增加碰撞几何。',
+                    icon: 'pixelarticons:edit'
                 }
             ],
             shortcutsTitle: '高频操作快捷键',
             shortcuts: [
                 { key: 'G', label: '实体化刚体', desc: '框选后按 G 将选区内方块转为物理实体' },
                 { key: 'C', label: '实体 AI & 终端', desc: '对准实体按 C 打开编辑器与自然语言 AI 编程' },
-                { key: 'F', label: '选区填充', desc: '使用当前色彩一键填充满当前选区' },
+                { key: 'F', label: '填充 / 飞行', desc: '选区工具有选区时填充，否则切换飞行模式' },
                 { key: 'P', label: '选区换色', desc: '将选区内已有方块全部批量替换为当前色彩' },
-                { key: 'Shift+1..5', label: '切换选区形状', desc: '依次切换方块、圆柱、球体、楼梯、线型' },
+                { key: 'Shift+1..5', label: '切换选区形状', desc: '使用选区工具时切换方块、圆柱、球体、楼梯或线型' },
                 { key: '方向键', label: '3D 轴向旋转', desc: '在选区或锤子工具下旋转方向与俯仰角' },
                 { key: 'V', label: '载具驾驶', desc: '对准载具驾驶位方块按 V 坐上并操控' },
-                { key: 'B / E', label: '背包与市场', desc: '开启 3-Tab 背包，浏览方块、蓝图与云端市场' }
+                { key: 'E', label: '背包与市场', desc: '打开物品和配色集，浏览市场或发布作品' },
+                { key: 'R', label: '复制选区', desc: '将所选地形和范围内的完整实体复制为一个物品' },
+                { key: 'Tab', label: '选区 / 笔刷尺度', desc: '切换选区或笔刷的标准方块与微格模式' },
+                { key: 'I', label: '颜色与材质', desc: '编辑当前调色盘的颜色、渐变与材质' },
+                { key: 'F3', label: '切换视角', desc: '依次切换第一人称、后方第三人称与前方第三人称' }
             ]
         },
         agentModes: {
@@ -1453,10 +1467,10 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             scopeLabel: '目标范围',
             entryLabel: '从这里开始',
             exampleLabel: '可以这样描述任务',
-            availabilityLabel: '当前能力与后续扩展',
+            availabilityLabel: '当前能力',
             sharedTitle: 'spaceAPI 接入 Agent，entityAPI 运行实体代码',
-            sharedDescription: '外部 Agent 通过 spaceAPI 建造世界；实体脚本通过 entityAPI（self / ctx）运行。',
-            authNote: '实体编辑器的 AI 助手使用你的模型 API Key。',
+            sharedDescription: '外部 Agent 通过 spaceAPI 建造世界。每个组件运行编译为 WebAssembly 的 AssemblyScript 控制脚本，通过 self / ctx 调用 entityAPI。',
+            authNote: '在编辑器助手的 Setup 中连接你自己的模型 API Key；未配置密钥时，内置本地编译器可处理其支持的行为请求。',
             cards: [
                 {
                     id: 'external',
@@ -1475,10 +1489,10 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                     title: '实体编程 Agent',
                     status: '脚本助手已可用',
                     scope: '当前实体及其全部组件',
-                    description: '围绕当前实体及其组件生成和改进控制脚本，适合反复打磨车辆与机械。检查生成的代码后，在编辑器中点击 Apply 应用。',
+                    description: '为车辆或机械的各个组件生成和改进 AssemblyScript 控制脚本。检查代码后点击 Apply，编辑器会编译脚本并显示错误。',
                     entry: '对准实体按 C，打开编辑器中的 AI 助手。',
                     example: '为这辆越野车生成转向与悬挂阻尼控制脚本。',
-                    availability: '目前可生成组件脚本，点击 Apply 应用；完整属性编辑与实体级 API 授权为后续扩展。',
+                    availability: '可将生成的代码应用至所选组件。编辑器也提供组件名称、物理属性、保存的默认值、实时运行数据与执行状态。修改前先停止实体。',
                 },
             ],
         },
@@ -1504,8 +1518,8 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         agentDevCards: [
             {
                 icon: 'pixelarticons:code',
-                title: 'AI 智能体控制与 QuickJS 实时沙箱',
-                desc: '通过 AI 将建造构想与控制意图即时转化为精确动力学逻辑，在独立的 QuickJS WebAssembly 隔离沙箱中零延迟实时驱动推进器、转向轴与传感器反馈。'
+                title: 'AssemblyScript 与 WebAssembly 控制脚本',
+                desc: '为每个组件编写控制脚本，或请助手生成代码。脚本编译为 WebAssembly，通过 entityAPI 读取传感器、保存状态并控制受力与运动。'
             },
             {
                 icon: 'pixelarticons:sliders',
@@ -1514,12 +1528,12 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             },
             {
                 icon: 'pixelarticons:folder',
-                title: 'Space 资源市场与蓝图共享',
-                desc: '内置去中心化资源市场，支持一键发布与下载可编程刚体实体、微体素方块组与调色盘资产，实现创作者造物的即时跨世界复用。'
+                title: '组合物品与社区市场',
+                desc: '将地形方块与完整实体保存在可复用的组合物品中，配色集单独管理。背包保存在当前浏览器；通过市场发布与下载作品，与其他玩家分享。'
             }
         ],
-        closingTitle: '无限创意的体素宇宙，已经就绪。',
-        closingSubtitle: '无需下载任何安装包，在现代桌面浏览器中即刻开启 WebGL 2 体素物理世界体验。',
+        closingTitle: '选择一个世界，开始建造。',
+        closingSubtitle: '在支持 WebGPU 并开启 GPU 加速的桌面浏览器中直接游玩，使用键盘和鼠标探索、建造与编程。',
         communityLinks: {
             github: 'GitHub 仓库',
             discord: 'Discord 社区'

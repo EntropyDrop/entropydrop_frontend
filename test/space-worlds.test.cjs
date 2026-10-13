@@ -74,7 +74,7 @@ test('configured development origin is preserved for all published worlds', () =
 });
 
 for (const locale of ['en', 'zh-hans']) {
-    test(`${locale} retains the original heading and specs with a single background carousel`, () => {
+    test(`${locale} presents the heading and current specs with a single background carousel`, () => {
         const current = load(`src/constants/locales/${locale}.ts`).default;
         const { SpacePage } = load('src/pages/SpacePage.tsx');
         const dom = new JSDOM(renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(SpacePage, { current }))));
@@ -84,7 +84,8 @@ for (const locale of ['en', 'zh-hans']) {
         assert.ok(heading.className.includes('lg:text-6xl'));
         assert.ok(hero.textContent.includes('PHYSICS'));
         assert.ok(hero.textContent.includes('AI AGENT'));
-        assert.ok(hero.textContent.includes('TORUS'));
+        assert.ok(hero.textContent.includes('WORLDS'));
+        assert.ok(hero.textContent.includes(current.space_page.stats.worlds));
         const images = [...dom.window.document.querySelectorAll('.space-world-background img')];
         assert.equal(images.length, 3);
         assert.equal(hero.querySelector('.space-world-background'), null);

@@ -5,6 +5,7 @@ import { PageContainer } from '../components/PageContainer'
 import { SEO } from '../components/SEO'
 import type { LangData } from '../constants/lang'
 import { request } from '../utils/httpClient'
+import { useCurrentUser } from '../hooks/useCurrentUser'
 import { disposeFigure, exportPartStl, generateFigure, generateFullFigureAssets, type FigureOutput, type PrintPartId } from './figure/print/figureEngine'
 import { FigurePreview } from './figure/print/FigurePreview'
 import { FigureDownloadDialog } from './figure/print/FigureDownloadDialog'
@@ -33,6 +34,25 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 
 export function FigurePrintPage({ current }: { current: LangData }) {
     const t = current.figurePrint
+    const { user: currentUser } = useCurrentUser()
+    const isPro = currentUser?.is_pro === true
+    const [proPromptDismissed, setProPromptDismissed] = useState(() => {
+        try {
+            return typeof sessionStorage !== 'undefined' && sessionStorage.getItem('dismissed_figure_pro_prompt') === '1'
+        } catch {
+            return false
+        }
+    })
+    const dismissProPrompt = useCallback(() => {
+        setProPromptDismissed(true)
+        try {
+            if (typeof sessionStorage !== 'undefined') {
+                sessionStorage.setItem('dismissed_figure_pro_prompt', '1')
+            }
+        } catch {
+            // ignore
+        }
+    }, [])
     const [model, setModel] = useState<FigureModel>(FIGURE_MODELS[0])
     const location = useLocation()
     const production = useOrderProductionSource(location.search || '')
@@ -197,6 +217,34 @@ export function FigurePrintPage({ current }: { current: LangData }) {
                 {production.active && <Link to="/figure/manage" className={buttonClass}>{t.backToManagement}</Link>}
             </div>
         </header>
+        {!production.active && !isPro && !proPromptDismissed && (
+            <div className="shrink-0 border border-[#a6df7a]/25 bg-gradient-to-r from-[#a6df7a]/12 via-[#a6df7a]/5 to-transparent p-3 sm:px-4 sm:py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs backdrop-blur-sm relative">
+                <div className="flex items-center gap-2.5 min-w-0">
+                    <Icon icon="pixelarticons:zap" className="text-base text-[#a6df7a] shrink-0 animate-pulse" />
+                    <span className="text-white/85 leading-relaxed">
+                        {t.proSupportPrompt}
+                    </span>
+                </div>
+                <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
+                    <Link
+                        to="/pro"
+                        className="inline-flex items-center gap-1 border border-[#a6df7a]/40 bg-[#a6df7a]/15 hover:bg-[#a6df7a]/25 px-3 py-1.5 text-xs font-medium text-[#a6df7a] hover:text-[#c4f09e] transition-all no-underline shadow-[0_0_10px_rgba(166,223,122,0.1)] active:translate-y-px"
+                    >
+                        <span>{t.proSupportAction}</span>
+                        <Icon icon="pixelarticons:chevron-right" className="text-xs" />
+                    </Link>
+                    <button
+                        type="button"
+                        onClick={dismissProPrompt}
+                        className="text-white/40 hover:text-white p-1 cursor-pointer transition-colors bg-transparent border-none inline-flex items-center justify-center"
+                        aria-label={t.dismissProPrompt}
+                        title={t.dismissProPrompt}
+                    >
+                        <Icon icon="pixelarticons:close" className="text-xs" />
+                    </button>
+                </div>
+            </div>
+        )}
         {failure && <div role="alert" className="flex flex-wrap items-center gap-3 border border-red-400/25 bg-red-400/10 p-3 text-xs text-red-200 shrink-0"><span className="flex-1">{t[failure]}</span>{textureUrl && !busy && <button type="button" className={buttonClass} onClick={production.active ? production.retry : () => setRetry(value => value + 1)}>{t.retry}</button>}</div>}
         {busy && <div role="status" className="shrink-0"><div className="flex justify-between text-xs text-white/60 mb-2"><span>{busyLabel || t.generating}</span><span>{progress}%</span></div><div role="progressbar" aria-label={busyLabel || t.generating} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} className="h-1 bg-white/10"><div className="h-full bg-[#4ea632] transition-[width]" style={{ width: `${progress}%` }} /></div></div>}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 lg:min-h-[430px] max-lg:flex-none">
