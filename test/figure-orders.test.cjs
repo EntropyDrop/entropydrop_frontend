@@ -31,7 +31,7 @@ async function fixture(check, options = {}) {
     const navigate = () => {};
     const items = Array.from({ length: 3 }, (_, i) => ({ id: `kit-${i}`, refer_log_id: 'skin-a', skin_url: `/snapshot-${i}.png`, model_type: 'Cute DIY Kit', price: 40, kit_specifications_snapshot: kitSpecifications }));
     const legacy = { id: 'legacy', refer_log_id: 'skin-b', skin_url: '/legacy.png', model_type: 'Figure10cm', price: 60 };
-    const order = { id: 'order-quantity', order_type: 'print', status: 'pending_payment', price: 180, total_price: 180, shipping_fee: 0, created_at: '2026-10-09T00:00:00Z', items: [...items, legacy], address: options.address };
+    const order = { id: 'order-quantity', order_type: 'print', status: 'pending_payment', price: 180, total_price: 180, shipping_fee: 0, created_at: '2026-10-09T00:00:00Z', items: [...items, legacy], address: options.address, shipping_source: options.shippingSource };
     const module = { exports: {} };
     vm.runInNewContext(await compiled, { module, exports: module.exports, console, AbortController, URL, Event: dom.window.Event, document, window: dom.window,
         require(name) {
@@ -285,3 +285,18 @@ test('order details retain the saved skin and publisher identity, and different 
     await e.renderDetails({ ...e.items[0], sticker_snapshot: { ...savedSticker, origin: 'legacy_backfill' } });
     assert.ok(document.body.textContent.includes(e.en.orders.legacyStickerSnapshot));
 }));
+
+test('unpaid PayPal shipping orders explain when the address will be confirmed', async () => fixture(async e => {
+    assert.ok(document.body.textContent.includes(e.en.figurePrint.commissionOrder.paypalAddress));
+    assert.ok(document.body.textContent.includes(e.en.orders.paypalAddressPending));
+    assert.equal(e.button(e.en.orders.payNow).disabled, false);
+}, { shippingSource: 'paypal' }));
+
+test('invalid PayPal addresses show actionable localized guidance without claiming payment success', async () => fixture(async e => {
+    await e.click(e.button(e.en.orders.payNow));
+    e.popup.closed = true; await e.tick();
+    assert.ok(document.body.textContent.includes(e.en.orders.paypalAddressInvalid));
+    assert.equal(document.body.textContent.includes('[object Object]'), false);
+    assert.equal(document.body.textContent.includes(e.en.modal.paySuccess), false);
+    assert.equal(e.button(e.en.orders.payNow).disabled, false);
+}, { shippingSource: 'paypal', captureError: { code: 'invalid_paypal_shipping_address', fields: { country: 'required' } } }));

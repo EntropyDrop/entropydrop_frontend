@@ -29,18 +29,30 @@ async function withDialog(options, check) {
     global.window = dom.window; global.document = dom.window.document; global.IS_REACT_ACT_ENVIRONMENT = true;
     dom.window.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
     dom.window.HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
-    const requests = [], navigated = [];
+    const requests = [], navigated = [], events = [], popups = [], timers = new Map();
+    dom.window.open = () => {
+        events.push('open');
+        if (options.popupBlocked) return null;
+        const popup = { closed: false, document: { title: '', body: { textContent: '' } }, location: { href: '' }, close() { this.closed = true; } };
+        popups.push(popup);
+        return popup;
+    };
+    dom.window.setInterval = callback => { const id = timers.size + 1; timers.set(id, callback); return id; };
+    dom.window.clearInterval = id => timers.delete(id);
     let closed = 0, session = options.guest ? null : 'account-a';
     const listeners = new Set();
     const server = { stock: [{ model_type: 'Cute DIY Kit', price: 40, stock: 300, available: true, kit_specifications: kitSpecifications }], addresses: [addressA], status: 200, postStatus: 200, deleteStatus: 200, pendingPost: null, pendingLoad: null, ...options.server };
     const module = { exports: {} };
-    vm.runInNewContext(await compiled, { module, exports: module.exports, console, AbortController, document, window: dom.window, localStorage: dom.window.localStorage, Event: dom.window.Event, confirm: () => options.confirmDelete !== false,
+    vm.runInNewContext(await compiled, { module, exports: module.exports, console, AbortController, URL, document, window: dom.window, localStorage: dom.window.localStorage, Event: dom.window.Event, confirm: () => options.confirmDelete !== false,
         require(name) {
             if (name.endsWith('/utils/authClient')) return { waitForAuthReady: async () => {} };
             if (name.endsWith('/utils/authSession')) return { getAuthSessionKey: () => session };
             if (name.endsWith('/hooks/useAuthSession')) return { useAuthSession: () => React.useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener); }, () => session) };
             if (name.endsWith('/utils/api')) return { apiResponseJson: response => response.json(), apiFetch: async (url, init = {}) => {
                 requests.push({ url, ...init });
+                events.push(url);
+                if (url.endsWith('/create-paypal-order')) return { ok: !server.checkoutError, status: server.checkoutError ? 500 : 200, json: async () => server.checkoutError ? { detail: server.checkoutError } : { id: 'PAYPAL-DIRECT', status: server.paypalStatus || 'CREATED', approval_url: 'https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-DIRECT' } };
+                if (url.endsWith('/pay')) return { ok: !server.captureError, status: server.captureError ? 400 : 200, json: async () => server.captureError ? { detail: server.captureError } : { id: 'order-a', status: 'paid' } };
                 const post = init.method === 'POST';
                 if (post && server.pendingPost) await server.pendingPost.promise;
                 if (!post && server.pendingLoad) await server.pendingLoad.promise;
@@ -67,8 +79,10 @@ async function withDialog(options, check) {
     const click = element => React.act(async () => { assert.ok(element); element.click(); });
     try {
         await React.act(async () => root.render(React.createElement(FigureCommissionDialog, { current: en, source, model: FIGURE_MODELS[0], onClose: () => { closed++; } })));
-        await check({ server, requests, navigated, button, click, en, closed: () => closed, submit: () => button(en.figurePrint.commissionOrder.checkout),
+        if (options.addressBook) await click(document.querySelector('input[value="address_book"]'));
+        await check({ server, requests, navigated, button, click, en, popups, timers, events, closed: () => closed, submit: () => button(en.figurePrint.commissionOrder.checkout), buyNow: () => button(en.figurePrint.commissionOrder.buyNow),
             resolve: pending => React.act(async () => pending.resolve()),
+            tick: () => React.act(async () => { for (const callback of Array.from(timers.values())) callback(); }),
             switchAccount: account => React.act(async () => { session = account; listeners.forEach(listener => listener()); }),
         });
         assert.equal(requests.some(request => request.url.includes('figure_print_terms')), false, 'commissioning is separate from download consent');
@@ -79,7 +93,7 @@ async function withDialog(options, check) {
     }
 }
 
-test('commissioning creates one unpaid Cute order from its source and address, then opens Orders', async () => {
+test('commissioning defaults to PayPal shipping without loading addresses, then opens Orders', async () => {
     await withDialog({}, async env => {
         assert.ok(document.body.textContent.includes('$40.00'));
         assert.equal(document.body.textContent.includes('Moving parts in the preview'), false);
@@ -103,8 +117,9 @@ test('commissioning creates one unpaid Cute order from its source and address, t
         assert.equal(env.navigated.length, 0);
         assert.equal(env.button(env.en.modal.cancel).disabled, true);
         await env.resolve(pending);
+        assert.equal(env.requests.some(request => request.url === '/api/addresses'), false);
         const post = env.requests.find(request => request.method === 'POST');
-        assert.deepEqual(JSON.parse(post.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', address_id: 'address-a', quantity: 1, sticker_language: 'en' });
+        assert.deepEqual(JSON.parse(post.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', shipping_source: 'paypal', quantity: 1, sticker_language: 'en' });
         assert.deepEqual(env.navigated, ['/skin/orders']);
     });
 });
@@ -213,7 +228,7 @@ function addressCard(street) {
 }
 
 test('an incomplete selected address blocks adding a kit until its recipient is saved', async () => {
-    await withDialog({ server: { addresses: [{ ...addressA, recipient_name: '' }] } }, async env => {
+    await withDialog({ addressBook: true, server: { addresses: [{ ...addressA, recipient_name: '' }] } }, async env => {
         assert.equal(env.submit().disabled, true);
         assert.ok(document.querySelector('footer').textContent.includes(env.en.address.completeAddress));
         await env.click(env.button(env.en.figurePrint.commissionOrder.change));
@@ -230,7 +245,7 @@ test('an incomplete selected address blocks adding a kit until its recipient is 
 });
 
 test('deleting an explicitly selected address clears checkout until another address is selected', async () => {
-    await withDialog({ server: { addresses: [addressA, addressB] } }, async env => {
+    await withDialog({ addressBook: true, server: { addresses: [addressA, addressB] } }, async env => {
         await env.click(env.button(env.en.figurePrint.commissionOrder.change));
         await env.click(addressCard(addressB.detail_address));
         assert.ok(document.querySelector('footer').textContent.includes(addressB.detail_address));
@@ -252,7 +267,7 @@ test('deleting an explicitly selected address clears checkout until another addr
 });
 
 for (const failAddressRefresh of [false, true]) test(`deleting the last address clears checkout even when refreshing fails: ${failAddressRefresh}`, async () => {
-    await withDialog({ server: { failAddressRefresh } }, async env => {
+    await withDialog({ addressBook: true, server: { failAddressRefresh } }, async env => {
         await env.click(env.button(env.en.figurePrint.commissionOrder.change));
         await env.click(env.button(env.en.address.deleteAddress));
         assert.equal(document.body.textContent.includes(addressA.detail_address), false);
@@ -263,7 +278,7 @@ for (const failAddressRefresh of [false, true]) test(`deleting the last address 
 });
 
 test('deleting a different address keeps the selected shipping address', async () => {
-    await withDialog({ server: { addresses: [addressA, addressB] } }, async env => {
+    await withDialog({ addressBook: true, server: { addresses: [addressA, addressB] } }, async env => {
         await env.click(env.button(env.en.figurePrint.commissionOrder.change));
         await env.click(addressCard(addressB.detail_address).querySelector(`[aria-label="${env.en.address.deleteAddress}"]`));
         assert.ok(document.querySelector('footer').textContent.includes(addressA.detail_address));
@@ -272,12 +287,211 @@ test('deleting a different address keeps the selected shipping address', async (
 });
 
 for (const [label, options] of [['cancelled', { confirmDelete: false }], ['failed', { server: { deleteStatus: 500 } }]]) test(`${label} deletion keeps the address in checkout and in the picker`, async () => {
-    await withDialog(options, async env => {
+    await withDialog({ ...options, addressBook: true }, async env => {
         await env.click(env.button(env.en.figurePrint.commissionOrder.change));
         await env.click(env.button(env.en.address.deleteAddress));
         assert.ok(addressCard(addressA.detail_address));
         assert.ok(document.querySelector('footer').textContent.includes(addressA.detail_address));
         assert.equal(env.submit().disabled, false);
         if (label === 'cancelled') assert.equal(env.requests.some(request => request.method === 'DELETE'), false);
+    });
+});
+
+test('PayPal shipping can be used without any saved address', async () => {
+    await withDialog({ server: { addresses: [] } }, async env => {
+        assert.equal(document.querySelector('input[value="paypal"]').checked, true);
+        assert.equal(env.submit().disabled, false);
+        assert.equal(env.requests.some(request => request.url === '/api/addresses'), false);
+        await env.click(env.submit());
+        const data = JSON.parse(env.requests.find(request => request.method === 'POST').body);
+        assert.equal(data.shipping_source, 'paypal');
+        assert.equal('address_id' in data, false);
+    });
+});
+
+test('switching to address book requires a complete address and sends its source', async () => {
+    await withDialog({ addressBook: true }, async env => {
+        assert.equal(document.querySelector('input[value="address_book"]').checked, true);
+        assert.ok(document.querySelector('footer').textContent.includes(addressA.recipient_name));
+        await env.click(env.submit());
+        const data = JSON.parse(env.requests.find(request => request.method === 'POST').body);
+        assert.equal(data.shipping_source, 'address_book');
+        assert.equal(data.address_id, addressA.id);
+    });
+});
+
+test('switching back to PayPal clears the address requirement and omits a previously selected address', async () => {
+    for (const addresses of [[], [{ ...addressA, recipient_name: '' }], [addressA]]) {
+        await withDialog({ addressBook: true, server: { addresses } }, async env => {
+            assert.equal(env.submit().disabled, !addresses[0]?.recipient_name);
+            await env.click(document.querySelector('input[value="paypal"]'));
+            assert.equal(env.submit().disabled, false);
+            await env.click(env.submit());
+            const data = JSON.parse(env.requests.find(request => request.method === 'POST').body);
+            assert.equal(data.shipping_source, 'paypal');
+            assert.equal('address_id' in data, false);
+        });
+    }
+});
+
+test('address-book failure does not block PayPal shipping', async () => {
+    await withDialog({}, async env => {
+        env.server.status = 500;
+        await env.click(document.querySelector('input[value="address_book"]'));
+        assert.equal(env.submit().disabled, true);
+        assert.ok(document.body.textContent.includes(env.en.figurePrint.commissionOrder.addressLoadFailed));
+        await env.click(document.querySelector('input[value="paypal"]'));
+        assert.equal(env.submit().disabled, false);
+        await env.click(env.submit());
+        assert.equal(env.navigated.length, 1);
+    });
+});
+
+test('Buy Now follows Add to cart, opens PayPal in the click, and pays only its new order', async () => {
+    await withDialog({}, async env => {
+        assert.equal(env.submit().nextElementSibling, env.buyNow());
+        const select = document.querySelector('select');
+        await React.act(async () => { select.value = '3'; select.dispatchEvent(new window.Event('change', { bubbles: true })); });
+        env.events.length = 0;
+        await env.click(env.buyNow());
+        assert.deepEqual(env.events.slice(0, 3), ['open', '/api/orders', '/api/orders/order-a/create-paypal-order']);
+        const create = env.requests.find(request => request.url === '/api/orders' && request.method === 'POST');
+        assert.deepEqual(JSON.parse(create.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', shipping_source: 'paypal', quantity: 3, sticker_language: 'en', checkout_mode: 'buy_now' });
+        assert.equal(env.popups[0].location.href, 'https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-DIRECT');
+        assert.deepEqual(env.navigated, []);
+        assert.equal(env.closed(), 0);
+        assert.equal(env.submit().disabled, true);
+        assert.equal(select.disabled, true);
+        assert.equal(document.querySelector('fieldset').disabled, true);
+        env.popups[0].closed = true;
+        await env.tick(); await env.tick();
+        const captures = env.requests.filter(request => request.url.endsWith('/pay'));
+        assert.equal(captures.length, 1);
+        assert.deepEqual(JSON.parse(captures[0].body), { paypal_order_id: 'PAYPAL-DIRECT' });
+        assert.deepEqual(env.navigated, ['/skin/orders?order=order-a']);
+        assert.equal(env.closed(), 1);
+        assert.equal(env.timers.size, 0);
+    });
+});
+
+test('Buy Now respects the selected address-book address', async () => {
+    await withDialog({ addressBook: true }, async env => {
+        await env.click(env.buyNow());
+        const data = JSON.parse(env.requests.find(request => request.url === '/api/orders').body);
+        assert.equal(data.shipping_source, 'address_book');
+        assert.equal(data.address_id, addressA.id);
+        assert.equal(data.checkout_mode, 'buy_now');
+    });
+});
+
+test('blocked popups do not create a direct purchase or charge the buyer', async () => {
+    await withDialog({ popupBlocked: true }, async env => {
+        await env.click(env.buyNow());
+        assert.equal(env.requests.some(request => request.method === 'POST'), false);
+        assert.equal(env.buyNow().disabled, false);
+        assert.ok(document.querySelector('[role="alert"]').textContent.includes(env.en.orders.popupBlocked));
+    });
+});
+
+test('double clicks and a simultaneous Add to cart cannot create duplicate direct purchases', async () => {
+    await withDialog({}, async env => {
+        const pending = deferred(); env.server.pendingPost = pending;
+        const buy = env.buyNow(), cart = env.submit();
+        await React.act(async () => { buy.click(); buy.click(); cart.click(); });
+        assert.equal(env.popups.length, 1);
+        assert.equal(env.requests.filter(request => request.url === '/api/orders').length, 1);
+        await env.resolve(pending);
+        assert.equal(env.requests.filter(request => request.url.endsWith('/create-paypal-order')).length, 1);
+    });
+});
+
+for (const captureError of ['PayPal payment is not approved', 'Payment confirmation pending; retry without creating another order']) test(`Buy Now retries the same local order after ${captureError}`, async () => {
+    await withDialog({ server: { captureError } }, async env => {
+        await env.click(env.buyNow());
+        env.popups[0].closed = true; await env.tick();
+        assert.equal(env.navigated.length, 0);
+        assert.equal(env.buyNow().disabled, false);
+        env.server.captureError = null;
+        env.server.paypalStatus = 'CAPTURE_PENDING';
+        await env.click(env.buyNow());
+        assert.equal(env.requests.filter(request => request.url === '/api/orders').length, 1);
+        assert.deepEqual(env.navigated, ['/skin/orders?order=order-a']);
+    });
+});
+
+test('direct-order creation errors close the popup and leave both actions available', async () => {
+    await withDialog({ server: { postStatus: 500 } }, async env => {
+        await env.click(env.buyNow());
+        assert.equal(env.popups[0].closed, true);
+        assert.equal(env.requests.some(request => request.url.endsWith('/create-paypal-order')), false);
+        assert.equal(env.buyNow().disabled, false);
+        assert.equal(env.submit().disabled, false);
+        assert.ok(document.querySelector('[role="alert"]').textContent.includes(env.en.figurePrint.commissionOrder.createFailed));
+    });
+});
+
+test('changing account during direct-order creation aborts checkout and ignores its late result', async () => {
+    await withDialog({}, async env => {
+        const pending = deferred(); env.server.pendingPost = pending;
+        await env.click(env.buyNow());
+        await env.switchAccount('account-b');
+        await env.resolve(pending);
+        assert.equal(env.popups[0].closed, true);
+        assert.equal(env.requests.find(request => request.url === '/api/orders').signal.aborted, true);
+        assert.equal(env.requests.some(request => request.url.endsWith('/create-paypal-order')), false);
+        assert.deepEqual(env.navigated, []);
+    });
+});
+
+for (const options of [{ guest: true }, { addressBook: true, server: { addresses: [] } }, { server: { stock: [] } }]) test(`Buy Now keeps existing sign-in, address and stock requirements: ${JSON.stringify(options)}`, async () => {
+    await withDialog(options, async env => {
+        if (options.guest) assert.equal(env.buyNow(), undefined);
+        else {
+            assert.equal(env.buyNow().disabled, true);
+            await env.click(env.buyNow());
+        }
+        assert.equal(env.popups.length, 0);
+        assert.equal(env.requests.some(request => request.method === 'POST'), false);
+    });
+});
+
+test('editing the saved address after cancelling Buy Now creates an order with the updated address', async () => {
+    await withDialog({ addressBook: true, server: { captureError: 'PayPal payment is not approved' } }, async env => {
+        await env.click(env.buyNow());
+        env.popups[0].closed = true; await env.tick();
+        env.server.addresses = [{ ...addressA, recipient_name: 'Updated Recipient' }];
+        await env.click(document.querySelector('input[value="paypal"]'));
+        await env.click(document.querySelector('input[value="address_book"]'));
+        assert.ok(document.querySelector('footer').textContent.includes('Updated Recipient'));
+        await env.click(env.buyNow());
+        assert.equal(env.requests.filter(request => request.url === '/api/orders').length, 2);
+    });
+});
+
+test('PayPal initialization failure can retry without creating another direct order', async () => {
+    await withDialog({ server: { checkoutError: 'Checkout unavailable' } }, async env => {
+        await env.click(env.buyNow());
+        assert.equal(env.popups[0].closed, true);
+        assert.ok(document.querySelector('[role="alert"]').textContent.includes('Checkout unavailable'));
+        env.server.checkoutError = null;
+        await env.click(env.buyNow());
+        assert.equal(env.requests.filter(request => request.url === '/api/orders').length, 1);
+        assert.ok(env.popups[1].location.href.includes('PAYPAL-DIRECT'));
+    });
+});
+
+test('closing the popup during direct-order creation does not launch payment afterwards', async () => {
+    await withDialog({}, async env => {
+        const pending = deferred(); env.server.pendingPost = pending;
+        await env.click(env.buyNow());
+        env.popups[0].closed = true;
+        await env.resolve(pending);
+        assert.equal(env.requests.some(request => request.url.endsWith('/create-paypal-order')), false);
+        assert.equal(env.buyNow().disabled, false);
+        assert.equal(env.navigated.length, 0);
+        env.server.pendingPost = null;
+        await env.click(env.buyNow());
+        assert.equal(env.requests.filter(request => request.url === '/api/orders').length, 1);
+        assert.ok(env.popups[1].location.href.includes('PAYPAL-DIRECT'));
     });
 });

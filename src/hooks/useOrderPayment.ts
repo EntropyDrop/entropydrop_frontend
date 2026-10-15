@@ -11,11 +11,11 @@ interface Checkout {
 export function useOrderPayment({ authSession, current, onSuccess, onError }: {
     authSession: string | null
     current: LangData
-    onSuccess: () => void
+    onSuccess: (orderId: string) => void
     onError: (message: string) => void
 }) {
     const checkout = useRef<Checkout | null>(null)
-    const [processing, setProcessing] = useState<{ orderId: string; session: string } | null>(null)
+    const [processing, setProcessing] = useState<{ orderId: string | null; session: string } | null>(null)
 
     useEffect(() => () => {
         const active = checkout.current
@@ -27,7 +27,7 @@ export function useOrderPayment({ authSession, current, onSuccess, onError }: {
         }
     }, [authSession])
 
-    const pay = async (orderId: string) => {
+    const pay = async (orderOrCreate: string | ((signal: AbortSignal) => Promise<string>)) => {
         if (!authSession || checkout.current) return
         // Open during the click, before the request, so browsers retain user activation.
         const width = 600, height = 700
@@ -41,6 +41,7 @@ export function useOrderPayment({ authSession, current, onSuccess, onError }: {
 
         const active: Checkout = { popup, controller: new AbortController() }
         checkout.current = active
+        let orderId = typeof orderOrCreate === 'string' ? orderOrCreate : null
         setProcessing({ orderId, session: authSession })
         const isCurrent = () => checkout.current === active && !active.controller.signal.aborted
         const finish = () => {
@@ -54,7 +55,7 @@ export function useOrderPayment({ authSession, current, onSuccess, onError }: {
 
         const confirmPayment = async (paypalOrderId: string) => {
             window.clearInterval(active.timer)
-            if (!isCurrent()) return
+            if (!isCurrent() || !orderId) return
             try {
                 const response = await apiFetch(`/api/orders/${encodeURIComponent(orderId)}/pay`, {
                     method: 'POST', signal: active.controller.signal, auth: 'required', skipGlobalError: true,
@@ -64,9 +65,11 @@ export function useOrderPayment({ authSession, current, onSuccess, onError }: {
                 if (!isCurrent()) return
                 if (response.ok) {
                     window.dispatchEvent(new Event('user-updated'))
-                    onSuccess()
+                    onSuccess(orderId)
                 } else if (!(response.status === 400 && result.detail === 'PayPal payment is not approved')) {
-                    onError(result.detail || current.orders.paymentFailed)
+                    onError(result.detail?.code === 'invalid_paypal_shipping_address'
+                        ? current.orders.paypalAddressInvalid
+                        : typeof result.detail === 'string' ? result.detail : current.orders.paymentFailed)
                 }
             } catch {
                 if (isCurrent()) onError(current.orders.paymentFailed)
@@ -78,6 +81,15 @@ export function useOrderPayment({ authSession, current, onSuccess, onError }: {
         try {
             popup.document.title = current.modal.payOrder
             popup.document.body.textContent = current.orders.openingPayment
+            // Buy Now also opens its popup within the click, before creating
+            // the local order, to retain the browser's user activation.
+            if (typeof orderOrCreate === 'function') {
+                orderId = await orderOrCreate(active.controller.signal)
+                if (!isCurrent()) return
+                setProcessing({ orderId, session: authSession })
+            }
+            if (!orderId) throw new Error(current.orders.paymentFailed)
+            if (popup.closed) { finish(); return }
             const returnUrl = `${window.location.origin}/credits?payment_redirect=1`
             const response = await apiFetch(`/api/orders/${encodeURIComponent(orderId)}/create-paypal-order`, {
                 method: 'POST', signal: active.controller.signal, auth: 'required', skipGlobalError: true,
@@ -107,5 +119,9 @@ export function useOrderPayment({ authSession, current, onSuccess, onError }: {
         }
     }
 
-    return { pay, processingOrderId: processing?.session === authSession ? processing.orderId : null }
+    return {
+        pay,
+        isProcessing: !!processing && processing.session === authSession,
+        processingOrderId: processing?.session === authSession ? processing.orderId : null,
+    }
 }

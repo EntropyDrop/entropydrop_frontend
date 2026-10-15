@@ -38,6 +38,7 @@ interface OrderItem extends KitSpecificationRecord, OrderStickerRecord {
 interface Order {
     id: string;
     address_id?: string;
+    shipping_source?: 'paypal' | 'address_book';
     order_type?: string;
     status: string;
     price: number;
@@ -405,6 +406,12 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                             </div>
                                         </div>
 
+                                        {order.order_type !== 'subscription' && !order.address && order.shipping_source === 'paypal' && (
+                                            <div className="border-l border-white/5 pl-4 text-xs text-white/60">
+                                                <p className="mt-0">{current.figurePrint.commissionOrder.paypalAddress}</p>
+                                                <p className="mb-0 text-white/40">{current.orders.paypalAddressPending}</p>
+                                            </div>
+                                        )}
                                         {order.order_type !== 'subscription' && order.address && (
                                             <div className="flex flex-col gap-1.5 border-l border-white/5 pl-4">
                                                 <span className="text-white/60 text-xs flex items-center gap-1">

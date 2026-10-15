@@ -162,7 +162,9 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
                             onSuccess();
                         } else {
                             const err = await captureRes.json();
-                            alert(err.detail || 'Capture Failed');
+                            alert(err.detail?.code === 'invalid_paypal_shipping_address'
+                                ? current.orders.paypalAddressInvalid
+                                : typeof err.detail === 'string' ? err.detail : current.orders.paymentFailed);
                         }
                     } catch {
                         alert('Payment Confirmation Failed');
@@ -181,7 +183,7 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
         }
 
         renderedButtonRef.current.render(paypalButtonRef.current);
-    }, [isSubscription, isUpgrade, existingSubscriptionId, planId, userId, onSuccess, orderId]);
+    }, [isSubscription, isUpgrade, existingSubscriptionId, planId, userId, onSuccess, orderId, current.orders.paypalAddressInvalid, current.orders.paymentFailed]);
 
     useEffect(() => {
         if (isSdkLoaded && paypalButtonRef.current && clientId && isOpen && (orderId || isSubscription) && !isLoadingClient) {
