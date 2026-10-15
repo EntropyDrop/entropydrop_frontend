@@ -134,6 +134,7 @@ for (const lang of ['zh', 'en']) {
             });
             await env.finish();
             assert.equal(env.generatedInfo[0].sourceUrl, 'https://entropydrop.com/skin/?id=skin123');
+            assert.equal(env.generatedInfo[0].sourceIsPublic, false);
             assert.equal(env.generatedInfo[0].publisher, source.publisher);
             assert.equal(env.generatedInfo[0].publisherId, source.publisherId);
             assert.equal(env.generatedInfo[0].generatedModelType, 'cute10');
@@ -256,6 +257,16 @@ test('rapid duplicate confirmations send one save and one download', async () =>
 
 const savedSticker = require('./fixtures/order-sticker.json');
 const productionSource = { id: 'kit-a', order_id: 'order-a', model_type: 'Cute DIY Kit', skin_url: 'https://private.example.test/orders/order-a/kit-a.png?signature=fresh', sticker_snapshot: savedSticker };
+
+for (const visibility of [true, false, null]) test(`production stickers preserve saved source visibility: ${visibility}`, async () => {
+    await withPage({ search: '?order=order-a&item=kit-a', server: { production: {
+        ...productionSource, sticker_snapshot: { ...savedSticker, source_is_public: visibility },
+    } } }, async env => {
+        await env.finish();
+        assert.equal(env.generatedInfo[0].sourceIsPublic, visibility);
+        assert.equal(env.generatedInfo[0].sourceUrl, savedSticker.source_url);
+    });
+});
 
 test('production reloads the saved order image and exact sticker text even with a different UI language', async () => {
     await withPage({ search: '?order=order-a&item=kit-a', lang: 'zh', server: { production: productionSource } }, async env => {

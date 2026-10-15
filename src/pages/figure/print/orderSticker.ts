@@ -10,6 +10,7 @@ export interface OrderStickerSnapshot {
     publisher_id: string
     publisher_name: string
     source_url: string
+    source_is_public?: boolean | null
     labels: { publisher: string; user_id: string; source: string }
     missing_fields: string[]
 }
@@ -21,6 +22,7 @@ export function orderStickerInfo(snapshot: OrderStickerSnapshot): StickerInfo {
         brand: snapshot.brand, modelName: snapshot.model_name,
         name: snapshot.skin_name, publisher: snapshot.publisher_name, publisherId: snapshot.publisher_id,
         sourceId: snapshot.skin_id, sourceUrl: snapshot.source_url,
+        sourceIsPublic: snapshot.source_is_public,
         labels: { publisher: snapshot.labels.publisher, userId: snapshot.labels.user_id, source: snapshot.labels.source },
     }
 }

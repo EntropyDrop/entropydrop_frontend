@@ -32,8 +32,41 @@ const code = buildSync({
     external: ['three', 'three/*', 'manifold-3d', 'manifold-3d/*'],
 }).outputFiles[0].text;
 const moduleRef = { exports: {} };
-vm.runInNewContext(code, { module: moduleRef, exports: moduleRef.exports, require: name => name === 'manifold-3d' ? async options => (await import('manifold-3d')).default(options) : require(name), console, setTimeout, clearTimeout, requestAnimationFrame: callback => setTimeout(callback, 0), Blob, URL, AbortController, DOMException });
+const engineContext = { module: moduleRef, exports: moduleRef.exports, require: name => name === 'manifold-3d' ? async options => (await import('manifold-3d')).default(options) : require(name), console, setTimeout, clearTimeout, requestAnimationFrame: callback => setTimeout(callback, 0), Blob, URL, AbortController, DOMException };
+vm.runInNewContext(code, engineContext);
 const engine = moduleRef.exports;
+
+// Record the real composer's printed borders, labels and image placements while
+// retaining the existing headless pixel canvas for all raster/cutter operations.
+async function recordStickerSheet(options, slim, check) {
+    const sheets = [];
+    function RecordingCanvas(width, height) {
+        delete engineContext.OffscreenCanvas;
+        const canvas = engine.createCanvas(width, height);
+        engineContext.OffscreenCanvas = RecordingCanvas;
+        if ((width === 840 && height === 1188) || (width === 4200 && height === 5940)) {
+            const drawing = { canvas, borders: [], labels: [], images: [] };
+            const context = canvas.getContext('2d');
+            const drawImage = context.drawImage;
+            context.strokeRect = (x, y, width, height) => drawing.borders.push({ x, y, width, height });
+            context.fillText = (text, x, y) => drawing.labels.push({ text, x, y });
+            context.drawImage = (image, ...args) => { drawing.images.push({ x: args[0], y: args[1], width: image.width, height: image.height }); drawImage(image, ...args); };
+            canvas.getContext = () => context;
+            sheets.push(drawing);
+        }
+        return canvas;
+    }
+    engineContext.OffscreenCanvas = RecordingCanvas;
+    let pages = [];
+    try {
+        const skin = engine.processSkin(skinCanvas(false, slim), 0.5);
+        pages = await engine.composeMergedPages(skin, { cuteMode: true, modelScale: 1.5, ...options });
+        await check(pages, sheets.find(sheet => sheet.canvas === pages[0].pageCanvas));
+    } finally {
+        delete engineContext.OffscreenCanvas;
+        for (const page of pages) for (const canvas of [page.pageCanvas, page.cutterCanvas, ...page.cutterLayers]) if (canvas) canvas.width = canvas.height = 1;
+    }
+}
 
 function skinCanvas(legacy = false, slim = false) {
     const canvas = engine.createCanvas(64, legacy ? 32 : 64);
@@ -295,6 +328,32 @@ test('sticker annotations stay in reserved whitespace and cannot enter the cutti
     assert.equal(engine.generatePageCutterSVG(page, { includeBackground: false }), before);
 });
 
+test('private sticker links keep their marker in previews and exports without changing the URL', () => {
+    for (const width of [840, 4200]) for (const visibility of [false, true, undefined, null]) {
+        const drawn = [];
+        const area = { x: 0, y: 400, width: 2540 * width / 4200, height: 200 };
+        const ctx = {
+            save() {}, restore() {}, beginPath() {}, rect() {}, clip() {},
+            measureText: text => ({ width: text.length * 6 }),
+            fillText: text => drawn.push(text),
+        };
+        const info = { name: 'Skin', publisher: 'Maker', publisherId: 'maker', sourceId: 'skin',
+            sourceUrl: 'https://entropydrop.com/skin/?id=skin', sourceIsPublic: visibility,
+            labels: { publisher: 'Publisher', userId: 'User ID', source: 'Skin' } };
+        const originalUrl = info.sourceUrl;
+        engine.drawStickerInfo({ width, getContext: () => ctx }, area, info);
+        assert.equal(drawn.at(-1), originalUrl + (visibility === false ? ' (private)' : ''));
+        assert.equal(info.sourceUrl, originalUrl, 'privacy is a printed annotation, never part of the URL');
+        if (visibility === false) {
+            engine.drawStickerInfo({ width, getContext: () => ctx }, area, { ...info, sourceUrl: originalUrl.repeat(50) });
+            assert.ok(drawn.at(-1).endsWith('… (private)'), 'truncation must preserve the marker');
+            assert.ok(ctx.measureText(drawn.at(-1)).width <= area.width);
+            engine.drawStickerInfo({ width, getContext: () => ctx }, area, { ...info, sourceUrl: '' });
+            assert.equal(drawn.at(-1), 'Skin: #skin', 'an absent URL must not label another line as private');
+        }
+    }
+});
+
 test('tiered loading creates fast preview sticker first and generates full 4200x5940 assets on demand', async () => {
     const controller = new AbortController();
     const info = { name: 'Tiered Hero', publisher: 'Tester', publisherId: '1', sourceId: 'skin1', sourceUrl: 'http://localhost/skin1', labels: { publisher: 'Maker', userId: 'ID', source: 'Skin' } };
@@ -433,6 +492,76 @@ for (const [slim, modelScale] of [[false, 1], [false, 1.5], [true, 1], [true, 1.
         assert.ok(page.infoArea.height > 0);
         assert.ok(page.infoArea.y + page.infoArea.height <= page.pageCanvas.height);
     } finally { for (const page of pages) page.pageCanvas.width = page.pageCanvas.height = 1; }
+});
+
+for (const slim of [false, true]) test(`cute10 preview groups all six faces per part with safe margins (${slim ? 'slim' : 'classic'})`, async () => {
+    await recordStickerSheet({ preview: true }, slim, (pages, drawing) => {
+        assert.equal(pages.length, 1);
+        assert.equal(drawing.borders.length, 6, 'one printed region per complete part');
+        assert.equal(drawing.images.length, 36, 'all six faces of all six parts are printed');
+        const contains = (outer, inner) => inner.x >= outer.x && inner.y >= outer.y
+            && inner.x + (inner.width || 0) <= outer.x + outer.width
+            && inner.y + (inner.height || 0) <= outer.y + outer.height;
+        const names = ['HEAD', 'TORSO', 'LEFT ARM', 'RIGHT ARM', 'LEFT LEG', 'RIGHT LEG'];
+        drawing.borders.forEach((region, index) => {
+            const labels = drawing.labels.filter(label => contains(region, label)).map(label => label.text);
+            assert.deepEqual(labels.filter(text => names.includes(text)), [names[index]]);
+            assert.deepEqual(labels.filter(text => !names.includes(text)).sort(), ['Back', 'Bottom', 'Front', 'Left', 'Right', 'Top']);
+            assert.equal(drawing.images.filter(image => contains(region, image)).length, 6, `${names[index]} keeps all textures inside its border`);
+            assert.ok(region.x >= 40 && region.x + region.width <= 800, '10 mm horizontal inset');
+            assert.ok(region.y + region.height < pages[0].infoArea.y, 'source annotations have their own whitespace');
+            for (const other of drawing.borders.slice(index + 1)) {
+                assert.ok(region.x + region.width <= other.x || other.x + other.width <= region.x
+                    || region.y + region.height <= other.y || other.y + other.height <= region.y, 'part borders cannot overlap');
+            }
+        });
+        const [head, torso, ...limbs] = drawing.borders;
+        assert.equal(head.y, torso.y, 'head and torso share the first row');
+        assert.ok(head.x < torso.x);
+        assert.ok(limbs.every(region => region.y > Math.max(head.y + head.height, torso.y + torso.height)));
+        assert.ok(limbs.every(region => region.y === limbs[0].y), 'four complete limbs share the second row');
+        for (const image of drawing.images) {
+            assert.ok(image.y >= Math.ceil(22.1 * 4));
+            assert.ok(image.y + image.height <= Math.floor(274.9 * 4));
+        }
+        const headFaces = drawing.images.filter(image => contains(head, image));
+        assert.ok(headFaces.every(image => image.width === 162 && image.height === 162), '40.65 mm head faces retain their preview scale');
+    });
+});
+
+test('cute10 export keeps grouped print faces and cutter geometry aligned at full physical scale', async () => {
+    await recordStickerSheet({ preview: false }, false, (pages, drawing) => {
+        const page = pages[0];
+        assert.equal(pages.length, 1);
+        assert.equal(drawing.borders.length, 6);
+        // Full exports add exactly two assembly guides after the 36 printed faces.
+        assert.equal(drawing.images.length, 38);
+        const faces = drawing.images.slice(0, 36).map(image => ({ x: image.x + 6, y: image.y + 6, width: image.width - 12, height: image.height - 12 }));
+        const contains = (outer, x, y) => x >= outer.x && y >= outer.y && x <= outer.x + outer.width && y <= outer.y + outer.height;
+        drawing.borders.forEach(region => {
+            assert.equal(faces.filter(face => contains(region, face.x, face.y) && contains(region, face.x + face.width, face.y + face.height)).length, 6);
+        });
+        assert.ok(faces.slice(0, 6).every(face => face.width === 813 && face.height === 813), 'head faces remain 40.65 mm at 20 pixels/mm');
+        const inFace = (x, y) => faces.some(face => contains(face, x, y));
+        let vectorPoints = 0;
+        for (const path of page.cutterTraceOptions.vectorPaths) for (const [x, y] of path.points) {
+            assert.ok(x >= 200 && x <= 4000 && y >= 442 && y <= 5498, 'analytic cuts stay within the compensated work area');
+            assert.ok(inFace(x, y), 'analytic cuts stay aligned with printed faces');
+            vectorPoints++;
+        }
+        assert.ok(vectorPoints > 0);
+        let rasterPixels = 0;
+        for (const canvas of page.cutterLayers) {
+            const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+            for (let offset = 3; offset < pixels.length; offset += 4) if (pixels[offset] > 128) {
+                const pixel = (offset - 3) / 4, x = pixel % canvas.width, y = Math.floor(pixel / canvas.width);
+                assert.ok(x >= 200 && x < 4000 && y >= 442 && y < 5498);
+                assert.ok(inFace(x, y), 'raster masks stay aligned with printed faces');
+                rasterPixels++;
+            }
+        }
+        assert.ok(rasterPixels > 0);
+    });
 });
 
 test('sticker preparation can be cancelled between parts before allocating an A4 page', async () => {

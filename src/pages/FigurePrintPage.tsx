@@ -68,6 +68,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
         publisherId: source?.publisherId || '',
         sourceId: source?.id || '',
         sourceUrl: source ? figureSourceUrl(source.id) : '',
+        sourceIsPublic: source?.isPublic,
         labels: t.stickerInfo,
     }), [savedSticker, name, source, t.unnamedSkin, t.unknownPublisher, t.stickerInfo])
     const [output, setOutput] = useState<FigureOutput | null>(null)

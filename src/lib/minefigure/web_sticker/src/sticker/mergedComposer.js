@@ -15,6 +15,14 @@ const INSET = 32;
 const TITLE_HEIGHT = 80;
 const LABEL_HEIGHT = 50;
 const SPLIT_GAP = 20;
+const COMPACT_GROUP_INSET = 16;
+const COMPACT_GROUP_TITLE_HEIGHT = 64;
+// Match Minefigure's 10 mm side inset and 20 mm top/bottom no-cut areas,
+// with another 2.1 mm reserved vertically for blade compensation and rounding.
+const COMPACT_PADDING = PADDING + 40;
+const COMPACT_WIDTH = PAGE_WIDTH - COMPACT_PADDING * 2;
+const CUT_TOP = Math.ceil((20 + 2.1) * 20);
+const CUT_BOTTOM = Math.floor((297 - 20 - 2.1) * 20);
 const FACE_LABELS = ['Top', 'Bottom', 'Front', 'Back', 'Left', 'Right'];
 const PARTS = [
   { index: 0, title: 'HEAD', rows: [[2, 3, 4], [5, 0, 1]] },
@@ -79,7 +87,12 @@ function createLayoutConfig(preview = false) {
     inset: Math.round(INSET * scale),
     titleHeight: Math.round(TITLE_HEIGHT * scale),
     labelHeight: Math.round(LABEL_HEIGHT * scale),
-    compactLabelHeight: Math.round(88 * scale),
+    compactPadding: Math.round(COMPACT_PADDING * scale),
+    compactWidth: Math.round(COMPACT_WIDTH * scale),
+    compactGroupInset: Math.round(COMPACT_GROUP_INSET * scale),
+    compactGroupTitleHeight: Math.round(COMPACT_GROUP_TITLE_HEIGHT * scale),
+    cutTop: Math.ceil(CUT_TOP * scale),
+    cutBottom: Math.floor(CUT_BOTTOM * scale),
     splitGap: Math.round(SPLIT_GAP * scale),
     dilateTimes: preview ? 1 : DILATE_TIMES,
   };
@@ -200,23 +213,43 @@ function prepareGroup(part, parts, scale, width, layoutConfig, allowReflow = fal
   };
 }
 
-/** Pack complete faces at their existing scale, including split-piece gaps. */
+/** Keep all six faces inside the same part border, as in Minefigure cute10. */
+function prepareCompactPart(group, maxHeight, layoutConfig) {
+  const { compactWidth, compactGroupInset, compactGroupTitleHeight, faceGap, rowGap, labelHeight } = layoutConfig;
+  const faces = group.rows.flatMap(row => row.faces);
+  const byIndex = new Map(faces.map(face => [face.faceIndex, face]));
+  const preferredRows = group.index === 0 ? [[2, 3, 4], [5, 0, 1]]
+    : group.index === 1 ? [[2, 4], [3, 5], [0, 1]]
+      : [[2, 3], [4, 5], [0, 1]];
+  const patterns = [preferredRows, [[2, 3, 4], [5, 0, 1]], [[2, 3, 4, 5, 0, 1]]];
+  for (const pattern of patterns) {
+    const rows = pattern.map(indices => {
+      const rowFaces = indices.map(index => byIndex.get(index));
+      return {
+        faces: rowFaces,
+        width: rowFaces.reduce((sum, face) => sum + face.width, 0) + faceGap * (rowFaces.length - 1),
+        height: Math.max(...rowFaces.map(face => face.height)) + labelHeight,
+      };
+    });
+    const width = Math.max(...rows.map(row => row.width)) + compactGroupInset * 2;
+    const height = compactGroupTitleHeight + rows.reduce((sum, row) => sum + row.height, 0)
+      + rowGap * (rows.length - 1) + compactGroupInset;
+    if (width <= compactWidth && height <= maxHeight) return { title: group.title, rows, width, height };
+  }
+  throw new Error(`${group.title} 的六面分区无法放入 A4 切割安全区；部件尺寸保持不变`);
+}
+
+/** Pack complete parts at their existing scale, including split-piece gaps. */
 function prepareCompactSheet(groups, startY, maxBottom, layoutConfig) {
-  const { safeWidth, faceGap, rowGap, compactLabelHeight } = layoutConfig;
-  const faces = groups.flatMap(group => group.rows.flatMap(row => row.faces.map(face => ({
-    face, title: group.title, height: face.height + compactLabelHeight,
-  }))));
-  const ordered = faces.map((item, order) => ({ ...item, order })).sort((a, b) =>
-    b.height - a.height || b.face.width - a.face.width || a.order - b.order);
+  const { compactWidth, faceGap, rowGap } = layoutConfig;
+  const ordered = groups.map(group => prepareCompactPart(group, maxBottom - startY, layoutConfig));
   const compactRows = [];
   for (const item of ordered) {
-    if (item.face.width > safeWidth) return null;
     let bestRow = null;
     let bestWaste = Infinity;
-    // Height decreases in this order, so fitting an existing row adds no height.
     for (const row of compactRows) {
-      const width = row.width + faceGap + item.face.width;
-      const waste = safeWidth - width;
+      const width = row.width + faceGap + item.width;
+      const waste = compactWidth - width;
       if (waste >= 0 && waste < bestWaste) {
         bestRow = row;
         bestWaste = waste;
@@ -226,12 +259,16 @@ function prepareCompactSheet(groups, startY, maxBottom, layoutConfig) {
       bestRow = { items: [], width: 0, height: item.height };
       compactRows.push(bestRow);
     }
-    bestRow.width += (bestRow.items.length ? faceGap : 0) + item.face.width;
+    bestRow.width += (bestRow.items.length ? faceGap : 0) + item.width;
+    bestRow.height = Math.max(bestRow.height, item.height);
     bestRow.items.push(item);
   }
   const groupsBottom = startY + compactRows.reduce((sum, row) => sum + row.height, 0)
     + rowGap * Math.max(0, compactRows.length - 1);
-  return groupsBottom <= maxBottom ? { compactRows, groupsBottom } : null;
+  // This storefront exports a single A4 for its fixed model presets. Never
+  // silently fall back to scattered faces or omit parts when a sheet cannot fit.
+  if (groupsBottom > maxBottom) throw new Error('部件六面分区超出单张 A4 切割安全区；实际尺寸保持不变');
+  return { compactRows, groupsBottom };
 }
 
 function drawFace(printCtx, layerContexts, face, x, y, vectorPaths, layoutConfig) {
@@ -276,6 +313,27 @@ function drawGroup(printCtx, layerContexts, group, x, y, height, vectorPaths, la
     let faceX = x + Math.floor((group.width - row.width) / 2);
     for (const face of row.faces) {
       text(printCtx, FACE_LABELS[face.faceIndex], faceX + face.width / 2, rowY, Math.round(40 * scale), { align: 'center' });
+      drawFace(printCtx, layerContexts, face, faceX, rowY + labelHeight, vectorPaths, layoutConfig);
+      faceX += face.width + faceGap;
+    }
+    rowY += row.height + rowGap;
+  }
+}
+
+function drawCompactItem(printCtx, layerContexts, item, x, y, vectorPaths, layoutConfig) {
+  const { scale, compactGroupTitleHeight, labelHeight, faceGap, rowGap } = layoutConfig;
+  // Borders and labels are printed only; masks and vectors share face positions.
+  printCtx.save();
+  printCtx.strokeStyle = '#d4dde6';
+  printCtx.lineWidth = Math.max(1, Math.round(2 * scale));
+  printCtx.strokeRect(x, y, item.width, item.height);
+  printCtx.restore();
+  text(printCtx, item.title, x + item.width / 2, y + Math.round(10 * scale), 42 * scale, { align: 'center' });
+  let rowY = y + compactGroupTitleHeight;
+  for (const row of item.rows) {
+    let faceX = x + Math.floor((item.width - row.width) / 2);
+    for (const face of row.faces) {
+      text(printCtx, FACE_LABELS[face.faceIndex], faceX + face.width / 2, rowY, 34 * scale, { align: 'center' });
       drawFace(printCtx, layerContexts, face, faceX, rowY + labelHeight, vectorPaths, layoutConfig);
       faceX += face.width + faceGap;
     }
@@ -346,11 +404,15 @@ export async function composeMergedPages(skin, { alphaThreshold = 0.5, cuteMode 
   let complete = false;
   try {
     const rowHeights = [0, 2, 4].map((index) => Math.max(groups[index].height, groups[index + 1].height));
-    const startY = layoutConfig.padding + Math.round(180 * layoutConfig.scale);
-    const maxBottom = layoutConfig.pageHeight - layoutConfig.padding - layoutConfig.rowGap - Math.round(436 * layoutConfig.scale);
-    const compactSheet = cuteMode && modelScale > 1 ? prepareCompactSheet(groups, startY, maxBottom, layoutConfig) : null;
+    const compact = cuteMode && modelScale > 1;
+    const startY = compact
+      ? Math.max(layoutConfig.compactPadding + Math.round(80 * layoutConfig.scale), layoutConfig.cutTop - layoutConfig.compactGroupTitleHeight - layoutConfig.labelHeight)
+      : Math.max(layoutConfig.padding + Math.round(180 * layoutConfig.scale), layoutConfig.cutTop - layoutConfig.titleHeight - layoutConfig.labelHeight);
+    const maxBottom = Math.min(layoutConfig.cutBottom,
+      layoutConfig.pageHeight - layoutConfig.compactPadding - layoutConfig.rowGap - Math.round(436 * layoutConfig.scale));
+    const compactSheet = compact ? prepareCompactSheet(groups, startY, maxBottom, layoutConfig) : null;
     const groupsBottom = compactSheet?.groupsBottom ?? startY + rowHeights.reduce((sum, height) => sum + height, 0) + layoutConfig.groupGap * 2;
-    if (groupsBottom > layoutConfig.pageHeight - layoutConfig.padding) {
+    if (groupsBottom > maxBottom) {
       throw new Error('合并后的部件超出单张 A4，已保留实际尺寸并停止生成');
     }
 
@@ -370,12 +432,10 @@ export async function composeMergedPages(skin, { alphaThreshold = 0.5, cuteMode 
       for (const [index, row] of compactSheet.compactRows.entries()) {
         onProgress?.(20 + index / compactSheet.compactRows.length * 65, '正在排版 CUTE-10cm 贴纸...');
         await yieldToPage(signal);
-        let faceX = layoutConfig.padding + Math.floor((layoutConfig.safeWidth - row.width) / 2);
-        for (const { face, title } of row.items) {
-          text(printCtx, title, faceX + face.width / 2, rowY, 34 * layoutConfig.scale, { align: 'center' });
-          text(printCtx, FACE_LABELS[face.faceIndex], faceX + face.width / 2, rowY + Math.round(40 * layoutConfig.scale), 34 * layoutConfig.scale, { align: 'center' });
-          drawFace(printCtx, layerContexts, face, faceX, rowY + layoutConfig.compactLabelHeight, vectorPaths, layoutConfig);
-          faceX += face.width + layoutConfig.faceGap;
+        let faceX = layoutConfig.compactPadding + Math.floor((layoutConfig.compactWidth - row.width) / 2);
+        for (const item of row.items) {
+          drawCompactItem(printCtx, layerContexts, item, faceX, rowY, vectorPaths, layoutConfig);
+          faceX += item.width + layoutConfig.faceGap;
         }
         rowY += row.height + layoutConfig.rowGap;
       }

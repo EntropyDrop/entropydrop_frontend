@@ -6,6 +6,14 @@ These files are vendored from the local `minefigure` project's `shared`,
 license is retained in `LICENSE`. The frontend builds independently of the
 sibling checkout.
 
+The CUTE-10cm sticker layout was updated on 2026-10-16 from Minefigure revision
+`2d76477af1d53f27059f84e16eb21c3e2a7e4aa8` (the latest layout change in local
+HEAD `b969ae95add4290b68af9ad1f2dee0d891b77f74`). Each part keeps all six faces
+inside one labeled print border: head and torso share the top row, with all four
+limbs below. PNG placement and SVG cutting geometry use the same coordinates.
+The layout includes the upstream 10 mm side inset, 20 mm top/bottom no-cut
+areas, and 2.1 mm vertical cutter reserve without changing physical face sizes.
+
 The React integration is in `src/pages/figure/print`. It fixes Cute mode, the
 0.5 alpha threshold, and Cute assembly defaults; it does not read Minefigure's
 saved settings. Both the preview and STL use the same Manifold solids, while
@@ -32,6 +40,11 @@ Local adaptations:
   print bleed, cutter sources or duplicate 3D guide images. Socket positions
   still map from physical export coordinates. Downloads keep the full
   4200×5940 sheet, guides, bleed and cutting geometry.
+- Both preview and export use the six-face grouping, while keeping EntropyDrop's
+  brand, skin name and source information in reserved whitespace. The storefront
+  uses fixed model presets and one A4 sheet; unsupported layouts fail rather
+  than scattering or silently omitting faces. Minefigure's device settings and
+  custom multi-page controls are not included.
 
 No device clients, settings UI, 3MF exporter, or original standalone app UI are
 included. Run `npm run test:figure` for the integration's geometry/export checks.

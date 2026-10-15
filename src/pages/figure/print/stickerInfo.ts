@@ -8,6 +8,7 @@ export interface StickerInfo {
     publisher: string
     publisherId: string
     sourceUrl: string
+    sourceIsPublic?: boolean | null
     sourceId: string
     labels: {
         publisher: string
@@ -22,7 +23,7 @@ export interface StickerInfoArea { x: number; y: number; width: number; height: 
 export async function loadStickerFont(info?: StickerInfo) {
     if (typeof document === 'undefined' || !document.fonts) return
     const text = [
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ·…—:/#?=',
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ·…—:/#?=()',
         ...(info ? [info.brand || '', info.modelName || '', info.name, info.publisher, info.publisherId, info.sourceUrl, info.sourceId, ...Object.values(info.labels)] : []),
     ].join(' ')
     await document.fonts.load(`36px ${STICKER_FONT_FAMILY}`, text)
@@ -66,6 +67,11 @@ export function drawStickerInfo(canvas: HTMLCanvasElement, area: StickerInfoArea
         ].filter(Boolean)
         const lineHeight = Math.min(60 * scale, Math.floor(area.height / lines.length))
         ctx.font = `${Math.max(12, Math.min(36 * scale, Math.floor((lineHeight - 12 * scale) / 12) * 12))}px ${STICKER_FONT_FAMILY}`
-        lines.forEach((line, index) => ctx.fillText(fitText(ctx, line, area.width), area.x, area.y + index * lineHeight))
+        lines.forEach((line, index) => {
+            const suffix = info.sourceUrl && info.sourceIsPublic === false && index === lines.length - 1 ? ' (private)' : ''
+            // Reserve the marker's width so a long URL cannot hide its visibility.
+            const text = fitText(ctx, line, area.width - ctx.measureText(suffix).width) + suffix
+            ctx.fillText(text, area.x, area.y + index * lineHeight)
+        })
     } finally { ctx.restore() }
 }
