@@ -41,7 +41,7 @@ async function withDialog(options, check) {
     dom.window.clearInterval = id => timers.delete(id);
     let closed = 0, session = options.guest ? null : 'account-a';
     const listeners = new Set();
-    const server = { stock: [{ model_type: 'Cute DIY Kit', price: 40, stock: 300, available: true, kit_specifications: kitSpecifications }], addresses: [addressA], status: 200, postStatus: 200, deleteStatus: 200, pendingPost: null, pendingLoad: null, ...options.server };
+    const server = { stock: [{ model_type: 'Cute DIY Kit', price: 30, shipping_fee: 10, stock: 300, available: true, kit_specifications: kitSpecifications }], addresses: [addressA], status: 200, postStatus: 200, deleteStatus: 200, pendingPost: null, pendingLoad: null, ...options.server };
     const module = { exports: {} };
     vm.runInNewContext(await compiled, { module, exports: module.exports, console, AbortController, URL, document, window: dom.window, localStorage: dom.window.localStorage, Event: dom.window.Event, confirm: () => options.confirmDelete !== false,
         require(name) {
@@ -95,17 +95,20 @@ async function withDialog(options, check) {
 
 test('commissioning defaults to PayPal shipping without loading addresses, then opens Orders', async () => {
     await withDialog({}, async env => {
-        assert.ok(document.body.textContent.includes('$40.00'));
+        assert.ok(document.body.textContent.includes('$30.00'));
         assert.equal(document.body.textContent.includes('Moving parts in the preview'), false);
         assert.equal(document.body.textContent.includes('Review the final total'), false);
         assert.equal(document.body.textContent.includes('300 kits'), false);
         assert.equal(document.body.textContent.includes('Available stock'), false);
         assert.ok(document.body.textContent.includes(env.en.figurePrint.commissionOrder.approval));
-        for (const label of ['Free', '3 days', '2 weeks', 'CUTE-10cm DIY kit', kitSpecifications.assembly_note]) {
+        for (const label of ['$10.00 per order', '2 days', '10 business days', 'CUTE-10cm DIY kit', kitSpecifications.assembly_note]) {
             assert.ok(document.body.textContent.includes(label));
         }
         const details = Object.fromEntries(Array.from(document.querySelectorAll('dt')).map(term => [term.textContent, term.nextElementSibling.textContent]));
         const t = env.en.figurePrint.commissionOrder;
+        assert.equal(details[t.shipping], '$10.00 per order');
+        assert.equal(details[t.production], '2 days');
+        assert.equal(document.body.textContent.includes('after approval'), false);
         assert.equal(details[t.productName], 'CUTE-10cm DIY kit');
         assert.equal(details[t.customSkinId], 'skin-a');
         assert.equal(details[t.dimensions], kitSpecifications.dimensions);
@@ -126,7 +129,9 @@ test('commissioning defaults to PayPal shipping without loading addresses, then 
 
 for (const [label, stock] of [
     ['an older model is the only product', [{ model_type: 'PLA+sticker', price: 60, available: true }]],
-    ['the Cute kit is sold out', [{ model_type: 'Cute DIY Kit', price: 40, stock: 0, available: false }]],
+    ['the Cute kit is sold out', [{ model_type: 'Cute DIY Kit', price: 30, shipping_fee: 10, stock: 0, available: false }]],
+    ['the shipping fee is missing', [{ model_type: 'Cute DIY Kit', price: 30, available: true, kit_specifications: kitSpecifications }]],
+    ['the shipping fee is negative', [{ model_type: 'Cute DIY Kit', price: 30, shipping_fee: -10, available: true, kit_specifications: kitSpecifications }]],
     ['the price is invalid', [{ model_type: 'Cute DIY Kit', price: 0, available: true }]],
 ]) test(`commissioning cannot order when ${label}`, async () => {
     await withDialog({ server: { stock } }, async env => {
@@ -180,9 +185,11 @@ test('unavailable order data is retryable and never enables ordering', async () 
 
 test('kit quantity updates the total and is sent in one atomic order request', async () => {
     await withDialog({}, async env => {
+        assert.ok(document.body.textContent.includes('$40.00'));
         const select = document.querySelector('select');
         await React.act(async () => { select.value = '3'; select.dispatchEvent(new window.Event('change', { bubbles: true })); });
-        assert.ok(document.body.textContent.includes('$120.00'));
+        assert.ok(document.body.textContent.includes('$100.00'));
+        assert.ok(document.body.textContent.includes('$10.00 per order'));
         const pending = deferred(); env.server.pendingPost = pending;
         await env.click(env.submit());
         assert.equal(select.disabled, true);
@@ -194,7 +201,7 @@ test('kit quantity updates the total and is sent in one atomic order request', a
 });
 
 test('quantity selection respects available stock and the 10-kit order limit', async () => {
-    await withDialog({ server: { stock: [{ model_type: 'Cute DIY Kit', price: 40, stock: 2, available: true, kit_specifications: kitSpecifications }] } }, async () => {
+    await withDialog({ server: { stock: [{ model_type: 'Cute DIY Kit', price: 30, shipping_fee: 10, stock: 2, available: true, kit_specifications: kitSpecifications }] } }, async () => {
         assert.deepEqual(Array.from(document.querySelectorAll('select option')).map(option => option.value), ['1', '2']);
     });
     await withDialog({}, async () => {
@@ -205,7 +212,7 @@ test('quantity selection respects available stock and the 10-kit order limit', a
 
 test('kit details come from the catalog response, including future model specifications', async () => {
     const specifications = { product_name: 'Catalog-only product', dimensions: 'Approx. 8 × 5 × 3 cm', materials: [{ name: 'New part', quantity: 2 }], assembly_note: 'Catalog assembly instructions.' };
-    await withDialog({ server: { stock: [{ model_type: 'Cute DIY Kit', price: 40, stock: 2, available: true, kit_specifications: specifications }] } }, async env => {
+    await withDialog({ server: { stock: [{ model_type: 'Cute DIY Kit', price: 30, shipping_fee: 10, stock: 2, available: true, kit_specifications: specifications }] } }, async env => {
         assert.ok(document.body.textContent.includes(specifications.product_name));
         assert.ok(document.body.textContent.includes(specifications.dimensions));
         assert.ok(document.body.textContent.includes('New part ×2'));
@@ -216,7 +223,7 @@ test('kit details come from the catalog response, including future model specifi
 });
 
 test('missing catalog specifications block ordering instead of substituting frontend text', async () => {
-    await withDialog({ server: { stock: [{ model_type: 'Cute DIY Kit', price: 40, stock: 2, available: true }] } }, async env => {
+    await withDialog({ server: { stock: [{ model_type: 'Cute DIY Kit', price: 30, shipping_fee: 10, stock: 2, available: true }] } }, async env => {
         assert.equal(env.submit().disabled, true);
         assert.ok(document.body.textContent.includes(env.en.figurePrint.commissionOrder.specificationsUnavailable));
         assert.equal(document.body.textContent.includes(kitSpecifications.dimensions), false);

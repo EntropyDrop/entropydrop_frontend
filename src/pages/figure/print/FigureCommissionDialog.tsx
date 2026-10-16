@@ -19,7 +19,7 @@ const buttonClass = 'border border-white/20 px-4 py-2 text-xs hover:bg-white/10 
 const checkoutButtonClass = 'min-h-13 border border-white/20 px-5 py-3 text-base font-medium hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer'
 
 interface Address { id: string; recipient_name: string; country: string; phone: string; zip_code: string; state: string; city: string; detail_address: string; is_default: boolean }
-interface Stock { model_type: string; available: boolean; price: number; stock?: number; kit_specifications?: KitSpecifications | null }
+interface Stock { model_type: string; available: boolean; price: number; shipping_fee: number; stock?: number; kit_specifications?: KitSpecifications | null }
 interface Props { current: LangData; source: FigureSkinSource; model: FigureModel; onClose: () => void }
 
 export function FigureCommissionDialog(props: Props) {
@@ -86,7 +86,7 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
         if (submitting.current || busy || !session || session !== getAuthSessionKey() || !shippingReady || !available || loading) return
         submitting.current = true
         setError('')
-        const selection = JSON.stringify({ ...orderFields, address: shippingSource === 'address_book' ? address : null, unitPrice: stock?.price })
+        const selection = JSON.stringify({ ...orderFields, address: shippingSource === 'address_book' ? address : null, unitPrice: stock?.price, shippingFee: stock?.shipping_fee })
         void pay(async signal => {
             // A cancelled checkout or uncertain capture resumes the same order.
             if (directOrder.current?.selection === selection) return directOrder.current.id
@@ -118,7 +118,7 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
                 if (controller.signal.aborted || session !== getAuthSessionKey()) return
                 // Never substitute an older model's price or stock for the Cute kit.
                 const kit = models.find(item => item.model_type === model.orderModelType)
-                setStock(kit && Number.isFinite(kit.price) && kit.price > 0 ? kit : null)
+                setStock(kit && Number.isFinite(kit.price) && kit.price > 0 && Number.isFinite(kit.shipping_fee) && kit.shipping_fee >= 0 ? kit : null)
             } catch {
                 if (!controller.signal.aborted && session === getAuthSessionKey()) setError(t.failed)
             } finally { if (!controller.signal.aborted) setLoading(false) }
@@ -200,10 +200,14 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
                         {Array.from({ length: Math.max(maxQuantity, quantity, 1) }, (_, i) => i + 1).map(value => <option key={value} value={value} disabled={value > maxQuantity}>{value}</option>)}
                     </select>
                 </div>
-                {stock && <p className="flex justify-between text-sm"><span>{t.total}</span><strong>${(stock.price * quantity).toFixed(2)}</strong></p>}
                 {stock?.kit_specifications && <section className="border border-white/10 p-4"><KitSpecificationsDetails specifications={stock.kit_specifications} skinId={source.id} current={current} /></section>}
                 <p className="text-xs leading-relaxed text-white/65">{t.approval}</p>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm"><dt className="text-white/50">{t.shipping}</dt><dd className="m-0 text-right">{t.freeShipping}</dd><dt className="text-white/50">{t.production}</dt><dd className="m-0 text-right">{t.productionTime}</dd><dt className="text-white/50">{t.delivery}</dt><dd className="m-0 text-right">{t.deliveryTime}</dd></dl>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                    <dt className="text-white/50">{t.shipping}</dt><dd className="m-0 text-right">{stock ? t.shippingPerOrder.replace('{amount}', stock.shipping_fee.toFixed(2)) : '—'}</dd>
+                    {stock && <><dt>{t.total}</dt><dd className="m-0 text-right"><strong>${(stock.price * quantity + stock.shipping_fee).toFixed(2)}</strong></dd></>}
+                    <dt className="text-white/50">{t.production}</dt><dd className="m-0 text-right">{t.productionTime}</dd>
+                    <dt className="text-white/50">{t.delivery}</dt><dd className="m-0 text-right">{t.deliveryTime}</dd>
+                </dl>
             </div>
             <footer className="flex shrink-0 flex-col gap-5 border-t border-white/10 px-6 py-5">
                 {!session ? <div className="space-y-3"><p className="text-sm">{t.signIn}</p><p className="text-xs text-white/50">{current.figurePrint.loginForCommission}</p>{loggingIn ? <p role="status">{current.figurePrint.loggingIn}</p> : <Suspense fallback={<p>{current.figurePrint.loggingIn}</p>}><GoogleSignInButton onSuccess={login} onError={() => setError(t.loginFailed)} locale={current.lang} /></Suspense>}</div> : <>
