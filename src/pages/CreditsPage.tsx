@@ -8,6 +8,8 @@ import { motion } from 'framer-motion'
 import { apiFetch, apiResponseJson } from '../utils/api'
 import { SEO } from '../components/SEO'
 
+const MIN_PURCHASE_AMOUNT = 2
+
 interface CreditsPageProps {
     current: LangData
 }
@@ -29,8 +31,8 @@ export function CreditsPage({ current }: CreditsPageProps) {
     const [pageSize] = useState(15)
     const [isLoading, setIsLoading] = useState(true)
 
-    const [preset, setPreset] = useState<number | null>(1) // preset amount, null=custom
-    const [customAmount, setCustomAmount] = useState(1)   // effective dollar amount
+    const [preset, setPreset] = useState<number | null>(MIN_PURCHASE_AMOUNT) // preset amount, null=custom
+    const [customAmount, setCustomAmount] = useState(MIN_PURCHASE_AMOUNT)   // effective dollar amount
     const [isProcessing, setIsProcessing] = useState(false)
     const [purchaseSuccess, setPurchaseSuccess] = useState(false)
 
@@ -70,7 +72,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
     }, [authSession, page, fetchHistory])
 
     const handlePay = async () => {
-        if (customAmount < 1 || isProcessing) return
+        if (customAmount < MIN_PURCHASE_AMOUNT || isProcessing) return
         setIsProcessing(true)
         try {
             const returnUrl = `${window.location.origin}/credits?payment_redirect=1`
@@ -230,7 +232,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
 
                 {/* Amount options */}
                 <div className="flex flex-wrap items-center gap-1.5 mb-4">
-                    {[1, 5, 10, 20].map((d) => {
+                    {[MIN_PURCHASE_AMOUNT, 5, 10, 20].map((d) => {
                         const active = preset === d
                         return (
                             <button
@@ -263,13 +265,13 @@ export function CreditsPage({ current }: CreditsPageProps) {
                             <input
                                 ref={customInputRef}
                                 type="number"
-                                min={1}
+                                min={MIN_PURCHASE_AMOUNT}
                                 step={1}
                                 placeholder="?"
                                 value={preset === null ? (customAmount || '') : ''}
                                 onChange={(e) => {
                                     const v = parseInt(e.target.value, 10)
-                                    if (v >= 1) { setPurchaseSuccess(false); setCustomAmount(v) }
+                                    if (v >= MIN_PURCHASE_AMOUNT) { setPurchaseSuccess(false); setCustomAmount(v) }
                                     else setCustomAmount(0)
                                 }}
                                 onFocus={() => { if (preset !== null) { setPreset(null); setCustomAmount(0) } }}
@@ -277,7 +279,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
                             />
                         </div>
                         <span className="text-[9px] mt-0.5 opacity-60">
-                            +{preset === null && customAmount >= 1 ? (customAmount * 10) : '?'} credits
+                            +{preset === null && customAmount >= MIN_PURCHASE_AMOUNT ? (customAmount * 10) : '?'} credits
                         </span>
                         {preset === null && (
                             <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#a6df7a] shadow-[0_0_6px_rgba(166,223,122,0.6)]" />
@@ -288,7 +290,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
                     <div className="w-full sm:w-auto sm:ml-auto flex flex-col gap-1.5 align-end">
                         <button
                             onClick={handlePay}
-                            disabled={isProcessing || customAmount < 1}
+                            disabled={isProcessing || customAmount < MIN_PURCHASE_AMOUNT}
                             className="w-full flex items-center justify-center gap-2 h-[58px] border border-[#a6df7a]/40 bg-[#a6df7a]/12 hover:bg-[#a6df7a]/20 disabled:opacity-40 disabled:pointer-events-none px-6 text-[#a6df7a] font-bold cursor-pointer transition-all hover:shadow-[0_0_12px_rgba(166,223,122,0.15)] animate-in fade-in slide-in-from-left-2 duration-200"
                         >
                             {isProcessing ? (

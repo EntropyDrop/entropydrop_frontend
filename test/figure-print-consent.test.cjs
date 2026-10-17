@@ -129,7 +129,7 @@ for (const lang of ['zh', 'en']) {
         const source = { id: 'skin123', name: 'Test skin', publisher: 'Sample maker', publisherId: 'maker456', parentId: 'original789', publicLicense: 'CC BY-NC 4.0', isPublic: false };
         await withPage({ lang, source }, async env => {
             assert.equal(env.node.querySelector('input[type="file"]'), null);
-            assert.equal(Array.from(env.node.querySelectorAll('a')).some(link => link.textContent === env.current.figurePrint.chooseCollection), false);
+            assert.equal(env.node.querySelector('header a[href="/skin/collection"]').textContent, env.current.figurePrint.chooseCollection);
             assert.equal(Array.from(env.node.querySelectorAll('a')).some(link => link.textContent === env.current.figurePrint.discoverSkins), false);
             assert.equal(env.node.querySelector('header a[href="/figure/showcase"]').textContent, env.current.nav.showcase);
             assert.equal(env.node.querySelector('a[href="/skin/?id=skin123"]').textContent, source.name);
@@ -502,6 +502,13 @@ test('production orders do not display the Pro support banner', async () => {
     await withPage({ search: '?order=order-a&item=kit-a', isPro: false, server: { production: productionSource } }, async env => {
         await env.finish();
         assert.equal(env.node.querySelector('a[href="/pro"]'), null, 'Pro support link should NOT be present in production order view');
+    });
+});
+
+test('production orders do not display choose from collection link', async () => {
+    await withPage({ search: '?order=order-a&item=kit-a', server: { production: productionSource } }, async env => {
+        await env.finish();
+        assert.equal(env.node.querySelector('header a[href="/skin/collection"]'), null);
     });
 });
 

@@ -224,6 +224,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
                             if (selected) { setCommissionSource(null); setPendingDownload(null); setModel(selected) }
                         }} className="h-9 appearance-none rounded-none border border-white/15 bg-white/5 pl-3 pr-8 py-0 text-xs text-white/80 cursor-pointer hover:bg-white/10 hover:text-white transition-colors focus:outline-none focus:border-[#84c96b]">{production.active && printModelType === 'cute7' && <option value="cute7" className="bg-[#182018]">CUTE-7cm</option>}{FIGURE_MODELS.map(item => <option key={item.id} value={item.id} className="bg-[#182018]">{item.name}</option>)}</select><Icon icon="pixelarticons:chevron-down" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs" /></span></label>
                         <Link to="/figure/showcase" className={`${buttonClass} h-9 shrink-0 !py-0 no-underline`}><Icon icon="pixelarticons:image" />{current.nav.showcase}</Link>
+                        {!production.active && <Link to="/skin/collection" className={`${buttonClass} h-9 shrink-0 !py-0 no-underline`}><Icon icon="pixelarticons:folder" />{t.chooseCollection}</Link>}
                     </div>
                 </div>
             </div>
