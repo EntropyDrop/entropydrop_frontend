@@ -72,7 +72,6 @@ export default {
         hint: '更换主播码只影响当前订单，不改变你的首次来源。',
         invalid: '该主播码无效、已停用或已过期，原来应用的码未改变。',
         changed: '优惠已更新，请刷新后重新应用主播码。',
-        locked: '支付开始后主播码会锁定。如需换码，请取消未付款订单后重新下单。',
         failed: '主播优惠读取或保存失败，请重试。',
         management: '主播合作', newCode: '创建主播码', editCode: '编辑主播码', creatorEmail: '注册用户邮箱',
         discountRate: '用户优惠比例', commissionRate: '主播佣金比例', expiry: '到期时间（可选）',

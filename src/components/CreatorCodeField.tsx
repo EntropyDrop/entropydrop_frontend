@@ -34,7 +34,6 @@ export function CreatorCodeField({ current, offer, disabled, busy, error, onAppl
                 {offer && !disabled && <button type="button" disabled={busy} onClick={() => apply('')} className="text-white/60 underline disabled:opacity-40 cursor-pointer">{t.remove}</button>}
             </div>
         </div>}
-        {disabled && <p className="m-0 leading-relaxed text-white/45">{t.locked}</p>}
         {error && <p role="alert" className="m-0 text-red-200">{error}</p>}
     </div>
 }

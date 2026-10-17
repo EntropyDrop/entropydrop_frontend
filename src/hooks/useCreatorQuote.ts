@@ -9,7 +9,6 @@ interface CreatorQuote { offer: CreatorOffer | null; subtotal: number; shipping_
 
 export function creatorError(detail: unknown, current: LangData) {
     return (detail === 'creator_code_invalid' || detail === 'creator_self_referral') ? current.creatorCodes.invalid
-        : detail === 'creator_code_locked' ? current.creatorCodes.locked
         : detail === 'creator_offer_changed' ? current.creatorCodes.changed
         : current.creatorCodes.failed
 }

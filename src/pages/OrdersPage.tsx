@@ -8,7 +8,7 @@ import { groupOrderItems } from './figure/print/orderItems'
 import { getOrderPrintModel, FIGURE_MODELS, getFigureModelName } from './figure/print/figureModels'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
-import { lazy, Suspense, useCallback, useState, useEffect, useRef } from 'react'
+import { lazy, Suspense, useCallback, useState, useEffect } from 'react'
 import { FigureOrderStatus } from '../components/FigureOrderStatus';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
@@ -18,8 +18,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { apiFetch, apiResponseJson } from '../utils/api';
 import { Skin3DModal } from '../components/Skin3DModal';
 import { formatDate } from '../utils/date';
-import { CreatorCodeField } from '../components/CreatorCodeField'
-import { creatorError, type CreatorOffer } from '../hooks/useCreatorQuote'
+import type { CreatorOffer } from '../hooks/useCreatorQuote'
 
 const FigureOrderPreviewModal = lazy(() => import('./figure/print/FigureOrderPreviewModal').then(module => ({ default: module.FigureOrderPreviewModal })))
 
@@ -39,7 +38,7 @@ interface OrderItem extends KitSpecificationRecord, OrderStickerRecord {
 
 interface Order {
     creator_discount?: CreatorOffer | null;
-    creator_code_locked?: boolean;
+    paypal_order_id?: string | null;
     discount_amount?: number;
     id: string;
     address_id?: string;
@@ -79,10 +78,6 @@ export function OrdersPage({ current }: OrdersPageProps) {
     const [hasMore, setHasMore] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const creatorRequests = useLatestRequest();
-    const creatorSaving = useRef(false);
-    const [editingCodeOrder, setEditingCodeOrder] = useState<string | null>(null);
-    const [codeError, setCodeError] = useState<{ id: string; message: string } | null>(null);
     const navigate = useNavigate();
     const [modalConfig, setModalConfig] = useState<{
         isOpen: boolean;
@@ -152,7 +147,7 @@ export function OrdersPage({ current }: OrdersPageProps) {
 
     const { pay, processingOrderId } = useOrderPayment({
         authSession, current,
-        onCheckoutCreated: id => setOrders(previous => previous.map(order => order.id === id ? { ...order, creator_code_locked: true } : order)),
+        onCheckoutCreated: (id, paypalOrderId) => setOrders(previous => previous.map(order => order.id === id ? { ...order, paypal_order_id: paypalOrderId } : order)),
         onSuccess: () => {
             setModalConfig({ isOpen: true, title: current.orders.tip, message: current.modal.paySuccess, type: 'success' });
             void fetchOrders();
@@ -160,38 +155,13 @@ export function OrdersPage({ current }: OrdersPageProps) {
         onError: message => setModalConfig({ isOpen: true, title: current.modal.payOrder, message, type: 'error' }),
     });
 
-    const applyCreatorCode = async (order: Order, code: string) => {
-        if (creatorSaving.current || processingOrderId || !authSession) return;
-        creatorSaving.current = true;
-        const ticket = creatorRequests.begin();
-        setEditingCodeOrder(order.id); setCodeError(null);
-        try {
-            const response = await apiFetch(`/api/orders/${encodeURIComponent(order.id)}/creator-code`, {
-                method: 'PATCH', auth: 'required', signal: ticket.signal, skipGlobalError: true,
-                body: JSON.stringify({ code: code.trim().toUpperCase(), expected_code: order.creator_discount?.code || null }),
-            });
-            const result = await apiResponseJson(response);
-            if (!ticket.isCurrent()) return;
-            if (!response.ok) {
-                if (result.detail === 'creator_code_locked') setOrders(previous => previous.map(item => item.id === order.id ? { ...item, creator_code_locked: true } : item));
-                throw new Error(creatorError(result.detail, current));
-            }
-            setOrders(previous => previous.map(item => item.id === order.id ? result : item));
-        } catch (error) {
-            if (ticket.isCurrent()) setCodeError({ id: order.id, message: error instanceof Error ? error.message : current.creatorCodes.failed });
-        } finally {
-            if (ticket.isCurrent()) { creatorSaving.current = false; setEditingCodeOrder(null); }
-        }
-    };
-
     useEffect(() => {
         closePreview();
         setOrders([]);
         setPage(1);
-        creatorSaving.current = false; setEditingCodeOrder(null); setCodeError(null);
         if (authSession) fetchOrders();
-        return () => { ordersRequests.cancel(); creatorRequests.cancel(); };
-    }, [authSession, linkedOrder, closePreview, fetchOrders, ordersRequests, creatorRequests]);
+        return () => { ordersRequests.cancel(); };
+    }, [authSession, linkedOrder, closePreview, fetchOrders, ordersRequests]);
 
     const handleCancelOrder = (orderId: string) => {
         setModalConfig({
@@ -387,11 +357,11 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                     </div>
 
                                     {order.order_type === "print" && <FigureOrderStatus current={current} order={order} />}
-                                    {order.order_type === 'print' && (order.status === 'pending_payment' || order.creator_discount) && <>
-                                        <CreatorCodeField key={`${order.id}:${order.creator_discount?.code || ''}`} current={current} offer={order.creator_discount}
-                                            disabled={order.status !== 'pending_payment' || order.creator_code_locked || !!processingOrderId || (!!editingCodeOrder && editingCodeOrder !== order.id)}
-                                            busy={editingCodeOrder === order.id} error={codeError?.id === order.id ? codeError.message : ''}
-                                            onApply={code => void applyCreatorCode(order, code)} />
+                                    {order.order_type === 'print' && order.creator_discount && <>
+                                        <div className="flex items-center gap-2 text-xs">
+                                            <span className="shrink-0 text-white/75">{current.creatorCodes.label}</span>
+                                            <p className="m-0 min-w-0 break-words text-[#a6df7a]">{current.creatorCodes.applied.replace('{code}', order.creator_discount.code)} · {order.creator_discount.discount_percent}% {current.creatorCodes.off}</p>
+                                        </div>
                                         {!!order.discount_amount && <p className="m-0 text-xs text-[#a6df7a]">{current.creatorCodes.discount}: −${order.discount_amount.toFixed(2)}</p>}
                                     </>}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-white/5 pt-3">
@@ -421,7 +391,7 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                                         </div>
                                                         {order.status === 'pending_payment' && order.order_type !== 'subscription' && (
                                                             <button
-                                                                disabled={processingOrderId === order.id || !!editingCodeOrder || (!!order.creator_discount && order.creator_code_locked)}
+                                                                disabled={processingOrderId === order.id || (!!order.creator_discount && !!order.paypal_order_id)}
                                                                 onClick={() => handleDeleteOrderItem(ids[ids.length - 1], quantity)}
                                                                 className="w-8 h-8 shrink-0 justify-center items-center border border-white/10 hover:bg-white/10 flex text-white/60 cursor-pointer text-[9px] disabled:opacity-50 disabled:cursor-not-allowed"
                                                                 title={quantity > 1 ? current.orders.removeOne : current.orders.deleteItem}
@@ -476,15 +446,15 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                     {order.status === 'pending_payment' && (
                                         <div className="flex justify-end gap-2 border-t border-white/5 pt-3 mt-1">
                                             <button
-                                                disabled={processingOrderId === order.id || !!editingCodeOrder}
+                                                disabled={processingOrderId === order.id}
                                                 onClick={() => handleCancelOrder(order.id)}
                                                 className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-500 text-[10px] border border-red-500/30 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 {current.orders.cancelOrder}
                                             </button>
                                             <button
-                                                onClick={() => { if (!creatorSaving.current) void pay(order.id) }}
-                                                disabled={processingOrderId !== null || !!editingCodeOrder}
+                                                onClick={() => void pay(order.id)}
+                                                disabled={processingOrderId !== null}
                                                 className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-black text-[10px] font-bold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                                             >
                                                 {processingOrderId === order.id && <Icon icon="pixelarticons:reload" className="animate-spin" />}

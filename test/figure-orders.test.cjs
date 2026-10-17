@@ -42,14 +42,6 @@ async function fixture(check, options = {}) {
             if (name.endsWith('/utils/api')) return { apiResponseJson: response => response.json(), apiFetch: async (url, init = {}) => {
                 requests.push({ url, ...init });
                 events.push({ type: 'request', url });
-                if (url.endsWith('/creator-code')) {
-                    if (options.pendingCode) await options.pendingCode;
-                    const { code } = JSON.parse(init.body);
-                    if (code !== 'BETA' || options.codeError) return { ok: false, status: 400, json: async () => ({ detail: options.codeError || 'creator_code_invalid' }) };
-                    order.creator_discount = { code: 'BETA', creator_name: 'Creator B', discount_percent: 20, version: 1 };
-                    order.discount_amount = 36; order.total_price = 144;
-                    return { ok: true, json: async () => ({ ...order }) };
-                }
                 if (url.endsWith('/create-paypal-order')) {
                     if (options.createDeferred) return options.createDeferred;
                     return { ok: !options.createError, status: options.createError ? 500 : 200, json: async () => options.createError ? { detail: 'Checkout unavailable' } : { id: 'PAYPAL-ORDER', status: options.paypalStatus || 'CREATED', approval_url: 'https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-ORDER' } };
@@ -91,55 +83,57 @@ async function fixture(check, options = {}) {
     }
 }
 
-async function enterCreatorCode(code) {
-    if (!document.querySelector('input[placeholder="Enter a creator code"]')) {
-        await React.act(async () => document.querySelector('button[aria-expanded="false"][aria-controls$="-editor"]').click());
-    }
-    await React.act(async () => {
-        const input = document.querySelector('input[placeholder="Enter a creator code"]');
-        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, code);
-        input.dispatchEvent(new window.Event('input', { bubbles: true }));
-    });
+const creatorOrder = { creator_discount: { code: 'ALPHA', discount_percent: 10, version: 1 }, creator_code_locked: true, discount_amount: 18, total_price: 162 };
+
+function assertCreatorCodeReadOnly(e) {
+    assert.equal(document.querySelector('input[placeholder="Enter a creator code"]'), null);
+    assert.equal(e.button(e.en.creatorCodes.apply), undefined);
+    assert.equal(e.button(e.en.creatorCodes.remove), undefined);
+    assert.equal(e.button(e.en.nav.edit), undefined);
+    assert.equal(document.body.textContent.includes('The code is locked once payment starts.'), false);
+    assert.equal(e.requests.some(request => request.url.endsWith('/creator-code')), false);
 }
 
-const creatorOrder = { creator_discount: { code: 'ALPHA', creator_name: 'Creator A', discount_percent: 10, version: 1 }, discount_amount: 18, total_price: 162 };
-
-test('an order can replace its default code, refresh the total and lock the field when PayPal starts', async () => fixture(async e => {
-    assert.equal(document.querySelectorAll('input[placeholder="Enter a creator code"]').length, 0);
-    await e.click(e.button(e.en.nav.edit));
-    assert.equal(document.querySelector('input[placeholder="Enter a creator code"]').value, 'ALPHA');
-    await enterCreatorCode('BETA'); await e.click(e.button(e.en.creatorCodes.apply));
-    assert.ok(document.body.textContent.includes('BETA'));
-    assert.ok(document.body.textContent.includes('$144'));
-    assert.deepEqual(JSON.parse(e.requests.find(request => request.url.endsWith('/creator-code')).body), { code: 'BETA', expected_code: 'ALPHA' });
-    await e.click(e.button(e.en.orders.payNow));
-    assert.equal(document.querySelectorAll('input[placeholder="Enter a creator code"]').length, 0);
-    assert.equal(document.querySelector('button[aria-controls$="-editor"]'), null);
-    e.popup.closed = true; await e.tick();
-    assert.equal(document.querySelectorAll('input[placeholder="Enter a creator code"]').length, 0);
-    assert.equal(document.querySelector('button[aria-controls$="-editor"]'), null);
-}, { order: creatorOrder, captureError: 'PayPal payment is not approved' }));
-
-test('invalid order codes leave the original discount and order attribution visible', async () => fixture(async e => {
-    await enterCreatorCode('BAD'); await e.click(e.button(e.en.creatorCodes.apply));
-    assert.ok(document.body.textContent.includes(e.en.creatorCodes.invalid));
-    assert.ok(document.body.textContent.includes('ALPHA'));
+test('pending orders display their saved creator code and discount without editing controls', async () => fixture(async e => {
+    assertCreatorCodeReadOnly(e);
+    assert.ok(document.body.textContent.includes('Creator Code'));
+    assert.ok(document.body.textContent.includes('Applied: ALPHA · 10% off'));
+    assert.ok(document.body.textContent.includes('Creator discount: −$18.00'));
     assert.ok(document.body.textContent.includes('$162'));
     assert.equal(e.button(e.en.orders.payNow).disabled, false);
+    assert.equal(e.button(e.en.orders.removeOne).disabled, false, 'code immutability must not prevent removing items before payment');
+    await e.click(e.button(e.en.orders.removeOne));
+    await e.click(e.button(e.en.modal.confirm));
+    assert.ok(e.requests.some(request => request.method === 'DELETE'));
+    assertCreatorCodeReadOnly(e);
 }, { order: creatorOrder }));
 
-test('payment is blocked while a code replacement is being saved', async () => {
-    let resolve;
-    const pendingCode = new Promise(done => { resolve = done; });
-    await fixture(async e => {
-        await enterCreatorCode('BETA'); await e.click(e.button(e.en.creatorCodes.apply));
-        assert.equal(e.button(e.en.orders.payNow).disabled, true);
-        await e.click(e.button(e.en.orders.payNow));
-        assert.equal(e.requests.some(request => request.url.endsWith('/create-paypal-order')), false);
-        await React.act(async () => resolve());
-        assert.equal(e.button(e.en.orders.payNow).disabled, false);
-    }, { order: creatorOrder, pendingCode });
-});
+test('orders created without a creator code cannot apply one later', async () => fixture(async e => {
+    assertCreatorCodeReadOnly(e);
+    assert.equal(document.body.textContent.includes('Creator Code'), false);
+    assert.equal(e.button(e.en.orders.payNow).disabled, false);
+}));
+
+test('starting checkout keeps code read-only and locks discounted items through payment retries', async () => fixture(async e => {
+    await e.click(e.button(e.en.orders.payNow));
+    assertCreatorCodeReadOnly(e);
+    assert.equal(e.button(e.en.orders.removeOne).disabled, true);
+    e.popup.closed = true; await e.tick();
+    assertCreatorCodeReadOnly(e);
+    assert.equal(e.button(e.en.orders.removeOne).disabled, true);
+    assert.equal(e.button(e.en.orders.payNow).disabled, false);
+}, { order: creatorOrder, captureError: 'PayPal payment is not approved' }));
+
+test('an existing PayPal voucher keeps discounted items locked after reloading orders', async () => fixture(async e => {
+    assertCreatorCodeReadOnly(e);
+    assert.equal(e.button(e.en.orders.removeOne).disabled, true);
+    assert.equal(e.button(e.en.orders.payNow).disabled, false);
+}, { order: { ...creatorOrder, paypal_order_id: 'EXISTING-PAYPAL' } }));
+
+test('paid orders retain their creator code summary without the old lock notice', async () => fixture(async e => {
+    assertCreatorCodeReadOnly(e);
+    assert.ok(document.body.textContent.includes('Applied: ALPHA · 10% off'));
+}, { order: { ...creatorOrder, status: 'paid' } }));
 
 test('orders show combined quantity, unit price and subtotal for kits with separate snapshots', async () => fixture(async e => {
     assert.ok(document.body.textContent.includes('Items (4)'));

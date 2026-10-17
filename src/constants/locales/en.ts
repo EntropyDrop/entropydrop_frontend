@@ -72,7 +72,6 @@ export default {
         hint: 'Changing the code applies only to this order. Your original referral stays the same.',
         invalid: 'This code is invalid, inactive or expired. Your applied code has not changed.',
         changed: 'The offer has changed. Refresh and apply the code again.',
-        locked: 'The code is locked once payment starts. To use another code, cancel the unpaid order and create a new one.',
         failed: 'Could not load or save the creator offer. Please retry.',
         management: 'Creator partnerships', newCode: 'Create code', editCode: 'Edit code', creatorEmail: 'Registered user email',
         discountRate: 'Customer discount', commissionRate: 'Creator commission', expiry: 'Expires at (optional)',

@@ -1,6 +1,6 @@
 # Creator partnerships
 
-Physical figure purchases support referral links and an editable creator code at checkout. Pro subscriptions are outside this feature.
+Physical figure purchases support referral links and a creator code selected in the purchase dialog before an order is created. Pro subscriptions are outside this feature.
 
 ## Configure a partnership
 
@@ -17,7 +17,7 @@ Copy the generated `/figure/3dprint?ref=CODE` link. A public skin can be include
 - A valid referral visit issues a server-signed receipt with a 30-day lifetime. The browser stores it until login or checkout binds it to the account. Replaying a receipt does not extend its expiry. Invalid links do not replace a valid source. This expiry only limits the initial binding request; it does not expire a source already bound to an account.
 - The first bound source remains available for acquisition reporting. A later valid referral visit updates the account's default. The bound default persists indefinitely, including for accounts whose old 30-day attribution window has elapsed. Expired or deactivated creator codes are not applied by default.
 - The purchase dialog defaults to the account's source code. Customers can apply another code or remove it. This changes only the current order, not account attribution. An invalid replacement preserves the current discount. Only one creator code can apply to an order.
-- Existing unpaid orders also allow changes until a PayPal checkout voucher is created. The code and price are then locked for that payment, including retries. To change them, cancel the unpaid order and create another. Paid orders cannot change attribution.
+- Adding to the cart or using Buy Now fixes the order's creator code and discount rates immediately, including the choice to use no code. Existing orders cannot add, replace or remove a code. Cart additions with the same offer snapshot can merge; different codes create separate orders. Removing items before payment recalculates the discount using the saved rates without changing attribution. Creating a PayPal checkout voucher also locks discounted order items for that payment, including retries.
 - The server calculates all prices, discounts, and commissions. Discounts apply to the product subtotal. Commission uses the discounted product subtotal and excludes shipping. Values are rounded to cents. Each order stores a snapshot of its creator account, code and rates; later configuration changes do not rewrite old orders.
 - Changing a partnership after a quote requires a fresh quote before ordering. Deactivation or expiry prevents starting a new PayPal voucher; an existing voucher keeps its original amount and attribution.
 
@@ -48,6 +48,6 @@ The matching changes are in the sibling `entropydrop_backend` repository. Deploy
 3. Build/deploy the frontend and bind partnership codes to registered accounts.
 4. Verify the complete flow in PayPal sandbox before enabling live transfers.
 
-Backend endpoints live under `/api/creators` (also the existing `/skin` alias): `POST /visit`, authenticated `POST /referral` and `POST /quote`, and admin-only `GET /manage` / `PUT /manage/{code}`. Order edits use `PATCH /api/orders/{id}/creator-code` and require the expected previous code. Creator reporting uses `GET /me`, `/me/users`, `/me/orders`, and `/me/payouts`; withdrawal requests use `POST /me/payouts`. Admins use `GET /manage/payouts` and `POST /manage/payouts/{id}/review` (`approve`, `reject`, or `sync`).
+Backend endpoints live under `/api/creators` (also the existing `/skin` alias): `POST /visit`, authenticated `POST /referral` and `POST /quote`, and admin-only `GET /manage` / `PUT /manage/{code}`. The legacy `PATCH /api/orders/{id}/creator-code` endpoint rejects changes with `409 creator_code_locked`; select the code when creating the order. Creator reporting uses `GET /me`, `/me/users`, `/me/orders`, and `/me/payouts`; withdrawal requests use `POST /me/payouts`. Admins use `GET /manage/payouts` and `POST /manage/payouts/{id}/review` (`approve`, `reject`, or `sync`).
 
 Frontend checks: `npm run test:figure`, `npm run test:architecture`, and `npm run build:site`. Backend coverage is in `tests/test_creator_referrals.py` and `tests/test_creator_payouts.py`, alongside the existing auth, order, PayPal, fulfillment, and webhook suites. Use the isolated test environment; do not run test migrations against production.
