@@ -96,6 +96,21 @@ test('request client leaves native fetch unchanged and adds credentials only to 
     } finally { await env.close(); }
 });
 
+test('anonymous shared-skin lookups omit both authorization and cookies even for a signed-in owner', async () => {
+    const calls = [];
+    const env = await setup(async (url, options) => { calls.push({ url, options }); return json({ detail: 'Permission denied' }, 403); });
+    try {
+        const response = await env.apiFetch('/api/logs/private-skin', {
+            auth: 'none', credentials: 'omit', cache: 'no-store', skipGlobalError: true,
+        });
+        assert.equal(response.status, 403);
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].options.headers.has('Authorization'), false);
+        assert.equal(calls[0].options.credentials, 'omit');
+        assert.equal(env.events.length, 0);
+    } finally { await env.close(); }
+});
+
 test('profile consumers share a request; cancelling one lease leaves the other request alive', async () => {
     const work = deferred(); let calls = 0, signal;
     const env = await setup((url, options) => { calls++; signal = options.signal; return work.promise; });

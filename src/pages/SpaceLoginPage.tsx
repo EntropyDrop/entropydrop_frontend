@@ -1,3 +1,4 @@
+import { googleLoginPayload } from '../utils/creatorReferral'
 import { useEffect, useState } from 'react'
 import { Icon } from '@iconify/react'
 import { GoogleSignInButton } from '../components/GoogleSignInButton'
@@ -61,7 +62,7 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
     setError('')
     try {
       const response = await apiFetch('/api/auth/google', {
-        method: 'POST', credentials: 'include', body: JSON.stringify({ token: credential }), skipGlobalError: true,
+        method: 'POST', credentials: 'include', body: JSON.stringify(googleLoginPayload(credential)), skipGlobalError: true,
       })
       if (!response.ok) throw new Error('Login failed')
       const data = await response.json()

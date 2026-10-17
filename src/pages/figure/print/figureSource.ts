@@ -38,3 +38,9 @@ export function figureSourcePath(id: string) {
 export function figureSourceUrl(id: string) {
     return `https://entropydrop.com${figureSourcePath(id)}`
 }
+
+export function figurePrintPath(source: FigureSkinSource) {
+    return source.isPublic === true
+        ? `/figure/3dprint?id=${encodeURIComponent(source.id)}`
+        : '/figure/3dprint'
+}

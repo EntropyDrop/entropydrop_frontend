@@ -19,7 +19,8 @@ import { apiFetch, apiResponseJson } from '../utils/api'
 import { formatDate } from '../utils/date'
 import { GoogleSignInButton } from './GoogleSignInButton'
 import { LoadingSpinner } from './LoadingPlaceholder'
-import { createFigureSource } from '../pages/figure/print/figureSource'
+import { createFigureSource, figurePrintPath } from '../pages/figure/print/figureSource'
+import { googleLoginPayload } from '../utils/creatorReferral'
 
 
 export interface Collection {
@@ -68,8 +69,11 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     };
 
     const handlePrint = () => {
+        const source = createFigureSource(item);
         close();
-        navigate('/figure/3dprint', { state: { textureUrl, name: item.name || 'skin.png', source: createFigureSource(item) } });
+        navigate(figurePrintPath(source), source.isPublic === true
+            ? undefined
+            : { state: { textureUrl, name: item.name || 'skin.png', source } });
     };
 
     const [mode, setModeState] = useState<'voxel' | 'plane' | 'cute'>(() => {
@@ -675,7 +679,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         try {
             const res = await apiFetch('/api/auth/google', {
                 method: 'POST',
-                body: JSON.stringify({ token: credentialResponse.credential })
+                body: JSON.stringify(googleLoginPayload(credentialResponse.credential))
             })
             if (res.ok) {
                 const data = await apiResponseJson(res)

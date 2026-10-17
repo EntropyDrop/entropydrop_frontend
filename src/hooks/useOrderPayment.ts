@@ -8,11 +8,12 @@ interface Checkout {
     timer?: number
 }
 
-export function useOrderPayment({ authSession, current, onSuccess, onError }: {
+export function useOrderPayment({ authSession, current, onSuccess, onError, onCheckoutCreated }: {
     authSession: string | null
     current: LangData
     onSuccess: (orderId: string) => void
     onError: (message: string) => void
+    onCheckoutCreated?: (orderId: string) => void
 }) {
     const checkout = useRef<Checkout | null>(null)
     const [processing, setProcessing] = useState<{ orderId: string | null; session: string } | null>(null)
@@ -99,6 +100,7 @@ export function useOrderPayment({ authSession, current, onSuccess, onError }: {
             if (!isCurrent()) return
             if (!response.ok) throw new Error(data.detail || current.orders.paymentFailed)
             if (!data.id) throw new Error(current.orders.paymentFailed)
+            onCheckoutCreated?.(orderId)
             // Retry the existing voucher after an uncertain capture; never create another payment.
             if (['APPROVED', 'COMPLETED', 'CAPTURE_PENDING'].includes(data.status)) {
                 await confirmPayment(data.id)

@@ -1,3 +1,4 @@
+import { googleLoginPayload } from '../../../utils/creatorReferral'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
@@ -106,7 +107,7 @@ function DownloadSession({ current, onClose, onDownload, session }: Props & { se
         pending.current = controller
         setPhase('loggingIn')
         try {
-            const response = await apiFetch('/api/auth/google', { method: 'POST', signal: controller.signal, skipGlobalError: true, body: JSON.stringify({ token: credential }) })
+            const response = await apiFetch('/api/auth/google', { method: 'POST', signal: controller.signal, skipGlobalError: true, body: JSON.stringify(googleLoginPayload(credential)) })
             if (!response.ok) throw new Error('Login failed')
             const data = await apiResponseJson(response)
             if (controller.signal.aborted || getAuthSessionKey() !== session) return

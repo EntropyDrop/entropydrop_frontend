@@ -12,6 +12,7 @@ export interface CurrentUser {
     google_id: string
     is_pro: boolean
     is_admin: boolean
+    is_creator?: boolean
     pro_expires_at: string
     email: string
     terms_agreed: boolean

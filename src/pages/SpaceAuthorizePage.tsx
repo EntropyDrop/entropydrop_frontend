@@ -1,3 +1,4 @@
+import { googleLoginPayload } from '../utils/creatorReferral'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { PageContainer } from '../components/PageContainer'
@@ -34,7 +35,7 @@ export function SpaceAuthorizePage({ current }: { current: LangData }) {
         setLoginError('')
         try {
             const response = await apiFetch('/api/auth/google', {
-                method: 'POST', body: JSON.stringify({ token: credential }), skipGlobalError: true,
+                method: 'POST', body: JSON.stringify(googleLoginPayload(credential)), skipGlobalError: true,
             })
             if (!response.ok) throw new Error('Login failed')
             const data = await response.json()

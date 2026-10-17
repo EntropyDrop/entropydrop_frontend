@@ -6,6 +6,9 @@ import { LoadingPlaceholder } from './components/LoadingPlaceholder'
 import { RouteLoadingSkeleton } from './components/RouteLoadingSkeleton'
 import { type LangKey, type LangData, loadLangData, SUPPORTED_LANGUAGES } from './constants/lang'
 import { FIGURE_PRINT_TERMS } from './constants/figurePrintTerms'
+import { CreatorReferralTracker } from './components/CreatorReferralTracker'
+
+const CreatorPage = lazy(() => import('./pages/CreatorPage').then(m => ({ default: m.CreatorPage })))
 
 // Lazy load pages
 const CollectionPage = lazy(() => import('./pages/CollectionPage').then(m => ({ default: m.CollectionPage })))
@@ -127,11 +130,13 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
   const currentLangData = isSpaceLandingPage ? english : preferredLangData
 
   const routes = (
+    <><CreatorReferralTracker />
     <RouteTransition key={location.pathname} current={currentLangData} showLoadingSkeleton={!isDiscoveryPath(location.pathname)}>
       <Routes>
         <Route path="/" element={<Navigate to="/skin/" replace />} />
         <Route path="/skin/" element={<DiscoveryPage current={currentLangData} />} />
         <Route path="/skin/generate" element={<GeneratePage current={currentLangData} />} />
+        <Route path="/creator" element={<CreatorPage current={currentLangData} />} />
         <Route path="/credits" element={<CreditsPage current={currentLangData} />} />
         <Route path="/skin/edit" element={<EditPage current={currentLangData} />} />
         <Route path="/skin/print" element={<Navigate to="/figure/3dprint" replace />} />
@@ -170,6 +175,7 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
         <Route path="/space/*" element={<SpaceIntroRedirect />} />
       </Routes>
     </RouteTransition>
+    </>
   )
 
   const isStandaloneLab = Boolean(import.meta.env.DEV && (location.pathname === '/space/terrain-lab' || location.pathname === '/terrain-lab'))

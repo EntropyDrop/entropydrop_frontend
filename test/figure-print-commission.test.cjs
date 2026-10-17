@@ -51,6 +51,16 @@ async function withDialog(options, check) {
             if (name.endsWith('/utils/api')) return { apiResponseJson: response => response.json(), apiFetch: async (url, init = {}) => {
                 requests.push({ url, ...init });
                 events.push(url);
+                if (url === '/api/creators/quote') {
+                    const { code, quantity } = JSON.parse(init.body);
+                    if (server.pendingQuote) await server.pendingQuote.promise;
+                    const offer = code === null ? server.defaultCreator || null : code ? server.creatorOffers?.[code] || (server.defaultCreator?.code === code ? server.defaultCreator : null) : null;
+                    if (server.quoteError || (code && !offer)) return { ok: false, status: 400, json: async () => ({ detail: server.quoteError || 'creator_code_invalid' }) };
+                    const product = server.stock.find(product => product.model_type === 'Cute DIY Kit');
+                    const subtotal = (product?.price || 0) * quantity, shipping_fee = product?.shipping_fee || 0;
+                    const discount_amount = subtotal * (offer?.discount_percent || 0) / 100;
+                    return { ok: true, json: async () => ({ offer: offer ? { ...offer } : null, subtotal, shipping_fee, discount_amount, total_price: subtotal - discount_amount + shipping_fee }) };
+                }
                 if (url.endsWith('/create-paypal-order')) return { ok: !server.checkoutError, status: server.checkoutError ? 500 : 200, json: async () => server.checkoutError ? { detail: server.checkoutError } : { id: 'PAYPAL-DIRECT', status: server.paypalStatus || 'CREATED', approval_url: 'https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-DIRECT' } };
                 if (url.endsWith('/pay')) return { ok: !server.captureError, status: server.captureError ? 400 : 200, json: async () => server.captureError ? { detail: server.captureError } : { id: 'order-a', status: 'paid' } };
                 const post = init.method === 'POST';
@@ -100,7 +110,6 @@ test('commissioning defaults to PayPal shipping without loading addresses, then 
         assert.equal(document.body.textContent.includes('Review the final total'), false);
         assert.equal(document.body.textContent.includes('300 kits'), false);
         assert.equal(document.body.textContent.includes('Available stock'), false);
-        assert.ok(document.body.textContent.includes(env.en.figurePrint.commissionOrder.approval));
         for (const label of ['$10.00 per order', '2 days', '10 business days', 'CUTE-10cm DIY kit', kitSpecifications.assembly_note]) {
             assert.ok(document.body.textContent.includes(label));
         }
@@ -116,14 +125,76 @@ test('commissioning defaults to PayPal shipping without loading addresses, then 
         const pending = deferred(); env.server.pendingPost = pending;
         const submit = env.submit(); assert.equal(submit.disabled, false);
         await React.act(async () => { submit.click(); submit.click(); });
-        assert.equal(env.requests.filter(request => request.method === 'POST').length, 1);
+        assert.equal(env.requests.filter(request => request.url === '/api/orders' && request.method === 'POST').length, 1);
         assert.equal(env.navigated.length, 0);
         assert.equal(env.button(env.en.modal.cancel).disabled, true);
         await env.resolve(pending);
         assert.equal(env.requests.some(request => request.url === '/api/addresses'), false);
-        const post = env.requests.find(request => request.method === 'POST');
-        assert.deepEqual(JSON.parse(post.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', shipping_source: 'paypal', quantity: 1, sticker_language: 'en' });
+        const post = env.requests.find(request => request.url === '/api/orders' && request.method === 'POST');
+        assert.deepEqual(JSON.parse(post.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', shipping_source: 'paypal', quantity: 1, sticker_language: 'en', creator_code: '' });
         assert.deepEqual(env.navigated, ['/skin/orders']);
+    });
+});
+
+const creatorA = { code: 'ALPHA', creator_name: 'Creator A', discount_percent: 10, version: 1 };
+const creatorB = { code: 'BETA', creator_name: 'Creator B', discount_percent: 20, version: 2 };
+async function enterCreatorCode(code) {
+    if (!document.querySelector('input[placeholder="Enter a creator code"]')) {
+        await React.act(async () => document.querySelector('button[aria-expanded="false"][aria-controls$="-editor"]').click());
+    }
+    await React.act(async () => {
+        const input = document.querySelector('input[placeholder="Enter a creator code"]');
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, code);
+        input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+}
+
+test('applied creator codes collapse behind Edit and a replacement changes only the submitted order', async () => {
+    await withDialog({ server: { defaultCreator: creatorA, creatorOffers: { BETA: creatorB } } }, async env => {
+        assert.equal(document.querySelectorAll('input[placeholder="Enter a creator code"]').length, 0);
+        assert.ok(document.body.textContent.includes('Applied: ALPHA · 10% off'));
+        await env.click(env.button(env.en.nav.edit));
+        assert.equal(document.querySelector('input[placeholder="Enter a creator code"]').value, 'ALPHA');
+        await env.click(env.button(env.en.creatorCodes.apply));
+        assert.equal(document.querySelectorAll('input[placeholder="Enter a creator code"]').length, 0);
+        assert.ok(document.body.textContent.includes('$37.00'));
+        await enterCreatorCode('beta'); await env.click(env.button(env.en.creatorCodes.apply));
+        assert.ok(document.body.textContent.includes('$34.00'));
+        assert.ok(document.body.textContent.includes('BETA'));
+        assert.equal(document.querySelectorAll('input[placeholder="Enter a creator code"]').length, 0);
+        assert.equal(env.server.defaultCreator.code, 'ALPHA');
+        const select = document.querySelector('select');
+        await React.act(async () => { select.value = '2'; select.dispatchEvent(new window.Event('change', { bubbles: true })); });
+        assert.ok(document.body.textContent.includes('$58.00'));
+        await env.click(env.submit());
+        const body = JSON.parse(env.requests.find(request => request.url === '/api/orders').body);
+        assert.equal(body.creator_code, 'BETA'); assert.equal(body.creator_offer_version, 2);
+    });
+});
+
+test('an invalid replacement preserves the applied code and discount, and removing it restores the full price', async () => {
+    await withDialog({ server: { defaultCreator: creatorA } }, async env => {
+        await enterCreatorCode('MISSING'); await env.click(env.button(env.en.creatorCodes.apply));
+        assert.ok(document.body.textContent.includes(env.en.creatorCodes.invalid));
+        assert.ok(document.body.textContent.includes('$37.00'));
+        assert.equal(env.submit().disabled, false);
+        await env.click(env.button(env.en.creatorCodes.remove));
+        assert.ok(document.body.textContent.includes('$40.00'));
+        await env.click(env.submit());
+        assert.equal(JSON.parse(env.requests.find(request => request.url === '/api/orders').body).creator_code, '');
+    });
+});
+
+test('checkout waits for a creator quote and ignores a pending replacement after logout', async () => {
+    await withDialog({ server: { defaultCreator: creatorA, creatorOffers: { BETA: creatorB } } }, async env => {
+        const pending = deferred(); env.server.pendingQuote = pending;
+        await enterCreatorCode('BETA'); await env.click(env.button(env.en.creatorCodes.apply));
+        assert.equal(env.submit().disabled, true); assert.equal(env.buyNow().disabled, true);
+        await env.click(env.buyNow()); assert.equal(env.requests.some(request => request.url === '/api/orders'), false);
+        const quote = env.requests.filter(request => request.url === '/api/creators/quote').at(-1);
+        await env.switchAccount(null); await env.resolve(pending);
+        assert.equal(quote.signal.aborted, true);
+        assert.equal(env.requests.some(request => request.url === '/api/orders'), false);
     });
 });
 
@@ -138,7 +209,7 @@ for (const [label, stock] of [
         assert.equal(env.submit().disabled, true);
         assert.ok(document.body.textContent.includes(env.en.figurePrint.commissionOrder.unavailable));
         await env.click(env.submit());
-        assert.equal(env.requests.some(request => request.method === 'POST'), false);
+        assert.equal(env.requests.some(request => request.url === '/api/orders' && request.method === 'POST'), false);
     });
 });
 
@@ -147,7 +218,7 @@ test('guests see sign-in and cannot retrieve addresses or create orders', async 
         assert.ok(env.button('Google sign in'));
         assert.equal(env.submit(), undefined);
         assert.equal(env.requests.some(request => request.url === '/api/addresses'), false);
-        assert.equal(env.requests.some(request => request.method === 'POST'), false);
+        assert.equal(env.requests.some(request => request.url === '/api/orders' && request.method === 'POST'), false);
     });
 });
 
@@ -168,7 +239,7 @@ test('account changes discard a late order response', async () => {
         await env.resolve(pending);
         assert.equal(document.querySelector('dialog'), null);
         assert.equal(env.navigated.length, 0);
-        assert.equal(env.requests.find(request => request.method === 'POST').signal.aborted, true);
+        assert.equal(env.requests.find(request => request.url === '/api/orders' && request.method === 'POST').signal.aborted, true);
     });
 });
 
@@ -193,7 +264,7 @@ test('kit quantity updates the total and is sent in one atomic order request', a
         const pending = deferred(); env.server.pendingPost = pending;
         await env.click(env.submit());
         assert.equal(select.disabled, true);
-        const posts = env.requests.filter(request => request.method === 'POST');
+        const posts = env.requests.filter(request => request.url === '/api/orders' && request.method === 'POST');
         assert.equal(posts.length, 1);
         assert.equal(JSON.parse(posts[0].body).quantity, 3);
         await env.resolve(pending);
@@ -265,11 +336,11 @@ test('deleting an explicitly selected address clears checkout until another addr
         assert.ok(document.querySelector('footer').textContent.includes(env.en.figurePrint.commissionOrder.noAddress));
         assert.equal(env.submit().disabled, true);
         await env.click(env.submit());
-        assert.equal(env.requests.some(request => request.method === 'POST'), false);
+        assert.equal(env.requests.some(request => request.url === '/api/orders' && request.method === 'POST'), false);
         await env.click(addressCard(addressA.detail_address));
         assert.equal(env.submit().disabled, false);
         await env.click(env.submit());
-        assert.equal(JSON.parse(env.requests.find(request => request.method === 'POST').body).address_id, addressA.id);
+        assert.equal(JSON.parse(env.requests.find(request => request.url === '/api/orders' && request.method === 'POST').body).address_id, addressA.id);
     });
 });
 
@@ -310,7 +381,7 @@ test('PayPal shipping can be used without any saved address', async () => {
         assert.equal(env.submit().disabled, false);
         assert.equal(env.requests.some(request => request.url === '/api/addresses'), false);
         await env.click(env.submit());
-        const data = JSON.parse(env.requests.find(request => request.method === 'POST').body);
+        const data = JSON.parse(env.requests.find(request => request.url === '/api/orders' && request.method === 'POST').body);
         assert.equal(data.shipping_source, 'paypal');
         assert.equal('address_id' in data, false);
     });
@@ -321,7 +392,7 @@ test('switching to address book requires a complete address and sends its source
         assert.equal(document.querySelector('input[value="address_book"]').checked, true);
         assert.ok(document.querySelector('footer').textContent.includes(addressA.recipient_name));
         await env.click(env.submit());
-        const data = JSON.parse(env.requests.find(request => request.method === 'POST').body);
+        const data = JSON.parse(env.requests.find(request => request.url === '/api/orders' && request.method === 'POST').body);
         assert.equal(data.shipping_source, 'address_book');
         assert.equal(data.address_id, addressA.id);
     });
@@ -334,7 +405,7 @@ test('switching back to PayPal clears the address requirement and omits a previo
             await env.click(document.querySelector('input[value="paypal"]'));
             assert.equal(env.submit().disabled, false);
             await env.click(env.submit());
-            const data = JSON.parse(env.requests.find(request => request.method === 'POST').body);
+            const data = JSON.parse(env.requests.find(request => request.url === '/api/orders' && request.method === 'POST').body);
             assert.equal(data.shipping_source, 'paypal');
             assert.equal('address_id' in data, false);
         });
@@ -363,7 +434,7 @@ test('Buy Now follows Add to cart, opens PayPal in the click, and pays only its 
         await env.click(env.buyNow());
         assert.deepEqual(env.events.slice(0, 3), ['open', '/api/orders', '/api/orders/order-a/create-paypal-order']);
         const create = env.requests.find(request => request.url === '/api/orders' && request.method === 'POST');
-        assert.deepEqual(JSON.parse(create.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', shipping_source: 'paypal', quantity: 3, sticker_language: 'en', checkout_mode: 'buy_now' });
+        assert.deepEqual(JSON.parse(create.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', shipping_source: 'paypal', quantity: 3, sticker_language: 'en', creator_code: '', checkout_mode: 'buy_now' });
         assert.equal(env.popups[0].location.href, 'https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-DIRECT');
         assert.deepEqual(env.navigated, []);
         assert.equal(env.closed(), 0);
@@ -394,7 +465,7 @@ test('Buy Now respects the selected address-book address', async () => {
 test('blocked popups do not create a direct purchase or charge the buyer', async () => {
     await withDialog({ popupBlocked: true }, async env => {
         await env.click(env.buyNow());
-        assert.equal(env.requests.some(request => request.method === 'POST'), false);
+        assert.equal(env.requests.some(request => request.url === '/api/orders' && request.method === 'POST'), false);
         assert.equal(env.buyNow().disabled, false);
         assert.ok(document.querySelector('[role="alert"]').textContent.includes(env.en.orders.popupBlocked));
     });
@@ -458,7 +529,7 @@ for (const options of [{ guest: true }, { addressBook: true, server: { addresses
             await env.click(env.buyNow());
         }
         assert.equal(env.popups.length, 0);
-        assert.equal(env.requests.some(request => request.method === 'POST'), false);
+        assert.equal(env.requests.some(request => request.url === '/api/orders' && request.method === 'POST'), false);
     });
 });
 

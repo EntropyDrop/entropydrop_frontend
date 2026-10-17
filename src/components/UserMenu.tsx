@@ -1,3 +1,4 @@
+import { googleLoginPayload } from '../utils/creatorReferral'
 import { FigureOrderNotification } from './FigureOrderNotification'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { Icon } from '@iconify/react'
@@ -164,7 +165,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
             setUser(null)
             setIsOpen(false)
             // Redirect to / (Discovery) on logout if we are on a protected page
-            const protectedRoutes = ['/skin/orders', '/skin/collection', '/skin/monitor', '/skin/generate']
+            const protectedRoutes = ['/skin/orders', '/skin/collection', '/skin/monitor', '/skin/generate', '/creator']
             const isProtected = protectedRoutes.some(route => 
                 window.location.pathname === route || window.location.pathname.startsWith(route + '/')
             )
@@ -237,7 +238,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         try {
             const res = await apiFetch('/api/auth/google', {
                 method: 'POST',
-                body: JSON.stringify({ token: credentialResponse.credential })
+                body: JSON.stringify(googleLoginPayload(credentialResponse.credential))
             })
             if (res.ok) {
                 const data = await apiResponseJson(res)
@@ -579,6 +580,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             </div>
 
 
+                            {user.is_creator && <button onClick={() => { setIsOpen(false); navigate('/creator'); }} className={`w-full px-4 py-3 text-left text-[#a6df7a] hover:bg-white/10 text-xs cursor-pointer flex items-center gap-3 ${current.fontClass}`}><Icon icon="pixelarticons:coin" />{current.creatorPortal.title}</button>}
                             {user.is_admin && <button onClick={() => { setIsOpen(false); navigate('/figure/manage'); }} className={`w-full px-4 py-3 text-left text-[#a6df7a] hover:bg-white/10 text-xs cursor-pointer flex items-center gap-3 ${current.fontClass}`}><Icon icon="pixelarticons:box" />{current.figureManagement.title}</button>}
                             <button
                                 onClick={() => { setIsOpen(false); navigate('/skin/orders'); }}

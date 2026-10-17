@@ -13,6 +13,7 @@ import { downloadUrl } from './figure/print/download'
 import { figureSourcePath, figureSourceUrl, readFigureSource, type FigureSkinSource } from './figure/print/figureSource'
 import { orderStickerInfo } from './figure/print/orderSticker'
 import { useOrderProductionSource } from './figure/print/useOrderProductionSource'
+import { usePublicFigureSource } from './figure/print/usePublicFigureSource'
 import { getOrderPrintModel, FIGURE_MODELS, type FigureModel } from './figure/print/figureModels'
 import { FigureKitPrice } from './figure/print/FigureKitPrice'
 
@@ -56,12 +57,13 @@ export function FigurePrintPage({ current }: { current: LangData }) {
     const [model, setModel] = useState<FigureModel>(FIGURE_MODELS[0])
     const location = useLocation()
     const production = useOrderProductionSource(location.search || '')
+    const publicSource = usePublicFigureSource(production.active ? '' : location.search || '')
     const savedSticker = production.data?.sticker_snapshot
     const printModelType = production.active ? getOrderPrintModel(savedSticker?.model_name) : model.id
     const state = location.state as PrintSource | null
-    const textureUrl = production.active ? production.data?.skin_url || '' : typeof state?.textureUrl === 'string' ? state.textureUrl : ''
-    const source = useMemo(() => production.active ? savedSticker ? { id: savedSticker.skin_id, name: savedSticker.skin_name, publisher: savedSticker.publisher_name, publisherId: savedSticker.publisher_id, parentId: '', publicLicense: '' } : null : readFigureSource(state?.source), [production.active, savedSticker, state?.source])
-    const name = source?.name || (typeof state?.name === 'string' ? state.name : '')
+    const textureUrl = production.active ? production.data?.skin_url || '' : publicSource.active ? publicSource.data?.textureUrl || '' : typeof state?.textureUrl === 'string' ? state.textureUrl : ''
+    const source = useMemo(() => production.active ? savedSticker ? { id: savedSticker.skin_id, name: savedSticker.skin_name, publisher: savedSticker.publisher_name, publisherId: savedSticker.publisher_id, parentId: '', publicLicense: '' } : null : publicSource.active ? publicSource.data?.source || null : readFigureSource(state?.source), [production.active, savedSticker, publicSource.active, publicSource.data, state?.source])
+    const name = source?.name || (!publicSource.active && !production.active && typeof state?.name === 'string' ? state.name : '')
     const stickerInfo = useMemo(() => savedSticker ? orderStickerInfo(savedSticker) : ({
         name: name || t.unnamedSkin,
         publisher: source?.publisher || t.unknownPublisher,
@@ -97,6 +99,8 @@ export function FigurePrintPage({ current }: { current: LangData }) {
             setProgress(0)
             setBusy(!!textureUrl)
             setBusyLabel(null)
+            setPendingDownload(null)
+            setCommissionSource(null)
             if (!textureUrl) return
             let stage: Failure = 'loadFailed'
             try {
@@ -186,12 +190,22 @@ export function FigurePrintPage({ current }: { current: LangData }) {
 
     if (production.active && !production.data) return <PageContainer className={current.fontClass}><p role={production.failed ? 'alert' : 'status'} className="text-sm text-white/65">{production.failed ? t.productionSourceFailed : t.productionSourceLoading}</p>{production.failed && <button type="button" className={buttonClass} onClick={production.retry}>{t.retry}</button>}<Link to="/figure/manage" className="text-xs text-[#a6df7a] underline">{t.backToManagement}</Link></PageContainer>
 
+    if (publicSource.active && !publicSource.data) return <PageContainer className={current.fontClass}>
+        <SEO title={t.title} description={t.description} />
+        <p role={publicSource.error ? 'alert' : 'status'} className="text-sm text-white/65">{publicSource.error === 'unavailable' ? t.sharedSourceUnavailable : publicSource.error ? t.loadFailed : t.sharedSourceLoading}</p>
+        <div className="flex flex-wrap gap-3">
+            {publicSource.error === 'loadFailed' && <button type="button" className={buttonClass} onClick={publicSource.retry}>{t.retry}</button>}
+            <Link to="/skin/" className={buttonClass}>{t.discoverSkins}</Link>
+        </div>
+    </PageContainer>
+
     if (!textureUrl) return <PageContainer innerPadding="p-0" gap="gap-4" overflow="overflow-hidden" className={current.fontClass}>
         <SEO title={t.title} description={t.description} />
         <section aria-label={t.title} className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4 bg-[#1a1a1a] p-6 shadow-inner">
-            <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-center justify-center gap-3">
                 <Link to="/skin/collection" className="px-6 py-3 bg-[#3c8527] hover:bg-[#4ea632] text-white text-xs cursor-pointer inline-flex items-center justify-center gap-2 transition-colors shadow-lg border border-black active:translate-y-px no-underline"><Icon icon="pixelarticons:folder" className="text-base" />{t.chooseCollection}</Link>
                 <Link to="/skin/" className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white text-xs cursor-pointer inline-flex items-center justify-center gap-2 transition-colors shadow-lg border border-black active:translate-y-px no-underline"><Icon icon="pixelarticons:search" className="text-base" />{t.discoverSkins}</Link>
+                <Link to="/figure/showcase" className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white text-xs cursor-pointer inline-flex items-center justify-center gap-2 transition-colors shadow-lg border border-black active:translate-y-px no-underline"><Icon icon="pixelarticons:image" className="text-base" />{current.nav.showcase}</Link>
             </div>
             <p className="text-white/40 text-[11px] text-center max-w-xs mt-2 mb-0 leading-relaxed">{t.empty}</p>
         </section>
@@ -204,10 +218,13 @@ export function FigurePrintPage({ current }: { current: LangData }) {
             <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
                     <div className="flex items-center gap-3"><Icon icon="pixelarticons:box" className="text-[#71bc56] text-2xl" /><h2 className="text-xl sm:text-2xl m-0">{t.title}</h2></div>
-                    <label className="flex items-center gap-2 text-xs text-white/60">{t.modelType}<span className="relative inline-flex"><select aria-label={t.modelType} value={printModelType} disabled={production.active} onChange={event => {
-                        const selected = FIGURE_MODELS.find(item => item.id === event.target.value)
-                        if (selected) { setCommissionSource(null); setPendingDownload(null); setModel(selected) }
-                    }} className="h-9 appearance-none rounded-none border border-white/15 bg-white/5 pl-3 pr-8 py-0 text-xs text-white/80 cursor-pointer hover:bg-white/10 hover:text-white transition-colors focus:outline-none focus:border-[#84c96b]">{production.active && printModelType === 'cute7' && <option value="cute7" className="bg-[#182018]">CUTE-7cm</option>}{FIGURE_MODELS.map(item => <option key={item.id} value={item.id} className="bg-[#182018]">{item.name}</option>)}</select><Icon icon="pixelarticons:chevron-down" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs" /></span></label>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <label className="flex items-center gap-2 text-xs text-white/60">{t.modelType}<span className="relative inline-flex"><select aria-label={t.modelType} value={printModelType} disabled={production.active} onChange={event => {
+                            const selected = FIGURE_MODELS.find(item => item.id === event.target.value)
+                            if (selected) { setCommissionSource(null); setPendingDownload(null); setModel(selected) }
+                        }} className="h-9 appearance-none rounded-none border border-white/15 bg-white/5 pl-3 pr-8 py-0 text-xs text-white/80 cursor-pointer hover:bg-white/10 hover:text-white transition-colors focus:outline-none focus:border-[#84c96b]">{production.active && printModelType === 'cute7' && <option value="cute7" className="bg-[#182018]">CUTE-7cm</option>}{FIGURE_MODELS.map(item => <option key={item.id} value={item.id} className="bg-[#182018]">{item.name}</option>)}</select><Icon icon="pixelarticons:chevron-down" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs" /></span></label>
+                        <Link to="/figure/showcase" className={`${buttonClass} h-9 shrink-0 !py-0 no-underline`}><Icon icon="pixelarticons:image" />{current.nav.showcase}</Link>
+                    </div>
                 </div>
             </div>
             <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-x-3 gap-y-2">

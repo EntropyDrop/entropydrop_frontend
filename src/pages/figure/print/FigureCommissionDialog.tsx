@@ -13,6 +13,9 @@ import type { FigureModel } from './figureModels'
 import type { KitSpecifications } from './kitSpecifications'
 import { KitSpecificationsDetails } from './KitSpecificationsDetails'
 import { validateAddress } from '../../../constants/shippingAddress'
+import { googleLoginPayload } from '../../../utils/creatorReferral'
+import { creatorError, useCreatorQuote } from '../../../hooks/useCreatorQuote'
+import { CreatorCodeField } from '../../../components/CreatorCodeField'
 
 const GoogleSignInButton = lazy(() => import('../../../components/GoogleSignInButton').then(m => ({ default: m.GoogleSignInButton })))
 const buttonClass = 'border border-white/20 px-4 py-2 text-xs hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer'
@@ -51,6 +54,7 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
     const [error, setError] = useState('')
     const [retry, setRetry] = useState(0)
     const [quantity, setQuantity] = useState(1)
+    const creator = useCreatorQuote(session, model.orderModelType, quantity, current)
     const maxQuantity = Math.min(10, Math.max(0, stock?.stock ?? 10))
     const available = !!stock?.available && !!stock.kit_specifications && quantity <= maxQuantity
     const addressValid = !!address && Object.keys(validateAddress(address)).length === 0
@@ -64,7 +68,8 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
         onError: setError,
     })
     const busy = saving || isProcessing
-    const orderFields = { order_type: 'print', log_id: source.id, model_type: model.orderModelType, shipping_source: shippingSource, address_id: shippingSource === 'address_book' ? address?.id : undefined, quantity, sticker_language: current.lang }
+    const orderFields = { order_type: 'print', log_id: source.id, model_type: model.orderModelType, shipping_source: shippingSource, address_id: shippingSource === 'address_book' ? address?.id : undefined, quantity, sticker_language: current.lang,
+        creator_code: creator.quote?.offer?.code || '', creator_offer_version: creator.quote?.offer?.version }
 
     async function createOrder(signal: AbortSignal, buyNow = false) {
         const response = await apiFetch('/api/orders', {
@@ -73,6 +78,7 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
         })
         const data = await apiResponseJson(response)
         if (!response.ok) {
+            if (typeof data.detail === 'string' && data.detail.startsWith('creator_')) throw new Error(creatorError(data.detail, current))
             throw new Error(data.detail === 'Kit specifications are unavailable' ? t.specificationsUnavailable
                 : data.detail === 'Item limit for unpaid orders reached' ? t.limitReached
                 : data.detail === 'This model is sold out' || data.detail === 'Insufficient stock for this quantity' ? t.unavailable
@@ -83,7 +89,7 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
     }
 
     function buyNow() {
-        if (submitting.current || busy || !session || session !== getAuthSessionKey() || !shippingReady || !available || loading) return
+        if (submitting.current || busy || !session || session !== getAuthSessionKey() || !shippingReady || !available || loading || !creator.ready) return
         submitting.current = true
         setError('')
         const selection = JSON.stringify({ ...orderFields, address: shippingSource === 'address_book' ? address : null, unitPrice: stock?.price, shippingFee: stock?.shipping_fee })
@@ -154,7 +160,7 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
         setLoggingIn(true)
         setError('')
         try {
-            const response = await apiFetch('/api/auth/google', { method: 'POST', signal: controller.signal, skipGlobalError: true, body: JSON.stringify({ token: credential }) })
+            const response = await apiFetch('/api/auth/google', { method: 'POST', signal: controller.signal, skipGlobalError: true, body: JSON.stringify(googleLoginPayload(credential)) })
             if (!response.ok) throw new Error(t.loginFailed)
             const data = await apiResponseJson(response)
             if (controller.signal.aborted || session !== getAuthSessionKey()) return
@@ -167,7 +173,7 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
     }
 
     async function order() {
-        if (submitting.current || busy || !session || session !== getAuthSessionKey() || !shippingReady || !available || loading) return
+        if (submitting.current || busy || !session || session !== getAuthSessionKey() || !shippingReady || !available || loading || !creator.ready) return
         submitting.current = true
         setSaving(true)
         setError('')
@@ -201,10 +207,14 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
                     </select>
                 </div>
                 {stock?.kit_specifications && <section className="border border-white/10 p-4"><KitSpecificationsDetails specifications={stock.kit_specifications} skinId={source.id} current={current} /></section>}
-                <p className="text-xs leading-relaxed text-white/65">{t.approval}</p>
+                {session && <>
+                    <CreatorCodeField key={creator.quote?.offer?.code || ''} current={current} offer={creator.quote?.offer} busy={creator.busy} disabled={busy} error={creator.error} onApply={code => void creator.apply(code)} />
+                    {!creator.ready && !creator.busy && <button type="button" onClick={() => void creator.retry()} className={buttonClass}>{current.figurePrint.retry}</button>}
+                </>}
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                     <dt className="text-white/50">{t.shipping}</dt><dd className="m-0 text-right">{stock ? t.shippingPerOrder.replace('{amount}', stock.shipping_fee.toFixed(2)) : '—'}</dd>
-                    {stock && <><dt>{t.total}</dt><dd className="m-0 text-right"><strong>${(stock.price * quantity + stock.shipping_fee).toFixed(2)}</strong></dd></>}
+                    {!!creator.quote?.discount_amount && <><dt>{current.creatorCodes.discount}</dt><dd className="m-0 text-right text-[#a6df7a]">−${creator.quote.discount_amount.toFixed(2)}</dd></>}
+                    {stock && <><dt>{t.total}</dt><dd className="m-0 text-right"><strong>{session ? creator.quote ? `$${creator.quote.total_price.toFixed(2)}` : '—' : `$${(stock.price * quantity + stock.shipping_fee).toFixed(2)}`}</strong></dd></>}
                     <dt className="text-white/50">{t.production}</dt><dd className="m-0 text-right">{t.productionTime}</dd>
                     <dt className="text-white/50">{t.delivery}</dt><dd className="m-0 text-right">{t.deliveryTime}</dd>
                 </dl>
@@ -221,11 +231,11 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
                     </div>}
                     </fieldset>
                     <div className="grid grid-cols-2 gap-3">
-                        <button type="button" disabled={loading || busy || !available || !shippingReady} onClick={order} className={checkoutButtonClass}>{saving ? t.submitting : t.checkout}</button>
-                        <button type="button" disabled={loading || busy || !available || !shippingReady} onClick={buyNow} className={`${checkoutButtonClass} bg-[#3c8527] hover:bg-[#4ea632]`}>{isProcessing ? t.buying : t.buyNow}</button>
+                        <button type="button" disabled={loading || busy || !available || !shippingReady || !creator.ready} onClick={order} className={checkoutButtonClass}>{saving ? t.submitting : t.checkout}</button>
+                        <button type="button" disabled={loading || busy || !available || !shippingReady || !creator.ready} onClick={buyNow} className={`${checkoutButtonClass} bg-[#3c8527] hover:bg-[#4ea632]`}>{isProcessing ? t.buying : t.buyNow}</button>
                     </div>
                 </>}
-                {error && <div role="alert" className="space-y-3 text-xs text-red-200"><p>{error}</p><button type="button" disabled={busy} onClick={() => setRetry(value => value + 1)} className={buttonClass}>{current.figurePrint.retry}</button></div>}
+                {error && <div role="alert" className="space-y-3 text-xs text-red-200"><p>{error}</p><button type="button" disabled={busy} onClick={() => { setRetry(value => value + 1); void creator.retry() }} className={buttonClass}>{current.figurePrint.retry}</button></div>}
             </footer>
         </div>
         <AddressManager isOpen={addressOpen} current={current} onClose={() => setAddressOpen(false)}

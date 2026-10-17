@@ -5,6 +5,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { build } = require('esbuild');
 const { JSDOM } = require('jsdom');
+const initialDOM = new JSDOM('<div></div>');
+global.window = initialDOM.window; global.document = initialDOM.window.document;
 const React = require('react');
 const { createRoot } = require('react-dom/client');
 
@@ -31,7 +33,7 @@ async function fixture(check, options = {}) {
     const navigate = () => {};
     const items = Array.from({ length: 3 }, (_, i) => ({ id: `kit-${i}`, refer_log_id: 'skin-a', skin_url: `/snapshot-${i}.png`, model_type: 'Cute DIY Kit', price: 40, kit_specifications_snapshot: kitSpecifications }));
     const legacy = { id: 'legacy', refer_log_id: 'skin-b', skin_url: '/legacy.png', model_type: 'Figure10cm', price: 60 };
-    const order = { id: 'order-quantity', order_type: 'print', status: 'pending_payment', price: 180, total_price: 180, shipping_fee: 0, created_at: '2026-10-09T00:00:00Z', items: [...items, legacy], address: options.address, shipping_source: options.shippingSource };
+    const order = { id: 'order-quantity', order_type: 'print', status: 'pending_payment', price: 180, total_price: 180, shipping_fee: 0, created_at: '2026-10-09T00:00:00Z', items: [...items, legacy], address: options.address, shipping_source: options.shippingSource, ...options.order };
     const module = { exports: {} };
     vm.runInNewContext(await compiled, { module, exports: module.exports, console, AbortController, URL, Event: dom.window.Event, document, window: dom.window,
         require(name) {
@@ -40,6 +42,14 @@ async function fixture(check, options = {}) {
             if (name.endsWith('/utils/api')) return { apiResponseJson: response => response.json(), apiFetch: async (url, init = {}) => {
                 requests.push({ url, ...init });
                 events.push({ type: 'request', url });
+                if (url.endsWith('/creator-code')) {
+                    if (options.pendingCode) await options.pendingCode;
+                    const { code } = JSON.parse(init.body);
+                    if (code !== 'BETA' || options.codeError) return { ok: false, status: 400, json: async () => ({ detail: options.codeError || 'creator_code_invalid' }) };
+                    order.creator_discount = { code: 'BETA', creator_name: 'Creator B', discount_percent: 20, version: 1 };
+                    order.discount_amount = 36; order.total_price = 144;
+                    return { ok: true, json: async () => ({ ...order }) };
+                }
                 if (url.endsWith('/create-paypal-order')) {
                     if (options.createDeferred) return options.createDeferred;
                     return { ok: !options.createError, status: options.createError ? 500 : 200, json: async () => options.createError ? { detail: 'Checkout unavailable' } : { id: 'PAYPAL-ORDER', status: options.paypalStatus || 'CREATED', approval_url: 'https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-ORDER' } };
@@ -80,6 +90,56 @@ async function fixture(check, options = {}) {
         dom.window.close();
     }
 }
+
+async function enterCreatorCode(code) {
+    if (!document.querySelector('input[placeholder="Enter a creator code"]')) {
+        await React.act(async () => document.querySelector('button[aria-expanded="false"][aria-controls$="-editor"]').click());
+    }
+    await React.act(async () => {
+        const input = document.querySelector('input[placeholder="Enter a creator code"]');
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, code);
+        input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+}
+
+const creatorOrder = { creator_discount: { code: 'ALPHA', creator_name: 'Creator A', discount_percent: 10, version: 1 }, discount_amount: 18, total_price: 162 };
+
+test('an order can replace its default code, refresh the total and lock the field when PayPal starts', async () => fixture(async e => {
+    assert.equal(document.querySelectorAll('input[placeholder="Enter a creator code"]').length, 0);
+    await e.click(e.button(e.en.nav.edit));
+    assert.equal(document.querySelector('input[placeholder="Enter a creator code"]').value, 'ALPHA');
+    await enterCreatorCode('BETA'); await e.click(e.button(e.en.creatorCodes.apply));
+    assert.ok(document.body.textContent.includes('BETA'));
+    assert.ok(document.body.textContent.includes('$144'));
+    assert.deepEqual(JSON.parse(e.requests.find(request => request.url.endsWith('/creator-code')).body), { code: 'BETA', expected_code: 'ALPHA' });
+    await e.click(e.button(e.en.orders.payNow));
+    assert.equal(document.querySelectorAll('input[placeholder="Enter a creator code"]').length, 0);
+    assert.equal(document.querySelector('button[aria-controls$="-editor"]'), null);
+    e.popup.closed = true; await e.tick();
+    assert.equal(document.querySelectorAll('input[placeholder="Enter a creator code"]').length, 0);
+    assert.equal(document.querySelector('button[aria-controls$="-editor"]'), null);
+}, { order: creatorOrder, captureError: 'PayPal payment is not approved' }));
+
+test('invalid order codes leave the original discount and order attribution visible', async () => fixture(async e => {
+    await enterCreatorCode('BAD'); await e.click(e.button(e.en.creatorCodes.apply));
+    assert.ok(document.body.textContent.includes(e.en.creatorCodes.invalid));
+    assert.ok(document.body.textContent.includes('ALPHA'));
+    assert.ok(document.body.textContent.includes('$162'));
+    assert.equal(e.button(e.en.orders.payNow).disabled, false);
+}, { order: creatorOrder }));
+
+test('payment is blocked while a code replacement is being saved', async () => {
+    let resolve;
+    const pendingCode = new Promise(done => { resolve = done; });
+    await fixture(async e => {
+        await enterCreatorCode('BETA'); await e.click(e.button(e.en.creatorCodes.apply));
+        assert.equal(e.button(e.en.orders.payNow).disabled, true);
+        await e.click(e.button(e.en.orders.payNow));
+        assert.equal(e.requests.some(request => request.url.endsWith('/create-paypal-order')), false);
+        await React.act(async () => resolve());
+        assert.equal(e.button(e.en.orders.payNow).disabled, false);
+    }, { order: creatorOrder, pendingCode });
+});
 
 test('orders show combined quantity, unit price and subtotal for kits with separate snapshots', async () => fixture(async e => {
     assert.ok(document.body.textContent.includes('Items (4)'));

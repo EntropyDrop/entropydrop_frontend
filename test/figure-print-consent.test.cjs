@@ -61,6 +61,12 @@ async function withPage(options, check) {
                     requests.push({ url, ...init });
                     if (url.includes('/model-stock')) return { ok: server.stockStatus === 200, json: async () => server.stock };
                     if (url.endsWith('/production-source')) return { ok: (server.productionStatus || 200) === 200, json: async () => server.production };
+                    if (url.startsWith('/api/logs/')) {
+                        const response = server.skins?.[url.slice('/api/logs/'.length)] || { status: 404 };
+                        if (response.pending) await response.pending.promise;
+                        if (response.networkError) throw new Error('Network unavailable');
+                        return { ok: (response.status || 200) === 200, status: response.status || 200, json: async () => response.data };
+                    }
                     let httpStatus = server.getStatus;
                     if (init.method === 'POST') {
                         if (server.pendingPost) await server.pendingPost.promise;
@@ -107,6 +113,7 @@ async function withPage(options, check) {
             cancel: () => click(button(current.modal.cancel)), confirm: () => click(button(current.figurePrint.agreeAndDownload)),
             switchAccount: account => React.act(async () => { session = account; listeners.forEach(listener => listener()); }),
             replaceSource: async () => { location.state = { textureUrl: 'data:image/png;base64,replacement' }; await render(); },
+            navigate: async (search, state = null) => { location.search = search; location.state = state; await render(); },
             remount: async () => { await React.act(() => root.unmount()); root = createRoot(node); await render(); },
         });
         assert.equal(stored.length, 0, 'acceptance must not be persisted in browser storage');
@@ -124,6 +131,7 @@ for (const lang of ['zh', 'en']) {
             assert.equal(env.node.querySelector('input[type="file"]'), null);
             assert.equal(Array.from(env.node.querySelectorAll('a')).some(link => link.textContent === env.current.figurePrint.chooseCollection), false);
             assert.equal(Array.from(env.node.querySelectorAll('a')).some(link => link.textContent === env.current.figurePrint.discoverSkins), false);
+            assert.equal(env.node.querySelector('header a[href="/figure/showcase"]').textContent, env.current.nav.showcase);
             assert.equal(env.node.querySelector('a[href="/skin/?id=skin123"]').textContent, source.name);
             assert.equal(env.node.querySelector('a[href="/skin/collection/maker456"]'), null);
             assert.equal(env.node.querySelector('a[href="/skin/?id=original789"]'), null);
@@ -150,18 +158,126 @@ for (const lang of ['zh', 'en']) {
     });
 }
 
-test('an empty page offers collections and Discover without a local upload or commissioning action', async () => {
+test('an empty page offers collections, Discover and Showcase without a local upload or commissioning action', async () => {
     await withPage({ empty: true }, async env => {
         assert.equal(env.node.querySelector('a[href="/skin/collection"]').textContent, env.current.figurePrint.chooseCollection);
         assert.equal(env.node.querySelector('a[href="/skin/"]').textContent, env.current.figurePrint.discoverSkins);
+        assert.equal(env.node.querySelector('a[href="/figure/showcase"]').textContent, env.current.nav.showcase);
         assert.equal(env.button(env.current.figurePrint.commission), undefined);
         assert.equal(env.node.querySelector('input[type="file"]'), null);
         assert.equal(env.node.querySelector('select'), null);
         assert.equal(downloadButtons(env.node).length, 0);
-        assert.equal(env.node.querySelectorAll('a').length, 2);
+        assert.equal(env.node.querySelectorAll('a').length, 3);
         assert.equal(env.node.querySelector('header'), null);
         assert.equal(env.node.querySelector('a[href="/skin/edit"]'), null);
         assert.ok(env.node.textContent.includes(env.current.figurePrint.empty));
+        assert.equal(env.generatedInfo.length, 0);
+    });
+});
+
+const publicSkin = {
+    id: 'shared-skin', name: 'Shared figure', is_public: true, result: 'https://cdn.example.test/shared-skin.png',
+    creator: { id: 'public-maker', username: 'Public maker' }, parent: '',
+    license: { public_license: 'cc-by-nc-4.0' },
+};
+
+test('print URLs include only the ID of an explicitly public skin', () => {
+    const module = { exports: {} };
+    const { buildSync } = require('esbuild');
+    vm.runInNewContext(buildSync({
+        entryPoints: [path.resolve(__dirname, '../src/pages/figure/print/figureSource.ts')],
+        bundle: true, write: false, platform: 'node', format: 'cjs',
+    }).outputFiles[0].text, { module, exports: module.exports });
+    const { createFigureSource, figurePrintPath } = module.exports;
+    assert.equal(figurePrintPath(createFigureSource(publicSkin)), '/figure/3dprint?id=shared-skin');
+    for (const is_public of [false, undefined, null]) {
+        assert.equal(figurePrintPath(createFigureSource({ ...publicSkin, is_public })), '/figure/3dprint');
+    }
+});
+
+for (const lang of ['zh', 'en']) test(`${lang}: a guest can open and refresh a shared print URL without navigation state`, async () => {
+    await withPage({ lang, guest: true, empty: true, search: '?id=shared-skin', server: { skins: { 'shared-skin': { data: publicSkin } } } }, async env => {
+        assert.equal(env.node.querySelector('a[href="/skin/?id=shared-skin"]').textContent, publicSkin.name);
+        assert.deepEqual(env.imageRequests, [publicSkin.result]);
+        assert.equal(env.generatedInfo[0].sourceId, publicSkin.id);
+        assert.equal(env.generatedInfo[0].sourceIsPublic, true);
+        assert.equal(env.generatedInfo[0].publisher, publicSkin.creator.username);
+        await env.finish();
+        assert.ok(downloadButtons(env.node).every(button => !button.disabled));
+        await env.click(downloadButtons(env.node)[0]);
+        assert.ok(env.modal().textContent.includes(env.current.figurePrint.loginForDownload));
+        await env.remount();
+        assert.deepEqual(env.imageRequests, [publicSkin.result, publicSkin.result]);
+        const lookups = env.requests.filter(request => request.url.startsWith('/api/logs/'));
+        assert.equal(lookups.length, 2);
+        assert.ok(lookups.every(request => request.auth === 'none' && request.credentials === 'omit' && request.cache === 'no-store'));
+    });
+});
+
+for (const [reason, response] of [
+    ['private skin, even for its owner', { data: { ...publicSkin, is_public: false } }],
+    ['missing visibility', { data: { ...publicSkin, is_public: undefined } }],
+    ['non-boolean visibility', { data: { ...publicSkin, is_public: 'true' } }],
+    ['another skin', { data: { ...publicSkin, id: 'other-skin' } }],
+    ['missing image', { data: { ...publicSkin, result: '' } }],
+    ['missing response', { data: null }],
+    ['forbidden skin', { status: 403 }],
+    ['deleted skin', { status: 404 }],
+]) test(`shared printing rejects ${reason} without falling back to private navigation state`, async () => {
+    await withPage({ search: '?id=shared-skin', source: { id: 'private-skin', isPublic: false }, server: { skins: { 'shared-skin': response } } }, async env => {
+        assert.equal(env.node.querySelector('[role="alert"]').textContent, env.current.figurePrint.sharedSourceUnavailable);
+        assert.equal(env.imageRequests.length, 0);
+        assert.equal(env.generatedInfo.length, 0);
+        assert.equal(downloadButtons(env.node).length, 0);
+        assert.equal(env.button(env.current.figurePrint.commission), undefined);
+    });
+});
+
+for (const search of ['?id=', '?id=..%2Fprivate', '?id=https%3A%2F%2Fexample.test%2Fskin.png', '?id=shared-skin&id=other', `?id=${'a'.repeat(81)}`]) {
+    test(`invalid shared skin IDs never load a texture: ${search}`, async () => {
+        await withPage({ search }, async env => {
+            assert.equal(env.node.querySelector('[role="alert"]').textContent, env.current.figurePrint.sharedSourceUnavailable);
+            assert.equal(env.requests.length, 0);
+            assert.equal(env.imageRequests.length, 0);
+        });
+    });
+}
+
+for (const response of [{ status: 503 }, { networkError: true }]) test(`shared skin lookup errors allow retry: ${JSON.stringify(response)}`, async () => {
+    await withPage({ empty: true, search: '?id=shared-skin', server: { skins: { 'shared-skin': response } } }, async env => {
+        assert.equal(env.node.querySelector('[role="alert"]').textContent, env.current.figurePrint.loadFailed);
+        assert.equal(env.imageRequests.length, 0);
+        env.server.skins['shared-skin'] = { data: publicSkin };
+        await env.click(env.button(env.current.figurePrint.retry));
+        assert.deepEqual(env.imageRequests, [publicSkin.result]);
+    });
+});
+
+test('changing shared IDs cancels old lookups and ignores their late responses', async () => {
+    const pending = deferred();
+    await withPage({ empty: true, search: '?id=shared-skin', server: { skins: {
+        'shared-skin': { data: publicSkin, pending },
+        'next-skin': { data: { ...publicSkin, id: 'next-skin', result: 'next.png' } },
+    } } }, async env => {
+        assert.equal(env.node.querySelector('[role="status"]').textContent, env.current.figurePrint.sharedSourceLoading);
+        assert.equal(env.imageRequests.length, 0);
+        const first = env.requests.find(request => request.url === '/api/logs/shared-skin');
+        await env.navigate('?id=next-skin');
+        assert.equal(first.signal.aborted, true);
+        await env.resolve(pending);
+        assert.deepEqual(env.imageRequests, ['next.png']);
+        assert.equal(env.generatedInfo[0].sourceId, 'next-skin');
+        await env.navigate('?id=private-skin');
+        assert.ok(env.node.querySelector('[role="alert"]'));
+        assert.equal(env.node.querySelector('a[href="/skin/?id=next-skin"]'), null);
+        assert.equal(downloadButtons(env.node).length, 0);
+    });
+});
+
+test('raw image URLs in the query cannot open a shared print preview', async () => {
+    await withPage({ empty: true, search: '?url=https%3A%2F%2Fexample.test%2Fprivate.png&textureUrl=private.png' }, async env => {
+        assert.equal(env.requests.length, 0);
+        assert.equal(env.imageRequests.length, 0);
         assert.equal(env.generatedInfo.length, 0);
     });
 });
@@ -301,6 +417,15 @@ test('production failures do not fall back to a skin passed through navigation s
         await env.switchAccount(null);
         assert.ok(env.node.querySelector('[role="alert"]'));
         assert.equal(downloadButtons(env.node).length, 0);
+    });
+});
+
+test('a shared skin parameter cannot override a production order or bypass its authorization', async () => {
+    await withPage({ search: '?order=order-a&item=kit-a&id=shared-skin', server: { productionStatus: 403, skins: { 'shared-skin': { data: publicSkin } } } }, async env => {
+        assert.equal(env.node.querySelector('[role="alert"]').textContent, env.current.figurePrint.productionSourceFailed);
+        assert.ok(env.requests.every(request => request.url.endsWith('/production-source') && request.auth === 'required'));
+        assert.equal(env.imageRequests.length, 0);
+        assert.equal(env.generatedInfo.length, 0);
     });
 });
 
