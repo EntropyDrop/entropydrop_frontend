@@ -286,22 +286,29 @@ for (const lang of ['zh', 'en']) {
     test(`${lang}: first download waits for saved consent; every format and re-entry use the account record`, async () => {
         await withPage({ lang }, async env => {
             assert.equal(env.checkbox(), null);
+            assert.equal(env.node.querySelector('a[href="/pro"]'), null);
             assert.ok(downloadButtons(env.node).every(button => button.disabled));
             await env.finish(); const buttons = downloadButtons(env.node); assert.equal(buttons.length, 10);
-            await env.click(buttons[0]); assert.equal(env.checkbox().checked, false);
+            // Exercise PNG and SVG as the first successful download as well as STL below.
+            const firstButton = env.button(lang === 'zh' ? env.current.figurePrint.downloadSticker : env.current.figurePrint.exportSvg);
+            await env.click(firstButton); assert.equal(env.checkbox().checked, false);
             assert.equal(env.modal().querySelector(`a[href="${env.terms.path}"]`).target, '_blank');
             await env.confirm(); assert.equal(env.requests.filter(r => r.method === 'POST').length, 0);
             await env.click(env.checkbox());
             const pending = deferred(); env.server.pendingPost = pending;
             await env.confirm(); assert.equal(env.downloads.length, 0);
+            assert.equal(env.node.querySelector('a[href="/pro"]'), null);
             await env.resolve(pending); assert.equal(env.downloads.length, 1); assert.equal(env.modal(), null);
+            assert.ok(env.node.querySelector('a[href="/pro"]'));
             assert.deepEqual(JSON.parse(env.requests.find(r => r.method === 'POST').body), { version: env.terms.version, accepted: true });
-            for (const button of buttons.slice(1)) await env.click(button);
+            for (const button of buttons.filter(button => button !== firstButton)) await env.click(button);
             assert.equal(env.downloads.length, 10);
             assert.equal(env.downloads.filter(([, name]) => name.endsWith('.stl')).length, 8);
             assert.equal(env.downloads.filter(([, name]) => name.endsWith('.png')).length, 1);
             assert.equal(env.downloads.filter(([, name]) => name.endsWith('.svg')).length, 1);
-            await env.remount(); await env.click(downloadButtons(env.node)[0]);
+            await env.remount();
+            assert.equal(env.node.querySelector('a[href="/pro"]'), null);
+            await env.click(downloadButtons(env.node)[0]);
             assert.equal(env.downloads.length, 11); assert.equal(env.requests.filter(r => r.method === 'POST').length, 1);
             assert.equal(env.modal(), null);
         });
@@ -319,12 +326,14 @@ test('cancel saves nothing and reopening requires an unchecked confirmation', as
         await env.finish(); await env.click(downloadButtons(env.node)[0]); await env.click(env.checkbox()); await env.cancel();
         await env.click(downloadButtons(env.node)[0]); assert.equal(env.checkbox().checked, false);
         assert.equal(env.downloads.length, 0); assert.equal(env.requests.filter(r => r.method === 'POST').length, 0);
+        assert.equal(env.node.querySelector('a[href="/pro"]'), null);
     });
 });
 test('failed saves block downloads and permit retry', async () => {
     await withPage({ server: { postStatus: 503 } }, async env => {
         await env.finish(); await env.click(downloadButtons(env.node)[0]); await env.click(env.checkbox()); await env.confirm();
         assert.equal(env.downloads.length, 0); assert.ok(env.modal().textContent.includes(env.current.figurePrint.consentSaveFailed));
+        assert.equal(env.node.querySelector('a[href="/pro"]'), null);
         env.server.postStatus = 200; await env.confirm(); assert.equal(env.downloads.length, 1);
     });
 });
@@ -469,8 +478,13 @@ test('production retains cute7 geometry and filenames for a historical kit', asy
     });
 });
 
-test('non-pro users see the Pro support prompt banner and can dismiss it', async () => {
-    await withPage({ isPro: false }, async env => {
+test('non-pro users see the Pro support prompt only after downloading and can dismiss it', async () => {
+    await withPage({ isPro: false, accepted: true }, async env => {
+        assert.equal(env.node.querySelector('a[href="/pro"]'), null);
+        await env.finish();
+        assert.equal(env.node.querySelector('a[href="/pro"]'), null);
+        await env.click(downloadButtons(env.node)[0]);
+        assert.equal(env.downloads.length, 1);
         const proLink = env.node.querySelector('a[href="/pro"]');
         assert.ok(proLink, 'Pro support link should be present for non-pro user');
         assert.equal(proLink.textContent, env.current.figurePrint.proSupportAction);
@@ -480,27 +494,36 @@ test('non-pro users see the Pro support prompt banner and can dismiss it', async
         assert.ok(dismissBtn, 'Dismiss button should be present');
         await env.click(dismissBtn);
         assert.equal(env.node.querySelector('a[href="/pro"]'), null, 'Prompt should be dismissed');
+        await env.click(downloadButtons(env.node)[1]);
+        assert.equal(env.node.querySelector('a[href="/pro"]'), null, 'Further downloads should keep the prompt dismissed');
     });
 });
 
-test('guests see the Pro support prompt banner', async () => {
+test('guests do not see the Pro support prompt before completing a download', async () => {
     await withPage({ guest: true }, async env => {
-        const proLink = env.node.querySelector('a[href="/pro"]');
-        assert.ok(proLink, 'Pro support link should be present for guest');
-        assert.ok(env.node.textContent.includes(env.current.figurePrint.proSupportPrompt));
+        await env.finish();
+        await env.click(downloadButtons(env.node)[0]);
+        assert.equal(env.downloads.length, 0);
+        assert.equal(env.node.querySelector('a[href="/pro"]'), null);
+        assert.ok(!env.node.textContent.includes(env.current.figurePrint.proSupportPrompt));
     });
 });
 
 test('Pro members do not see the Pro support prompt banner', async () => {
-    await withPage({ isPro: true }, async env => {
+    await withPage({ isPro: true, accepted: true }, async env => {
+        await env.finish();
+        await env.click(downloadButtons(env.node)[0]);
+        assert.equal(env.downloads.length, 1);
         assert.equal(env.node.querySelector('a[href="/pro"]'), null, 'Pro support link should NOT be present for Pro member');
         assert.ok(!env.node.textContent.includes(env.current.figurePrint.proSupportPrompt));
     });
 });
 
 test('production orders do not display the Pro support banner', async () => {
-    await withPage({ search: '?order=order-a&item=kit-a', isPro: false, server: { production: productionSource } }, async env => {
+    await withPage({ search: '?order=order-a&item=kit-a', isPro: false, accepted: true, server: { production: productionSource } }, async env => {
         await env.finish();
+        await env.click(downloadButtons(env.node)[0]);
+        assert.equal(env.downloads.length, 1);
         assert.equal(env.node.querySelector('a[href="/pro"]'), null, 'Pro support link should NOT be present in production order view');
     });
 });

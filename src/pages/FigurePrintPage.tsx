@@ -37,6 +37,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
     const t = current.figurePrint
     const { user: currentUser } = useCurrentUser()
     const isPro = currentUser?.is_pro === true
+    const [hasDownloaded, setHasDownloaded] = useState(false)
     const [proPromptDismissed, setProPromptDismissed] = useState(() => {
         try {
             return typeof sessionStorage !== 'undefined' && sessionStorage.getItem('dismissed_figure_pro_prompt') === '1'
@@ -176,11 +177,14 @@ export function FigurePrintPage({ current }: { current: LangData }) {
                     cutterUrl = activeOutput.cutterUrl
                 }
                 if (target.kind === 'sticker') {
-                    if (stickerUrl) downloadUrl(stickerUrl, `${printModelType}_sticker_A4.png`)
+                    if (!stickerUrl) return
+                    downloadUrl(stickerUrl, `${printModelType}_sticker_A4.png`)
                 } else {
-                    if (cutterUrl) downloadUrl(cutterUrl, `${printModelType}_sticker_cut_A4.svg`)
+                    if (!cutterUrl) return
+                    downloadUrl(cutterUrl, `${printModelType}_sticker_cut_A4.svg`)
                 }
             }
+            setHasDownloaded(true)
         } catch (error: unknown) {
             if (error instanceof Error && error.name === 'AbortError') return
             console.error(error)
@@ -236,7 +240,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
                 {production.active && <Link to="/figure/manage" className={buttonClass}>{t.backToManagement}</Link>}
             </div>
         </header>
-        {!production.active && !isPro && !proPromptDismissed && (
+        {hasDownloaded && !production.active && !isPro && !proPromptDismissed && (
             <div className="shrink-0 border border-[#a6df7a]/25 bg-gradient-to-r from-[#a6df7a]/12 via-[#a6df7a]/5 to-transparent p-3 sm:px-4 sm:py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs backdrop-blur-sm relative">
                 <div className="flex items-center gap-2.5 min-w-0">
                     <Icon icon="pixelarticons:zap" className="text-base text-[#a6df7a] shrink-0 animate-pulse" />
