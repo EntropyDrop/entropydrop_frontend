@@ -16,13 +16,15 @@ import { validateAddress } from '../../../constants/shippingAddress'
 import { googleLoginPayload } from '../../../utils/creatorReferral'
 import { creatorError, useCreatorQuote } from '../../../hooks/useCreatorQuote'
 import { CreatorCodeField } from '../../../components/CreatorCodeField'
+import { figureDiscountAmount, type FigureOffer } from '../../../hooks/useFigureOffer'
+import { FigureDiscountBadge } from '../../../components/FigureDiscountBadge'
 
 const GoogleSignInButton = lazy(() => import('../../../components/GoogleSignInButton').then(m => ({ default: m.GoogleSignInButton })))
 const buttonClass = 'border border-white/20 px-4 py-2 text-xs hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer'
 const checkoutButtonClass = 'min-h-13 border border-white/20 px-5 py-3 text-base font-medium hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer'
 
 interface Address { id: string; recipient_name: string; country: string; phone: string; zip_code: string; state: string; city: string; detail_address: string; is_default: boolean }
-interface Stock { model_type: string; available: boolean; price: number; shipping_fee: number; stock?: number; kit_specifications?: KitSpecifications | null }
+interface Stock extends FigureOffer { available: boolean; shipping_fee: number; stock?: number; kit_specifications?: KitSpecifications | null }
 interface Props { current: LangData; source: FigureSkinSource; model: FigureModel; onClose: () => void }
 
 export function FigureCommissionDialog(props: Props) {
@@ -55,6 +57,11 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
     const [retry, setRetry] = useState(0)
     const [quantity, setQuantity] = useState(1)
     const creator = useCreatorQuote(session, model.orderModelType, quantity, current)
+    const unitPrice = creator.quote ? creator.quote.subtotal / quantity : stock?.price ?? 0
+    const globalBps = creator.quote?.global_discount_bps ?? stock?.global_discount_bps ?? 0
+    const discountedUnitPrice = unitPrice - figureDiscountAmount(unitPrice, 1, globalBps)
+    const globalDiscount = creator.quote?.global_discount_amount ?? (stock ? figureDiscountAmount(stock.price, quantity, stock.global_discount_bps) : 0)
+    const creatorDiscount = creator.quote?.creator_discount_amount ?? creator.quote?.discount_amount ?? 0
     const maxQuantity = Math.min(10, Math.max(0, stock?.stock ?? 10))
     const available = !!stock?.available && !!stock.kit_specifications && quantity <= maxQuantity
     const addressValid = !!address && Object.keys(validateAddress(address)).length === 0
@@ -69,7 +76,8 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
     })
     const busy = saving || isProcessing
     const orderFields = { order_type: 'print', log_id: source.id, model_type: model.orderModelType, shipping_source: shippingSource, address_id: shippingSource === 'address_book' ? address?.id : undefined, quantity, sticker_language: current.lang,
-        creator_code: creator.quote?.offer?.code || '', creator_offer_version: creator.quote?.offer?.version }
+        creator_code: creator.quote?.offer?.code || '', creator_offer_version: creator.quote?.offer?.version,
+        global_discount_version: creator.quote?.global_discount_version }
 
     async function createOrder(signal: AbortSignal, buyNow = false) {
         const response = await apiFetch('/api/orders', {
@@ -78,6 +86,10 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
         })
         const data = await apiResponseJson(response)
         if (!response.ok) {
+            if (data.detail === 'figure_discount_changed') {
+                void creator.retry()
+                throw new Error(current.figureDiscount.changed)
+            }
             if (typeof data.detail === 'string' && data.detail.startsWith('creator_')) throw new Error(creatorError(data.detail, current))
             throw new Error(data.detail === 'Kit specifications are unavailable' ? t.specificationsUnavailable
                 : data.detail === 'Item limit for unpaid orders reached' ? t.limitReached
@@ -197,7 +209,9 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5 space-y-5">
                 <div><h3 className="m-0 mb-2 text-lg">{source.name || current.figurePrint.unnamedSkin}</h3><p className="m-0 text-xs text-white/50">{current.figurePrint.publisher}: {source.publisher || current.figurePrint.unknownPublisher}</p></div>
                 {loading ? <p role="status" className="text-sm">{t.loading}</p> : <>
-                    {stock && <p className="flex justify-between text-sm"><span>{t.price}</span><strong>${stock.price.toFixed(2)}</strong></p>}
+                    {stock && <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{t.price}</span><span className="inline-flex items-center gap-2">
+                        {globalBps > 0 ? <><del className="text-white/45">${unitPrice.toFixed(2)}</del><strong>${discountedUnitPrice.toFixed(2)}</strong><FigureDiscountBadge current={current} bps={globalBps} /></> : <strong>${unitPrice.toFixed(2)}</strong>}
+                    </span></div>}
                     {!available && !error && <p role="status" className="text-sm text-amber-200">{stock?.available && !stock.kit_specifications ? t.specificationsUnavailable : t.unavailable}</p>}
                 </>}
                 <div className="flex items-center justify-between gap-4 text-sm">
@@ -213,8 +227,9 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
                 </>}
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                     <dt className="text-white/50">{t.shipping}</dt><dd className="m-0 text-right">{stock ? t.shippingPerOrder.replace('{amount}', stock.shipping_fee.toFixed(2)) : '—'}</dd>
-                    {!!creator.quote?.discount_amount && <><dt>{current.creatorCodes.discount}</dt><dd className="m-0 text-right text-[#a6df7a]">−${creator.quote.discount_amount.toFixed(2)}</dd></>}
-                    {stock && <><dt>{t.total}</dt><dd className="m-0 text-right"><strong>{session ? creator.quote ? `$${creator.quote.total_price.toFixed(2)}` : '—' : `$${(stock.price * quantity + stock.shipping_fee).toFixed(2)}`}</strong></dd></>}
+                    {globalDiscount > 0 && <><dt>{current.figureDiscount.discount}</dt><dd className="m-0 text-right text-[#a6df7a]">−${globalDiscount.toFixed(2)}</dd></>}
+                    {creatorDiscount > 0 && <><dt>{current.creatorCodes.discount}</dt><dd className="m-0 text-right text-[#a6df7a]">−${creatorDiscount.toFixed(2)}</dd></>}
+                    {stock && <><dt>{t.total}</dt><dd className="m-0 text-right"><strong>{session ? creator.quote ? `$${creator.quote.total_price.toFixed(2)}` : '—' : `$${(stock.price * quantity - globalDiscount + stock.shipping_fee).toFixed(2)}`}</strong></dd></>}
                     <dt className="text-white/50">{t.production}</dt><dd className="m-0 text-right">{t.productionTime}</dd>
                     <dt className="text-white/50">{t.delivery}</dt><dd className="m-0 text-right">{t.deliveryTime}</dd>
                 </dl>

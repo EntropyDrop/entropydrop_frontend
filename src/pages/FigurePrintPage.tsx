@@ -235,7 +235,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
             <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-x-3 gap-y-2">
                 {!production.active && <>
                     <span className="text-xs leading-relaxed text-white/50">{t.commissionIntro}</span>
-                    <button type="button" disabled={!source || !canDownload} onClick={() => setCommissionSource(source)} className={`${buttonClass} h-9 shrink-0 !py-0 !bg-[#3c8527] hover:!bg-[#4ea632] !text-white`}><Icon icon="pixelarticons:box" />{t.commission}<FigureKitPrice modelType={model.orderModelType} /></button>
+                    <button type="button" disabled={!source || !canDownload} onClick={() => setCommissionSource(source)} className={`${buttonClass} h-9 shrink-0 !py-0 !bg-[#3c8527] hover:!bg-[#4ea632] !text-white`}><Icon icon="pixelarticons:box" />{t.commission}<FigureKitPrice modelType={model.orderModelType} current={current} /></button>
                 </>}
                 {production.active && <Link to="/figure/manage" className={buttonClass}>{t.backToManagement}</Link>}
             </div>

@@ -10,6 +10,7 @@ const fs = require('node:fs');
 
 const compiled = build({
     stdin: { contents: `export { FigurePrintPage } from './src/pages/FigurePrintPage';
+        export { FigurePrintOfferBadge } from './src/components/FigureDiscountBadge';
         export { default as en } from './src/constants/locales/en';
         export { default as zh } from './src/constants/locales/zh-hans';
         export { FIGURE_PRINT_TERMS } from './src/constants/figurePrintTerms';`,
@@ -96,7 +97,7 @@ async function withPage(options, check) {
     const node = document.getElementById('root'); let root = createRoot(node);
     const { FigurePrintPage, FIGURE_PRINT_TERMS } = module.exports;
     const current = module.exports[options.lang || 'en'];
-    const render = () => React.act(async () => { root.render(React.createElement(FigurePrintPage, { current })); });
+    const render = () => React.act(async () => { root.render(React.createElement(options.badge ? module.exports.FigurePrintOfferBadge : FigurePrintPage, { current })); });
     const button = text => Array.from(document.querySelectorAll('button')).find(button => button.textContent === text || (text === current.figurePrint.commission && button.textContent.startsWith(text)));
     const click = element => { assert.ok(element, 'expected a clickable element'); return React.act(async () => element.click()); };
     try {
@@ -535,3 +536,24 @@ test('production orders do not display choose from collection link', async () =>
     });
 });
 
+
+test('the print purchase button shows the original price, discounted price and offer', async () => {
+    await withPage({ guest: true, server: { stock: [{ model_type: 'Cute DIY Kit', price: 30, discounted_price: 15, global_discount_bps: 5000 }] } }, async env => {
+        const purchase = env.button(env.current.figurePrint.commission);
+        assert.equal(purchase.querySelector('del').textContent, '$30');
+        assert.ok(purchase.textContent.includes('$15'));
+        assert.ok(purchase.textContent.includes(env.current.figureDiscount.badge.replace('{percent}', '50')));
+    });
+});
+
+for (const lang of ['en', 'zh']) test(`${lang}: the modal badge follows the saved global discount and hides when disabled`, async () => {
+    await withPage({ lang, badge: true, guest: true, server: { stock: [{ model_type: 'Cute DIY Kit', price: 30, discounted_price: 15, global_discount_bps: 5000 }] } }, async env => {
+        assert.equal(env.node.textContent, env.current.figureDiscount.badge.replace('{percent}', '50'));
+        env.server.stock = [{ ...env.server.stock[0], global_discount_bps: 2550 }];
+        await React.act(async () => window.dispatchEvent(new window.Event('figure-pricing-updated')));
+        assert.equal(env.node.textContent, env.current.figureDiscount.badge.replace('{percent}', '25.5'));
+        env.server.stock = [{ ...env.server.stock[0], global_discount_bps: 0 }];
+        await React.act(async () => window.dispatchEvent(new window.Event('focus')));
+        assert.equal(env.node.textContent, '');
+    });
+});

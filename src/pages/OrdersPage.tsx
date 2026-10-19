@@ -40,6 +40,9 @@ interface Order {
     creator_discount?: CreatorOffer | null;
     paypal_order_id?: string | null;
     discount_amount?: number;
+    global_discount_bps?: number;
+    global_discount_amount?: number;
+    creator_discount_amount?: number;
     id: string;
     address_id?: string;
     shipping_source?: 'paypal' | 'address_book';
@@ -357,12 +360,13 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                     </div>
 
                                     {order.order_type === "print" && <FigureOrderStatus current={current} order={order} />}
+                                    {!!order.global_discount_amount && <p className="m-0 text-xs text-[#a6df7a]">{current.figureDiscount.discount} ({(order.global_discount_bps ?? 0) / 100}%): −${order.global_discount_amount.toFixed(2)}</p>}
                                     {order.order_type === 'print' && order.creator_discount && <>
                                         <div className="flex items-center gap-2 text-xs">
                                             <span className="shrink-0 text-white/75">{current.creatorCodes.label}</span>
                                             <p className="m-0 min-w-0 break-words text-[#a6df7a]">{current.creatorCodes.applied.replace('{code}', order.creator_discount.code)} · {order.creator_discount.discount_percent}% {current.creatorCodes.off}</p>
                                         </div>
-                                        {!!order.discount_amount && <p className="m-0 text-xs text-[#a6df7a]">{current.creatorCodes.discount}: −${order.discount_amount.toFixed(2)}</p>}
+                                        {!!(order.creator_discount_amount ?? order.discount_amount) && <p className="m-0 text-xs text-[#a6df7a]">{current.creatorCodes.discount}: −${(order.creator_discount_amount ?? order.discount_amount ?? 0).toFixed(2)}</p>}
                                     </>}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-white/5 pt-3">
                                         <div className="flex flex-col gap-1.5">
@@ -379,7 +383,9 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                                                 onClick={() => setSkin3DModalConfig({ isOpen: true, textureUrl: item.skin_url!, modelType: item.model_type, modelName: item.sticker_snapshot?.model_name || item.kit_specifications_snapshot?.product_name })}
                                                                 className="cursor-pointer shrink-0 w-14 h-14"
                                                             >
-                                                                <Skin2DImg src={item.skin_url} className="w-14 h-14 object-cover bg-black/40 border border-white/5 shrink-0" />
+                                                                <Skin2DImg src={item.skin_url}
+                                                                    cuteMode={item.model_type === 'Cute DIY Kit' && getOrderPrintModel(item.sticker_snapshot?.model_name || item.kit_specifications_snapshot?.product_name) === 'cute10'}
+                                                                    className="w-14 h-14 object-contain bg-black/40 border border-white/5 shrink-0" />
                                                             </button>
                                                         )}
                                                         <div className="flex-1 min-w-0 space-y-1">
@@ -391,7 +397,7 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                                         </div>
                                                         {order.status === 'pending_payment' && order.order_type !== 'subscription' && (
                                                             <button
-                                                                disabled={processingOrderId === order.id || (!!order.creator_discount && !!order.paypal_order_id)}
+                                                                disabled={processingOrderId === order.id || ((!!order.creator_discount || !!order.global_discount_bps) && !!order.paypal_order_id)}
                                                                 onClick={() => handleDeleteOrderItem(ids[ids.length - 1], quantity)}
                                                                 className="w-8 h-8 shrink-0 justify-center items-center border border-white/10 hover:bg-white/10 flex text-white/60 cursor-pointer text-[9px] disabled:opacity-50 disabled:cursor-not-allowed"
                                                                 title={quantity > 1 ? current.orders.removeOne : current.orders.deleteItem}

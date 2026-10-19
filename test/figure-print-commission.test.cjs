@@ -58,8 +58,10 @@ async function withDialog(options, check) {
                     if (server.quoteError || (code && !offer)) return { ok: false, status: 400, json: async () => ({ detail: server.quoteError || 'creator_code_invalid' }) };
                     const product = server.stock.find(product => product.model_type === 'Cute DIY Kit');
                     const subtotal = (product?.price || 0) * quantity, shipping_fee = product?.shipping_fee || 0;
-                    const discount_amount = subtotal * (offer?.discount_percent || 0) / 100;
-                    return { ok: true, json: async () => ({ offer: offer ? { ...offer } : null, subtotal, shipping_fee, discount_amount, total_price: subtotal - discount_amount + shipping_fee }) };
+                    const global_discount_amount = Math.round(subtotal * (product?.global_discount_bps || 0) / 100) / 100;
+                    const creator_discount_amount = (subtotal - global_discount_amount) * (offer?.discount_percent || 0) / 100;
+                    const discount_amount = global_discount_amount + creator_discount_amount;
+                    return { ok: true, json: async () => ({ offer: offer ? { ...offer } : null, subtotal, shipping_fee, discount_amount, global_discount_amount, creator_discount_amount, global_discount_bps: product?.global_discount_bps, global_discount_version: product?.global_discount_version, total_price: subtotal - discount_amount + shipping_fee }) };
                 }
                 if (url.endsWith('/create-paypal-order')) return { ok: !server.checkoutError, status: server.checkoutError ? 500 : 200, json: async () => server.checkoutError ? { detail: server.checkoutError } : { id: 'PAYPAL-DIRECT', status: server.paypalStatus || 'CREATED', approval_url: 'https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-DIRECT' } };
                 if (url.endsWith('/pay')) return { ok: !server.captureError, status: server.captureError ? 400 : 200, json: async () => server.captureError ? { detail: server.captureError } : { id: 'order-a', status: 'paid' } };
@@ -74,7 +76,7 @@ async function withDialog(options, check) {
                 }
                 if (url === '/api/addresses' && server.failAddressRefresh && requests.some(request => request.method === 'DELETE')) return { ok: false, status: 500 };
                 const status = post ? server.postStatus : server.status;
-                return { ok: status === 200, status, json: async () => url.includes('model-stock') ? server.stock : url === '/api/addresses' ? server.addresses : { id: 'order-a' } };
+                return { ok: status === 200, status, json: async () => url.includes('model-stock') ? server.stock : url === '/api/addresses' ? server.addresses : server.postError ? { detail: server.postError } : { id: 'order-a' } };
             } };
             if (name === '@iconify/react') return { Icon: () => null };
             if (name.endsWith('/components/GoogleSignInButton')) return { GoogleSignInButton: () => React.createElement('button', null, 'Google sign in') };
@@ -573,3 +575,48 @@ test('closing the popup during direct-order creation does not launch payment aft
         assert.ok(env.popups[1].location.href.includes('PAYPAL-DIRECT'));
     });
 });
+
+const discountedStock = [{ model_type: 'Cute DIY Kit', price: 30, discounted_price: 15, global_discount_bps: 5000, global_discount_version: 3, shipping_fee: 10, stock: 300, available: true, kit_specifications: kitSpecifications }];
+test('checkout shows global and creator savings separately and submits the quote version', async () => withDialog({ server: { stock: discountedStock, defaultCreator: { code: 'ALPHA', discount_percent: 10, version: 1 } } }, async e => {
+    assert.equal(document.querySelector('del').textContent, '$30.00');
+    assert.ok(document.body.textContent.includes('50% off'));
+    const rows = Array.from(document.querySelectorAll('dt'));
+    assert.equal(rows.find(row => row.textContent === e.en.figureDiscount.discount).nextElementSibling.textContent, '−$15.00');
+    assert.equal(rows.find(row => row.textContent === e.en.creatorCodes.discount).nextElementSibling.textContent, '−$1.50');
+    assert.equal(rows.find(row => row.textContent === e.en.figurePrint.commissionOrder.total).nextElementSibling.textContent, '$23.50');
+    await e.click(e.submit());
+    const body = JSON.parse(e.requests.find(r => r.url === '/api/orders' && r.method === 'POST').body);
+    assert.equal(body.global_discount_version, 3);
+    assert.equal(body.creator_code, 'ALPHA');
+    assert.equal(body.total_price, undefined);
+}));
+test('guests see the global discount and shipping without a creator quote', async () => withDialog({ guest: true, server: { stock: discountedStock } }, async e => {
+    const rows = Array.from(document.querySelectorAll('dt'));
+    assert.equal(rows.find(row => row.textContent === e.en.figurePrint.commissionOrder.total).nextElementSibling.textContent, '$25.00');
+    assert.equal(e.requests.some(r => r.url === '/api/creators/quote'), false);
+}));
+
+test('removing a creator code keeps the global discount in place', async () => withDialog({ server: { stock: discountedStock, defaultCreator: creatorA } }, async e => {
+    await e.click(e.button(e.en.nav.edit));
+    await e.click(e.button(e.en.creatorCodes.remove));
+    const rows = Array.from(document.querySelectorAll('dt'));
+    assert.equal(rows.find(row => row.textContent === e.en.figurePrint.commissionOrder.total).nextElementSibling.textContent, '$25.00');
+    assert.equal(rows.some(row => row.textContent === e.en.creatorCodes.discount), false);
+    assert.ok(document.body.textContent.includes('50% off'));
+}));
+
+test('a changed promotion refreshes the checkout quote before retrying the order', async () => withDialog({ server: { stock: structuredClone(discountedStock) } }, async e => {
+    e.server.stock[0].global_discount_bps = 2500;
+    e.server.stock[0].global_discount_version = 4;
+    e.server.postStatus = 409; e.server.postError = 'figure_discount_changed';
+    await e.click(e.submit());
+    assert.ok(document.body.textContent.includes(e.en.figureDiscount.changed));
+    assert.ok(document.body.textContent.includes('25% off'));
+    assert.ok(document.body.textContent.includes('$32.50'));
+    assert.equal(e.closed(), 0);
+    e.server.postStatus = 200; e.server.postError = null;
+    await e.click(e.submit());
+    const submitted = e.requests.filter(r => r.url === '/api/orders' && r.method === 'POST').map(r => JSON.parse(r.body));
+    assert.equal(submitted[0].global_discount_version, 3);
+    assert.equal(submitted[1].global_discount_version, 4);
+}));

@@ -3,12 +3,17 @@ import { apiFetch, apiResponseJson } from '../utils/api'
 import { getAuthSessionKey } from '../utils/authSession'
 import { readReferralReceipt, referralEvent } from '../utils/creatorReferral'
 import type { LangData } from '../constants/lang'
+import { figurePricingEvent } from './useFigureOffer'
 
 export interface CreatorOffer { code: string; discount_percent: number; version: number }
-interface CreatorQuote { offer: CreatorOffer | null; subtotal: number; shipping_fee: number; discount_amount: number; total_price: number }
+interface CreatorQuote {
+    offer: CreatorOffer | null; subtotal: number; shipping_fee: number; discount_amount: number; total_price: number
+    global_discount_bps?: number; global_discount_version?: number; global_discount_amount?: number; creator_discount_amount?: number
+}
 
 export function creatorError(detail: unknown, current: LangData) {
-    return (detail === 'creator_code_invalid' || detail === 'creator_self_referral') ? current.creatorCodes.invalid
+    return detail === 'figure_discount_changed' ? current.figureDiscount.changed
+        : (detail === 'creator_code_invalid' || detail === 'creator_self_referral') ? current.creatorCodes.invalid
         : detail === 'creator_offer_changed' ? current.creatorCodes.changed
         : current.creatorCodes.failed
 }
@@ -44,8 +49,10 @@ export function useCreatorQuote(session: string | null, modelType: string, quant
         let active = true
         void Promise.resolve().then(() => { if (active) return load(selectedCode.current) })
         const refresh = () => { if (selectedCode.current === null) void load(null) }
+        const refreshPricing = () => { void load(selectedCode.current) }
         window.addEventListener(referralEvent, refresh)
-        return () => { active = false; request.current?.abort(); window.removeEventListener(referralEvent, refresh) }
+        window.addEventListener(figurePricingEvent, refreshPricing)
+        return () => { active = false; request.current?.abort(); window.removeEventListener(referralEvent, refresh); window.removeEventListener(figurePricingEvent, refreshPricing) }
     }, [load])
     const quote = result?.key === key ? result.quote : null
     return { quote, busy, error, ready: !!quote && !busy, apply: (code: string) => load(code.trim().toUpperCase(), true), retry: () => load(selectedCode.current) }

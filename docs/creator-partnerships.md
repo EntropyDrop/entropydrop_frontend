@@ -2,6 +2,16 @@
 
 Physical figure purchases support referral links and a creator code selected in the purchase dialog before an order is created. Pro subscriptions are outside this feature.
 
+## Global figure promotion
+
+In `/figure/manage`, choose **Global figure discount / 全局手办优惠** to set the percentage off all new physical figure orders. The migration initializes it to **50% off**. Enter **0** to disable it; supported values are 0–99% with up to two decimal places. The MCModal print entry and print-page purchase button read the saved public catalog; the purchase button shows the original and reduced prices.
+
+The server first rounds the global discount on the product subtotal to cents, then applies the creator percentage to the remaining subtotal. For example, $100 with 50% global savings and a 10% creator code costs $45 plus shipping. Commission uses the final $45 product amount. Checkout and order history show both savings separately.
+
+Orders snapshot the global percentage and configuration version as well as the creator offer. Changing a promotion never reprices an existing order. New cart additions only merge with the same saved promotion and creator offer; deleting items recalculates using those saved percentages. A PayPal voucher locks global-discounted items even when no creator code is present. If the global configuration changes after a quote, checkout requests a fresh quote before creating an order.
+
+Deploy backend migration `b8e17d930a42` (following `a6d3e9f127c8`) and the matching backend before the frontend. Run `alembic upgrade head` in the normal deployment environment. The migration activates 50% savings for new orders and leaves historical totals and rates unchanged. Admin configuration uses `GET/PATCH /api/figure/models/discount`; the patch requires `discount_bps` and `expected_version`. Regression coverage is in backend `tests/test_figure_discounts.py` and the frontend figure suites.
+
 ## Configure a partnership
 
 Sign in as an administrator, open `/figure/manage`, and choose **Creator partners / 主播合作**. Create a unique code with the creator's **registered email**, customer discount percentage, commission percentage, optional expiry, and active status. Percentages are explicit inputs; there are no seeded partnerships or rates. Codes contain 2–32 letters, digits, underscores, or hyphens and are normalized to uppercase. Codes cannot be renamed or deleted; deactivate an old partnership.

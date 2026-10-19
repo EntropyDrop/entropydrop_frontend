@@ -4,7 +4,7 @@ import { AsyncResourceCache } from './asyncResourceCache'
 import { getAuthSessionKey, subscribeAuthSession } from './authSession'
 
 type Skin2DOptions = Partial<Skin2DRenderOptions>
-const DEFAULT_OPTIONS: Skin2DRenderOptions = { scale: 8, showOverlay: true, overlayInflated: true }
+const DEFAULT_OPTIONS: Skin2DRenderOptions = { scale: 8, showOverlay: true, overlayInflated: true, cuteMode: false }
 const canvasBytes = (canvas: HTMLCanvasElement) => canvas.width * canvas.height * 4
 const sourceCache = new AsyncResourceCache<HTMLCanvasElement>({
     maxEntries: 240, maxBytes: 8 * 1024 * 1024, ttlMs: 5 * 60_000, sizeOf: canvasBytes,
@@ -92,7 +92,7 @@ function renderPreview(imgSrc: string, options: Skin2DOptions, avatar: boolean) 
     if (!Number.isFinite(normalized.scale) || normalized.scale <= 0 || normalized.scale > 64) {
         return Promise.reject(new Error('Skin preview scale must be between 0 and 64'))
     }
-    const key = JSON.stringify([imgSrc, avatar, normalized.scale, normalized.showOverlay, normalized.overlayInflated])
+    const key = JSON.stringify([imgSrc, avatar, normalized.scale, normalized.showOverlay, normalized.overlayInflated, normalized.cuteMode])
     const renderEpoch = sessionEpoch
     return previewCache.getOrLoad(key, async () => {
         if (renderEpoch !== sessionEpoch) throw new DOMException('Session changed', 'AbortError')

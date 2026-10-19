@@ -26,16 +26,24 @@ async function fixture(options, check) {
     dom.window.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
     const requests = [], listeners = new Set();
     let session = 'admin';
-    const server = { status: 200, pending: null, catalogStatus: 200, saveStatus: 200, models: [{ id: 'cute-kit', model_type: 'Cute DIY Kit', product_name: 'CUTE-10cm', stock: 300, price: 40 }, { id: 'legacy-kit', model_type: 'PLA+sticker', product_name: null, stock: 10, price: 60 }], ...options };
+    const server = { promotion: { discount_bps: 5000, version: 1 }, discountStatus: 200, status: 200, pending: null, catalogStatus: 200, saveStatus: 200, models: [{ id: 'cute-kit', model_type: 'Cute DIY Kit', product_name: 'CUTE-10cm', stock: 300, price: 40 }, { id: 'legacy-kit', model_type: 'PLA+sticker', product_name: null, stock: 10, price: 60 }], ...options };
     const order = { id: 'order-test', user_id: 'customer', total_price: 60, created_at: '2026-10-09T00:00:00Z', order_type: 'print', status: 'paid', goods_status: 'awaiting_review', figure_review_status: 'pending', items: [{ id: 'part', model_type: 'Cute DIY Kit', refer_log_id: 'skin-a', source_snapshot: { skin_id: 'skin-a', publisher_id: 'maker-a', license: 'cc-by-nc-4.0' } }], ...options.order };
     const module = { exports: {} };
-    vm.runInNewContext(await compiled, { module, exports: module.exports, console, AbortController, document, window: dom.window,
+    vm.runInNewContext(await compiled, { module, exports: module.exports, console, AbortController, document, Event: dom.window.Event, window: dom.window,
         require(name) {
             if (name.endsWith('/utils/authSession')) return { getAuthSessionKey: () => session };
             if (name.endsWith('/hooks/useAuthSession')) return { useAuthSession: () => React.useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener); }, () => session) };
             if (name.endsWith('/hooks/useCurrentUser')) return { useCurrentUser: () => ({ user: { id: session, is_admin: options.admin !== false && !!session } }) };
             if (name.endsWith('/utils/api')) return { apiResponseJson: response => response.json(), apiFetch: async (url, init = {}) => {
                 requests.push({ url, ...init });
+                if (url === '/api/figure/models/discount') {
+                    if (init.method === 'PATCH' && server.pending) await server.pending;
+                    if (init.method === 'PATCH' && server.discountStatus === 200) {
+                        const body = JSON.parse(init.body);
+                        server.promotion = { discount_bps: body.discount_bps, version: server.promotion.version + 1 };
+                    }
+                    return { ok: server.discountStatus === 200, status: server.discountStatus, json: async () => ({ ...server.promotion }) };
+                }
                 if (url.startsWith('/api/figure/models')) {
                     if (init.method === 'PATCH' && server.pending) await server.pending;
                     const status = init.method === 'PATCH' ? server.saveStatus : server.catalogStatus;
@@ -70,7 +78,7 @@ async function fixture(options, check) {
     });
     try {
         await React.act(async () => root.render(React.createElement(FigureManagePage, { current })));
-        await check({ server, requests, button, click, input, t: current.figureManagement,
+        await check({ server, requests, button, click, input, t: current.figureManagement, discount: current.figureDiscount,
             field: name => document.querySelector(`input[name="${name}"]`),
             edit: (name, value) => React.act(async () => {
                 const el = document.querySelector(`input[name="${name}"]`);
@@ -229,4 +237,49 @@ test('model double submits are ignored and logout aborts the pending update', as
     await React.act(async () => resolve());
     assert.equal(document.querySelector('input[name=stock]'), null);
     assert.equal(document.body.textContent.includes(e.t.models.saved), false);
+}));
+
+for (const lang of ['en', 'zh']) test(`${lang}: global discount can be saved and disabled with a version check`, async () => fixture({ lang }, async e => {
+    await e.click(e.button(e.discount.title));
+    assert.equal(e.field('global-discount').value, '50');
+    await e.edit('global-discount', '25.5');
+    await e.click(e.button(e.t.models.save));
+    assert.deepEqual(JSON.parse(e.requests.find(r => r.method === 'PATCH').body), { discount_bps: 2550, expected_version: 1 });
+    assert.ok(document.body.textContent.includes(e.discount.saved));
+    await e.edit('global-discount', '0');
+    await e.click(e.button(e.t.models.save));
+    assert.deepEqual(e.server.promotion, { discount_bps: 0, version: 3 });
+}));
+
+for (const value of ['-1', '100', '1.234', '']) test(`invalid global percentage ${JSON.stringify(value)} is blocked`, async () => fixture({}, async e => {
+    await e.click(e.button(e.discount.title));
+    await e.edit('global-discount', value);
+    assert.equal(e.button(e.t.models.save).disabled, true);
+    assert.ok(document.body.textContent.includes(e.discount.invalid));
+    assert.equal(e.requests.filter(r => r.method === 'PATCH').length, 0);
+}));
+
+test('a conflicting global update requires refresh and discards the stale draft', async () => fixture({}, async e => {
+    await e.click(e.button(e.discount.title));
+    await e.edit('global-discount', '20');
+    e.server.discountStatus = 409;
+    await e.click(e.button(e.t.models.save));
+    assert.ok(document.body.textContent.includes(e.discount.changed));
+    assert.equal(e.button(e.t.models.save).disabled, true);
+    e.server.discountStatus = 200;
+    e.server.promotion = { discount_bps: 3000, version: 2 };
+    await e.click(e.button(e.t.refresh));
+    assert.equal(e.field('global-discount').value, '30');
+}));
+
+test('global discount double submits are ignored and logout cancels a pending save', async () => fixture({}, async e => {
+    let resolve; e.server.pending = new Promise(done => { resolve = done; });
+    await e.click(e.button(e.discount.title)); await e.edit('global-discount', '25');
+    const save = e.button(e.t.models.save);
+    await React.act(async () => { save.click(); save.click(); });
+    assert.equal(e.requests.filter(r => r.method === 'PATCH').length, 1);
+    await e.logout();
+    assert.equal(e.requests.find(r => r.method === 'PATCH').signal.aborted, true);
+    await React.act(async () => resolve());
+    assert.equal(document.body.textContent.includes(e.discount.saved), false);
 }));

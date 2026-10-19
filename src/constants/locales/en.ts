@@ -66,10 +66,23 @@ export default {
                 "excluded": "Not included in earnings"
         }
 },
+    figureDiscount: {
+        "title": "Global figure discount",
+        "badge": "{percent}% off",
+        "rate": "Discount percentage (%)",
+        "hint": "Applies to all new figure orders. 50 means 50% off; 0 disables the promotion. Creator codes apply an additional discount to the reduced product subtotal. Shipping is excluded, and existing orders keep their saved rates.",
+        "loading": "Loading the global discount…",
+        "loadFailed": "Could not load the global discount. Please retry.",
+        "saveFailed": "The update could not be confirmed. Refresh before trying again.",
+        "saved": "Global discount saved.",
+        "changed": "The global discount has changed. Refresh the quote or settings before continuing.",
+        "invalid": "Enter a percentage from 0 to 99 with up to two decimal places.",
+        "discount": "Global discount"
+},
     creatorCodes: {
         label: 'Creator Code', placeholder: 'Enter a creator code', apply: 'Apply', applying: 'Saving…', remove: 'Remove',
         applied: 'Applied: {code}', off: 'off', discount: 'Creator discount',
-        hint: 'Changing the code applies only to this order. Your original referral stays the same.',
+        hint: 'Creator codes stack after the global discount. Changing the code applies only to this order. Your original referral stays the same.',
         invalid: 'This code is invalid, inactive or expired. Your applied code has not changed.',
         changed: 'The offer has changed. Refresh and apply the code again.',
         failed: 'Could not load or save the creator offer. Please retry.',
@@ -79,7 +92,7 @@ export default {
         invalidSettings: 'Use a 2–32 character code (letters, numbers, _ or -), a registered user email, a 0–99% discount and a 0–100% commission with up to two decimal places.',
         link: 'Referral link', acquired: 'Original referrals', orders: 'Attributed orders', sales: 'Paid product sales',
         pendingCommission: 'Pending commission', eligibleCommission: 'Eligible commission (cumulative)', empty: 'No creator codes yet.',
-        managementHint: 'Codes apply to figure orders. Once bound to your account, the source code remains the default until the code is deactivated or expires. Discounts exclude shipping; commission uses the discounted product subtotal. Canceled and refunded orders are excluded. Completed orders become eligible 3 days after payment. Bind each code to a registered user email. Creators request withdrawals in Creator earnings; administrators review them in Withdrawal review.',
+        managementHint: 'Codes apply to figure orders. Once bound to your account, the source code remains the default until the code is deactivated or expires. Creator discounts stack after the global figure discount and exclude shipping; commission uses the final discounted product subtotal. Canceled and refunded orders are excluded. Completed orders become eligible 3 days after payment. Bind each code to a registered user email. Creators request withdrawals in Creator earnings; administrators review them in Withdrawal review.',
     },
     figureManagement: {
         "ordersTab": "Order management",

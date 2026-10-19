@@ -1,7 +1,10 @@
+import { renderCuteSkin } from './cuteSkin2dRenderer'
+
 export type Skin2DRenderOptions = {
     scale: number
     showOverlay: boolean
     overlayInflated: boolean
+    cuteMode?: boolean
 }
 
 export type SkinImageSource = CanvasImageSource & {
@@ -16,7 +19,7 @@ type FaceUV = {
     v2: number
 }
 
-type BoxUV = {
+export type BoxUV = {
     right: FaceUV
     front: FaceUV
     left: FaceUV
@@ -430,6 +433,10 @@ export function renderSkinIsometricFast(
     const { texture, context: textureContext, textureScale } = createTextureCanvas(source)
     const slim = detectSlim(textureContext, textureScale)
     const uv = getSkinUV(slim)
+    if (options.cuteMode) {
+        renderCuteSkin(canvas, texture, slim, [uv.head, uv.body, uv.leftArm, uv.rightArm, uv.leftLeg, uv.rightLeg], options)
+        return
+    }
     const armWidth = slim ? 3 : 4
     const inflate = options.showOverlay && options.overlayInflated ? 1 : 0
     const paddingX = inflate * 0.5 * options.scale

@@ -1,3 +1,4 @@
+import { FigurePrintOfferBadge } from './FigureDiscountBadge';
 import type { LangData } from '../constants/lang'
 import { request } from '../utils/httpClient'
 import { Icon } from '@iconify/react'
@@ -296,7 +297,7 @@ export function MCModalPreview({
                         </div>
 
                         {onPrint && (
-                            <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 w-32">
+                            <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 min-w-32">
                                 <button
                                     type="button"
                                     onClick={onPrint}
@@ -304,9 +305,7 @@ export function MCModalPreview({
                                 >
                                     <Icon icon="pixelarticons:box" className="text-sm shrink-0" />
                                     <span>{current.mcmodal?.print || '3D PRINT'}</span>
-                                    <span className="ml-0.5 px-1 py-0.5 bg-amber-400 group-hover:bg-amber-300 text-[#1a1200] font-pixel-hans text-[8px] font-bold leading-none tracking-wider select-none shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-colors">
-                                        NEW
-                                    </span>
+                                    <FigurePrintOfferBadge current={current} />
                                 </button>
                             </div>
                         )}

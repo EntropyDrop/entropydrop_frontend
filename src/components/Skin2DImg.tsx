@@ -7,15 +7,17 @@ export function Skin2DImg({
     className,
     style,
     scale = 8,
+    cuteMode = false,
     showRawFallback = false
 }: {
     className?: string
     src: string
     style?: React.CSSProperties
     scale?: number
+    cuteMode?: boolean
     showRawFallback?: boolean
 }) {
-    const renderKey = `${src}|${scale}`
+    const renderKey = `${src}|${scale}|${cuteMode}`
     const placeholder = useRef<HTMLCanvasElement>(null)
     const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined')
     const [renderState, setRenderState] = useState<{ key: string; canvas: HTMLCanvasElement | null; error: boolean }>({
@@ -45,7 +47,7 @@ export function Skin2DImg({
             }
         }
 
-        Skin2D(src, { scale }).then(result => {
+        Skin2D(src, { scale, cuteMode }).then(result => {
             if (!active) return
             setRenderState({
                 key: renderKey,
@@ -65,7 +67,7 @@ export function Skin2DImg({
         return () => {
             active = false
         }
-    }, [src, scale, renderKey, visible]);
+    }, [src, scale, cuteMode, renderKey, visible]);
 
     const isCurrentRender = renderState.key === renderKey
     const canvas = isCurrentRender ? renderState.canvas : null

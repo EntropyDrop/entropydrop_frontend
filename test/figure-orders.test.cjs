@@ -58,7 +58,7 @@ async function fixture(check, options = {}) {
                 }
                 return { ok: true, json: async () => ({ items: [order], total_pages: 1 }) };
             } };
-            if (name.endsWith('/components/Skin2DImg')) return { Skin2DImg: ({ src }) => React.createElement('img', { src }) };
+            if (name.endsWith('/components/Skin2DImg')) return { Skin2DImg: ({ src, cuteMode }) => React.createElement('img', { src, 'data-cute': String(!!cuteMode) }) };
             if (name.endsWith('/components/Skin3DModal')) return { Skin3DModal: ({ isOpen, textureUrl }) => isOpen ? React.createElement('div', { 'data-preview': 'legacy' }, textureUrl) : null };
             if (name.endsWith('/print/FigureOrderPreviewModal')) return { FigureOrderPreviewModal: ({ textureUrl, modelType, onClose }) => React.createElement('div', { 'data-preview': 'figure', 'data-model': modelType }, textureUrl, React.createElement('button', { onClick: onClose }, 'Close preview')) };
             if (name === 'react-router-dom') return { useNavigate: () => navigate, useSearchParams: () => [new URLSearchParams()], Link: ({ to, children, ...props }) => React.createElement('a', { href: to, ...props }, children) };
@@ -354,3 +354,27 @@ test('invalid PayPal addresses show actionable localized guidance without claimi
     assert.equal(document.body.textContent.includes(e.en.modal.paySuccess), false);
     assert.equal(e.button(e.en.orders.payNow).disabled, false);
 }, { shippingSource: 'paypal', captureError: { code: 'invalid_paypal_shipping_address', fields: { country: 'required' } } }));
+
+test('order history separates stacked savings and locks global-only vouchers', async () => fixture(async e => {
+    assert.ok(document.body.textContent.includes('Global discount (50%): −$90.00'));
+    assert.ok(document.body.textContent.includes('Creator discount: −$9.00'));
+}, { order: { ...creatorOrder, global_discount_bps: 5000, global_discount_amount: 90, creator_discount_amount: 9, discount_amount: 99, total_price: 81 } }));
+
+test('a global discount alone locks items after a PayPal voucher is issued', async () => fixture(async e => {
+    const buttons = Array.from(document.querySelectorAll('button')).filter(button => button.title === e.en.orders.deleteItem || button.getAttribute('aria-label') === e.en.orders.deleteItem);
+    assert.ok(document.body.textContent.includes('Global discount (50%): −$90.00'));
+    assert.ok(buttons.length > 0 && buttons.every(button => button.disabled));
+}, { order: { global_discount_bps: 5000, global_discount_amount: 90, discount_amount: 90, total_price: 90, paypal_order_id: 'PAYPAL-GLOBAL' } }));
+
+for (const [name, item, expected] of [
+    ['CUTE-10cm purchase specifications', { kit_specifications_snapshot: kitSpecifications }, true],
+    ['CUTE-10cm sticker snapshot', { sticker_snapshot: { model_name: 'CUTE-10cm' } }, true],
+    ['historical CUTE-7cm sticker overrides current specifications', { sticker_snapshot: { model_name: 'CUTE-7cm' }, kit_specifications_snapshot: kitSpecifications }, false],
+    ['historical CUTE-7cm kit', { kit_specifications_snapshot: { ...kitSpecifications, product_name: 'CUTE-7cm' } }, false],
+    ['unknown old kit with only current catalog metadata', { kit_specifications_current: kitSpecifications }, false],
+    ['non-Cute 10cm model', { model_type: 'Figure10cm', kit_specifications_snapshot: kitSpecifications }, false],
+]) test(`${name} selects the correct 2D thumbnail`, async () => fixture(async () => {
+    const image = document.querySelector('img');
+    assert.equal(image.dataset.cute, String(expected));
+    assert.equal(image.getAttribute('src'), '/saved-order-skin.png');
+}, { order: { items: [{ id: 'preview-kit', model_type: 'Cute DIY Kit', price: 30, skin_url: '/saved-order-skin.png', ...item }] } }));

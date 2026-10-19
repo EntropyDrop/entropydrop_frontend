@@ -99,7 +99,7 @@ async function skinEnvironment(fetchOverride) {
             assert.equal(name, 'skin-renderer-test');
             return {
                 renderSkinIsometricFast(canvas, source, options) {
-                    counts.iso++; canvas.width = 20 * options.scale; canvas.height = 35 * options.scale;
+                    counts.iso++; canvas.width = 20 * options.scale; canvas.height = (options.cuteMode ? 24 : 35) * options.scale;
                 },
                 renderSkinAvatarFast(canvas, source, options) {
                     counts.avatar++; canvas.width = canvas.height = 9 * options.scale;
@@ -209,6 +209,7 @@ test('DOM thumbnails wait for visibility, draw canvas pixels and ignore stale re
     };
     dom.window.HTMLCanvasElement.prototype.toDataURL = () => { throw Error('Must not encode PNG'); };
     const loads = [];
+    const loadedOptions = [];
     const pending = new Map();
     let intersection;
     class Observer {
@@ -221,7 +222,7 @@ test('DOM thumbnails wait for visibility, draw canvas pixels and ignore stale re
     vm.runInNewContext(result.outputFiles[0].text, { module, exports: module.exports, console,
         IntersectionObserver: Observer,
         require: name => name === 'skin-image-test' ? {
-            Skin2D: src => { loads.push(src); const work = deferred(); pending.set(src, work); return work.promise; },
+            Skin2D: (src, options) => { loads.push(src); loadedOptions.push(options); const work = deferred(); pending.set(src, work); return work.promise; },
             SkinAvatar: async () => avatar,
         } : name === 'avatar-icon-test' ? { Icon: () => null } : require(name),
     });
@@ -230,8 +231,8 @@ test('DOM thumbnails wait for visibility, draw canvas pixels and ignore stale re
     const node = dom.window.document.getElementById('root');
     const root = createRoot(node);
     const { Skin2DImg, SkinAvatarImage } = module.exports;
-    function view(src) { return React.createElement(React.Fragment, null,
-        React.createElement(Skin2DImg, { src, showRawFallback: true, className: 'preview' }),
+    function view(src, cuteMode = false) { return React.createElement(React.Fragment, null,
+        React.createElement(Skin2DImg, { src, cuteMode, showRawFallback: true, className: 'preview' }),
         React.createElement(SkinAvatarImage, { textureUrl: '/avatar.png', alt: 'Minecraft avatar' })); }
     try {
         await React.act(async () => root.render(view('/a.png')));
@@ -256,6 +257,11 @@ test('DOM thumbnails wait for visibility, draw canvas pixels and ignore stale re
         await React.act(async () => pending.get('/b.png').resolve(b));
         assert.equal(node.querySelector('.preview').width, 280);
         assert.ok(!draws.some(draw => draw.source === b));
+        await React.act(async () => root.render(view('/c.png', true)));
+        assert.equal(loadedOptions.at(-1).cuteMode, true);
+        const cute = dom.window.document.createElement('canvas'); cute.width = cute.height = 192;
+        await React.act(async () => pending.get('/c.png').resolve(cute));
+        assert.equal(node.querySelector('.preview').width, 192, 'switching proportions must rerender the same source');
         await React.act(async () => root.render(null));
         assert.equal(visibleC.width, 1, 'release DOM backing pixels on unmount');
         assert.equal(c.width, 280, 'a view must never dispose the shared cached canvas');
@@ -264,4 +270,19 @@ test('DOM thumbnails wait for visibility, draw canvas pixels and ignore stale re
         global.window = previous.window; global.document = previous.document; global.IS_REACT_ACT_ENVIRONMENT = previous.act;
         dom.window.close();
     }
+});
+
+test('Cute and standard previews cache separately while sharing the original skin decode', async () => {
+    const env = await skinEnvironment();
+    try {
+        const [standard, cute] = await Promise.all([env.Skin2D('/skin.png'), env.Skin2D('/skin.png', { cuteMode: true })]);
+        assert.equal(standard.height, 280);
+        assert.equal(cute.height, 192);
+        assert.notStrictEqual(standard, cute);
+        assert.strictEqual(await env.Skin2D('/skin.png', { cuteMode: true }), cute);
+        assert.strictEqual(await env.Skin2D('/skin.png', { cuteMode: false }), standard);
+        assert.equal(env.counts.fetch, 1);
+        assert.equal(env.counts.decode, 1);
+        assert.equal(env.counts.iso, 2);
+    } finally { env.close(); }
 });
