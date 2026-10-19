@@ -179,7 +179,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [imageToSkinSettingLoading, setImageToSkinSettingLoading] = useState(false)
   const [isImageEditToSkinEnabled, setIsImageEditToSkinEnabled] = useState(true)
   const [imageEditToSkinSettingLoading, setImageEditToSkinSettingLoading] = useState(false)
-  const [modelPrices, setModelPrices] = useState<Record<string, { credits: number; free_credits: number; is_pro: boolean; under_maintenance: boolean }>>({})
+  const [modelPrices, setModelPrices] = useState<Record<string, { credits: number; free_credits: number; is_pro: boolean; under_maintenance: boolean; display_priority: number }>>({})
   const [modelPricesLoading, setModelPricesLoading] = useState(false)
 
   // Gift Credits to All states
@@ -357,26 +357,26 @@ export function MonitorPage({ current }: MonitorPageProps) {
     }
   }
 
-  const updateModelPrice = async (modelName: string, value: number, freeValue: number, isPro: boolean, underMaintenance: boolean) => {
+  const updateModelPrice = async (modelName: string, value: number, freeValue: number, isPro: boolean, underMaintenance: boolean, displayPriority: number) => {
     setModelPricesLoading(true)
     try {
       const response = await apiFetch('/api/monitor/model_prices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name: modelName, credits: value, free_credits: freeValue, is_pro: isPro, under_maintenance: underMaintenance })
+        body: JSON.stringify({ model_name: modelName, credits: value, free_credits: freeValue, is_pro: isPro, under_maintenance: underMaintenance, display_priority: displayPriority })
       })
       if (response.ok) {
         const data = await response.json()
         setModelPrices(prev => ({
           ...prev,
-          [modelName]: { credits: data.credits, free_credits: data.free_credits, is_pro: data.is_pro, under_maintenance: data.under_maintenance }
+          [modelName]: { credits: data.credits, free_credits: data.free_credits, is_pro: data.is_pro, under_maintenance: data.under_maintenance, display_priority: data.display_priority }
         }))
         const maintenanceStr = data.under_maintenance ? (isZh ? ' (维护中)' : ' (Under Maintenance)') : ''
         setDeleteMessage({
           type: 'success',
           text: isZh 
-            ? `模型 ${modelName} 已更新：Free ${data.free_credits} 积分，Pro ${data.credits} 积分${data.is_pro ? ' (PRO专属)' : ''}${maintenanceStr}。`
-            : `Model ${modelName} updated: Free ${data.free_credits} credits, Pro ${data.credits} credits${data.is_pro ? ' (PRO Only)' : ''}${maintenanceStr}.`
+            ? `模型 ${modelName} 已更新：显示优先级 ${data.display_priority}，Free ${data.free_credits} 积分，Pro ${data.credits} 积分${data.is_pro ? ' (PRO专属)' : ''}${maintenanceStr}。`
+            : `Model ${modelName} updated: display priority ${data.display_priority}, Free ${data.free_credits} credits, Pro ${data.credits} credits${data.is_pro ? ' (PRO Only)' : ''}${maintenanceStr}.`
         })
       } else {
         const errData = await response.json().catch(() => ({}))
@@ -1388,10 +1388,13 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </div>
               <div className="flex flex-col gap-0.5">
                 <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
-                  {isZh ? '模型单独定价 • Model Specific Pricing' : 'Model Specific Pricing'}
+                  {isZh ? '模型定价与排序 • Model Pricing & Order' : 'Model Pricing & Order'}
                 </h3>
                 <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
                   {isZh ? '所有模型统一设置 Free / Pro 价格、Pro 专属和维护开关。开启 Pro 专属时仅显示 Pro 档；关闭时，价格相同显示一档，不同显示两档。维护开关对整个模型生效。' : 'Every model uses Free / Pro prices, a Pro-only switch and a maintenance switch. Pro-only models show only the Pro option. Otherwise, equal prices show one option and different prices show two. Maintenance applies to the entire model.'}
+                </p>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono">
+                  {isZh ? '显示优先级越大，生成页模型下拉框中越靠前；默认 0，相同优先级保持原顺序。保存后重新进入生成页生效。' : 'Higher display priority places a model earlier in the generation dropdown. The default is 0; ties keep the original order. Reopen the generation page after saving.'}
                 </p>
               </div>
             </div>
@@ -1428,6 +1431,24 @@ export function MonitorPage({ current }: MonitorPageProps) {
                         </div>
                       </div>
                       <div className="flex items-center gap-3.5 self-end xl:self-auto flex-wrap justify-end">
+                        <label className="flex items-center gap-1">
+                          <span className="text-white/40 text-[10px] uppercase mr-1">{isZh ? '显示优先级' : 'PRIORITY'}:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            aria-label={`${modelName} ${isZh ? '显示优先级' : 'Display priority'}`}
+                            value={modelPrices[modelName]?.display_priority ?? 0}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseInt(e.target.value) || 0)
+                              setModelPrices(prev => ({
+                                ...prev,
+                                [modelName]: { ...prev[modelName], display_priority: val }
+                              }))
+                            }}
+                            className="w-20 px-2 py-0.5 text-center bg-black/40 border border-white/20 text-white text-xs focus:outline-none focus:border-blue-500/50"
+                          />
+                        </label>
                         <label className="flex items-center gap-1">
                           <span className="text-white/40 text-[10px] uppercase mr-1">Free:</span>
                           <input
@@ -1521,7 +1542,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
                             modelPrices[modelName]?.credits ?? 0,
                             modelPrices[modelName]?.free_credits ?? modelPrices[modelName]?.credits ?? 0,
                             modelPrices[modelName]?.is_pro || false,
-                            modelPrices[modelName]?.under_maintenance || false
+                            modelPrices[modelName]?.under_maintenance || false,
+                            modelPrices[modelName]?.display_priority ?? 0
                           )}
                           className="px-2.5 py-0.5 bg-blue-500/20 border border-blue-500/40 text-blue-400 hover:bg-blue-500/30 hover:border-blue-500/50 transition-colors text-[10px] font-bold tracking-wide flex items-center gap-1 cursor-pointer disabled:opacity-50"
                         >

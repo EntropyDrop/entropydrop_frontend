@@ -6,7 +6,7 @@ const { build } = require('esbuild');
 const { JSDOM } = require('jsdom');
 const React = require('react');
 
-test('Monitor saves both prices and both switches for every model, including models with pricing tiers', async () => {
+test('Monitor saves prices, switches and display priorities for every model and restores them on reload', async () => {
     const compiled = await build({
         stdin: {
             contents: `export { MonitorPage } from './src/pages/MonitorPage';
@@ -23,7 +23,7 @@ test('Monitor saves both prices and both switches for every model, including mod
     const dom = new JSDOM('<div id="root"></div>');
     const { window } = dom;
     const prices = {
-        SKING_DDJ_v101c: { credits: 4, free_credits: 12, pricing_tiers: ['pro', 'standard'], is_pro: false, under_maintenance: false },
+        SKING_DDJ_v101c: { credits: 4, free_credits: 12, pricing_tiers: ['pro', 'standard'], is_pro: false, under_maintenance: false, display_priority: 5 },
         sking_v73_flux_4b_000027000: { credits: 4, free_credits: 4, pricing_tiers: [], is_pro: false, under_maintenance: false },
         z_image: { credits: 0, free_credits: 0, pricing_tiers: [], is_pro: false, under_maintenance: false },
     };
@@ -71,9 +71,16 @@ test('Monitor saves both prices and both switches for every model, including mod
         await React.act(() => root.render(React.createElement(MonitorPage, { current })));
         for (const model of Object.keys(prices)) {
             const input = name => node.querySelector(`input[aria-label="${model} ${name} credits"]`);
+            const priority = () => node.querySelector(`input[aria-label="${model} Display priority"]`);
             const toggle = name => node.querySelector(`button[role="switch"][aria-label="${model} ${name}"]`);
             assert.ok(input('Free'), `${model} has a Free price`);
             assert.ok(input('Pro'), `${model} has a Pro price`);
+            assert.equal(priority().value, String(prices[model].display_priority ?? 0));
+            const displayPriority = (Object.keys(prices).indexOf(model) + 1) * 10;
+            await React.act(() => {
+                Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(priority(), String(displayPriority));
+                priority().dispatchEvent(new window.Event('input', { bubbles: true }));
+            });
             for (const name of ['Pro only', 'Maintenance']) {
                 assert.equal(toggle(name).getAttribute('aria-checked'), 'false');
                 await React.act(() => toggle(name).click());
@@ -85,12 +92,29 @@ test('Monitor saves both prices and both switches for every model, including mod
             await React.act(() => save.click());
             assert.deepEqual(writes.at(-1), {
                 model_name: model, credits: expected.credits, free_credits: expected.free_credits,
-                is_pro: true, under_maintenance: true,
+                is_pro: true, under_maintenance: true, display_priority: displayPriority,
             });
             assert.equal(toggle('Pro only').getAttribute('aria-checked'), 'true');
             assert.equal(toggle('Maintenance').getAttribute('aria-checked'), 'true');
+            assert.equal(priority().value, String(displayPriority));
         }
         assert.equal(writes.length, 3);
+        const firstModel = Object.keys(prices)[0];
+        const priority = node.querySelector(`input[aria-label="${firstModel} Display priority"]`);
+        await React.act(() => {
+            Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(priority, '0');
+            priority.dispatchEvent(new window.Event('input', { bubbles: true }));
+        });
+        const save = [...priority.closest('label').parentElement.querySelectorAll('button')]
+            .find(button => button.textContent === 'SAVE');
+        await React.act(() => save.click());
+        assert.equal(writes.at(-1).display_priority, 0, 'zero explicitly resets the priority');
+        await React.act(() => root.render(null));
+        await React.act(() => root.render(React.createElement(MonitorPage, { current })));
+        for (const model of Object.keys(prices)) {
+            assert.equal(node.querySelector(`input[aria-label="${model} Display priority"]`).value,
+                String(prices[model].display_priority), 'saved priorities survive page reload');
+        }
     } finally {
         await React.act(() => root.unmount());
         global.window = previous.window;

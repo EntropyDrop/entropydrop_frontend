@@ -171,6 +171,27 @@ const secondOptions = ['pro', 'standard'].map(pricing_tier => ({
     id: `${secondModel}:${pricing_tier}`, model_version: secondModel, pricing_tier,
 }));
 
+for (const secondUnavailable of [false, true]) {
+    test(`Generation preserves server priority order and defaults to the first available option (higher priority under maintenance: ${secondUnavailable})`, async () => {
+        const imageOptions = [...secondOptions, ...options];
+        const env = await mount(false, {
+            imageOptions,
+            maintenance: secondUnavailable ? secondOptions.map(option => option.id) : [],
+        });
+        try {
+            assert.ok(env.trigger().textContent.startsWith(secondUnavailable ? model : secondModel));
+            await env.click(env.trigger());
+            const entries = [...env.node.querySelectorAll('button')].filter(button => button !== env.trigger()
+                && [model, secondModel].some(name => button.textContent.startsWith(name)));
+            assert.deepEqual(entries.map(button => [
+                button.textContent.startsWith(secondModel) ? secondModel : model,
+                button.textContent.includes('PRO ONLY') ? 'pro' : 'standard',
+            ]), imageOptions.map(option => [option.model_version, option.pricing_tier]));
+            assert.deepEqual(entries.map(button => button.disabled), [secondUnavailable, secondUnavailable, false, false]);
+        } finally { await env.close(); }
+    });
+}
+
 for (const isPro of [false, true]) {
     for (const proOnly of [false, true]) {
         test(`Equal-price models have one entry for ${isPro ? 'Pro' : 'Free'} users, Pro only ${proOnly}`, async () => {
