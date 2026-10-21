@@ -32,6 +32,18 @@ export class TokenRegistry {
     this.tokens = [CUT_TOKEN]; // slot 0 reserved for cut walls
   }
 
+  /** Keep each voxel's wall color distinct through Boolean material seams. */
+  getVoxelWall(skinToken: number): number {
+    const key = `voxel-wall:${skinToken}`;
+    let index = this.map.get(key);
+    if (index === undefined) {
+      index = this.tokens.length;
+      this.tokens.push({ color: WHITE, voxelColor: this.tokens[skinToken]!.color, opacity: 1 });
+      this.map.set(key, index);
+    }
+    return index;
+  }
+
   get(
     rOrColor: number | ColorRGBA | number[] | Float32Array,
     g?: number,

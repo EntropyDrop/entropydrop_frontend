@@ -288,8 +288,8 @@ export default {
         },
         "model": "模型预览",
         "stickers": "A4 贴纸",
-        "resetView": "重置视角",
-        "resetPositions": "重置位置",
+        voxelMode: '体素模式',
+        voxelModeHint: '开启时用皮肤颜色填充边缘，关闭时显示贴纸未覆盖的白边。',
         assembly: {
             toggle: '爆炸图',
             legend: '装配连接关系',

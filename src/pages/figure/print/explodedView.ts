@@ -32,8 +32,10 @@ function socketPosition(socket: Socket, exploded: boolean) {
 
 /** Separate preview instances own their poses/materials, never the exported STL geometry. */
 export function createAssemblyPreview(parts: FigurePart[], isSlim: boolean, modelType: PrintModelType = DEFAULT_PRINT_MODEL) {
+    const previews: ReturnType<typeof createPreviewPart>[] = []
     const items: AssemblyItem[] = parts.map(part => {
         const preview = createPreviewPart(part)
+        previews.push(preview)
         return { key: part.id, label: part.id as PrintPartId, pivot: preview.pivot, meshes: preview.meshes,
             assembled: preview.initialPosition, exploded: preview.initialPosition.clone(),
             explodedRotation: new THREE.Quaternion(), explodedOnly: false }
@@ -74,6 +76,7 @@ export function createAssemblyPreview(parts: FigurePart[], isSlim: boolean, mode
             : ['rightHipJoint'] as const
         for (const key of extraJoints) {
             const preview = createPreviewPart(shortPart)
+            previews.push(preview)
             const joint: AssemblyItem = { key, label: key, pivot: preview.pivot, meshes: preview.meshes,
                 assembled: preview.initialPosition, exploded: preview.initialPosition.clone(), explodedRotation: new THREE.Quaternion(), explodedOnly: true }
             items.push(joint)
@@ -161,6 +164,9 @@ export function createAssemblyPreview(parts: FigurePart[], isSlim: boolean, mode
     applyPositions()
     return {
         items, guides, connections, updateGuides,
+        setVoxelMode(value: boolean) {
+            previews.forEach(preview => preview.setVoxelMode(value))
+        },
         setExploded(value: boolean) {
             if (value === exploded) return
             items.forEach((item, index) => saved[exploded ? 'exploded' : 'assembled'][index].copy(item.pivot.position))
@@ -172,7 +178,8 @@ export function createAssemblyPreview(parts: FigurePart[], isSlim: boolean, mode
             applyPositions()
         },
         dispose() {
-            items.forEach(item => item.meshes.forEach(mesh => mesh.material.dispose()))
+            previews.forEach(preview => preview.dispose())
+            items.filter(item => item.tubeLengthMm).forEach(item => item.meshes.forEach(mesh => mesh.material.dispose()))
             ownedGeometries.forEach(geometry => geometry.dispose())
             lines.forEach(({ line }) => { line.geometry.dispose(); line.material.dispose() })
         },

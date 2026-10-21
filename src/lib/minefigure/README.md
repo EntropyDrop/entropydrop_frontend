@@ -28,9 +28,12 @@ Local adaptations:
 - Made the WASM URL import statically analyzable by Vite.
 - Added TypeScript declarations at the sticker module boundary and explicit
   cleanup for the offscreen guide renderer.
-- Uncovered voxel step walls, socket walls, and connectors use bare white.
-  Skin colors stay on faces with corresponding stickers; assembly guides use
-  the same white fallback, including transparent core texels.
+- Printed-color surfaces and assembly guides keep uncovered voxel step walls,
+  socket walls, connectors and transparent core texels white. The interactive
+  preview defaults to Voxel mode, coloring exposed decor walls from their skin
+  pixels. Turning it off restores the printed colors. The alternate colors
+  survive CSG as a separate attribute; each viewport switches its own binding
+  without changing the exported solids, sticker data or part positions.
 - Merged sticker sheets generate only the outer layer and complementary core.
   RGBA resampling copies whole pixels, preparation yields between parts, and
   temporary rasters are released after use. SVG export retains independent

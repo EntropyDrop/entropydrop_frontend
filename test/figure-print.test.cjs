@@ -650,12 +650,31 @@ test('final CSG preview preserves skin caps and base while exposing white step w
         const mesh = new THREE.Mesh(geometry, material);
         const samples = [
             { label: 'outer sticker cap', origin: [10, -0.5, 14.5], direction: [-1, 0, 0], color: [1, 0, 0] },
-            { label: 'exposed voxel side', origin: [4.25, 2, 14.5], direction: [0, -1, 0], color: [1, 1, 1] },
-            { label: 'exposed voxel top', origin: [4.25, -0.5, 20], direction: [0, 0, -1], color: [1, 1, 1] },
-            { label: 'exposed voxel bottom', origin: [4.25, -0.5, 8], direction: [0, 0, 1], color: [1, 1, 1] },
+            { label: 'exposed voxel side', origin: [4.25, 2, 14.5], direction: [0, -1, 0], color: [1, 1, 1], voxelColor: [1, 0, 0] },
+            { label: 'exposed voxel top', origin: [4.25, -0.5, 20], direction: [0, 0, -1], color: [1, 1, 1], voxelColor: [1, 0, 0] },
+            { label: 'exposed voxel bottom', origin: [4.25, -0.5, 8], direction: [0, 0, 1], color: [1, 1, 1], voxelColor: [1, 0, 0] },
             { label: 'base sticker', origin: [10, 1.5, 14.5], direction: [-1, 0, 0], color: [0, 0, 1] },
             { label: 'neck socket wall', origin: [0, 0, 11], direction: [1, 0, 0], color: [1, 1, 1] },
         ];
+        const part = { id: 'head', position: [0, 0, 0], meshes: [{ geometry }], cutters: [], exportGeometry: geometry };
+        const preview = engine.createPreviewPart(part);
+        const secondPreview = engine.createPreviewPart(part);
+        const stlBefore = Buffer.from(await engine.exportPartStl(part).arrayBuffer());
+        try {
+            preview.pivot.updateMatrixWorld(true);
+            for (const voxelMode of [true, false, true]) {
+                preview.setVoxelMode(voxelMode);
+                for (const sample of samples) {
+                    const ray = new THREE.Raycaster(new THREE.Vector3(...sample.origin), new THREE.Vector3(...sample.direction));
+                    const hit = ray.intersectObject(preview.meshes[0])[0];
+                    assert.ok(hit, sample.label);
+                    const colors = preview.meshes[0].geometry.getAttribute('color');
+                    for (const index of [hit.face.a, hit.face.b, hit.face.c]) assertRgb([colors.getX(index), colors.getY(index), colors.getZ(index)], voxelMode ? sample.voxelColor ?? sample.color : sample.color, `voxel=${voxelMode}: ${sample.label}`);
+                }
+            }
+            assert.deepEqual(Array.from(secondPreview.meshes[0].geometry.getAttribute('color').array), Array.from(geometry.getAttribute('color').array), 'a separate preview retains its own mode');
+            assert.deepEqual(Buffer.from(await engine.exportPartStl(part).arrayBuffer()), stlBefore, 'voxel mode never changes STL output');
+        } finally { preview.dispose(); secondPreview.dispose(); }
         for (const sample of samples) {
             const ray = new THREE.Raycaster(new THREE.Vector3(...sample.origin), new THREE.Vector3(...sample.direction));
             const hit = ray.intersectObject(mesh)[0];

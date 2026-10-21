@@ -99,6 +99,8 @@ export interface FaceConfig {
 
 export interface MaterialToken {
   color: ColorRGBA | Float32Array | number[];
+  /** Preview-only color for exposed decor voxel walls; printed surfaces stay white. */
+  voxelColor?: ColorRGBA | Float32Array | number[];
   opacity: number;
 }
 

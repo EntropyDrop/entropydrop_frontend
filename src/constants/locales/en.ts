@@ -288,8 +288,8 @@ export default {
         },
         "model": "Model preview",
         "stickers": "A4 sticker sheet",
-        "resetView": "Reset view",
-        "resetPositions": "Reset positions",
+        voxelMode: 'Voxel mode',
+        voxelModeHint: 'Color voxel edges with skin colors. Turn off to show the uncovered white edges.',
         assembly: {
             toggle: 'Exploded view',
             legend: 'Assembly connections',

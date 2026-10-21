@@ -367,7 +367,6 @@ export function createDecorCubes(
     local: Vec3;
     materials: Array<number | undefined>;
   }>();
-  const bareMaterial = reg.get(WHITE);
 
   for (let fi = 0; fi < faces.length; fi++) {
     const face = faces[fi]!;
@@ -399,8 +398,13 @@ export function createDecorCubes(
       location[2] + voxel.local[2] * decorScale[2]
     );
     // BoxGeometry's groups are +X, -X, +Y, -Y, +Z, -Z.
+    const firstSkin = voxel.materials.find(material => material !== undefined)!;
     for (const group of cube.groups) {
-      group.materialIndex = voxel.materials[group.materialIndex!] ?? bareMaterial;
+      const face = group.materialIndex!;
+      // Carry a second color for the on-screen voxel view. At corners, prefer
+      // the opposite cap; all actual sticker caps retain their own face color.
+      group.materialIndex = voxel.materials[face]
+        ?? reg.getVoxelWall(voxel.materials[face ^ 1] ?? firstSkin);
     }
     decorGeoms.push(cube);
   }

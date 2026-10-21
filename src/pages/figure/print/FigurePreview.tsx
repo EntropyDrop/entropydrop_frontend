@@ -8,12 +8,12 @@ import { ARM_TUBE_LENGTH_MM, createAssemblyPreview, type AssemblyItem } from './
 import { projectHeightRuler } from './heightRuler'
 import { DEFAULT_PRINT_MODEL, getPrintModelProfile, type PrintModelType } from './figureModels'
 
-export function FigurePreview({ parts, isSlim, modelType = DEFAULT_PRINT_MODEL, resetLabel, resetPositionsLabel, partLabels, assemblyLabels, onError }: {
+export function FigurePreview({ parts, isSlim, modelType = DEFAULT_PRINT_MODEL, voxelModeLabel, voxelModeHint, partLabels, assemblyLabels, onError }: {
     parts: FigurePart[]
     isSlim: boolean
     modelType?: PrintModelType
-    resetLabel: string
-    resetPositionsLabel: string
+    voxelModeLabel: string
+    voxelModeHint: string
     partLabels: Record<PrintPartId, string>
     assemblyLabels: LangData['figurePrint']['assembly']
     onError: () => void
@@ -21,8 +21,9 @@ export function FigurePreview({ parts, isSlim, modelType = DEFAULT_PRINT_MODEL, 
     const { heightCm } = getPrintModelProfile(modelType)
     const host = useRef<HTMLDivElement>(null)
     const ruler = useRef<SVGSVGElement>(null)
-    const reset = useRef<() => void>(() => {})
-    const resetPositions = useRef<() => void>(() => {})
+    const [voxelMode, setVoxelMode] = useState(true)
+    const voxelModeRef = useRef(true)
+    const updateVoxelMode = useRef<(value: boolean) => void>(() => {})
     const toggleExploded = useRef<() => void>(() => {})
     const [view, setView] = useState<{ parts: FigurePart[]; exploded: boolean } | null>(null)
     const [selected, setSelected] = useState<{ parts: FigurePart[]; item: AssemblyItem } | null>(null)
@@ -48,6 +49,7 @@ export function FigurePreview({ parts, isSlim, modelType = DEFAULT_PRINT_MODEL, 
         world.rotation.x = -Math.PI / 2
         scene.add(world)
         const assembly = createAssemblyPreview(parts, isSlim, modelType)
+        assembly.setVoxelMode(voxelModeRef.current)
         const previews = assembly.items
         let isExploded = false
         const selectable = previews.flatMap(preview => preview.meshes)
@@ -154,9 +156,8 @@ export function FigurePreview({ parts, isSlim, modelType = DEFAULT_PRINT_MODEL, 
             controls.update()
             render()
         }
-        reset.current = frame
-        resetPositions.current = () => {
-            assembly.resetPositions()
+        updateVoxelMode.current = value => {
+            assembly.setVoxelMode(value)
             render()
         }
         controls.addEventListener('change', render)
@@ -227,8 +228,7 @@ export function FigurePreview({ parts, isSlim, modelType = DEFAULT_PRINT_MODEL, 
         const contextLost = (event: Event) => { event.preventDefault(); onError() }
         renderer.domElement.addEventListener('webglcontextlost', contextLost)
         return () => {
-            reset.current = () => {}
-            resetPositions.current = () => {}
+            updateVoxelMode.current = () => {}
             toggleExploded.current = () => {}
             observer.disconnect()
             renderer.domElement.removeEventListener('pointerdown', pointerDown)
@@ -267,8 +267,15 @@ export function FigurePreview({ parts, isSlim, modelType = DEFAULT_PRINT_MODEL, 
         </svg>
         <div className="absolute top-3 left-24 right-3 flex flex-wrap justify-end gap-2">
             <button type="button" aria-pressed={exploded} onClick={() => toggleExploded.current()} className={`border px-3 py-1.5 text-xs cursor-pointer ${exploded ? 'border-[#84c96b]/50 bg-[#3c8527] text-white' : 'border-white/15 bg-black/50 text-white/70 hover:text-white'}`}>{assemblyLabels.toggle}</button>
-            <button type="button" onClick={() => resetPositions.current()} className="border border-white/15 bg-black/50 px-3 py-1.5 text-xs text-white/70 hover:text-white cursor-pointer">{resetPositionsLabel}</button>
-            <button type="button" onClick={() => reset.current()} className="border border-white/15 bg-black/50 px-3 py-1.5 text-xs text-white/70 hover:text-white cursor-pointer">{resetLabel}</button>
+            <button type="button" role="switch" aria-checked={voxelMode} title={voxelModeHint} onClick={() => {
+                const next = !voxelMode
+                voxelModeRef.current = next
+                updateVoxelMode.current(next)
+                setVoxelMode(next)
+            }} className="flex items-center gap-2 border border-white/15 bg-black/50 px-3 py-1.5 text-xs text-white/60 hover:text-white/80 cursor-pointer">
+                {voxelModeLabel}
+                <span aria-hidden="true" className="relative inline-block h-3.5 w-6 shrink-0 rounded-full bg-white/15"><span className={`absolute top-0.5 left-0.5 h-2.5 w-2.5 rounded-full bg-white/60 transition-transform ${voxelMode ? 'translate-x-2.5' : 'translate-x-0'}`} /></span>
+            </button>
         </div>
         <div className="absolute bottom-3 left-3 max-w-[36%] bg-black/65 px-3 py-2 text-[10px] leading-relaxed pointer-events-none">
             <div aria-label={assemblyLabels.legend}>

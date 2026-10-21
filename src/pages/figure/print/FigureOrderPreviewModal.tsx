@@ -70,7 +70,7 @@ export function FigureOrderPreviewModal({ textureUrl, current, modelType = 'cute
         </header>
         <div className="relative h-[min(65dvh,560px)] min-h-80 bg-[radial-gradient(ellipse_at_center,#263323_0%,#111711_75%)]">
             {failed ? <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center text-sm"><p>{t.previewFailed}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="border border-white/20 px-3 py-2 cursor-pointer">{t.retry}</button></div>
-                : output ? <FigurePreview modelType={output.modelType} parts={output.parts} isSlim={output.isSlim} assemblyLabels={t.assembly} resetLabel={t.resetView} resetPositionsLabel={t.resetPositions} partLabels={t.parts} onError={onError} />
+                : output ? <FigurePreview modelType={output.modelType} parts={output.parts} isSlim={output.isSlim} assemblyLabels={t.assembly} voxelModeLabel={t.voxelMode} voxelModeHint={t.voxelModeHint} partLabels={t.parts} onError={onError} />
                 : <p role="status" className="absolute inset-0 flex items-center justify-center text-sm text-white/60">{t.generating}</p>}
         </div>
     </dialog>, document.body)
