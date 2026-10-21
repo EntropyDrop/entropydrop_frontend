@@ -66,6 +66,17 @@ export default {
                 "excluded": "不计入佣金"
         }
 },
+    figureShipping: {
+        title: '运费设置',
+        fee: '整单运费（美元）',
+        hint: '每笔 CUTE 套件订单收取一次，不随数量叠加；设为 0 即免运费。优惠不抵扣运费，已有订单保留原运费。',
+        loading: '正在加载运费设置…',
+        loadFailed: '无法加载运费设置，请重试。',
+        saveFailed: '暂时无法确认保存结果，请刷新后重试。',
+        saved: '运费已保存。',
+        changed: '运费已变化，请确认更新后的合计金额后重新下单。',
+        invalid: '请输入 0 至 999,999.99 的金额，最多两位小数。',
+    },
     figureDiscount: {
         "title": "全局手办优惠",
         "badge": "{percent}%优惠",

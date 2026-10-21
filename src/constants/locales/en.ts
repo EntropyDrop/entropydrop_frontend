@@ -66,6 +66,17 @@ export default {
                 "excluded": "Not included in earnings"
         }
 },
+    figureShipping: {
+        title: 'Shipping settings',
+        fee: 'Shipping per order (USD)',
+        hint: 'One flat fee per CUTE kit order, regardless of quantity. Set 0 for free shipping. Discounts exclude shipping; existing orders keep their saved shipping fee.',
+        loading: 'Loading shipping settings…',
+        loadFailed: 'Could not load shipping settings. Please retry.',
+        saveFailed: 'The update could not be confirmed. Refresh before trying again.',
+        saved: 'Shipping fee saved.',
+        changed: 'The shipping fee has changed. Review the updated total before ordering again.',
+        invalid: 'Enter an amount from 0 to 999,999.99 with up to two decimal places.',
+    },
     figureDiscount: {
         "title": "Global figure discount",
         "badge": "{percent}% off",

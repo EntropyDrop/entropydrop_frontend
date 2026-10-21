@@ -4,8 +4,8 @@
   "materials": [
     {
       "name": "Pre-cut sticker sheet",
-      "quantity": 1,
-      "description": null
+      "quantity": 2,
+      "description": "Includes 1 spare sheet."
     },
     {
       "name": "White 3D printed body parts",
@@ -21,6 +21,16 @@
       "name": "Short joint",
       "quantity": 4,
       "description": "Two shoulder joints and two hip joints."
+    },
+    {
+      "name": "Tweezers",
+      "quantity": 1,
+      "description": "For sticker application."
+    },
+    {
+      "name": "Flat-head screwdriver",
+      "quantity": 1,
+      "description": "For sticker application."
     }
   ],
   "assembly_note": "Assembly and sticker application are not included. Assemble the parts and apply the stickers yourself."

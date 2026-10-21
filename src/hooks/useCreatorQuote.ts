@@ -13,6 +13,7 @@ interface CreatorQuote {
 
 export function creatorError(detail: unknown, current: LangData) {
     return detail === 'figure_discount_changed' ? current.figureDiscount.changed
+        : detail === 'figure_shipping_changed' ? current.figureShipping.changed
         : (detail === 'creator_code_invalid' || detail === 'creator_self_referral') ? current.creatorCodes.invalid
         : detail === 'creator_offer_changed' ? current.creatorCodes.changed
         : current.creatorCodes.failed

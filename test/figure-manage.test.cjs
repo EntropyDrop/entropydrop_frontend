@@ -26,7 +26,7 @@ async function fixture(options, check) {
     dom.window.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
     const requests = [], listeners = new Set();
     let session = 'admin';
-    const server = { promotion: { discount_bps: 5000, version: 1 }, discountStatus: 200, status: 200, pending: null, catalogStatus: 200, saveStatus: 200, models: [{ id: 'cute-kit', model_type: 'Cute DIY Kit', product_name: 'CUTE-10cm', stock: 300, price: 40 }, { id: 'legacy-kit', model_type: 'PLA+sticker', product_name: null, stock: 10, price: 60 }], ...options };
+    const server = { shipping: { shipping_fee: 12.9, version: 1 }, shippingStatus: 200, promotion: { discount_bps: 5000, version: 1 }, discountStatus: 200, status: 200, pending: null, catalogStatus: 200, saveStatus: 200, models: [{ id: 'cute-kit', model_type: 'Cute DIY Kit', product_name: 'CUTE-10cm', stock: 300, price: 40 }, { id: 'legacy-kit', model_type: 'PLA+sticker', product_name: null, stock: 10, price: 60 }], ...options };
     const order = { id: 'order-test', user_id: 'customer', total_price: 60, created_at: '2026-10-09T00:00:00Z', order_type: 'print', status: 'paid', goods_status: 'awaiting_review', figure_review_status: 'pending', items: [{ id: 'part', model_type: 'Cute DIY Kit', refer_log_id: 'skin-a', source_snapshot: { skin_id: 'skin-a', publisher_id: 'maker-a', license: 'cc-by-nc-4.0' } }], ...options.order };
     const module = { exports: {} };
     vm.runInNewContext(await compiled, { module, exports: module.exports, console, AbortController, document, Event: dom.window.Event, window: dom.window,
@@ -36,6 +36,14 @@ async function fixture(options, check) {
             if (name.endsWith('/hooks/useCurrentUser')) return { useCurrentUser: () => ({ user: { id: session, is_admin: options.admin !== false && !!session } }) };
             if (name.endsWith('/utils/api')) return { apiResponseJson: response => response.json(), apiFetch: async (url, init = {}) => {
                 requests.push({ url, ...init });
+                if (url === '/api/figure/models/shipping') {
+                    if (init.method === 'PATCH' && server.pending) await server.pending;
+                    if (init.method === 'PATCH' && server.shippingStatus === 200) {
+                        const body = JSON.parse(init.body);
+                        server.shipping = { shipping_fee: body.shipping_fee, version: server.shipping.version + 1 };
+                    }
+                    return { ok: server.shippingStatus === 200, status: server.shippingStatus, json: async () => ({ ...server.shipping }) };
+                }
                 if (url === '/api/figure/models/discount') {
                     if (init.method === 'PATCH' && server.pending) await server.pending;
                     if (init.method === 'PATCH' && server.discountStatus === 200) {
@@ -78,7 +86,7 @@ async function fixture(options, check) {
     });
     try {
         await React.act(async () => root.render(React.createElement(FigureManagePage, { current })));
-        await check({ server, requests, button, click, input, t: current.figureManagement, discount: current.figureDiscount,
+        await check({ server, requests, button, click, input, t: current.figureManagement, discount: current.figureDiscount, shipping: current.figureShipping,
             field: name => document.querySelector(`input[name="${name}"]`),
             edit: (name, value) => React.act(async () => {
                 const el = document.querySelector(`input[name="${name}"]`);
@@ -282,4 +290,46 @@ test('global discount double submits are ignored and logout cancels a pending sa
     assert.equal(e.requests.find(r => r.method === 'PATCH').signal.aborted, true);
     await React.act(async () => resolve());
     assert.equal(document.body.textContent.includes(e.discount.saved), false);
+}));
+
+
+for (const lang of ['en', 'zh']) test(`${lang}: shipping settings support cents and free shipping with version checks`, async () => fixture({ lang }, async e => {
+    await e.click(e.button(e.shipping.title));
+    assert.equal(e.field('shipping-fee').value, '12.90');
+    await e.edit('shipping-fee', '15.75');
+    await e.click(e.button(e.t.models.save));
+    assert.deepEqual(JSON.parse(e.requests.find(r => r.method === 'PATCH').body), { shipping_fee: 15.75, expected_version: 1 });
+    assert.ok(document.body.textContent.includes(e.shipping.saved));
+    await e.edit('shipping-fee', '0');
+    await e.click(e.button(e.t.models.save));
+    assert.deepEqual(e.server.shipping, { shipping_fee: 0, version: 3 });
+}));
+
+for (const value of ['-1', '1.234', '1000000', '']) test(`invalid shipping fee ${JSON.stringify(value)} is blocked`, async () => fixture({}, async e => {
+    await e.click(e.button(e.shipping.title)); await e.edit('shipping-fee', value);
+    assert.equal(e.button(e.t.models.save).disabled, true);
+    assert.equal(e.requests.filter(r => r.method === 'PATCH').length, 0);
+}));
+
+test('a concurrent shipping change blocks stale saves until refresh', async () => fixture({}, async e => {
+    await e.click(e.button(e.shipping.title)); await e.edit('shipping-fee', '15');
+    e.server.shippingStatus = 409;
+    await e.click(e.button(e.t.models.save));
+    assert.ok(document.body.textContent.includes(e.shipping.changed));
+    assert.equal(e.button(e.t.models.save).disabled, true);
+    e.server.shippingStatus = 200; e.server.shipping = { shipping_fee: 18.5, version: 2 };
+    await e.click(e.button(e.t.refresh));
+    assert.equal(e.field('shipping-fee').value, '18.50');
+}));
+
+test('shipping double submits are ignored and logout cancels a pending save', async () => fixture({}, async e => {
+    let resolve; e.server.pending = new Promise(done => { resolve = done; });
+    await e.click(e.button(e.shipping.title)); await e.edit('shipping-fee', '16');
+    const save = e.button(e.t.models.save);
+    await React.act(async () => { save.click(); save.click(); });
+    assert.equal(e.requests.filter(r => r.method === 'PATCH').length, 1);
+    await e.logout();
+    assert.equal(e.requests.find(r => r.method === 'PATCH').signal.aborted, true);
+    await React.act(async () => resolve());
+    assert.equal(document.body.textContent.includes(e.shipping.saved), false);
 }));

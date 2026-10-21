@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { devTutorialLevel } from '../entropydrop_space/client/tools/dev-tutorial-level.mjs'
 
 const spaceClientRoot = fileURLToPath(new URL('../entropydrop_space/client', import.meta.url))
 const spaceIndexPath = fileURLToPath(new URL('../entropydrop_space/client/index.html', import.meta.url))
@@ -54,6 +55,7 @@ function spaceDevMount(): Plugin {
 export default defineConfig({
   plugins: [
     spaceDevMount(),
+    devTutorialLevel({ root: spaceClientRoot }),
     react(),
     tailwindcss(),
   ],

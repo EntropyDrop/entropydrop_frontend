@@ -16,6 +16,7 @@ import type { KitSpecificationRecord } from './figure/print/kitSpecifications'
 import { getFigureModelName } from './figure/print/figureModels'
 import { FigureModelSettings } from './figure/FigureModelSettings'
 import { FigureDiscountSettings } from './figure/FigureDiscountSettings'
+import { FigureShippingSettings } from './figure/FigureShippingSettings'
 import { CreatorCodeSettings } from './figure/CreatorCodeSettings'
 
 type Source = { skin_id: string; name?: string; publisher_id?: string; publisher_name?: string; parent_id?: string; license?: string; public_license?: string; is_public?: boolean }
@@ -41,7 +42,7 @@ export function FigureManagePage({ current }: { current: LangData }) {
 }
 
 function FigureManagement({ current }: { current: LangData }) {
-    const [section, setSection] = useState<'orders' | 'models' | 'creators' | 'discount'>('orders')
+    const [section, setSection] = useState<'orders' | 'models' | 'creators' | 'discount' | 'shipping'>('orders')
     const [modelsOpened, setModelsOpened] = useState(false)
     const t = current.figureManagement
     return <>
@@ -49,11 +50,13 @@ function FigureManagement({ current }: { current: LangData }) {
             <button type="button" aria-pressed={section === 'orders'} onClick={() => setSection('orders')} className={`${button} ${section === 'orders' ? 'border-[#84c96b]/70 text-[#a6df7a]' : 'text-white/60'}`}>{t.ordersTab}</button>
             <button type="button" aria-pressed={section === 'models'} onClick={() => { setModelsOpened(true); setSection('models') }} className={`${button} ${section === 'models' ? 'border-[#84c96b]/70 text-[#a6df7a]' : 'text-white/60'}`}>{t.models.title}</button>
             <button type="button" aria-pressed={section === 'discount'} onClick={() => setSection('discount')} className={`${button} ${section === 'discount' ? 'border-[#84c96b]/70 text-[#a6df7a]' : 'text-white/60'}`}>{current.figureDiscount.title}</button>
+            <button type="button" aria-pressed={section === 'shipping'} onClick={() => setSection('shipping')} className={`${button} ${section === 'shipping' ? 'border-[#84c96b]/70 text-[#a6df7a]' : 'text-white/60'}`}>{current.figureShipping.title}</button>
             <button type="button" aria-pressed={section === 'creators'} onClick={() => setSection('creators')} className={`${button} ${section === 'creators' ? 'border-[#84c96b]/70 text-[#a6df7a]' : 'text-white/60'}`}>{current.creatorCodes.management}</button>
         </nav>
         <section hidden={section !== 'orders'} aria-label={t.ordersTab} className="space-y-5"><FigureOrderQueue current={current} /></section>
         {modelsOpened && <section hidden={section !== 'models'} aria-label={t.models.title}><FigureModelSettings current={current} /></section>}
         {section === 'discount' && <FigureDiscountSettings current={current} />}
+        {section === 'shipping' && <FigureShippingSettings current={current} />}
         {section === 'creators' && <section aria-label={current.creatorCodes.management}><CreatorCodeSettings current={current} /></section>}
     </>
 }

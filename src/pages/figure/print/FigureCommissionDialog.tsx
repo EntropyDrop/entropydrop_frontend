@@ -62,6 +62,7 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
     const discountedUnitPrice = unitPrice - figureDiscountAmount(unitPrice, 1, globalBps)
     const globalDiscount = creator.quote?.global_discount_amount ?? (stock ? figureDiscountAmount(stock.price, quantity, stock.global_discount_bps) : 0)
     const creatorDiscount = creator.quote?.creator_discount_amount ?? creator.quote?.discount_amount ?? 0
+    const shippingFee = creator.quote?.shipping_fee ?? stock?.shipping_fee
     const maxQuantity = Math.min(10, Math.max(0, stock?.stock ?? 10))
     const available = !!stock?.available && !!stock.kit_specifications && quantity <= maxQuantity
     const addressValid = !!address && Object.keys(validateAddress(address)).length === 0
@@ -77,7 +78,7 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
     const busy = saving || isProcessing
     const orderFields = { order_type: 'print', log_id: source.id, model_type: model.orderModelType, shipping_source: shippingSource, address_id: shippingSource === 'address_book' ? address?.id : undefined, quantity, sticker_language: current.lang,
         creator_code: creator.quote?.offer?.code || '', creator_offer_version: creator.quote?.offer?.version,
-        global_discount_version: creator.quote?.global_discount_version }
+        global_discount_version: creator.quote?.global_discount_version, expected_shipping_fee: creator.quote?.shipping_fee }
 
     async function createOrder(signal: AbortSignal, buyNow = false) {
         const response = await apiFetch('/api/orders', {
@@ -86,9 +87,9 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
         })
         const data = await apiResponseJson(response)
         if (!response.ok) {
-            if (data.detail === 'figure_discount_changed') {
+            if (data.detail === 'figure_discount_changed' || data.detail === 'figure_shipping_changed') {
                 void creator.retry()
-                throw new Error(current.figureDiscount.changed)
+                throw new Error(creatorError(data.detail, current))
             }
             if (typeof data.detail === 'string' && data.detail.startsWith('creator_')) throw new Error(creatorError(data.detail, current))
             throw new Error(data.detail === 'Kit specifications are unavailable' ? t.specificationsUnavailable
@@ -226,7 +227,7 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
                     {!creator.ready && !creator.busy && <button type="button" onClick={() => void creator.retry()} className={buttonClass}>{current.figurePrint.retry}</button>}
                 </>}
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                    <dt className="text-white/50">{t.shipping}</dt><dd className="m-0 text-right">{stock ? t.shippingPerOrder.replace('{amount}', stock.shipping_fee.toFixed(2)) : '—'}</dd>
+                    <dt className="text-white/50">{t.shipping}</dt><dd className="m-0 text-right">{shippingFee !== undefined ? t.shippingPerOrder.replace('{amount}', shippingFee.toFixed(2)) : '—'}</dd>
                     {globalDiscount > 0 && <><dt>{current.figureDiscount.discount}</dt><dd className="m-0 text-right text-[#a6df7a]">−${globalDiscount.toFixed(2)}</dd></>}
                     {creatorDiscount > 0 && <><dt>{current.creatorCodes.discount}</dt><dd className="m-0 text-right text-[#a6df7a]">−${creatorDiscount.toFixed(2)}</dd></>}
                     {stock && <><dt>{t.total}</dt><dd className="m-0 text-right"><strong>{session ? creator.quote ? `$${creator.quote.total_price.toFixed(2)}` : '—' : `$${(stock.price * quantity - globalDiscount + stock.shipping_fee).toFixed(2)}`}</strong></dd></>}

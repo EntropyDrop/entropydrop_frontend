@@ -133,7 +133,7 @@ test('commissioning defaults to PayPal shipping without loading addresses, then 
         await env.resolve(pending);
         assert.equal(env.requests.some(request => request.url === '/api/addresses'), false);
         const post = env.requests.find(request => request.url === '/api/orders' && request.method === 'POST');
-        assert.deepEqual(JSON.parse(post.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', shipping_source: 'paypal', quantity: 1, sticker_language: 'en', creator_code: '' });
+        assert.deepEqual(JSON.parse(post.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', shipping_source: 'paypal', quantity: 1, sticker_language: 'en', creator_code: '', expected_shipping_fee: 10 });
         assert.deepEqual(env.navigated, ['/skin/orders']);
     });
 });
@@ -436,7 +436,7 @@ test('Buy Now follows Add to cart, opens PayPal in the click, and pays only its 
         await env.click(env.buyNow());
         assert.deepEqual(env.events.slice(0, 3), ['open', '/api/orders', '/api/orders/order-a/create-paypal-order']);
         const create = env.requests.find(request => request.url === '/api/orders' && request.method === 'POST');
-        assert.deepEqual(JSON.parse(create.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', shipping_source: 'paypal', quantity: 3, sticker_language: 'en', creator_code: '', checkout_mode: 'buy_now' });
+        assert.deepEqual(JSON.parse(create.body), { order_type: 'print', log_id: 'skin-a', model_type: 'Cute DIY Kit', shipping_source: 'paypal', quantity: 3, sticker_language: 'en', creator_code: '', expected_shipping_fee: 10, checkout_mode: 'buy_now' });
         assert.equal(env.popups[0].location.href, 'https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-DIRECT');
         assert.deepEqual(env.navigated, []);
         assert.equal(env.closed(), 0);
@@ -619,4 +619,27 @@ test('a changed promotion refreshes the checkout quote before retrying the order
     const submitted = e.requests.filter(r => r.url === '/api/orders' && r.method === 'POST').map(r => JSON.parse(r.body));
     assert.equal(submitted[0].global_discount_version, 3);
     assert.equal(submitted[1].global_discount_version, 4);
+}));
+
+
+test('checkout shows the configured $12.90 shipping fee once per order', async () => withDialog({ server: { stock: [{ ...discountedStock[0], shipping_fee: 12.9 }] } }, async e => {
+    assert.ok(document.body.textContent.includes('$12.90 per order'));
+    assert.ok(document.body.textContent.includes('$27.90'));
+    await e.click(e.submit());
+    const request = e.requests.find(r => r.url === '/api/orders' && r.method === 'POST');
+    assert.equal(JSON.parse(request.body).expected_shipping_fee, 12.9);
+}));
+
+test('a changed shipping fee refreshes both the shipping line and total before retry', async () => withDialog({ server: { stock: structuredClone(discountedStock) } }, async e => {
+    e.server.stock[0].shipping_fee = 12.9;
+    e.server.postStatus = 409; e.server.postError = 'figure_shipping_changed';
+    await e.click(e.submit());
+    assert.ok(document.body.textContent.includes(e.en.figureShipping.changed));
+    assert.ok(document.body.textContent.includes('$12.90 per order'));
+    assert.ok(document.body.textContent.includes('$27.90'));
+    assert.equal(e.closed(), 0);
+    e.server.postStatus = 200; e.server.postError = null;
+    await e.click(e.submit());
+    const requests = e.requests.filter(r => r.url === '/api/orders' && r.method === 'POST').map(r => JSON.parse(r.body));
+    assert.deepEqual(requests.map(r => r.expected_shipping_fee), [10, 12.9]);
 }));
