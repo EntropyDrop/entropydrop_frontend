@@ -213,22 +213,39 @@ async function openUpload(env, isPublic, custom = false) {
     await click(env, env.current.collection.upload);
     const picker = env.node.querySelector('[role="dialog"]');
     if (!isPublic) await click(env, env.current.collection.private, picker);
-    const targetName = custom ? `custom-42-${isPublic}-1`
-        : isPublic ? env.current.collection.creationsPublic : env.current.collection.creationsPrivate;
-    const target = [...picker.querySelectorAll('button[aria-pressed]')]
-        .find(button => button.textContent.includes(targetName));
-    assert.ok(target, `Missing upload destination: ${targetName}`);
-    await React.act(() => target.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true })));
+    assert.equal(picker.textContent.includes(env.current.collection.creationsPublic), isPublic);
+    assert.equal(picker.textContent.includes(env.current.collection.creationsPrivate), !isPublic);
+    const defaultTarget = picker.querySelector('button[aria-pressed="true"]');
+    assert.ok(defaultTarget);
+    assert.equal(defaultTarget.disabled, true);
+    await React.act(() => defaultTarget.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true })));
+    assert.equal(defaultTarget.getAttribute('aria-pressed'), 'true');
+    assert.equal(picker.querySelector('button[aria-pressed="true"]:not(:disabled)'), null);
+    if (custom) {
+        const targetName = `custom-42-${isPublic}-1`;
+        const target = [...picker.querySelectorAll('button[aria-pressed]')]
+            .find(button => button.textContent.includes(targetName));
+        assert.ok(target, `Missing upload destination: ${targetName}`);
+        await React.act(() => target.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true })));
+        assert.equal(defaultTarget.getAttribute('aria-pressed'), 'true');
+        assert.equal(target.getAttribute('aria-pressed'), 'true');
+    }
+    return chooseUploadImage(env);
+}
+
+async function chooseUploadImage(env) {
+    const picker = env.node.querySelector('[role="dialog"]');
     const choose = [...picker.querySelectorAll('button')].find(button => button.textContent === env.current.collection.chooseImage);
     assert.equal(choose.disabled, false);
     assert.equal(picker.querySelector('#private-upload-picker-notice'), null);
+    await click(env, env.current.collection.chooseImage, picker);
     const input = env.node.querySelector('input[type="file"]');
     Object.defineProperty(input, 'files', { value: [new File(['skin'], 'skin.png', { type: 'image/png' })], configurable: true });
     await React.act(() => input.dispatchEvent(new env.window.Event('change', { bubbles: true })));
     return env.node.querySelector('[role="dialog"]');
 }
 
-async function mountUploader(isPro, { previewResponse, collectionResponse, ...mountOptions } = {}) {
+async function mountUploader(isPro, { previewResponse, collectionResponse, uploadTargets, ...mountOptions } = {}) {
     const writes = [];
     const previews = [];
     const metadataRequests = [];
@@ -253,6 +270,9 @@ async function mountUploader(isPro, { previewResponse, collectionResponse, ...mo
             metadataRequests.push({ url, signal: options.signal });
             return collectionResponse ? collectionResponse.promise : Promise.resolve(collections(url));
         }
+        if (url.pathname === '/api/collections' && url.searchParams.get('page_size') === '6' && uploadTargets) {
+            return Promise.resolve(json({ items: uploadTargets, page: 1, total_pages: 1 }));
+        }
         return Promise.resolve(collections(url));
     }, mountOptions);
     return { env, writes, previews, metadataRequests };
@@ -265,7 +285,7 @@ for (const isPro of [false, true]) {
             try {
                 const dialog = await openUpload(env, true, custom);
                 assert.ok(dialog.textContent.includes(env.current.edit.importRightsMessage));
-                assert.ok(dialog.textContent.includes(env.current.edit.publicSaveRightsMessage));
+                assert.ok(dialog.textContent.includes(env.current.collection.uploadLicenseMessage));
                 assert.equal(dialog.textContent.includes(env.current.skinLicense.yourRights), false);
                 assert.equal(dialog.querySelector('select'), null);
                 assert.equal(dialog.querySelector('[role="radiogroup"]'), null);
@@ -307,6 +327,36 @@ for (const custom of [false, true]) {
 }
 
 for (const isPublic of [false, true]) {
+    test(`${isPublic ? 'public' : 'private'} upload works with no custom folders`, async () => {
+        const { env, writes } = await mountUploader(true, { uploadTargets: [] });
+        try {
+            const dialog = await openUpload(env, isPublic);
+            if (isPublic) await click(env, env.current.modal.confirm, dialog);
+            assert.equal(writes.length, 1);
+            assert.equal(writes[0].path, `/api/collections/creations_${isPublic ? 'public' : 'private'}/upload`);
+            assert.equal(writes[0].body.get('public_license_consent'), String(isPublic));
+        } finally { await env.close(); }
+    });
+
+    test(`deselecting a ${isPublic ? 'public' : 'private'} folder uploads only to creations`, async () => {
+        const { env, writes } = await mountUploader(true);
+        try {
+            await click(env, env.current.collection.upload);
+            const picker = env.node.querySelector('[role="dialog"]');
+            if (!isPublic) await click(env, env.current.collection.private, picker);
+            const target = picker.querySelector('button[aria-pressed]:not(:disabled)');
+            await React.act(() => target.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true })));
+            assert.equal(target.getAttribute('aria-pressed'), 'true');
+            await React.act(() => target.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true })));
+            assert.equal(target.getAttribute('aria-pressed'), 'false');
+            assert.equal(picker.querySelector('button[aria-pressed]:disabled').getAttribute('aria-pressed'), 'true');
+            const dialog = await chooseUploadImage(env);
+            if (isPublic) await click(env, env.current.modal.confirm, dialog);
+            assert.equal(writes.length, 1);
+            assert.equal(writes[0].path, `/api/collections/creations_${isPublic ? 'public' : 'private'}/upload`);
+        } finally { await env.close(); }
+    });
+
     test(`canceling public upload preserves the next ${isPublic ? 'public confirmation' : 'direct private upload'}`, async () => {
         const { env, writes } = await mountUploader(true);
         try {
@@ -315,7 +365,7 @@ for (const isPublic of [false, true]) {
             assert.equal(writes.length, 0);
             dialog = await openUpload(env, isPublic);
             if (isPublic) {
-                assert.ok(dialog.textContent.includes(env.current.edit.publicSaveRightsMessage));
+                assert.ok(dialog.textContent.includes(env.current.collection.uploadLicenseMessage));
                 assert.equal(writes.length, 0);
                 await click(env, env.current.modal.confirm, dialog);
             } else {
@@ -588,10 +638,10 @@ test('Free accounts cannot choose a file for private upload', async () => {
         await click(env, env.current.collection.upload);
         const picker = env.node.querySelector('[role="dialog"]');
         await click(env, env.current.collection.private, picker);
-        const target = [...picker.querySelectorAll('button[aria-pressed]')]
-            .find(button => button.textContent.includes(env.current.collection.creationsPrivate));
-        await React.act(() => target.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true })));
         const choose = [...picker.querySelectorAll('button')].find(button => button.textContent === env.current.collection.chooseImage);
+        assert.equal(choose.disabled, true);
+        const target = picker.querySelector('button[aria-pressed]:not(:disabled)');
+        await React.act(() => target.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true })));
         assert.equal(choose.disabled, true);
         assert.equal(writes.length, 0);
     } finally { await env.close(); }

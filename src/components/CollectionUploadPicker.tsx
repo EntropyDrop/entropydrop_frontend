@@ -42,8 +42,6 @@ export function CollectionUploadPicker({
     onChooseImage,
     onClose
 }: CollectionUploadPickerProps) {
-    const hasSelection = selectedCollectionId !== null
-
     return (
         <motion.div
             initial={{ opacity: 0, y: -8, scale: 0.96 }}
@@ -99,17 +97,31 @@ export function CollectionUploadPicker({
                 </button>
             </div>
 
+            <div className="border-b border-white/5 p-1">
+                <button
+                    type="button"
+                    disabled
+                    aria-pressed={true}
+                    className="flex w-full cursor-default items-center gap-2 p-2 text-left"
+                >
+                    <div className="flex h-3.5 w-3.5 shrink-0 items-center justify-center border border-[#4ea632] bg-[#4ea632] text-[8px] text-white">
+                        ✓
+                    </div>
+                    <Icon icon="pixelarticons:image" className="shrink-0 text-sm text-white/30" />
+                    <span className={`min-w-0 flex-1 truncate text-xs text-white/80 ${current.fontClass}`}>
+                        {activeTab === 'public' ? current.collection.creationsPublic : current.collection.creationsPrivate}
+                    </span>
+                    <Icon icon={activeTab === 'public' ? 'pixelarticons:bullseye' : 'pixelarticons:lock'} className="shrink-0 text-[9px] text-white/25" />
+                </button>
+            </div>
+
             {isLoading ? (
                 <div className={`p-6 text-center text-[10px] text-white/30 ${current.fontClass}`}>
                     {current.mcmodal.loading}
                 </div>
-            ) : (
+            ) : collections.length > 0 && (
                 <div className="max-h-[264px] overflow-y-auto p-1 custom-scrollbar">
-                    {collections.length === 0 ? (
-                        <div className={`p-6 text-center text-[10px] text-white/20 ${current.fontClass}`}>
-                            {current.collection.noCollectionAvailable}
-                        </div>
-                    ) : collections.map((collection) => {
+                    {collections.map((collection) => {
                         const isSelected = String(selectedCollectionId) === String(collection.id)
                         return (
                             <button
@@ -126,7 +138,7 @@ export function CollectionUploadPicker({
                                     ✓
                                 </div>
                                 <Icon
-                                    icon={collection.original_creation ? 'pixelarticons:image' : 'pixelarticons:folder'}
+                                    icon="pixelarticons:folder"
                                     className="shrink-0 text-sm text-white/30 group-hover:text-[#4ea632]"
                                 />
                                 <span className={`min-w-0 flex-1 truncate text-xs text-white/80 ${current.fontClass}`}>
@@ -177,7 +189,7 @@ export function CollectionUploadPicker({
                 <button
                     type="button"
                     onClick={onChooseImage}
-                    disabled={!hasSelection || (isPrivateUploadDisabled && activeTab === 'private')}
+                    disabled={isPrivateUploadDisabled && activeTab === 'private'}
                     className={`flex w-full items-center justify-center gap-2 bg-[#4ea632] py-2 text-[11px] text-white transition-colors hover:bg-[#3c8527] disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-white/20 ${current.fontClass}`}
                 >
                     <Icon icon="pixelarticons:image-plus" className="text-sm" />

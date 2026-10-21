@@ -271,23 +271,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
 
                 const data = await apiResponseJson(response)
                 if (isCancelled) return
-                const originalId = isPublic ? 'creations_public' : 'creations_private'
-                const loadedOriginal = originalCollections.find(collection => String(collection.id) === originalId)
-                const originalTarget: Collection = loadedOriginal
-                    ? {
-                        ...loadedOriginal,
-                        name: isPublic ? current.collection.creationsPublic : current.collection.creationsPrivate
-                    }
-                    : {
-                        id: originalId,
-                        name: isPublic ? current.collection.creationsPublic : current.collection.creationsPrivate,
-                        is_public: isPublic,
-                        item_count: 0,
-                        original_creation: true,
-                        user_id: myUserId || undefined
-                    }
-
-                setUploadPickerCollections([originalTarget, ...(data.items || [])])
+                setUploadPickerCollections((data.items || []).filter((collection: Collection) => !collection.original_creation))
                 setUploadPickerPage(data.page || uploadPickerPage)
                 setUploadPickerTotalPages(Math.max(1, data.total_pages || 1))
             } catch (error) {
@@ -305,15 +289,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         return () => {
             isCancelled = true
         }
-    }, [
-        current.collection.creationsPrivate,
-        current.collection.creationsPublic,
-        isUploadPickerOpen,
-        myUserId,
-        originalCollections,
-        uploadPickerPage,
-        uploadPickerTab
-    ])
+    }, [isUploadPickerOpen, uploadPickerPage, uploadPickerTab])
 
     // Cache updates do not trigger route loads; read the latest metadata when a route loads.
     const findRouteCollection = useEffectEvent((id: string, ownerId: string) =>
@@ -561,7 +537,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         setConfirmModal({
             isOpen: true,
             title: current.collection.uploadLicenseTitle,
-            message: `${current.edit.importRightsMessage}\n\n${current.edit.publicSaveRightsMessage}`,
+            message: current.collection.uploadLicenseMessage,
             uploadIsPublic: true,
             onConfirm: () => {
                 void uploadConfirmedItem(file, collection);
@@ -581,9 +557,18 @@ export function CollectionPage({ current }: CollectionPageProps) {
 
     const handleHomeUploadItem = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
-        const collection = selectedUploadCollection
         e.target.value = ''
-        if (!file || !collection) return
+        if (!file) return
+
+        const isPublic = uploadPickerTab === 'public'
+        const collection = selectedUploadCollection ?? {
+            id: isPublic ? 'creations_public' : 'creations_private',
+            name: isPublic ? current.collection.creationsPublic : current.collection.creationsPrivate,
+            is_public: isPublic,
+            item_count: 0,
+            original_creation: true,
+            user_id: myUserId || undefined
+        }
 
         setIsUploadPickerOpen(false)
         prepareUpload(file, collection)
@@ -942,7 +927,9 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                                     setUploadPickerPage(1)
                                                     setSelectedUploadCollection(null)
                                                 }}
-                                                onSelectCollection={setSelectedUploadCollection}
+                                                onSelectCollection={(collection) => setSelectedUploadCollection(selected =>
+                                                    String(selected?.id) === String(collection.id) ? null : collection
+                                                )}
                                                 onPageChange={(page) => {
                                                     setUploadPickerPage(page)
                                                     setSelectedUploadCollection(null)
