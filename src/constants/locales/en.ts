@@ -227,7 +227,7 @@ export default {
         "title": "3D Printing",
         "description": "Turn your skin into a figure and a matching sticker sheet.",
         modelType: 'Model',
-        "chooseCollection": "Choose from collections",
+        "chooseCollection": "Upload skin",
         "discoverSkins": "Discover skins",
         commission: 'Order a Figure Kit',
         commissionIntro: 'Make it yourself with the files below, or',

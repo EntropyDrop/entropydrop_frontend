@@ -227,7 +227,7 @@ export default {
         "title": "3D 打印",
         "description": "把皮肤变成手办，并生成配套贴纸。",
         modelType: '型号',
-        "chooseCollection": "从收藏夹选择",
+        "chooseCollection": "上传皮肤",
         "discoverSkins": "发现皮肤",
         commission: '委托制作',
         commissionIntro: '使用下方文件自行制作，或',
