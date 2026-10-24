@@ -2,7 +2,6 @@ export const TOP_NAV_ITEMS = [
     { key: 'space', icon: 'pixelarticons:react', path: '/space/intro' },
     { key: 'skin', icon: 'pixelarticons:avatar', path: '/skin/' },
     { key: 'figure', icon: 'pixelarticons:box', path: '/figure' },
-    { key: 'pro', icon: 'pixelarticons:zap', path: '/pro' },
     { key: 'public', icon: 'pixelarticons:binary', path: '/public' },
 ] as const
 

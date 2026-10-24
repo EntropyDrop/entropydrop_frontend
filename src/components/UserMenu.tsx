@@ -493,13 +493,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 <div className="absolute top-full right-0 mt-2 w-64 sm:w-52 max-h-[50vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-[99999] animate-in fade-in slide-in-from-top-2 duration-200">
                     {/* Mobile/Tablet Navigation Links */}
                     <div className="lg:hidden border-b border-black/10 pb-1 pt-1 bg-black/10 flex flex-col gap-1">
-                        {/* Global Platform Links: Pro & Public */}
-                        <button
-                            onClick={() => { setIsOpen(false); navigate('/pro'); }}
-                            className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:zap" className="text-sm shrink-0" /> {current.nav.pro}
-                        </button>
+                        {/* Global Platform Links: Public */}
                         <button
                             onClick={() => { setIsOpen(false); navigate('/public/about'); }}
                             className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
@@ -546,60 +540,79 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         ))}
                     </div>
 
-                    {user && (
+                    {user ? (
                         <>
-                            <div className="p-3 border-b border-black/20 bg-black/20">
+                            <div className="p-2.5 border-b border-black/20 bg-black/20">
                                 <button
                                     onClick={() => {
                                         setIsOpen(false);
                                         handleOpenProfileModal();
                                     }}
-                                    className={`w-full py-1.5 px-3 mb-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs cursor-pointer flex items-center justify-center gap-2 transition-all ${current.fontClass}`}
+                                    className={`w-full py-1.5 px-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs cursor-pointer flex items-center justify-center gap-2 transition-all ${current.fontClass}`}
                                 >
                                     <Icon icon="pixelarticons:user" className="text-sm" />
                                     {current.user.profile}
                                 </button>
-                                {user.is_pro && user.pro_expires_at && (
-                                    <div className={`bg-black/40 p-2 border border-white/5 flex flex-col gap-1 text-[10px] sm:text-xs ${current.fontClass}`}>
-                                        <div className="flex flex-col gap-1 text-white/60">
-                                            <div className="flex items-center gap-1 text-[10px] sm:text-xs uppercase">
-                                                <span className="font-bold text-white">{user.pro_level}</span>
-                                                <span>{current.user.proExpires}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-white flex-1 text-[10px]">{new Date(user.pro_expires_at).toLocaleDateString()}</span>
-                                                {user.paypal_subscription_status === 'ACTIVE' && (
-                                                    <span className="bg-green-500/20 text-green-400 text-[8px] px-1 border border-green-500/30 flex items-center gap-0.5">
-                                                        Auto renew
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
 
+                            <button
+                                onClick={() => { setIsOpen(false); navigate('/pro'); }}
+                                className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:zap" className="text-sm shrink-0" />
+                                <span className="flex-1">{current.nav.pro}</span>
+                                {user.is_pro && (
+                                    <span className="font-sans text-[9px] bg-yellow-400 text-black px-1 border border-black shadow">{user.pro_level || 'PRO'}</span>
+                                )}
+                            </button>
 
-                            {user.is_creator && <button onClick={() => { setIsOpen(false); navigate('/creator'); }} className={`w-full px-4 py-3 text-left text-[#a6df7a] hover:bg-white/10 text-xs cursor-pointer flex items-center gap-3 ${current.fontClass}`}><Icon icon="pixelarticons:coin" />{current.creatorPortal.title}</button>}
-                            {user.is_admin && <button onClick={() => { setIsOpen(false); navigate('/figure/manage'); }} className={`w-full px-4 py-3 text-left text-[#a6df7a] hover:bg-white/10 text-xs cursor-pointer flex items-center gap-3 ${current.fontClass}`}><Icon icon="pixelarticons:box" />{current.figureManagement.title}</button>}
+                            {user.is_pro && user.pro_expires_at && (
+                                <div
+                                    className={`mx-3 mb-2 bg-black/40 p-2 border border-white/5 flex flex-col gap-1 text-[10px] sm:text-xs select-none ${current.fontClass}`}
+                                >
+                                    <div className="flex flex-col gap-1 text-white/60">
+                                        <div className="flex items-center gap-1 text-[10px] sm:text-xs uppercase">
+                                            <span>{current.user.proExpires}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-white flex-1 text-[10px]">{new Date(user.pro_expires_at).toLocaleDateString()}</span>
+                                            {user.paypal_subscription_status === 'ACTIVE' && (
+                                                <span className="text-white/60 text-[9px]">
+                                                    Auto renew
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {user.is_creator && <button onClick={() => { setIsOpen(false); navigate('/creator'); }} className={`w-full px-4 py-2.5 text-left text-[#a6df7a] hover:bg-white/10 text-xs cursor-pointer flex items-center gap-3 ${current.fontClass}`}><Icon icon="pixelarticons:coin" />{current.creatorPortal.title}</button>}
                             <button
                                 onClick={() => { setIsOpen(false); navigate('/skin/orders'); }}
-                                className={`w-full px-4 py-3 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                                className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
                             >
                                 <Icon icon="pixelarticons:book-open" /> {current.user.orders}
                             </button>
                         </>
+                    ) : (
+                        <button
+                            onClick={() => { setIsOpen(false); navigate('/pro'); }}
+                            className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                        >
+                            <Icon icon="pixelarticons:zap" className="text-sm shrink-0" />
+                            <span className="flex-1">{current.nav.pro}</span>
+                        </button>
                     )}
 
                     <button
                         onClick={() => { setIsOpen(false); window.open('/skin/tos', '_blank'); }}
-                        className={`w-full px-4 py-3 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                        className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
                     >
                         <Icon icon="pixelarticons:notes" /> {current.terms.tos}
                     </button>
                     <button
                         onClick={() => { setIsOpen(false); window.open('/skin/privacy', '_blank'); }}
-                        className={`w-full px-4 py-3 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                        className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
                     >
                         <Icon icon="pixelarticons:notes" /> {current.terms.privacy}
                     </button>
@@ -635,15 +648,21 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         <>
                             <button
                                 onClick={() => { setIsOpen(false); navigate('/skin/monitor'); }}
-                                className={`w-full px-4 py-3 text-left text-green-400 hover:bg-green-500/10 hover:text-green-300 transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                                className={`w-full px-4 py-2.5 text-left text-green-400 hover:bg-green-500/10 hover:text-green-300 transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
                             >
                                 <Icon icon="pixelarticons:device-tv" /> {current.nav.monitor}
+                            </button>
+                            <button
+                                onClick={() => { setIsOpen(false); navigate('/figure/manage'); }}
+                                className={`w-full px-4 py-2.5 text-left text-[#a6df7a] hover:bg-white/10 text-xs cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:box" /> {current.figureManagement.title}
                             </button>
                             <div className="h-0.5 bg-black/20" />
                         </>
                     )}
                     {user && (
-                        <button onClick={handleLogout} className={`w-full px-4 py-3 text-left text-red-400 hover:bg-red-500/20 transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}>
+                        <button onClick={handleLogout} className={`w-full px-4 py-2.5 text-left text-red-400 hover:bg-red-500/20 transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}>
                             <Icon icon="pixelarticons:logout" /> {current.user.logout}
                         </button>
                     )}
