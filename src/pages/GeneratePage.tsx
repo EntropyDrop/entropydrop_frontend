@@ -1000,9 +1000,9 @@ export function GeneratePage({ current }: GeneratePageProps) {
                         </div>
                     </div>
 
-                    <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-0">
+                    <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-4 xl:gap-6 min-h-0">
                         {/* Area 1: Upload & Prompt */}
-                        <div className="flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar pr-1">
+                        <div className="w-full lg:w-60 xl:w-72 2xl:flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar pr-1 shrink-0">
                             <div className="flex flex-col gap-4">
                                 {(genMode === 'aigc_image_to_skin' || genMode === 'aigc_image_edit_to_skin') && (
                                     <div className="flex flex-col gap-3 lg:gap-4 animate-in fade-in duration-300">
@@ -1151,9 +1151,9 @@ export function GeneratePage({ current }: GeneratePageProps) {
                         {/* Area 2: Settings & Action */}
                         <div className="flex-1 flex flex-col gap-4 min-h-0">
                             {/* Unified Settings Card: Model Version & Advanced Settings */}
-                            <div className={`bg-white/5 border border-white/10 p-4 flex flex-col gap-4 ${isAdvancedOpen ? 'flex-1 min-h-0' : 'shrink-0'}`}>
+                            <div className={`bg-white/5 border border-white/10 p-4 flex flex-col gap-4 overflow-y-auto custom-scrollbar ${isAdvancedOpen ? 'flex-1 min-h-0' : 'shrink-0'}`}>
                                 {/* Model Version Dropdown */}
-                                <div className="flex flex-col gap-2 relative shrink-0" ref={modelDropdownRef}>
+                                <div className="flex flex-col gap-2 relative" ref={modelDropdownRef}>
                                     <span className={`text-white/60 text-[10px] ${current.fontClass}`}>
                                         {current.generate.modelVersion}
                                     </span>
@@ -1205,7 +1205,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                     </button>
 
                                     {isModelDropdownOpen && (
-                                        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[#1a1a1a] border border-white/10 max-h-48 overflow-y-auto custom-scrollbar flex flex-col">
+                                        <div className="mt-1 bg-[#1a1a1a] border border-white/10 max-h-48 overflow-y-auto custom-scrollbar flex flex-col">
                                             {(modelsConfig[genMode] || []).map(m => {
                                                 const isUnderMaintenance = !!modelMaintenanceStates[m];
                                                 return (
@@ -1252,7 +1252,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                 </div>
 
                                 {/* Advanced Settings */}
-                                <div className={`flex flex-col gap-3 pt-3 border-t border-white/10 ${isAdvancedOpen ? 'flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1' : 'shrink-0'}`}>
+                                <div className="flex flex-col gap-3 pt-3 border-t border-white/10 shrink-0">
                                     <button
                                         type="button"
                                         onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
@@ -1264,7 +1264,7 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                         </h3>
                                         <Icon
                                             icon="pixelarticons:chevron-down"
-                                            className={`text-white/60 group-hover:text-white transition-transform duration-200 text-sm lg:text-base ${isAdvancedOpen ? 'rotate-180' : ''}`}
+                                            className={`text-white/60 group-hover:text-white transition-transform duration-200 text-sm lg:text-base ${isAdvancedOpen ? '' : 'rotate-180'}`}
                                         />
                                     </button>
 
@@ -1322,13 +1322,13 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                 </div>
                             </div>
                             <div className="flex flex-col gap-3 mt-auto shrink-0">
-                                <div className="flex items-center gap-3 lg:gap-4 flex-wrap">
+                                <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
                                     <span className={`text-white/60 text-[10px] lg:text-xs shrink-0 ${current.fontClass}`}>
                                         {current.generate.visibility}:
                                     </span>
 
                                     {/* Public Option */}
-                                    <label className={`flex items-center gap-2 cursor-pointer group ${sourceId ? 'opacity-60' : ''}`}>
+                                    <label className={`flex items-center gap-2 cursor-pointer group shrink-0 ${sourceId ? 'opacity-60' : ''}`}>
                                         <div className="relative">
                                             <input
                                                 type="radio"
@@ -1352,42 +1352,44 @@ export function GeneratePage({ current }: GeneratePageProps) {
                                         </span>
                                     </label>
 
-                                    {/* Private Option */}
-                                    <label className={`flex items-center gap-2 cursor-pointer group ${(!isPro || !!sourceId) ? 'opacity-50' : ''}`}>
-                                        <div className="relative">
-                                            <input
-                                                type="radio"
-                                                className="sr-only"
-                                                name="privacy"
-                                                checked={isPrivate}
-                                                disabled={!!sourceId || !isPro}
-                                                onChange={() => {
-                                                    if (sourceId || !isPro) return;
-                                                    setIsPrivate(true);
-                                                }}
-                                            />
-                                            <div className={`w-5 h-5 border-2 border-black rounded-full transition-colors flex items-center justify-center ${isPrivate ? 'bg-[#3c8527]' : 'bg-[#555] group-hover:bg-[#666]'}`}>
-                                                {isPrivate && (
-                                                    <div className="w-2 h-2 bg-white rounded-full" />
-                                                )}
+                                    {/* Private Option & Pro Badge Group */}
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <label className={`flex items-center gap-2 cursor-pointer group shrink-0 ${(!isPro || !!sourceId) ? 'opacity-50' : ''}`}>
+                                            <div className="relative">
+                                                <input
+                                                    type="radio"
+                                                    className="sr-only"
+                                                    name="privacy"
+                                                    checked={isPrivate}
+                                                    disabled={!!sourceId || !isPro}
+                                                    onChange={() => {
+                                                        if (sourceId || !isPro) return;
+                                                        setIsPrivate(true);
+                                                    }}
+                                                />
+                                                <div className={`w-5 h-5 border-2 border-black rounded-full transition-colors flex items-center justify-center ${isPrivate ? 'bg-[#3c8527]' : 'bg-[#555] group-hover:bg-[#666]'}`}>
+                                                    {isPrivate && (
+                                                        <div className="w-2 h-2 bg-white rounded-full" />
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                        <span className={`text-white/60 group-hover:text-white/80 text-[10px] lg:text-xs transition-colors ${current.fontClass}`}>
-                                            {current.generate.private}
-                                        </span>
-                                    </label>
-
-                                    {!isPro && (
-                                        <div
-                                            onClick={() => navigate('/pro')}
-                                            className="flex items-center gap-1.5 px-2 py-1 bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 cursor-pointer hover:bg-yellow-400/20 transition-all animate-in fade-in slide-in-from-left-2 duration-300"
-                                        >
-                                            <Icon icon="pixelarticons:zap" className="text-xs" />
-                                            <span className={`text-[9px] lg:text-[10px] font-bold ${current.fontClass}`}>
-                                                {current.generate.privateTip}
+                                            <span className={`text-white/60 group-hover:text-white/80 text-[10px] lg:text-xs transition-colors ${current.fontClass}`}>
+                                                {current.generate.private}
                                             </span>
-                                        </div>
-                                    )}
+                                        </label>
+
+                                        {!isPro && (
+                                            <div
+                                                onClick={() => navigate('/pro')}
+                                                className="flex items-center gap-1.5 px-2 py-1 bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 cursor-pointer hover:bg-yellow-400/20 transition-all animate-in fade-in slide-in-from-left-2 duration-300 shrink-0"
+                                            >
+                                                <Icon icon="pixelarticons:zap" className="text-xs" />
+                                                <span className={`text-[9px] lg:text-[10px] font-bold ${current.fontClass}`}>
+                                                    {current.generate.privateTip}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                                 {sourceId && (
                                     <div className="text-yellow-500/80 text-[10px] flex items-center gap-1 -mt-1 animate-in fade-in duration-200">
