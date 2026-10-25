@@ -493,7 +493,14 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                 <div className="absolute top-full right-0 mt-2 w-64 sm:w-52 max-h-[50vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-[99999] animate-in fade-in slide-in-from-top-2 duration-200">
                     {/* Mobile/Tablet Navigation Links */}
                     <div className="lg:hidden border-b border-black/10 pb-1 pt-1 bg-black/10 flex flex-col gap-1">
-                        {/* Global Platform Links: Public */}
+                        {/* Global Platform Links: Home & Public */}
+                        <button
+                            onClick={() => { setIsOpen(false); navigate('/'); }}
+                            className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                        >
+                            <Icon icon="pixelarticons:home" className="text-sm shrink-0" /> {current.nav.home}
+                        </button>
+
                         <button
                             onClick={() => { setIsOpen(false); navigate('/public/about'); }}
                             className={`w-full px-4 py-2 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}

@@ -21,12 +21,15 @@ interface LayoutProps {
 export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: LayoutProps) {
     const location = useLocation()
     const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' })
+    const isHomeSection = location.pathname === '/'
     const isSpaceSection = location.pathname === '/space' || location.pathname.startsWith('/space/')
     const isFigureSection = location.pathname.startsWith('/figure')
-    const isSkinSection = location.pathname.startsWith('/skin') || location.pathname === '/'
+    const isSkinSection = location.pathname.startsWith('/skin')
     const isPublicSection = location.pathname.startsWith('/public')
 
-    const activeSubNavItems = isSpaceSection
+    const activeSubNavItems = isHomeSection
+        ? []
+        : isSpaceSection
         ? SPACE_NAV_ITEMS
         : isFigureSection
         ? FIGURE_NAV_ITEMS
@@ -64,13 +67,14 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
             {/* Top Navigation */}
             <div className="absolute top-0 left-0 right-0 z-[9999] py-3 sm:py-5 pointer-events-none">
                 <div className="max-w-7xl mx-auto px-4 sm:px-8 flex flex-row justify-between items-center gap-4">
-                    <div
-                        className={`text-white text-left ${current.fontClass} flex flex-col justify-center`}
+                    <Link
+                        to="/"
+                        className={`text-white text-left ${current.fontClass} flex flex-col justify-center pointer-events-auto no-underline group transition-opacity hover:opacity-90`}
                         style={{ textShadow: '2px 2px 0px #000' }}
                     >
-                        <h1 className="m-0 text-xl sm:text-5xl leading-tight">{current.title}</h1>
+                        <h1 className="m-0 text-xl sm:text-5xl leading-tight group-hover:text-emerald-400 transition-colors">{current.title}</h1>
                         <h2 className="m-0 text-base sm:text-2xl text-gray-400 hidden sm:block">{current.subtitle}</h2>
-                    </div>
+                    </Link>
 
                     <div className="flex items-center gap-4 sm:gap-6 min-w-0">
                         {/* Stacked Navigation Container */}
@@ -80,7 +84,9 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                 {/* First-Level Navigation Switcher */}
                                 <div className="hidden lg:flex border border-white/10 p-0.5 bg-black/40 backdrop-blur-md gap-0.5">
                                     {TOP_NAV_ITEMS.map((item) => {
-                                        const isCurrentSection = item.key === 'space'
+                                        const isCurrentSection = item.key === 'home'
+                                            ? isHomeSection
+                                            : item.key === 'space'
                                             ? isSpaceSection
                                             : item.key === 'skin'
                                             ? isSkinSection

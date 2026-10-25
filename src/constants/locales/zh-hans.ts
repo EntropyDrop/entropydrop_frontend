@@ -367,6 +367,7 @@ export default {
     subtitle: '',
     fontClass: 'font-pixel-hans',
     nav: {
+        home: '首页',
         figurePrint: "3D 打印",
         discover: '发现',
         generate: '生成',
@@ -1456,9 +1457,6 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         primaryCta: '开始游玩',
         secondaryCta: '核心特性',
         worldCarousel: { label: '世界背景轮播', select: '切换至 {world}' },
-        onlinePlayers: '人在线',
-        onlineLoading: '正在获取在线人数…',
-        onlineUnavailable: '在线人数暂不可用',
         stats: {
             scale: '0.125m (8×8×8) 微格',
             physics: '体素刚体物理',
@@ -1850,5 +1848,105 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         modeHumanUpload: '人类上传',
         systemMaintenanceMsg: '该功能正在系统维护中，请稍后再试。',
         temporarilyUnavailable: '系统维护中'
+    },
+    home: {
+        seo: {
+            title: '开源体素与实体制造创作生态',
+            description: 'EntropyDrop 创作者生态：融合智能皮肤生成、浏览器体素沙盒多重世界与参数化实体手办定制。'
+        },
+        hero: {
+            badge: '开源创作者生态',
+            title: '想象，由此具象。',
+            subtitle: '智能皮肤工坊 · 体素沙盒宇宙 · 全关节实体手办。',
+            exploreCta: '探索业务线',
+            quickStartSpace: '进入体素宇宙',
+            quickStartSkin: '生成皮肤'
+        },
+        loop: {
+            tag: '创作闭环',
+            title: '一个统一的创作闭环',
+            step1: {
+                step: '01',
+                title: '创造化身',
+                desc: '智能生成双层皮肤'
+            },
+            step2: {
+                step: '02',
+                title: '漫游宇宙',
+                desc: '一键进入沙盒世界'
+            },
+            step3: {
+                step: '03',
+                title: '触碰实体',
+                desc: '阻尼可动关节手办'
+            }
+        },
+        services: {
+            skin: {
+                tag: '智能皮肤工坊',
+                title: '参考生皮，形神兼备。',
+                desc: '多模态模型精准解析立绘与原画，生成标准双层体素皮肤。',
+                features: [
+                    { title: '参考图重构', desc: '像素还原' },
+                    { title: '实时三维视口', desc: '动态光影' },
+                    { title: '网页像素编辑', desc: '精细微调' },
+                    { title: '开源创作社区', desc: '自由共享' }
+                ],
+                stats: [
+                    { value: '双层结构', label: '标准贴图' },
+                    { value: '多模态', label: '参考图生成' },
+                    { value: '10,000+', label: '社区皮肤' }
+                ],
+                ctaPrimary: '生成皮肤',
+                ctaSecondary: '浏览社区',
+                ctaTertiary: '像素编辑器'
+            },
+            space: {
+                tag: '沙盒体素宇宙',
+                title: '无界体素，自由探索。',
+                desc: '广袤多维沙盒，驾驶载具探索以太浮岛。',
+                features: [
+                    { title: '无限程序化世界', desc: '多重浮岛' },
+                    { title: '刚体物理载具', desc: '动态物理' },
+                    { title: '轻量三维引擎', desc: '原生流畅' },
+                    { title: '智能体协作', desc: '自主建造' }
+                ],
+                stats: [
+                    { value: '轻量三维', label: '原生流畅' },
+                    { value: '3 大世界', label: '程序化世界' },
+                    { value: '开放协议', label: '自主建造' }
+                ],
+                ctaPrimary: '启动体素宇宙',
+                ctaSecondary: '玩法介绍'
+            },
+            figure: {
+                tag: '实体手办定制',
+                title: '像素，触手可及。',
+                desc: '阻尼可动关节，免胶卡扣咬合。',
+                features: [
+                    { title: '一键工程拆解', desc: '精密零件' },
+                    { title: '免胶咬合关节', desc: '多姿可动' },
+                    { title: '高精度背胶贴纸', desc: '质感还原' },
+                    { title: '代工或自印', desc: '灵活定制' }
+                ],
+                stats: [
+                    { value: '100%', label: '像素还原' },
+                    { value: '多关节', label: '灵活可动' },
+                    { value: '代工或自印', label: '自由定制' }
+                ],
+                ctaPrimary: '定制手办',
+                ctaSecondary: '手办精选'
+            }
+        },
+        openSource: {
+            badge: '开源透明',
+            title: '坚持开源，全额透明。',
+            desc: '软硬件与模型权重向社区公开，财务账本全天候公示。',
+            ctaAbout: '关于我们',
+            ctaLedger: '公开账本',
+            ctaMonitor: '服务器监控',
+            github: '开源代码',
+            huggingface: '模型权重'
+        }
     }
 } as const

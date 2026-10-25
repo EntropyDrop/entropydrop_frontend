@@ -36,6 +36,7 @@ const SpacePage = lazy(() => import('./pages/SpacePage').then(m => ({ default: m
 const TerrainLabPage = import.meta.env.DEV
   ? lazy(() => import('./pages/TerrainLabPage').then(m => ({ default: m.TerrainLabPage })))
   : () => null
+const HomePage = lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })))
 
 
 /**
@@ -133,7 +134,8 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
     <><CreatorReferralTracker />
     <RouteTransition key={location.pathname} current={currentLangData} showLoadingSkeleton={!isDiscoveryPath(location.pathname)}>
       <Routes>
-        <Route path="/" element={<Navigate to="/skin/" replace />} />
+        <Route path="/" element={<HomePage current={currentLangData} />} />
+        <Route path="/home" element={<Navigate to="/" replace />} />
         <Route path="/skin/" element={<DiscoveryPage current={currentLangData} />} />
         <Route path="/skin/generate" element={<GeneratePage current={currentLangData} />} />
         <Route path="/creator" element={<CreatorPage current={currentLangData} />} />

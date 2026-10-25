@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { type ReactNode, useRef } from 'react'
 
 interface PageContainerProps {
     children: ReactNode
@@ -12,6 +12,8 @@ interface PageContainerProps {
     innerPadding?: string // overrides the default inner card padding
     className?: string // extra class names for the inner card container
     outerClassName?: string // extra class names for the outer wrapper container
+    pointerEvents?: string // defaults to 'pointer-events-auto' so scrolling works in non-center margins
+    outerSpacing?: string // overrides the default outer spacing (e.g., pt-20 sm:pt-28 lg:pt-32)
 }
 
 export function PageContainer({
@@ -25,16 +27,34 @@ export function PageContainer({
     animate = 'animate-in fade-in duration-300',
     innerPadding = 'p-3 sm:p-6',
     className = '',
-    outerClassName = ''
+    outerClassName = '',
+    pointerEvents = 'pointer-events-auto',
+    outerSpacing = 'p-1 sm:p-2 lg:p-3 pt-20 sm:pt-28 lg:pt-32'
 }: PageContainerProps) {
-    // CENTRALIZED LAYOUT SPACING CONSTANTS
-    const outerSpacing = 'p-1 sm:p-2 lg:p-3 pt-20 sm:pt-28 lg:pt-32'
+    const innerRef = useRef<HTMLDivElement>(null)
+
+    const handleOuterWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+        const inner = innerRef.current
+        if (!inner) return
+
+        // If the inner card is the scrollable container and the mouse wheel event occurred in the non-center margin, forward the scroll to it
+        if (inner.scrollHeight > inner.clientHeight && !inner.contains(e.target as Node)) {
+            inner.scrollTop += e.deltaY
+        }
+    }
 
     return (
-        <div className={`absolute inset-0 z-10 flex justify-center box-border overflow-y-auto pointer-events-none ${alignItems} ${outerSpacing} ${outerClassName}`}>
-            <div className={`w-full ${maxWidth} ${height} flex flex-col border border-white/10 pointer-events-auto text-white ${bg} ${innerPadding} ${gap} ${overflow} ${animate} ${className}`}>
+        <div
+            onWheel={handleOuterWheel}
+            className={`absolute inset-0 z-10 flex justify-center box-border overflow-y-auto overflow-x-hidden ${pointerEvents} ${alignItems} ${outerSpacing} ${outerClassName}`}
+        >
+            <div
+                ref={innerRef}
+                className={`w-full ${maxWidth} ${height} flex flex-col border border-white/10 pointer-events-auto text-white ${bg} ${innerPadding} ${gap} ${overflow} ${animate} ${className}`}
+            >
                 {children}
             </div>
         </div>
     )
 }
+

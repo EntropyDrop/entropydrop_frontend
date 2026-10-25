@@ -367,6 +367,7 @@ export default {
     subtitle: 'Open-Source Manufacturer',
     fontClass: 'font-pixel-hans',
     nav: {
+        home: 'Home',
         figurePrint: "3D Printing",
         discover: 'Discover',
         generate: 'Generate',
@@ -1456,9 +1457,6 @@ Email: support@entropydrop.com`
         primaryCta: 'Play',
         secondaryCta: 'Core Features',
         worldCarousel: { label: 'World background', select: 'Show {world}' },
-        onlinePlayers: 'players online',
-        onlineLoading: 'Checking online players…',
-        onlineUnavailable: 'Online count unavailable',
         stats: {
             scale: '0.125m (8×8×8) Micro Grid',
             physics: 'Voxel Rigid Bodies',
@@ -1837,5 +1835,105 @@ Email: support@entropydrop.com`
         modeHumanUpload: 'Human Upload',
         systemMaintenanceMsg: 'This feature is temporarily under maintenance.',
         temporarilyUnavailable: 'Under Maintenance'
+    },
+    home: {
+        seo: {
+            title: 'Open-Source Voxel & Physical Creative Ecosystem',
+            description: 'EntropyDrop creator ecosystem uniting AI Minecraft skin generation, browser voxel sandbox worlds, and parametric 3D printed physical figures.'
+        },
+        hero: {
+            badge: 'OPEN-SOURCE CREATOR ECOSYSTEM',
+            title: 'From Imagination to Reality.',
+            subtitle: 'AI Avatar Forge · Voxel Multiverse · 3D Articulated Figures.',
+            exploreCta: 'Explore Services',
+            quickStartSpace: 'Launch Voxel Space',
+            quickStartSkin: 'Generate AI Skin'
+        },
+        loop: {
+            tag: 'THE CREATIVE LOOP',
+            title: 'One Unified Creative Journey',
+            step1: {
+                step: '01',
+                title: 'Create Avatar',
+                desc: 'Dual-layer AI skin'
+            },
+            step2: {
+                step: '02',
+                title: 'Explore Space',
+                desc: 'Voxel sandbox worlds'
+            },
+            step3: {
+                step: '03',
+                title: 'Hold Physical',
+                desc: 'Articulated snap figures'
+            }
+        },
+        services: {
+            skin: {
+                tag: 'AI AVATAR FORGE',
+                title: 'From Reference to Voxel Avatar.',
+                desc: 'Multimodal AI turns reference art and character illustrations into standard dual-layer voxel skins.',
+                features: [
+                    { title: 'Reference-to-Skin', desc: 'AI reconstruction' },
+                    { title: 'Real-Time 3D', desc: 'Dynamic lights' },
+                    { title: 'Pixel Editor', desc: 'Precision editing' },
+                    { title: 'CC Community', desc: 'Freely shared' }
+                ],
+                stats: [
+                    { value: 'Dual-Layer', label: 'Standard Rig' },
+                    { value: 'Multimodal', label: 'Image Reference' },
+                    { value: '10,000+', label: 'Skins' }
+                ],
+                ctaPrimary: 'Generate AI Skin',
+                ctaSecondary: 'Discover Library',
+                ctaTertiary: 'Pixel Editor'
+            },
+            space: {
+                tag: 'VOXEL MULTIVERSE',
+                title: 'Infinite voxels, boundless exploration.',
+                desc: 'Vast sandbox realms with rigid physics and agent collaboration.',
+                features: [
+                    { title: 'Procedural Realms', desc: 'Vast archipelagos' },
+                    { title: 'Physics Vehicles', desc: 'Aerial drones' },
+                    { title: 'Voxel Engine', desc: 'Silky smooth' },
+                    { title: 'AI Agent Ready', desc: 'Build protocol' }
+                ],
+                stats: [
+                    { value: 'Lightweight', label: 'Engine' },
+                    { value: '3+ Worlds', label: 'Procedural Realms' },
+                    { value: 'Agent Ready', label: 'Build Protocol' }
+                ],
+                ctaPrimary: 'Launch Voxel Space',
+                ctaSecondary: 'Explore Guide'
+            },
+            figure: {
+                tag: 'PHYSICAL REALITY',
+                title: 'Pixels in your hands.',
+                desc: 'Damped articulated joints, snap-fit assembly.',
+                features: [
+                    { title: 'One-Click STL', desc: 'Topology breakdown' },
+                    { title: 'Glue-Free Articulation', desc: 'Damped joints' },
+                    { title: 'Precision Vinyl Decals', desc: 'Adhesive textures' },
+                    { title: 'Turnkey or Free STL', desc: 'DIY print or order' }
+                ],
+                stats: [
+                    { value: '100%', label: 'Pixel Accuracy' },
+                    { value: 'Articulated', label: 'Multi-Joint' },
+                    { value: 'DIY or Made', label: 'Flexible' }
+                ],
+                ctaPrimary: '3D Print Figure',
+                ctaSecondary: 'Showcase Gallery'
+            }
+        },
+        openSource: {
+            badge: 'OPEN SOURCE & TRANSPARENT',
+            title: 'OPEN SOURCE & TRANSPARENT',
+            desc: 'Code, weights, and financial ledger are open. Public 24/7.',
+            ctaAbout: 'About Us',
+            ctaLedger: 'Public Ledger',
+            ctaMonitor: 'Server Monitor',
+            github: 'Open Source',
+            huggingface: 'Open Weights'
+        }
     }
 } as const

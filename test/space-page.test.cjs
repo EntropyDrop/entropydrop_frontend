@@ -66,3 +66,11 @@ test('Space login handoff page is English-only', () => {
   assert.match(loginSource, /Sign in to your EntropyDrop account before entering Space\./);
   assert.match(loginSource, /loadingText="Loading Google sign-in…"/);
 });
+
+test('Space welcome page does not expose online player count or status polling', () => {
+  const source = readFileSync(join(__dirname, '../src/pages/SpacePage.tsx'), 'utf8');
+  assert.doesNotMatch(source, /SPACE_STATUS_PATH/);
+  assert.doesNotMatch(source, /onlinePlayers/);
+  assert.doesNotMatch(source, /refreshPopulation/);
+});
+

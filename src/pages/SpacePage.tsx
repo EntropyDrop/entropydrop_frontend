@@ -7,22 +7,13 @@ import { SpaceWorldBackground, SpaceWorldControls } from '../components/SpaceWor
 import { SPACE_DEFAULT_ENTRANCE_WORLD, SPACE_ENTRANCE_WORLDS, spaceWorldLaunchUrl, type SpaceEntranceWorld } from '../utils/spaceWorlds'
 import { SEO } from '../components/SEO'
 import { type LangData } from '../constants/lang'
-import { API_BASE_URL, apiFetch } from '../utils/api'
+import { API_BASE_URL } from '../utils/api'
 
 interface SpacePageProps {
     current: LangData
 }
 
-interface SpacePopulation {
-    onlinePlayers: number
-    maxOnlinePlayers: number
-}
-
-type SpacePopulationStatus = 'loading' | 'ready' | 'unavailable'
-
-const SPACE_POPULATION_REFRESH_MS = 30_000
 const SPACE_WORLD_CAROUSEL_MS = 5_000
-const SPACE_STATUS_PATH = '/space/api/v2/status'
 
 interface SpaceImageSlotProps {
     src?: string
@@ -107,74 +98,11 @@ export function SpacePage({ current }: SpacePageProps) {
     const worldName = SPACE_ENTRANCE_WORLDS.find(world => world.slug === selectedWorld)!.name
     const getSpaceLaunchUrl = () => spaceWorldLaunchUrl(spaceAppUrl, selectedWorld, window.location.href)
 
-    const spaceStatusUrl = new URL(
-        SPACE_STATUS_PATH,
-        new URL(API_BASE_URL, window.location.href),
-    ).toString()
     const agentOrigin = new URL(import.meta.env.VITE_SPACE_API_BASE_URL || API_BASE_URL, window.location.href).origin
     const agentConnection = spaceAgentConnection(agentOrigin, selectedWorld)
     const agentPrompt = spaceAgentPrompt(agentConnection.origin, agentConnection.worldSelector)
     const [agentCopyMessage, setAgentCopyMessage] = useState('')
     const [worldCarouselPaused, setWorldCarouselPaused] = useState(false)
-    const [population, setPopulation] = useState<SpacePopulation | null>(null)
-    const [populationStatus, setPopulationStatus] = useState<SpacePopulationStatus>('loading')
-
-    useEffect(() => {
-        const controller = new AbortController()
-        let requestInFlight = false
-        let hasPopulation = false
-
-        const refreshPopulation = async () => {
-            if (requestInFlight) return
-            requestInFlight = true
-            try {
-                const response = await apiFetch(
-                    spaceStatusUrl,
-                    {
-                        headers: { Accept: 'application/json' },
-                        signal: controller.signal,
-                        skipGlobalError: true,
-                    },
-                )
-                if (!response.ok) throw new Error(`Space status request failed: ${response.status}`)
-                const payload = await response.json() as Record<string, unknown>
-                const onlinePlayers = Number(payload.online_players)
-                const maxOnlinePlayers = Number(payload.max_online_players)
-                if (
-                    !Number.isSafeInteger(onlinePlayers)
-                    || !Number.isSafeInteger(maxOnlinePlayers)
-                    || onlinePlayers < 0
-                    || maxOnlinePlayers < 1
-                    || maxOnlinePlayers > 32
-                    || onlinePlayers > maxOnlinePlayers
-                ) {
-                    throw new Error('Space status response is invalid')
-                }
-                setPopulation({ onlinePlayers, maxOnlinePlayers })
-                hasPopulation = true
-                setPopulationStatus('ready')
-            } catch (error) {
-                if (!controller.signal.aborted) {
-                    if (!hasPopulation) setPopulationStatus('unavailable')
-                    console.warn('Could not refresh the Space online-player count.', error)
-                }
-            } finally {
-                requestInFlight = false
-            }
-        }
-
-        const refreshWhenVisible = () => {
-            if (document.visibilityState === 'visible') void refreshPopulation()
-        }
-        void refreshPopulation()
-        const refreshTimer = window.setInterval(() => void refreshPopulation(), SPACE_POPULATION_REFRESH_MS)
-        document.addEventListener('visibilitychange', refreshWhenVisible)
-        return () => {
-            controller.abort()
-            window.clearInterval(refreshTimer)
-            document.removeEventListener('visibilitychange', refreshWhenVisible)
-        }
-    }, [spaceStatusUrl])
 
     useEffect(() => {
         if (worldCarouselPaused) return
@@ -237,20 +165,6 @@ export function SpacePage({ current }: SpacePageProps) {
                     <span className="inline-flex items-center gap-2 border border-green-500/40 bg-green-500/10 px-2.5 py-1 text-[11px] font-mono uppercase tracking-wider text-green-400">
                         <span className="h-2 w-2 bg-green-400 animate-pulse" />
                         {data.eyebrow}
-                    </span>
-                    <span
-                        className="inline-flex items-center gap-2 border border-white/15 bg-black/40 px-2.5 py-1 text-[11px] font-mono uppercase tracking-wider text-white/75"
-                        role="status"
-                        aria-live="polite"
-                        title={populationStatus === 'unavailable' ? data.onlineUnavailable : undefined}
-                    >
-                        <span className={`h-2 w-2 ${population ? 'bg-green-400 animate-pulse' : 'bg-white/30'}`} />
-                        <Icon icon="pixelarticons:users" className="text-sm text-green-400" />
-                        {population
-                            ? `${population.onlinePlayers} / ${population.maxOnlinePlayers} ${data.onlinePlayers}`
-                            : populationStatus === 'loading'
-                                ? data.onlineLoading
-                                : data.onlineUnavailable}
                     </span>
                 </div>
 
