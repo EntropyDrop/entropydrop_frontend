@@ -156,7 +156,7 @@ export function SpaceShowcaseCarousel({ isZh, fontClass, ctaText }: SpaceShowcas
 
     return (
         <div
-            className={`relative w-full max-w-7xl mx-auto overflow-hidden py-3 select-none group/space-carousel ${fontClass}`}
+            className={`relative w-full max-w-7xl mx-auto overflow-visible select-none group/space-carousel ${fontClass}`}
             onMouseEnter={() => setIsPaused(true)}
             onMouseLeave={() => setIsPaused(false)}
             onTouchStart={handleTouchStart}
@@ -208,14 +208,14 @@ export function SpaceShowcaseCarousel({ isZh, fontClass, ctaText }: SpaceShowcas
                                         : 'scale(0.92) perspective(1200px) rotateY(-3.5deg)',
                                 transformOrigin: isPrev ? 'right center' : isNext ? 'left center' : 'center center',
                                 maskImage: isPrev
-                                    ? 'linear-gradient(to left, rgba(0,0,0,1) 0%, rgba(0,0,0,0.65) 40%, rgba(0,0,0,0.2) 75%, transparent 100%)'
+                                    ? 'linear-gradient(to left, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
                                     : isNext
-                                        ? 'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,0.65) 40%, rgba(0,0,0,0.2) 75%, transparent 100%)'
+                                        ? 'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
                                         : 'none',
                                 WebkitMaskImage: isPrev
-                                    ? 'linear-gradient(to left, rgba(0,0,0,1) 0%, rgba(0,0,0,0.65) 40%, rgba(0,0,0,0.2) 75%, transparent 100%)'
+                                    ? 'linear-gradient(to left, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
                                     : isNext
-                                        ? 'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,0.65) 40%, rgba(0,0,0,0.2) 75%, transparent 100%)'
+                                        ? 'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
                                         : 'none',
                                 boxShadow: isActive
                                     ? '0 25px 60px -12px rgba(0, 0, 0, 0.95), 0 0 45px -5px rgba(14, 165, 233, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.15)'

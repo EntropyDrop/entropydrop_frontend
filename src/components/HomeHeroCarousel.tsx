@@ -193,7 +193,7 @@ export function HomeHeroCarousel({ isZh, fontClass }: HomeHeroCarouselProps) {
 
     return (
         <div
-            className={`relative w-full max-w-7xl mx-auto overflow-hidden py-3 select-none group/carousel ${fontClass}`}
+            className={`relative w-full max-w-7xl mx-auto overflow-visible select-none group/carousel ${fontClass}`}
             onMouseEnter={() => setIsPaused(true)}
             onMouseLeave={() => setIsPaused(false)}
             onTouchStart={handleTouchStart}
@@ -235,7 +235,7 @@ export function HomeHeroCarousel({ isZh, fontClass }: HomeHeroCarouselProps) {
                             onClick={() => handleSlideClick(index, slide.ctaLink)}
                             className={`flex-none w-[82%] aspect-video relative transition-all duration-700 ease-out select-none overflow-hidden cursor-pointer ${
                                 isActive
-                                    ? 'opacity-100 z-20 border border-white/25'
+                                    ? 'opacity-100 z-20 border border-white/20'
                                     : 'opacity-70 hover:opacity-95 z-10 border border-white/10 hover:border-white/20'
                             }`}
                             style={{
@@ -246,14 +246,14 @@ export function HomeHeroCarousel({ isZh, fontClass }: HomeHeroCarouselProps) {
                                         : 'scale(0.92) perspective(1200px) rotateY(-3.5deg)',
                                 transformOrigin: isPrev ? 'right center' : isNext ? 'left center' : 'center center',
                                 maskImage: isPrev
-                                    ? 'linear-gradient(to left, rgba(0,0,0,1) 0%, rgba(0,0,0,0.65) 40%, rgba(0,0,0,0.2) 75%, transparent 100%)'
+                                    ? 'linear-gradient(to left, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
                                     : isNext
-                                        ? 'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,0.65) 40%, rgba(0,0,0,0.2) 75%, transparent 100%)'
+                                        ? 'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
                                         : 'none',
                                 WebkitMaskImage: isPrev
-                                    ? 'linear-gradient(to left, rgba(0,0,0,1) 0%, rgba(0,0,0,0.65) 40%, rgba(0,0,0,0.2) 75%, transparent 100%)'
+                                    ? 'linear-gradient(to left, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
                                     : isNext
-                                        ? 'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,0.65) 40%, rgba(0,0,0,0.2) 75%, transparent 100%)'
+                                        ? 'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
                                         : 'none',
                                 boxShadow: isActive
                                     ? `0 25px 60px -12px rgba(0, 0, 0, 0.95), 0 0 45px -5px ${slideAccent.glow}, 0 0 0 1px rgba(255, 255, 255, 0.15)`
