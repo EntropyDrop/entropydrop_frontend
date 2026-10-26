@@ -550,13 +550,6 @@ export function HomePage({ current }: HomePageProps) {
                             </Link>
                         </div>
                     </ScrollReveal>
-
-                    {/* Apple Footnotes */}
-                    <div className={`pt-8 border-t border-white/10 w-full max-w-xl text-[10px] text-white/35 flex flex-col gap-1 text-center sm:text-left ${fontClass}`}>
-                        <p className="m-0">1. {isZh ? '皮肤生成测算基于专用算力集群实测。' : 'Latency benchmark based on dedicated clusters.'}</p>
-                        <p className="m-0">2. {isZh ? '体素渲染表现视运行设备性能而定。' : 'Voxel rendering performance depends on client hardware.'}</p>
-                        <p className="m-0">3. {isZh ? '手办关节免胶咬合，遵循组装指引。' : 'Joints snap-fit without glue; follow assembly guides.'}</p>
-                    </div>
                 </section>
             </PageContainer>
         </div>

@@ -59,7 +59,7 @@ function isDiscoveryPath(pathname: string) {
 
 function FigureRedirect() {
   const location = useLocation()
-  const target = `/figure/showcase${location.search}${location.hash}`
+  const target = `/figure/3dprint${location.search}${location.hash}`
   return <Navigate to={target} replace />
 }
 

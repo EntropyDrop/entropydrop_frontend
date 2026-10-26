@@ -203,69 +203,74 @@ export function FigurePrintPage({ current }: { current: LangData }) {
         </div>
     </PageContainer>
 
-    if (!textureUrl) return <PageContainer innerPadding="p-0" gap="gap-4" overflow="overflow-hidden" className={current.fontClass}>
-        <SEO title={t.title} description={t.description} />
-        <section aria-label={t.title} className="relative flex-1 min-h-0 w-full flex flex-col justify-between overflow-hidden p-4 sm:p-6 lg:p-8 bg-black">
-            {/* Background Physical Figure Showcase */}
-            <div className="absolute inset-0 pointer-events-none select-none overflow-hidden">
+    if (!textureUrl) return (
+        <div className={`absolute inset-0 z-10 flex flex-col justify-between overflow-x-hidden overflow-y-auto custom-scrollbar ${current.fontClass}`}>
+            <SEO title={t.title} description={t.description} />
+            {/* Background Physical Figure Showcase spanning entire screen from behind nav down */}
+            <div className="fixed inset-0 pointer-events-none select-none overflow-hidden" aria-hidden="true">
                 <img
                     src="/images/figure_physical_showcase.jpg"
                     alt="Physical 3D printed voxel figures"
-                    className="w-full h-full object-cover object-center filter brightness-[0.8] contrast-[1.05]"
+                    className="w-full h-full object-cover object-center filter brightness-[0.98] contrast-[1.02]"
                     loading="eager"
                     decoding="async"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-black/75" />
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(0,0,0,0.5)_75%,rgba(0,0,0,0.85)_100%)]" />
+                {/* Subtle gradient: soft darkening at top behind nav for contrast, gentle darkening at bottom behind dock */}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/55" />
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_65%,rgba(0,0,0,0.25)_100%)]" />
             </div>
 
-            {/* Top Bar Title */}
-            <div className="relative z-10 flex items-center gap-2.5 shrink-0">
-                <Icon icon="pixelarticons:box" className="text-[#71bc56] text-2xl drop-shadow" />
-                <h1 className="text-lg sm:text-xl font-bold text-white tracking-wide m-0 drop-shadow">
-                    {t.title}
-                </h1>
+            {/* Top spacing below floating Navbar */}
+            <div className="pt-20 sm:pt-28 px-4 sm:px-8 max-w-7xl mx-auto w-full relative z-10 flex items-center justify-between pointer-events-none shrink-0">
+                <div className="flex items-center gap-2.5 pointer-events-auto">
+                    <Icon icon="pixelarticons:box" className="text-[#71bc56] text-xl sm:text-2xl drop-shadow" />
+                    <h1 className="text-base sm:text-xl font-bold text-white tracking-wide m-0 drop-shadow">
+                        {t.title}
+                    </h1>
+                </div>
             </div>
 
             {/* Center Spacer to showcase the 4 physical figures */}
-            <div className="relative z-10 flex-1 min-h-0" aria-hidden="true" />
+            <div className="relative z-10 flex-1 min-h-[40px] sm:min-h-[80px]" aria-hidden="true" />
 
             {/* Bottom Floating Glassmorphism Hero Dock */}
-            <div className="relative z-10 flex flex-col items-center text-center gap-3.5 max-w-2xl mx-auto w-full p-4 sm:p-5 bg-black/65 backdrop-blur-md border border-white/15 shadow-2xl">
-                <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 text-[10px] sm:text-xs font-mono uppercase tracking-wider border border-amber-500/40 bg-amber-500/15 text-amber-300 backdrop-blur-md">
-                        3D PRINT FIGURE
-                    </span>
-                </div>
-                <p className="text-xs sm:text-sm text-white/85 m-0 leading-relaxed max-w-md">
-                    {t.empty}
-                </p>
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 w-full sm:w-auto">
-                    <Link
-                        to="/skin/collection"
-                        className="w-full sm:w-auto px-5 py-2.5 bg-[#3c8527] hover:bg-[#4ea632] text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-950/60 border border-black active:translate-y-px no-underline"
-                    >
-                        <Icon icon="pixelarticons:folder" className="text-base" />
-                        <span>{t.chooseCollection}</span>
-                    </Link>
-                    <Link
-                        to="/skin/"
-                        className="w-full sm:w-auto px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-white/20 hover:border-white/35 active:translate-y-px no-underline"
-                    >
-                        <Icon icon="pixelarticons:search" className="text-base" />
-                        <span>{t.discoverSkins}</span>
-                    </Link>
-                    <Link
-                        to="/figure/showcase"
-                        className="w-full sm:w-auto px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-white/20 hover:border-white/35 active:translate-y-px no-underline"
-                    >
-                        <Icon icon="pixelarticons:image" className="text-base" />
-                        <span>{current.nav.showcase}</span>
-                    </Link>
+            <div className="relative z-10 pb-6 sm:pb-8 lg:pb-10 px-4 w-full">
+                <div className="flex flex-col items-center text-center gap-3.5 max-w-2xl mx-auto w-full p-4 sm:p-5 bg-black/30 backdrop-blur-md border border-white/20 shadow-2xl">
+                    <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-0.5 text-[10px] sm:text-xs ${current.fontClass || 'font-pixel-hans'} uppercase tracking-wider border border-amber-500/40 bg-amber-500/20 text-amber-300 backdrop-blur-md`}>
+                            3D PRINT FIGURE
+                        </span>
+                    </div>
+                    <p className="text-xs sm:text-sm text-white/85 m-0 leading-relaxed max-w-md">
+                        {t.empty}
+                    </p>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 w-full sm:w-auto">
+                        <Link
+                            to="/skin/collection"
+                            className="w-full sm:w-auto px-5 py-2.5 bg-[#3c8527] hover:bg-[#4ea632] text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-950/60 border border-black active:translate-y-px no-underline"
+                        >
+                            <Icon icon="pixelarticons:folder" className="text-base" />
+                            <span>{t.chooseCollection}</span>
+                        </Link>
+                        <Link
+                            to="/skin/"
+                            className="w-full sm:w-auto px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-white/20 hover:border-white/35 active:translate-y-px no-underline"
+                        >
+                            <Icon icon="pixelarticons:search" className="text-base" />
+                            <span>{t.discoverSkins}</span>
+                        </Link>
+                        <Link
+                            to="/figure/showcase"
+                            className="w-full sm:w-auto px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-white/20 hover:border-white/35 active:translate-y-px no-underline"
+                        >
+                            <Icon icon="pixelarticons:image" className="text-base" />
+                            <span>{current.nav.showcase}</span>
+                        </Link>
+                    </div>
                 </div>
             </div>
-        </section>
-    </PageContainer>
+        </div>
+    )
 
     const partLabel = (id: string) => t.parts[id as PrintPartId] || id
     return <PageContainer gap="gap-4" className={current.fontClass}>

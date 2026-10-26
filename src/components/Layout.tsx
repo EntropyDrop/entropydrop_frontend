@@ -90,6 +90,8 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                             ? isSpaceSection
                                             : item.key === 'skin'
                                             ? isSkinSection
+                                            : item.key === 'figure'
+                                            ? isFigureSection
                                             : location.pathname.startsWith(item.path)
                                         return (
                                             <Link
