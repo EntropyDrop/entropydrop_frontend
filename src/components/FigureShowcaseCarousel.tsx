@@ -62,27 +62,28 @@ export function FigureShowcaseCarousel({ isZh, fontClass, ctaText }: FigureShowc
     const [isPaused, setIsPaused] = useState(false)
     const touchStartX = useRef<number | null>(null)
     const trackRef = useRef<HTMLDivElement>(null)
+    const animationTimeoutRef = useRef<number | null>(null)
 
     const SLIDE_DURATION = 5000 // 5 seconds per slide
     const slideWidthPercent = 82 // Active slide occupies 82% width; 9% peek on each side (~110px peeking)
     const gapPx = 20 // 20px gap between slides
 
     const nextSlide = useCallback(() => {
-        if (isAnimating) return
+        if (isAnimating || !enableTransition) return
         setIsAnimating(true)
         setEnableTransition(true)
         setCurrentIndex(prev => prev + 1)
-    }, [isAnimating])
+    }, [isAnimating, enableTransition])
 
     const prevSlide = useCallback(() => {
-        if (isAnimating) return
+        if (isAnimating || !enableTransition) return
         setIsAnimating(true)
         setEnableTransition(true)
         setCurrentIndex(prev => prev - 1)
-    }, [isAnimating])
+    }, [isAnimating, enableTransition])
 
     const goToSlide = (targetModIndex: number) => {
-        if (isAnimating) return
+        if (isAnimating || !enableTransition) return
         const currentMod = currentIndex % slides.length
         const diff = targetModIndex - currentMod
         if (diff === 0) return
@@ -90,6 +91,34 @@ export function FigureShowcaseCarousel({ isZh, fontClass, ctaText }: FigureShowc
         setEnableTransition(true)
         setCurrentIndex(prev => prev + diff)
     }
+
+    // Safety timeout in case transitionEnd event is dropped
+    useEffect(() => {
+        if (isAnimating) {
+            animationTimeoutRef.current = window.setTimeout(() => {
+                setIsAnimating(false)
+            }, 800)
+        }
+        return () => {
+            if (animationTimeoutRef.current) {
+                clearTimeout(animationTimeoutRef.current)
+                animationTimeoutRef.current = null
+            }
+        }
+    }, [isAnimating])
+
+    // Pause timer when browser tab is hidden to prevent pile-up
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                setIsPaused(true)
+            } else {
+                setIsPaused(false)
+            }
+        }
+        document.addEventListener('visibilitychange', handleVisibilityChange)
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }, [])
 
     // Auto-advance timer (clean interval, pauses on hover)
     useEffect(() => {
@@ -114,6 +143,10 @@ export function FigureShowcaseCarousel({ isZh, fontClass, ctaText }: FigureShowc
     // Re-enable transition after boundary snap
     useEffect(() => {
         if (!enableTransition) {
+            // Force synchronous layout reflow so the transform jump is committed with transition: none
+            if (trackRef.current) {
+                void trackRef.current.offsetWidth
+            }
             const raf1 = requestAnimationFrame(() => {
                 const raf2 = requestAnimationFrame(() => {
                     setEnableTransition(true)
@@ -144,11 +177,16 @@ export function FigureShowcaseCarousel({ isZh, fontClass, ctaText }: FigureShowc
     }
 
     const handleSlideClick = (index: number) => {
-        if (index === currentIndex) {
+        if (isAnimating || !enableTransition) return
+        const isCycleActive = index === currentIndex || (currentIndex >= 6 && index === currentIndex - 3) || (currentIndex < 3 && index === currentIndex + 3)
+        const isCyclePrev = index === currentIndex - 1 || (currentIndex >= 6 && index === currentIndex - 4) || (currentIndex < 3 && index === currentIndex + 2)
+        const isCycleNext = index === currentIndex + 1 || (currentIndex >= 6 && index === currentIndex - 2) || (currentIndex < 3 && index === currentIndex + 4)
+
+        if (isCycleActive) {
             navigate('/figure/3dprint')
-        } else if (index === currentIndex - 1) {
+        } else if (isCyclePrev) {
             prevSlide()
-        } else if (index === currentIndex + 1) {
+        } else if (isCycleNext) {
             nextSlide()
         } else {
             goToSlide(index % slides.length)
@@ -176,82 +214,87 @@ export function FigureShowcaseCarousel({ isZh, fontClass, ctaText }: FigureShowc
                 }}
             >
                 {extendedSlides.map((slide, index) => {
-                    const isActive = index === currentIndex
-                    const isPrev = index === currentIndex - 1
-                    const isNext = index === currentIndex + 1
-                    const isFar = Math.abs(index - currentIndex) > 1
-
-                    // Far slides are hidden to keep viewport clean with overflow-visible
-                    if (isFar) {
-                        return (
-                            <div
-                                key={`${slide.id}-${index}`}
-                                className="flex-none w-[82%] aspect-video pointer-events-none opacity-0 invisible"
-                                aria-hidden="true"
-                            />
-                        )
-                    }
+                    const isCycleActive = index === currentIndex || (currentIndex >= 6 && index === currentIndex - 3) || (currentIndex < 3 && index === currentIndex + 3)
+                    const isCyclePrev = index === currentIndex - 1 || (currentIndex >= 6 && index === currentIndex - 4) || (currentIndex < 3 && index === currentIndex + 2)
+                    const isCycleNext = index === currentIndex + 1 || (currentIndex >= 6 && index === currentIndex - 2) || (currentIndex < 3 && index === currentIndex + 4)
+                    const isFar = !isCycleActive && !isCyclePrev && !isCycleNext
 
                     return (
                         <div
                             key={`${slide.id}-${index}`}
                             onClick={() => handleSlideClick(index)}
-                            className={`flex-none w-[82%] aspect-video relative transition-all duration-700 ease-out select-none overflow-hidden cursor-pointer ${
-                                isActive
-                                    ? 'opacity-100 z-20 border border-amber-500/40'
-                                    : 'opacity-70 hover:opacity-95 z-10 border border-white/10 hover:border-white/20'
+                            aria-hidden={isFar}
+                            className={`flex-none w-[82%] aspect-video relative select-none overflow-hidden cursor-pointer ${
+                                isFar
+                                    ? 'opacity-0 pointer-events-none invisible z-0'
+                                    : isCycleActive
+                                        ? 'opacity-100 z-20 border border-amber-500/40'
+                                        : 'opacity-70 hover:opacity-95 z-10 border border-white/10 hover:border-white/20'
                             }`}
                             style={{
-                                transform: isActive
+                                transition: enableTransition
+                                    ? 'transform 700ms ease-out, opacity 700ms ease-out, filter 700ms ease-out, border-color 700ms ease-out, box-shadow 700ms ease-out'
+                                    : 'none',
+                                transform: isCycleActive
                                     ? 'scale(1) perspective(1200px) rotateY(0deg)'
-                                    : isPrev
+                                    : isCyclePrev
                                         ? 'scale(0.92) perspective(1200px) rotateY(3.5deg)'
                                         : 'scale(0.92) perspective(1200px) rotateY(-3.5deg)',
-                                transformOrigin: isPrev ? 'right center' : isNext ? 'left center' : 'center center',
-                                maskImage: isPrev
+                                transformOrigin: isCyclePrev ? 'right center' : isCycleNext ? 'left center' : 'center center',
+                                maskImage: isCyclePrev
                                     ? 'linear-gradient(to left, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
-                                    : isNext
+                                    : isCycleNext
                                         ? 'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
                                         : 'none',
-                                WebkitMaskImage: isPrev
+                                WebkitMaskImage: isCyclePrev
                                     ? 'linear-gradient(to left, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
-                                    : isNext
+                                    : isCycleNext
                                         ? 'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.08) 44%, transparent 50%, transparent 100%)'
                                         : 'none',
-                                boxShadow: isActive
+                                boxShadow: isCycleActive
                                     ? '0 25px 60px -12px rgba(0, 0, 0, 0.95), 0 0 45px -5px rgba(245, 158, 11, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.15)'
                                     : '0 10px 30px -10px rgba(0, 0, 0, 0.7)',
-                                filter: isActive ? 'brightness(1) saturate(1)' : 'brightness(0.65) saturate(0.85)'
+                                filter: isCycleActive ? 'brightness(1) saturate(1)' : 'brightness(0.65) saturate(0.85)'
                             }}
                             title={`${slide.badge} - ${slide.title}`}
                         >
                             <img
                                 src={slide.image}
                                 alt={slide.imageAlt}
-                                className={`w-full h-full object-cover object-center transition-transform duration-700 ${
-                                    isActive ? 'group-hover/figure-carousel:scale-[1.015]' : ''
+                                loading="eager"
+                                decoding="async"
+                                className={`w-full h-full object-cover object-center ${
+                                    isCycleActive ? 'group-hover/figure-carousel:scale-[1.015]' : ''
                                 }`}
-                                loading={index >= 2 && index <= 4 ? 'eager' : 'lazy'}
+                                style={{
+                                    transition: enableTransition ? 'transform 700ms ease-out' : 'none'
+                                }}
                             />
 
                             {/* Cinema Depth Vignette for peeking slides */}
                             <div
-                                className={`absolute inset-0 pointer-events-none transition-opacity duration-500 ${
-                                    isActive
+                                className={`absolute inset-0 pointer-events-none ${
+                                    isCycleActive
                                         ? 'opacity-0'
-                                        : isPrev
+                                        : isCyclePrev
                                             ? 'opacity-100 bg-gradient-to-r from-black/80 via-black/30 to-transparent'
                                             : 'opacity-100 bg-gradient-to-l from-black/80 via-black/30 to-transparent'
                                 }`}
+                                style={{
+                                    transition: enableTransition ? 'opacity 500ms ease-out' : 'none'
+                                }}
                             />
 
                             {/* Bottom-Right CTA Button Only */}
                             <div
-                                className={`absolute bottom-3 sm:bottom-4 right-3 sm:right-4 z-30 transition-all duration-500 ${
-                                    isActive
+                                className={`absolute bottom-3 sm:bottom-4 right-3 sm:right-4 z-30 ${
+                                    isCycleActive
                                         ? 'opacity-100 translate-y-0 pointer-events-auto'
                                         : 'opacity-0 translate-y-4 pointer-events-none'
                                 }`}
+                                style={{
+                                    transition: enableTransition ? 'opacity 500ms ease-out, transform 500ms ease-out' : 'none'
+                                }}
                             >
                                 <Link
                                     to="/figure/3dprint"
