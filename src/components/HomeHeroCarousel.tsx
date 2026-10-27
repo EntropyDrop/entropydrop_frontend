@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
+import type { LangData } from '../constants/lang'
 
 export interface HomeHeroCarouselProps {
-    isZh: boolean
+    data: LangData['home']['carousels']['hero']
     fontClass: string
 }
 
@@ -19,46 +20,40 @@ interface SlideItem {
     accentColor: 'sky' | 'emerald' | 'amber'
 }
 
-export function HomeHeroCarousel({ isZh, fontClass }: HomeHeroCarouselProps) {
+export function HomeHeroCarousel({ data, fontClass }: HomeHeroCarouselProps) {
     const navigate = useNavigate()
 
     const slides: SlideItem[] = [
         {
             id: 'skin',
-            badge: isZh ? 'AI 皮肤生成器' : 'AI Skin Generator',
-            title: isZh ? '参考图转 3D 体素皮肤' : 'Reference Image to 3D Voxel Skin',
-            desc: isZh
-                ? '智能光影烘焙 · 适配全生态模型'
-                : 'Smart lighting bake · Ecosystem ready',
+            badge: data.skin.badge,
+            title: data.skin.title,
+            desc: data.skin.desc,
             image: '/images/home_carousel_skin.webp',
-            imageAlt: isZh ? 'AI 皮肤生成示意图' : 'AI Skin Generation Showcase',
-            ctaText: isZh ? '生成 AI 皮肤' : 'Generate AI Skin',
+            imageAlt: data.skin.imageAlt,
+            ctaText: data.skin.ctaText,
             ctaLink: '/skin/generate',
             accentColor: 'emerald'
         },
         {
             id: 'space',
-            badge: isZh ? '体素空间' : 'Voxel Space',
-            title: isZh ? '环形都会与程序化沙盒' : 'Ring Megastructure & Procedural Space',
-            desc: isZh
-                ? '化身入界 · 物理建造 · 多人同屏与自由漫游'
-                : 'Avatar embodied · Physics building · Multiplayer sandbox',
+            badge: data.space.badge,
+            title: data.space.title,
+            desc: data.space.desc,
             image: '/images/home_carousel_space.webp',
-            imageAlt: isZh ? '角色在体素空间中的游戏实机截图' : 'Character in Voxel Space in-game screenshot',
-            ctaText: isZh ? '进入体素空间' : 'Launch Voxel Space',
+            imageAlt: data.space.imageAlt,
+            ctaText: data.space.ctaText,
             ctaLink: '/space/intro',
             accentColor: 'sky'
         },
         {
             id: 'figure',
-            badge: isZh ? '物理手办' : 'MineFigure',
-            title: isZh ? '全彩高精度 3D 打印桌面手办' : 'Full-Color 3D Printed Desktop Figures',
-            desc: isZh
-                ? '免胶卡扣咬合 · 实体桌面级收藏'
-                : 'Snap-fit assembly · Physical collectible',
+            badge: data.figure.badge,
+            title: data.figure.title,
+            desc: data.figure.desc,
             image: '/images/home_carousel_figure.webp',
-            imageAlt: isZh ? '彩色体素 3D 打印实体手办' : 'Color 3D Printed Voxel Figures',
-            ctaText: isZh ? '定制实物手办' : '3D Print Figure',
+            imageAlt: data.figure.imageAlt,
+            ctaText: data.figure.ctaText,
             ctaLink: '/figure/3dprint',
             accentColor: 'amber'
         }

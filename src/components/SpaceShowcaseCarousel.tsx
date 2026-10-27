@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
+import type { LangData } from '../constants/lang'
 
 export interface SpaceShowcaseCarouselProps {
-    isZh: boolean
+    data: LangData['home']['carousels']['space']
     fontClass: string
     ctaText?: string
 }
@@ -17,39 +18,33 @@ interface SpaceSlide {
     imageAlt: string
 }
 
-export function SpaceShowcaseCarousel({ isZh, fontClass, ctaText }: SpaceShowcaseCarouselProps) {
+export function SpaceShowcaseCarousel({ data, fontClass, ctaText }: SpaceShowcaseCarouselProps) {
     const navigate = useNavigate()
 
     const slides: SpaceSlide[] = [
         {
             id: 'aether',
-            title: isZh ? '以太浮岛' : 'Aether Archipelago',
-            badge: isZh ? '云海浮岛 ➔ 滑翔漫游' : 'Cloud Archipelago ➔ Glider Flight',
-            desc: isZh
-                ? '高空云海浮岛群，刚体滑翔伞与浮空探索'
-                : 'Cloud archipelago with glider flight and aerial exploration',
+            title: data.aether.title,
+            badge: data.aether.badge,
+            desc: data.aether.desc,
             image: '/images/space_world_aether.webp',
-            imageAlt: isZh ? '以太浮岛体素沙盒画卷' : 'Aether Archipelago Voxel World'
+            imageAlt: data.aether.imageAlt
         },
         {
             id: 'nature',
-            title: isZh ? '原始旷野' : 'Nature Wildlands',
-            badge: isZh ? '苍翠山林 ➔ 动态生态' : 'Lush Biomes ➔ Dynamic Ecosystem',
-            desc: isZh
-                ? '苍翠山林与动态水体光影，物理交互与沙盒建造'
-                : 'Lush biomes with dynamic water & lighting, physics building',
+            title: data.nature.title,
+            badge: data.nature.badge,
+            desc: data.nature.desc,
             image: '/images/space_world_nature.webp',
-            imageAlt: isZh ? '原始旷野体素沙盒画卷' : 'Nature Wildlands Voxel World'
+            imageAlt: data.nature.imageAlt
         },
         {
             id: 'copper',
-            title: isZh ? '黄铜都会' : 'Copper Metropolis',
-            badge: isZh ? '蒸汽工业 ➔ 机械浮城' : 'Steampunk Industrial ➔ Floating City',
-            desc: isZh
-                ? '蒸汽工业机械浮城，载具驾驶与多人同屏'
-                : 'Steampunk industrial floating city with vehicle piloting',
+            title: data.copper.title,
+            badge: data.copper.badge,
+            desc: data.copper.desc,
             image: '/images/space_world_copper.webp',
-            imageAlt: isZh ? '黄铜都会体素沙盒画卷' : 'Copper Metropolis Voxel World'
+            imageAlt: data.copper.imageAlt
         }
     ]
 
@@ -300,7 +295,7 @@ export function SpaceShowcaseCarousel({ isZh, fontClass, ctaText }: SpaceShowcas
                                     onClick={(e) => e.stopPropagation()}
                                     className={`inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 font-bold text-xs sm:text-sm border border-black backdrop-blur-md transition-all active:scale-95 no-underline shadow-xl bg-sky-500 hover:bg-sky-400 text-black shadow-sky-950/60 ${fontClass}`}
                                 >
-                                    <span>{ctaText || (isZh ? '进入体素空间' : 'Launch Voxel Space')}</span>
+                                    <span>{ctaText || data.defaultCta}</span>
                                     <Icon icon="pixelarticons:chevron-right" className="text-sm sm:text-base" />
                                 </Link>
                             </div>

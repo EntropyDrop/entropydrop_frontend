@@ -445,6 +445,7 @@ export default {
         noShowcases: 'No showcase posts found.',
     },
     generate: {
+        allUsersBadge: 'ALL USERS',
         imageMode: 'Image Mode',
         textMode: 'Text Mode',
         uploadTitle: 'Upload Reference',
@@ -626,6 +627,7 @@ export default {
         freeDeleteWarning: '\n\n(Note: Free users can only delete 1 skin per day. Pro is unlimited)'
     },
     edit: {
+        discoverSkins: 'Discover Skins',
         importRightsTitle: 'Confirm skin import',
         importRightsMessage: 'I confirm that I have the right to upload and edit this skin.',
         confirmImport: 'Confirm and import',
@@ -692,6 +694,8 @@ export default {
         activatePro: 'Activate PRO',
         language: 'Language',
         login: 'Login',
+        googleSignInUnavailable: 'Google sign-in unavailable',
+        googleSignInLoading: 'Loading Google sign-in…',
         notifications: {
             title: 'Notifications',
             markAllRead: 'Mark all as read',
@@ -699,6 +703,10 @@ export default {
             like: 'liked your post',
             comment: 'commented on your post',
             reply: 'replied to your comment',
+            dailyLoginReward: 'Daily login reward received!',
+            monthlyLoginReward: 'Monthly login reward received!',
+            proReward: 'Pro subscription credits received!',
+            systemGift: 'System Gift: {reason}',
             prev: 'Prev',
             next: 'Next',
             pageLabel: 'Page {page} of {total}'
@@ -728,6 +736,7 @@ export default {
     common: {
         auto: 'Auto',
         navigation: 'Navigation',
+        pageLoading: 'Loading page...',
         authRequired: 'Please login',
         connectError: 'Failed to connect to server',
         sessionExpired: 'Session expired, please log in again.',
@@ -1845,6 +1854,8 @@ Email: support@entropydrop.com`
             badge: 'OPEN-SOURCE CREATOR ECOSYSTEM',
             title: 'From Imagination to Reality.',
             subtitle: 'AI Avatar Forge · Voxel Multiverse · 3D Articulated Figures.',
+            headlineMain: 'From Idea to Multiverse.',
+            headlineSub: 'Then to Reality.',
             exploreCta: 'Explore Services',
             quickStartSpace: 'Launch Voxel Space',
             quickStartSkin: 'Generate AI Skin'
@@ -1852,27 +1863,28 @@ Email: support@entropydrop.com`
         loop: {
             tag: 'THE CREATIVE LOOP',
             title: 'One Unified Creative Journey',
+            subtitle: 'From prompt to sandbox and physical desktop figure.',
             step1: {
                 step: '01',
                 title: 'Create Avatar',
-                desc: 'Dual-layer AI skin'
+                desc: 'Dual-layer AI skin driven by prompts & references.'
             },
             step2: {
                 step: '02',
                 title: 'Explore Space',
-                desc: 'Voxel sandbox worlds'
+                desc: 'Rigid-body physics and free vehicle exploration.'
             },
             step3: {
                 step: '03',
                 title: 'Hold Physical',
-                desc: 'Articulated snap figures'
+                desc: 'Articulated snap-fit figures with damped joints.'
             }
         },
         services: {
             skin: {
                 tag: 'AI AVATAR FORGE',
                 title: 'From Reference to Voxel Avatar.',
-                desc: 'Multimodal AI turns reference art and character illustrations into standard dual-layer voxel skins.',
+                desc: 'Multimodal AI accurately reconstructs concept art into dual-layer voxel skins with real-time 3D lighting.',
                 features: [
                     { title: 'Reference-to-Skin', desc: 'AI reconstruction' },
                     { title: 'Real-Time 3D', desc: 'Dynamic lights' },
@@ -1884,14 +1896,19 @@ Email: support@entropydrop.com`
                     { value: 'Multimodal', label: 'Image Reference' },
                     { value: '10,000+', label: 'Skins' }
                 ],
+                cards: {
+                    topology: { tag: 'TOPOLOGY', title: 'Dual-Layer Rig', badge: 'Universal' },
+                    capability: { tag: 'CORE CAPABILITY', title: 'Image Reference', badge: 'Multimodal' },
+                    editor: { tag: 'EDITOR', title: 'Web Pixel Editor' }
+                },
                 ctaPrimary: 'Generate AI Skin',
                 ctaSecondary: 'Discover Library',
                 ctaTertiary: 'Pixel Editor'
             },
             space: {
                 tag: 'VOXEL MULTIVERSE',
-                title: 'Infinite voxels, boundless exploration.',
-                desc: 'Vast sandbox realms with rigid physics and agent collaboration.',
+                title: 'Open your browser, enter infinity.',
+                desc: 'Vast voxel sandbox with rigid vehicle dynamics and autonomous agent collaboration.',
                 features: [
                     { title: 'Procedural Realms', desc: 'Vast archipelagos' },
                     { title: 'Physics Vehicles', desc: 'Aerial drones' },
@@ -1903,12 +1920,17 @@ Email: support@entropydrop.com`
                     { value: '3+ Worlds', label: 'Procedural Realms' },
                     { value: 'Agent Ready', label: 'Build Protocol' }
                 ],
+                cards: {
+                    graphics: { tag: 'GRAPHICS', title: 'Voxel Engine', badge: 'Cross-Platform' },
+                    physics: { tag: 'PHYSICS', title: 'Rigid Dynamics', badge: 'Vehicles' },
+                    protocol: { tag: 'PROTOCOL', title: 'Agent Protocol', badge: 'spaceAPI' }
+                },
                 ctaPrimary: 'Launch Voxel Space',
                 ctaSecondary: 'Explore Guide'
             },
             figure: {
                 tag: 'PHYSICAL REALITY',
-                title: 'Pixels in your hands.',
+                title: 'Engineering marvel. Pixels in your hands.',
                 desc: 'Damped articulated joints, snap-fit assembly.',
                 features: [
                     { title: 'One-Click STL', desc: 'Topology breakdown' },
@@ -1921,19 +1943,122 @@ Email: support@entropydrop.com`
                     { value: 'Articulated', label: 'Multi-Joint' },
                     { value: 'DIY or Made', label: 'Flexible' }
                 ],
+                customCraft: {
+                    tag: 'CUSTOM CRAFT',
+                    title: 'Articulated Figure Customization',
+                    desc: 'Precision modular parts + laser-cut decals + snap-fit assembly.',
+                    cta: 'Order'
+                },
                 ctaPrimary: '3D Print Figure',
                 ctaSecondary: 'Showcase Gallery'
             }
         },
         openSource: {
             badge: 'OPEN SOURCE & TRANSPARENT',
-            title: 'OPEN SOURCE & TRANSPARENT',
-            desc: 'Code, weights, and financial ledger are open. Public 24/7.',
+            title: 'Open source & fully transparent.',
+            desc: 'Full-stack code and model weights open source, financial ledger public 24/7.',
             ctaAbout: 'About Us',
             ctaLedger: 'Public Ledger',
             ctaMonitor: 'Server Monitor',
             github: 'Open Source',
-            huggingface: 'Open Weights'
+            huggingface: 'Open Weights',
+            cards: {
+                github: { title: 'GitHub', desc: 'Source code repository', cta: 'GitHub' },
+                huggingface: { title: 'Hugging Face', desc: 'Open model weights', cta: 'Open Weights' },
+                ledger: { title: 'Ledger', desc: 'Public finances' }
+            }
+        },
+        footerCta: {
+            title: 'Ready to create your next avatar?',
+            subtitle: 'Seamless ecosystem across all platforms'
+        },
+        carousels: {
+            hero: {
+                skin: {
+                    badge: 'AI Skin Generator',
+                    title: 'Reference Image to 3D Voxel Skin',
+                    desc: 'Smart lighting bake · Ecosystem ready',
+                    imageAlt: 'AI Skin Generation Showcase',
+                    ctaText: 'Generate AI Skin'
+                },
+                space: {
+                    badge: 'Voxel Space',
+                    title: 'Ring Megastructure & Procedural Space',
+                    desc: 'Avatar embodied · Physics building · Multiplayer sandbox',
+                    imageAlt: 'Character in Voxel Space in-game screenshot',
+                    ctaText: 'Launch Voxel Space'
+                },
+                figure: {
+                    badge: 'MineFigure',
+                    title: 'Full-Color 3D Printed Desktop Figures',
+                    desc: 'Snap-fit assembly · Physical collectible',
+                    imageAlt: 'Color 3D Printed Voxel Figures',
+                    ctaText: '3D Print Figure'
+                }
+            },
+            skin: {
+                defaultCta: 'Generate AI Skin',
+                rebel: {
+                    title: 'Rebel Punk',
+                    badge: 'Anime Illustration ➔ Dual-Layer',
+                    desc: 'Precise reconstruction of layered hair and punk outfit',
+                    imageAlt: 'Rebel Punk generated from reference image to 3D voxel skin'
+                },
+                cosmic: {
+                    title: 'Cosmic Warrior',
+                    badge: 'Epic Fantasy ➔ Emissive Voxel Skin',
+                    desc: 'Black hole chestplate & stellar cosmic energy reconstruction',
+                    imageAlt: 'Cosmic Warrior generated from reference image to 3D voxel skin'
+                },
+                original: {
+                    title: 'Original Avatar',
+                    badge: 'Original Concept ➔ In-Game Skin',
+                    desc: 'Character concept art & 3D voxel apparel breakdown',
+                    imageAlt: 'Original Avatar generated from reference image to 3D voxel skin'
+                }
+            },
+            space: {
+                defaultCta: 'Launch Voxel Space',
+                aether: {
+                    title: 'Aether Archipelago',
+                    badge: 'Cloud Archipelago ➔ Glider Flight',
+                    desc: 'Cloud archipelago with glider flight and aerial exploration',
+                    imageAlt: 'Aether Archipelago Voxel World'
+                },
+                nature: {
+                    title: 'Nature Wildlands',
+                    badge: 'Lush Biomes ➔ Dynamic Ecosystem',
+                    desc: 'Lush biomes with dynamic water & lighting, physics building',
+                    imageAlt: 'Nature Wildlands Voxel World'
+                },
+                copper: {
+                    title: 'Copper Metropolis',
+                    badge: 'Steampunk Industrial ➔ Floating City',
+                    desc: 'Steampunk industrial floating city with vehicle piloting',
+                    imageAlt: 'Copper Metropolis Voxel World'
+                }
+            },
+            figure: {
+                defaultCta: '3D Print Figure',
+                lineup: {
+                    title: 'Physical Lineup',
+                    badge: 'Full Lineup ➔ Articulated',
+                    desc: 'Tough photopolymer resin, stable posing',
+                    imageAlt: 'Physical figure squad'
+                },
+                trio: {
+                    title: 'Trio Studio',
+                    badge: 'Snap-Fit ➔ Vinyl Wrap',
+                    desc: 'Modular hair parts, snap-fit joints',
+                    imageAlt: 'Trio figure studio showcase'
+                },
+                duo: {
+                    title: 'Duo Focus',
+                    badge: 'Tough Resin ➔ Snap Joints',
+                    desc: 'Contrasting colorways with articulation',
+                    imageAlt: 'Duo figure studio showcase'
+                }
+            }
         }
     }
 } as const

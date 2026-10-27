@@ -856,7 +856,7 @@ export function EditPage({ current }: EditPageProps) {
                                         className="px-6 py-3 bg-[#3c8527] hover:bg-[#4ea632] text-white font-pixel-hans text-xs cursor-pointer flex items-center gap-2 transition-all shadow-lg border border-black active:translate-y-px"
                                     >
                                         <Icon icon="pixelarticons:search" className="text-base" />
-                                        {current.lang === 'zh-hans' ? '发现皮肤' : 'Discover Skins'}
+                                        {current.edit.discoverSkins}
                                     </button>
                                     <button
                                         onClick={() => document.getElementById('import-input')?.click()}

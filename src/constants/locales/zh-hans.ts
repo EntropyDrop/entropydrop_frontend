@@ -445,6 +445,7 @@ export default {
         noShowcases: '暂无玩家晒图。',
     },
     generate: {
+        allUsersBadge: '不限用户',
         imageMode: '图片生成',
         textMode: '文本生成',
         uploadTitle: '上传参考图',
@@ -626,6 +627,7 @@ export default {
         freeDeleteWarning: '\n\n(注意：免费用户每天只能删除1张图，Pro版无限制)'
     },
     edit: {
+        discoverSkins: '发现皮肤',
         importRightsTitle: '确认导入皮肤',
         importRightsMessage: '我确认有权上传和编辑此皮肤。',
         confirmImport: '确认并导入',
@@ -692,6 +694,8 @@ export default {
         activatePro: '开通 PRO',
         language: '语言',
         login: '登录',
+        googleSignInUnavailable: 'Google 登录暂时不可用',
+        googleSignInLoading: '正在加载 Google 登录…',
         notifications: {
             title: '消息通知',
             markAllRead: '全部已读',
@@ -699,6 +703,10 @@ export default {
             like: '点赞了你的帖子',
             comment: '评论了你的帖子',
             reply: '回复了你的评论',
+            dailyLoginReward: '每日登录奖励已到账！',
+            monthlyLoginReward: '每月登录奖励已到账！',
+            proReward: '订阅会员奖励已到账！',
+            systemGift: '系统赠送：{reason}',
             prev: '上一页',
             next: '下一页',
             pageLabel: '第 {page} / {total} 页'
@@ -728,6 +736,7 @@ export default {
     common: {
         auto: '跟随系统',
         navigation: '导航',
+        pageLoading: '页面加载中...',
         authRequired: '请先登录',
         connectError: '无法连接到服务器',
         sessionExpired: '登录已过期，请重新登录。',
@@ -1858,34 +1867,37 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             badge: '开源创作者生态',
             title: '想象，由此具象。',
             subtitle: '智能皮肤工坊 · 体素沙盒宇宙 · 全关节实体手办。',
+            headlineMain: '从构想，到宇宙，',
+            headlineSub: '再到现实。',
             exploreCta: '探索业务线',
             quickStartSpace: '进入体素宇宙',
             quickStartSkin: '生成皮肤'
         },
         loop: {
             tag: '创作闭环',
-            title: '一个统一的创作闭环',
+            title: '三位一体创作闭环',
+            subtitle: '一处生成，多维贯通。',
             step1: {
                 step: '01',
-                title: '创造化身',
-                desc: '智能生成双层皮肤'
+                title: '生成化身',
+                desc: '自然语言与参考图驱动，生成双层皮肤。'
             },
             step2: {
                 step: '02',
                 title: '漫游宇宙',
-                desc: '一键进入沙盒世界'
+                desc: '刚体物理模拟，自由驾驶载具漫游。'
             },
             step3: {
                 step: '03',
-                title: '触碰实体',
-                desc: '阻尼可动关节手办'
+                title: '实体定格',
+                desc: '阻尼可动关节，免胶咬合实体手办。'
             }
         },
         services: {
             skin: {
                 tag: '智能皮肤工坊',
                 title: '参考生皮，形神兼备。',
-                desc: '多模态模型精准解析立绘与原画，生成标准双层体素皮肤。',
+                desc: '多模态模型精准解析立绘与原画，生成标准双层体素皮肤，实时三维渲染，所见即所得。',
                 features: [
                     { title: '参考图重构', desc: '像素还原' },
                     { title: '实时三维视口', desc: '动态光影' },
@@ -1897,14 +1909,19 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                     { value: '多模态', label: '参考图生成' },
                     { value: '10,000+', label: '社区皮肤' }
                 ],
+                cards: {
+                    topology: { tag: '拓扑结构', title: '双层立体结构', badge: '标准通用格式' },
+                    capability: { tag: '核心能力', title: '参考图精准解析', badge: '多模态重构' },
+                    editor: { tag: '创作工坊', title: '网页像素工坊' }
+                },
                 ctaPrimary: '生成皮肤',
                 ctaSecondary: '浏览社区',
                 ctaTertiary: '像素编辑器'
             },
             space: {
                 tag: '沙盒体素宇宙',
-                title: '无界体素，自由探索。',
-                desc: '广袤多维沙盒，驾驶载具探索以太浮岛。',
+                title: '推开浏览器，即是无界。',
+                desc: '广袤体素沙盒，刚体载具与智能体协同建造。',
                 features: [
                     { title: '无限程序化世界', desc: '多重浮岛' },
                     { title: '刚体物理载具', desc: '动态物理' },
@@ -1916,12 +1933,17 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                     { value: '3 大世界', label: '程序化世界' },
                     { value: '开放协议', label: '自主建造' }
                 ],
+                cards: {
+                    graphics: { tag: '图形渲染', title: '轻量体素引擎', badge: '跨平台适配' },
+                    physics: { tag: '物理系统', title: '刚体动力学载具', badge: '矿车 · 滑翔伞' },
+                    protocol: { tag: '开放互联', title: '智能体开放协议', badge: 'spaceAPI' }
+                },
                 ctaPrimary: '启动体素宇宙',
                 ctaSecondary: '玩法介绍'
             },
             figure: {
                 tag: '实体手办定制',
-                title: '像素，触手可及。',
+                title: '工程奇迹。像素，触手可及。',
                 desc: '阻尼可动关节，免胶卡扣咬合。',
                 features: [
                     { title: '一键工程拆解', desc: '精密零件' },
@@ -1934,6 +1956,12 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                     { value: '多关节', label: '灵活可动' },
                     { value: '代工或自印', label: '自由定制' }
                 ],
+                customCraft: {
+                    tag: '实体工艺',
+                    title: '全套手办定制',
+                    desc: '精密工程分件 + 激光裁切贴膜 + 阻尼关节装配',
+                    cta: '立即定制'
+                },
                 ctaPrimary: '定制手办',
                 ctaSecondary: '手办精选'
             }
@@ -1941,12 +1969,109 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         openSource: {
             badge: '开源透明',
             title: '坚持开源，全额透明。',
-            desc: '软硬件与模型权重向社区公开，财务账本全天候公示。',
+            desc: '全栈代码与模型权重开源，财务账本 24 小时公开。',
             ctaAbout: '关于我们',
             ctaLedger: '公开账本',
             ctaMonitor: '服务器监控',
             github: '开源代码',
-            huggingface: '模型权重'
+            huggingface: '模型权重',
+            cards: {
+                github: { title: '全栈开源', desc: '客户端与渲染代码', cta: '源码仓库' },
+                huggingface: { title: '模型权重', desc: '开放模型权重与数据集', cta: '模型主页' },
+                ledger: { title: '公开账本', desc: '硬件开支与营收明细' }
+            }
+        },
+        footerCta: {
+            title: '开启你的下一个化身。',
+            subtitle: '全生态无缝互联 · 跨平台即刻体验'
+        },
+        carousels: {
+            hero: {
+                skin: {
+                    badge: 'AI 皮肤生成器',
+                    title: '参考图转 3D 体素皮肤',
+                    desc: '智能光影烘焙 · 适配全生态模型',
+                    imageAlt: 'AI 皮肤生成示意图',
+                    ctaText: '生成 AI 皮肤'
+                },
+                space: {
+                    badge: '体素空间',
+                    title: '环形都会与程序化沙盒',
+                    desc: '化身入界 · 物理建造 · 多人同屏与自由漫游',
+                    imageAlt: '角色在体素空间中的游戏实机截图',
+                    ctaText: '进入体素空间'
+                },
+                figure: {
+                    badge: '物理手办',
+                    title: '全彩高精度 3D 打印桌面手办',
+                    desc: '免胶卡扣咬合 · 实体桌面级收藏',
+                    imageAlt: '彩色体素 3D 打印实体手办',
+                    ctaText: '定制实物手办'
+                }
+            },
+            skin: {
+                defaultCta: '生成专属皮肤',
+                rebel: {
+                    title: '暴走萝莉',
+                    badge: '二次元立绘 ➔ 双层体素',
+                    desc: '蓝发双层发丝与朋克涂鸦细节精准还原',
+                    imageAlt: '暴走萝莉从参考图生成 3D 体素皮肤'
+                },
+                cosmic: {
+                    title: '星界战神',
+                    badge: '史诗幻想 ➔ 发光体素',
+                    desc: '黑洞星轨胸甲与星云动态能量重构',
+                    imageAlt: '星界战神从参考图生成 3D 体素皮肤'
+                },
+                original: {
+                    title: '纯真创客',
+                    badge: '原创插画 ➔ 游戏皮肤',
+                    desc: '二次元角色原画服饰拓扑解构与 3D 配饰',
+                    imageAlt: '纯真创客从参考图生成 3D 体素皮肤'
+                }
+            },
+            space: {
+                defaultCta: '进入体素空间',
+                aether: {
+                    title: '以太浮岛',
+                    badge: '云海浮岛 ➔ 滑翔漫游',
+                    desc: '高空云海浮岛群，刚体滑翔伞与浮空探索',
+                    imageAlt: '以太浮岛体素沙盒画卷'
+                },
+                nature: {
+                    title: '原始旷野',
+                    badge: '苍翠山林 ➔ 动态生态',
+                    desc: '苍翠山林与动态水体光影，物理交互与沙盒建造',
+                    imageAlt: '原始旷野体素沙盒画卷'
+                },
+                copper: {
+                    title: '黄铜都会',
+                    badge: '蒸汽工业 ➔ 机械浮城',
+                    desc: '蒸汽工业机械浮城，载具驾驶与多人同屏',
+                    imageAlt: '黄铜都会体素沙盒画卷'
+                }
+            },
+            figure: {
+                defaultCta: '定制实体手办',
+                lineup: {
+                    title: '实物合影',
+                    badge: '全员集结 ➔ 阻尼可动',
+                    desc: '高韧树脂，多姿态悬停定格',
+                    imageAlt: '四员实物合影'
+                },
+                trio: {
+                    title: '三员特写',
+                    badge: '分件咬合 ➔ 耐磨贴膜',
+                    desc: '立体发丝分件，免胶咬合关节',
+                    imageAlt: '三员实物特写'
+                },
+                duo: {
+                    title: '双子特写',
+                    badge: '高韧光固化 ➔ 阻尼关节',
+                    desc: '暗夜与翠绿对峙，多姿态可动',
+                    imageAlt: '双子实物特写'
+                }
+            }
         }
     }
 } as const

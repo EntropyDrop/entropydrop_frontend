@@ -104,10 +104,7 @@ function ScrollReveal({
 
 export function HomePage({ current }: HomePageProps) {
     const data = current.home
-    const isZh = current.lang === 'zh-hans'
     const fontClass = current.fontClass || 'font-pixel-hans'
-
-
 
     return (
         <div className={`relative w-full min-h-screen bg-transparent text-white selection:bg-emerald-500/30 selection:text-white overflow-x-hidden ${fontClass}`}>
@@ -158,17 +155,13 @@ export function HomePage({ current }: HomePageProps) {
                     {/* Apple-style Monumental Headline */}
                     <ScrollReveal delay={0} y={16}>
                         <h1 className={`m-0 text-3xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight max-w-4xl bg-gradient-to-b from-white via-white/95 to-white/50 bg-clip-text text-transparent ${fontClass}`}>
-                            {isZh ? (
-                                <>从构想，到宇宙，<br className="hidden sm:inline" />再到现实。</>
-                            ) : (
-                                <>From Idea to Multiverse. <br className="hidden sm:inline" />Then to Reality.</>
-                            )}
+                            {data.hero.headlineMain}<br className="hidden sm:inline" />{data.hero.headlineSub}
                         </h1>
                     </ScrollReveal>
 
                     {/* Hero Product Carousel */}
                     <ScrollReveal delay={120} y={12} className="w-full mt-2 sm:mt-3">
-                        <HomeHeroCarousel isZh={isZh} fontClass={fontClass} />
+                        <HomeHeroCarousel data={data.carousels.hero} fontClass={fontClass} />
                     </ScrollReveal>
                 </section>
 
@@ -179,10 +172,10 @@ export function HomePage({ current }: HomePageProps) {
                             {data.loop.tag}
                         </span>
                         <h2 className={`m-0 text-2xl sm:text-4xl font-bold text-white ${fontClass}`}>
-                            {isZh ? '三位一体创作闭环' : data.loop.title}
+                            {data.loop.title}
                         </h2>
                         <p className={`m-0 text-xs sm:text-sm text-white/60 max-w-lg ${fontClass}`}>
-                            {isZh ? '一处生成，多维贯通。' : 'From prompt to sandbox and physical desktop figure.'}
+                            {data.loop.subtitle}
                         </p>
                     </ScrollReveal>
 
@@ -198,10 +191,10 @@ export function HomePage({ current }: HomePageProps) {
                                     <Icon icon="pixelarticons:avatar" className="text-emerald-400 text-lg" />
                                 </div>
                                 <h3 className={`m-0 text-base font-bold text-white ${fontClass}`}>
-                                    {isZh ? '生成化身' : data.loop.step1.title}
+                                    {data.loop.step1.title}
                                 </h3>
                                 <p className={`m-0 text-xs text-white/60 ${fontClass}`}>
-                                    {isZh ? '自然语言与参考图驱动，生成双层皮肤。' : data.loop.step1.desc}
+                                    {data.loop.step1.desc}
                                 </p>
                                 <span className={`mt-auto pt-2 text-xs font-bold text-emerald-400 flex items-center gap-1 ${fontClass}`}>
                                     <span>{data.services.skin.ctaPrimary}</span>
@@ -221,10 +214,10 @@ export function HomePage({ current }: HomePageProps) {
                                     <Icon icon="pixelarticons:planet" className="text-sky-400 text-lg" />
                                 </div>
                                 <h3 className={`m-0 text-base font-bold text-white ${fontClass}`}>
-                                    {isZh ? '漫游宇宙' : data.loop.step2.title}
+                                    {data.loop.step2.title}
                                 </h3>
                                 <p className={`m-0 text-xs text-white/60 ${fontClass}`}>
-                                    {isZh ? '刚体物理模拟，自由驾驶载具漫游。' : data.loop.step2.desc}
+                                    {data.loop.step2.desc}
                                 </p>
                                 <span className={`mt-auto pt-2 text-xs font-bold text-sky-400 flex items-center gap-1 ${fontClass}`}>
                                     <span>{data.services.space.ctaPrimary}</span>
@@ -244,10 +237,10 @@ export function HomePage({ current }: HomePageProps) {
                                     <Icon icon="pixelarticons:cube" className="text-amber-400 text-lg" />
                                 </div>
                                 <h3 className={`m-0 text-base font-bold text-white ${fontClass}`}>
-                                    {isZh ? '实体定格' : data.loop.step3.title}
+                                    {data.loop.step3.title}
                                 </h3>
                                 <p className={`m-0 text-xs text-white/60 ${fontClass}`}>
-                                    {isZh ? '阻尼可动关节，免胶咬合实体手办。' : data.loop.step3.desc}
+                                    {data.loop.step3.desc}
                                 </p>
                                 <span className={`mt-auto pt-2 text-xs font-bold text-amber-400 flex items-center gap-1 ${fontClass}`}>
                                     <span>{data.services.figure.ctaPrimary}</span>
@@ -269,16 +262,13 @@ export function HomePage({ current }: HomePageProps) {
 
                         <ScrollReveal delay={80} y={16}>
                             <h2 className={`m-0 text-3xl sm:text-5xl font-bold text-white leading-tight ${fontClass}`}>
-                                {isZh ? '参考生皮，形神兼备。' : data.services.skin.title}
+                                {data.services.skin.title}
                             </h2>
                         </ScrollReveal>
 
                         <ScrollReveal delay={140} y={14}>
                             <p className={`m-0 text-sm sm:text-base text-white/70 max-w-xl leading-relaxed ${fontClass}`}>
-                                {isZh
-                                    ? '多模态模型精准解析立绘与原画，生成标准双层体素皮肤，实时三维渲染，所见即所得。'
-                                    : data.services.skin.desc
-                                }
+                                {data.services.skin.desc}
                             </p>
                         </ScrollReveal>
                     </div>
@@ -286,7 +276,7 @@ export function HomePage({ current }: HomePageProps) {
                     {/* Reference to Skin Showcase Carousel */}
                     <ScrollReveal delay={180} y={16}>
                         <SkinShowcaseCarousel
-                            isZh={isZh}
+                            data={data.carousels.skin}
                             fontClass={fontClass}
                             ctaText={data.services.skin.ctaPrimary}
                         />
@@ -296,18 +286,18 @@ export function HomePage({ current }: HomePageProps) {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div className={`p-4 bg-[#0d0d0f]/80 border border-white/10 flex items-center justify-between gap-3 ${fontClass}`}>
                             <div>
-                                <span className={`text-[10px] text-emerald-400 font-bold block ${fontClass}`}>{isZh ? '拓扑结构' : 'TOPOLOGY'}</span>
-                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{isZh ? '双层立体结构' : 'Dual-Layer Rig'}</span>
+                                <span className={`text-[10px] text-emerald-400 font-bold block ${fontClass}`}>{data.services.skin.cards.topology.tag}</span>
+                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{data.services.skin.cards.topology.title}</span>
                             </div>
-                            <span className={`text-xs text-white/50 shrink-0 ${fontClass}`}>{isZh ? '标准通用格式' : 'Universal'}</span>
+                            <span className={`text-xs text-white/50 shrink-0 ${fontClass}`}>{data.services.skin.cards.topology.badge}</span>
                         </div>
 
                         <div className={`p-4 bg-[#0d0d0f]/80 border border-white/10 flex items-center justify-between gap-3 ${fontClass}`}>
                             <div>
-                                <span className={`text-[10px] text-emerald-400 font-bold block ${fontClass}`}>{isZh ? '核心能力' : 'CORE CAPABILITY'}</span>
-                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{isZh ? '参考图精准解析' : 'Image Reference'}</span>
+                                <span className={`text-[10px] text-emerald-400 font-bold block ${fontClass}`}>{data.services.skin.cards.capability.tag}</span>
+                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{data.services.skin.cards.capability.title}</span>
                             </div>
-                            <span className={`text-xs text-emerald-400 font-bold shrink-0 ${fontClass}`}>{isZh ? '多模态重构' : 'Multimodal'}</span>
+                            <span className={`text-xs text-emerald-400 font-bold shrink-0 ${fontClass}`}>{data.services.skin.cards.capability.badge}</span>
                         </div>
 
                         <Link
@@ -315,8 +305,8 @@ export function HomePage({ current }: HomePageProps) {
                             className={`p-4 bg-[#0d0d0f]/80 border border-white/10 hover:border-emerald-500/40 flex items-center justify-between gap-3 no-underline transition-all ${fontClass}`}
                         >
                             <div>
-                                <span className={`text-[10px] text-emerald-400 font-bold block ${fontClass}`}>{isZh ? '创作工坊' : 'EDITOR'}</span>
-                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{isZh ? '网页像素工坊' : 'Web Pixel Editor'}</span>
+                                <span className={`text-[10px] text-emerald-400 font-bold block ${fontClass}`}>{data.services.skin.cards.editor.tag}</span>
+                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{data.services.skin.cards.editor.title}</span>
                             </div>
                             <span className={`text-xs text-emerald-400 font-bold shrink-0 ${fontClass}`}>{data.services.skin.ctaTertiary} ›</span>
                         </Link>
@@ -343,16 +333,13 @@ export function HomePage({ current }: HomePageProps) {
 
                         <ScrollReveal delay={80} y={16}>
                             <h2 className={`m-0 text-3xl sm:text-5xl font-bold text-white leading-tight ${fontClass}`}>
-                                {isZh ? '推开浏览器，即是无界。' : data.services.space.title}
+                                {data.services.space.title}
                             </h2>
                         </ScrollReveal>
 
                         <ScrollReveal delay={140} y={14}>
                             <p className={`m-0 text-sm sm:text-base text-white/70 max-w-xl leading-relaxed ${fontClass}`}>
-                                {isZh
-                                    ? '广袤体素沙盒，刚体载具与智能体协同建造。'
-                                    : data.services.space.desc
-                                }
+                                {data.services.space.desc}
                             </p>
                         </ScrollReveal>
                     </div>
@@ -360,7 +347,7 @@ export function HomePage({ current }: HomePageProps) {
                     {/* Voxel Multiverse Carousel */}
                     <ScrollReveal delay={180} y={16}>
                         <SpaceShowcaseCarousel
-                            isZh={isZh}
+                            data={data.carousels.space}
                             fontClass={fontClass}
                             ctaText={data.services.space.ctaPrimary}
                         />
@@ -370,26 +357,26 @@ export function HomePage({ current }: HomePageProps) {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div className={`p-4 bg-[#0d0d0f]/80 border border-white/10 flex items-center justify-between gap-3 ${fontClass}`}>
                             <div>
-                                <span className={`text-[10px] text-sky-400 font-bold block ${fontClass}`}>{isZh ? '图形渲染' : 'GRAPHICS'}</span>
-                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{isZh ? '轻量体素引擎' : 'Voxel Engine'}</span>
+                                <span className={`text-[10px] text-sky-400 font-bold block ${fontClass}`}>{data.services.space.cards.graphics.tag}</span>
+                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{data.services.space.cards.graphics.title}</span>
                             </div>
-                            <span className={`text-xs text-sky-400 font-bold shrink-0 ${fontClass}`}>{isZh ? '跨平台适配' : 'Cross-Platform'}</span>
+                            <span className={`text-xs text-sky-400 font-bold shrink-0 ${fontClass}`}>{data.services.space.cards.graphics.badge}</span>
                         </div>
 
                         <div className={`p-4 bg-[#0d0d0f]/80 border border-white/10 flex items-center justify-between gap-3 ${fontClass}`}>
                             <div>
-                                <span className={`text-[10px] text-sky-400 font-bold block ${fontClass}`}>{isZh ? '物理系统' : 'PHYSICS'}</span>
-                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{isZh ? '刚体动力学载具' : 'Rigid Dynamics'}</span>
+                                <span className={`text-[10px] text-sky-400 font-bold block ${fontClass}`}>{data.services.space.cards.physics.tag}</span>
+                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{data.services.space.cards.physics.title}</span>
                             </div>
-                            <span className={`text-xs text-white/50 shrink-0 ${fontClass}`}>{isZh ? '矿车 · 滑翔伞' : 'Vehicles'}</span>
+                            <span className={`text-xs text-white/50 shrink-0 ${fontClass}`}>{data.services.space.cards.physics.badge}</span>
                         </div>
 
                         <div className={`p-4 bg-[#0d0d0f]/80 border border-white/10 flex items-center justify-between gap-3 ${fontClass}`}>
                             <div>
-                                <span className={`text-[10px] text-sky-400 font-bold block ${fontClass}`}>{isZh ? '开放互联' : 'PROTOCOL'}</span>
-                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{isZh ? '智能体开放协议' : 'Agent Protocol'}</span>
+                                <span className={`text-[10px] text-sky-400 font-bold block ${fontClass}`}>{data.services.space.cards.protocol.tag}</span>
+                                <span className={`text-sm font-bold text-white block ${fontClass}`}>{data.services.space.cards.protocol.title}</span>
                             </div>
-                            <span className={`text-xs text-sky-400 font-bold shrink-0 ${fontClass}`}>{isZh ? '实时双向通信' : 'WebSocket'}</span>
+                            <span className={`text-xs text-sky-400 font-bold shrink-0 ${fontClass}`}>{data.services.space.cards.protocol.badge}</span>
                         </div>
                     </div>
 
@@ -414,7 +401,7 @@ export function HomePage({ current }: HomePageProps) {
 
                         <ScrollReveal delay={80} y={16}>
                             <h2 className={`m-0 text-3xl sm:text-5xl font-bold text-white leading-tight ${fontClass}`}>
-                                {isZh ? '工程奇迹。像素，触手可及。' : data.services.figure.title}
+                                {data.services.figure.title}
                             </h2>
                         </ScrollReveal>
 
@@ -423,7 +410,7 @@ export function HomePage({ current }: HomePageProps) {
                     {/* Physical Reality Figure Carousel */}
                     <ScrollReveal delay={180} y={16}>
                         <FigureShowcaseCarousel
-                            isZh={isZh}
+                            data={data.carousels.figure}
                             fontClass={fontClass}
                             ctaText={data.services.figure.ctaPrimary}
                             previewImage="/images/figure_physical_showcase.jpg"
@@ -433,12 +420,12 @@ export function HomePage({ current }: HomePageProps) {
                     {/* Articulated Figure Customization Card */}
                     <div className={`p-4 bg-[#0d0d0f]/80 border border-white/10 flex items-center justify-between gap-3 ${fontClass}`}>
                         <div>
-                            <span className={`text-[10px] text-amber-300 font-bold block ${fontClass}`}>{isZh ? '实体工艺' : 'CUSTOM CRAFT'}</span>
-                            <span className={`text-sm font-bold text-white block ${fontClass}`}>{isZh ? '全套手办定制' : 'Articulated Figure Customization'}</span>
-                            <span className={`text-xs text-white/60 block mt-0.5 ${fontClass}`}>{isZh ? '精密工程分件 + 激光裁切贴膜 + 阻尼关节装配' : 'Precision modular parts + laser-cut decals + snap-fit assembly.'}</span>
+                            <span className={`text-[10px] text-amber-300 font-bold block ${fontClass}`}>{data.services.figure.customCraft.tag}</span>
+                            <span className={`text-sm font-bold text-white block ${fontClass}`}>{data.services.figure.customCraft.title}</span>
+                            <span className={`text-xs text-white/60 block mt-0.5 ${fontClass}`}>{data.services.figure.customCraft.desc}</span>
                         </div>
                         <Link to="/figure/3dprint" className={`text-xs font-bold text-amber-400 hover:underline shrink-0 no-underline ${fontClass}`}>
-                            <span>{isZh ? '立即定制' : 'Order'} ›</span>
+                            <span>{data.services.figure.customCraft.cta} ›</span>
                         </Link>
                     </div>
                 </section>
@@ -449,16 +436,13 @@ export function HomePage({ current }: HomePageProps) {
                     <div className="flex flex-col gap-2">
                         <ScrollReveal delay={0} y={16}>
                             <h2 className={`m-0 text-3xl sm:text-5xl font-bold text-white leading-tight ${fontClass}`}>
-                                {isZh ? '坚持开源，全额透明。' : data.openSource.title}
+                                {data.openSource.title}
                             </h2>
                         </ScrollReveal>
 
                         <ScrollReveal delay={80} y={14}>
                             <p className={`m-0 text-sm text-white/70 max-w-xl leading-relaxed ${fontClass}`}>
-                                {isZh
-                                    ? '全栈代码与模型权重开源，财务账本 24 小时公开。'
-                                    : data.openSource.desc
-                                }
+                                {data.openSource.desc}
                             </p>
                         </ScrollReveal>
                     </div>
@@ -472,11 +456,11 @@ export function HomePage({ current }: HomePageProps) {
                         >
                             <div>
                                 <Icon icon="pixelarticons:git-branch" className="text-purple-400 text-xl mb-2" />
-                                <h3 className={`m-0 text-base font-bold text-white ${fontClass}`}>{isZh ? '全栈开源' : 'GitHub'}</h3>
-                                <p className={`mt-1.5 text-xs text-white/60 leading-relaxed ${fontClass}`}>{isZh ? '客户端与渲染代码' : 'Source code repository'}</p>
+                                <h3 className={`m-0 text-base font-bold text-white ${fontClass}`}>{data.openSource.cards.github.title}</h3>
+                                <p className={`mt-1.5 text-xs text-white/60 leading-relaxed ${fontClass}`}>{data.openSource.cards.github.desc}</p>
                             </div>
                             <span className={`pt-3 text-xs font-bold text-purple-400 flex items-center gap-1 ${fontClass}`}>
-                                <span>{isZh ? '源码仓库' : 'GitHub'}</span>
+                                <span>{data.openSource.cards.github.cta}</span>
                                 <span>›</span>
                             </span>
                         </a>
@@ -489,11 +473,11 @@ export function HomePage({ current }: HomePageProps) {
                         >
                             <div>
                                 <Icon icon="simple-icons:huggingface" className="text-amber-400 text-xl mb-2" />
-                                <h3 className={`m-0 text-base font-bold text-white ${fontClass}`}>{isZh ? '模型权重' : 'Hugging Face'}</h3>
-                                <p className={`mt-1.5 text-xs text-white/60 leading-relaxed ${fontClass}`}>{isZh ? '开放模型权重与数据集' : 'Open model weights'}</p>
+                                <h3 className={`m-0 text-base font-bold text-white ${fontClass}`}>{data.openSource.cards.huggingface.title}</h3>
+                                <p className={`mt-1.5 text-xs text-white/60 leading-relaxed ${fontClass}`}>{data.openSource.cards.huggingface.desc}</p>
                             </div>
                             <span className={`pt-3 text-xs font-bold text-amber-400 flex items-center gap-1 ${fontClass}`}>
-                                <span>{isZh ? '模型主页' : 'Open Weights'}</span>
+                                <span>{data.openSource.cards.huggingface.cta}</span>
                                 <span>›</span>
                             </span>
                         </a>
@@ -504,8 +488,8 @@ export function HomePage({ current }: HomePageProps) {
                         >
                             <div>
                                 <Icon icon="pixelarticons:coin" className="text-emerald-400 text-xl mb-2" />
-                                <h3 className={`m-0 text-base font-bold text-white ${fontClass}`}>{isZh ? '公开账本' : 'Ledger'}</h3>
-                                <p className={`mt-1.5 text-xs text-white/60 leading-relaxed ${fontClass}`}>{isZh ? '硬件开支与营收明细' : 'Public finances'}</p>
+                                <h3 className={`m-0 text-base font-bold text-white ${fontClass}`}>{data.openSource.cards.ledger.title}</h3>
+                                <p className={`mt-1.5 text-xs text-white/60 leading-relaxed ${fontClass}`}>{data.openSource.cards.ledger.desc}</p>
                             </div>
                             <span className={`pt-3 text-xs font-bold text-emerald-400 flex items-center gap-1 ${fontClass}`}>
                                 <span>{data.openSource.ctaLedger}</span>
@@ -521,13 +505,13 @@ export function HomePage({ current }: HomePageProps) {
 
                     <ScrollReveal delay={0} y={16}>
                         <h2 className={`m-0 text-2xl sm:text-4xl font-bold text-white leading-tight ${fontClass}`}>
-                            {isZh ? '开启你的下一个化身。' : 'Ready to create your next avatar?'}
+                            {data.footerCta.title}
                         </h2>
                     </ScrollReveal>
 
                     <ScrollReveal delay={80} y={14}>
                         <p className={`m-0 text-xs sm:text-sm text-white/65 max-w-md ${fontClass}`}>
-                            {isZh ? '全生态无缝互联 · 跨平台即刻体验' : 'Seamless ecosystem across all platforms'}
+                            {data.footerCta.subtitle}
                         </p>
                     </ScrollReveal>
 

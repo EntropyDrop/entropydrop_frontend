@@ -8,7 +8,7 @@ const skeletonCards = Array.from({ length: 4 })
 const skeletonRows = Array.from({ length: 3 })
 
 export function RouteLoadingSkeleton({ current }: RouteLoadingSkeletonProps) {
-    const loadingText = current.lang === 'zh-hans' ? '页面加载中...' : 'Loading page...'
+    const loadingText = current.common.pageLoading
 
     return (
         <div

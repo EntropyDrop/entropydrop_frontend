@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
+import type { LangData } from '../constants/lang'
 
 export interface FigureShowcaseCarouselProps {
-    isZh: boolean
+    data: LangData['home']['carousels']['figure']
     fontClass: string
     ctaText?: string
     previewImage?: string
@@ -18,39 +19,33 @@ export interface FigureSlide {
     imageAlt: string
 }
 
-export function FigureShowcaseCarousel({ isZh, fontClass, ctaText }: FigureShowcaseCarouselProps) {
+export function FigureShowcaseCarousel({ data, fontClass, ctaText }: FigureShowcaseCarouselProps) {
     const navigate = useNavigate()
 
     const slides: FigureSlide[] = [
         {
             id: 'lineup',
-            title: isZh ? '实物合影' : 'Physical Lineup',
-            badge: isZh ? '全员集结 ➔ 阻尼可动' : 'Full Lineup ➔ Articulated',
-            desc: isZh
-                ? '高韧树脂，多姿态悬停定格'
-                : 'Tough photopolymer resin, stable posing',
+            title: data.lineup.title,
+            badge: data.lineup.badge,
+            desc: data.lineup.desc,
             image: '/images/figure_physical_showcase.jpg',
-            imageAlt: isZh ? '四员实物合影' : 'Physical figure squad'
+            imageAlt: data.lineup.imageAlt
         },
         {
             id: 'trio',
-            title: isZh ? '三员特写' : 'Trio Studio',
-            badge: isZh ? '分件咬合 ➔ 耐磨贴膜' : 'Snap-Fit ➔ Vinyl Wrap',
-            desc: isZh
-                ? '立体发丝分件，免胶咬合关节'
-                : 'Modular hair parts, snap-fit joints',
+            title: data.trio.title,
+            badge: data.trio.badge,
+            desc: data.trio.desc,
             image: '/images/figure_trio_showcase.jpg',
-            imageAlt: isZh ? '三员实物特写' : 'Trio figure studio showcase'
+            imageAlt: data.trio.imageAlt
         },
         {
             id: 'duo',
-            title: isZh ? '双子特写' : 'Duo Focus',
-            badge: isZh ? '高韧光固化 ➔ 阻尼关节' : 'Tough Resin ➔ Snap Joints',
-            desc: isZh
-                ? '暗夜与翠绿对峙，多姿态可动'
-                : 'Contrasting colorways with articulation',
+            title: data.duo.title,
+            badge: data.duo.badge,
+            desc: data.duo.desc,
             image: '/images/figure_duo_showcase.jpg',
-            imageAlt: isZh ? '双子实物特写' : 'Duo figure studio showcase'
+            imageAlt: data.duo.imageAlt
         }
     ]
 
@@ -301,7 +296,7 @@ export function FigureShowcaseCarousel({ isZh, fontClass, ctaText }: FigureShowc
                                     onClick={(e) => e.stopPropagation()}
                                     className={`inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 font-bold text-xs sm:text-sm border border-black backdrop-blur-md transition-all active:scale-95 no-underline shadow-xl bg-amber-500 hover:bg-amber-400 text-black shadow-amber-950/60 ${fontClass}`}
                                 >
-                                    <span>{ctaText || (isZh ? '定制实体手办' : '3D Print Figure')}</span>
+                                    <span>{ctaText || data.defaultCta}</span>
                                     <Icon icon="pixelarticons:chevron-right" className="text-sm sm:text-base" />
                                 </Link>
                             </div>

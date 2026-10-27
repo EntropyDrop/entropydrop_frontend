@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
+import type { LangData } from '../constants/lang'
 
 export interface SkinShowcaseCarouselProps {
-    isZh: boolean
+    data: LangData['home']['carousels']['skin']
     fontClass: string
     ctaText?: string
 }
@@ -17,39 +18,33 @@ interface SkinSlide {
     imageAlt: string
 }
 
-export function SkinShowcaseCarousel({ isZh, fontClass, ctaText }: SkinShowcaseCarouselProps) {
+export function SkinShowcaseCarousel({ data, fontClass, ctaText }: SkinShowcaseCarouselProps) {
     const navigate = useNavigate()
 
     const slides: SkinSlide[] = [
         {
             id: 'rebel',
-            title: isZh ? '暴走萝莉' : 'Rebel Punk',
-            badge: isZh ? '二次元立绘 ➔ 双层体素' : 'Anime Illustration ➔ Dual-Layer',
-            desc: isZh
-                ? '蓝发双层发丝与朋克涂鸦细节精准还原'
-                : 'Precise reconstruction of layered hair and punk outfit',
+            title: data.rebel.title,
+            badge: data.rebel.badge,
+            desc: data.rebel.desc,
             image: '/images/skin_example_rebel.webp',
-            imageAlt: isZh ? '暴走萝莉从参考图生成 3D 体素皮肤' : 'Rebel Punk generated from reference image to 3D voxel skin'
+            imageAlt: data.rebel.imageAlt
         },
         {
             id: 'cosmic',
-            title: isZh ? '星界战神' : 'Cosmic Warrior',
-            badge: isZh ? '史诗幻想 ➔ 发光体素' : 'Epic Fantasy ➔ Emissive Voxel Skin',
-            desc: isZh
-                ? '黑洞星轨胸甲与星云动态能量重构'
-                : 'Black hole chestplate & stellar cosmic energy reconstruction',
+            title: data.cosmic.title,
+            badge: data.cosmic.badge,
+            desc: data.cosmic.desc,
             image: '/images/skin_example_cosmic.webp',
-            imageAlt: isZh ? '星界战神从参考图生成 3D 体素皮肤' : 'Cosmic Warrior generated from reference image to 3D voxel skin'
+            imageAlt: data.cosmic.imageAlt
         },
         {
             id: 'original',
-            title: isZh ? '纯真创客' : 'Original Avatar',
-            badge: isZh ? '原创插画 ➔ 游戏皮肤' : 'Original Concept ➔ In-Game Skin',
-            desc: isZh
-                ? '二次元角色原画服饰拓扑解构与 3D 配饰'
-                : 'Character concept art & 3D voxel apparel breakdown',
+            title: data.original.title,
+            badge: data.original.badge,
+            desc: data.original.desc,
             image: '/images/home_carousel_skin.webp',
-            imageAlt: isZh ? '纯真创客从参考图生成 3D 体素皮肤' : 'Original Avatar generated from reference image to 3D voxel skin'
+            imageAlt: data.original.imageAlt
         }
     ]
 
@@ -300,7 +295,7 @@ export function SkinShowcaseCarousel({ isZh, fontClass, ctaText }: SkinShowcaseC
                                     onClick={(e) => e.stopPropagation()}
                                     className={`inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 font-bold text-xs sm:text-sm border border-black backdrop-blur-md transition-all active:scale-95 no-underline shadow-xl bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-950/60 ${fontClass}`}
                                 >
-                                    <span>{ctaText || (isZh ? '生成专属皮肤' : 'Generate AI Skin')}</span>
+                                    <span>{ctaText || data.defaultCta}</span>
                                     <Icon icon="pixelarticons:chevron-right" className="text-sm sm:text-base" />
                                 </Link>
                             </div>

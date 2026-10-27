@@ -377,12 +377,12 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                         {n.orderId ? <FigureOrderNotification current={current} notification={n} /> : n.type === 'daily_login' || n.type === 'monthly_login' || n.type === 'subscription_grant' || n.type === 'system_gift' ? (
                                                             <span>
                                                                 {n.type === 'daily_login'
-                                                                    ? (current.lang === 'zh-hans' ? '每日登录奖励已到账！' : 'Daily login reward received!')
+                                                                    ? current.user.notifications.dailyLoginReward
                                                                     : n.type === 'monthly_login'
-                                                                    ? (current.lang === 'zh-hans' ? '每月登录奖励已到账！' : 'Monthly login reward received!')
+                                                                    ? current.user.notifications.monthlyLoginReward
                                                                     : n.type === 'subscription_grant'
-                                                                    ? (current.lang === 'zh-hans' ? '订阅会员奖励已到账！' : 'Pro subscription credits received!')
-                                                                    : (current.lang === 'zh-hans' ? `系统赠送：${(n.postTitle || '').split('|')[1] || ''}` : `System Gift: ${(n.postTitle || '').split('|')[1] || ''}`)
+                                                                    ? current.user.notifications.proReward
+                                                                    : current.user.notifications.systemGift.replace('{reason}', (n.postTitle || '').split('|')[1] || '')
                                                                 }
                                                                 <span className="text-[#a6df7a] font-bold"> +{n.type === 'system_gift' ? (n.postTitle || '').split('|')[0] : n.postTitle} Credits</span>
                                                             </span>
@@ -482,8 +482,8 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             onSuccess={handleGoogleSuccess}
                             onError={() => console.error('Google login error')}
                             locale={current.lang === 'en' ? 'en' : 'zh-CN'}
-                            configErrorText={current.lang === 'en' ? 'Google sign-in unavailable' : 'Google 登录暂时不可用'}
-                            loadingText={current.lang === 'en' ? 'Loading Google sign-in…' : '正在加载 Google 登录…'}
+                            configErrorText={current.user.googleSignInUnavailable}
+                            loadingText={current.user.googleSignInLoading}
                         />
                     </Suspense>
                 </>
