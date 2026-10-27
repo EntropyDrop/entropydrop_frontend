@@ -430,12 +430,12 @@ export function HomePage({ current }: HomePageProps) {
                         />
                     </ScrollReveal>
 
-                    {/* Turnkey Delivery Card */}
+                    {/* Articulated Figure Customization Card */}
                     <div className={`p-4 bg-[#0d0d0f]/80 border border-white/10 flex items-center justify-between gap-3 ${fontClass}`}>
                         <div>
-                            <span className={`text-[10px] text-amber-300 font-bold block ${fontClass}`}>{isZh ? '成品交付' : 'TURNKEY'}</span>
-                            <span className={`text-sm font-bold text-white block ${fontClass}`}>{isZh ? '专业光固化代工' : 'Turnkey Delivery'}</span>
-                            <span className={`text-xs text-white/60 block mt-0.5 ${fontClass}`}>{isZh ? '高精打印 + 激光裁切贴纸 + 礼盒装配' : 'Industrial 3D print + decals + gift box.'}</span>
+                            <span className={`text-[10px] text-amber-300 font-bold block ${fontClass}`}>{isZh ? '实体工艺' : 'CUSTOM CRAFT'}</span>
+                            <span className={`text-sm font-bold text-white block ${fontClass}`}>{isZh ? '全套手办定制' : 'Articulated Figure Customization'}</span>
+                            <span className={`text-xs text-white/60 block mt-0.5 ${fontClass}`}>{isZh ? '精密工程分件 + 激光裁切贴膜 + 阻尼关节装配' : 'Precision modular parts + laser-cut decals + snap-fit assembly.'}</span>
                         </div>
                         <Link to="/figure/3dprint" className={`text-xs font-bold text-amber-400 hover:underline shrink-0 no-underline ${fontClass}`}>
                             <span>{isZh ? '立即定制' : 'Order'} ›</span>
