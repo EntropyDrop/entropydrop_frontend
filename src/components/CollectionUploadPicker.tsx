@@ -186,8 +186,12 @@ export function CollectionUploadPicker({
             )}
 
             <div className="border-t border-white/5 p-2">
+                <p id="collection-picker-skin-hint" className={`mb-2 px-1 text-[10px] leading-relaxed text-white/50 ${current.fontClass}`}>
+                    {current.collection.uploadSkinHint}
+                </p>
                 <button
                     type="button"
+                    aria-describedby="collection-picker-skin-hint"
                     onClick={onChooseImage}
                     disabled={isPrivateUploadDisabled && activeTab === 'private'}
                     className={`flex w-full items-center justify-center gap-2 bg-[#4ea632] py-2 text-[11px] text-white transition-colors hover:bg-[#3c8527] disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-white/20 ${current.fontClass}`}

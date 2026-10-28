@@ -520,7 +520,32 @@ export function CollectionPage({ current }: CollectionPageProps) {
         }
     };
 
-    const prepareUpload = (file: File, collection: Collection) => {
+    const prepareUpload = async (file: File, collection: Collection) => {
+        const isPng = file.type === 'image/png' || (!file.type && /\.png$/i.test(file.name));
+        if (!isPng) {
+            showError(current.collection.invalidSkinFile);
+            return;
+        }
+
+        const imageUrl = URL.createObjectURL(file);
+        try {
+            const img = new Image();
+            await new Promise<void>((resolve, reject) => {
+                img.onload = () => resolve();
+                img.onerror = () => reject(new Error('Invalid skin image'));
+                img.src = imageUrl;
+            });
+            if (img.width !== 64 || (img.height !== 64 && img.height !== 32)) {
+                showError(current.collection.invalidSkinFile);
+                return;
+            }
+        } catch {
+            showError(current.collection.invalidSkinFile);
+            return;
+        } finally {
+            URL.revokeObjectURL(imageUrl);
+        }
+
         if (file.size > 512 * 1024) {
             showError(current.collection.fileTooLarge);
             return;
@@ -552,7 +577,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         e.target.value = '';
         if (!file || !collection) return;
 
-        prepareUpload(file, collection)
+        void prepareUpload(file, collection)
     };
 
     const handleHomeUploadItem = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -571,7 +596,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
         }
 
         setIsUploadPickerOpen(false)
-        prepareUpload(file, collection)
+        void prepareUpload(file, collection)
     }
 
     const handleMoveItem = async (targetCollectionId: string | number) => {
@@ -897,7 +922,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                     <input
                                         ref={homeUploadInputRef}
                                         type="file"
-                                        accept="image/*"
+                                        accept="image/png,.png"
                                         className="hidden"
                                         onChange={handleHomeUploadItem}
                                     />
@@ -1343,7 +1368,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
 
                 {/* Footer (Pagination & Actions) */}
                 {currentCollection && (
-                    <div className="mt-auto pt-3 sm:pt-6 border-t border-white/5 flex flex-row items-center justify-between gap-2 sm:gap-4 shrink-0 w-full">
+                    <div className="mt-auto pt-3 sm:pt-6 border-t border-white/5 flex flex-row flex-wrap items-center justify-between gap-2 sm:gap-4 shrink-0 w-full">
                         {/* Left: Pagination */}
                         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                             {currentCollection && itemTotalPages > 1 && (
@@ -1388,7 +1413,8 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                     <input
                                         id="upload-item-input"
                                         type="file"
-                                        accept="image/*"
+                                        accept="image/png,.png"
+                                        aria-describedby="collection-skin-upload-hint"
                                         style={{ display: 'none' }}
                                         onChange={handleUploadItem}
                                     />
@@ -1413,6 +1439,7 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                         </div>
                                     ) : (
                                         <button
+                                            aria-describedby="collection-skin-upload-hint"
                                             onClick={() => {
                                                 document.getElementById('upload-item-input')?.click();
                                             }}
@@ -1425,6 +1452,11 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                 </div>
                             )}
                         </div>
+                        {canUploadToCurrentCollection && (
+                            <p id="collection-skin-upload-hint" className={`w-full text-right text-[10px] leading-relaxed text-white/50 ${current.fontClass}`}>
+                                {current.collection.uploadSkinHint}
+                            </p>
+                        )}
                     </div>
                 )}
 

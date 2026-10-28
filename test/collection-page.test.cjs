@@ -59,12 +59,15 @@ function collections(url, userId = 42) {
     });
 }
 
-async function mount(fetch, { userId = 42, width = 1920, collectionId, loggedIn = true, locale = 'en' } = {}) {
+async function mount(fetch, { userId = 42, width = 1920, collectionId, loggedIn = true, locale = 'en',
+    imageSize = [64, 64], imageDecodeFails = false } = {}) {
     const initialPath = `/skin/collection/${userId}${collectionId ? `/${collectionId}` : ''}`;
     const dom = new JSDOM('<div id="root"></div>', {
         url: `https://app.example.test${initialPath}`,
     });
     const { window } = dom;
+    const errors = [], revokedImageUrls = [];
+    window.addEventListener('global-error', event => errors.push(event.detail.message));
     window.innerWidth = width;
     if (loggedIn) window.localStorage.setItem('token', 'existing-token');
     const module = { exports: {} };
@@ -79,8 +82,14 @@ async function mount(fetch, { userId = 42, width = 1920, collectionId, loggedIn 
     const context = vm.createContext({
         window, localStorage: window.localStorage, document: window.document,
         fetch, Headers, Response, Request,
-        URL: class extends URL { static createObjectURL() { return 'blob:mock-skin'; } },
-        Image: class { width = 64; height = 64; set src(value) { this.onload?.(); } },
+        URL: class extends URL {
+            static createObjectURL() { return 'blob:mock-skin'; }
+            static revokeObjectURL(url) { revokedImageUrls.push(url); }
+        },
+        Image: class {
+            width = imageSize[0]; height = imageSize[1];
+            set src(value) { if (imageDecodeFails) this.onerror?.(); else this.onload?.(); }
+        },
         URLSearchParams, FormData, Blob, AbortController, DOMException, atob, console,
         Event: window.Event, CustomEvent: window.CustomEvent, navigator: window.navigator,
         require: name => name === 'collection-visuals' ? visuals : require(name),
@@ -108,7 +117,7 @@ async function mount(fetch, { userId = 42, width = 1920, collectionId, loggedIn 
             React.createElement(Route, { path: '/skin/collection/:userId/:collectionId?',
                 element: React.createElement(CollectionPage, { current }) })))));
     return {
-        node, window, current,
+        node, window, current, errors, revokedImageUrls,
         navigate: destination => React.act(() => navigate(destination)),
         async close() {
             await React.act(() => root.unmount());
@@ -206,10 +215,10 @@ test('an empty original_items on a later custom page preserves default collectio
 async function click(env, text, scope = env.node) {
     const button = [...scope.querySelectorAll('button')].find(node => node.textContent === text);
     assert.ok(button, `Missing button: ${text}`);
-    await React.act(() => button.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true })));
+    await React.act(async () => { button.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true })); });
 }
 
-async function openUpload(env, isPublic, custom = false) {
+async function openUpload(env, isPublic, custom = false, file) {
     await click(env, env.current.collection.upload);
     const picker = env.node.querySelector('[role="dialog"]');
     if (!isPublic) await click(env, env.current.collection.private, picker);
@@ -230,18 +239,18 @@ async function openUpload(env, isPublic, custom = false) {
         assert.equal(defaultTarget.getAttribute('aria-pressed'), 'true');
         assert.equal(target.getAttribute('aria-pressed'), 'true');
     }
-    return chooseUploadImage(env);
+    return chooseUploadImage(env, file);
 }
 
-async function chooseUploadImage(env) {
+async function chooseUploadImage(env, file = new File(['skin'], 'skin.png', { type: 'image/png' })) {
     const picker = env.node.querySelector('[role="dialog"]');
     const choose = [...picker.querySelectorAll('button')].find(button => button.textContent === env.current.collection.chooseImage);
     assert.equal(choose.disabled, false);
     assert.equal(picker.querySelector('#private-upload-picker-notice'), null);
     await click(env, env.current.collection.chooseImage, picker);
     const input = env.node.querySelector('input[type="file"]');
-    Object.defineProperty(input, 'files', { value: [new File(['skin'], 'skin.png', { type: 'image/png' })], configurable: true });
-    await React.act(() => input.dispatchEvent(new env.window.Event('change', { bubbles: true })));
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    await React.act(async () => { input.dispatchEvent(new env.window.Event('change', { bubbles: true })); });
     return env.node.querySelector('[role="dialog"]');
 }
 
@@ -277,6 +286,72 @@ async function mountUploader(isPro, { previewResponse, collectionResponse, uploa
     }, mountOptions);
     return { env, writes, previews, metadataRequests };
 }
+
+for (const locale of ['en', 'zh-hans']) {
+    test(`${locale} upload picker explains skin requirements before choosing a file`, async () => {
+        const { env } = await mountUploader(true, { locale });
+        try {
+            await click(env, env.current.collection.upload);
+            const picker = env.node.querySelector('[role="dialog"]');
+            assert.ok(picker.textContent.includes(env.current.collection.uploadSkinHint));
+            assert.equal(env.node.querySelector('input[type="file"]').accept, 'image/png,.png');
+        } finally { await env.close(); }
+    });
+
+    for (const { name, fileType, imageSize, imageDecodeFails, large, expected } of [
+        { name: 'large ordinary JPEG', fileType: 'image/jpeg', large: true, expected: 'invalidSkinFile' },
+        { name: 'large PNG photo', fileType: 'image/png', imageSize: [1024, 768], large: true, expected: 'invalidSkinFile' },
+        { name: 'small PNG photo', fileType: 'image/png', imageSize: [256, 256], expected: 'invalidSkinFile' },
+        { name: 'unreadable PNG', fileType: 'image/png', imageDecodeFails: true, expected: 'invalidSkinFile' },
+        { name: 'oversized skin file', fileType: 'image/png', large: true, expected: 'fileTooLarge' },
+    ]) {
+        test(`${locale} ${name} gets the relevant error before consent or upload`, async () => {
+            const { env, writes, previews } = await mountUploader(true, { locale, imageSize, imageDecodeFails });
+            try {
+                const file = new File([large ? new Uint8Array(512 * 1024 + 1) : 'image'],
+                    fileType === 'image/png' ? 'image.png' : 'photo.jpg', { type: fileType });
+                const dialog = await openUpload(env, true, false, file);
+                assert.equal(dialog, null);
+                assert.deepEqual(env.errors, [env.current.collection[expected]]);
+                assert.equal(writes.length, 0);
+                assert.equal(previews.length, 0);
+                if (fileType === 'image/png') assert.deepEqual(env.revokedImageUrls, ['blob:mock-skin']);
+            } finally { await env.close(); }
+        });
+    }
+}
+
+test('upload inside a collection also explains and rejects ordinary images', async () => {
+    const { env, writes } = await mountUploader(true, { collectionId: 'creations_public', imageSize: [800, 600] });
+    try {
+        assert.ok(env.node.textContent.includes(env.current.collection.uploadSkinHint));
+        const input = env.node.querySelector('#upload-item-input');
+        assert.equal(input.accept, 'image/png,.png');
+        Object.defineProperty(input, 'files', { value: [new File(['photo'], 'photo.png', { type: 'image/png' })] });
+        await React.act(() => input.dispatchEvent(new env.window.Event('change', { bubbles: true })));
+        assert.deepEqual(env.errors, [env.current.collection.invalidSkinFile]);
+        assert.equal(writes.length, 0);
+    } finally { await env.close(); }
+});
+
+test('legacy 64x32 PNG skins still convert and upload as 64x64', async () => {
+    const { env, writes } = await mountUploader(true, { imageSize: [64, 32] });
+    const encodedSizes = [];
+    env.window.HTMLCanvasElement.prototype.getContext = () => ({
+        drawImage() {}, getImageData() { return {}; }, putImageData() {},
+    });
+    env.window.HTMLCanvasElement.prototype.toBlob = function (callback, type) {
+        encodedSizes.push([this.width, this.height, type]);
+        callback(new Blob(['converted skin'], { type }));
+    };
+    try {
+        await openUpload(env, false);
+        assert.deepEqual(env.errors, []);
+        assert.deepEqual(encodedSizes, [[64, 64, 'image/png']]);
+        assert.equal(writes.length, 1);
+        assert.equal(await writes[0].body.get('file').text(), 'converted skin');
+    } finally { await env.close(); }
+});
 
 for (const isPro of [false, true]) {
     for (const custom of [false, true]) {
@@ -404,7 +479,8 @@ for (const custom of [false, true]) {
             await env.navigate(`/skin/collection/42/${collectionId}`);
             const upload = [...env.node.querySelectorAll('button')].find(button => button.textContent === env.current.collection.upload);
             assert.ok(upload);
-            assert.equal(upload.hasAttribute('aria-describedby'), false);
+            assert.equal(upload.getAttribute('aria-describedby'), 'collection-skin-upload-hint');
+            assert.equal(env.node.querySelector('#collection-skin-upload-hint').textContent.trim(), env.current.collection.uploadSkinHint);
             assert.equal(env.node.querySelector('#private-collection-upload-notice'), null);
             const input = env.node.querySelector('#upload-item-input');
             Object.defineProperty(input, 'files', { value: [new File(['skin'], 'skin.png', { type: 'image/png' })], configurable: true });
