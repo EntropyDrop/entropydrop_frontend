@@ -25,6 +25,7 @@ export interface CurrentUser {
     text_to_skin_enabled?: boolean
     image_to_skin_enabled?: boolean
     image_edit_to_skin_enabled?: boolean
+    payment_enabled?: boolean
     credits?: number
 }
 
@@ -44,7 +45,12 @@ export function useCurrentUser() {
         const ticket = requests.begin()
         try {
             const user = await apiJson<CurrentUser>('/api/users/me', { signal: ticket.signal, auth: 'required', skipGlobalError: true })
-            if (ticket.isCurrent() && expected === getAuthSessionKey()) setSnapshot({ session: expected, user })
+            if (ticket.isCurrent() && expected === getAuthSessionKey()) {
+                setSnapshot({ session: expected, user })
+                if (typeof user?.payment_enabled === 'boolean') {
+                    window.dispatchEvent(new CustomEvent('payment-status-updated', { detail: user.payment_enabled }))
+                }
+            }
         } catch (error) { if (ticket.isCurrent()) console.error('Failed to load current user', error) }
     }, [requests])
     useEffect(() => {

@@ -1,10 +1,12 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
+import { Icon } from '@iconify/react'
 import type { LangData } from '../../../constants/lang'
 import { AddressManager } from '../../../components/AddressManager'
 import { useAuthSession } from '../../../hooks/useAuthSession'
 import { useOrderPayment } from '../../../hooks/useOrderPayment'
+import { usePaymentStatus } from '../../../hooks/usePaymentStatus'
 import { apiFetch, apiResponseJson } from '../../../utils/api'
 import { getAuthSessionKey } from '../../../utils/authSession'
 import { waitForAuthReady } from '../../../utils/authClient'
@@ -38,6 +40,7 @@ export function FigureCommissionDialog(props: Props) {
 
 function CommissionSession({ current, source, model, onClose, session }: Props & { session: string | null }) {
     const t = current.figurePrint.commissionOrder
+    const { isPaymentUnderMaintenance } = usePaymentStatus()
     const navigate = useNavigate()
     const dialog = useRef<HTMLDialogElement>(null)
     const pending = useRef<AbortController | null>(null)
@@ -246,9 +249,15 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
                         {addressError && <p role="alert" className="mb-0 text-xs text-amber-200">{t.addressLoadFailed} <button type="button" onClick={() => setAddressRetry(value => value + 1)} className="cursor-pointer underline">{current.figurePrint.retry}</button></p>}
                     </div>}
                     </fieldset>
+                    {isPaymentUnderMaintenance && (
+                        <div className="flex items-center gap-2 border border-amber-500/30 bg-amber-500/10 p-3 text-amber-300 text-xs">
+                            <Icon icon="pixelarticons:alert" className="text-base shrink-0 text-amber-400" />
+                            <span>{t.paymentUnderMaintenance}</span>
+                        </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                         <button type="button" disabled={loading || busy || !available || !shippingReady || !creator.ready} onClick={order} className={checkoutButtonClass}>{saving ? t.submitting : t.checkout}</button>
-                        <button type="button" disabled={loading || busy || !available || !shippingReady || !creator.ready} onClick={buyNow} className={`${checkoutButtonClass} bg-[#3c8527] hover:bg-[#4ea632]`}>{isProcessing ? t.buying : t.buyNow}</button>
+                        <button type="button" disabled={loading || busy || !available || !shippingReady || !creator.ready || isPaymentUnderMaintenance} onClick={buyNow} className={`${checkoutButtonClass} ${isPaymentUnderMaintenance ? 'bg-white/10 text-white/30 cursor-not-allowed border-white/10' : 'bg-[#3c8527] hover:bg-[#4ea632]'}`}>{isProcessing ? t.buying : (isPaymentUnderMaintenance ? current.common.paymentUnderMaintenanceBtn : t.buyNow)}</button>
                     </div>
                 </>}
                 {error && <div role="alert" className="space-y-3 text-xs text-red-200"><p>{error}</p><button type="button" disabled={busy} onClick={() => { setRetry(value => value + 1); void creator.retry() }} className={buttonClass}>{current.figurePrint.retry}</button></div>}

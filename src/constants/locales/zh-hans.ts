@@ -284,6 +284,7 @@ export default {
             submitting: '正在加入购物车…',
             buyNow: '购买',
             buying: '等待支付…',
+            paymentUnderMaintenance: '支付服务维护中，暂不支持直接支付。',
             approval: '付款后进行人工审核，审核通过才会生产。未通过的订单将全额退款，并通过站内信告知原因。',
         },
         "model": "模型预览",
@@ -745,7 +746,9 @@ export default {
         requestFailed: '请求失败',
         requestError: '请求错误',
         networkError: '网络错误',
-        networkConnectFailed: '网络连接失败'
+        networkConnectFailed: '网络连接失败',
+        paymentUnderMaintenance: '支付服务维护中，请稍后再试',
+        paymentUnderMaintenanceBtn: '支付维护中'
     },
     placeholder: {
         building: '模块建设中',
@@ -775,6 +778,7 @@ export default {
         subscription: '订阅套餐',
         cancelOrder: '取消订单',
         payNow: '立即支付',
+        paymentUnderMaintenance: '支付服务维护中，暂无法支付订单',
         openingPayment: '正在打开 PayPal 支付…',
         popupBlocked: '请允许此网站打开弹窗，然后重试。',
         paymentFailed: '未能完成支付，请检查订单状态后重试。',
@@ -863,6 +867,7 @@ export default {
         supportText: '订单疑问：',
         successMessage: '订阅成功！Pro 会员已激活。',
         upgrade: '升级',
+        paymentUnderMaintenance: '支付服务维护中，暂无法发起订阅或升级，请稍后再试。',
         buyCreditsTip: '可以根据需要直接购买 Credits 点数',
         buyCreditsBtn: '直接购买 Credits',
         monthlyCreditsFormulaTitle: '每月可获得的 Credits 总数',
@@ -928,6 +933,7 @@ export default {
         waitingPayment: '等待支付完成...',
         purchaseSuccess: '充值成功！',
         purchaseSuccessMsg: '{credits} Credits 已添加到您的账户。',
+        paymentUnderMaintenance: '支付服务维护中，暂时无法购买积分。',
         tableTime: '时间',
         tableType: '类型',
         tableSource: '来源 / 详情',
@@ -1690,7 +1696,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                     title: '硬件 (Hardware)',
                     icon: 'pixelarticons:device-laptop',
                     items: [
-                        { title: '3D打印产线', desc: '从参数化设计、智能切片、自动供料、无人化运维到自动化后处理，构建智能的 3D 打印工厂。', status: '规划中' },
+                        { title: '3D打印产线', desc: '从参数化设计、智能切片、自动供料、无人化运维到自动化后处理，构建智能的 3D 打印工厂。', status: '进行中' },
                         { title: '工业自动化', desc: '基于仿真和强化学习，驱动多智能体协作，打造完全自主的 AI 原生制造单元。', status: '规划中' },
                         { title: '可信设备', desc: '基于可信执行环境与开放硬件，确保数据使用、算法执行与生产过程可验证、可审计，并支持社区治理。', status: '规划中' }
                     ]
@@ -1828,6 +1834,8 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         imageToSkinToggleDesc: '控制 Generate 页面的 Image to skin（图生皮肤）按钮是否可用。开启维护时按钮将不可用。',
         imageEditToSkinToggleTitle: '编辑生皮肤功能维护开关',
         imageEditToSkinToggleDesc: '控制 Generate 页面的 Image Edit to skin（编辑生皮肤）按钮是否可用。开启维护时按钮将不可用。',
+        paymentToggleTitle: '支付服务维护开关',
+        paymentToggleDesc: '控制全局支付服务是否可用。开启维护时，相关支付页面（会员订阅、积分充值、订单支付、3D打印购买等）将显示维护提醒且按钮变灰禁用。',
         enabled: '功能已开启',
         disabled: '功能已关闭',
         underMaintenance: '维护中',
@@ -1840,6 +1848,8 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         imageToSkinDisabledMsg: '图生皮肤维护模式已开启，用户将无法使用该功能。',
         imageEditToSkinEnabledMsg: '编辑生皮肤功能已开启',
         imageEditToSkinDisabledMsg: '编辑生皮肤维护模式已开启，用户将无法使用该功能。',
+        paymentEnabledMsg: '支付服务已开启（正常运行）',
+        paymentDisabledMsg: '支付服务维护模式已开启，用户将无法进行支付。',
         operationFailed: '操作失败，请重试',
         networkError: '网络连接错误',
         deleteSkinSuccess: '成功删除皮肤 {id} 及其相关资源。',

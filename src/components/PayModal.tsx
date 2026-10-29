@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { type LangData } from '../constants/lang'
 import { apiFetch } from '../utils/api'
 import { activateSubscriptionWithRetry } from '../utils/subscription'
+import { usePaymentStatus } from '../hooks/usePaymentStatus'
 
 interface PayModalProps {
     isOpen: boolean;
@@ -20,6 +21,7 @@ interface PayModalProps {
 }
 
 export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubscription, isUpgrade, existingSubscriptionId, userId, onClose, onSuccess }: PayModalProps) {
+    const { isPaymentUnderMaintenance } = usePaymentStatus();
     const [isLoadingClient, setIsLoadingClient] = useState(true);
     const [isSdkLoaded, setIsSdkLoaded] = useState(false);
     const [clientId, setClientId] = useState<string>('');
@@ -238,7 +240,21 @@ export function PayModal({ isOpen, orderId, totalPrice, tierKey, current, isSubs
                 </div>
 
                 <div className="border-t border-white/5 pt-3">
-                    {isLoadingClient ? (
+                    {isPaymentUnderMaintenance ? (
+                        <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2 border border-amber-500/30 bg-amber-500/10 p-3 text-amber-300 text-xs">
+                                <Icon icon="pixelarticons:alert" className="text-base shrink-0 text-amber-400" />
+                                <span>{current.common.paymentUnderMaintenance}</span>
+                            </div>
+                            <button
+                                disabled
+                                className="w-full py-2.5 bg-white/10 text-white/30 cursor-not-allowed border border-white/10 text-xs font-bold flex items-center justify-center gap-1.5"
+                            >
+                                <Icon icon="pixelarticons:lock" />
+                                {current.common.paymentUnderMaintenanceBtn}
+                            </button>
+                        </div>
+                    ) : isLoadingClient ? (
                         <div className="text-center font-mono text-xs text-white/40 py-4">{current.modal.loadingConfig}</div>
                     ) : (
                         <div className={`w-full ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}>

@@ -1,4 +1,5 @@
 import { useCurrentUser } from '../hooks/useCurrentUser'
+import { usePaymentStatus } from '../hooks/usePaymentStatus'
 import { PageContainer } from '../components/PageContainer';
 import { Icon } from '@iconify/react'
 import { useState } from 'react'
@@ -24,6 +25,7 @@ interface Plan {
 export function ProPage({ current }: ProPageProps) {
     const navigate = useNavigate();
     const { user: userProfile } = useCurrentUser();
+    const { isPaymentUnderMaintenance } = usePaymentStatus();
     const [isProcessing, setIsProcessing] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
 
@@ -135,6 +137,13 @@ export function ProPage({ current }: ProPageProps) {
                     </p>
                 </div>
 
+                {/* Payment Maintenance Notice */}
+                {isPaymentUnderMaintenance && (
+                    <div className="flex items-center gap-3 p-4 my-6 border border-amber-500/30 bg-amber-500/10 text-amber-300 text-sm animate-in fade-in duration-200">
+                        <Icon icon="pixelarticons:alert" className="text-xl shrink-0 text-amber-400" />
+                        <span className={current.fontClass}>{current.pro.paymentUnderMaintenance}</span>
+                    </div>
+                )}
 
                 {/* Tiers Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -317,18 +326,25 @@ export function ProPage({ current }: ProPageProps) {
                                                      handleSubscribe(planData);
                                                  }
                                              }}
-                                             disabled={isCancelling || isProcessing || isLowerTier}
+                                             disabled={isCancelling || isProcessing || isLowerTier || (!tier.isCurrent && isPaymentUnderMaintenance)}
                                              className={`w-full py-3 font-bold transition-all flex items-center justify-center gap-2 text-sm ${tier.isCurrent
                                                  ? 'bg-red-500 hover:bg-red-600 text-black border border-red-400'
-                                                 : isLowerTier
-                                                     ? 'bg-white/5 text-white/30 cursor-not-allowed border border-white/10'
-                                                     : `${tier.styles.button} border border-black/10`
+                                                 : (!tier.isCurrent && isPaymentUnderMaintenance)
+                                                     ? 'bg-white/10 text-white/30 cursor-not-allowed border border-white/10'
+                                                     : isLowerTier
+                                                         ? 'bg-white/5 text-white/30 cursor-not-allowed border border-white/10'
+                                                         : `${tier.styles.button} border border-black/10`
                                                  } ${current.fontClass}`}
                                          >
                                              {tier.isCurrent ? (
                                                  <>
                                                      <Icon icon="pixelarticons:close" className={isCancelling ? 'animate-spin' : ''} />
                                                      {current.pro.cancel}
+                                                 </>
+                                             ) : isPaymentUnderMaintenance ? (
+                                                 <>
+                                                     <Icon icon="pixelarticons:lock" />
+                                                     {current.common.paymentUnderMaintenanceBtn}
                                                  </>
                                              ) : (
                                                  <>

@@ -284,6 +284,7 @@ export default {
             submitting: 'Adding to cart…',
             buyNow: 'Buy',
             buying: 'Waiting for payment…',
+            paymentUnderMaintenance: 'Payment service is under maintenance. Direct purchase is temporarily unavailable.',
             approval: 'Paid orders are reviewed before production. Rejected orders receive a full refund and a reason in your mailbox.',
         },
         "model": "Model preview",
@@ -745,7 +746,9 @@ export default {
         requestFailed: 'Request failed',
         requestError: 'Request Error',
         networkError: 'Network Error',
-        networkConnectFailed: 'Network connection failed'
+        networkConnectFailed: 'Network connection failed',
+        paymentUnderMaintenance: 'Payment service is currently under maintenance. Please try again later.',
+        paymentUnderMaintenanceBtn: 'Under Maintenance'
     },
     placeholder: {
         building: 'Module under construction',
@@ -775,6 +778,7 @@ export default {
         subscription: 'Subscription',
         cancelOrder: 'Cancel Order',
         payNow: 'Pay Now',
+        paymentUnderMaintenance: 'Payment service is under maintenance. Orders cannot be paid at this time.',
         openingPayment: 'Opening PayPal checkout…',
         popupBlocked: 'Please allow pop-ups for this website, then try again.',
         paymentFailed: 'Unable to complete payment. Please check your order status and try again.',
@@ -863,6 +867,7 @@ Updates will identify their version and effective date and request your acceptan
         supportText: 'Support: ',
         successMessage: 'Subscription Success! Pro Activated.',
         upgrade: 'Upgrade',
+        paymentUnderMaintenance: 'Payment service is under maintenance. Subscriptions and upgrades are temporarily unavailable.',
         buyCreditsTip: 'You can purchase Credits directly as needed.',
         buyCreditsBtn: 'Buy Credits Directly',
         monthlyCreditsFormulaTitle: 'Total Monthly Credits',
@@ -928,6 +933,7 @@ Updates will identify their version and effective date and request your acceptan
         waitingPayment: 'Waiting for payment...',
         purchaseSuccess: 'Credits Added!',
         purchaseSuccessMsg: '{credits} credits have been added to your account.',
+        paymentUnderMaintenance: 'Payment service is under maintenance. Credit purchases are temporarily unavailable.',
         tableTime: 'Time',
         tableType: 'Type',
         tableSource: 'Source / Description',
@@ -1677,7 +1683,7 @@ Email: support@entropydrop.com`
                     title: 'Hardware',
                     icon: 'pixelarticons:device-laptop',
                     items: [
-                        { title: '3D Printing Production Line', desc: 'From parametric design, intelligent slicing, automated material feeding, unmanned operations, to automated post-processing, building a smart 3D printing factory.', status: 'Planned' },
+                        { title: '3D Printing Production Line', desc: 'From parametric design, intelligent slicing, automated material feeding, unmanned operations, to automated post-processing, building a smart 3D printing factory.', status: 'Active' },
                         { title: 'Industrial Automation', desc: 'Based on simulation and reinforcement learning, driving multi-agent collaboration to build fully autonomous AI-native manufacturing units.', status: 'Planned' },
                         { title: 'Trusted Devices', desc: 'Based on Trusted Execution Environments and open hardware, ensuring data usage, algorithm execution, and production processes are verifiable, auditable, and support community governance.', status: 'Planned' }
                     ]
@@ -1815,6 +1821,8 @@ Email: support@entropydrop.com`
         imageToSkinToggleDesc: 'Toggle maintenance for Image to Skin. When enabled, the Image to Skin button will be disabled.',
         imageEditToSkinToggleTitle: 'Edit to Skin Maintenance Switch',
         imageEditToSkinToggleDesc: 'Toggle maintenance for Image Edit to Skin. When enabled, the Image Edit to Skin button will be disabled.',
+        paymentToggleTitle: 'Payment Service Maintenance Switch',
+        paymentToggleDesc: 'Toggle maintenance for payment services. When enabled, payment buttons across subscription, credits, orders and 3D printing will be disabled and grayed out with a reminder.',
         enabled: 'ENABLED',
         disabled: 'DISABLED',
         underMaintenance: 'UNDER MAINTENANCE',
@@ -1827,6 +1835,8 @@ Email: support@entropydrop.com`
         imageToSkinDisabledMsg: 'Image to Skin maintenance mode enabled.',
         imageEditToSkinEnabledMsg: 'Image Edit to Skin generation enabled!',
         imageEditToSkinDisabledMsg: 'Image Edit to Skin maintenance mode enabled.',
+        paymentEnabledMsg: 'Payment service is now operational.',
+        paymentDisabledMsg: 'Payment service maintenance mode enabled.',
         operationFailed: 'Operation failed, please try again',
         networkError: 'Network connection error',
         deleteSkinSuccess: 'Skin {id} and associated resources successfully deleted.',

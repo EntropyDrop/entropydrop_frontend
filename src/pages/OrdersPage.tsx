@@ -1,6 +1,7 @@
 import { useAuthSession } from '../hooks/useAuthSession'
 import { useLatestRequest } from '../hooks/useLatestRequest'
 import { useOrderPayment } from '../hooks/useOrderPayment'
+import { usePaymentStatus } from '../hooks/usePaymentStatus'
 import { OrderKitDetails } from './figure/print/KitSpecificationsDetails'
 import type { OrderStickerRecord } from './figure/print/orderSticker'
 import type { KitSpecificationRecord } from './figure/print/kitSpecifications'
@@ -72,6 +73,7 @@ interface Order {
 
 export function OrdersPage({ current }: OrdersPageProps) {
     const authSession = useAuthSession();
+    const { isPaymentUnderMaintenance } = usePaymentStatus();
     const [searchParams] = useSearchParams();
     const linkedOrder = searchParams.get("order");
     const ordersRequests = useLatestRequest();
@@ -330,6 +332,12 @@ export function OrdersPage({ current }: OrdersPageProps) {
                         </div>
                     ) : (
                         <>
+                            {isPaymentUnderMaintenance && orders.some(o => o.status === 'pending_payment') && (
+                                <div className="flex items-center gap-2 border border-amber-500/30 bg-amber-500/10 p-3 text-amber-300 text-xs animate-in fade-in duration-200">
+                                    <Icon icon="pixelarticons:alert" className="text-base shrink-0 text-amber-400" />
+                                    <span>{current.orders.paymentUnderMaintenance}</span>
+                                </div>
+                            )}
                             {orders.map(order => (
                                 <div key={order.id} className="bg-white/5 border border-white/10 p-4 flex flex-col gap-3 hover:bg-white/10 transition-colors">
                                     <div className="flex justify-between items-start">
@@ -460,11 +468,26 @@ export function OrdersPage({ current }: OrdersPageProps) {
                                             </button>
                                             <button
                                                 onClick={() => void pay(order.id)}
-                                                disabled={processingOrderId !== null}
-                                                className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-black text-[10px] font-bold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                                disabled={processingOrderId !== null || isPaymentUnderMaintenance}
+                                                className={`px-3 py-1.5 ${
+                                                    isPaymentUnderMaintenance
+                                                        ? 'bg-white/10 text-white/30 border border-white/10 cursor-not-allowed'
+                                                        : 'bg-green-500 hover:bg-green-600 text-black cursor-pointer'
+                                                } text-[10px] font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1`}
                                             >
-                                                {processingOrderId === order.id && <Icon icon="pixelarticons:reload" className="animate-spin" />}
-                                                {processingOrderId === order.id ? current.credits.waitingPayment : current.orders.payNow}
+                                                {processingOrderId === order.id ? (
+                                                    <>
+                                                        <Icon icon="pixelarticons:reload" className="animate-spin" />
+                                                        {current.credits.waitingPayment}
+                                                    </>
+                                                ) : isPaymentUnderMaintenance ? (
+                                                    <>
+                                                        <Icon icon="pixelarticons:lock" />
+                                                        {current.common.paymentUnderMaintenanceBtn}
+                                                    </>
+                                                ) : (
+                                                    current.orders.payNow
+                                                )}
                                             </button>
                                         </div>
                                     )}

@@ -179,6 +179,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [imageToSkinSettingLoading, setImageToSkinSettingLoading] = useState(false)
   const [isImageEditToSkinEnabled, setIsImageEditToSkinEnabled] = useState(true)
   const [imageEditToSkinSettingLoading, setImageEditToSkinSettingLoading] = useState(false)
+  const [isPaymentEnabled, setIsPaymentEnabled] = useState(true)
+  const [paymentSettingLoading, setPaymentSettingLoading] = useState(false)
   const [modelPrices, setModelPrices] = useState<Record<string, { credits: number; free_credits: number; is_pro: boolean; under_maintenance: boolean; display_priority: number }>>({})
   const [modelPricesLoading, setModelPricesLoading] = useState(false)
 
@@ -574,16 +576,23 @@ export function MonitorPage({ current }: MonitorPageProps) {
         setIsTextToSkinEnabled(data.text_to_skin_enabled)
         setIsImageToSkinEnabled(data.image_to_skin_enabled)
         setIsImageEditToSkinEnabled(data.image_edit_to_skin_enabled)
+        if (typeof data.payment_enabled === 'boolean') {
+          setIsPaymentEnabled(data.payment_enabled)
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('payment-status-updated', { detail: data.payment_enabled }))
+          }
+        }
       }
     } catch (e) {
       console.error('Failed to fetch mode status', e)
     }
   }
 
-  const toggleModeStatus = async (mode: 'text_to_skin' | 'image_to_skin' | 'image_edit_to_skin', checked: boolean) => {
+  const toggleModeStatus = async (mode: 'text_to_skin' | 'image_to_skin' | 'image_edit_to_skin' | 'payment', checked: boolean) => {
     if (mode === 'text_to_skin') setTextToSkinSettingLoading(true)
     else if (mode === 'image_to_skin') setImageToSkinSettingLoading(true)
     else if (mode === 'image_edit_to_skin') setImageEditToSkinSettingLoading(true)
+    else if (mode === 'payment') setPaymentSettingLoading(true)
 
     try {
       const response = await apiFetch(`/api/monitor/mode_status/${mode}`, {
@@ -603,6 +612,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
         } else if (mode === 'image_edit_to_skin') {
           setIsImageEditToSkinEnabled(data.enabled)
           successMsg = data.enabled ? current.monitor.imageEditToSkinEnabledMsg : current.monitor.imageEditToSkinDisabledMsg
+        } else if (mode === 'payment') {
+          setIsPaymentEnabled(data.enabled)
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('payment-status-updated', { detail: data.enabled }))
+          }
+          successMsg = data.enabled ? current.monitor.paymentEnabledMsg : current.monitor.paymentDisabledMsg
         }
 
         setDeleteMessage({
@@ -625,6 +640,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
       if (mode === 'text_to_skin') setTextToSkinSettingLoading(false)
       else if (mode === 'image_to_skin') setImageToSkinSettingLoading(false)
       else if (mode === 'image_edit_to_skin') setImageEditToSkinSettingLoading(false)
+      else if (mode === 'payment') setPaymentSettingLoading(false)
     }
   }
 
@@ -1377,8 +1393,41 @@ export function MonitorPage({ current }: MonitorPageProps) {
             </div>
           </div>
 
+          {/* Payment Service Maintenance Switch */}
+          <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start gap-3.5">
+              <div className={`w-10 h-10 border flex items-center justify-center text-xl transition-all ${!isPaymentEnabled ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
+                <Icon icon="pixelarticons:credit-card" className="" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <h3 className={`text-white text-sm sm:text-base m-0 flex items-center gap-2 ${current.fontClass}`}>
+                  {current.monitor.paymentToggleTitle}
+                </h3>
+                <p className="text-white/40 text-[9px] sm:text-[10px] font-mono uppercase tracking-wider">
+                  {current.monitor.paymentToggleDesc}
+                </p>
+              </div>
+            </div>
 
-
+            <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
+              <span className={`text-[10px] sm:text-xs font-mono font-bold tracking-wider uppercase ${!isPaymentEnabled ? 'text-red-400' : 'text-green-400'}`}>
+                {!isPaymentEnabled ? current.monitor.underMaintenance : current.monitor.operational}
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!isPaymentEnabled}
+                  disabled={paymentSettingLoading}
+                  onChange={(e) => toggleModeStatus('payment', !e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-white/10 border border-white/20 peer-focus:outline-none rounded-none transition-all peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-none after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500/20 peer-checked:border-red-500/40 peer-disabled:opacity-50"></div>
+              </label>
+              {paymentSettingLoading && (
+                <Icon icon="pixelarticons:reload" className="animate-spin text-green-500 text-sm" />
+              )}
+            </div>
+          </div>
 
           {/* Model Specific Pricing Configuration Card */}
           <div className="bg-white/5 border border-white/10 p-4 sm:p-5 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-300">

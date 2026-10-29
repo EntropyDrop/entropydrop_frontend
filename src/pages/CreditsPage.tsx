@@ -1,5 +1,6 @@
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { useAuthSession } from '../hooks/useAuthSession'
+import { usePaymentStatus } from '../hooks/usePaymentStatus'
 import { PageContainer } from '../components/PageContainer';
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Icon } from '@iconify/react'
@@ -25,6 +26,7 @@ interface CreditLogEntry {
 export function CreditsPage({ current }: CreditsPageProps) {
     const authSession = useAuthSession();
     const { user, setUser } = useCurrentUser()
+    const { isPaymentUnderMaintenance } = usePaymentStatus()
     const [items, setItems] = useState<CreditLogEntry[]>([])
     const [page, setPage] = useState(1)
     const [total, setTotal] = useState(0)
@@ -219,6 +221,13 @@ export function CreditsPage({ current }: CreditsPageProps) {
                     <span className="text-sm font-bold text-white/80">{c.topUpTitle}</span>
                 </div>
 
+                {isPaymentUnderMaintenance && (
+                    <div className="flex items-center gap-2 border border-amber-500/30 bg-amber-500/10 p-3 mb-4 text-amber-300 text-xs animate-in fade-in duration-200">
+                        <Icon icon="pixelarticons:alert" className="text-lg shrink-0 text-amber-400" />
+                        <span>{c.paymentUnderMaintenance}</span>
+                    </div>
+                )}
+
                 {purchaseSuccess && (
                     <motion.div
                         initial={{ opacity: 0, y: -8 }}
@@ -290,13 +299,22 @@ export function CreditsPage({ current }: CreditsPageProps) {
                     <div className="w-full sm:w-auto sm:ml-auto flex flex-col gap-1.5 align-end">
                         <button
                             onClick={handlePay}
-                            disabled={isProcessing || customAmount < MIN_PURCHASE_AMOUNT}
-                            className="w-full flex items-center justify-center gap-2 h-[58px] border border-[#a6df7a]/40 bg-[#a6df7a]/12 hover:bg-[#a6df7a]/20 disabled:opacity-40 disabled:pointer-events-none px-6 text-[#a6df7a] font-bold cursor-pointer transition-all hover:shadow-[0_0_12px_rgba(166,223,122,0.15)] animate-in fade-in slide-in-from-left-2 duration-200"
+                            disabled={isProcessing || customAmount < MIN_PURCHASE_AMOUNT || isPaymentUnderMaintenance}
+                            className={`w-full flex items-center justify-center gap-2 h-[58px] border px-6 font-bold transition-all ${
+                                isPaymentUnderMaintenance
+                                    ? 'border-white/10 bg-white/5 text-white/30 cursor-not-allowed'
+                                    : 'border-[#a6df7a]/40 bg-[#a6df7a]/12 hover:bg-[#a6df7a]/20 disabled:opacity-40 disabled:pointer-events-none text-[#a6df7a] cursor-pointer hover:shadow-[0_0_12px_rgba(166,223,122,0.15)] animate-in fade-in slide-in-from-left-2 duration-200'
+                            }`}
                         >
                             {isProcessing ? (
                                 <>
                                     <Icon icon="pixelarticons:reload" className="animate-spin text-lg" />
                                     {c.waitingPayment}
+                                </>
+                            ) : isPaymentUnderMaintenance ? (
+                                <>
+                                    <Icon icon="pixelarticons:lock" className="text-lg" />
+                                    {current.common.paymentUnderMaintenanceBtn}
                                 </>
                             ) : (
                                 <>
