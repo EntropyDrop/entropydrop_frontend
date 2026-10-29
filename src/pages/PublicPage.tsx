@@ -72,33 +72,42 @@ export function PublicPage({ current }: PublicPageProps) {
 
             {/* Header */}
             <div className="flex flex-col gap-2 border-b border-white/10 pb-6 shrink-0">
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <a
+                            href="https://github.com/EntropyDrop"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-white font-mono tracking-wider bg-white/10 self-start px-2 py-0.5 border border-white/30 hover:bg-white/20 transition-colors flex items-center gap-1.5"
+                        >
+                            <Icon icon="mdi:github" className="text-base" />
+                            GITHUB
+                        </a>
+                        <a
+                            href="https://huggingface.co/EntropyDrop"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-[#FFD21E] font-mono tracking-wider bg-[#FFD21E]/10 self-start px-2 py-0.5 border border-[#FFD21E]/30 hover:bg-[#FFD21E]/20 transition-colors flex items-center gap-1.5"
+                        >
+                            <Icon icon="simple-icons:huggingface" className="text-base" />
+                            HUGGING FACE
+                        </a>
+                        <a
+                            href="https://discord.gg/zxd8RjUyYt"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-[#5865F2] font-mono tracking-wider bg-[#5865F2]/10 self-start px-2 py-0.5 border border-[#5865F2]/30 hover:bg-[#5865F2]/20 transition-colors flex items-center gap-1.5"
+                        >
+                            <Icon icon="ic:baseline-discord" className="text-base" />
+                            DISCORD
+                        </a>
+                    </div>
                     <a
-                        href="https://github.com/EntropyDrop"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-white font-mono tracking-wider bg-white/10 self-start px-2 py-0.5 border border-white/30 hover:bg-white/20 transition-colors flex items-center gap-1.5"
+                        href="mailto:support@entropydrop.com"
+                        className={`text-xs sm:text-sm text-white/70 hover:text-green-400 ${current.fontClass} flex items-center gap-1.5 transition-colors group`}
                     >
-                        <Icon icon="mdi:github" className="text-base" />
-                        GITHUB
-                    </a>
-                    <a
-                        href="https://huggingface.co/EntropyDrop"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-[#FFD21E] font-mono tracking-wider bg-[#FFD21E]/10 self-start px-2 py-0.5 border border-[#FFD21E]/30 hover:bg-[#FFD21E]/20 transition-colors flex items-center gap-1.5"
-                    >
-                        <Icon icon="simple-icons:huggingface" className="text-base" />
-                        HUGGING FACE
-                    </a>
-                    <a
-                        href="https://discord.gg/zxd8RjUyYt"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-[#5865F2] font-mono tracking-wider bg-[#5865F2]/10 self-start px-2 py-0.5 border border-[#5865F2]/30 hover:bg-[#5865F2]/20 transition-colors flex items-center gap-1.5"
-                    >
-                        <Icon icon="ic:baseline-discord" className="text-base" />
-                        DISCORD
+                        <Icon icon="pixelarticons:mail" className="text-base text-green-500 group-hover:text-green-400 transition-colors translate-y-[2px]" />
+                        <span>support@entropydrop.com</span>
                     </a>
                 </div>
                 <h1 className={`text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-white via-white/80 to-white/40 bg-clip-text text-transparent ${current.fontClass}`}>
