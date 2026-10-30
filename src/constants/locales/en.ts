@@ -690,6 +690,7 @@ export default {
         profile: 'Profile',
         settings: 'Settings',
         orders: 'My Orders',
+        credits: 'Credits',
         logout: 'Logout',
         regular: 'Regular',
         proExpires: 'Expires:',

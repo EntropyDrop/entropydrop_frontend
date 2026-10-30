@@ -690,6 +690,7 @@ export default {
         profile: '个人资料',
         settings: '设置',
         orders: '我的订单',
+        credits: 'Credits 额度',
         logout: '退出登录',
         regular: '普通用户',
         proExpires: '到期:',

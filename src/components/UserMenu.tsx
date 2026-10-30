@@ -595,6 +595,14 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
 
                             {user.is_creator && <button onClick={() => { setIsOpen(false); navigate('/creator'); }} className={`w-full px-4 py-2.5 text-left text-[#a6df7a] hover:bg-white/10 text-xs cursor-pointer flex items-center gap-3 ${current.fontClass}`}><Icon icon="pixelarticons:coin" />{current.creatorPortal.title}</button>}
                             <button
+                                onClick={() => { setIsOpen(false); navigate('/credits'); }}
+                                className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:zap" className="text-sm shrink-0" />
+                                <span className="flex-1">{current.user.credits}</span>
+                                <span className="text-[10px] text-white/60">{user.credits ?? 0}</span>
+                            </button>
+                            <button
                                 onClick={() => { setIsOpen(false); navigate('/skin/orders'); }}
                                 className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
                             >
@@ -602,13 +610,22 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                             </button>
                         </>
                     ) : (
-                        <button
-                            onClick={() => { setIsOpen(false); navigate('/pro'); }}
-                            className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
-                        >
-                            <Icon icon="pixelarticons:zap" className="text-sm shrink-0" />
-                            <span className="flex-1">{current.nav.pro}</span>
-                        </button>
+                        <>
+                            <button
+                                onClick={() => { setIsOpen(false); navigate('/pro'); }}
+                                className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:zap" className="text-sm shrink-0" />
+                                <span className="flex-1">{current.nav.pro}</span>
+                            </button>
+                            <button
+                                onClick={() => { setIsOpen(false); navigate('/credits'); }}
+                                className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:zap" className="text-sm shrink-0" />
+                                <span className="flex-1">{current.user.credits}</span>
+                            </button>
+                        </>
                     )}
 
                     <button
