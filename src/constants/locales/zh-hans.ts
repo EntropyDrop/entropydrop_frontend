@@ -756,7 +756,7 @@ export default {
         soon: '更多精彩功能即将上线...'
     },
     orders: {
-        support: '订单疑问/售后：',
+        support: '支持与退款：',
         loading: '加载中...',
         noOrders: '暂无订单',
         orderId: '订单号',
@@ -865,7 +865,7 @@ export default {
         cancelSuccess: '您的订阅已取消。',
         cancelFailed: '取消订阅失败',
         recommended: '官方推荐',
-        supportText: '订单疑问：',
+        supportText: '支持与退款：',
         successMessage: '订阅成功！Pro 会员已激活。',
         upgrade: '升级',
         paymentUnderMaintenance: '支付服务维护中，暂无法发起订阅或升级，请稍后再试。',
@@ -929,6 +929,7 @@ export default {
         pageDesc: '查看您的 Credit 额度增加和消费记录。',
         balanceLabel: '当前余额',
         topUpTitle: '购买 Credits',
+        supportText: '支持与退款：',
         creditsFor: '{credits} Credits',
         paypalButton: '购买',
         waitingPayment: '等待支付完成...',

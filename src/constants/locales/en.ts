@@ -756,7 +756,7 @@ export default {
         soon: 'More exciting features coming soon...'
     },
     orders: {
-        support: 'Support: ',
+        support: 'Support & Refunds: ',
         loading: 'Loading...',
         noOrders: 'No records',
         orderId: 'Order ID',
@@ -865,7 +865,7 @@ Updates will identify their version and effective date and request your acceptan
         cancelSuccess: 'Your subscription has been cancelled.',
         cancelFailed: 'Failed to cancel subscription',
         recommended: 'RECOMMENDED',
-        supportText: 'Support: ',
+        supportText: 'Support & Refunds: ',
         successMessage: 'Subscription Success! Pro Activated.',
         upgrade: 'Upgrade',
         paymentUnderMaintenance: 'Payment service is under maintenance. Subscriptions and upgrades are temporarily unavailable.',
@@ -929,6 +929,7 @@ Updates will identify their version and effective date and request your acceptan
         pageDesc: 'View your credit logs, including balance increases and generation consumption.',
         balanceLabel: 'Current Balance',
         topUpTitle: 'Buy Credits',
+        supportText: 'Support & Refunds: ',
         creditsFor: '{credits} Credits',
         paypalButton: 'Purchase',
         waitingPayment: 'Waiting for payment...',

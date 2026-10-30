@@ -321,9 +321,16 @@ export function CreditsPage({ current }: CreditsPageProps) {
                     >
                         {/* Top-Up Section - Compact Pixel Style */}
                         <div className="border border-white/10 bg-white/5 p-3">
-                            <div className="flex items-center gap-1.5 mb-2">
-                                <Icon icon="pixelarticons:cart-plus" className="text-base text-white/60" />
-                                <span className="text-xs font-bold text-white/80">{c.topUpTitle}</span>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-2">
+                                <div className="flex items-center gap-1.5">
+                                    <Icon icon="pixelarticons:cart-plus" className="text-base text-white/60" />
+                                    <span className="text-xs font-bold text-white/80">{c.topUpTitle}</span>
+                                </div>
+                                <div className="text-[10px] text-white/40 flex items-center gap-1">
+                                    <Icon icon="pixelarticons:mail" className="text-xs shrink-0" />
+                                    <span>{c.supportText}</span>
+                                    <a href="mailto:support@entropydrop.com" className="text-white/60 hover:text-white transition-colors cursor-pointer underline">support@entropydrop.com</a>
+                                </div>
                             </div>
 
                             {isPaymentUnderMaintenance && (
