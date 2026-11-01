@@ -2,7 +2,7 @@ import { FigurePrintOfferBadge } from './FigureDiscountBadge';
 import type { LangData } from '../constants/lang'
 import { request } from '../utils/httpClient'
 import { Icon } from '@iconify/react'
-import { Component, Suspense, useState, useRef, useEffect, type ErrorInfo, type ReactNode } from 'react'
+import { Component, Suspense, memo, useState, useRef, useEffect, useCallback, useSyncExternalStore, type ErrorInfo, type ReactNode } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Stage } from '@react-three/drei'
 import { MinecraftCharacter } from './MC'
@@ -70,6 +70,48 @@ class PreviewErrorBoundary extends Component<PreviewErrorBoundaryProps, PreviewE
     }
 }
 
+function subscribeVisibility(listener: () => void) {
+    document.addEventListener('visibilitychange', listener);
+    return () => document.removeEventListener('visibilitychange', listener);
+}
+const isDocumentVisible = () => !document.hidden;
+
+// Sidebar, download and dropdown updates should not reconcile the Three scene.
+const PreviewScene = memo(function PreviewScene({ textureUrl, mode, action, fbxUrl, visibleParts, onError }:
+    Pick<MCModalPreviewProps, 'textureUrl' | 'mode' | 'action' | 'fbxUrl' | 'visibleParts'> & { onError: () => void }) {
+    const visible = useSyncExternalStore(subscribeVisibility, isDocumentVisible, () => true);
+    const animated = action !== 'idle' || mode === 'cute';
+    return (
+        <Canvas
+            camera={{ position: [35, 35, 35], fov: 40 }}
+            frameloop={!visible ? 'never' : animated ? 'always' : 'demand'}
+            dpr={[1, 1.5]}
+            resize={{ offsetSize: true }}
+        >
+            <color attach="background" args={['#1a1a1a']} />
+            <ambientLight intensity={0.6} />
+            <spotLight position={[10, 20, 10]} angle={0.15} penumbra={1} intensity={1.5} />
+            <pointLight position={[-10, -10, -10]} intensity={0.5} />
+            <PreviewErrorBoundary key={textureUrl} onError={onError}>
+                <Suspense fallback={null}>
+                    <Stage
+                        key={mode}
+                        environment={null}
+                        intensity={0.5}
+                        shadows={{ type: 'contact', opacity: 0.6, blur: 1.5, resolution: 256, smooth: false }}
+                        adjustCamera={false}
+                    >
+                        <group position={[0, -0.5, 0]}>
+                            <MinecraftCharacter textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} />
+                        </group>
+                    </Stage>
+                </Suspense>
+            </PreviewErrorBoundary>
+            <OrbitControls makeDefault enableDamping target={[0, 0, 0]} />
+        </Canvas>
+    );
+});
+
 export function MCModalPreview({
     textureUrl,
     mode,
@@ -89,6 +131,7 @@ export function MCModalPreview({
 }: MCModalPreviewProps) {
     const [isFbxDropdownOpen, setIsFbxDropdownOpen] = useState(false);
     const [previewFailed, setPreviewFailed] = useState(false);
+    const handlePreviewError = useCallback(() => setPreviewFailed(true), []);
     const fbxDropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -139,36 +182,7 @@ export function MCModalPreview({
 
     return (
         <div className="w-full aspect-square lg:aspect-auto lg:w-[600px] h-full lg:h-full bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] relative overflow-hidden flex-shrink-0 border-b lg:border-b-0 lg:border-r border-white/10">
-            <Canvas
-                camera={{ position: [35, 35, 35], fov: 40 }}
-                shadows
-                resize={{ offsetSize: true }}
-            >
-                <color attach="background" args={['#1a1a1a']} />
-                <ambientLight intensity={0.6} />
-                <spotLight position={[10, 20, 10]} angle={0.15} penumbra={1} intensity={1.5} castShadow />
-                <pointLight position={[-10, -10, -10]} intensity={0.5} />
-
-                {!previewFailed && (
-                    <PreviewErrorBoundary key={textureUrl} onError={() => setPreviewFailed(true)}>
-                        <Suspense fallback={null}>
-                            <Stage
-                                key={`${mode}-${modelType}`}
-                                environment={null}
-                                intensity={0.5}
-                                shadows={{ type: 'contact', opacity: 0.6, blur: 1.5, frames: Infinity }}
-                                adjustCamera={false}
-                            >
-                                <group position={[0, -0.5, 0]}>
-                                    <MinecraftCharacter textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} />
-                                </group>
-                            </Stage>
-                        </Suspense>
-                    </PreviewErrorBoundary>
-                )}
-
-                <OrbitControls makeDefault enableDamping target={[0, 0, 0]} />
-            </Canvas>
+            <PreviewScene textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} onError={handlePreviewError} />
 
             {previewFailed && (
                 <div className={`absolute inset-0 pointer-events-none flex items-center justify-center p-6 text-center ${current.fontClass}`}>

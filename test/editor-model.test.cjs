@@ -14,6 +14,7 @@ const code = buildSync({
 }).outputFiles[0].text;
 const moduleRef = { exports: {} };
 const frameCallbacks = [];
+let danceSource;
 vm.runInNewContext(code, {
     module: moduleRef, exports: moduleRef.exports,
     document: { createElement() {
@@ -26,7 +27,7 @@ vm.runInNewContext(code, {
     require: name => {
         if (name === 'react') return { ...React, useMemo: fn => fn(), useRef: value => ({ current: value }), useEffect() {} };
         if (name === '@react-three/fiber') return { Canvas: 'canvas', useFrame: callback => frameCallbacks.push(callback) };
-        if (name === '@react-three/drei') return { Stage: 'stage', OrbitControls: 'orbit-controls' };
+        if (name === '@react-three/drei') return { Stage: 'stage', OrbitControls: 'orbit-controls', useFBX: () => danceSource, useAnimations: () => ({ actions: {} }) };
         if (name === './utils') return { isSlim: image => image.slim, ensureSkinVoxelModeConsistency() {} };
         return require(name);
     },
@@ -145,10 +146,113 @@ test('canvas-backed editor textures produce voxel overlays and refresh after pix
     const texture = new THREE.Texture({ width: 64, height: 64, pixels });
     for (const [revision, color] of [[1, [255, 0, 0, 255]], [2, [0, 255, 0, 255]]]) {
         pixels.data.set(color, offset);
-        const tree = MinecraftCharacterInner({ texture, mode: 'voxel', updateTrigger: revision });
+        const tree = MinecraftCharacterInner({ texture, mode: 'voxel', updateTrigger: revision, onPaint() {} });
         const overlays = findAll(tree, node => node.type === 'primitive' && node.props.object instanceof THREE.Group);
         const head = overlays.map(node => node.props.object).find(group => group.children.length === 1);
         assert.ok(head, 'Canvas images do not have HTMLImageElement.complete');
         assert.equal(head.children[0].material[4].color.getHex(), revision === 1 ? 0xff0000 : 0x00ff00);
+    }
+});
+
+
+for (const mode of ['voxel', 'cute']) for (const slim of [false, true]) {
+    test(`${mode} ${slim ? 'slim' : 'classic'} batches preview voxels without changing geometry or face colors`, t => {
+        const pixels = { width: 64, height: 64, data: new Uint8ClampedArray(64 * 64 * 4) };
+        for (let i = 0; i < 64 * 64; i++) {
+            pixels.data.set([i % 256, (i * 7) % 256, (i * 13) % 256, i % 11 === 0 ? 0 : i % 17 === 0 ? 128 : 255], i * 4);
+        }
+        const texture = new THREE.Texture({ width: 64, height: 64, pixels, slim });
+        const preview = MinecraftCharacterInner({ texture, mode, action: 'dance' });
+        const editor = MinecraftCharacterInner({ texture, mode, action: 'dance', onPaint() {} });
+        const groups = tree => findAll(tree, node => node.type === 'primitive' && node.props.object instanceof THREE.Group).map(node => node.props.object);
+        const previewGroups = groups(preview), editorGroups = groups(editor);
+        assert.equal(previewGroups.length, 10);
+        let oldDrawCalls = 0;
+        for (let part = 0; part < previewGroups.length; part++) {
+            const merged = previewGroups[part].children;
+            const cells = editorGroups[part].children;
+            assert.equal(merged.length, 1, 'One draw call per body part');
+            assert.equal(Array.isArray(merged[0].material), false);
+            assert.equal(merged[0].geometry.groups.length, 0);
+            assert.ok(previewGroups[part].scale.equals(editorGroups[part].scale));
+            const positions = merged[0].geometry.getAttribute('position');
+            const colors = merged[0].geometry.getAttribute('color');
+            assert.equal(positions.count, cells.length * 24);
+            oldDrawCalls += cells.length * 6;
+            cells.forEach((cell, index) => {
+                cell.updateMatrix();
+                const original = cell.geometry.getAttribute('position');
+                for (let vertex = 0; vertex < original.count; vertex++) {
+                    const expected = new THREE.Vector3().fromBufferAttribute(original, vertex).applyMatrix4(cell.matrix);
+                    const actual = new THREE.Vector3().fromBufferAttribute(positions, index * 24 + vertex);
+                    assert.ok(actual.distanceTo(expected) < 1e-5, 'Cube boundaries and Cute taper stay unchanged');
+                    const expectedColor = cell.material[Math.floor(vertex / 4)].color;
+                    const actualColor = new THREE.Color().fromBufferAttribute(colors, index * 24 + vertex);
+                    assert.ok(Math.abs(actualColor.r - expectedColor.r) < 1e-6);
+                    assert.ok(Math.abs(actualColor.g - expectedColor.g) < 1e-6);
+                    assert.ok(Math.abs(actualColor.b - expectedColor.b) < 1e-6);
+                }
+            });
+        }
+        assert.ok(oldDrawCalls > previewGroups.length * 100);
+        t.diagnostic(`Overlay draw calls per pass: ${oldDrawCalls} -> ${previewGroups.length}`);
+        assert.equal(findAll(preview, node => node.props.onPointerMove || node.props.onPointerDown || node.props.onPointerLeave).length, 0,
+            'Read-only previews must not run pixel raycasts during camera drags');
+        assert.ok(findAll(editor, node => node.props.onPointerMove).length > 0);
+    });
+}
+
+test('an empty overlay creates no preview geometry', () => {
+    const pixels = { width: 64, height: 64, data: new Uint8ClampedArray(64 * 64 * 4) };
+    const texture = new THREE.Texture({ width: 64, height: 64, pixels });
+    const preview = MinecraftCharacterInner({ texture, mode: 'voxel' });
+    for (const node of findAll(preview, node => node.type === 'primitive')) {
+        assert.equal(node.props.object.children.length, 0);
+    }
+});
+
+
+test('dance caches bone lookups and matches world rotations without mutating a shared FBX', () => {
+    danceSource = new THREE.Group();
+    const names = ['body', 'head', 'left_up_arm', 'LeftLowArm', 'right up arm'];
+    for (const [index, name] of names.entries()) {
+        const bone = new THREE.Bone();
+        bone.name = name;
+        bone.rotation.set(index * 0.1, index * 0.2, index * 0.3);
+        bone.position.set(0, index, 0);
+        danceSource.add(bone);
+    }
+    const texture = new THREE.Texture({ width: 64, height: 64, complete: false });
+    const tree = MinecraftCharacterInner({ texture, action: 'dance', mode: 'plane' });
+    const controller = findAll(tree, node => typeof node.type === 'function' && node.type.name === 'DanceController')[0];
+    const inner = controller.type(controller.props);
+    const refNames = ['body', 'head', 'left_arm', 'left_low_arm', 'right_arm'];
+    const parent = new THREE.Group();
+    parent.rotation.set(0.3, 0.1, -0.2);
+    for (const name of refNames) {
+        const part = new THREE.Group();
+        parent.add(part);
+        inner.props.partsRefs.current[name] = part;
+    }
+    const animation = inner.type(inner.props);
+    const fbx = findAll(animation, node => node.type === 'primitive')[0].props.object;
+    assert.notEqual(fbx, danceSource);
+    assert.notEqual(fbx.children[0], danceSource.children[0]);
+    const frame = frameCallbacks.at(-1);
+    fbx.getObjectByName = () => assert.fail('No bone-name searches in the animation loop');
+    fbx.traverse = () => assert.fail('No hierarchy searches in the animation loop');
+    const flipY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI).invert();
+    for (let step = 0; step < 3; step++) {
+        fbx.children.forEach(bone => { bone.rotation.y += 0.1; });
+        fbx.children[0].position.x = step * 8;
+        frame();
+        refNames.forEach((name, index) => {
+            const expected = fbx.children[index].getWorldQuaternion(new THREE.Quaternion());
+            if (name !== 'body' && name !== 'head') expected.multiply(flipY);
+            const actual = inner.props.partsRefs.current[name].getWorldQuaternion(new THREE.Quaternion());
+            assert.ok(actual.angleTo(expected) < 1e-7);
+            assert.ok(Math.abs(danceSource.children[index].rotation.y - index * 0.2) < 1e-7);
+        });
+        assert.equal(inner.props.partsRefs.current.body.position.x, step);
     }
 });
