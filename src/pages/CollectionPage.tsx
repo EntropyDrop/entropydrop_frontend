@@ -9,7 +9,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import { type LangData } from '../constants/lang'
 import { SEO } from '../components/SEO'
 import { Skin2DImg } from '../components/Skin2DImg'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { MCModal } from '../components/MCModal'
 import { showError } from '../utils/alert'
 import { LoadingPlaceholder } from '../components/LoadingPlaceholder'
@@ -813,6 +813,76 @@ export function CollectionPage({ current }: CollectionPageProps) {
         }
     }
 
+    const [showShareToast, setShowShareToast] = useState(false)
+    const shareToastTimerRef = useRef<number | ReturnType<typeof setTimeout> | null>(null)
+    useEffect(() => {
+        return () => {
+            if (shareToastTimerRef.current) window.clearTimeout(shareToastTimerRef.current)
+        }
+    }, [])
+
+    const handleShare = async (shareUrl: string, shareTitle: string) => {
+        if (typeof navigator !== 'undefined' && navigator.share) {
+            try {
+                await navigator.share({
+                    title: shareTitle,
+                    url: shareUrl,
+                })
+                return
+            } catch (err) {
+                if ((err as Error)?.name === 'AbortError') return
+            }
+        }
+        let copied = false
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+            try {
+                await navigator.clipboard.writeText(shareUrl)
+                copied = true
+            } catch (err) {
+                console.error('Failed to copy share link via clipboard API', err)
+            }
+        }
+        if (!copied && typeof document !== 'undefined') {
+            try {
+                const textArea = document.createElement('textarea')
+                textArea.value = shareUrl
+                textArea.style.position = 'fixed'
+                textArea.style.opacity = '0'
+                document.body.appendChild(textArea)
+                textArea.select()
+                document.execCommand('copy')
+                document.body.removeChild(textArea)
+                copied = true
+            } catch {
+                // ignore
+            }
+        }
+        if (copied) {
+            setShowShareToast(true)
+            if (shareToastTimerRef.current) window.clearTimeout(shareToastTimerRef.current)
+            shareToastTimerRef.current = window.setTimeout(() => setShowShareToast(false), 2000)
+        }
+    }
+
+    const handleShareHome = () => {
+        const targetUserId = userId || myUserId
+        const shareUrl = targetUserId
+            ? `${window.location.origin}/skin/collection/${targetUserId}`
+            : `${window.location.origin}/skin/collection`
+        void handleShare(shareUrl, pageTitle)
+    }
+
+    const handleShareCurrentCollection = () => {
+        if (!currentCollection) return
+        const targetUserId = userId || (currentCollection.user_id ? String(currentCollection.user_id) : myUserId)
+        const shareUrl = targetUserId
+            ? `${window.location.origin}/skin/collection/${targetUserId}/${currentCollection.id}`
+            : `${window.location.origin}/skin/collection?id=${currentCollection.id}`
+        const currentColName = currentCollection.id === 'creations_public' ? publicCreationsName : currentCollection.name
+        const shareTitle = `${currentColName} | ${pageTitle}`
+        void handleShare(shareUrl, shareTitle)
+    }
+
     if (!authSession) {
         return (
             <PageContainer className="items-center justify-center">
@@ -869,9 +939,21 @@ export function CollectionPage({ current }: CollectionPageProps) {
                                         <Icon icon="pixelarticons:arrow-left" className="text-xl" />
                                     </button>
                                 )}
-                                <h2 className={`text-white text-2xl sm:text-3xl m-0 truncate ${current.fontClass}`}>
+                                <h2 className={`text-white text-2xl sm:text-3xl m-0 truncate min-w-0 ${current.fontClass}`}>
                                     {currentCollection ? collectionName : pageTitle}
                                 </h2>
+                                {currentCollection?.is_public && (
+                                    <button
+                                        type="button"
+                                        onClick={handleShareCurrentCollection}
+                                        className={`flex cursor-pointer items-center justify-center gap-1.5 border border-white/10 bg-white/5 hover:bg-white/10 px-2.5 py-1 text-xs text-white transition-all active:translate-y-0.5 shrink-0 ${current.fontClass}`}
+                                        title={current.collection.share}
+                                        aria-label={current.collection.share}
+                                    >
+                                        <Icon icon="pixelarticons:forward" className="text-sm" />
+                                        <span>{current.collection.share}</span>
+                                    </button>
+                                )}
                             </div>
                             <p className={`text-white/40 text-sm ${current.fontClass}`}>
                                 {currentCollection
@@ -889,82 +971,96 @@ export function CollectionPage({ current }: CollectionPageProps) {
                     </div>
 
                     <div className="flex flex-col items-stretch md:items-end gap-3 w-full md:w-auto">
-                        {!currentCollection && isOwnCollectionPage && (
+                        {!currentCollection && !pathCollectionId && (
                             <div className="flex w-full items-center gap-2 md:w-auto">
-                                <button
-                                    onClick={() => setIsCreateModalOpen(true)}
-                                    className={`flex flex-1 cursor-pointer items-center justify-center gap-2 border-2 border-black bg-[#3c8527] px-4 py-2 text-xs text-white transition-all hover:bg-[#4ea632] active:translate-y-0.5 md:flex-none ${current.fontClass}`}
-                                >
-                                    <Icon icon="pixelarticons:plus" />
-                                    {current.collection.btnNew}
-                                </button>
-
-                                <div className={`relative flex-1 md:flex-none ${isUploadPickerOpen ? 'z-[60]' : ''}`}>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (isUploadPickerOpen) {
-                                                setIsUploadPickerOpen(false)
-                                                return
-                                            }
-                                            setUploadPickerTab('public')
-                                            setUploadPickerPage(1)
-                                            setSelectedUploadCollection(null)
-                                            setIsUploadPickerOpen(true)
-                                        }}
-                                        aria-expanded={isUploadPickerOpen}
-                                        className={`flex w-full cursor-pointer items-center justify-center gap-2 border-2 border-black bg-[#3c8527] px-4 py-2 text-xs text-white transition-all hover:bg-[#4ea632] active:translate-y-0.5 ${current.fontClass}`}
-                                    >
-                                        <Icon icon="pixelarticons:upload" />
-                                        {current.collection.upload}
-                                    </button>
-
-                                    <input
-                                        ref={homeUploadInputRef}
-                                        type="file"
-                                        accept="image/png,.png"
-                                        className="hidden"
-                                        onChange={handleHomeUploadItem}
-                                    />
-
-                                    {isUploadPickerOpen && (
+                                {isOwnCollectionPage && (
+                                    <>
                                         <button
-                                            type="button"
-                                            aria-label={current.modal.cancel}
-                                            onClick={() => setIsUploadPickerOpen(false)}
-                                            className="fixed inset-0 z-40 cursor-default"
-                                        />
-                                    )}
+                                            onClick={() => setIsCreateModalOpen(true)}
+                                            className={`flex flex-1 cursor-pointer items-center justify-center gap-2 border-2 border-black bg-[#3c8527] px-4 py-2 text-xs text-white transition-all hover:bg-[#4ea632] active:translate-y-0.5 md:flex-none ${current.fontClass}`}
+                                        >
+                                            <Icon icon="pixelarticons:plus" />
+                                            {current.collection.btnNew}
+                                        </button>
 
-                                    <AnimatePresence>
-                                        {isUploadPickerOpen && (
-                                            <CollectionUploadPicker
-                                                current={current}
-                                                collections={uploadPickerCollections}
-                                                activeTab={uploadPickerTab}
-                                                selectedCollectionId={selectedUploadCollection?.id ?? null}
-                                                page={uploadPickerPage}
-                                                totalPages={uploadPickerTotalPages}
-                                                isLoading={isLoadingUploadPicker}
-                                                isPrivateUploadDisabled={!isPro}
-                                                onTabChange={(tab) => {
-                                                    setUploadPickerTab(tab)
+                                        <div className={`relative flex-1 md:flex-none ${isUploadPickerOpen ? 'z-[60]' : ''}`}>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (isUploadPickerOpen) {
+                                                        setIsUploadPickerOpen(false)
+                                                        return
+                                                    }
+                                                    setUploadPickerTab('public')
                                                     setUploadPickerPage(1)
                                                     setSelectedUploadCollection(null)
+                                                    setIsUploadPickerOpen(true)
                                                 }}
-                                                onSelectCollection={(collection) => setSelectedUploadCollection(selected =>
-                                                    String(selected?.id) === String(collection.id) ? null : collection
-                                                )}
-                                                onPageChange={(page) => {
-                                                    setUploadPickerPage(page)
-                                                    setSelectedUploadCollection(null)
-                                                }}
-                                                onChooseImage={() => homeUploadInputRef.current?.click()}
-                                                onClose={() => setIsUploadPickerOpen(false)}
+                                                aria-expanded={isUploadPickerOpen}
+                                                className={`flex w-full cursor-pointer items-center justify-center gap-2 border-2 border-black bg-[#3c8527] px-4 py-2 text-xs text-white transition-all hover:bg-[#4ea632] active:translate-y-0.5 ${current.fontClass}`}
+                                            >
+                                                <Icon icon="pixelarticons:upload" />
+                                                {current.collection.upload}
+                                            </button>
+
+                                            <input
+                                                ref={homeUploadInputRef}
+                                                type="file"
+                                                accept="image/png,.png"
+                                                className="hidden"
+                                                onChange={handleHomeUploadItem}
                                             />
-                                        )}
-                                    </AnimatePresence>
-                                </div>
+
+                                            {isUploadPickerOpen && (
+                                                <button
+                                                    type="button"
+                                                    aria-label={current.modal.cancel}
+                                                    onClick={() => setIsUploadPickerOpen(false)}
+                                                    className="fixed inset-0 z-40 cursor-default"
+                                                />
+                                            )}
+
+                                            <AnimatePresence>
+                                                {isUploadPickerOpen && (
+                                                    <CollectionUploadPicker
+                                                        current={current}
+                                                        collections={uploadPickerCollections}
+                                                        activeTab={uploadPickerTab}
+                                                        selectedCollectionId={selectedUploadCollection?.id ?? null}
+                                                        page={uploadPickerPage}
+                                                        totalPages={uploadPickerTotalPages}
+                                                        isLoading={isLoadingUploadPicker}
+                                                        isPrivateUploadDisabled={!isPro}
+                                                        onTabChange={(tab) => {
+                                                            setUploadPickerTab(tab)
+                                                            setUploadPickerPage(1)
+                                                            setSelectedUploadCollection(null)
+                                                        }}
+                                                        onSelectCollection={(collection) => setSelectedUploadCollection(selected =>
+                                                            String(selected?.id) === String(collection.id) ? null : collection
+                                                        )}
+                                                        onPageChange={(page) => {
+                                                            setUploadPickerPage(page)
+                                                            setSelectedUploadCollection(null)
+                                                        }}
+                                                        onChooseImage={() => homeUploadInputRef.current?.click()}
+                                                        onClose={() => setIsUploadPickerOpen(false)}
+                                                    />
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+                                    </>
+                                )}
+
+                                <button
+                                    onClick={handleShareHome}
+                                    className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 sm:gap-2 border-2 border-black bg-[#1a1a1a] hover:bg-white/10 px-3 sm:px-4 py-2 text-xs text-white transition-all active:translate-y-0.5 md:flex-none ${current.fontClass}`}
+                                    title={current.collection.share}
+                                    aria-label={current.collection.share}
+                                >
+                                    <Icon icon="pixelarticons:forward" />
+                                    {current.collection.share}
+                                </button>
                             </div>
                         )}
 
@@ -1398,6 +1494,19 @@ export function CollectionPage({ current }: CollectionPageProps) {
 
                         {/* Right: Actions (Upload & Generate) */}
                         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 ml-auto">
+                            {currentCollection?.is_public && (
+                                <button
+                                    type="button"
+                                    onClick={handleShareCurrentCollection}
+                                    className={`px-2 py-1.5 sm:px-4 sm:py-2 bg-[#1a1a1a] hover:bg-white/10 text-white border border-white/10 sm:border-2 cursor-pointer text-[10px] sm:text-xs flex items-center justify-center gap-1 sm:gap-2 transition-all active:translate-y-0.5 whitespace-nowrap ${current.fontClass}`}
+                                    title={current.collection.share}
+                                    aria-label={current.collection.share}
+                                >
+                                    <Icon icon="pixelarticons:forward" className="text-xs sm:text-sm" />
+                                    <span>{current.collection.share}</span>
+                                </button>
+                            )}
+
                             {currentCollection && (
                                 <button
                                     onClick={() => navigate('/skin/generate')}
@@ -1704,6 +1813,25 @@ export function CollectionPage({ current }: CollectionPageProps) {
                         </div>
                     </div>
                 )}
+                <AnimatePresence>
+                    {showShareToast && (
+                        <motion.div
+                            key="share-toast"
+                            initial={{ opacity: 0, y: -20, scale: 0.9 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+                            transition={{ duration: 0.2 }}
+                            className={`fixed top-24 left-1/2 -translate-x-1/2 z-[200] bg-[#1a1a1a] border border-[#4ea632]/50 text-[#4ea632] px-4 py-2 text-xs shadow-[0_4px_20px_rgba(78,166,50,0.2)] ${current.fontClass}`}
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center gap-2">
+                                <Icon icon="pixelarticons:check" className="text-sm" />
+                                <span>{current.collection.linkCopied}</span>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 {(isLoading || isLoadingCollection) && <LoadingPlaceholder current={current} />}
         </PageContainer>
     )

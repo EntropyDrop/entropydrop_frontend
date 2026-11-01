@@ -60,7 +60,7 @@ function collections(url, userId = 42) {
 }
 
 async function mount(fetch, { userId = 42, width = 1920, collectionId, loggedIn = true, locale = 'en',
-    imageSize = [64, 64], imageDecodeFails = false } = {}) {
+    imageSize = [64, 64], imageDecodeFails = false, clipboard, share } = {}) {
     const initialPath = `/skin/collection/${userId}${collectionId ? `/${collectionId}` : ''}`;
     const dom = new JSDOM('<div id="root"></div>', {
         url: `https://app.example.test${initialPath}`,
@@ -70,6 +70,12 @@ async function mount(fetch, { userId = 42, width = 1920, collectionId, loggedIn 
     window.addEventListener('global-error', event => errors.push(event.detail.message));
     window.innerWidth = width;
     if (loggedIn) window.localStorage.setItem('token', 'existing-token');
+    if (clipboard) {
+        Object.defineProperty(window.navigator, 'clipboard', { value: clipboard, configurable: true, writable: true });
+    }
+    if (share) {
+        Object.defineProperty(window.navigator, 'share', { value: share, configurable: true, writable: true });
+    }
     const module = { exports: {} };
     const visuals = {
         Icon: ({ icon }) => React.createElement('svg', { 'data-icon': icon }),
@@ -82,6 +88,8 @@ async function mount(fetch, { userId = 42, width = 1920, collectionId, loggedIn 
     const context = vm.createContext({
         window, localStorage: window.localStorage, document: window.document,
         fetch, Headers, Response, Request,
+        setTimeout: window.setTimeout.bind(window),
+        clearTimeout: window.clearTimeout.bind(window),
         URL: class extends URL {
             static createObjectURL() { return 'blob:mock-skin'; }
             static revokeObjectURL(url) { revokedImageUrls.push(url); }
@@ -91,7 +99,8 @@ async function mount(fetch, { userId = 42, width = 1920, collectionId, loggedIn 
             set src(value) { if (imageDecodeFails) this.onerror?.(); else this.onload?.(); }
         },
         URLSearchParams, FormData, Blob, AbortController, DOMException, atob, console,
-        Event: window.Event, CustomEvent: window.CustomEvent, navigator: window.navigator,
+        Event: window.Event, CustomEvent: window.CustomEvent,
+        navigator: window.navigator,
         require: name => name === 'collection-visuals' ? visuals : require(name),
         module, exports: module.exports,
     });
@@ -846,3 +855,133 @@ test('guests still see the login requirement and do not request another user’s
         assertNoManagement(env);
     } finally { await env.close(); }
 });
+
+for (const locale of ['en', 'zh-hans']) {
+    test(`${locale}: collection homepage exposes a share button that copies the user collection URL`, async () => {
+        let copiedText = null;
+        const clipboard = {
+            writeText: async (text) => { copiedText = text; },
+        };
+        const env = await mount(input => {
+            const url = new URL(input);
+            if (url.pathname === '/api/users/me') return Promise.resolve(json({ id: 42, is_pro: true }));
+            return Promise.resolve(collections(url));
+        }, { userId: 42, locale, clipboard });
+        try {
+            const shareBtn = [...env.node.querySelectorAll('button')].find(b => b.textContent.includes(env.current.collection.share));
+            assert.ok(shareBtn, 'Share button must be present on collection homepage');
+            await React.act(async () => {
+                shareBtn.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true }));
+            });
+            assert.equal(copiedText, 'https://app.example.test/skin/collection/42');
+            assert.ok(env.node.textContent.includes(env.current.collection.linkCopied));
+        } finally { await env.close(); }
+    });
+
+    test(`${locale}: navigator.share is invoked when supported on collection homepage`, async () => {
+        let sharedPayload = null;
+        const share = async (payload) => { sharedPayload = payload; };
+        const env = await mount(input => {
+            const url = new URL(input);
+            if (url.pathname === '/api/users/me') return Promise.resolve(json({ id: 42, is_pro: true }));
+            return Promise.resolve(collections(url));
+        }, { userId: 42, locale, share });
+        try {
+            const shareBtn = [...env.node.querySelectorAll('button')].find(b => b.textContent.includes(env.current.collection.share));
+            assert.ok(shareBtn);
+            await React.act(async () => {
+                shareBtn.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true }));
+            });
+            assert.equal(sharedPayload?.url, 'https://app.example.test/skin/collection/42');
+        } finally { await env.close(); }
+    });
+
+    test(`${locale}: visitor collection homepage exposes a share button for the target user`, async () => {
+        let copiedText = null;
+        const clipboard = {
+            writeText: async (text) => { copiedText = text; },
+        };
+        const env = await mount(visitorFetch, { userId: 99, locale, clipboard });
+        try {
+            const shareBtn = [...env.node.querySelectorAll('button')].find(b => b.textContent.includes(env.current.collection.share));
+            assert.ok(shareBtn, 'Share button must be present on visitor collection homepage');
+            await React.act(async () => {
+                shareBtn.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true }));
+            });
+            assert.equal(copiedText, 'https://app.example.test/skin/collection/99');
+            assert.ok(env.node.textContent.includes(env.current.collection.linkCopied));
+        } finally { await env.close(); }
+    });
+
+    test(`${locale}: public collection (creations_public) exposes share buttons that copy collection URL`, async () => {
+        let copiedText = null;
+        const clipboard = {
+            writeText: async (text) => { copiedText = text; },
+        };
+        const env = await mount(visitorFetch, { userId: 99, collectionId: 'creations_public', locale, clipboard });
+        try {
+            const shareBtns = [...env.node.querySelectorAll('button')].filter(b => b.textContent.includes(env.current.collection.share));
+            assert.ok(shareBtns.length >= 1, 'At least one share button must be present inside public collection');
+            await React.act(async () => {
+                shareBtns[0].dispatchEvent(new env.window.MouseEvent('click', { bubbles: true }));
+            });
+            assert.equal(copiedText, 'https://app.example.test/skin/collection/99/creations_public');
+            assert.ok(env.node.textContent.includes(env.current.collection.linkCopied));
+        } finally { await env.close(); }
+    });
+
+    test(`${locale}: custom public collection exposes share buttons`, async () => {
+        let copiedText = null;
+        const clipboard = {
+            writeText: async (text) => { copiedText = text; },
+        };
+        const env = await mount(input => {
+            const url = new URL(input);
+            if (url.pathname === '/api/users/99/collections') {
+                return Promise.resolve(json({
+                    items: [{ id: '99-true-1', name: 'custom-99-true-1', user_id: '99', is_public: true, item_count: 0, original_creation: false }],
+                    page: 1, total_pages: 1,
+                }));
+            }
+            return visitorFetch(input);
+        }, { userId: 99, collectionId: '99-true-1', locale, clipboard });
+        try {
+            await React.act(async () => {
+                await new Promise(r => setTimeout(r, 20));
+            });
+            const shareBtns = [...env.node.querySelectorAll('button')].filter(b => b.textContent.includes(env.current.collection.share));
+            assert.ok(shareBtns.length >= 1, 'Share button must be present inside custom public collection');
+            await React.act(async () => {
+                shareBtns[0].dispatchEvent(new env.window.MouseEvent('click', { bubbles: true }));
+            });
+            assert.equal(copiedText, 'https://app.example.test/skin/collection/99/99-true-1');
+            assert.ok(env.node.textContent.includes(env.current.collection.linkCopied));
+        } finally { await env.close(); }
+    });
+
+    test(`${locale}: private collection (creations_private) does not expose share buttons`, async () => {
+        const env = await mount(input => {
+            const url = new URL(input);
+            if (url.pathname === '/api/users/me') return Promise.resolve(json({ id: 42, is_pro: true }));
+            if (url.pathname === '/api/collections/items') return Promise.resolve(json({ items: [], page: 1, total_pages: 1, total: 0 }));
+            return Promise.resolve(collections(url));
+        }, { userId: 42, collectionId: 'creations_private', locale });
+        try {
+            const shareBtns = [...env.node.querySelectorAll('button')].filter(b => b.textContent.includes(env.current.collection.share));
+            assert.equal(shareBtns.length, 0, 'No share button should be present inside private creations');
+        } finally { await env.close(); }
+    });
+
+    test(`${locale}: private collection (liked) does not expose share buttons`, async () => {
+        const env = await mount(input => {
+            const url = new URL(input);
+            if (url.pathname === '/api/users/me') return Promise.resolve(json({ id: 42, is_pro: true }));
+            if (url.pathname === '/api/collections/items') return Promise.resolve(json({ items: [], page: 1, total_pages: 1, total: 0 }));
+            return Promise.resolve(collections(url));
+        }, { userId: 42, collectionId: 'liked', locale });
+        try {
+            const shareBtns = [...env.node.querySelectorAll('button')].filter(b => b.textContent.includes(env.current.collection.share));
+            assert.equal(shareBtns.length, 0, 'No share button should be present inside liked collection');
+        } finally { await env.close(); }
+    });
+}
