@@ -680,7 +680,7 @@ export function CreditsPage({ current }: CreditsPageProps) {
                             <span className="text-xs text-white/40 hidden sm:inline">— {c.earnSubtitle}</span>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {/* Method 1: Daily Login */}
                             <div className="border border-white/10 bg-white/5 p-4 flex flex-col justify-between hover:border-white/20 transition-colors">
                                 <div className="space-y-2">
@@ -701,7 +701,27 @@ export function CreditsPage({ current }: CreditsPageProps) {
                                 </div>
                             </div>
 
-                            {/* Method 2: Pro Subscription */}
+                            {/* Method 2: Monthly Login */}
+                            <div className="border border-white/10 bg-white/5 p-4 flex flex-col justify-between hover:border-white/20 transition-colors">
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-[#a6df7a]">
+                                            <Icon icon="pixelarticons:calendar-month" className="text-xl" />
+                                            <h3 className="text-base font-bold text-white">
+                                                {c.earnMonthlyTitle}
+                                            </h3>
+                                        </div>
+                                        <span className="border border-[#a6df7a]/30 bg-[#a6df7a]/10 text-[#a6df7a] px-2 py-0.5 text-[10px] font-bold">
+                                            {c.earnMonthlyReward}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-white/60 leading-relaxed">
+                                        {c.earnMonthlyDesc}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Method 3: Pro Subscription */}
                             <div className="border border-white/10 bg-white/5 p-4 flex flex-col justify-between hover:border-white/20 transition-colors">
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between">
@@ -730,10 +750,115 @@ export function CreditsPage({ current }: CreditsPageProps) {
                                 </div>
                             </div>
 
-                            {/* Method 3: Creator & Community (Coming Soon) */}
+                            {/* Method 4: Video Creator Incentive */}
                             <div className="border border-white/10 bg-white/5 p-4 flex flex-col justify-between hover:border-white/20 transition-colors">
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-[#a6df7a]">
+                                            <Icon icon="pixelarticons:video" className="text-xl" />
+                                            <h3 className="text-base font-bold text-white">
+                                                {c.earnVideoTitle}
+                                            </h3>
+                                        </div>
+                                        <span className="border border-[#a6df7a]/30 bg-[#a6df7a]/10 text-[#a6df7a] px-2 py-0.5 text-[10px] font-bold">
+                                            {c.earnVideoReward}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-white/60 leading-relaxed">
+                                        {c.earnVideoDesc}
+                                    </p>
+                                </div>
+                                <div className="pt-3 flex items-center gap-2 flex-wrap">
+                                    <a
+                                        href="mailto:support@entropydrop.com?subject=EntropyDrop%20Video%20Creator%20Submission"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/15 bg-white/5 hover:bg-white/10 text-white/80 text-xs transition-colors cursor-pointer"
+                                    >
+                                        <Icon icon="pixelarticons:mail" className="text-xs" />
+                                        <span>{c.earnVideoBtn}</span>
+                                    </a>
+                                    <a
+                                        href="https://discord.gg/zxd8RjUyYt"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#5865F2]/40 bg-[#5865F2]/10 hover:bg-[#5865F2]/20 text-[#7983f5] hover:text-[#9ba2ff] text-xs transition-colors cursor-pointer"
+                                    >
+                                        <Icon icon="ic:baseline-discord" className="text-sm" />
+                                        <span>{c.earnFeedbackDiscordBtn}</span>
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Method 5: Bug Report */}
+                            <div className="border border-white/10 bg-white/5 p-4 flex flex-col justify-between hover:border-white/20 transition-colors">
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-[#a6df7a]">
+                                            <Icon icon="pixelarticons:bug" className="text-xl" />
+                                            <h3 className="text-base font-bold text-white">
+                                                {c.earnBugTitle}
+                                            </h3>
+                                        </div>
+                                        <span className="border border-[#a6df7a]/30 bg-[#a6df7a]/10 text-[#a6df7a] px-2 py-0.5 text-[10px] font-bold">
+                                            {c.earnBugReward}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-white/60 leading-relaxed">
+                                        {c.earnBugDesc}
+                                    </p>
+                                </div>
+                                <div className="pt-3">
+                                    <a
+                                        href="mailto:support@entropydrop.com?subject=EntropyDrop%20Bug%20Report"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/15 bg-white/5 hover:bg-white/10 text-white/80 text-xs transition-colors cursor-pointer"
+                                    >
+                                        <Icon icon="pixelarticons:mail" className="text-xs" />
+                                        <span>{c.earnBugBtn}</span>
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Method 6: Feedback & Suggestions */}
+                            <div className="border border-white/10 bg-white/5 p-4 flex flex-col justify-between hover:border-white/20 transition-colors">
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-[#a6df7a]">
+                                            <Icon icon="pixelarticons:message-text" className="text-xl" />
+                                            <h3 className="text-base font-bold text-white">
+                                                {c.earnFeedbackTitle}
+                                            </h3>
+                                        </div>
+                                        <span className="border border-[#a6df7a]/30 bg-[#a6df7a]/10 text-[#a6df7a] px-2 py-0.5 text-[10px] font-bold">
+                                            {c.earnFeedbackReward}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-white/60 leading-relaxed">
+                                        {c.earnFeedbackDesc}
+                                    </p>
+                                </div>
+                                <div className="pt-3 flex items-center gap-2 flex-wrap">
+                                    <a
+                                        href="mailto:support@entropydrop.com?subject=EntropyDrop%20Feedback%20Suggestion"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/15 bg-white/5 hover:bg-white/10 text-white/80 text-xs transition-colors cursor-pointer"
+                                    >
+                                        <Icon icon="pixelarticons:mail" className="text-xs" />
+                                        <span>{c.earnFeedbackBtn}</span>
+                                    </a>
+                                    <a
+                                        href="https://discord.gg/zxd8RjUyYt"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#5865F2]/40 bg-[#5865F2]/10 hover:bg-[#5865F2]/20 text-[#7983f5] hover:text-[#9ba2ff] text-xs transition-colors cursor-pointer"
+                                    >
+                                        <Icon icon="ic:baseline-discord" className="text-sm" />
+                                        <span>{c.earnFeedbackDiscordBtn}</span>
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Method 7: Creator & Community (Coming Soon) */}
+                            <div className="border border-white/10 bg-white/5 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-white/20 transition-colors md:col-span-2 lg:col-span-3">
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center gap-2">
                                         <div className="flex items-center gap-2 text-[#a6df7a]">
                                             <Icon icon="pixelarticons:trophy" className="text-xl" />
                                             <h3 className="text-base font-bold text-white">
@@ -745,11 +870,11 @@ export function CreditsPage({ current }: CreditsPageProps) {
                                             {c.comingSoonBadge}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-white/60 leading-relaxed">
+                                    <p className="text-xs text-white/60 leading-relaxed max-w-3xl">
                                         {c.earnCreatorDesc}
                                     </p>
                                 </div>
-                                <div className="pt-3">
+                                <div className="shrink-0">
                                     <button
                                         type="button"
                                         onClick={() => triggerComingSoonToast(`${c.earnCreatorTitle} - ${c.comingSoonNotice}`)}
