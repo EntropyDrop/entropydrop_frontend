@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { apiFetch } from '../utils/api'
+import { getNotificationActionUrl } from '../utils/notificationAction'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, LineChart, Line
@@ -184,9 +185,12 @@ export function MonitorPage({ current }: MonitorPageProps) {
   const [modelPrices, setModelPrices] = useState<Record<string, { credits: number; free_credits: number; is_pro: boolean; under_maintenance: boolean; display_priority: number }>>({})
   const [modelPricesLoading, setModelPricesLoading] = useState(false)
 
-  // Gift Credits to All states
+  // Gift Credits to Seven-Day Active Users states
   const [giftAmount, setGiftAmount] = useState<number>(10)
   const [giftMessageInput, setGiftMessageInput] = useState<string>('')
+  const [giftActionUrlInput, setGiftActionUrlInput] = useState('')
+  const giftActionUrl = getNotificationActionUrl(giftActionUrlInput)
+  const giftActionUrlInvalid = Boolean(giftActionUrlInput.trim()) && !giftActionUrl
   const [giftLoading, setGiftLoading] = useState(false)
   const [showGiftConfirmation, setShowGiftConfirmation] = useState(false)
 
@@ -452,6 +456,13 @@ export function MonitorPage({ current }: MonitorPageProps) {
   }
 
   const executeActiveUserGift = async () => {
+    if (giftActionUrlInvalid) {
+      setDeleteMessage({
+        type: 'error',
+        text: isZh ? '请输入有效的 http:// 或 https:// 跳转链接' : 'Enter a valid http:// or https:// destination URL'
+      })
+      return
+    }
     if (giftAmount <= 0) {
       setDeleteMessage({
         type: 'error',
@@ -475,7 +486,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: giftAmount,
-          message: giftMessageInput.trim()
+          message: giftMessageInput.trim(),
+          action_url: giftActionUrl
         })
       })
       if (response.ok) {
@@ -487,6 +499,7 @@ export function MonitorPage({ current }: MonitorPageProps) {
             : `Successfully gifted ${giftAmount} credits to ${data.gifted_users} seven-day active users. Reason: ${giftMessageInput.trim()}`
         })
         setGiftMessageInput('')
+        setGiftActionUrlInput('')
         fetchStats()
       } else {
         const errData = await response.json().catch(() => ({}))
@@ -1637,10 +1650,33 @@ export function MonitorPage({ current }: MonitorPageProps) {
                     type="text"
                     placeholder={isZh ? '赠送备注/信息 (如: 维护补偿 / 节日福利)' : 'Gift reason/message (e.g. Maintenance Compensation / Holiday Gift)'}
                     value={giftMessageInput}
+                    aria-label={isZh ? '赠送备注/信息' : 'Gift reason/message'}
                     onChange={(e) => setGiftMessageInput(e.target.value)}
                     className="flex-1 min-w-[200px] h-7 px-3 bg-black/40 border border-white/20 text-white font-mono text-xs focus:outline-none focus:border-purple-500/50 placeholder:text-white/20"
                     disabled={giftLoading}
                   />
+                </div>
+                <div className="flex flex-col gap-1 mt-1 w-full max-w-2xl">
+                  <label htmlFor="active-user-gift-url" className="text-[10px] font-mono text-white/50">
+                    {isZh ? '跳转链接（可选，新标签页打开）' : 'Destination URL (optional, opens in a new tab)'}
+                  </label>
+                  <input
+                    id="active-user-gift-url"
+                    type="url"
+                    placeholder="https://..."
+                    value={giftActionUrlInput}
+                    onChange={event => setGiftActionUrlInput(event.target.value)}
+                    maxLength={2083}
+                    aria-invalid={giftActionUrlInvalid}
+                    aria-describedby="active-user-gift-url-hint"
+                    className="w-full min-w-0 h-7 px-3 bg-black/40 border border-white/20 text-white font-mono text-xs focus:outline-none focus:border-purple-500/50 placeholder:text-white/20"
+                    disabled={giftLoading}
+                  />
+                  <p id="active-user-gift-url-hint" className={`text-[10px] ${giftActionUrlInvalid ? 'text-red-400' : 'text-white/40'}`}>
+                    {giftActionUrlInvalid
+                      ? (isZh ? '请输入有效的 http:// 或 https:// 链接。' : 'Enter a valid http:// or https:// URL.')
+                      : (isZh ? '填写后，消息中将显示“查看详情”按钮。' : 'Adds a “View details” button to the notification when provided.')}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1650,9 +1686,10 @@ export function MonitorPage({ current }: MonitorPageProps) {
                 onClick={() => {
                   if (giftAmount <= 0) return
                   if (!giftMessageInput.trim()) return
+                  if (giftActionUrlInvalid) return
                   setShowGiftConfirmation(true)
                 }}
-                disabled={giftLoading || giftAmount <= 0 || !giftMessageInput.trim()}
+                disabled={giftLoading || giftAmount <= 0 || !giftMessageInput.trim() || giftActionUrlInvalid}
                 className="px-4 py-1.5 bg-purple-500/20 border border-purple-500/40 text-purple-400 hover:bg-purple-500/30 hover:border-purple-500/50 transition-colors text-xs font-bold font-mono tracking-wide flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {giftLoading ? (
@@ -3078,6 +3115,14 @@ export function MonitorPage({ current }: MonitorPageProps) {
                     </>
                   )}
                 </p>
+                {giftActionUrl && (
+                  <p className="text-white/60 text-xs leading-relaxed break-all">
+                    {isZh ? '跳转链接（新标签页）：' : 'Destination (new tab): '}
+                    <a href={giftActionUrl} target="_blank" rel="noopener noreferrer" className="text-purple-400 underline">
+                      {giftActionUrl}
+                    </a>
+                  </p>
+                )}
               </div>
             </div>
 

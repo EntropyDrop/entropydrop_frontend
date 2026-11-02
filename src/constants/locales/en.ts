@@ -711,6 +711,8 @@ export default {
             monthlyLoginReward: 'Monthly login reward received!',
             proReward: 'Pro subscription credits received!',
             systemGift: 'System Gift: {reason}',
+            viewDetails: 'View details',
+            opensInNewTab: 'Opens in a new tab',
             prev: 'Prev',
             next: 'Next',
             pageLabel: 'Page {page} of {total}'

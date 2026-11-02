@@ -10,6 +10,7 @@ import { type LangData } from '../constants/lang'
 import { motion, AnimatePresence } from 'framer-motion'
 import { apiFetch, apiResponseJson } from '../utils/api'
 import { SEO } from '../components/SEO'
+import { NotificationActionLink } from '../components/NotificationActionLink'
 
 const MIN_PURCHASE_AMOUNT = 2
 const FIGURE_GOAL_CREDITS = 600
@@ -24,6 +25,7 @@ interface CreditLogEntry {
     amount: number
     action: string
     source?: string
+    actionUrl?: string | null
     timestamp: string
 }
 
@@ -527,6 +529,9 @@ export function CreditsPage({ current }: CreditsPageProps) {
                                                     <span className="text-xs text-white/80 group-hover:text-white transition-colors truncate">
                                                         {log.source || '-'}
                                                     </span>
+                                                    {log.action === 'system_gift' && (
+                                                        <NotificationActionLink url={log.actionUrl} current={current} />
+                                                    )}
                                                 </div>
                                                 <span className={`col-span-2 text-xs text-right font-bold tabular-nums truncate ${styles.color}`}>
                                                     {log.amount > 0 ? `+${log.amount}` : log.amount}

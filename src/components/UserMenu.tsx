@@ -1,5 +1,6 @@
 import { googleLoginPayload } from '../utils/creatorReferral'
 import { FigureOrderNotification } from './FigureOrderNotification'
+import { NotificationActionLink } from './NotificationActionLink'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { Icon } from '@iconify/react'
 import { useState, useRef, useEffect, lazy, Suspense, useCallback } from 'react'
@@ -41,6 +42,7 @@ interface NotificationInfo {
     postTitle?: string
     orderId?: string
     message?: string
+    actionUrl?: string | null
     createdAt: string
     isRead: boolean
 }
@@ -221,6 +223,20 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
         }
     }
 
+    const markNotificationRead = async (notification: NotificationInfo) => {
+        if (notification.isRead) return
+        setUnreadCount(prev => Math.max(0, prev - 1))
+        setNotifications(prev => prev.map(item => item.id === notification.id ? { ...item, isRead: true } : item))
+        try {
+            await apiFetch(`/api/forum/notifications/${notification.id}/read`, {
+                method: 'POST',
+                skipGlobalError: true
+            })
+        } catch (err) {
+            console.error('Failed to mark notification as read', err)
+        }
+    }
+
     // Load and poll notifications
     useEffect(() => {
         if (user) {
@@ -347,21 +363,7 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                     } else if (n.postId) {
                                                         navigate(`/figure?postId=${n.postId}`);
                                                     }
-                                                    // Optimistically mark as read
-                                                    if (!n.isRead) {
-                                                        setUnreadCount(prev => Math.max(0, prev - 1));
-                                                    }
-                                                    setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, isRead: true } : item));
-
-                                                    // Sync with backend
-                                                    try {
-                                                        await apiFetch(`/api/forum/notifications/${n.id}/read`, {
-                                                            method: 'POST',
-                                                            skipGlobalError: true
-                                                        });
-                                                    } catch (err) {
-                                                        console.error("Failed to mark notification as read", err);
-                                                    }
+                                                    await markNotificationRead(n);
                                                 }}
                                                 className={`p-3 border-b border-white/5 hover:bg-white/5 flex gap-2.5 items-start cursor-pointer transition-colors ${!n.isRead ? 'bg-white/5' : ''} ${current.fontClass}`}
                                             >
@@ -398,6 +400,9 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                                                             </>
                                                         )}
                                                     </p>
+                                                    {n.type === 'system_gift' && (
+                                                        <NotificationActionLink url={n.actionUrl} current={current} onOpen={() => { void markNotificationRead(n) }} />
+                                                    )}
                                                     <span className={`text-[9px] text-white/30 mt-0.5 ${current.fontClass}`}>{n.createdAt}</span>
                                                 </div>
                                                 {!n.isRead && (

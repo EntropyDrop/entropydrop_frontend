@@ -711,6 +711,8 @@ export default {
             monthlyLoginReward: '每月登录奖励已到账！',
             proReward: '订阅会员奖励已到账！',
             systemGift: '系统赠送：{reason}',
+            viewDetails: '查看详情',
+            opensInNewTab: '在新标签页打开',
             prev: '上一页',
             next: '下一页',
             pageLabel: '第 {page} / {total} 页'
