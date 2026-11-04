@@ -852,11 +852,6 @@ export default {
         ],
     },
     pro: {
-        printServiceNotice: {
-            beforeTerms: '本站 3D 打印下载服务仅限个人非商业用途，另适用',
-            terms: '独立条款',
-            afterTerms: '。',
-        },
         title: 'Pro 订阅',
         benefits: '解锁 Pro 专属权益',
         plans: '选择您的订阅计划',
@@ -908,7 +903,7 @@ export default {
                 private: '1,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
                 experimental: '优先体验新功能',
-                commercial: '订阅期内生成的皮肤拥有永久商用许可。'
+                commercial: '订阅期内生成的皮肤拥有永久数字商用许可。'
             },
             pro_max: {
                 title: 'Pro-Max',
@@ -922,7 +917,7 @@ export default {
                 private: '5,000 个私有皮肤上限',
                 priority: '高优先级生成队列',
                 experimental: '优先体验新功能',
-                commercial: '订阅期内生成的皮肤拥有永久商用许可。'
+                commercial: '订阅期内生成的皮肤拥有永久数字商用许可。'
             }
         }
     },

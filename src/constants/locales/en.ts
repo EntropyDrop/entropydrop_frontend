@@ -852,11 +852,6 @@ Updates will identify their version and effective date and request your acceptan
         ],
     },
     pro: {
-        printServiceNotice: {
-            beforeTerms: 'This website’s 3D printing download service is for personal, non-commercial use under ',
-            terms: 'separate terms',
-            afterTerms: '.',
-        },
         title: 'Pro Subscription',
         benefits: 'Unlock Pro Benefits',
         plans: 'Choose Your Plan',
@@ -908,7 +903,7 @@ Updates will identify their version and effective date and request your acceptan
                 private: '1,000 private skins limit',
                 priority: 'High priority queue',
                 experimental: 'Early access to new features',
-                commercial: 'Skins generated during subscription enjoy permanent commercial license.'
+                commercial: 'Skins generated during subscription enjoy permanent digital commercial license.'
             },
             pro_max: {
                 title: 'Pro-Max',
@@ -922,7 +917,7 @@ Updates will identify their version and effective date and request your acceptan
                 private: '5,000 private skins limit',
                 priority: 'High priority queue',
                 experimental: 'Early access to new features',
-                commercial: 'Skins generated during subscription enjoy permanent commercial license.'
+                commercial: 'Skins generated during subscription enjoy permanent digital commercial license.'
             }
         }
     },
