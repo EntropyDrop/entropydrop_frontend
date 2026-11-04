@@ -19,6 +19,7 @@ export interface CurrentUser {
     figure_print_terms_version?: string | null
     figure_print_terms_accepted_at?: string | null
     pro_level: string
+    paypal_subscription_id?: string | null
     paypal_subscription_status?: string
     skin_url?: string | null
     skin_type?: string | null

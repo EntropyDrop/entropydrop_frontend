@@ -57,6 +57,7 @@ export function ProPage({ current }: ProPageProps) {
             }
 
             const data = await apiResponseJson(res); // { approval_url, subscription_id }
+            window.dispatchEvent(new Event('user-updated'));
 
             const width = 600;
             const height = 700;
@@ -141,6 +142,18 @@ export function ProPage({ current }: ProPageProps) {
                     <div className="flex items-center gap-3 p-4 my-6 border border-amber-500/30 bg-amber-500/10 text-amber-300 text-sm animate-in fade-in duration-200">
                         <Icon icon="pixelarticons:alert" className="text-xl shrink-0 text-amber-400" />
                         <span className={current.fontClass}>{current.pro.paymentUnderMaintenance}</span>
+                    </div>
+                )}
+
+                {['APPROVAL_PENDING', 'APPROVED', 'SUSPENDED', 'UNKNOWN', 'CANCELLATION_PENDING'].includes(userProfile?.paypal_subscription_status ?? '') && (
+                    <div className="flex justify-end my-4">
+                        <button
+                            onClick={handleCancelSubscription}
+                            disabled={isCancelling}
+                            className={`border border-red-400 bg-red-500 px-4 py-3 text-sm font-bold text-black disabled:opacity-50 ${current.fontClass}`}
+                        >
+                            {current.pro.cancel}
+                        </button>
                     </div>
                 )}
 
