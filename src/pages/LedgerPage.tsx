@@ -5,6 +5,7 @@ import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { motion } from 'framer-motion'
 import { apiFetch } from '../utils/api'
+import { formatLedgerMoney, normalizePublicLedger, summarizeLedger, type PayPalCategory } from '../utils/publicLedger'
 
 interface LedgerPageProps {
     current: LangData
@@ -12,114 +13,10 @@ interface LedgerPageProps {
 
 type LedgerProvider = 'all' | 'paypal' | 'aws'
 
-interface LedgerEntry {
-    id: string
-    date: string
-    type: 'revenue' | 'expense'
-    provider?: string
-    source?: string
-    desc: string
-    amount: string
-    amount_value?: number
-    status?: string
-}
-
-interface LedgerSummary {
-    count: number
-    total: string
-    total_value: number
-    revenue?: string
-    expense?: string
-    last_entry_at?: string | null
-}
-
-interface LedgerResponse {
-    entries: LedgerEntry[]
-    summaries: {
-        all: LedgerSummary
-        paypal: LedgerSummary
-        aws: LedgerSummary
-    }
-    sync?: {
-        mode?: string
-        interval_seconds?: number
-        generated_at?: string
-        paypal?: { status?: string; last_synced_at?: string | null; records?: number }
-        aws?: { status?: string; last_synced_at?: string | null; records?: number }
-    }
-}
-
-const emptySummary: LedgerSummary = {
-    count: 0,
-    total: '$0.00',
-    total_value: 0,
-    revenue: '$0.00',
-    expense: '$0.00',
-    last_entry_at: null,
-}
-
-function parseAmount(value: unknown) {
-    if (typeof value === 'number') return value
-    if (!value) return 0
-    const cleaned = String(value).replace('$', '').replace(',', '').replace('+', '').trim()
-    const parsed = Number.parseFloat(cleaned)
-    return Number.isFinite(parsed) ? parsed : 0
-}
-
-function formatMoney(value: number) {
-    const sign = value >= 0 ? '+' : '-'
-    return `${sign}$${Math.abs(value).toFixed(2)}`
-}
-
-function buildSummary(entries: LedgerEntry[], provider?: string): LedgerSummary {
-    const scoped = provider ? entries.filter((entry) => entry.provider === provider) : entries
-    const totalValue = scoped.reduce((sum, entry) => sum + parseAmount(entry.amount_value ?? entry.amount), 0)
-    const revenueValue = scoped.reduce((sum, entry) => sum + Math.max(parseAmount(entry.amount_value ?? entry.amount), 0), 0)
-    const expenseValue = scoped.reduce((sum, entry) => sum + Math.min(parseAmount(entry.amount_value ?? entry.amount), 0), 0)
-
-    return {
-        count: scoped.length,
-        total: formatMoney(totalValue),
-        total_value: totalValue,
-        revenue: formatMoney(revenueValue),
-        expense: formatMoney(expenseValue),
-        last_entry_at: scoped[0]?.date || null,
-    }
-}
-
-function normalizePayload(payload: unknown): LedgerResponse {
-    if (Array.isArray(payload)) {
-        const entries = payload as LedgerEntry[]
-        return {
-            entries,
-            summaries: {
-                all: buildSummary(entries),
-                paypal: buildSummary(entries, 'paypal'),
-                aws: buildSummary(entries, 'aws'),
-            },
-        }
-    }
-
-    const data = payload as Partial<LedgerResponse>
-    const entries = data.entries || []
-    return {
-        entries,
-        summaries: {
-            all: data.summaries?.all || buildSummary(entries),
-            paypal: data.summaries?.paypal || buildSummary(entries, 'paypal'),
-            aws: data.summaries?.aws || buildSummary(entries, 'aws'),
-        },
-        sync: data.sync,
-    }
-}
-
 export function LedgerPage({ current }: LedgerPageProps) {
     const navigate = useNavigate()
     const pageData = current.public_page.assets_pages.ledger
-    const [ledger, setLedger] = useState<LedgerResponse>({
-        entries: [],
-        summaries: { all: emptySummary, paypal: emptySummary, aws: emptySummary },
-    })
+    const [ledger, setLedger] = useState<ReturnType<typeof normalizePublicLedger>>({ entries: [] })
     const [selectedProvider, setSelectedProvider] = useState<LedgerProvider>('all')
     const [isLoading, setIsLoading] = useState(true)
 
@@ -127,10 +24,10 @@ export function LedgerPage({ current }: LedgerPageProps) {
         let active = true
         async function fetchLedger() {
             try {
-                const response = await apiFetch('/api/public/ledger')
+                const response = await apiFetch('/api/public/ledger', { auth: 'none', cache: 'no-store' })
                 if (response.ok && active) {
                     const data = await response.json()
-                    setLedger(normalizePayload(data))
+                    setLedger(normalizePublicLedger(data))
                 }
             } catch (err) {
                 console.error('Failed to load live ledger:', err)
@@ -159,25 +56,31 @@ export function LedgerPage({ current }: LedgerPageProps) {
         || ledger.sync?.generated_at
         || pageData.sync.empty
 
+    const summaries = {
+        all: summarizeLedger(entries),
+        paypal: summarizeLedger(entries, 'paypal'),
+        aws: summarizeLedger(entries, 'aws'),
+    }
+
     const filters: { id: LedgerProvider; label: string; count: number }[] = [
-        { id: 'all', label: pageData.filters.all, count: ledger.summaries.all.count },
-        { id: 'paypal', label: pageData.filters.paypal, count: ledger.summaries.paypal.count },
-        { id: 'aws', label: pageData.filters.aws, count: ledger.summaries.aws.count },
+        { id: 'all', label: pageData.filters.all, count: summaries.all.count },
+        { id: 'paypal', label: pageData.filters.paypal, count: summaries.paypal.count },
+        { id: 'aws', label: pageData.filters.aws, count: summaries.aws.count },
     ]
 
     const stats = [
         {
             label: pageData.stats.paypal,
-            value: ledger.summaries.paypal.total,
-            sub: `${pageData.sync.records}: ${ledger.summaries.paypal.count}`,
+            totals: summaries.paypal.totals,
+            sub: `${pageData.monthlyGroups}: ${summaries.paypal.count}`,
             note: pageData.stats.paypalNote,
             icon: 'pixelarticons:dollar',
-            color: ledger.summaries.paypal.total_value < 0 ? 'text-red-400' : 'text-green-500',
+            color: 'text-green-500',
         },
         {
             label: pageData.stats.aws,
-            value: ledger.summaries.aws.total,
-            sub: `${pageData.sync.records}: ${ledger.summaries.aws.count}`,
+            totals: summaries.aws.totals,
+            sub: `${pageData.sync.records}: ${summaries.aws.count}`,
             icon: 'pixelarticons:device-laptop',
             color: 'text-yellow-400',
         },
@@ -249,7 +152,11 @@ export function LedgerPage({ current }: LedgerPageProps) {
                             <span className="text-[10px] uppercase tracking-wider truncate">{stat.label}</span>
                         </div>
                         <div className="flex flex-col gap-1 min-w-0">
-                            <span className={`text-xl sm:text-2xl font-bold tabular-nums truncate ${stat.color}`}>{stat.value}</span>
+                            {stat.totals.length ? stat.totals.map(total => (
+                                <span key={total.currency} className={`text-xl sm:text-2xl font-bold tabular-nums break-words ${total.value < 0 ? 'text-red-400' : stat.color}`}>
+                                    {formatLedgerMoney(total.value, total.currency)}
+                                </span>
+                            )) : <span className="text-xl text-white/40">—</span>}
                             <span className="text-[10px] text-white/35 truncate">{stat.sub}</span>
                             {stat.note && <span className="text-[10px] text-white/50 leading-relaxed">{stat.note}</span>}
                         </div>
@@ -306,7 +213,7 @@ export function LedgerPage({ current }: LedgerPageProps) {
                                 >
                                     <div className="col-span-3 flex flex-col min-w-0">
                                         <span className="text-[11px] text-white/60 tabular-nums truncate">{tx.date}</span>
-                                        <span className="text-[9px] text-white/20 uppercase tabular-nums truncate">{tx.id}</span>
+                                        <span className="text-[9px] text-white/30">{tx.provider === 'paypal' ? pageData.monthlySummary : tx.id}</span>
                                     </div>
                                     <div className="col-span-2 flex items-center gap-2 min-w-0">
                                         <div className={`p-1.5 border ${styles.bg} ${styles.color} ${styles.border}`}>
@@ -317,10 +224,10 @@ export function LedgerPage({ current }: LedgerPageProps) {
                                         </span>
                                     </div>
                                     <div className="col-span-5 flex flex-col min-w-0">
-                                        <span className="text-xs text-white/80 group-hover:text-white transition-colors truncate">{tx.desc}</span>
-                                        <span className="text-[9px] text-white/25 uppercase truncate">{tx.source || pageData.headers.source} / {tx.status || 'posted'}</span>
+                                        <span className="text-xs text-white/80 group-hover:text-white transition-colors truncate">{tx.provider === 'paypal' ? pageData.categories[tx.category as PayPalCategory] : tx.desc}</span>
+                                        <span className="text-[9px] text-white/25 uppercase truncate">{tx.provider === 'paypal' ? tx.currency : `${tx.source || pageData.headers.source} / ${tx.status || 'posted'}`}</span>
                                     </div>
-                                    <span className={`col-span-2 text-xs text-right font-bold tabular-nums truncate ${typeColor(tx.type)}`}>
+                                    <span className={`col-span-2 text-xs text-right font-bold tabular-nums break-words ${typeColor(tx.type)}`}>
                                         {tx.amount}
                                     </span>
                                 </motion.div>
@@ -331,7 +238,7 @@ export function LedgerPage({ current }: LedgerPageProps) {
             </div>
 
             <div className="text-[10px] text-white/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <span>TOTAL_RECORDS: <span className="tabular-nums">{entries.length}</span></span>
+                <span>{pageData.sync.records}: <span className="tabular-nums">{entries.length}</span></span>
                 <span>FILTER: {selectedProvider.toUpperCase()}</span>
                 <span>LAST_UPDATE: {syncLastUpdate || '-'}</span>
             </div>

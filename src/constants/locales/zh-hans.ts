@@ -1368,7 +1368,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
 
 我们也可能为响应有权机关的要求，处理欺诈、攻击、侵权或紧急安全事件，或在合并、重组及资产转让中进行必要披露，并要求接收方继续按照适用要求保护信息。
 
-平台的公开财务页面如展示交易信息，将对姓名、邮箱和其他直接身份信息进行删除、遮盖或去标识化处理。`
+平台公开财务页面仅按月（UTC）、币种和类别展示 PayPal 汇总，不公开付款人姓名、邮箱、交易号或原始交易标题。逐笔对账记录保留在内部，用于对账、退款、审计及履行必要义务。`
             },
             {
                 title: '8. 跨境处理',
@@ -1809,7 +1809,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                     items: [
                         { title: '财务状况', desc: '平台营收流、运营支出、资金流向及总资产的概览。', status: '开发中' },
                         { title: '固定资产', desc: '计算节点、实物加工设备及资产列表。', status: '开发中' },
-                        { title: '实时总账', desc: '平台所有财务收支流水的实时、脱敏流展示。', status: '进行中', link: '/public/ledger' }
+                        { title: '公开账本', desc: '按月、币种和类别公开 PayPal 汇总及云服务开支。', status: '进行中', link: '/public/ledger' }
                     ]
                 }
             ]
@@ -1828,7 +1828,9 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             financials: {
                 title: '财务透明化',
                 desc: '平台财务状况、可持续性指标及社会影响力赋能的综合视图。',
-                source: '数据来源：实时总账',
+                source: '数据来源：公开账本',
+                currency: '币种',
+                currencyNote: '各币种分别统计，不进行汇率换算或合并。',
                 empty: {
                     value: '—',
                     financials: '暂无可验证财务数据',
@@ -1867,17 +1869,20 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                 }
             },
             ledger: {
-                title: '实时总账',
-                desc: '展示每个同步周期内来自 PayPal 与 AWS API 的收入和云服务账单记录，所有用户与交易敏感信息已脱敏。',
-                fullData: '完整财务账单及数据集可在 GitHub 访问',
+                title: '公开账本',
+                desc: 'PayPal 按月（UTC）、币种及类别汇总，不公开姓名、交易号和原始交易标题；另行展示 AWS 云服务账单。',
+                monthlyGroups: '月度汇总组数',
+                monthlySummary: '月度汇总（UTC）',
+                categories: { payment: '收付款', refund_reversal: '退款及撤销', fee: '手续费', transfer: '转账', currency_conversion: '货币兑换', other: '其他收支' },
+                fullData: '公开财务数据仓库',
                 fullDataUrl: 'https://github.com/EntropyDrop/financial',
                 bankLedger: '银行实时总账正在开发中',
                 betaNotice: '目前处于测试阶段，数据可能不准确',
                 headers: {
-                    date: '日期',
+                    date: '月份 / 日期',
                     type: '类型',
                     source: '来源',
-                    desc: '说明',
+                    desc: '类别 / 说明',
                     amount: '金额',
                     status: '状态'
                 },
@@ -1889,7 +1894,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                     sync: '同步机制'
                 },
                 filters: {
-                    all: '全部流水',
+                    all: '全部账目',
                     paypal: 'PayPal',
                     aws: 'AWS'
                 },
@@ -1897,7 +1902,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                     daily: 'API 同步',
                     rateLimit: '受第三方 API 频率限制，更新周期暂时为每日',
                     lastUpdate: '最近同步',
-                    records: '记录数',
+                    records: '公开行数',
                     empty: '暂无同步账单'
                 }
             }

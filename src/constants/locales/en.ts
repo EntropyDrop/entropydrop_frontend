@@ -1368,7 +1368,7 @@ When you send a friend request, chat, or direct message, your display name, avat
 
 We may also make necessary disclosures in response to an authorized governmental request, to address fraud, attacks, infringement, or an urgent safety incident, or in connection with a merger, restructuring, or asset transfer, subject to continued appropriate protection by the recipient.
 
-If the Platform’s public financial pages display transaction information, names, email addresses, and other direct identifiers will be removed, masked, or de-identified.`
+Public financial pages show PayPal totals only by month (UTC), currency and category. Payer names, emails, transaction IDs and original transaction titles are not published. Individual reconciliation records remain internal for reconciliation, refunds, audits and required obligations.`
             },
             {
                 title: '8. International Processing',
@@ -1796,7 +1796,7 @@ Email: support@entropydrop.com`
                     items: [
                         { title: 'Financial Status', desc: 'An overview of platform revenue streams, operating expenditures, funds flow, and total assets.', status: 'In Development' },
                         { title: 'Fixed Assets', desc: 'A list of computing nodes, physical manufacturing equipment, and assets.', status: 'In Development' },
-                        { title: 'Live Ledger', desc: 'A real-time, anonymized stream display of all platform financial revenue and expenditure transactions.', status: 'Active', link: '/public/ledger' }
+                        { title: 'Public Ledger', desc: 'PayPal monthly totals by currency and category, alongside cloud costs.', status: 'Active', link: '/public/ledger' }
                     ]
                 }
             ]
@@ -1815,7 +1815,9 @@ Email: support@entropydrop.com`
             financials: {
                 title: 'Financial Transparency',
                 desc: 'A consolidated view of our platform\'s financial health, sustainability, and social impact.',
-                source: 'Source: Live Ledger',
+                source: 'Source: Public Ledger',
+                currency: 'Currency',
+                currencyNote: 'Each currency is reported separately; no conversion is applied.',
                 empty: {
                     value: '—',
                     financials: 'No verified financial records yet',
@@ -1854,17 +1856,20 @@ Email: support@entropydrop.com`
                 }
             },
             ledger: {
-                title: 'Real-time Ledger',
-                desc: 'Shows PayPal revenue and AWS cloud billing records for each synchronization cycle, with sensitive user and transaction data anonymized.',
-                fullData: 'Full datasets and financial ledger are open-sourced on GitHub',
+                title: 'Public Ledger',
+                desc: 'PayPal totals are grouped by month (UTC), currency and category. Names, transaction IDs and original transaction titles are not published. AWS cloud costs are shown separately.',
+                monthlyGroups: 'Monthly groups',
+                monthlySummary: 'Monthly total (UTC)',
+                categories: { payment: 'Payments', refund_reversal: 'Refunds and reversals', fee: 'Fees', transfer: 'Transfers', currency_conversion: 'Currency conversions', other: 'Other activity' },
+                fullData: 'Public financial data repository',
                 fullDataUrl: 'https://github.com/EntropyDrop/financial',
                 bankLedger: 'Real-time bank ledger integration is in development',
                 betaNotice: 'Currently in beta, data may be inaccurate',
                 headers: {
-                    date: 'Date',
+                    date: 'Month / Date',
                     type: 'Type',
                     source: 'Source',
-                    desc: 'Description',
+                    desc: 'Category / Description',
                     amount: 'Amount',
                     status: 'Status'
                 },
@@ -1884,7 +1889,7 @@ Email: support@entropydrop.com`
                     daily: 'API Sync',
                     rateLimit: 'Due to third-party API rate limits, updates are currently daily',
                     lastUpdate: 'Last Sync',
-                    records: 'Records',
+                    records: 'Published rows',
                     empty: 'No synced billing records'
                 }
             }

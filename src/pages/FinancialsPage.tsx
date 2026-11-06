@@ -5,40 +5,10 @@ import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 import { apiFetch } from '../utils/api'
+import { formatLedgerMoney, ledgerFlows, normalizePublicLedger, type LedgerEntry } from '../utils/publicLedger'
 
 interface FinancialsPageProps {
     current: LangData
-}
-
-interface LedgerEntry {
-    date: string
-    type: 'revenue' | 'expense'
-    provider?: string
-    category?: string
-    amount?: string
-    amount_value?: number
-}
-
-interface LedgerResponse {
-    entries?: LedgerEntry[]
-    sync?: {
-        generated_at?: string
-        paypal?: { last_synced_at?: string | null }
-        aws?: { last_synced_at?: string | null }
-    }
-}
-
-function parseAmount(value: unknown) {
-    if (typeof value === 'number') return value
-    if (!value) return 0
-    const cleaned = String(value).replace('$', '').replace(',', '').replace('+', '').trim()
-    const parsed = Number.parseFloat(cleaned)
-    return Number.isFinite(parsed) ? parsed : 0
-}
-
-function formatMoney(value: number) {
-    const sign = value < 0 ? '-' : ''
-    return `${sign}$${Math.abs(value).toFixed(2)}`
 }
 
 function monthKey(date: string) {
@@ -58,6 +28,10 @@ export function FinancialsPage({ current }: FinancialsPageProps) {
     const navigate = useNavigate()
     const pageData = current.public_page.assets_pages?.financials || {}
     const [entries, setEntries] = useState<LedgerEntry[]>([])
+    const [selectedCurrency, setSelectedCurrency] = useState('USD')
+    const currencies = Array.from(new Set(entries.map(entry => entry.currency))).sort()
+    const currency = currencies.includes(selectedCurrency) ? selectedCurrency : currencies[0] ?? 'USD'
+    const formatMoney = (value: number) => formatLedgerMoney(value, currency, false)
     const [lastUpdate, setLastUpdate] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState(true)
 
@@ -65,11 +39,11 @@ export function FinancialsPage({ current }: FinancialsPageProps) {
         let active = true
         async function fetchLedger() {
             try {
-                const response = await apiFetch('/api/public/ledger')
+                const response = await apiFetch('/api/public/ledger', { auth: 'none', cache: 'no-store' })
                 if (!response.ok) return
-                const data: LedgerResponse = await response.json()
+                const data = normalizePublicLedger(await response.json())
                 if (!active) return
-                setEntries(data.entries || [])
+                setEntries(data.entries)
                 setLastUpdate(
                     data.sync?.paypal?.last_synced_at
                     || data.sync?.aws?.last_synced_at
@@ -95,20 +69,21 @@ export function FinancialsPage({ current }: FinancialsPageProps) {
         let expenditure = 0
 
         entries.forEach((entry) => {
-            const amount = parseAmount(entry.amount_value ?? entry.amount)
+            if (entry.currency !== currency) return
+            const flows = ledgerFlows(entry)
             const key = monthKey(entry.date)
             const trendRow = trendMap.get(key) || { name: key, revenue: 0, expenditure: 0 }
 
-            if (amount >= 0) {
-                revenue += amount
-                trendRow.revenue += amount
-                const source = displayName(entry.provider || entry.category)
-                revenueMap.set(source, (revenueMap.get(source) || 0) + amount)
-            } else {
-                const abs = Math.abs(amount)
+            const source = displayName(entry.provider || entry.category)
+            if (flows.revenue > 0) {
+                revenue += flows.revenue
+                trendRow.revenue += flows.revenue
+                revenueMap.set(source, (revenueMap.get(source) || 0) + flows.revenue)
+            }
+            if (flows.expense < 0) {
+                const abs = -flows.expense
                 expenditure += abs
                 trendRow.expenditure += abs
-                const source = displayName(entry.provider || entry.category)
                 expenseMap.set(source, (expenseMap.get(source) || 0) + abs)
             }
 
@@ -126,9 +101,9 @@ export function FinancialsPage({ current }: FinancialsPageProps) {
             revenueBreakdown: toPie(revenueMap),
             expenditureBreakdown: toPie(expenseMap),
         }
-    }, [entries])
+    }, [entries, currency])
 
-    const hasEntries = entries.length > 0
+    const hasEntries = entries.some(entry => entry.currency === currency)
 
     const stats = [
         { label: pageData.stats?.net_profit, value: hasEntries ? formatMoney(financials.net) : pageData.empty?.value, icon: 'pixelarticons:trending-up', color: financials.net >= 0 ? 'text-yellow-400' : 'text-red-400' },
@@ -161,6 +136,19 @@ export function FinancialsPage({ current }: FinancialsPageProps) {
                     {pageData.desc}
                 </p>
             </div>
+
+            {currencies.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
+                    <label className="flex items-center gap-2">
+                        {pageData.currency}
+                        <select aria-label={pageData.currency} value={currency} onChange={event => setSelectedCurrency(event.target.value)}
+                            className="border border-white/20 bg-black p-2 text-white">
+                            {currencies.map(value => <option key={value} value={value}>{value}</option>)}
+                        </select>
+                    </label>
+                    <span>{pageData.currencyNote}</span>
+                </div>
+            )}
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {stats.map((stat, i) => (
@@ -204,8 +192,8 @@ export function FinancialsPage({ current }: FinancialsPageProps) {
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
                                 <XAxis dataKey="name" stroke="#ffffff40" fontSize={10} tickLine={false} axisLine={false} dy={10} />
-                                <YAxis stroke="#ffffff40" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => `$${Number(v) / 1000}k`} />
-                                <Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #ffffff20', borderRadius: '0px' }} />
+                                <YAxis stroke="#ffffff40" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => `${currency} ${Number(v) / 1000}k`} />
+                                <Tooltip formatter={(value) => formatMoney(Number(value))} contentStyle={{ backgroundColor: '#000', border: '1px solid #ffffff20', borderRadius: '0px' }} />
                                 <Area type="monotone" dataKey="revenue" stroke="#22c55e" fill="url(#colorRev)" strokeWidth={2} />
                                 <Area type="monotone" dataKey="expenditure" stroke="#f87171" fill="url(#colorExp)" strokeWidth={2} />
                             </AreaChart>
@@ -232,7 +220,7 @@ export function FinancialsPage({ current }: FinancialsPageProps) {
                                         <Pie data={chart.data} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
                                             {chart.data.map((entry, index) => <Cell key={index} fill={entry.color} />)}
                                         </Pie>
-                                        <Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #ffffff20', borderRadius: '0px' }} />
+                                        <Tooltip formatter={(value) => formatMoney(Number(value))} contentStyle={{ backgroundColor: '#000', border: '1px solid #ffffff20', borderRadius: '0px' }} />
                                         <Legend verticalAlign="bottom" formatter={(v) => <span className="text-[10px] font-mono text-white/40">{v}</span>} />
                                     </PieChart>
                                 </ResponsiveContainer>

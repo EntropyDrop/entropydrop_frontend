@@ -47,7 +47,7 @@ A central workspace for managing, sorting, and sharing skins.
 
 ### 4. 🔓 Public Startup & Real-time Ledger (`/public`)
 Exposing actual system operations and financials directly to the community to maintain complete transparency.
-- **Real-Time Ledger (`/public/ledger`):** A live, anonymized billing ledger displaying daily-synchronized PayPal income transactions and AWS cloud infrastructure costs.
+- **Real-Time Ledger (`/public/ledger`):** Daily-synchronized PayPal totals grouped by UTC month, currency and fixed category, alongside AWS cloud infrastructure costs. Public API responses exclude individual PayPal transactions and customer identifiers; internal reconciliation records are retained. Financial charts report each currency separately.
 - **Open Roadmap:** Tracks software evolution milestones, data synthesis improvements, and protocol releases.
 - **Technical Articles:** Built-in Markdown reader serving our latest research (e.g., Flux2 Klein LoRA fine-tuning methodologies, deep dives into skin UV spatial parameters, and backend scaling boundaries).
 
