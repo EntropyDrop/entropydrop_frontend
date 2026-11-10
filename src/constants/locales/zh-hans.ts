@@ -2106,6 +2106,7 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         },
         footer: {
             links: {
+                aboutUs: '关于我们',
                 termsOfService: '服务条款',
                 privacyPolicy: '隐私政策',
                 figurePrintTerms: '3D 打印服务条款'

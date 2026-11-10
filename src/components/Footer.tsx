@@ -27,8 +27,15 @@ export function Footer({ current }: FooterProps) {
                     </a>
                 </div>
 
-                {/* Legal & Social Links */}
+                {/* Navigation & Legal Links */}
                 <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-5">
+                    <Link
+                        to="/public"
+                        className="text-white/50 hover:text-white transition-colors no-underline"
+                    >
+                        {data.links.aboutUs}
+                    </Link>
+                    <span className="text-white/20">·</span>
                     <Link
                         to="/skin/tos"
                         target="_blank"

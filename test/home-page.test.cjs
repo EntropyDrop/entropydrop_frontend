@@ -95,7 +95,9 @@ test('HomePage.tsx renders Footer with contact info, terms of service, and priva
         assert.match(localeSource, /emailAddress:\s*'support@entropydrop\.com'/);
     }
 
-    // Terms of service and privacy policy links
+    // About us, terms of service and privacy policy links
+    assert.match(footerSource, /to="\/public"/);
+    assert.match(footerSource, /data\.links\.aboutUs/);
     assert.match(footerSource, /\/skin\/tos/);
     assert.match(footerSource, /\/skin\/privacy/);
     assert.match(footerSource, /\/figure\/3dprint\/terms/);

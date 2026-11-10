@@ -2093,6 +2093,7 @@ Email: support@entropydrop.com`
         },
         footer: {
             links: {
+                aboutUs: 'About Us',
                 termsOfService: 'Terms of Service',
                 privacyPolicy: 'Privacy Policy',
                 figurePrintTerms: '3D Printing Terms'
