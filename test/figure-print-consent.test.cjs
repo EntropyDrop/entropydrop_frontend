@@ -6,7 +6,6 @@ const { build } = require('esbuild');
 const { JSDOM } = require('jsdom');
 const React = require('react');
 const { createRoot } = require('react-dom/client');
-const fs = require('node:fs');
 
 const compiled = build({
     stdin: { contents: `export { FigurePrintPage } from './src/pages/FigurePrintPage';
@@ -40,9 +39,7 @@ async function withPage(options, check) {
     const ids = ['head', 'torso', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg', 'shortConnector', 'longConnector'];
     let session = options.guest ? null : 'account-a';
     const listeners = new Set();
-    const server = { version: '1.0', accepted: options.accepted ? '1.0' : null, acceptedAt: options.accepted ? '2026-10-09T00:00:00Z' : null,
-        getStatus: 200, postStatus: 200, pendingPost: null, stockStatus: 200, stock: [{ model_type: 'Cute DIY Kit', price: 40 }], ...options.server };
-    const status = () => ({ required_version: server.version, accepted_version: server.accepted, accepted_at: server.acceptedAt });
+    const server = { stockStatus: 200, stock: [{ model_type: 'Cute DIY Kit', price: 40 }], ...options.server };
     const location = { search: options.search || '', state: options.empty ? null : { textureUrl: 'data:image/png;base64,test', source: options.source } };
     const module = { exports: {} };
     vm.runInNewContext(await compiled, { module, exports: module.exports, console, AbortController, document, URLSearchParams,
@@ -63,18 +60,13 @@ async function withPage(options, check) {
                     if (url.includes('/model-stock')) return { ok: server.stockStatus === 200, json: async () => server.stock };
                     if (url.endsWith('/production-source')) return { ok: (server.productionStatus || 200) === 200, json: async () => server.production };
                     if (url.startsWith('/api/logs/')) {
-                        const response = server.skins?.[url.slice('/api/logs/'.length)] || { status: 404 };
+                        const entry = server.skins?.[url.slice('/api/logs/'.length)] || { status: 404 };
+                        const response = typeof entry === 'function' ? entry(init) : entry;
                         if (response.pending) await response.pending.promise;
                         if (response.networkError) throw new Error('Network unavailable');
                         return { ok: (response.status || 200) === 200, status: response.status || 200, json: async () => response.data };
                     }
-                    let httpStatus = server.getStatus;
-                    if (init.method === 'POST') {
-                        if (server.pendingPost) await server.pendingPost.promise;
-                        httpStatus = server.postStatus;
-                        if (httpStatus === 200) { server.accepted = server.version; server.acceptedAt = '2026-10-09T08:00:00Z'; }
-                    }
-                    return { ok: httpStatus === 200, status: httpStatus, json: async () => status() };
+                    return { ok: false, status: 404, json: async () => ({}) };
                 },
             };
             if (name.endsWith('/components/PageContainer')) return { PageContainer: ({ children }) => React.createElement('main', null, children) };
@@ -102,16 +94,10 @@ async function withPage(options, check) {
     const click = element => { assert.ok(element, 'expected a clickable element'); return React.act(async () => element.click()); };
     try {
         await render();
-        const archive = JSON.parse(fs.readFileSync(path.join(__dirname, `../docs/legal/figure-print-terms/${FIGURE_PRINT_TERMS.version}.json`), 'utf8'));
-        const termsText = current.figurePrintTerms;
-        assert.deepEqual(archive.languages[options.lang === 'zh' ? 'zh-hans' : 'en'], JSON.parse(JSON.stringify({
-            title: termsText.title, summary: termsText.summary, sections: termsText.sections,
-        })), 'the accepted version must have a matching archived text');
-        assert.equal(archive.effectiveDate, FIGURE_PRINT_TERMS.effectiveDate);
         await check({ node, downloads, requests, imageRequests, stored, generatedInfo, server, current, terms: FIGURE_PRINT_TERMS, button, click,
-            modal: () => document.querySelector('dialog'), checkbox: () => document.querySelector('input[type="checkbox"]'),
+            modal: () => document.querySelector('dialog'),
             finish: () => React.act(async () => generation.resolve()), resolve: pending => React.act(async () => pending.resolve()),
-            cancel: () => click(button(current.modal.cancel)), confirm: () => click(button(current.figurePrint.agreeAndDownload)),
+            cancel: () => click(button(current.modal.cancel)),
             switchAccount: account => React.act(async () => { session = account; listeners.forEach(listener => listener()); }),
             replaceSource: async () => { location.state = { textureUrl: 'data:image/png;base64,replacement' }; await render(); },
             navigate: async (search, state = null) => { location.search = search; location.state = state; await render(); },
@@ -182,7 +168,7 @@ const publicSkin = {
     license: { public_license: 'cc-by-nc-4.0' },
 };
 
-test('print URLs include only the ID of an explicitly public skin', () => {
+test('print URLs carry the ID of public and private skins alike', () => {
     const module = { exports: {} };
     const { buildSync } = require('esbuild');
     vm.runInNewContext(buildSync({
@@ -190,10 +176,11 @@ test('print URLs include only the ID of an explicitly public skin', () => {
         bundle: true, write: false, platform: 'node', format: 'cjs',
     }).outputFiles[0].text, { module, exports: module.exports });
     const { createFigureSource, figurePrintPath } = module.exports;
-    assert.equal(figurePrintPath(createFigureSource(publicSkin)), '/figure/3dprint?id=shared-skin');
-    for (const is_public of [false, undefined, null]) {
-        assert.equal(figurePrintPath(createFigureSource({ ...publicSkin, is_public })), '/figure/3dprint');
+    for (const is_public of [true, false, undefined, null]) {
+        assert.equal(figurePrintPath(createFigureSource({ ...publicSkin, is_public })), '/figure/3dprint?id=shared-skin');
     }
+    const modal = require('node:fs').readFileSync(path.resolve(__dirname, '../src/components/MCModal.tsx'), 'utf8');
+    assert.match(modal, /navigate\(figurePrintPath\(source\)\);/, 'the skin dialog opens the ID link without router state');
 });
 
 for (const lang of ['zh', 'en']) test(`${lang}: a guest can open and refresh a shared print URL without navigation state`, async () => {
@@ -216,7 +203,6 @@ for (const lang of ['zh', 'en']) test(`${lang}: a guest can open and refresh a s
 });
 
 for (const [reason, response] of [
-    ['private skin, even for its owner', { data: { ...publicSkin, is_public: false } }],
     ['missing visibility', { data: { ...publicSkin, is_public: undefined } }],
     ['non-boolean visibility', { data: { ...publicSkin, is_public: 'true' } }],
     ['another skin', { data: { ...publicSkin, id: 'other-skin' } }],
@@ -229,6 +215,64 @@ for (const [reason, response] of [
         assert.equal(env.node.querySelector('[role="alert"]').textContent, env.current.figurePrint.sharedSourceUnavailable);
         assert.equal(env.imageRequests.length, 0);
         assert.equal(env.generatedInfo.length, 0);
+        assert.equal(downloadButtons(env.node).length, 0);
+        assert.equal(env.button(env.current.figurePrint.commission), undefined);
+    });
+});
+
+const privateSkin = { ...publicSkin, id: 'my-private-skin', name: 'My private figure', is_public: false, result: 'https://cdn.example.test/private.png',
+    creator: { id: 'account-a', username: 'Owner' } };
+const ownerOnly = data => init => init.auth === 'none' ? { status: 403 } : { data };
+const logLookups = env => env.requests.filter(request => request.url.startsWith('/api/logs/'));
+
+for (const lang of ['zh', 'en']) test(`${lang}: the signed-in owner can open a private skin by its print link`, async () => {
+    await withPage({ lang, empty: true, search: '?id=my-private-skin', server: { skins: { 'my-private-skin': ownerOnly(privateSkin) } } }, async env => {
+        assert.equal(env.node.querySelector('a[href="/skin/?id=my-private-skin"]').textContent, privateSkin.name);
+        assert.deepEqual(env.imageRequests, [privateSkin.result]);
+        assert.equal(env.generatedInfo[0].sourceId, privateSkin.id);
+        assert.equal(env.generatedInfo[0].sourceIsPublic, false);
+        assert.equal(env.generatedInfo[0].publisher, 'Owner');
+        const lookups = logLookups(env);
+        assert.deepEqual(lookups.map(request => request.auth), ['none', 'required'], 'the anonymous lookup comes first, then the account lookup');
+        assert.equal(lookups[0].credentials, 'omit');
+        await env.finish();
+        assert.ok(downloadButtons(env.node).every(button => !button.disabled));
+        await env.click(env.button(env.current.figurePrint.commission));
+        assert.equal(env.node.querySelector('aside').dataset.sourceId, privateSkin.id);
+    });
+});
+
+for (const [reason, response] of [
+    ['a 403 for anonymous requests', ownerOnly(privateSkin)],
+    ['private data returned to an anonymous request', { data: privateSkin }],
+]) test(`a guest cannot open a private skin link: ${reason}`, async () => {
+    await withPage({ guest: true, empty: true, search: '?id=my-private-skin', server: { skins: { 'my-private-skin': response } } }, async env => {
+        assert.equal(env.node.querySelector('[role="alert"]').textContent, env.current.figurePrint.sharedSourceUnavailable);
+        assert.equal(env.imageRequests.length, 0);
+        assert.equal(env.generatedInfo.length, 0);
+        assert.deepEqual(logLookups(env).map(request => request.auth), ['none'], 'a guest never makes an account lookup');
+    });
+});
+
+test('another account cannot open a private skin link', async () => {
+    await withPage({ empty: true, search: '?id=my-private-skin', server: { skins: { 'my-private-skin': { status: 403 } } } }, async env => {
+        assert.equal(env.node.querySelector('[role="alert"]').textContent, env.current.figurePrint.sharedSourceUnavailable);
+        assert.equal(env.imageRequests.length, 0);
+        assert.deepEqual(logLookups(env).map(request => request.auth), ['none', 'required']);
+        assert.equal(downloadButtons(env.node).length, 0);
+        assert.equal(env.button(env.current.figurePrint.commission), undefined);
+    });
+});
+
+test('signing in opens a private skin link and signing out drops it', async () => {
+    await withPage({ guest: true, empty: true, search: '?id=my-private-skin', server: { skins: { 'my-private-skin': ownerOnly(privateSkin) } } }, async env => {
+        assert.ok(env.node.querySelector('[role="alert"]'));
+        await env.switchAccount('account-a');
+        assert.equal(env.node.querySelector('[role="alert"]'), null);
+        assert.deepEqual(env.imageRequests, [privateSkin.result]);
+        assert.equal(env.generatedInfo[0].sourceId, privateSkin.id);
+        await env.switchAccount(null);
+        assert.equal(env.node.querySelector('[role="alert"]').textContent, env.current.figurePrint.sharedSourceUnavailable);
         assert.equal(downloadButtons(env.node).length, 0);
         assert.equal(env.button(env.current.figurePrint.commission), undefined);
     });
@@ -284,102 +328,42 @@ test('raw image URLs in the query cannot open a shared print preview', async () 
 });
 
 for (const lang of ['zh', 'en']) {
-    test(`${lang}: first download waits for saved consent; every format and re-entry use the account record`, async () => {
+    test(`${lang}: a signed-in account downloads every format directly, without a separate agreement step`, async () => {
         await withPage({ lang }, async env => {
-            assert.equal(env.checkbox(), null);
             assert.equal(env.node.querySelector('a[href="/pro"]'), null);
             assert.ok(downloadButtons(env.node).every(button => button.disabled));
             await env.finish(); const buttons = downloadButtons(env.node); assert.equal(buttons.length, 10);
-            // Exercise PNG and SVG as the first successful download as well as STL below.
-            const firstButton = env.button(lang === 'zh' ? env.current.figurePrint.downloadSticker : env.current.figurePrint.exportSvg);
-            await env.click(firstButton); assert.equal(env.checkbox().checked, false);
-            assert.equal(env.modal().querySelector(`a[href="${env.terms.path}"]`).target, '_blank');
-            await env.confirm(); assert.equal(env.requests.filter(r => r.method === 'POST').length, 0);
-            await env.click(env.checkbox());
-            const pending = deferred(); env.server.pendingPost = pending;
-            await env.confirm(); assert.equal(env.downloads.length, 0);
-            assert.equal(env.node.querySelector('a[href="/pro"]'), null);
-            await env.resolve(pending); assert.equal(env.downloads.length, 1); assert.equal(env.modal(), null);
-            assert.ok(env.node.querySelector('a[href="/pro"]'));
-            assert.deepEqual(JSON.parse(env.requests.find(r => r.method === 'POST').body), { version: env.terms.version, accepted: true });
-            for (const button of buttons.filter(button => button !== firstButton)) await env.click(button);
+            for (const button of buttons) { await env.click(button); assert.equal(env.modal(), null); }
             assert.equal(env.downloads.length, 10);
             assert.equal(env.downloads.filter(([, name]) => name.endsWith('.stl')).length, 8);
             assert.equal(env.downloads.filter(([, name]) => name.endsWith('.png')).length, 1);
             assert.equal(env.downloads.filter(([, name]) => name.endsWith('.svg')).length, 1);
-            await env.remount();
-            assert.equal(env.node.querySelector('a[href="/pro"]'), null);
-            await env.click(downloadButtons(env.node)[0]);
-            assert.equal(env.downloads.length, 11); assert.equal(env.requests.filter(r => r.method === 'POST').length, 1);
-            assert.equal(env.modal(), null);
+            assert.equal(env.node.querySelector('input[type="checkbox"]'), null);
+            assert.ok(env.node.querySelector('a[href="/pro"]'));
+            assert.equal(env.requests.some(request => request.url.includes('figure_print_terms')), false);
         });
     });
 }
-test('guests can preview but must sign in before confirming or downloading', async () => {
+test('guests can preview but must sign in before downloading; the notice has no agreement checkbox', async () => {
     await withPage({ guest: true }, async env => {
         await env.finish(); await env.click(downloadButtons(env.node)[0]);
         assert.ok(env.modal().textContent.includes(env.current.figurePrint.loginForDownload));
-        assert.equal(env.checkbox(), null); assert.ok(env.requests.every(request => request.url.includes('/model-stock'))); assert.equal(env.downloads.length, 0);
+        assert.ok(env.modal().textContent.includes(env.current.figurePrintTerms.summary));
+        assert.equal(env.modal().querySelector('input[type="checkbox"]'), null);
+        assert.equal(env.modal().querySelector(`a[href="${env.terms.path}"]`).target, '_blank');
+        assert.ok(env.requests.every(request => request.url.includes('/model-stock'))); assert.equal(env.downloads.length, 0);
+        await env.cancel(); assert.equal(env.modal(), null); assert.equal(env.downloads.length, 0);
     });
 });
-test('cancel saves nothing and reopening requires an unchecked confirmation', async () => {
-    await withPage({}, async env => {
-        await env.finish(); await env.click(downloadButtons(env.node)[0]); await env.click(env.checkbox()); await env.cancel();
-        await env.click(downloadButtons(env.node)[0]); assert.equal(env.checkbox().checked, false);
-        assert.equal(env.downloads.length, 0); assert.equal(env.requests.filter(r => r.method === 'POST').length, 0);
-        assert.equal(env.node.querySelector('a[href="/pro"]'), null);
-    });
-});
-test('failed saves block downloads and permit retry', async () => {
-    await withPage({ server: { postStatus: 503 } }, async env => {
-        await env.finish(); await env.click(downloadButtons(env.node)[0]); await env.click(env.checkbox()); await env.confirm();
-        assert.equal(env.downloads.length, 0); assert.ok(env.modal().textContent.includes(env.current.figurePrint.consentSaveFailed));
-        assert.equal(env.node.querySelector('a[href="/pro"]'), null);
-        env.server.postStatus = 200; await env.confirm(); assert.equal(env.downloads.length, 1);
-    });
-});
-test('lookup failures cannot assume acceptance and permit retry', async () => {
-    await withPage({ accepted: true, server: { getStatus: 503 } }, async env => {
-        await env.finish(); await env.click(downloadButtons(env.node)[0]); assert.equal(env.downloads.length, 0);
-        assert.ok(env.modal().textContent.includes(env.current.figurePrint.consentLoadFailed));
-        env.server.getStatus = 200; await env.click(env.button(env.current.figurePrint.retry)); assert.equal(env.downloads.length, 1);
-    });
-});
-for (const server of [{ version: '2.0' }, { postStatus: 409 }]) {
-    test(`a terms version mismatch stops downloading (${JSON.stringify(server)})`, async () => {
-        await withPage({ server }, async env => {
-            await env.finish(); await env.click(downloadButtons(env.node)[0]);
-            if (env.checkbox()) { await env.click(env.checkbox()); await env.confirm(); }
-            assert.equal(env.downloads.length, 0); assert.equal(env.checkbox(), null);
-            assert.ok(env.modal().textContent.includes(env.current.figurePrint.consentVersionMismatch));
+for (const action of ['switchAccount', 'replaceSource']) {
+    test(`${action} while the sign-in notice is open cancels the pending download`, async () => {
+        await withPage({ guest: true }, async env => {
+            await env.finish(); await env.click(downloadButtons(env.node)[0]); assert.ok(env.modal());
+            await env[action](action === 'switchAccount' ? 'account-b' : undefined);
+            assert.equal(env.modal(), null); assert.equal(env.downloads.length, 0);
         });
     });
 }
-test('an older saved version needs explicit new acceptance', async () => {
-    await withPage({ server: { accepted: '0.9', acceptedAt: '2026-10-08T00:00:00Z' } }, async env => {
-        await env.finish(); await env.click(downloadButtons(env.node)[0]);
-        assert.equal(env.checkbox().checked, false); assert.equal(env.downloads.length, 0);
-    });
-});
-for (const action of ['cancel', 'switchAccount', 'replaceSource']) {
-    test(`${action} during a save prevents a late response from downloading`, async () => {
-        await withPage({}, async env => {
-            await env.finish(); await env.click(downloadButtons(env.node)[0]); await env.click(env.checkbox());
-            const pending = deferred(); env.server.pendingPost = pending; await env.confirm();
-            await env[action](action === 'switchAccount' ? 'account-b' : undefined); await env.resolve(pending);
-            assert.equal(env.downloads.length, 0); assert.equal(env.modal(), null);
-        });
-    });
-}
-test('rapid duplicate confirmations send one save and one download', async () => {
-    await withPage({}, async env => {
-        await env.finish(); await env.click(downloadButtons(env.node)[0]); await env.click(env.checkbox());
-        const button = env.button(env.current.figurePrint.agreeAndDownload);
-        await React.act(async () => { button.click(); button.click(); });
-        assert.equal(env.requests.filter(r => r.method === 'POST').length, 1); assert.equal(env.downloads.length, 1);
-    });
-});
-
 
 const savedSticker = require('./fixtures/order-sticker.json');
 const productionSource = { id: 'kit-a', order_id: 'order-a', model_type: 'Cute DIY Kit', skin_url: 'https://private.example.test/orders/order-a/kit-a.png?signature=fresh', sticker_snapshot: savedSticker };
@@ -480,7 +464,7 @@ test('production retains cute7 geometry and filenames for a historical kit', asy
 });
 
 test('non-pro users see the Pro support prompt only after downloading and can dismiss it', async () => {
-    await withPage({ isPro: false, accepted: true }, async env => {
+    await withPage({ isPro: false }, async env => {
         assert.equal(env.node.querySelector('a[href="/pro"]'), null);
         await env.finish();
         assert.equal(env.node.querySelector('a[href="/pro"]'), null);
@@ -511,7 +495,7 @@ test('guests do not see the Pro support prompt before completing a download', as
 });
 
 test('Pro members do not see the Pro support prompt banner', async () => {
-    await withPage({ isPro: true, accepted: true }, async env => {
+    await withPage({ isPro: true }, async env => {
         await env.finish();
         await env.click(downloadButtons(env.node)[0]);
         assert.equal(env.downloads.length, 1);
@@ -521,7 +505,7 @@ test('Pro members do not see the Pro support prompt banner', async () => {
 });
 
 test('production orders do not display the Pro support banner', async () => {
-    await withPage({ search: '?order=order-a&item=kit-a', isPro: false, accepted: true, server: { production: productionSource } }, async env => {
+    await withPage({ search: '?order=order-a&item=kit-a', isPro: false, server: { production: productionSource } }, async env => {
         await env.finish();
         await env.click(downloadButtons(env.node)[0]);
         assert.equal(env.downloads.length, 1);

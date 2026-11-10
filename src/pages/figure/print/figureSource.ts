@@ -40,7 +40,5 @@ export function figureSourceUrl(id: string) {
 }
 
 export function figurePrintPath(source: FigureSkinSource) {
-    return source.isPublic === true
-        ? `/figure/3dprint?id=${encodeURIComponent(source.id)}`
-        : '/figure/3dprint'
+    return `/figure/3dprint?id=${encodeURIComponent(source.id)}`
 }

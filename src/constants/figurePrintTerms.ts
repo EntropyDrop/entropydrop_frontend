@@ -1,8 +1,9 @@
-// Keep the notice, download confirmation, and standalone agreement in sync.
+// The custom product file download terms (including 3D printing) are Section 18 of the Terms of Service.
 export const FIGURE_PRINT_TERMS = {
-    path: '/figure/3dprint/terms',
-    version: '1.0',
-    effectiveDate: '2026-10-09',
+    path: '/skin/tos#custom-product-files',
+    anchor: 'custom-product-files',
+    // Old standalone page; it now redirects to `path`.
+    legacyPath: '/figure/3dprint/terms',
 } as const
 
-export const TERMS_OF_SERVICE_VERSION = '2026-10-09'
+export const TERMS_OF_SERVICE_VERSION = '2026-11-10'

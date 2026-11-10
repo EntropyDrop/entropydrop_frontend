@@ -1,10 +1,10 @@
 import { spaceAgentOnboarding } from '@entropydrop/space/agent-guide'
-import { FIGURE_PRINT_TERMS } from '../figurePrintTerms'
+import { TERMS_OF_SERVICE_VERSION } from '../figurePrintTerms'
 
 export default {
     creatorPortal: {
         "title": "Creator earnings",
-        "subtitle": "Track referrals, commissions and PayPal withdrawals. All amounts are in USD.",
+        "subtitle": "Track referrals, commissions and withdrawals. All amounts are in USD.",
         "restricted": "Sign in with an account registered as a creator to view this page.",
         "available": "Available to withdraw",
         "pending": "Awaiting settlement",
@@ -21,46 +21,50 @@ export default {
         "productAmount": "Product subtotal",
         "commission": "Commission",
         "request": "Request withdrawal",
-        "paypalEmail": "PayPal recipient email",
         "accountEmail": "Registered account email",
         "amount": "Amount (USD)",
-        "requestHint": "Completed orders become withdrawable 3 days after payment. Discounts and shipping are excluded from the commission basis. Requests reserve your balance; an administrator reviews the recipient and amount before sending through PayPal.",
+        "requestHint": "Completed orders become withdrawable 3 days after payment. Discounts and shipping are excluded from the commission basis. Submitting a request reserves that amount. We transfer it through Stripe and process requests within 5 days. The Stripe fee is deducted from the amount you request, so you receive the amount minus the fee.",
         "confirmRequest": "Confirm withdrawal request",
-        "confirmRequestBody": "Request {amount} USD to {email}? Check the PayPal recipient carefully. The amount will be reserved until review and transfer are complete.",
+        "confirmRequestBody": "Request {amount} USD? The Stripe fee is deducted from this amount. We will contact {email} to arrange the transfer and process requests within 5 days. The amount stays reserved until we record the transfer.",
         "submitRequest": "Confirm request",
         "invalidAmount": "Enter a valid amount within your available balance, with up to two decimal places.",
         "failed": "The request could not be confirmed. Refresh the records and retry.",
         "insufficient": "The available commission has changed or is insufficient. Refresh to check your balance.",
         "requestConflict": "This request was already used for different details. Refresh the withdrawal history.",
-        "changed": "This withdrawal has already been reviewed or updated. Refresh the records.",
+        "changed": "This withdrawal has already been processed or updated. Refresh the records.",
         "userNotFound": "No registered account has this email. Ask the creator to register first.",
         "ownerLocked": "This code is already bound to an account and cannot be transferred. Create a new code for another account.",
         "unbound": "Account binding required",
         "history": "Status history",
-        "transaction": "PayPal transaction",
-        "reviewNote": "Review note",
-        "adminTitle": "Withdrawal review",
-        "adminHint": "Approval sends the exact requested amount to the recorded PayPal email. PayPal fees are paid by the business. Failed or returned payouts release the reserved balance; unconfirmed transfers remain reserved.",
-        "disabled": "PayPal Payouts is not enabled. Requests can be recorded, but approval and transfers require the business Payouts configuration.",
+        "reviewNote": "Note",
+        "adminTitle": "Withdrawal processing",
+        "adminHint": "Send the transfer in Stripe first, then record its receipt here. Recording deducts the requested amount from the creator’s balance. The Stripe fee comes out of that amount, so the creator receives the amount minus the fee. Process requests within 5 days. Rejecting releases the reserved balance.",
         "filter": "Status",
         "all": "All withdrawals",
-        "approve": "Approve and send",
         "reject": "Reject request",
-        "sync": "Check PayPal status",
-        "approveHint": "Confirming starts a PayPal transfer. Verify the recipient email and amount; a successful payment cannot simply be undone.",
         "reasonRequired": "Enter a reason for rejecting this withdrawal.",
-        "transferError": "PayPal has not confirmed this transfer. Check the latest status before taking further action.",
-        "manualReviewHint": "This transfer requires manual reconciliation. The funds remain reserved to prevent a duplicate payment.",
+        "payoutEmail": "Email for the Stripe transfer",
+        "fee": "Stripe fee (deducted)",
+        "netAmount": "You receive",
+        "dueBy": "We process this by",
+        "transferReference": "Stripe transfer receipt",
+        "recordTransfer": "Record Stripe transfer",
+        "feeAmount": "Stripe fee (USD)",
+        "creatorReceives": "Creator receives",
+        "recordHint": "Confirming deducts the requested amount from the creator’s balance. A recorded transfer cannot be changed.",
+        "referenceInvalid": "The transfer receipt must be at least 3 characters: letters, numbers, underscores or hyphens.",
+        "referenceUsed": "This transfer receipt is already recorded for another withdrawal.",
+        "feeInvalid": "Enter a fee of at least 0 and less than the withdrawal amount, with up to two decimal places.",
         "states": {
-                "pending_review": "Awaiting review",
-                "processing": "Processing",
-                "unclaimed": "Awaiting recipient claim",
-                "on_hold": "On hold at PayPal",
-                "paid": "Paid",
-                "failed": "Failed",
+                "pending_review": "Awaiting transfer",
+                "processing": "Processing (legacy PayPal)",
+                "unclaimed": "Awaiting recipient claim (legacy PayPal)",
+                "on_hold": "On hold (legacy PayPal)",
+                "paid": "Transferred",
+                "failed": "Failed (legacy PayPal)",
                 "rejected": "Rejected",
-                "returned": "Returned",
-                "manual_review": "Manual reconciliation",
+                "returned": "Returned (legacy PayPal)",
+                "manual_review": "Needs resolution (legacy PayPal)",
                 "eligible": "Eligible",
                 "pending": "Awaiting settlement",
                 "excluded": "Not included in earnings"
@@ -103,7 +107,7 @@ export default {
         invalidSettings: 'Use a 2–32 character code (letters, numbers, _ or -), a registered user email, a 0–99% discount and a 0–100% commission with up to two decimal places.',
         link: 'Referral link', acquired: 'Original referrals', orders: 'Attributed orders', sales: 'Paid product sales',
         pendingCommission: 'Pending commission', eligibleCommission: 'Eligible commission (cumulative)', empty: 'No creator codes yet.',
-        managementHint: 'Codes apply to figure orders. Once bound to your account, the source code remains the default until the code is deactivated or expires. Creator discounts stack after the global figure discount and exclude shipping; commission uses the final discounted product subtotal. Canceled and refunded orders are excluded. Completed orders become eligible 3 days after payment. Bind each code to a registered user email. Creators request withdrawals in Creator earnings; administrators review them in Withdrawal review.',
+        managementHint: 'Codes apply to figure orders. Once bound to your account, the source code remains the default until the code is deactivated or expires. Creator discounts stack after the global figure discount and exclude shipping; commission uses the final discounted product subtotal. Canceled and refunded orders are excluded. Completed orders become eligible 3 days after payment. Bind each code to a registered user email. Creators request withdrawals in Creator earnings; administrators record Stripe transfers in Withdrawal processing.',
     },
     figureManagement: {
         "ordersTab": "Order management",
@@ -209,21 +213,11 @@ export default {
 },
     figurePrint: {
         nonCommercialTitle: 'Downloads for personal, non-commercial use',
-        existingRights: 'Pro does not automatically include commercial use of this download service. Source licenses and existing valid permissions remain in effect.',
-        acceptTerms: 'I have read and agree to the 3D Printing Download Service Terms, including the non-commercial use restriction.',
-        downloadConfirmTitle: 'Confirm before downloading',
-        downloadConsentHint: 'Sign in to download. Confirm the separate terms before your first download; the same version does not require repeated confirmation.',
-        checkingConsent: 'Checking your agreement status…',
-        loginForDownload: 'Sign in so we can save your agreement record. After signing in, click the file you want to download again.',
+        existingRights: 'A Pro digital commercial license does not cover this download service. Source licenses still apply.',
+        downloadSignInTitle: 'Sign in to download',
+        loginForDownload: 'Sign in to download (subject to Section 18 of the Terms of Service), then click the file again.',
         loggingIn: 'Signing in…',
         downloadLoginFailed: 'Sign-in was not completed. Please try again.',
-        consentRecordNotice: 'By clicking “Agree and download”, you save the agreement version and acceptance time to your account. Later downloads under the same version do not require confirmation again.',
-        consentLoadFailed: 'Could not check your agreement status. Nothing was downloaded. Please retry.',
-        consentSaveFailed: 'Could not save your agreement. Nothing was downloaded. Please retry.',
-        consentVersionMismatch: 'The terms have changed. Reload the page to read and accept the current version.',
-        reloadTerms: 'Reload page',
-        savingConsent: 'Saving…',
-        agreeAndDownload: 'Agree and download',
         "title": "3D Printing",
         "description": "Turn your skin into a figure and a matching sticker sheet.",
         modelType: 'Model',
@@ -239,7 +233,7 @@ export default {
         publisher: 'Published by',
         sourceUnavailable: 'Source unavailable · reopen a skin from collections or Discover',
         sharedSourceLoading: 'Loading shared skin…',
-        sharedSourceUnavailable: 'This skin is unavailable or private. Only public skins can be shared for 3D printing.',
+        sharedSourceUnavailable: 'This skin is unavailable or private. Private skins can only be opened by their owner while signed in.',
         unnamedSkin: 'Untitled skin',
         unknownPublisher: 'Unknown publisher',
         sourceParent: 'Based on another skin',
@@ -286,6 +280,9 @@ export default {
             buying: 'Waiting for payment…',
             paymentUnderMaintenance: 'Payment service is under maintenance. Direct purchase is temporarily unavailable.',
             approval: 'Paid orders are reviewed before production. Rejected orders receive a full refund and a reason in your mailbox.',
+            policyNote: 'Custom products are made to order and cannot be returned because you changed your mind.',
+            policyLink: 'Shipping & Refunds',
+            disclaimer: 'NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.',
         },
         "model": "Model preview",
         "stickers": "A4 sticker sheet",
@@ -334,8 +331,8 @@ export default {
     skinLicense: {
         yourRights: "Your usage rights",
         sharing: "Sharing",
-        commercial: "Account commercial license",
-        commercialDescription: "EntropyDrop commercial rights belong to the licensed account. Once granted, they remain valid after Pro expires; source and third-party restrictions still apply.",
+        commercial: "Account digital commercial license",
+        commercialDescription: "EntropyDrop digital commercial rights belong to the licensed account. Once granted, they remain valid after Pro expires; source and third-party restrictions still apply.",
         original: "Original creator rights",
         originalDescription: "You retain the rights to your original work, regardless of your subscription.",
         source: "Subject to source permissions",
@@ -526,16 +523,16 @@ export default {
         proModelTitle: 'PRO Exclusive Model',
         proModelDesc: 'The selected model is exclusive to PRO members. Please subscribe to use it.',
         licenseTitle: 'License for Generated Work',
-        licenseCommercial: 'Creator Commercial License',
+        licenseCommercial: 'Creator Digital Commercial License',
         licenseUnknown: 'Unknown License',
         licenseSource: 'Source license',
         licenseSourceSummary: 'The original license applies to this generation.',
-        licenseCommercialBadge: 'Commercial',
+        licenseCommercialBadge: 'Digital commercial',
         licenseNonCommercialBadge: 'CC BY-NC 4.0',
         licenseUnknownBadge: 'Unknown',
-        licenseCommercialDesc: 'Works generated during an active Pro subscription enjoy a perpetual creator commercial license. If public, others receive only CC BY-NC 4.0.',
+        licenseCommercialDesc: 'Works generated during an active Pro subscription enjoy a perpetual creator digital commercial license. If public, others receive only CC BY-NC 4.0.',
         licenseNonCommercialDesc: 'Works generated under the free tier are offered under CC BY-NC 4.0 for non-commercial use, sharing, and remixing with attribution.',
-        licenseParentCommercialOwnerDesc: 'This generation retains your perpetual commercial license. If public, other users receive only CC BY-NC 4.0.',
+        licenseParentCommercialOwnerDesc: 'This generation retains your perpetual digital commercial license. If public, other users receive only CC BY-NC 4.0.',
         licenseParentCommercialOtherDesc: 'Generations derived from another user’s work receive only a CC BY-NC 4.0 non-commercial license.',
         licenseParentNonCommercialDesc: 'The source work is under CC BY-NC 4.0; this generation remains non-commercial.',
         licenseParentUnknownDesc: 'The source license is unknown; this generation retains unknown status and does not expand rights.',
@@ -543,15 +540,15 @@ export default {
         licenseLoadingDesc: 'Checking the source skin to confirm the applicable license after generation.',
         licenseUnavailable: 'License unavailable',
         licenseUnavailableDesc: 'The source license could not be verified. Please reopen the original skin or try again.',
-        licensePublicNotice: 'If set to Public, other users receive only CC BY-NC 4.0; commercial rights belong solely to your account.',
+        licensePublicNotice: 'If set to Public, other users receive only CC BY-NC 4.0; digital commercial rights belong solely to your account.',
         licensePrivateNotice: 'If set to Private, this work is not shared publicly and remains accessible only to you.',
-        licenseProUpgradeHint: 'Subscribe to Pro for perpetual commercial license',
+        licenseProUpgradeHint: 'Subscribe to Pro for a perpetual digital commercial license',
         licenseTermsLink: 'View CC BY-NC 4.0 terms',
         licenseViewDetails: 'View details',
         licenseHideDetails: 'Hide details',
-        licenseCommercialSummary: 'Works generated during Pro enjoy a perpetual creator commercial license.',
+        licenseCommercialSummary: 'Works generated during Pro enjoy a perpetual creator digital commercial license.',
         licenseNonCommercialSummary: 'Works generated under the free tier are for non-commercial personal use under CC BY-NC 4.0.',
-        licenseParentCommercialOwnerSummary: 'This generation retains your perpetual creator commercial license.',
+        licenseParentCommercialOwnerSummary: 'This generation retains your perpetual creator digital commercial license.',
         licenseParentCommercialOtherSummary: 'Derivations from others receive only CC BY-NC 4.0 non-commercial license.',
         licenseParentNonCommercialSummary: 'Source is under CC BY-NC 4.0; this generation remains non-commercial.',
         licenseParentUnknownSummary: 'Source license is unknown; this generation retains unknown license.'
@@ -658,8 +655,8 @@ export default {
         saveSuccess: 'Saved to creations',
         saveFailed: 'Failed to save',
         saveLicenseTitle: 'License after saving',
-        saveLicenseCommercial: 'Creator commercial license',
-        saveLicenseCommercialDescription: 'This edit keeps your perpetual commercial-use license. If saved as Public, other users receive only CC BY-NC 4.0.',
+        saveLicenseCommercial: 'Creator digital commercial license',
+        saveLicenseCommercialDescription: 'This edit keeps your perpetual digital commercial license. If saved as Public, other users receive only CC BY-NC 4.0.',
         saveLicenseNonCommercialDescription: 'By saving, you confirm you hold the necessary rights and agree to record this edit under CC BY-NC 4.0. A Public save lets anyone reuse it non-commercially with attribution.',
         saveLicenseUnknown: 'Unknown license',
         saveLicenseUnknownDescription: 'Editing does not expand unknown source rights. A Public save does not grant other users reuse rights.',
@@ -819,35 +816,28 @@ export default {
         totalAmount: 'Total Amount'
     },
     figurePrintTerms: {
-        title: '3D Printing Download Service Terms',
         versionLabel: 'Version',
         effectiveDateLabel: 'Effective',
-        backToPrint: 'Go to 3D printing',
-        summary: 'This website’s 3D printing download service is for personal, non-commercial making. Unless separately agreed, STL, sticker PNG, and cutting SVG files obtained through this service may not be used to sell files or printed products, provide paid printing, or promote a business.',
+        sectionTitle: '18. Custom Product File Downloads (Including 3D Printing)',
+        summary: 'This website’s custom product file downloads are for personal, non-commercial making. Unless separately agreed, files obtained through this service (such as STL, sticker PNG, and cutting SVG) may not be used to sell files or made products, provide paid printing or making services, or promote a business.',
         sections: [
             {
-                title: '1. Scope and acceptance',
-                content: `These terms are between Shanghai EqualRank Technology Co., Ltd. (EntropyDrop) and users of this website’s 3D printing download service. They supplement the EntropyDrop Terms of Service for the new model conversion, part STL, sticker PNG, and cutting SVG downloads at /figure/3dprint. Custom physical product orders remain subject to their order terms.
+                title: '18.1 Scope',
+                content: `This section applies to the files you can download for making custom physical products yourself, currently the model conversion, part STL, sticker PNG, and cutting SVG files at /figure/3dprint, and to files for other printing or manufacturing methods we may add. Orders you place with us for custom physical products remain subject to Section 11 and their order terms.
 
-Previews do not require sign-in. Downloads require sign-in. If your account has not accepted the current version, read these terms in the download confirmation dialog, especially the non-commercial restriction and the treatment of existing permissions, actively check the agreement box, and click “Agree and download”. Downloading proceeds only after the confirmation is saved. Later downloads under the same version do not require repeated confirmation. If you do not agree, do not download through this page. Not using this service does not constitute acceptance of its separate terms.`
+Previews do not require sign-in; downloads do.`
             },
             {
-                title: '2. Non-commercial use',
-                content: `This service is for personal, non-commercial making. Unless separately agreed, you agree not to use it to sell digital files or printed products, operate a paid printing business, promote a business, or for other commercial purposes. You also agree not to use STL, sticker PNG, cutting SVG files obtained through this service, or modified versions of those files, for those purposes.
+                title: '18.2 Non-commercial use',
+                content: `This service is for personal, non-commercial making. Unless separately agreed, you agree not to use it to sell digital files or products made from them, operate a paid printing or manufacturing business, promote a business, or for other commercial purposes. You also agree not to use files obtained through this service (such as STL, sticker PNG, and cutting SVG files), or modified versions of those files, for those purposes.
 
-Paying for Pro does not automatically include commercial use of this download service.`
+A Pro commercial license is a digital commercial license under Section 6 and does not include commercial use of files or products obtained through this download service.`
             },
             {
-                title: '3. Source content and files',
-                content: `Source skins retain their existing licenses, including valid CC licenses, author permissions, or commercial licenses already held by an account. You must have permission for the conversion and making involved and continue to follow applicable attribution, non-commercial, and other source conditions. Uploading, converting, downloading, or checking the agreement box does not transfer ownership, remove upstream restrictions, or grant the Platform rights beyond its actual authorization.
+                title: '18.3 Source content and files',
+                content: `Source skins retain their existing licenses, including valid CC licenses, author permissions, or commercial licenses already held by an account. You must have permission for the conversion and making involved and continue to follow applicable attribution, non-commercial, and other source conditions. Uploading, converting, or downloading does not transfer ownership, remove upstream restrictions, or grant the Platform rights beyond its actual authorization.
 
-These terms govern your use of this website’s service. They do not replace source licenses or license every output under a new non-commercial copyright license, revoke valid permissions, or automatically bind third parties who obtain content elsewhere. A file format does not itself give the Platform all rights in the file.`
-            },
-            {
-                title: '4. Version, effective date, and updates',
-                content: `From the effective date shown on this page, this version applies to use of the service after your active acceptance. The general Terms of Service govern general matters, and these terms govern matters specific to this service, without reducing existing valid permissions or promised benefits.
-
-Updates will identify their version and effective date and request your acceptance of the new version before downloading. They will not retroactively revoke existing valid permissions. We save the latest accepted version and a server-recorded acceptance time to your account to confirm the service agreement, avoid repeated confirmation of the same version, and handle related disputes. The corresponding version of the full terms will be retained. Repeating acceptance of the same version does not change its original acceptance time. This is not a record of individual downloads. Our Privacy Policy applies to the processing of this information.`
+This section governs your use of this website’s service. It does not replace source licenses or license every output under a new non-commercial copyright license, revoke valid permissions, or automatically bind third parties who obtain content elsewhere. A file format does not itself give the Platform all rights in the file.`
             },
         ],
     },
@@ -989,9 +979,9 @@ Updates will identify their version and effective date and request your acceptan
         itemProWeekTitle: 'Pro Membership 7-Day Pass',
         itemProWeekTag: 'Digital Perk',
         itemProWeekCost: '100 Credits',
-        itemProWeekDesc: 'Unlock 7 days of Pro perks, including high-priority generation queues and commercial licenses.',
+        itemProWeekDesc: 'Unlock 7 days of Pro perks, including high-priority generation queues and digital commercial licenses.',
         itemProWeekF1: 'Dedicated accelerated queue with zero waiting',
-        itemProWeekF2: 'Permanent creator commercial license granted',
+        itemProWeekF2: 'Permanent creator digital commercial license granted',
         topUpSubtitle: 'Official fixed rate: $1.00 USD = 10 Credits. Instantly credited, never expires.',
         securityTitle: 'Official Secure Payment Guarantee',
         security1: 'PayPal Encrypted Checkout',
@@ -1103,32 +1093,105 @@ Updates will identify their version and effective date and request your acceptan
     },
     terms: {
         title: 'Terms of Service & Privacy Policy',
-        intro: 'Welcome to our service! Before you start, please read our Terms of Service and Privacy Policy.',
+        intro: 'Welcome to our service! Before you start, please read our Terms of Service and Privacy Policy, including the terms for custom physical products (Sections 11 and 18) and the digital scope of Pro commercial licenses (Section 6).',
         decline: 'Decline & Exit',
         agree: 'Agree & Continue',
         tos: 'Terms of Service',
         privacy: 'Privacy Policy'
     },
+    shippingRefundPolicy: {
+        title: 'EntropyDrop Shipping, Returns & Refunds Policy',
+        lastUpdatedLabel: 'Last updated',
+        lastUpdated: TERMS_OF_SERVICE_VERSION,
+        sections: [
+            {
+                title: '1. Scope',
+                content: `This policy applies to purchases from EntropyDrop LLC (“EntropyDrop,” “we”) through entropydrop.com: digital items (Credits, Pro subscriptions, and other digital services) and custom physical products (including 3D-printed products). It is part of the Terms of Service. Prices are shown in US dollars (USD).`
+            },
+            {
+                title: '2. Payments and Taxes',
+                content: `Payments are processed by third-party payment providers such as PayPal and Stripe. We do not receive or store your full card number.
+
+The amount due is the price shown at checkout plus the shipping fee. Import duties, customs fees, and local taxes charged by the destination country are not included and are the recipient’s responsibility.`
+            },
+            {
+                title: '3. Digital Purchases',
+                content: `Credits: Credits are non-refundable once purchased, except for a billing error, a duplicate charge, or a Platform failure confirmed by us. Credits returned for a failed generation are handled under Section 5 of the Terms of Service.
+
+Subscriptions: Pro subscriptions renew automatically until you cancel on the Pro page. After cancellation, your benefits continue through the current paid period and no further renewal charge is made. A billing period that has already begun is not prorated or refunded, except for a billing error, a duplicate charge, or where the law requires otherwise.
+
+To request a refund under one of these exceptions, contact support@entropydrop.com within 14 days after the charge.`
+            },
+            {
+                title: '4. Custom Physical Products: Orders and Cancellation',
+                content: `Paid orders are reviewed by us before production. If an order is rejected, the whole order is refunded in full and the reason is sent to your website mailbox.
+
+You can cancel an unpaid order on your Orders page. After payment, contact support@entropydrop.com; we can cancel and refund the order only if production has not begun. Once production begins, the order cannot be canceled except as described in Section 6.`
+            },
+            {
+                title: '5. Shipping',
+                content: `Shipping is charged once per order at the fee shown at checkout. We estimate about 2 days for production and about 10 business days for transit to supported destinations. These are estimates, not guarantees, and may be affected by customs, carriers, and events beyond our control. When a tracking number is available, it appears on your order after the package is handed to the carrier.
+
+Please provide a complete and accurate address. We cannot change an address after shipment, and the cost of re-sending a package that is returned or lost because of an incorrect or incomplete address is the buyer’s responsibility.
+
+We ship only to the destinations offered in the address form. We do not ship to Cuba, Iran, North Korea, Syria, or the Crimea, Donetsk, and Luhansk regions of Ukraine, or to any destination to which shipping is prohibited by applicable law.`
+            },
+            {
+                title: '6. Returns and Problem Orders',
+                content: `Custom products are made to order. Unless the law requires otherwise, they cannot be returned or refunded because you changed your mind.
+
+If your product arrives damaged, defective, incomplete, or materially different from your order, email support@entropydrop.com within 14 days after delivery with your order number and clear photos. After review, we will remake or replace the item, or refund the affected amount in full or in part. We pay the shipping for any remade, replaced, or re-sent item. We may ask you to return the item; if so, we provide instructions and pay the return shipping.
+
+If your package has not arrived 30 days after it shipped, contact us. We will check with the carrier and re-send the order or refund it.
+
+Nothing in this policy limits rights you have under mandatory consumer-protection law.`
+            },
+            {
+                title: '7. Refunds',
+                content: `An approved refund is returned to the original payment method through the payment provider, and we start it within 5 business days after approval. Your bank or card issuer decides when it appears, usually within 5 to 10 business days.
+
+A refund covers the amount you actually paid for the affected item, and the shipping fee when the whole order is refunded or the problem was ours. Discounts are not paid out in cash. Referral rewards tied to a refunded order are reversed.`
+            },
+            {
+                title: '8. Payment Disputes',
+                content: `If you do not recognize a charge or have a problem with an order, contact support@entropydrop.com first. We reply within 5 business days.
+
+If you file a dispute or chargeback with your bank, card issuer, or payment provider, we may submit order, delivery, and communication records in response, and may suspend the related order, Credits, subscription benefits, or account while it is reviewed. Benefits obtained through a charge that is reversed may be revoked. We may decline future orders from accounts that repeatedly file unfounded disputes.`
+            },
+            {
+                title: '9. Promotions and Creator Codes',
+                content: `A promotion applies only as described when it is offered, and, unless stated otherwise, only to custom product orders. A global discount applies first and a creator code applies to the remaining product amount; shipping is never discounted. Only one creator code can be used per order, you cannot use your own code, and the code is locked once payment starts.
+
+Discounts have no cash value, cannot be transferred, and cannot be combined with other offers beyond these rules. We may end or change a promotion, and may cancel a discount obtained through abuse or error. If an order is refunded, you receive the amount you paid.`
+            },
+            {
+                title: '10. Legal and Export Restrictions',
+                content: `You may not order or receive products through the Services if you or the destination are subject to applicable sanctions or export restrictions, including those of the United States. We may decline, cancel, and refund an order that we reasonably believe violates these laws. You are responsible for complying with the import laws and regulations of the destination country.`
+            },
+            {
+                title: '11. Contact',
+                content: `EntropyDrop LLC, a Wyoming limited liability company
+Email: support@entropydrop.com
+Please include your order number and the email address of your account.
+
+EntropyDrop LLC is the seller and manufacturer of custom products sold through the Services and is not Mojang or Microsoft. NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.`
+            }
+        ]
+    },
     termsOfService: {
         title: 'EntropyDrop Terms of Service',
         lastUpdatedLabel: 'Last updated',
-        lastUpdated: FIGURE_PRINT_TERMS.effectiveDate,
-        additionalServices: {
-            title: 'This update: separate service terms and existing rights',
-            content: `New or specific services may have separate terms. We will provide the full text at the relevant entry point and before use, identify its version and effective date, and prominently disclose important provisions such as commercial-use restrictions. Where separate acceptance is required, accepting the general terms, holding a subscription, or continuing to use other services does not replace it.
-
-3D printing conversion and part STL, sticker PNG, and cutting SVG downloads are governed by the separate terms linked below and are generally for personal, non-commercial use. A Pro skin’s perpetual commercial license does not automatically include commercial use of this new download service. Source licenses and existing valid permissions remain in effect.
-
-Separate terms address only matters within the relevant service’s scope and do not modify CC or other source licenses or the code’s AGPL license. We will honor relevant benefits already expressly promised in subscriptions, orders, or separate agreements purchased before the effective date under their original valid terms. Checking a separate agreement box does not waive existing benefits. Adverse changes to existing core subscription benefits will be handled under applicable terms and law, without retroactive reduction through this addition.`,
-        },
+        lastUpdated: TERMS_OF_SERVICE_VERSION,
         sections: [
             {
                 title: '1. Acceptance and Scope',
-                content: `The Services are operated by Shanghai EqualRank Technology Co., Ltd. (“EntropyDrop,” “we,” “us,” or the “Platform”). Please read these Terms carefully before registering an account, making a purchase, or using EntropyDrop, especially the provisions concerning public content, intellectual property, paid services, and limitations of liability.
+                content: `The Services are operated by EntropyDrop LLC, a Wyoming limited liability company (“EntropyDrop,” “we,” “us,” or the “Platform”). Please read these Terms carefully before registering an account, making a purchase, or using EntropyDrop, especially the provisions concerning public content, intellectual property, paid services, and limitations of liability.
 
 By clicking “Agree & Continue,” registering an account, purchasing a Service, or continuing to use EntropyDrop, you acknowledge that you have read, understood, and agreed to these Terms and the Privacy Policy. If you do not agree, stop using the Services.
 
-The “Services” include the entropydrop.com website and its AI image, game character skin, and 3D model generation, editing, and conversion tools; content storage, display, search, collections, likes, and sharing; forums and community features; friend connections, Space chat, direct messages, and other social features; the EntropyDrop Space multiplayer world, world editing, programmable entities, and resource marketplace; AI Agents, developer APIs, Credits, Pro subscriptions, custom 3D-printed products; and other related features we may introduce. Some features may be experimental or subject to additional rules displayed in the applicable interface, API documentation, or developer console.`
+The “Services” include the entropydrop.com website and its AI image, game character skin, and 3D model generation, editing, and conversion tools; content storage, display, search, collections, likes, and sharing; forums and community features; friend connections, Space chat, direct messages, and other social features; the EntropyDrop Space multiplayer world, world editing, programmable entities, and resource marketplace; AI Agents, developer APIs, Credits, Pro subscriptions, custom physical products (including 3D printing); and other related features we may introduce. Some features may be experimental or subject to additional rules displayed in the applicable interface, API documentation, or developer console.
+
+EntropyDrop is an independent service. NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT. “Minecraft” and “Mojang” are trademarks of their respective owners.`
             },
             {
                 title: '2. Eligibility and Minors',
@@ -1136,7 +1199,9 @@ The “Services” include the entropydrop.com website and its AI image, game ch
 
 Users under 18 must review these Terms, use the Services, and make purchases with the consent and guidance of a parent or legal guardian. Guardians should reasonably supervise a minor’s usage time, interactions, and purchases.
 
-We do not knowingly offer account services to children under 14. If we learn that we collected a child’s personal information without valid guardian authorization, we will delete it or take other necessary protective measures. If we later permit children under 14 to use a particular Service, we will publish separate children’s privacy rules and obtain guardian consent.`
+We do not knowingly offer account services to children under 14. If we learn that we collected a child’s personal information without valid guardian authorization, we will delete it or take other necessary protective measures. If we later permit children under 14 to use a particular Service, we will publish separate children’s privacy rules and obtain guardian consent.
+
+You may not make purchases through the Services, or have products shipped, if you or the destination are subject to applicable sanctions or export restrictions, including those of the United States.`
             },
             {
                 title: '3. Accounts and Security',
@@ -1155,7 +1220,7 @@ If we provide developer APIs, you must follow the API documentation and protect 
 Before publishing, selling, commercially using, or relying on generated content, Agent results, or API outputs, you must review their content, technical suitability, and rights status. Do not use them as the sole basis for medical, legal, financial, personal-safety, or other high-impact decisions. You are responsible for obtaining any necessary permission for content involving a person’s likeness, brand, character, building, artwork, or other third-party material.`
             },
             {
-                title: '5. Credits, Subscriptions, and Virtual Items',
+                title: '5. Credits, Subscriptions, Virtual Items, and Creator Earnings',
                 content: `Credits are digital benefits usable only for designated EntropyDrop features. They are not currency, have no cash value, and generally may not be transferred, sold, redeemed for cash, or traded outside the Platform. In the future, the Platform may allow you to use Credits to obtain virtual items, resources, or related usage entitlements in the Space marketplace. Unless the purchase page states otherwise, acquiring a virtual item provides only a limited right to use it within the Services under the displayed rules; it does not transfer intellectual-property rights or ownership of real-world property. Virtual items may not be redeemed for cash or traded outside the Platform.
 
 If a generation fails because of a technical failure confirmed by us, or a marketplace purchase for which Credits were deducted is not delivered because of a Platform failure, we may return the corresponding Credits. Credits used for a successfully processed generation or a properly delivered virtual item are generally non-refundable unless the purchase page states otherwise, a systemic Platform error occurred, or applicable requirements provide otherwise.
@@ -1164,7 +1229,11 @@ Pro-Plus, Pro-Max, and similar subscriptions renew automatically for the period 
 
 AI Agent or API Services may be billed by request count, input and output volume, compute time, tool calls, storage, bandwidth, or another metric displayed on the purchase page or developer console. Fees charged by third-party tools or services may be billed separately by those providers. Except for billing errors, duplicate charges, a confirmed Service failure, or another applicable exception, Agent or API usage that was actually processed is generally non-refundable.
 
-We may change prices, allowances, or plan features. We will provide reasonable advance notice of material changes to renewal prices or core benefits. We may revoke Credits, subscription benefits, or virtual resources obtained through fraud, chargebacks, exploitation of a vulnerability, or other improper means.`
+We may change prices, allowances, or plan features. We will provide reasonable advance notice of material changes to renewal prices or core benefits. We may revoke Credits, subscription benefits, or virtual resources obtained through fraud, chargebacks, exploitation of a vulnerability, or other improper means.
+
+Creator earnings: If you take part in the creator program, commission accrues on completed orders that use your code and becomes withdrawable 3 days after payment. Commission on canceled, rejected, or refunded orders is not payable, and commission already withdrawn on an order that is later refunded is offset against your future earnings. You request a withdrawal on the creator earnings page, and the requested amount is reserved. We process requests within 5 days and transfer the funds through Stripe. The Stripe fee is deducted from the amount you request, so you receive the requested amount minus the fee. A rejected request returns the amount to your balance.
+
+Refunds, cancellations, shipping, and payment disputes are further described in the Shipping, Returns & Refunds Policy at entropydrop.com/skin/refund-policy.`
             },
             {
                 title: '6. Licenses for Generated Works',
@@ -1172,9 +1241,9 @@ We may change prices, allowances, or plan features. We will provide reasonable a
 
 Works generated under the Free plan are offered under CC BY-NC 4.0. To the extent EntropyDrop can grant the relevant rights, the generating user and other users may, with attribution, use, copy, share, and adapt them for personal, educational, research, and other non-commercial purposes. They may not be used directly or indirectly in commercial sales, commercial promotions, paid projects, or other revenue-generating activities.
 
-For a work generated during an active Pro-Plus, Pro-Max, or other paid period expressly marked as including commercial rights, and that is not restricted by an upstream non-commercial or unknown license, the account that generated it receives a perpetual, worldwide, non-exclusive commercial-use license. A commercial license already obtained remains valid after the subscription ends. If the work is Public, other users receive only the CC BY-NC 4.0 non-commercial license; public display, viewability, or download access does not grant them commercial-use rights.
+For a work generated during an active Pro-Plus, Pro-Max, or other paid period expressly marked as including commercial rights, and that is not restricted by an upstream non-commercial or unknown license, the account that generated it receives a perpetual, worldwide, non-exclusive digital commercial license. A digital commercial license already obtained remains valid after the subscription ends. “Digital commercial use” means commercially using the work itself in digital form, such as in games, servers, videos, websites, and other digital content or services. It does not extend to physical goods, custom physical products (including 3D-printed products), or files obtained through the custom product file download service (see Section 18), unless separately agreed. If the work is Public, other users receive only the CC BY-NC 4.0 non-commercial license; public display, viewability, or download access does not grant them commercial-use rights.
 
-Manual edits inherit the rights available to the editing account. You retain your original creator rights and existing account commercial licenses when editing your own work, even if the public receives a non-commercial license. When your permission comes only from a source’s CC BY-NC 4.0 license, an edit or regeneration remains non-commercial. Unknown source rights remain unknown. New AI generations depend on both the current plan and source permissions; subscribing to Pro does not remove source restrictions.
+Manual edits inherit the rights available to the editing account. You retain your original creator rights and existing account digital commercial licenses when editing your own work, even if the public receives a non-commercial license. When your permission comes only from a source’s CC BY-NC 4.0 license, an edit or regeneration remains non-commercial. Unknown source rights remain unknown. New AI generations depend on both the current plan and source permissions; subscribing to Pro does not remove source restrictions.
 
 Editor imports and Collection uploads remain subject to their source permissions. Uploading or manually editing a skin does not grant a new EntropyDrop commercial license. Reference images used for AI generation are also subject to source permissions; any source declaration offered in that flow records your statement and does not establish ownership or clear third-party rights.
 
@@ -1191,6 +1260,8 @@ Because of the nature of AI, other users may receive identical or similar output
                 content: `A skin’s Public or Private visibility is chosen when it is created and cannot be changed afterward. When you save a work as “Public,” its output, prompt, source image, intermediate processing results, author name, avatar, model parameters, and related public interactions may be accessed, displayed, or downloaded by anyone through pages, shared links, or public interfaces. Do not make content public if it contains identity documents, contact information, private photographs, information about minors, or other sensitive information.
 
 For Public Content, in addition to the user-to-user public license shown on the work detail page, you grant EntropyDrop a worldwide, non-exclusive, royalty-free, sublicensable license to store, reproduce, transform, and display the content; provide search, sharing, recommendation, derivative-creation, and community features; conduct safety review, moderation, and infringement handling; reasonably promote the Services; and evaluate, fine-tune, or train models using Public Content that is expressly identified as eligible for model improvement. A work’s Public status is independent of the generating user’s license; a creator-only commercial license displayed on the detail page does not extend to other users merely because the work is Public.
+
+To the extent you hold the necessary rights, you also authorize EntropyDrop to produce physical products based on your Public Content, such as figures, stickers, and kits, and to sell and ship them to users who order them through the Services for their own personal, non-commercial use, with attribution as shown in the Services. This authorization covers only EntropyDrop’s production and fulfillment of such orders and gives the purchaser no commercial-use rights. Orders placed before you delete a work may still be fulfilled.
 
 If you delete Public Content, we will stop using it for new public displays and new training runs. However, content already used in completed model training may not be separable or capable of being reverse-removed from model parameters, and rights already validly received by third parties under an irrevocable public license are unaffected, except where mandatory requirements provide otherwise.
 
@@ -1241,17 +1312,21 @@ We may act immediately without advance notice in response to an urgent security 
             },
             {
                 title: '11. Custom Physical Products',
-                content: `EntropyDrop’s 3D-printed products are “14+ collectibles,” not children’s toys, and are unsuitable for infants or young children.
+                content: `EntropyDrop’s custom physical products, including 3D-printed products, are “14+ collectibles,” not children’s toys, and are unsuitable for infants or young children.
 
-Custom products are manufactured from the model you select or upload. Reasonable differences may exist between an on-screen preview and the physical product because of printing processes, materials, stickers, display color, and manual assembly. After a custom-product exclusion is conspicuously disclosed during checkout and separately confirmed by you, the product may be ineligible for return without cause. You may still request repair, remanufacture, replacement, return, or refund if the product has a serious quality problem, is incorrect or incomplete, is damaged in transit, or materially fails to match the order.
+Custom products are manufactured from the model you select or upload. Reasonable differences may exist between an on-screen preview and the physical product because of printing or production processes, materials, stickers, display color, and manual assembly. Custom products are made to order and, unless the law requires otherwise, are not eligible for return or refund because you changed your mind. You may still request repair, remanufacture, replacement, return, or refund if the product has a serious quality problem, is incorrect or incomplete, is damaged in transit, or materially fails to match the order.
 
-Once production begins, an order generally cannot be canceled unless otherwise required or agreed by us. Production and delivery times are estimates and may be affected by destination, customs, carriers, or events beyond reasonable control.
+Once production begins, an order generally cannot be canceled unless otherwise required or agreed by us. Production and delivery times are estimates and may be affected by destination, customs, carriers, or events beyond reasonable control. Shipping, returns, and refunds are further described in the Shipping, Returns & Refunds Policy at entropydrop.com/skin/refund-policy.
 
-Purchasing a physical item gives you ownership of that item but does not transfer third-party rights in characters, artwork, or other protected material contained in it. You are responsible for custom content and resale activity involving third-party rights.`
+You may order custom products from your own works or from other users’ Public works. A product made from another user’s Public work is for your personal, non-commercial use only and may not be resold or used commercially. The author’s rights in the work are not transferred to you.
+
+Purchasing a physical item gives you ownership of that item but does not transfer third-party rights in characters, artwork, or other protected material contained in it. You are responsible for custom content and resale activity involving third-party rights. Custom products must be made from original works or works you are authorized to use. EntropyDrop does not provide official Minecraft characters or other official Minecraft assets.
+
+EntropyDrop LLC is the seller and manufacturer of custom products sold through the Services. It is not Mojang or Microsoft, and Mojang and Microsoft are not responsible for these products or their sale. NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.`
             },
             {
                 title: '12. Third-Party Services',
-                content: `EntropyDrop may use or link to third-party services such as Google Sign-In, Google Analytics, AWS, PayPal, YouTube, shipping providers, foundation-model providers, tool or connector providers, and AI endpoints selected by users.
+                content: `EntropyDrop may use or link to third-party services such as Google Sign-In, Google Analytics, AWS, PayPal, Stripe, YouTube, shipping providers, foundation-model providers, tool or connector providers, and AI endpoints selected by users.
 
 When you authorize an AI Agent to call a third-party tool or connect an external account, the Agent may send that third party instructions, content, and context needed to complete the task and receive results in return. Review the permission scope and third-party terms before authorization, and connect only accounts and data you are authorized to use.
 
@@ -1285,7 +1360,7 @@ Termination does not affect payment obligations accrued before termination, vali
                 title: '17. Updates and Contact',
                 content: `We may update these Terms as the Services, our business, or applicable rules change. We will notify you of material changes through an in-product notice, email, or another reasonable method. If a material change requires renewed consent, we will ask for consent before it takes effect.
 
-Operator: Shanghai EqualRank Technology Co., Ltd.
+Operator: EntropyDrop LLC
 Product: EntropyDrop
 Website: entropydrop.com
 Email: support@entropydrop.com`
@@ -1295,11 +1370,11 @@ Email: support@entropydrop.com`
     privacyPolicy: {
         title: 'EntropyDrop Privacy Policy',
         lastUpdatedLabel: 'Last updated',
-        lastUpdated: FIGURE_PRINT_TERMS.effectiveDate,
+        lastUpdated: '2026-11-10',
         sections: [
             {
                 title: '1. Scope and Controller',
-                content: `Shanghai EqualRank Technology Co., Ltd. is the controller of personal information processed in connection with EntropyDrop. We process personal information lawfully, fairly, transparently, and only to the extent reasonably necessary.
+                content: `EntropyDrop LLC is the controller of personal information processed in connection with EntropyDrop. We process personal information lawfully, fairly, transparently, and only to the extent reasonably necessary.
 
 This Policy applies to the EntropyDrop website, AI generation services, AI Agents and developer APIs we may offer in the future, friend, chat, direct-message, and other social features, community, Space, subscriptions, Credits, and custom-product services.`
             },
@@ -1310,13 +1385,13 @@ This Policy applies to the EntropyDrop website, AI generation services, AI Agent
 • Browsing and access data: IP address, browser and device type, language, page visits, timestamps, network data, and error information, used to deliver pages, protect security, rate-limit requests, troubleshoot failures, and improve the Services;
 • Google Sign-In data: Google ID, email address, account name, and avatar, used to create and authenticate accounts, send notices, and manage accounts;
 • Profile data: display name, avatar, game character skin, and character model type, used for author attribution, community profiles, and Space characters;
-• 3D printing download agreement data: account identifier, latest accepted terms version, and server-recorded acceptance time, used to confirm the service agreement, avoid repeated confirmation of the same version, and handle related disputes. This does not include a history of individual downloads and is subject to this Policy’s retention and user-rights provisions;
 • AI generation, editing, and license data: prompts, source images, outputs, intermediate results, model versions, parameters, seeds, visibility settings, license type and version, grant timestamp, commercial licensee, upload-license confirmation, and feedback, used to complete generations, store history, display and enforce licenses, record grants, charge Credits, recover from failures, and improve models;
 • AI Agent and API data: conversations, instructions, context, files, and objects you choose to provide; tool calls and returned results; generated code; execution and action records; API-key identifiers; request and response metadata; usage, quotas, errors, and audit logs, used to understand requests, perform tasks, provide APIs, bill usage, debug failures, audit security, and prevent abuse;
 • Community data: posts, comments, images, video links, collections, likes, reports, and notifications, used to provide community interaction, display content, and address violations;
 • Friend and communications data: friend requests, friend lists, blocks, sender and recipient identifiers, chat and direct-message content and attachments, the relevant Space or channel, sent, delivery, and read status, timestamps, reports, and moderation records, used to establish friend connections, deliver and synchronize messages, provide blocking and reporting, protect safety, and prevent abuse;
 • Space data: user and player identifiers, world identifiers, character position and state, world edits, public resources, scripts, marketplace listings, purchases, downloads, and virtual-item entitlement records, used for multiplayer synchronization, reconnect recovery, world persistence, marketplace operations, virtual-item delivery, and abuse prevention;
-• Subscription and Credit data: plans, Credit balances and history, records of Credits used to obtain virtual items, PayPal order identifiers, subscription status, payment amounts, and timestamps, used for payment, entitlement delivery, renewal, refunds, reconciliation, and fraud prevention;
+• Subscription and Credit data: plans, Credit balances and history, records of Credits used to obtain virtual items, payment-provider (PayPal or Stripe) order identifiers, subscription status, payment amounts, and timestamps, used for payment, entitlement delivery, renewal, refunds, reconciliation, and fraud prevention (we do not receive or store full card numbers, which our payment providers handle);
+• Creator program data: for creators, referral codes, attributed orders, commission balances, and withdrawal requests, including the amount, the email address you provide for the Stripe transfer, the transfer receipt, and the Stripe fee, used to calculate and pay commissions and prevent fraud;
 • Custom-product data: country or region, telephone number, postal code, state or province, city, street address, custom model, order, and shipment status, used for production, delivery, support, and necessary recordkeeping;
 • Analytics data: cookies or similar identifiers, page visits, interaction events, device information, and approximate region, used to understand usage and improve the product; and
 • Support data: email address, message content, attachments, and communication timestamps, used to answer questions, handle complaints, and provide after-sales support.
@@ -1329,7 +1404,7 @@ An uploaded image containing a face, identity document, health information, prec
 
 • Directly from you when you register, complete a form, upload or create content, make a purchase, or contact us;
 • Automatically when you use the website, an API, or Space;
-• From third parties such as Google, PayPal, or shipping providers based on your authorization or transaction; and
+• From third parties such as Google, PayPal, Stripe, or shipping providers based on your authorization or transaction; and
 • From interactions by other users, such as likes, comments, reports, or replies involving your content.`
             },
             {
@@ -1354,13 +1429,13 @@ A direct-message recipient may save, capture, forward, or report content they re
 
 Space API keys remain only in the current page session and are not persisted to localStorage. When you use a custom AI endpoint, your prompt, necessary game context, and API key are sent directly by your browser to the provider you select and are governed by that provider’s privacy policy.
 
-When configured, the website may use Google Analytics. Where required, we will obtain consent before enabling analytics and provide a method to reject or withdraw analytics-cookie consent. PayPal, Google Sign-In, and embedded YouTube content may also set cookies or similar identifiers under their own practices.`
+When configured, the website may use Google Analytics. Where required, we will obtain consent before enabling analytics and provide a method to reject or withdraw analytics-cookie consent. PayPal, Stripe, Google Sign-In, and embedded YouTube content may also set cookies or similar identifiers under their own practices.`
             },
             {
                 title: '7. Sharing, Service Providers, and Disclosure',
                 content: `We do not sell personal information or provide it to third parties for their independent behavioral advertising.
 
-To provide the Services, we may share the minimum necessary information with Google for account sign-in and website analytics; AWS for servers, databases, object storage, content delivery, and backups; PayPal for payments, subscriptions, refunds, reconciliation, and fraud prevention; YouTube for user-submitted public videos; 3D-printing, logistics, and shipping providers for custom-product production and delivery; foundation-model, AI endpoint, tool, or connector providers for a request you submit or an Agent task you authorize; and professional providers supporting security, auditing, legal services, or necessary technical operations.
+To provide the Services, we may share the minimum necessary information with Google for account sign-in and website analytics; AWS for servers, databases, object storage, content delivery, and backups; PayPal and Stripe for payments, subscriptions, refunds, reconciliation, and fraud prevention; YouTube for user-submitted public videos; production, logistics, and shipping providers (including 3D printing) for custom physical product production and delivery; foundation-model, AI endpoint, tool, or connector providers for a request you submit or an Agent task you authorize; and professional providers supporting security, auditing, legal services, or necessary technical operations.
 
 An Agent should connect to external services only within the permission scope you authorize. Instructions, content, context, and tool results needed to complete a task may be transferred between EntropyDrop and the relevant third party. You may stop future access by disconnecting a service, revoking authorization, or changing Agent permissions, but this does not affect processing completed before revocation.
 
@@ -1372,7 +1447,7 @@ Public financial pages show PayPal totals only by month (UTC), currency and cate
             },
             {
                 title: '8. International Processing',
-                content: `Because Google, AWS, PayPal, YouTube, and other providers may operate in different countries or regions, your information may be transferred to or stored outside your country or region.
+                content: `Because Google, AWS, PayPal, Stripe, YouTube, and other providers may operate in different countries or regions, your information may be transferred to or stored outside your country or region.
 
 We will take appropriate measures such as data minimization, contractual safeguards, security assessments, certification, standard contractual clauses, or separate consent where applicable. Where required, we will provide information about the overseas recipient, processing purpose, data categories, and available methods for exercising your rights.`
             },
@@ -1417,7 +1492,7 @@ If we learn that we collected information from a child under 14 without valid au
                 title: '13. Policy Updates and Contact',
                 content: `We may update this Policy as our features, providers, or applicable rules change. We will provide an in-product notice, email, or another prominent notice of material changes. If a change involving a new processing purpose, sensitive personal information, public display, model training, or international transfer requires renewed consent, we will ask for it again.
 
-Controller: Shanghai EqualRank Technology Co., Ltd.
+Controller: EntropyDrop LLC
 Product: EntropyDrop
 Website: entropydrop.com
 Email: support@entropydrop.com`
@@ -1478,20 +1553,20 @@ Email: support@entropydrop.com`
         licenseTitle: 'License',
         licenseUnknown: 'Unknown license',
         licenseUnknownDescription: 'This work was uploaded before license tracking was introduced. EntropyDrop cannot confirm its permitted uses; contact the uploader before using it.',
-        creatorCommercialLicense: 'Creator commercial license',
-        creatorCommercialDescription: 'You generated this work and hold a perpetual, worldwide, non-exclusive commercial-use license.',
+        creatorCommercialLicense: 'Creator digital commercial license',
+        creatorCommercialDescription: 'You generated this work and hold a perpetual, worldwide, non-exclusive digital commercial license.',
         publicNonCommercialDescription: 'Anyone may use, share, and adapt this work for non-commercial purposes with attribution under CC BY-NC 4.0.',
         privateLicenseDescription: 'This work is currently private and is not offered for new public access.',
-        publicDoesNotGrantCommercial: 'Your commercial license belongs only to the creator account. Public display does not grant commercial rights to other users.',
+        publicDoesNotGrantCommercial: 'Your digital commercial license belongs only to the creator account. Public display does not grant commercial rights to other users.',
         otherUserNoCommercial: 'You receive only the CC BY-NC 4.0 non-commercial license. Public visibility or download access does not grant commercial rights.',
         previousPublicLicense: 'This work was previously public. CC BY-NC 4.0 licenses already validly received remain valid.',
         viewLicenseTerms: 'View the full CC BY-NC 4.0 terms',
         thirdPartyRightsNotice: 'The license covers only rights the licensor can grant and excludes third-party trademarks, characters, likenesses, copyrighted material, and other third-party rights.',
         licenseViewDetails: 'View details',
         licenseHideDetails: 'Hide details',
-        creatorCommercialSummary: 'You hold a perpetual, worldwide commercial-use license.',
+        creatorCommercialSummary: 'You hold a perpetual, worldwide digital commercial license.',
         publicNonCommercialSummary: 'Free for personal and non-commercial use with attribution under CC BY-NC 4.0.',
-        otherUserCommercialSummary: 'Commercial rights belong to the creator; you receive CC BY-NC 4.0 non-commercial license.',
+        otherUserCommercialSummary: 'Digital commercial rights belong to the creator; you receive CC BY-NC 4.0 non-commercial license.',
         unknownSummary: 'Uploaded before license system was introduced; contact creator before use.'
     },
     space_authorize: {
@@ -1759,7 +1834,7 @@ Email: support@entropydrop.com`
         title: 'Open Production',
         introduction: {
             title: 'About Us',
-            company: 'Shanghai EqualRank Technology Co., Ltd.',
+            company: 'EntropyDrop LLC',
             desc: 'Committed to building root trust infrastructure and an open production system.'
         },
         vision: {
@@ -2096,8 +2171,9 @@ Email: support@entropydrop.com`
                 aboutUs: 'About Us',
                 termsOfService: 'Terms of Service',
                 privacyPolicy: 'Privacy Policy',
-                figurePrintTerms: '3D Printing Terms'
+                refundPolicy: 'Shipping & Refunds'
             },
+            disclaimer: 'NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.',
             contact: {
                 emailAddress: 'support@entropydrop.com'
             }

@@ -237,6 +237,8 @@ function CommissionSession({ current, source, model, onClose, session }: Props &
                     <dt className="text-white/50">{t.production}</dt><dd className="m-0 text-right">{t.productionTime}</dd>
                     <dt className="text-white/50">{t.delivery}</dt><dd className="m-0 text-right">{t.deliveryTime}</dd>
                 </dl>
+                <p className="m-0 text-xs text-white/50">{t.policyNote} <a href="/skin/refund-policy" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">{t.policyLink}</a></p>
+                <p className="m-0 text-xs text-white/40">{t.disclaimer}</p>
             </div>
             <footer className="flex shrink-0 flex-col gap-5 border-t border-white/10 px-6 py-5">
                 {!session ? <div className="space-y-3"><p className="text-sm">{t.signIn}</p><p className="text-xs text-white/50">{current.figurePrint.loginForCommission}</p>{loggingIn ? <p role="status">{current.figurePrint.loggingIn}</p> : <Suspense fallback={<p>{current.figurePrint.loggingIn}</p>}><GoogleSignInButton onSuccess={login} onError={() => setError(t.loginFailed)} locale={current.lang} /></Suspense>}</div> : <>

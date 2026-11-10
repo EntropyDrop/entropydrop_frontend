@@ -16,7 +16,7 @@ export function Footer({ current }: FooterProps) {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 {/* Brand & Contact */}
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
-                    <span>© {currentYear} EntropyDrop</span>
+                    <span>© {currentYear} EntropyDrop LLC</span>
                     <span className="text-white/20 hidden sm:inline">·</span>
                     <a
                         href={`mailto:${data.contact.emailAddress}`}
@@ -55,15 +55,16 @@ export function Footer({ current }: FooterProps) {
                     </Link>
                     <span className="text-white/20">·</span>
                     <Link
-                        to="/figure/3dprint/terms"
+                        to="/skin/refund-policy"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-white/50 hover:text-white transition-colors no-underline"
                     >
-                        {data.links.figurePrintTerms}
+                        {data.links.refundPolicy}
                     </Link>
                 </div>
             </div>
+            <p className="m-0 mt-4 text-center text-[10px] uppercase tracking-wide text-white/30">{data.disclaimer}</p>
         </footer>
     )
 }

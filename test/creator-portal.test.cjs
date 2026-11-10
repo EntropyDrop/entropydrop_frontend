@@ -12,7 +12,7 @@ const compiled = build({ stdin: { contents: `export * from './src/pages/CreatorP
     bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react/jsx-runtime', 'react-dom'],
     plugins: [{ name: 'portal-boundaries', setup(build) { build.onResolve({ filter: /\/hooks\/(useCurrentUser|useAuthSession)$|\/utils\/(api|authSession)$/ }, args => ({ path: args.path, external: true })); } }],
 }).then(result => result.outputFiles[0].text);
-const record = { id: 'payout-1', amount_cents: 1200, currency: 'USD', paypal_email: 'receiver@example.test', creator_email: 'creator@example.test', status: 'pending_review', created_at: '2026-01-01', updated_at: '2026-01-01', events: [] };
+const record = { id: 'payout-1', amount_cents: 1200, currency: 'USD', payout_email: 'receiver@example.test', creator_email: 'creator@example.test', status: 'pending_review', created_at: '2026-01-01', updated_at: '2026-01-01', events: [] };
 const page = (items, number = 1, total = 21) => ({ items, page: number, page_size: 20, total, total_pages: Math.ceil(total / 20) });
 async function fixture(options, check) {
     const dom = new JSDOM('<div id="root"></div>', { url: 'https://example.test/creator' });
@@ -31,11 +31,12 @@ async function fixture(options, check) {
                 requests.push({ url, ...init });
                 if (options.pending && url.includes('/me/users')) await options.pending;
                 const ok = data => ({ ok: true, json: async () => data });
-                if (url === '/api/creators/me') return ok({ balance: { available_cents: 2500, pending_cents: 500, reserved_cents: 0, paid_cents: 1000, adjustment_cents: 0 }, codes: [{ code: 'ALPHA', active: true, usable: true, discount_percent: 10, commission_percent: 15 }], payouts_enabled: true });
+                if (url === '/api/creators/me') return ok({ balance: { available_cents: 2500, pending_cents: 500, reserved_cents: 0, paid_cents: 1000, adjustment_cents: 0 }, codes: [{ code: 'ALPHA', active: true, usable: true, discount_percent: 10, commission_percent: 15 }] });
                 if (url.includes('/me/users')) return ok(page([{ reference: url.includes('page=2') ? 'USER-SECOND' : 'USER-FIRST', email: 'a***@g***', code: 'ALPHA', referred_at: '2026-01-01' }], url.includes('page=2') ? 2 : 1));
                 if (url.includes('/me/orders')) return ok(page([{ reference: 'ORDER-MASKED', customer_reference: 'USER-FIRST', email: 'a***@g***', code: 'ALPHA', created_at: '2026-01-01', product_amount_cents: 9000, commission_cents: 1200, status: 'eligible' }], 1, 1));
-                if (url.endsWith('/review')) return ok({ ...record, status: 'processing' });
-                if (url.includes('/manage/payouts')) return ok({ ...page([record], 1, 1), payouts_enabled: options.enabled !== false });
+                if (url.endsWith('/transfer')) return ok({ ...record, status: 'paid' });
+                if (url.endsWith('/reject')) return ok({ ...record, status: 'rejected' });
+                if (url.includes('/manage/payouts')) return ok(page([options.record || record], 1, 1));
                 if (init.method === 'POST') { posted++; if (options.failFirst && posted === 1) throw new Error('Network uncertain'); return ok(record); }
                 if (url.includes('/me/payouts')) return ok(page([record], 1, 1));
                 throw new Error('Unexpected request: ' + url);
@@ -68,15 +69,18 @@ test('creator dashboard paginates masked users, orders and withdrawal history', 
 
 test('withdrawal confirms recipient and amount and reuses the request identity after uncertain response', async () => fixture({ failFirst: true }, async e => {
     const t = e.current.creatorPortal;
-    await e.field(t.paypalEmail, 'receiver@example.test'); await e.field(t.amount, '12.00');
+    assert.ok(document.body.textContent.includes('5 days') && document.body.textContent.includes('Stripe fee'));
+    assert.equal(document.body.textContent.includes('PayPal'), false);
+    await e.field(t.payoutEmail, 'receiver@example.test'); await e.field(t.amount, '12.00');
     await e.click(t.request);
-    assert.ok(document.querySelector('[role=dialog]').textContent.includes('$12.00 USD to receiver@example.test'));
+    const confirm = document.querySelector('[role=dialog]').textContent;
+    assert.ok(confirm.includes('$12.00 USD') && confirm.includes('receiver@example.test') && confirm.includes('Stripe fee'));
     assert.equal(e.requests.filter(r => r.method === 'POST').length, 0);
     await e.click(t.submitRequest);
     await e.click(t.request); await e.click(t.submitRequest);
     const posts = e.requests.filter(r => r.method === 'POST').map(r => JSON.parse(r.body));
     assert.equal(posts.length, 2); assert.equal(posts[0].request_key, posts[1].request_key);
-    assert.equal(posts[0].amount_cents, 1200); assert.equal(posts[0].paypal_email, 'receiver@example.test');
+    assert.equal(posts[0].amount_cents, 1200); assert.equal(posts[0].payout_email, 'receiver@example.test'); assert.equal('paypal_email' in posts[0], false);
 }));
 
 test('ordinary users cannot render or fetch the creator dashboard', async () => fixture({ creator: false }, async e => {
@@ -92,16 +96,53 @@ test('late account responses are aborted and cannot restore creator data after l
     });
 });
 
-test('admin approval requires explicit confirmation showing amount and recipient', async () => fixture({ admin: true }, async e => {
+test('admin records a Stripe receipt with the fee taken out of the requested amount', async () => fixture({ admin: true }, async e => {
     const t = e.current.creatorPortal;
-    await e.click(t.approve);
+    assert.ok(document.body.textContent.includes(t.adminHint));
+    await e.click(t.recordTransfer);
     const dialog = document.querySelector('[role=dialog]'); assert.ok(dialog.textContent.includes('$12.00 USD → receiver@example.test'));
     assert.equal(e.requests.filter(r => r.method === 'POST').length, 0);
-    await e.click(t.approve, dialog);
-    assert.deepEqual(JSON.parse(e.requests.find(r => r.method === 'POST').body), { action: 'approve', note: '' });
+    await e.field(t.transferReference, 'tr_1Abc23'); await e.field(t.feeAmount, '1.50');
+    assert.ok(dialog.textContent.includes(`${t.creatorReceives}: $10.50 USD`));
+    await e.click(t.recordTransfer, dialog);
+    const post = e.requests.find(r => r.method === 'POST');
+    assert.ok(post.url.endsWith('/api/creators/manage/payouts/payout-1/transfer'));
+    assert.deepEqual(JSON.parse(post.body), { transfer_reference: 'tr_1Abc23', fee_cents: 150, note: '' });
 }));
 
-test('disabled payout integration cannot approve a real transfer', async () => fixture({ admin: true, enabled: false }, async e => {
-    assert.ok(document.body.textContent.includes(e.current.creatorPortal.disabled));
-    assert.ok([...document.querySelectorAll('button')].find(button => button.textContent === e.current.creatorPortal.approve).disabled);
+test('a fee that is not below the withdrawal amount or a malformed receipt is never submitted', async () => fixture({ admin: true }, async e => {
+    const t = e.current.creatorPortal;
+    await e.click(t.recordTransfer);
+    const dialog = document.querySelector('[role=dialog]');
+    await e.field(t.transferReference, 'tr_1Abc23'); await e.field(t.feeAmount, '12.00');
+    assert.ok(dialog.textContent.includes(`${t.creatorReceives}: —`));
+    await e.click(t.recordTransfer, dialog);
+    assert.ok(dialog.textContent.includes(t.feeInvalid));
+    await e.field(t.feeAmount, '1'); await e.field(t.transferReference, 'bad receipt');
+    await e.click(t.recordTransfer, dialog);
+    assert.ok(dialog.textContent.includes(t.referenceInvalid));
+    assert.equal(e.requests.filter(r => r.method === 'POST').length, 0);
 }));
+
+test('admin rejection sends the reason to the reject endpoint', async () => fixture({ admin: true }, async e => {
+    const t = e.current.creatorPortal;
+    await e.click(t.reject);
+    const dialog = document.querySelector('[role=dialog]');
+    await e.field(t.reviewNote, 'Please verify your Stripe email');
+    await e.click(t.reject, dialog);
+    const post = e.requests.find(r => r.method === 'POST');
+    assert.ok(post.url.endsWith('/api/creators/manage/payouts/payout-1/reject'));
+    assert.deepEqual(JSON.parse(post.body), { note: 'Please verify your Stripe email' });
+}));
+
+test('payout cards show the fee, the amount received, the receipt and the processing deadline', async () => {
+    const paid = { ...record, status: 'paid', fee_cents: 150, net_cents: 1050, transfer_reference: 'tr_1Abc23', paid_at: '2026-01-03T00:00:00Z' };
+    await fixture({ admin: true, record: paid }, async e => {
+        const t = e.current.creatorPortal, text = document.body.textContent;
+        assert.ok(text.includes(`${t.fee}: $1.50`) && text.includes(`${t.netAmount}: $10.50`) && text.includes(`${t.transferReference}: tr_1Abc23`));
+        assert.equal([...document.querySelectorAll('button')].some(button => button.textContent === t.recordTransfer), false);
+    });
+    await fixture({ admin: true, record: { ...record, due_at: '2026-01-06T00:00:00Z' } }, async e => {
+        assert.ok(document.body.textContent.includes(e.current.creatorPortal.dueBy));
+    });
+});

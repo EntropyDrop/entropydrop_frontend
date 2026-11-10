@@ -13,7 +13,7 @@ import { downloadUrl } from './figure/print/download'
 import { figureSourcePath, figureSourceUrl, readFigureSource, type FigureSkinSource } from './figure/print/figureSource'
 import { orderStickerInfo } from './figure/print/orderSticker'
 import { useOrderProductionSource } from './figure/print/useOrderProductionSource'
-import { usePublicFigureSource } from './figure/print/usePublicFigureSource'
+import { useFigureSourceById } from './figure/print/useFigureSourceById'
 import { getOrderPrintModel, FIGURE_MODELS, type FigureModel } from './figure/print/figureModels'
 import { FigureKitPrice } from './figure/print/FigureKitPrice'
 
@@ -58,13 +58,13 @@ export function FigurePrintPage({ current }: { current: LangData }) {
     const [model, setModel] = useState<FigureModel>(FIGURE_MODELS[0])
     const location = useLocation()
     const production = useOrderProductionSource(location.search || '')
-    const publicSource = usePublicFigureSource(production.active ? '' : location.search || '')
+    const linkedSource = useFigureSourceById(production.active ? '' : location.search || '')
     const savedSticker = production.data?.sticker_snapshot
     const printModelType = production.active ? getOrderPrintModel(savedSticker?.model_name) : model.id
     const state = location.state as PrintSource | null
-    const textureUrl = production.active ? production.data?.skin_url || '' : publicSource.active ? publicSource.data?.textureUrl || '' : typeof state?.textureUrl === 'string' ? state.textureUrl : ''
-    const source = useMemo(() => production.active ? savedSticker ? { id: savedSticker.skin_id, name: savedSticker.skin_name, publisher: savedSticker.publisher_name, publisherId: savedSticker.publisher_id, parentId: '', publicLicense: '' } : null : publicSource.active ? publicSource.data?.source || null : readFigureSource(state?.source), [production.active, savedSticker, publicSource.active, publicSource.data, state?.source])
-    const name = source?.name || (!publicSource.active && !production.active && typeof state?.name === 'string' ? state.name : '')
+    const textureUrl = production.active ? production.data?.skin_url || '' : linkedSource.active ? linkedSource.data?.textureUrl || '' : typeof state?.textureUrl === 'string' ? state.textureUrl : ''
+    const source = useMemo(() => production.active ? savedSticker ? { id: savedSticker.skin_id, name: savedSticker.skin_name, publisher: savedSticker.publisher_name, publisherId: savedSticker.publisher_id, parentId: '', publicLicense: '' } : null : linkedSource.active ? linkedSource.data?.source || null : readFigureSource(state?.source), [production.active, savedSticker, linkedSource.active, linkedSource.data, state?.source])
+    const name = source?.name || (!linkedSource.active && !production.active && typeof state?.name === 'string' ? state.name : '')
     const stickerInfo = useMemo(() => savedSticker ? orderStickerInfo(savedSticker) : ({
         name: name || t.unnamedSkin,
         publisher: source?.publisher || t.unknownPublisher,
@@ -194,11 +194,11 @@ export function FigurePrintPage({ current }: { current: LangData }) {
 
     if (production.active && !production.data) return <PageContainer className={current.fontClass}><p role={production.failed ? 'alert' : 'status'} className="text-sm text-white/65">{production.failed ? t.productionSourceFailed : t.productionSourceLoading}</p>{production.failed && <button type="button" className={buttonClass} onClick={production.retry}>{t.retry}</button>}<Link to="/figure/manage" className="text-xs text-[#a6df7a] underline">{t.backToManagement}</Link></PageContainer>
 
-    if (publicSource.active && !publicSource.data) return <PageContainer className={current.fontClass}>
+    if (linkedSource.active && !linkedSource.data) return <PageContainer className={current.fontClass}>
         <SEO title={t.title} description={t.description} />
-        <p role={publicSource.error ? 'alert' : 'status'} className="text-sm text-white/65">{publicSource.error === 'unavailable' ? t.sharedSourceUnavailable : publicSource.error ? t.loadFailed : t.sharedSourceLoading}</p>
+        <p role={linkedSource.error ? 'alert' : 'status'} className="text-sm text-white/65">{linkedSource.error === 'unavailable' ? t.sharedSourceUnavailable : linkedSource.error ? t.loadFailed : t.sharedSourceLoading}</p>
         <div className="flex flex-wrap gap-3">
-            {publicSource.error === 'loadFailed' && <button type="button" className={buttonClass} onClick={publicSource.retry}>{t.retry}</button>}
+            {linkedSource.error === 'loadFailed' && <button type="button" className={buttonClass} onClick={linkedSource.retry}>{t.retry}</button>}
             <Link to="/skin/" className={buttonClass}>{t.discoverSkins}</Link>
         </div>
     </PageContainer>

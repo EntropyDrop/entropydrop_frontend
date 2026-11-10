@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon } from '@iconify/react';
 import { countries } from '../constants/countries';
 import type { LangData } from '../constants/lang';
+import { addressRule } from '../constants/shippingAddress';
 
 interface CountrySelectProps {
     id: string;
@@ -13,7 +14,8 @@ interface CountrySelectProps {
 }
 
 const normalizeSearch = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-const searchableCountries = countries.map(country => ({
+// Only destinations with an address rule can be chosen; unsupported ones stay in the catalog so saved addresses still display.
+const searchableCountries = countries.filter(country => addressRule(country.code)).map(country => ({
     ...country,
     search: normalizeSearch(`${country.name} ${country.zhName} ${country.code}`),
 }));
@@ -34,7 +36,7 @@ export function CountrySelect({ id, value, onChange, current, invalid, described
 
     function showOptions() {
         setQuery('');
-        setActiveIndex(Math.max(0, countries.findIndex(country => country.code === value)));
+        setActiveIndex(Math.max(0, searchableCountries.findIndex(country => country.code === value)));
         setOpen(true);
     }
 

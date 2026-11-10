@@ -19,6 +19,7 @@ const ProPage = lazy(() => import('./pages/ProPage').then(m => ({ default: m.Pro
 const PublicPage = lazy(() => import('./pages/PublicPage').then(m => ({ default: m.PublicPage })))
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })))
 const TermsOfServicePage = lazy(() => import('./pages/TermsOfServicePage').then(m => ({ default: m.TermsOfServicePage })))
+const ShippingRefundPolicyPage = lazy(() => import('./pages/ShippingRefundPolicyPage').then(m => ({ default: m.ShippingRefundPolicyPage })))
 const ArticlePage = lazy(() => import('./pages/ArticlePage').then(m => ({ default: m.ArticlePage })))
 const MonitorPage = lazy(() => import('./pages/MonitorPage').then(m => ({ default: m.MonitorPage })))
 const FinancialsPage = lazy(() => import('./pages/FinancialsPage').then(m => ({ default: m.FinancialsPage })))
@@ -126,7 +127,7 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
   setIsAuto: (a: boolean) => void
 }) {
   const location = useLocation()
-  const isPolicyPage = ['/skin/privacy', '/skin/tos', FIGURE_PRINT_TERMS.path].includes(location.pathname.replace(/\/$/, ''))
+  const isPolicyPage = ['/skin/privacy', '/skin/tos', '/skin/refund-policy', FIGURE_PRINT_TERMS.legacyPath].includes(location.pathname.replace(/\/$/, ''))
   const isSpaceLandingPage = ['/space', '/space/intro', '/space/login'].includes(location.pathname)
   const currentLangData = isSpaceLandingPage ? english : preferredLangData
 
@@ -152,6 +153,7 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
         <Route path="/public/blog/:id" element={<ArticlePage current={currentLangData} />} />
         <Route path="/skin/privacy" element={<PrivacyPolicyPage current={currentLangData} />} />
         <Route path="/skin/tos" element={<TermsOfServicePage current={currentLangData} />} />
+        <Route path="/skin/refund-policy" element={<ShippingRefundPolicyPage current={currentLangData} />} />
         <Route path="/skin/monitor" element={<MonitorPage current={currentLangData} />} />
         <Route path="/public/financials" element={<FinancialsPage current={currentLangData} />} />
         <Route path="/public/fixed-assets" element={<FixedAssetsPage current={currentLangData} />} />
@@ -159,7 +161,7 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
         <Route path="/skin/open/*" element={<LegacyOpenRedirect />} />
         <Route path="/figure" element={<FigureRedirect />} />
         <Route path="/figure/3dprint" element={<FigurePrintPage current={currentLangData} />} />
-        <Route path={FIGURE_PRINT_TERMS.path} element={<FigurePrintTermsPage current={currentLangData} />} />
+        <Route path={FIGURE_PRINT_TERMS.legacyPath} element={<FigurePrintTermsPage />} />
         <Route path="/figure/manage" element={<FigureManagePage current={currentLangData} />} />
         <Route path="/figure/:category" element={<FigurePage current={currentLangData} />} />
         <Route path="/space/app" element={<SpaceAppRedirect />} />

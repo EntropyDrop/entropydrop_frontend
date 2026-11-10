@@ -74,7 +74,8 @@ for (const lang of ['en', 'zh']) test(`${lang}: country or region selection supp
     await e.add();
     assert.equal(document.querySelector('label[for="shipping-country"]').textContent, lang === 'en' ? 'Country or region *' : '国家或地区 *');
     await e.click(e.countryInput());
-    assert.equal(document.querySelectorAll('[role="option"]').length, 252);
+    assert.equal(document.querySelectorAll('[role="option"]').length, 248);
+    for (const code of ['CU', 'IR', 'KP', 'SY']) assert.equal(document.querySelector(`[data-country-code="${code}"]`), null, code);
     await e.key('Escape');
     assert.equal(e.field('country').value, 'US');
     assert.equal(e.countryInput().value, lang === 'en' ? 'United States' : '美国');
@@ -189,7 +190,12 @@ test('editing an existing full state name uses the postal abbreviation', async (
 }));
 
 test('all bundled postal patterns recognize at least their first documented example', async () => fixture({}, async e => {
-    for (const country of e.countries) {
+    const unsupported = ['CU', 'IR', 'KP', 'SY'];
+    for (const code of unsupported) {
+        assert.equal(e.addressRule(code), undefined, code);
+        assert.equal(e.validateAddress({ recipient_name: '测试收件人', country: code, state: '', city: 'City', zip_code: '', detail_address: 'Street 1', phone: '+1 5550100' }).country, 'country_invalid', code);
+    }
+    for (const country of e.countries.filter(item => !unsupported.includes(item.code))) {
         const rule = e.addressRule(country.code);
         assert.ok(rule, country.code);
         if (rule.postal_pattern && rule.postal_example) {

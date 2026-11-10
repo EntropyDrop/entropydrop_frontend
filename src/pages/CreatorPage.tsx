@@ -8,7 +8,7 @@ import { useAuthSession } from '../hooks/useAuthSession'
 import { getAuthSessionKey } from '../utils/authSession'
 import { apiFetch, apiResponseJson } from '../utils/api'
 import { CreatorPagination, PayoutCard } from './creator/CreatorPayoutHistory'
-import { creatorButton, creatorInput, creatorPortalError, dollars, useCreatorResource, type CreatorSummary, type PageResult, type PayoutRecord, type ReferredOrder, type ReferredUser } from './creator/creatorPortal'
+import { creatorButton, creatorInput, creatorPortalError, dollars, parseDollars, useCreatorResource, type CreatorSummary, type PageResult, type PayoutRecord, type ReferredOrder, type ReferredUser } from './creator/creatorPortal'
 
 type Tab = 'users' | 'orders' | 'payouts'
 export function CreatorPage({ current }: { current: LangData }) {
@@ -75,9 +75,8 @@ function WithdrawalForm({ current, email, available, onSaved }: { current: LangD
     useEffect(() => () => request.current?.abort(), [])
     const prepare = (event: React.FormEvent) => {
         event.preventDefault()
-        const parts = amount.trim().split('.')
-        const cents = /^\d+(\.\d{1,2})?$/.test(amount.trim()) ? Number(parts[0]) * 100 + Number((parts[1] || '').padEnd(2, '0')) : NaN
-        if (!Number.isSafeInteger(cents) || cents < 1 || cents > available || !receiver.trim()) { setError(t.invalidAmount); return }
+        const cents = parseDollars(amount)
+        if (cents === null || cents < 1 || cents > available || !receiver.trim()) { setError(t.invalidAmount); return }
         setError(''); setConfirm({ cents, email: receiver.trim().toLowerCase() })
     }
     const submit = async () => {
@@ -88,7 +87,7 @@ function WithdrawalForm({ current, email, available, onSaved }: { current: LangD
         request.current = controller; setBusy(true); setConfirm(null)
         try {
             const response = await apiFetch('/api/creators/me/payouts', { method: 'POST', auth: 'required', signal: controller.signal, skipGlobalError: true,
-                body: JSON.stringify({ amount_cents: confirm.cents, paypal_email: confirm.email, request_key: retryKey.current.key }) })
+                body: JSON.stringify({ amount_cents: confirm.cents, payout_email: confirm.email, request_key: retryKey.current.key }) })
             const data = await apiResponseJson(response)
             if (controller.signal.aborted || session !== getAuthSessionKey()) return
             if (!response.ok) throw new Error(creatorPortalError(data.detail, current))
@@ -99,7 +98,7 @@ function WithdrawalForm({ current, email, available, onSaved }: { current: LangD
     return <form onSubmit={prepare} className="space-y-3 border border-white/15 p-4">
         <h2 className="m-0 text-sm">{t.request}</h2><p className="m-0 text-xs leading-relaxed text-white/55">{t.requestHint}</p>
         <fieldset disabled={busy} className="m-0 grid gap-3 border-none p-0 sm:grid-cols-2">
-            <label className="space-y-1 text-xs">{t.paypalEmail}<input className={creatorInput} type="email" maxLength={127} value={receiver} required onChange={event => setReceiver(event.target.value)} /></label>
+            <label className="space-y-1 text-xs">{t.payoutEmail}<input className={creatorInput} type="email" maxLength={127} value={receiver} required onChange={event => setReceiver(event.target.value)} /></label>
             <label className="space-y-1 text-xs">{t.amount}<input className={creatorInput} inputMode="decimal" value={amount} required onChange={event => setAmount(event.target.value)} /></label>
         </fieldset>
         {error && <p role="alert" className="m-0 text-xs text-red-200">{error}</p>}

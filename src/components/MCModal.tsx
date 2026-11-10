@@ -71,9 +71,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const handlePrint = () => {
         const source = createFigureSource(item);
         close();
-        navigate(figurePrintPath(source), source.isPublic === true
-            ? undefined
-            : { state: { textureUrl, name: item.name || 'skin.png', source } });
+        navigate(figurePrintPath(source));
     };
 
     const [mode, setModeState] = useState<'voxel' | 'plane' | 'cute'>(() => {

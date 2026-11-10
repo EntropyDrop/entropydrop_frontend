@@ -100,5 +100,5 @@ test('HomePage.tsx renders Footer with contact info, terms of service, and priva
     assert.match(footerSource, /data\.links\.aboutUs/);
     assert.match(footerSource, /\/skin\/tos/);
     assert.match(footerSource, /\/skin\/privacy/);
-    assert.match(footerSource, /\/figure\/3dprint\/terms/);
+    assert.doesNotMatch(footerSource, /custom-product-files|figurePrintTerms/);
 });

@@ -16,10 +16,11 @@ export function PayoutCard({ current, payout, children }: { current: LangData; p
         <div className="flex flex-wrap items-center justify-between gap-3"><strong className="text-base text-[#a6df7a]">{dollars(payout.amount_cents)} USD</strong><span>{states[payout.status] || payout.status}</span></div>
         <p className="m-0 break-all text-white/50">{payout.id} · {new Date(payout.created_at).toLocaleString(current.lang)}</p>
         {payout.creator_email && <p className="m-0 break-all">{t.accountEmail}: {payout.creator_email}</p>}
-        <p className="m-0 break-all">{t.paypalEmail}: {payout.paypal_email}</p>
+        <p className="m-0 break-all">{t.payoutEmail}: {payout.payout_email}</p>
+        {payout.status === 'pending_review' && payout.due_at && <p className="m-0 text-white/60">{t.dueBy}: {new Date(payout.due_at).toLocaleDateString(current.lang)}</p>}
+        {typeof payout.fee_cents === 'number' && typeof payout.net_cents === 'number' && <p className="m-0">{t.fee}: {dollars(payout.fee_cents)} · {t.netAmount}: {dollars(payout.net_cents)}</p>}
         {payout.review_note && <p className="m-0 break-words text-white/65">{t.reviewNote}: {payout.review_note === 'balance_changed' ? t.insufficient : payout.review_note}</p>}
-        {payout.last_error && <p className="m-0 leading-relaxed text-amber-200">{payout.status === 'manual_review' ? t.manualReviewHint : t.transferError}</p>}
-        {payout.paypal_transaction_id && <p className="m-0 break-all text-white/60">{t.transaction}: {payout.paypal_transaction_id}</p>}
+        {payout.transfer_reference && <p className="m-0 break-all text-white/60">{t.transferReference}: {payout.transfer_reference}{payout.paid_at ? ` · ${new Date(payout.paid_at).toLocaleString(current.lang)}` : ''}</p>}
         {payout.events.length > 0 && <details className="text-white/60"><summary className="cursor-pointer">{t.history}</summary><ol className="space-y-2 pl-4">{payout.events.map((event, index) => <li key={index}>{new Date(event.created_at).toLocaleString(current.lang)} · {states[event.status] || event.status}</li>)}</ol></details>}
         {children}
     </article>
