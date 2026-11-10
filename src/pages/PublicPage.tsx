@@ -73,35 +73,9 @@ export function PublicPage({ current }: PublicPageProps) {
             {/* Header */}
             <div className="flex flex-col gap-2 border-b border-white/10 pb-6 shrink-0">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <a
-                            href="https://github.com/EntropyDrop"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-white font-mono tracking-wider bg-white/10 self-start px-2 py-0.5 border border-white/30 hover:bg-white/20 transition-colors flex items-center gap-1.5"
-                        >
-                            <Icon icon="mdi:github" className="text-base" />
-                            GITHUB
-                        </a>
-                        <a
-                            href="https://huggingface.co/EntropyDrop"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-[#FFD21E] font-mono tracking-wider bg-[#FFD21E]/10 self-start px-2 py-0.5 border border-[#FFD21E]/30 hover:bg-[#FFD21E]/20 transition-colors flex items-center gap-1.5"
-                        >
-                            <Icon icon="simple-icons:huggingface" className="text-base" />
-                            HUGGING FACE
-                        </a>
-                        <a
-                            href="https://discord.gg/zxd8RjUyYt"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-[#5865F2] font-mono tracking-wider bg-[#5865F2]/10 self-start px-2 py-0.5 border border-[#5865F2]/30 hover:bg-[#5865F2]/20 transition-colors flex items-center gap-1.5"
-                        >
-                            <Icon icon="ic:baseline-discord" className="text-base" />
-                            DISCORD
-                        </a>
-                    </div>
+                    <h1 className={`text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-white via-white/80 to-white/40 bg-clip-text text-transparent ${current.fontClass}`}>
+                        {activeSection === 'blog' ? data.articles.title : data.title}
+                    </h1>
                     <a
                         href="mailto:support@entropydrop.com"
                         className={`text-xs sm:text-sm text-white/70 hover:text-green-400 ${current.fontClass} flex items-center gap-1.5 transition-colors group`}
@@ -110,9 +84,6 @@ export function PublicPage({ current }: PublicPageProps) {
                         <span>support@entropydrop.com</span>
                     </a>
                 </div>
-                <h1 className={`text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-white via-white/80 to-white/40 bg-clip-text text-transparent ${current.fontClass}`}>
-                    {activeSection === 'blog' ? data.articles.title : data.title}
-                </h1>
             </div>
 
             {activeSection === 'blog' ? (
@@ -152,9 +123,9 @@ export function PublicPage({ current }: PublicPageProps) {
                 </div>
             ) : (
                 <>
-                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 shrink-0">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 shrink-0">
                         {/* Left: Introduction (Company) */}
-                        <div className="lg:col-span-2 flex flex-col gap-6">
+                        <div className="flex flex-col gap-6">
                             <div className="bg-white/5 border border-white/10 p-6 flex flex-col gap-4 hover:bg-white/10 transition-all group relative overflow-hidden min-h-[380px] lg:h-full">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/5 blur-3xl -mr-16 -mt-16 group-hover:bg-green-500/10 transition-colors" />
                                 <div className="flex items-center gap-3 text-green-500 border-b border-white/5 pb-3">
@@ -171,33 +142,42 @@ export function PublicPage({ current }: PublicPageProps) {
                                     <p className={`text-white/70 text-sm leading-relaxed ${current.fontClass}`}>
                                         {data.introduction.desc}
                                     </p>
-                                    <div className="flex flex-wrap gap-3 mt-auto pt-2">
+                                    <div className="flex flex-wrap items-center gap-2 xl:gap-2.5 mt-auto pt-2">
                                         <a
                                             href="https://github.com/EntropyDrop"
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/30 text-white/60 hover:text-white transition-all text-sm font-medium self-start group"
+                                            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/30 text-white/60 hover:text-white transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group"
                                         >
-                                            <Icon icon="mdi:github" className="text-xl group-hover:scale-110 transition-transform" />
+                                            <Icon icon="mdi:github" className="text-lg sm:text-xl group-hover:scale-110 transition-transform" />
                                             <span>GitHub</span>
                                         </a>
                                         <a
                                             href="https://huggingface.co/EntropyDrop"
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-[#FFD21E]/10 border border-white/10 hover:border-[#FFD21E]/30 text-white/60 hover:text-[#FFD21E] transition-all text-sm font-medium self-start group"
+                                            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-[#FFD21E]/10 border border-white/10 hover:border-[#FFD21E]/30 text-white/60 hover:text-[#FFD21E] transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group"
                                         >
-                                            <Icon icon="simple-icons:huggingface" className="text-xl group-hover:scale-110 transition-transform" />
+                                            <Icon icon="simple-icons:huggingface" className="text-lg sm:text-xl group-hover:scale-110 transition-transform" />
                                             <span>Hugging Face</span>
                                         </a>
                                         <a
                                             href="https://discord.gg/zxd8RjUyYt"
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-[#5865F2]/20 border border-white/10 hover:border-[#5865F2]/50 text-white/60 hover:text-white transition-all text-sm font-medium self-start group"
+                                            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-[#5865F2]/20 border border-white/10 hover:border-[#5865F2]/50 text-white/60 hover:text-white transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group"
                                         >
-                                            <Icon icon="ic:baseline-discord" className="text-xl group-hover:scale-110 transition-transform" />
+                                            <Icon icon="ic:baseline-discord" className="text-lg sm:text-xl group-hover:scale-110 transition-transform" />
                                             <span>Discord</span>
+                                        </a>
+                                        <a
+                                            href="https://www.youtube.com/@EntropyDrop"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-[#FF0000]/10 border border-white/10 hover:border-[#FF0000]/30 text-white/60 hover:text-[#FF0000] transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group"
+                                        >
+                                            <Icon icon="simple-icons:youtube" className="text-lg sm:text-xl group-hover:scale-110 transition-transform" />
+                                            <span>YouTube</span>
                                         </a>
                                     </div>
                                 </div>
@@ -205,7 +185,7 @@ export function PublicPage({ current }: PublicPageProps) {
                         </div>
 
                         {/* Right: Vision & Motivation */}
-                        <div className="lg:col-span-3 flex flex-col gap-6">
+                        <div className="flex flex-col gap-6">
                             <div className="bg-gradient-to-br from-white/10 to-transparent border border-white/10 p-6 flex flex-col gap-4 hover:border-green-500/30 transition-all group shadow-lg min-h-[380px] lg:h-full">
                                 <div className="flex items-center gap-3 text-blue-400 border-b border-white/5 pb-3">
                                     <Icon icon="pixelarticons:eye" className="text-2xl" />
