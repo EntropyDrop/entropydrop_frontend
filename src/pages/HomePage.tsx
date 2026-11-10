@@ -7,6 +7,7 @@ import { HomeHeroCarousel } from '../components/HomeHeroCarousel'
 import { SkinShowcaseCarousel } from '../components/SkinShowcaseCarousel'
 import { SpaceShowcaseCarousel } from '../components/SpaceShowcaseCarousel'
 import { FigureShowcaseCarousel } from '../components/FigureShowcaseCarousel'
+import { Footer } from '../components/Footer'
 import type { LangData } from '../constants/lang'
 
 interface HomePageProps {
@@ -518,8 +519,16 @@ export function HomePage({ current }: HomePageProps) {
                     <ScrollReveal delay={140} y={16}>
                         <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
                             <Link
-                                to="/space/intro"
+                                to="/skin/generate"
                                 className={`px-6 py-3 bg-[#3c8527] hover:bg-[#4ea632] text-white font-bold text-xs sm:text-sm transition-all border border-black no-underline flex items-center gap-1.5 ${fontClass}`}
+                            >
+                                <span>{data.hero.quickStartSkin}</span>
+                                <Icon icon="pixelarticons:chevron-right" className="text-xs" />
+                            </Link>
+
+                            <Link
+                                to="/space/intro"
+                                className={`px-6 py-3 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 font-bold text-xs sm:text-sm border border-sky-500/30 transition-all no-underline flex items-center gap-1.5 ${fontClass}`}
                             >
                                 <span>{data.hero.quickStartSpace}</span>
                                 <Icon icon="pixelarticons:chevron-right" className="text-xs" />
@@ -535,6 +544,9 @@ export function HomePage({ current }: HomePageProps) {
                         </div>
                     </ScrollReveal>
                 </section>
+
+                {/* ===================== FOOTER ===================== */}
+                <Footer current={current} />
             </PageContainer>
         </div>
     )

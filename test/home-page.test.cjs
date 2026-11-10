@@ -60,6 +60,8 @@ test('HomePage.tsx introduces the 3 business lines with direct CTA links', () =>
     assert.match(homeSource, /github\.com\/EntropyDrop/);
     assert.match(homeSource, /huggingface\.co\/EntropyDrop/);
     assert.match(homeSource, /\/public\/ledger/);
+    // Footer grand finale CTA includes avatar creation to match the heading
+    assert.match(homeSource, /data\.footerCta\.title[\s\S]*?to="\/skin\/generate"[\s\S]*?quickStartSkin/);
 });
 
 test('HomePage.tsx uses smooth horizontal translucent Aether background (sides transparent, center semi-transparent) and physical figure photo', () => {
@@ -76,4 +78,25 @@ test('HomePage.tsx implements Apple-style progressive scroll reveal for copy and
     assert.match(homeSource, /IntersectionObserver/);
     assert.match(homeSource, /cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/);
     assert.match(homeSource, /<ScrollReveal\s+delay=\{/);
+});
+
+test('HomePage.tsx renders Footer with contact info, terms of service, and privacy policy links', () => {
+    const homeSource = readFileSync(join(__dirname, '../src/pages/HomePage.tsx'), 'utf8');
+    assert.match(homeSource, /<Footer\s+current=\{current\}\s*\/>/);
+
+    const footerSource = readFileSync(join(__dirname, '../src/components/Footer.tsx'), 'utf8');
+    // Contact email through locale and mailto
+    assert.match(footerSource, /mailto:\$\{data\.contact\.emailAddress\}/);
+    assert.match(footerSource, /data\.contact\.emailAddress/);
+
+    // Verify contact email in both en and zh-hans locales
+    for (const locale of ['en', 'zh-hans']) {
+        const localeSource = readFileSync(join(__dirname, `../src/constants/locales/${locale}.ts`), 'utf8');
+        assert.match(localeSource, /emailAddress:\s*'support@entropydrop\.com'/);
+    }
+
+    // Terms of service and privacy policy links
+    assert.match(footerSource, /\/skin\/tos/);
+    assert.match(footerSource, /\/skin\/privacy/);
+    assert.match(footerSource, /\/figure\/3dprint\/terms/);
 });

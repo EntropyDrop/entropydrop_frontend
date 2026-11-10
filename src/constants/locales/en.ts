@@ -2091,6 +2091,16 @@ Email: support@entropydrop.com`
             title: 'Ready to create your next avatar?',
             subtitle: 'Seamless ecosystem across all platforms'
         },
+        footer: {
+            links: {
+                termsOfService: 'Terms of Service',
+                privacyPolicy: 'Privacy Policy',
+                figurePrintTerms: '3D Printing Terms'
+            },
+            contact: {
+                emailAddress: 'support@entropydrop.com'
+            }
+        },
         carousels: {
             hero: {
                 skin: {
