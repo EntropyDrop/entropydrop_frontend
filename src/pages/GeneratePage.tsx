@@ -4,6 +4,7 @@ import { useCurrentUser } from '../hooks/useCurrentUser'
 import { request } from '../utils/httpClient'
 import { useAuthSession } from '../hooks/useAuthSession'
 import { PageContainer } from '../components/PageContainer';
+import { Footer } from '../components/Footer';
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Icon } from '@iconify/react'
 import { useNavigate, useLocation } from 'react-router-dom'
@@ -701,20 +702,24 @@ export function GeneratePage({ current }: GeneratePageProps) {
             <PageContainer
                 alignItems="items-start lg:items-center"
                 height="h-auto lg:h-full"
-                overflow="overflow-visible lg:overflow-hidden"
+                overflow="overflow-y-auto custom-scrollbar"
                 animate="animate-in fade-in zoom-in duration-300"
-                className="items-center justify-center"
+                className="items-center justify-between"
             >
                 <SEO title={current.nav.generate} description={current.generate.loginPrompt} />
-                <Icon icon="pixelarticons:lock" className="text-6xl opacity-30" />
-                <div className="text-center flex flex-col gap-1">
-                    <h2 className={`text-xl font-bold ${current.fontClass}`}>
-                        {current.common.authRequired}
-                    </h2>
-                    <p className={`text-white/60 text-xs ${current.fontClass}`}>
-                        {current.generate.loginPrompt}
-                    </p>
+                <div />
+                <div className="text-center flex flex-col items-center gap-4 my-auto">
+                    <Icon icon="pixelarticons:lock" className="text-6xl opacity-30" />
+                    <div className="text-center flex flex-col gap-1">
+                        <h2 className={`text-xl font-bold ${current.fontClass}`}>
+                            {current.common.authRequired}
+                        </h2>
+                        <p className={`text-white/60 text-xs ${current.fontClass}`}>
+                            {current.generate.loginPrompt}
+                        </p>
+                    </div>
                 </div>
+                <Footer current={current} />
             </PageContainer>
         )
     }
@@ -724,15 +729,16 @@ export function GeneratePage({ current }: GeneratePageProps) {
 
     return (
         <PageContainer
-            alignItems="items-start lg:items-center"
+            alignItems="items-start"
             height="h-auto lg:h-full"
             gap="gap-3 lg:gap-6"
-            overflow="overflow-visible lg:overflow-hidden"
+            overflow="overflow-y-auto custom-scrollbar"
             animate="animate-in fade-in zoom-in duration-300"
-            className="flex-col lg:flex-row"
+            className="flex-col"
         >
             <SEO title={current.nav.generate} description={current.subtitle} />
 
+            <div className="flex flex-col lg:flex-row gap-3 lg:gap-6 w-full lg:flex-1 lg:min-h-0">
                 {/* Left: History Sidebar */}
                 <div className="w-full lg:w-80 flex flex-col gap-4 order-last lg:order-first border-t lg:border-t-0 lg:border-r border-white/10 pt-4 lg:pt-0 lg:pr-6 shrink-0 h-auto lg:h-full">
                     <h3 className={`text-white text-sm lg:text-lg m-0 flex items-center gap-2 opacity-80 lg:opacity-100 ${current.fontClass}`}>
@@ -1511,7 +1517,10 @@ export function GeneratePage({ current }: GeneratePageProps) {
                     </div>
 
                 </div> {/* End Main Content Split Frame */}
+            </div>
             {/* End Middle Section */}
+
+            <Footer current={current} />
 
             <ConfirmModal
                 isOpen={infoModal.isOpen}

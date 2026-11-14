@@ -22,7 +22,7 @@ const compiled = build({
     external: ['react', 'react/jsx-runtime', 'react-router-dom', 'generation-visuals'],
     define: { 'import.meta.env.VITE_API_BASE_URL': JSON.stringify('https://api.example.test') },
     plugins: [{ name: 'generation-visuals', setup(build) {
-        build.onResolve({ filter: /^(?:@iconify\/react|framer-motion)$|\/components\/(?:SEO|utils|LoadingPlaceholder|MCModal|ConfirmModal)$/ },
+        build.onResolve({ filter: /^(?:@iconify\/react|framer-motion)$|\/components\/(?:SEO|utils|LoadingPlaceholder|MCModal|ConfirmModal|Footer)$/ },
             () => ({ path: 'generation-visuals', external: true }));
     } }],
 }).then(result => result.outputFiles[0].text);
@@ -41,7 +41,7 @@ async function mount(isPro, { imageOptions = options, maintenance = [], userStat
         Icon: ({ icon }) => React.createElement('svg', { 'data-icon': icon }),
         AnimatePresence: ({ children }) => children,
         motion: { div: ({ children }) => React.createElement('div', null, children) },
-        SEO: () => null, LoadingSpinner: () => null, MCModal: () => null, ConfirmModal: () => null,
+        SEO: () => null, LoadingSpinner: () => null, MCModal: () => null, ConfirmModal: () => null, Footer: () => null,
     };
     const module = { exports: {} };
     const context = vm.createContext({

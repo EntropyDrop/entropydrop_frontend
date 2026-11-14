@@ -6,6 +6,7 @@ import { UserMenu } from './UserMenu'
 import { ErrorModal } from './ErrorModal'
 
 import { type LangKey, type LangData } from '../constants/lang'
+import { LanguageProvider } from '../context/LanguageContext'
 
 import { SPACE_NAV_ITEMS, SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS, TOP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from '../constants/nav'
 
@@ -152,7 +153,9 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
             </div>
 
             <div className="absolute inset-0 z-0"><LightweightBackground /></div>
-            {children}
+            <LanguageProvider value={{ lang, setLang, isAuto, setIsAuto, current }}>
+                {children}
+            </LanguageProvider>
 
             <ErrorModal
                 isOpen={errorModal.isOpen}

@@ -36,7 +36,7 @@ async function mount() {
         useAuthSession: () => session,
         useCurrentUser: () => ({ user: { id: session, is_pro: false }, refresh() {} }),
         useSkinLicensePolicy: () => ({ ready: true, code: 'cc-by-nc-4.0', key: session }),
-        PageContainer: passthrough, GeneratedLicenseCard: () => null, SEO: () => null,
+        PageContainer: passthrough, GeneratedLicenseCard: () => null, SEO: () => null, Footer: () => null,
         Icon: () => null, LoadingSpinner: () => null, MCModal: () => null, ConfirmModal: () => null,
         AnimatePresence: passthrough, motion: { div: passthrough },
         formatDate: value => value, showError: message => { throw new Error(message); },

@@ -3,6 +3,7 @@ import { Icon } from '@iconify/react'
 import { spaceAgentConnection, spaceAgentPrompt } from '@entropydrop/space/agent-guide'
 
 import { PageContainer } from '../components/PageContainer'
+import { Footer } from '../components/Footer'
 import { SpaceWorldBackground, SpaceWorldControls } from '../components/SpaceWorldCarousel'
 import { SPACE_DEFAULT_ENTRANCE_WORLD, SPACE_ENTRANCE_WORLDS, spaceWorldLaunchUrl, type SpaceEntranceWorld } from '../utils/spaceWorlds'
 import { SEO } from '../components/SEO'
@@ -577,6 +578,9 @@ export function SpacePage({ current }: SpacePageProps) {
                     </a>
                 </div>
             </section>
+
+            {/* ===================== FOOTER ===================== */}
+            <Footer current={current} />
         </PageContainer>
         </>
     )

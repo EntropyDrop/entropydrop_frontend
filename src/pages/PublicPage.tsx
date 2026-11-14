@@ -1,4 +1,5 @@
 import { PageContainer } from '../components/PageContainer';
+import { Footer } from '../components/Footer';
 import { Icon } from '@iconify/react'
 import { type LangData } from '../constants/lang'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -282,6 +283,7 @@ export function PublicPage({ current }: PublicPageProps) {
                 </>
             )}
 
+            <Footer current={current} />
         </PageContainer>
     );
 }

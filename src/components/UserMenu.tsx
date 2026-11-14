@@ -6,7 +6,7 @@ import { Icon } from '@iconify/react'
 import { useState, useRef, useEffect, lazy, Suspense, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { type LangData, type LangKey, SUPPORTED_LANGUAGES } from '../constants/lang'
+import { type LangData, type LangKey } from '../constants/lang'
 import { apiFetch, apiResponseJson } from '../utils/api'
 import { revokeAuthSession } from '../utils/authClient'
 import { SPACE_NAV_ITEMS, SKIN_NAV_ITEMS, FIGURE_NAV_ITEMS } from "../constants/nav"
@@ -17,15 +17,10 @@ const ProfileSkinPreview = lazy(() => import('./ProfileSkinPreview').then(m => (
 
 interface UserMenuProps {
     current: LangData
-    lang: LangKey
-    setLang: (l: LangKey) => void
-    isAuto: boolean
-    setIsAuto: (a: boolean) => void
-}
-
-const LANGUAGE_LABELS: Record<LangKey, string> = {
-    'zh-hans': '简体中文',
-    en: 'English',
+    lang?: LangKey
+    setLang?: (l: LangKey) => void
+    isAuto?: boolean
+    setIsAuto?: (a: boolean) => void
 }
 
 interface GoogleCredentialResponse {
@@ -67,7 +62,7 @@ function getNotificationActionLabel(current: LangData, type: string) {
     return ''
 }
 
-export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenuProps) {
+export function UserMenu({ current }: UserMenuProps) {
     const [isOpen, setIsOpen] = useState(false)
 
     const { user, setUser } = useCurrentUser()
@@ -646,54 +641,30 @@ export function UserMenu({ current, lang, setLang, isAuto, setIsAuto }: UserMenu
                         <Icon icon="pixelarticons:notes" /> {current.terms.privacy}
                     </button>
 
-                    <div className="h-0.5 bg-black/20" />
-                    <div className="p-3 bg-black/10">
-                        <span className={`text-white/40 text-[9px] uppercase ${current.fontClass} mb-2 block`}>{current.user.language}</span>
-                        <select
-                            value={isAuto ? 'auto' : lang}
-                            onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === 'auto') {
-                                    setIsAuto(true);
-                                } else {
-                                    setIsAuto(false);
-                                    setLang(val as LangKey); // cast to LangKey
-                                }
-                                setIsOpen(false);
-                            }}
-                            className={`w-full bg-[#222] border border-white/10 p-2 text-white/80 text-[10px] focus:outline-none focus:border-green-500/30 cursor-pointer ${current.fontClass}`}
-                        >
-                            <option value="auto" className="bg-[#1a1a1a] text-white"> {current.common.auto}</option>
-                            {SUPPORTED_LANGUAGES.map(lk => (
-                                <option key={lk} value={lk} className="bg-[#1a1a1a] text-white">
-                                    {LANGUAGE_LABELS[lk]}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="h-0.5 bg-black/20" />
-                    {user && user.is_admin && (
-                        <>
-                            <button
-                                onClick={() => { setIsOpen(false); navigate('/skin/monitor'); }}
-                                className={`w-full px-4 py-2.5 text-left text-green-400 hover:bg-green-500/10 hover:text-green-300 transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
-                            >
-                                <Icon icon="pixelarticons:device-tv" /> {current.nav.monitor}
-                            </button>
-                            <button
-                                onClick={() => { setIsOpen(false); navigate('/figure/manage'); }}
-                                className={`w-full px-4 py-2.5 text-left text-[#a6df7a] hover:bg-white/10 text-xs cursor-pointer flex items-center gap-3 ${current.fontClass}`}
-                            >
-                                <Icon icon="pixelarticons:box" /> {current.figureManagement.title}
-                            </button>
-                            <div className="h-0.5 bg-black/20" />
-                        </>
-                    )}
                     {user && (
-                        <button onClick={handleLogout} className={`w-full px-4 py-2.5 text-left text-red-400 hover:bg-red-500/20 transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}>
-                            <Icon icon="pixelarticons:logout" /> {current.user.logout}
-                        </button>
+                        <>
+                            <div className="h-0.5 bg-black/20" />
+                            {user.is_admin && (
+                                <>
+                                    <button
+                                        onClick={() => { setIsOpen(false); navigate('/skin/monitor'); }}
+                                        className={`w-full px-4 py-2.5 text-left text-green-400 hover:bg-green-500/10 hover:text-green-300 transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                                    >
+                                        <Icon icon="pixelarticons:device-tv" /> {current.nav.monitor}
+                                    </button>
+                                    <button
+                                        onClick={() => { setIsOpen(false); navigate('/figure/manage'); }}
+                                        className={`w-full px-4 py-2.5 text-left text-[#a6df7a] hover:bg-white/10 text-xs cursor-pointer flex items-center gap-3 ${current.fontClass}`}
+                                    >
+                                        <Icon icon="pixelarticons:box" /> {current.figureManagement.title}
+                                    </button>
+                                    <div className="h-0.5 bg-black/20" />
+                                </>
+                            )}
+                            <button onClick={handleLogout} className={`w-full px-4 py-2.5 text-left text-red-400 hover:bg-red-500/20 transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}>
+                                <Icon icon="pixelarticons:logout" /> {current.user.logout}
+                            </button>
+                        </>
                     )}
                 </div>
             )}

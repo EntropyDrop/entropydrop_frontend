@@ -1,6 +1,7 @@
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { usePaymentStatus } from '../hooks/usePaymentStatus'
 import { PageContainer } from '../components/PageContainer';
+import { Footer } from '../components/Footer';
 import { Icon } from '@iconify/react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -402,6 +403,7 @@ export function ProPage({ current }: ProPageProps) {
                     </div>
                 </div>
 
+                <Footer current={current} />
         </PageContainer>
     );
 }

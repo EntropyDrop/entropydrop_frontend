@@ -2,6 +2,7 @@ import { useCurrentUser } from '../hooks/useCurrentUser'
 import { useAuthSession } from '../hooks/useAuthSession'
 import { usePaymentStatus } from '../hooks/usePaymentStatus'
 import { PageContainer } from '../components/PageContainer'
+import { Footer } from '../components/Footer'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams, Link } from 'react-router-dom'
@@ -58,6 +59,18 @@ export function CreditsPage({ current }: CreditsPageProps) {
     const [isProcessing, setIsProcessing] = useState(false)
     const [purchaseSuccess, setPurchaseSuccess] = useState(false)
     const [showComingSoonToast, setShowComingSoonToast] = useState<string | null>(null)
+
+    // YouTube Subscription Task state
+    const [youtubeTaskClaimed, setYoutubeTaskClaimed] = useState(false)
+    const [hasVisitedYoutube, setHasVisitedYoutube] = useState(() => {
+        try {
+            return localStorage.getItem('entropydrop_youtube_visited') === '1'
+        } catch {
+            return false
+        }
+    })
+    const [isClaimingYoutube, setIsClaimingYoutube] = useState(false)
+    const [taskToast, setTaskToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
     const customInputRef = useRef<HTMLInputElement>(null)
     const c = current.credits
@@ -185,6 +198,67 @@ export function CreditsPage({ current }: CreditsPageProps) {
         setTimeout(() => setShowComingSoonToast(null), 4000)
     }
 
+    // Load YouTube Subscription task status
+    useEffect(() => {
+        if (!authSession) {
+            setYoutubeTaskClaimed(false)
+            return
+        }
+        let active = true
+        apiFetch('/api/credits/tasks/youtube-subscription')
+            .then(res => res.ok ? apiResponseJson(res) : null)
+            .then(data => {
+                if (active && data && typeof data.claimed === 'boolean') {
+                    setYoutubeTaskClaimed(data.claimed)
+                }
+            })
+            .catch(() => {})
+        return () => { active = false }
+    }, [authSession])
+
+    const handleOpenYoutube = () => {
+        setHasVisitedYoutube(true)
+        try {
+            localStorage.setItem('entropydrop_youtube_visited', '1')
+        } catch {}
+        window.open('https://www.youtube.com/@EntropyDrop?sub_confirmation=1', '_blank', 'noopener,noreferrer')
+    }
+
+    const handleClaimYoutube = async () => {
+        if (!authSession) {
+            setTaskToast({ type: 'error', message: c.earnYoutubeToastLoginRequired })
+            setTimeout(() => setTaskToast(null), 3500)
+            return
+        }
+        if (youtubeTaskClaimed || isClaimingYoutube) return
+        setIsClaimingYoutube(true)
+        try {
+            const res = await apiFetch('/api/credits/tasks/youtube-subscription/claim', {
+                method: 'POST'
+            })
+            if (!res.ok) {
+                const err = await apiResponseJson(res).catch(() => null)
+                if (err?.detail?.includes('already been claimed')) {
+                    setYoutubeTaskClaimed(true)
+                }
+                throw new Error(err?.detail || c.earnYoutubeToastError)
+            }
+            const data = await apiResponseJson(res)
+            setYoutubeTaskClaimed(true)
+            if (typeof data.new_balance === 'number') {
+                setUser(prev => prev ? { ...prev, credits: data.new_balance } : prev)
+            }
+            setTaskToast({ type: 'success', message: c.earnYoutubeToastSuccess })
+            setTimeout(() => setTaskToast(null), 4000)
+            fetchHistory(1)
+        } catch (err: any) {
+            setTaskToast({ type: 'error', message: err?.message || c.earnYoutubeToastError })
+            setTimeout(() => setTaskToast(null), 3500)
+        } finally {
+            setIsClaimingYoutube(false)
+        }
+    }
+
     const currentBalance = user?.credits ?? 0
     const progressPercent = Math.min(100, Math.round((currentBalance / FIGURE_GOAL_CREDITS) * 100))
     const creditsNeeded = Math.max(0, FIGURE_GOAL_CREDITS - currentBalance)
@@ -213,6 +287,8 @@ export function CreditsPage({ current }: CreditsPageProps) {
         refund: 'actionRefund',
         subscription_grant: 'actionSubscriptionGrant',
         purchase: 'actionPurchase',
+        system_gift: 'actionSystemGift',
+        youtube_subscribe: 'actionYoutubeSubscribe',
     }
 
     const formatActionName = (action: string) => {
@@ -726,6 +802,86 @@ export function CreditsPage({ current }: CreditsPageProps) {
                                 </div>
                             </div>
 
+                            {/* Method 3: YouTube Channel Subscription */}
+                            <div className="border border-white/10 bg-white/5 p-4 flex flex-col justify-between hover:border-white/20 transition-colors">
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-[#FF0000]">
+                                            <Icon icon="fa6-brands:youtube" className="text-xl" />
+                                            <h3 className="text-base font-bold text-white">
+                                                {c.earnYoutubeTitle}
+                                            </h3>
+                                        </div>
+                                        <span className="border border-[#a6df7a]/30 bg-[#a6df7a]/10 text-[#a6df7a] px-2 py-0.5 text-[10px] font-bold">
+                                            {c.earnYoutubeReward}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-white/60 leading-relaxed">
+                                        {c.earnYoutubeDesc}
+                                    </p>
+                                </div>
+                                <div className="pt-3">
+                                    {youtubeTaskClaimed ? (
+                                        <div className="flex items-center gap-2">
+                                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/10 bg-white/5 text-white/40 text-xs">
+                                                <Icon icon="pixelarticons:check" className="text-xs text-[#a6df7a]" />
+                                                <span>{c.earnYoutubeClaimed}</span>
+                                            </span>
+                                            <a
+                                                href="https://www.youtube.com/@EntropyDrop"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-white/40 hover:text-white transition-colors"
+                                                title="YouTube: @EntropyDrop"
+                                            >
+                                                <Icon icon="pixelarticons:external-link" />
+                                            </a>
+                                        </div>
+                                    ) : hasVisitedYoutube ? (
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <button
+                                                type="button"
+                                                onClick={handleClaimYoutube}
+                                                disabled={isClaimingYoutube}
+                                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-[#a6df7a]/50 bg-[#a6df7a]/15 hover:bg-[#a6df7a]/25 text-[#a6df7a] text-xs font-bold transition-all shadow-[0_0_12px_rgba(166,223,122,0.15)] cursor-pointer disabled:opacity-50"
+                                            >
+                                                {isClaimingYoutube ? (
+                                                    <>
+                                                        <Icon icon="pixelarticons:reload" className="animate-spin text-xs" />
+                                                        <span>{c.earnYoutubeBtnClaiming}</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Icon icon="pixelarticons:gift" className="text-xs" />
+                                                        <span>{c.earnYoutubeBtnClaim}</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                            <a
+                                                href="https://www.youtube.com/@EntropyDrop?sub_confirmation=1"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-white/50 hover:text-white transition-colors"
+                                            >
+                                                <Icon icon="fa6-brands:youtube" className="text-xs text-red-400" />
+                                                <span>{c.earnYoutubeBtnGo}</span>
+                                            </a>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <button
+                                                type="button"
+                                                onClick={handleOpenYoutube}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-red-500/40 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 text-xs transition-colors cursor-pointer"
+                                            >
+                                                <Icon icon="fa6-brands:youtube" className="text-xs" />
+                                                <span>{c.earnYoutubeBtnGo}</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
                             {/* Method 3: Pro Subscription */}
                             <div className="border border-white/10 bg-white/5 p-4 flex flex-col justify-between hover:border-white/20 transition-colors">
                                 <div className="space-y-2">
@@ -896,6 +1052,9 @@ export function CreditsPage({ current }: CreditsPageProps) {
 
             </AnimatePresence>
 
+            {/* ===================== FOOTER ===================== */}
+            <Footer current={current} />
+
             {/* PIXEL TOAST: COMING SOON ALERT */}
             {createPortal(
                 <AnimatePresence>
@@ -918,6 +1077,49 @@ export function CreditsPage({ current }: CreditsPageProps) {
                             <button
                                 type="button"
                                 onClick={() => setShowComingSoonToast(null)}
+                                className="text-white/40 hover:text-white cursor-pointer"
+                            >
+                                <Icon icon="pixelarticons:close" className="text-base" />
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
+
+            {/* PIXEL TOAST: TASK FEEDBACK ALERT */}
+            {createPortal(
+                <AnimatePresence>
+                    {taskToast && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 16 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 16 }}
+                            className={`fixed bottom-6 right-6 z-[9999] max-w-sm p-4 bg-black/95 border ${
+                                taskToast.type === 'success' ? 'border-[#a6df7a]/50' : 'border-red-500/50'
+                            } shadow-2xl text-white flex items-start gap-3 ${current.fontClass || 'font-pixel-hans'} font-pixel-hans`}
+                        >
+                            <Icon
+                                icon={taskToast.type === 'success' ? 'pixelarticons:check' : 'pixelarticons:alert'}
+                                className={`text-xl shrink-0 mt-0.5 ${
+                                    taskToast.type === 'success' ? 'text-[#a6df7a]' : 'text-red-400'
+                                }`}
+                            />
+                            <div className="flex-1 space-y-1">
+                                <div
+                                    className={`text-xs font-bold uppercase tracking-wider ${
+                                        taskToast.type === 'success' ? 'text-[#a6df7a]' : 'text-red-400'
+                                    }`}
+                                >
+                                    {taskToast.type === 'success' ? c.earnYoutubeReward : 'Notice'}
+                                </div>
+                                <p className="text-xs text-white/80 leading-relaxed">
+                                    {taskToast.message}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setTaskToast(null)}
                                 className="text-white/40 hover:text-white cursor-pointer"
                             >
                                 <Icon icon="pixelarticons:close" className="text-base" />

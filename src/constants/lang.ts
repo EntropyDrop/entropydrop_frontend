@@ -3,6 +3,19 @@ import type en from './locales/en'
 export const SUPPORTED_LANGUAGES = ['zh-hans', 'en'] as const;
 export type LangKey = typeof SUPPORTED_LANGUAGES[number];
 
+export const LANGUAGE_LABELS: Record<LangKey, string> = {
+    'zh-hans': '简体中文',
+    en: 'English',
+};
+
+export const getSystemLang = (): LangKey => {
+    if (typeof navigator !== 'undefined' && navigator.language) {
+        const fullLang = navigator.language.toLowerCase()
+        if (fullLang.startsWith('zh')) return 'zh-hans'
+    }
+    return 'en'
+};
+
 type DeepString<T> = T extends string ? string : { [K in keyof T]: DeepString<T[K]> };
 type BaseLangData = DeepString<typeof en>;
 type ArticleItem = {

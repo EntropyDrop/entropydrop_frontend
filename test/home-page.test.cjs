@@ -102,3 +102,30 @@ test('HomePage.tsx renders Footer with contact info, terms of service, and priva
     assert.match(footerSource, /\/skin\/privacy/);
     assert.doesNotMatch(footerSource, /custom-product-files|figurePrintTerms/);
 });
+
+test('Footer.tsx renders language selector and UserMenu no longer contains it', () => {
+    const footerSource = readFileSync(join(__dirname, '../src/components/Footer.tsx'), 'utf8');
+    assert.match(footerSource, /SUPPORTED_LANGUAGES/);
+    assert.match(footerSource, /LANGUAGE_LABELS/);
+    assert.match(footerSource, /current\.common\.auto/);
+    assert.match(footerSource, /pixelarticons:globe/);
+    assert.match(footerSource, /footer-language-select/);
+
+    const userMenuSource = readFileSync(join(__dirname, '../src/components/UserMenu.tsx'), 'utf8');
+    assert.doesNotMatch(userMenuSource, /current\.user\.language/);
+    assert.doesNotMatch(userMenuSource, /LANGUAGE_LABELS/);
+});
+
+test('GeneratePage, SpacePage, PublicPage, ProPage, and CreditsPage render Footer', () => {
+    for (const file of [
+        'src/pages/GeneratePage.tsx',
+        'src/pages/SpacePage.tsx',
+        'src/pages/PublicPage.tsx',
+        'src/pages/ProPage.tsx',
+        'src/pages/CreditsPage.tsx',
+    ]) {
+        const source = readFileSync(join(__dirname, '..', file), 'utf8');
+        assert.match(source, /import\s+.*Footer.*from\s+['"]\.\.\/components\/Footer['"]/);
+        assert.match(source, /<Footer\s+current=\{current\}\s*\/>/);
+    }
+});
