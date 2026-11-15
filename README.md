@@ -148,6 +148,29 @@ npm run preview
 
 Production releases to S3/CloudFront are managed by the backend deployment tools.
 
+### PWA installation
+
+`public/manifest.webmanifest` identifies EntropyDrop as one app on the current
+origin. Installation launches `/` in a standalone window; the `/` scope covers
+the main site's routes, but not the separate `space.entropydrop.com` origin.
+Keep the manifest `id` stable when changing the launch page.
+
+`index.html` links the manifest, the theme color, and an Apple touch icon.
+`public/icons/` contains the checked-in 192px/512px PNG icons, a 512px maskable
+variant, a 180px Apple touch icon, and the editable pixel-logo SVG source.
+The maskable variant keeps the whole mark and shadow inside the central safe
+circle. Vite copies these files into `dist/`; no PWA plugin or service worker is
+needed for this installation-only setup. The app continues to require a network
+connection.
+
+When deploying to S3/CloudFront, include the manifest and icons, serve
+`manifest.webmanifest` as `application/manifest+json` and PNGs as `image/png`,
+and refresh cached HTML/manifest/icons when they change. Static asset requests
+must return the actual files, not the SPA HTML fallback. Verify the HTTPS site
+in Chrome's Application > Manifest panel and on an Android device, including
+installation, launch, sign-in, and navigation. A desktop or local preview does
+not verify the Android WebAPK installation flow.
+
 ### Pixel font subsets
 
 The site uses checked-in WOFF2 subsets: Latin/punctuation, Chinese UI copy, and
