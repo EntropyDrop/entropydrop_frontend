@@ -256,7 +256,7 @@ export function HomeHeroCarousel({ data, fontClass }: HomeHeroCarouselProps) {
                             key={`${slide.id}-${index}`}
                             onClick={() => handleSlideClick(index, slide.ctaLink)}
                             aria-hidden={isFar}
-                            className={`flex-none w-[82%] aspect-video relative select-none overflow-hidden cursor-pointer ${
+                            className={`flex-none w-[82%] aspect-[4/3] sm:aspect-video min-h-[220px] sm:min-h-0 relative select-none overflow-hidden cursor-pointer ${
                                 isFar
                                     ? 'opacity-0 pointer-events-none invisible z-0'
                                     : isCycleActive
@@ -319,7 +319,7 @@ export function HomeHeroCarousel({ data, fontClass }: HomeHeroCarouselProps) {
 
                             {/* Slide Bottom Dock */}
                             <div
-                                className={`absolute bottom-3 sm:bottom-4 inset-x-3 sm:inset-x-4 z-30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 sm:p-4 bg-black/80 backdrop-blur-md border border-white/10 shadow-2xl ${
+                                className={`absolute bottom-2.5 sm:bottom-4 inset-x-2.5 sm:inset-x-4 z-30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3 p-2.5 sm:p-4 bg-black/80 backdrop-blur-md border border-white/10 shadow-2xl ${
                                     isCycleActive
                                         ? 'opacity-100 translate-y-0 pointer-events-auto'
                                         : 'opacity-0 translate-y-4 pointer-events-none'
@@ -328,9 +328,9 @@ export function HomeHeroCarousel({ data, fontClass }: HomeHeroCarouselProps) {
                                     transition: enableTransition ? 'opacity 500ms ease-out, transform 500ms ease-out' : 'none'
                                 }}
                             >
-                                <div className="flex flex-col gap-1 sm:gap-1.5 max-w-xl text-left">
+                                <div className="flex flex-col gap-1 sm:gap-1.5 max-w-xl text-left w-full sm:w-auto">
                                     <div className="flex items-center gap-2">
-                                        <span className={`inline-block px-2 py-0.5 text-[10px] sm:text-xs font-mono uppercase tracking-wider border backdrop-blur-md ${slideAccent.badge}`}>
+                                        <span className={`inline-block px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-mono uppercase tracking-wider border backdrop-blur-md ${slideAccent.badge}`}>
                                             {slide.badge}
                                         </span>
                                         {/* Slide Indicators */}
@@ -354,11 +354,11 @@ export function HomeHeroCarousel({ data, fontClass }: HomeHeroCarouselProps) {
                                         </div>
                                     </div>
 
-                                    <h2 className={`m-0 text-base sm:text-xl lg:text-2xl font-bold text-white tracking-wide leading-tight ${fontClass}`}>
+                                    <h2 className={`m-0 text-sm sm:text-xl lg:text-2xl font-bold text-white tracking-wide leading-tight ${fontClass}`}>
                                         {slide.title}
                                     </h2>
 
-                                    <p className={`m-0 text-xs sm:text-sm text-white/75 line-clamp-1 leading-normal ${fontClass}`}>
+                                    <p className={`m-0 text-xs sm:text-sm text-white/75 leading-normal ${fontClass}`}>
                                         {slide.desc}
                                     </p>
                                 </div>
@@ -367,7 +367,7 @@ export function HomeHeroCarousel({ data, fontClass }: HomeHeroCarouselProps) {
                                     <Link
                                         to={slide.ctaLink}
                                         onClick={(e) => e.stopPropagation()}
-                                        className={`inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 font-bold text-xs sm:text-sm border backdrop-blur-md transition-all active:scale-95 no-underline shadow-lg ${slideAccent.cta} ${fontClass}`}
+                                        className={`inline-flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-1.5 sm:py-2.5 font-bold text-xs sm:text-sm border backdrop-blur-md transition-all active:scale-95 no-underline shadow-lg ${slideAccent.cta} ${fontClass}`}
                                     >
                                         <span>{slide.ctaText}</span>
                                         <Icon icon="pixelarticons:chevron-right" className="text-sm sm:text-base" />
