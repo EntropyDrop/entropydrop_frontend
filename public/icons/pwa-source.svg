@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="512" height="512" shape-rendering="crispEdges">
-  <!-- Editable source for the existing pixel E mark and its offset shadow. -->
-  <rect width="24" height="24" fill="#404040" />
-  <path d="M7 5h8v2H9v2h4v2H9v4h6v2H7Z" fill="#000000" transform="translate(2 2)" />
-  <path d="M7 5h8v2H9v2h4v2H9v4h6v2H7Z" fill="#ffffff" />
-</svg>

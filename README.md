@@ -157,9 +157,12 @@ Keep the manifest `id` stable when changing the launch page.
 
 `index.html` links the manifest, the theme color, and an Apple touch icon.
 `public/icons/` contains the checked-in 192px/512px PNG icons, a 512px maskable
-variant, a 180px Apple touch icon, and the editable pixel-logo SVG source.
-The maskable variant keeps the whole mark and shadow inside the central safe
-circle. Vite copies these files into `dist/`; no PWA plugin or service worker is
+variant, and a 180px Apple touch icon. All four use `public/favicon.png` as their
+source, preserving its original pixels and composition with nearest-neighbor
+resizing. Regenerate them with `python3 scripts/generate-pwa-icons.py` (requires
+Pillow). The source canvas is padded to square, and the maskable variant adds
+extra padding to keep the whole mark and shadow inside the central safe circle.
+Vite copies these files into `dist/`; no PWA plugin or service worker is
 needed for this installation-only setup. The app continues to require a network
 connection.
 
