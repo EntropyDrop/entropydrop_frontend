@@ -326,7 +326,7 @@ export function UserMenu({ current }: UserMenuProps) {
                             )}
                         </button>
                         {isNotifOpen && (
-                            <div className="absolute top-full right-0 mt-2 w-72 max-h-[350px] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-[99999] animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="absolute top-full right-0 mt-2 w-72 max-h-[350px] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-[100001] animate-in fade-in slide-in-from-top-2 duration-200">
                                 <div className="p-3 border-b border-black/20 bg-black/20 flex justify-between items-center">
                                     <span className={`text-white text-xs font-bold ${current.fontClass}`}>
                                         {current.user.notifications.title}
@@ -490,7 +490,7 @@ export function UserMenu({ current }: UserMenuProps) {
             )}
 
             {isOpen && (
-                <div className="absolute top-full right-0 mt-2 w-64 sm:w-52 max-h-[50vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-[99999] animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="absolute top-full right-0 mt-2 w-64 sm:w-52 max-h-[50vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-white/10 shadow-2xl z-[100001] animate-in fade-in slide-in-from-top-2 duration-200">
                     {/* Mobile/Tablet Navigation Links */}
                     <div className="lg:hidden border-b border-black/10 pb-1 pt-1 bg-black/10 flex flex-col gap-1">
                         {/* Global Platform Links: Home & Public */}
@@ -670,7 +670,7 @@ export function UserMenu({ current }: UserMenuProps) {
             )}
 
             {user && user.terms_agreed === false && createPortal(
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[99999] backdrop-blur-sm pointer-events-auto animate-in fade-in duration-300">
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100002] backdrop-blur-sm pointer-events-auto animate-in fade-in duration-300">
                     <div className="bg-[#1a1a1a] border-2 border-white/10 p-6 max-w-sm w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-200">
                         <h3 className={`text-white text-base font-bold mb-3 ${current.fontClass}`}>
                             {current.terms.title}
@@ -716,7 +716,7 @@ export function UserMenu({ current }: UserMenuProps) {
             )}
 
             {isProfileModalOpen && user && createPortal(
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[99999] backdrop-blur-sm pointer-events-auto animate-in fade-in duration-300">
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100002] backdrop-blur-sm pointer-events-auto animate-in fade-in duration-300">
                     <div className="bg-[#1a1a1a] border border-white/10 p-5 max-w-lg w-full max-h-[90vh] overflow-y-auto custom-scrollbar mx-4 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-4">
                         <div className="flex justify-between items-center pb-2 border-b border-white/10">
                             <h3 className={`text-white text-sm font-bold ${current.fontClass}`}>

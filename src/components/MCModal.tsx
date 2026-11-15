@@ -166,7 +166,12 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
     const { user: currentUser } = useCurrentUser();
     const isLoggedIn = !!useAuthSession();
-    const isOwner = Boolean(currentUser && item.creator?.id != null && String(item.creator.id) === String(currentUser.id));
+    const isOwner = Boolean(
+        currentUser && (
+            (item.creator?.id != null && String(item.creator.id) === String(currentUser.id)) ||
+            ((item as any).user_id != null && String((item as any).user_id) === String(currentUser.id))
+        )
+    );
     const isAuthor = Boolean(!item.id || isOwner);
     const canSetMinecraftSkin = Boolean(isOwner && item.result && item.is_public === true);
     const licenseCode = item.license?.code || 'unknown';
@@ -370,8 +375,9 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                             </p>
                             <button
                                 onClick={() => { setIsEditingName(true); setEditedName(value || ''); }}
-                                className="opacity-0 group-hover/name:opacity-60 hover:opacity-100 text-white/40 hover:text-[#4ea632] transition-all cursor-pointer p-0.5"
+                                className="text-white/50 hover:text-[#4ea632] transition-colors cursor-pointer p-0.5 shrink-0"
                                 title={current.mcmodal.editName}
+                                aria-label={current.mcmodal.editName}
                             >
                                 <Icon icon="pixelarticons:edit" className="text-xs" />
                             </button>
