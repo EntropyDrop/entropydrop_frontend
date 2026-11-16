@@ -28,7 +28,7 @@ export function CreatorCodeField({ current, offer, disabled, busy, error, onAppl
             <label htmlFor={id} className="block text-white/75">{t.label}</label>
             <div className="flex gap-2">
                 <input id={id} value={draft} maxLength={32} autoComplete="off" autoCapitalize="characters" spellCheck={false} disabled={disabled || busy} autoFocus={editing}
-                    onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); apply(draft) } }}
+                    onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { if (event.nativeEvent.isComposing || event.keyCode === 229) return; event.preventDefault(); apply(draft) } }}
                     placeholder={t.placeholder} className="min-w-0 flex-1 border border-white/20 bg-black/20 px-3 py-2 text-white disabled:opacity-50" />
                 <button type="button" disabled={disabled || busy} onClick={() => apply(draft)} className="border border-white/20 px-3 py-2 hover:bg-white/10 disabled:opacity-40 cursor-pointer">{busy ? t.applying : t.apply}</button>
                 {offer && !disabled && <button type="button" disabled={busy} onClick={() => apply('')} className="text-white/60 underline disabled:opacity-40 cursor-pointer">{t.remove}</button>}

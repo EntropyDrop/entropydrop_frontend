@@ -764,7 +764,10 @@ export function UserMenu({ current }: UserMenuProps) {
                                     value={tempNickname}
                                     onChange={(e) => setTempNickname(e.target.value)}
                                     onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleSaveProfile()
+                                        if (e.key === 'Enter') {
+                                            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                                            handleSaveProfile()
+                                        }
                                         if (e.key === 'Escape') setTempNickname(user.username || '')
                                     }}
                                     className={`min-w-0 flex-1 bg-transparent px-2 py-2 text-white text-xs focus:outline-none ${current.fontClass}`}

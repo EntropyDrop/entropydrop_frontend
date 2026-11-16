@@ -61,6 +61,7 @@ export function FigureHeader({
                             onChange={e => setSearchInput(e.target.value)}
                             onKeyDown={e => {
                                 if (e.key === 'Enter') {
+                                    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                                     setSearchQuery(searchInput);
                                 }
                             }}

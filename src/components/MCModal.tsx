@@ -351,7 +351,10 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                 className="bg-black/40 border border-white/10 text-white font-pixel-hans text-xs px-2 py-1 flex-1 min-w-0"
                                 autoFocus
                                 onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleUpdateName();
+                                    if (e.key === 'Enter') {
+                                        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                                        handleUpdateName();
+                                    }
                                     if (e.key === 'Escape') setIsEditingName(false);
                                 }}
                             />
