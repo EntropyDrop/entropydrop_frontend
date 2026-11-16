@@ -107,7 +107,8 @@ Create a `.env` file in the root directory and add the backend API endpoint and 
 ```env
 VITE_API_BASE_URL=http://localhost:8000/skin
 VITE_GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
-VITE_GTAG_ID=abc
+VITE_UMAMI_WEBSITE_ID=your_umami_website_id
+VITE_UMAMI_SCRIPT_URL=https://cloud.umami.is/script.js
 ```
 
 ### Space world backgrounds

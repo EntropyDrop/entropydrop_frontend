@@ -2,7 +2,11 @@ export {}
 
 declare global {
     interface Window {
-        dataLayer?: IArguments[]
-        gtag?: (...args: [string, ...unknown[]]) => void
+        umami?: {
+            track: {
+                (eventName: string, eventData?: Record<string, unknown>): void
+                (customPayload: (props: Record<string, unknown>) => Record<string, unknown>): void
+            }
+        }
     }
 }

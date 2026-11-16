@@ -7,23 +7,15 @@ import './index.css'
 import App from './App.tsx'
 import pixelarticons from './icons/pixelarticons'
 
-// Load Google Analytics dynamically if configured
-const gtagId = import.meta.env.VITE_GTAG_ID
-if (gtagId) {
+// Load Umami Analytics dynamically if configured (privacy-friendly, cookieless analytics)
+const umamiWebsiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID
+const umamiScriptUrl = import.meta.env.VITE_UMAMI_SCRIPT_URL || 'https://cloud.umami.is/script.js'
+if (umamiWebsiteId) {
   const script = document.createElement('script')
-  script.async = true
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${gtagId}`
+  script.defer = true
+  script.src = umamiScriptUrl
+  script.setAttribute('data-website-id', umamiWebsiteId)
   document.head.appendChild(script)
-
-  const dataLayer = window.dataLayer = window.dataLayer || []
-  const gtag: NonNullable<Window['gtag']> = function () {
-    // Keep Google's SDK queue format: https://developers.google.com/tag-platform/devguides/datalayer
-    // eslint-disable-next-line prefer-rest-params -- gtag commands require IArguments rather than an Array.
-    dataLayer.push(arguments)
-  }
-  ;window.gtag = gtag
-  ;gtag('js', new Date())
-  ;gtag('config', gtagId)
 }
 
 addCollection(pixelarticons)

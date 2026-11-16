@@ -1338,7 +1338,7 @@ EntropyDrop LLC is the seller and manufacturer of custom products sold through t
             },
             {
                 title: '12. Third-Party Services',
-                content: `EntropyDrop may use or link to third-party services such as Google Sign-In, Google Analytics, AWS, PayPal, Stripe, YouTube, shipping providers, foundation-model providers, tool or connector providers, and AI endpoints selected by users.
+                content: `EntropyDrop may use or link to third-party services such as Google Sign-In, cookieless analytics services, AWS, PayPal, Stripe, YouTube, shipping providers, foundation-model providers, tool or connector providers, and AI endpoints selected by users.
 
 When you authorize an AI Agent to call a third-party tool or connect an external account, the Agent may send that third party instructions, content, and context needed to complete the task and receive results in return. Review the permission scope and third-party terms before authorization, and connect only accounts and data you are authorized to use.
 
@@ -1405,7 +1405,7 @@ This Policy applies to the EntropyDrop website, AI generation services, AI Agent
 • Subscription and Credit data: plans, Credit balances and history, records of Credits used to obtain virtual items, payment-provider (PayPal or Stripe) order identifiers, subscription status, payment amounts, and timestamps, used for payment, entitlement delivery, renewal, refunds, reconciliation, and fraud prevention (we do not receive or store full card numbers, which our payment providers handle);
 • Creator program data: for creators, referral codes, attributed orders, commission balances, and withdrawal requests, including the amount, the email address you provide for the Stripe transfer, the transfer receipt, and the Stripe fee, used to calculate and pay commissions and prevent fraud;
 • Custom-product data: country or region, telephone number, postal code, state or province, city, street address, custom model, order, and shipment status, used for production, delivery, support, and necessary recordkeeping;
-• Analytics data: cookies or similar identifiers, page visits, interaction events, device information, and approximate region, used to understand usage and improve the product; and
+• Analytics data: page visits, interaction events, referrer sources, device and browser type, and approximate region (we use privacy-friendly, cookieless analytics that do not store tracking cookies or collect personally identifiable information), used to understand usage and improve the product; and
 • Support data: email address, message content, attachments, and communication timestamps, used to answer questions, handle complaints, and provide after-sales support.
 
 An uploaded image containing a face, identity document, health information, precise location, financial account information, or information about a minor may contain sensitive personal information. Do not upload such content unless the feature requires it and you have all necessary rights. We do not use uploaded photographs for facial identification.`
@@ -1441,13 +1441,13 @@ A direct-message recipient may save, capture, forward, or report content they re
 
 Space API keys remain only in the current page session and are not persisted to localStorage. When you use a custom AI endpoint, your prompt, necessary game context, and API key are sent directly by your browser to the provider you select and are governed by that provider’s privacy policy.
 
-When configured, the website may use Google Analytics. Where required, we will obtain consent before enabling analytics and provide a method to reject or withdraw analytics-cookie consent. PayPal, Stripe, Google Sign-In, and embedded YouTube content may also set cookies or similar identifiers under their own practices.`
+The website uses privacy-friendly, cookieless analytics services that do not set or read tracking cookies and do not track users across websites. Consequently, the website uses only strictly necessary cookies for authentication and core functionality. When you use specific third-party features, PayPal, Stripe, Google Sign-In, and embedded YouTube content may set cookies or similar identifiers under their own practices.`
             },
             {
                 title: '7. Sharing, Service Providers, and Disclosure',
                 content: `We do not sell personal information or provide it to third parties for their independent behavioral advertising.
 
-To provide the Services, we may share the minimum necessary information with Google for account sign-in and website analytics; AWS for servers, databases, object storage, content delivery, and backups; PayPal and Stripe for payments, subscriptions, refunds, reconciliation, and fraud prevention; YouTube for user-submitted public videos; production, logistics, and shipping providers (including 3D printing) for custom physical product production and delivery; foundation-model, AI endpoint, tool, or connector providers for a request you submit or an Agent task you authorize; and professional providers supporting security, auditing, legal services, or necessary technical operations.
+To provide the Services, we may share the minimum necessary information with Google for account sign-in (not for website analytics); privacy-friendly analytics providers for aggregate cookieless website traffic analytics; AWS for servers, databases, object storage, content delivery, and backups; PayPal and Stripe for payments, subscriptions, refunds, reconciliation, and fraud prevention; YouTube for user-submitted public videos; production, logistics, and shipping providers (including 3D printing) for custom physical product production and delivery; foundation-model, AI endpoint, tool, or connector providers for a request you submit or an Agent task you authorize; and professional providers supporting security, auditing, legal services, or necessary technical operations.
 
 An Agent should connect to external services only within the permission scope you authorize. Instructions, content, context, and tool results needed to complete a task may be transferred between EntropyDrop and the relevant third party. You may stop future access by disconnecting a service, revoking authorization, or changing Agent permissions, but this does not affect processing completed before revocation.
 
