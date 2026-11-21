@@ -24,7 +24,7 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
   const worldName = spaceEntranceWorldName(new URL(destination).searchParams.get('world'))
   const silent = searchParams?.get('silent') === '1'
   const reauthenticate = searchParams?.get('reauth') === '1'
-  const fontClass = current?.fontClass || ''
+  const fontClass = current?.fontClass || 'font-pixel-hans'
 
   useEffect(() => {
     let active = true
@@ -77,7 +77,7 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
   }
 
   return (
-    <PageContainer maxWidth="max-w-md" height="h-auto" gap="gap-6" className="text-center items-center py-8 sm:py-12">
+    <PageContainer maxWidth="max-w-md" height="h-auto" gap="gap-6" className={`text-center items-center py-8 sm:py-12 ${fontClass}`}>
       <div className="flex flex-col items-center gap-3">
         <div className="w-16 h-16 rounded-xl bg-[#3c8527]/20 border border-[#3c8527]/50 flex items-center justify-center text-[#4ea632] text-3xl shadow-[0_0_24px_rgba(60,133,39,0.35)]">
           <Icon icon="pixelarticons:cube" />
@@ -85,11 +85,11 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
         <h1 className={`text-2xl sm:text-3xl font-bold tracking-wide text-white m-0 ${fontClass}`}>
           EntropyDrop Space
         </h1>
-        <p className="text-sm text-gray-300 max-w-sm m-0 leading-relaxed">
+        <p className={`text-sm text-gray-300 max-w-sm m-0 leading-relaxed ${fontClass}`}>
           Sign in to your EntropyDrop account before entering Space.
         </p>
         {worldName && (
-          <span className="inline-flex items-center gap-2 border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-green-300">
+          <span className={`inline-flex items-center gap-2 border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-green-300 ${fontClass}`}>
             <Icon icon="pixelarticons:globe" />
             Entering {worldName}
           </span>
@@ -97,14 +97,15 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
       </div>
 
       {checking ? (
-        <div className="flex items-center justify-center gap-2.5 py-6 text-gray-400 text-sm" role="status">
+        <div className={`flex items-center justify-center gap-2.5 py-6 text-gray-400 text-sm ${fontClass}`} role="status">
           <Icon icon="pixelarticons:loader" className="animate-spin text-lg text-[#4ea632]" />
           <span>Connecting to the account service…</span>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-4 w-full">
+        <div className={`flex flex-col items-center gap-4 w-full ${fontClass}`}>
           <div className="flex justify-center my-1 scale-105">
             <GoogleSignInButton
+              className={fontClass}
               onSuccess={login}
               locale="en"
               onError={() => setError('Google sign-in failed. Please try again.')}
@@ -113,14 +114,14 @@ export function SpaceLoginPage({ current }: SpaceLoginPageProps) {
             />
           </div>
           {error && (
-            <p role="alert" className="text-xs text-red-400 bg-red-950/40 border border-red-800/50 px-3 py-1.5 rounded m-0">
+            <p role="alert" className={`text-xs text-red-400 bg-red-950/40 border border-red-800/50 px-3 py-1.5 rounded m-0 ${fontClass}`}>
               {error}
             </p>
           )}
           <div className="pt-2">
             <a
               href="/space/intro"
-              className="inline-flex items-center gap-2 border border-white/20 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs text-gray-300 hover:text-white transition-all no-underline"
+              className={`inline-flex items-center gap-2 border border-white/20 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs text-gray-300 hover:text-white transition-all no-underline ${fontClass}`}
             >
               <Icon icon="pixelarticons:arrow-left" />
               Back to Space Intro

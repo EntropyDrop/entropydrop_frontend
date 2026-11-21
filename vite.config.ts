@@ -36,9 +36,11 @@ function spaceDevMount(): Plugin {
 
         try {
           const source = await readFile(spaceIndexPath, 'utf8')
-          const mountedSource = source
-            .replace('href="/src/style.css"', `href="/@fs/${spaceClientRoot}/src/style.css"`)
-            .replace('src="/src/main.ts"', `src="/@fs/${spaceClientRoot}/src/main.ts"`)
+          // Resolve Space's entry assets against its source tree, not the main site's.
+          const mountedSource = source.replace(
+            /(<(?:script|link)\b[^>]*?\s(?:src|href)=["'])\/src\//g,
+            `$1/@fs/${spaceClientRoot}/src/`,
+          )
           const html = await server.transformIndexHtml(requestUrl, mountedSource)
           response.statusCode = 200
           response.setHeader('Content-Type', 'text/html; charset=utf-8')

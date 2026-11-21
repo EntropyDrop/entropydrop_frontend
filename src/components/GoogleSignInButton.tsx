@@ -12,6 +12,7 @@ interface GoogleSignInButtonProps {
     configErrorText?: string
     loadingText?: string
     locale?: string
+    className?: string
 }
 
 export function GoogleSignInButton({
@@ -20,6 +21,7 @@ export function GoogleSignInButton({
     configErrorText = 'Google 登录暂时不可用 / Google sign-in unavailable',
     loadingText = '正在加载 Google 登录… / Loading Google sign-in…',
     locale,
+    className = '',
 }: GoogleSignInButtonProps) {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
     const [clientId, setClientId] = useState(import.meta.env.VITE_GOOGLE_CLIENT_ID || '')
@@ -50,19 +52,21 @@ export function GoogleSignInButton({
         return () => window.removeEventListener('resize', handleResize)
     }, [])
 
-    if (configError) return <span role="alert">{configErrorText}</span>
-    if (!clientId) return <span role="status">{loadingText}</span>
+    if (configError) return <span role="alert" className={className}>{configErrorText}</span>
+    if (!clientId) return <span role="status" className={className}>{loadingText}</span>
 
     return (
         <GoogleOAuthProvider clientId={clientId} locale={locale} onScriptLoadError={onError}>
-            <GoogleLogin
-                onSuccess={onSuccess}
-                onError={onError}
-                useOneTap={false}
-                shape="square"
-                size={isMobile ? "medium" : "large"}
-                text="signin"
-            />
+            <div className={className}>
+                <GoogleLogin
+                    onSuccess={onSuccess}
+                    onError={onError}
+                    useOneTap={false}
+                    shape="square"
+                    size={isMobile ? "medium" : "large"}
+                    text="signin"
+                />
+            </div>
         </GoogleOAuthProvider>
     )
 }
