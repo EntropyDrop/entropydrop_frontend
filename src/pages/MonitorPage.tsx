@@ -1,5 +1,6 @@
 import { request } from '../utils/httpClient'
 import { PageContainer } from '../components/PageContainer';
+import { MonitorAccountTools } from '../components/MonitorAccountTools'
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@iconify/react'
@@ -1829,6 +1830,8 @@ export function MonitorPage({ current }: MonitorPageProps) {
               </button>
             </div>
           </div>
+
+          <MonitorAccountTools current={current} onGift={fetchStats} />
 
           {/* Admin Purge Terminal */}
           <div className="bg-red-500/5 border border-red-500/20 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
