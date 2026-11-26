@@ -20,6 +20,7 @@ interface MCModalPreviewProps {
     convertModel: (target: 'steve' | 'alex') => void;
     onEdit?: () => void;
     onPrint?: () => void;
+    onOrigami?: () => void;
     downloadFilename?: string;
     current: LangData;
     fbxUrl?: string;
@@ -494,6 +495,7 @@ export function MCModalPreview({
     convertModel,
     onEdit,
     onPrint,
+    onOrigami,
     downloadFilename,
     current,
     fbxUrl,
@@ -678,6 +680,19 @@ export function MCModalPreview({
                                     <Icon icon="pixelarticons:box" className="text-sm shrink-0" />
                                     <span>{current.mcmodal?.print || '3D PRINT'}</span>
                                     <FigurePrintOfferBadge current={current} />
+                                </button>
+                            </div>
+                        )}
+
+                        {onOrigami && (
+                            <div className="bg-black/40 backdrop-blur-md p-1 border border-white/10 min-w-32">
+                                <button
+                                    type="button"
+                                    onClick={onOrigami}
+                                    className="w-full px-2 py-1.5 bg-[#a67332] hover:bg-[#be863d] text-white font-pixel-hans text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer transition-colors group border-none outline-none"
+                                >
+                                    <Icon icon="pixelarticons:scissors" className="text-sm shrink-0" />
+                                    <span>{current.mcmodal?.origami || 'ORIGAMI'}</span>
                                 </button>
                             </div>
                         )}

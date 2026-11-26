@@ -42,3 +42,7 @@ export function figureSourceUrl(id: string) {
 export function figurePrintPath(source: FigureSkinSource) {
     return `/figure/3dprint?id=${encodeURIComponent(source.id)}`
 }
+
+export function figureOrigamiPath(source: FigureSkinSource) {
+    return `/figure/origami?id=${encodeURIComponent(source.id)}`
+}

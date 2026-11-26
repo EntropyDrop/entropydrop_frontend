@@ -1,7 +1,7 @@
 import type { LangData } from '../../constants/lang'
 
-export const BODY_TYPES_EN = ['SLA', 'FDM', 'UV Inkjet 3D Printing', 'Other/Unknown'];
-export const MULTICOLOR_TYPES_EN = ['Stickers', 'UV Inkjet', 'Spraying', 'FDM Multi-color', 'Other/Unknown'];
+export const BODY_TYPES_EN = ['SLA', 'FDM', 'UV Inkjet 3D Printing', 'Sticker/Paper', 'Other/Unknown'];
+export const MULTICOLOR_TYPES_EN = ['Sticker/Paper', 'UV Inkjet', 'Spraying', 'FDM Multi-color', 'Other/Unknown'];
 
 export const getBodyTypeLabel = (val: string | undefined, current: LangData) => {
     if (!val) return '';
@@ -14,7 +14,9 @@ export const getBodyTypeLabel = (val: string | undefined, current: LangData) => 
 
 export const getMultiColorTypeLabel = (val: string | undefined, current: LangData) => {
     if (!val) return '';
-    const idx = MULTICOLOR_TYPES_EN.findIndex(t => t.toLowerCase() === val.toLowerCase());
+    const lower = val.toLowerCase();
+    const normalized = lower === 'stickers' ? 'sticker/paper' : lower;
+    const idx = MULTICOLOR_TYPES_EN.findIndex(t => t.toLowerCase() === normalized);
     if (idx !== -1 && current.figureForum.colorModes?.[idx]) {
         return current.figureForum.colorModes[idx];
     }

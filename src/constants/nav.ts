@@ -20,6 +20,7 @@ export const SKIN_NAV_ITEMS = [
 
 export const FIGURE_NAV_ITEMS = [
     { key: 'figurePrint', icon: 'pixelarticons:box', path: '/figure/3dprint' },
+    { key: 'figureOrigami', icon: 'pixelarticons:scissors', path: '/figure/origami' },
     { key: 'showcase', icon: 'pixelarticons:image-new', path: '/figure/showcase' },
     { key: 'discussions', icon: 'pixelarticons:comment', path: '/figure/discussions' },
     { key: 'videos', icon: 'pixelarticons:device-laptop', path: '/figure/videos' },

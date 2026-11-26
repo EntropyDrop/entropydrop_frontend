@@ -19,7 +19,7 @@ import { apiFetch, apiResponseJson } from '../utils/api'
 import { formatDate } from '../utils/date'
 import { GoogleSignInButton } from './GoogleSignInButton'
 import { LoadingSpinner } from './LoadingPlaceholder'
-import { createFigureSource, figurePrintPath } from '../pages/figure/print/figureSource'
+import { createFigureSource, figureOrigamiPath, figurePrintPath } from '../pages/figure/print/figureSource'
 import { googleLoginPayload } from '../utils/creatorReferral'
 
 
@@ -72,6 +72,12 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         const source = createFigureSource(item);
         close();
         navigate(figurePrintPath(source));
+    };
+
+    const handleOrigami = () => {
+        const source = createFigureSource(item);
+        close();
+        navigate(figureOrigamiPath(source));
     };
 
     const [mode, setModeState] = useState<'voxel' | 'plane' | 'cute'>(() => {
@@ -936,6 +942,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                 convertModel={convertModel}
                                                 onEdit={onEdit ? () => onEdit(textureUrl, item.id, item.is_public === true, item.name) : undefined}
                                                 onPrint={handlePrint}
+                                                onOrigami={handleOrigami}
                                                 downloadFilename={item.id ? `skin_${item.id.toString().substring(0, 8)}.png` : 'skin.png'}
                                                 current={current}
                                             />

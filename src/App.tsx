@@ -27,6 +27,7 @@ const FixedAssetsPage = lazy(() => import('./pages/FixedAssetsPage').then(m => (
 const LedgerPage = lazy(() => import('./pages/LedgerPage').then(m => ({ default: m.LedgerPage })))
 const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage').then(m => ({ default: m.DiscoveryPage })))
 const FigurePrintPage = lazy(() => import('./pages/FigurePrintPage').then(m => ({ default: m.FigurePrintPage })))
+const FigureOrigamiPage = lazy(() => import('./pages/FigureOrigamiPage').then(m => ({ default: m.FigureOrigamiPage })))
 const FigurePrintTermsPage = lazy(() => import('./pages/FigurePrintTermsPage').then(m => ({ default: m.FigurePrintTermsPage })))
 const FigureManagePage = lazy(() => import('./pages/FigureManagePage').then(m => ({ default: m.FigureManagePage })))
 const FigurePage = lazy(() => import('./pages/FigurePage').then(m => ({ default: m.FigurePage })))
@@ -161,6 +162,7 @@ function AppContent({ currentLangData: preferredLangData, lang, setLang, isAuto,
         <Route path="/skin/open/*" element={<LegacyOpenRedirect />} />
         <Route path="/figure" element={<FigureRedirect />} />
         <Route path="/figure/3dprint" element={<FigurePrintPage current={currentLangData} />} />
+        <Route path="/figure/origami" element={<FigureOrigamiPage current={currentLangData} />} />
         <Route path={FIGURE_PRINT_TERMS.legacyPath} element={<FigurePrintTermsPage />} />
         <Route path="/figure/manage" element={<FigureManagePage current={currentLangData} />} />
         <Route path="/figure/:category" element={<FigurePage current={currentLangData} />} />
