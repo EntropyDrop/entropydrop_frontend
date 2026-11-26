@@ -74,3 +74,16 @@ test('Space welcome page does not expose online player count or status polling',
   assert.doesNotMatch(source, /refreshPopulation/);
 });
 
+test('Space intro uses pixel font across the page container, badges, code blocks, and world selector', () => {
+  const spacePageSource = readFileSync(join(__dirname, '../src/pages/SpacePage.tsx'), 'utf8');
+  assert.match(spacePageSource, /className=\{`relative space-world-page \$\{fontClass\}`\}/);
+  assert.doesNotMatch(spacePageSource, /\bfont-mono\b/);
+  assert.match(spacePageSource, /<kbd className=\{`[^`]*\$\{fontClass\}/);
+  assert.match(spacePageSource, /<pre className=\{`[^`]*\$\{fontClass\}/);
+  assert.match(spacePageSource, /<code className=\{fontClass\}>/);
+
+  const carouselSource = readFileSync(join(__dirname, '../src/components/SpaceWorldCarousel.tsx'), 'utf8');
+  assert.match(carouselSource, /className=\{`space-world-controls \$\{fontClass\}`\}/);
+  assert.match(carouselSource, /className=\{`space-world-name \$\{fontClass\}`\}/);
+});
+

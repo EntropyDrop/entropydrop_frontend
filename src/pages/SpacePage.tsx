@@ -64,25 +64,25 @@ function SpaceImageSlot({
 
             {/* Slot Identifier Badge */}
             {slotId && (
-                <div className="absolute top-2.5 left-2.5 font-mono text-[9px] uppercase tracking-wider text-green-400/80 border border-green-500/30 bg-black/80 px-2 py-0.5 z-10">
+                <div className="absolute top-2.5 left-2.5 text-[9px] uppercase tracking-wider text-green-400/80 border border-green-500/30 bg-black/80 px-2 py-0.5 z-10">
                     SLOT // {slotId}
                 </div>
             )}
 
             {/* Corner crosshairs */}
-            <div className="absolute top-2 right-2 text-white/20 font-mono text-xs select-none pointer-events-none">+</div>
-            <div className="absolute bottom-2 left-2 text-white/20 font-mono text-xs select-none pointer-events-none">+</div>
-            <div className="absolute bottom-2 right-2 text-white/20 font-mono text-xs select-none pointer-events-none">+</div>
+            <div className="absolute top-2 right-2 text-white/20 text-xs select-none pointer-events-none">+</div>
+            <div className="absolute bottom-2 left-2 text-white/20 text-xs select-none pointer-events-none">+</div>
+            <div className="absolute bottom-2 right-2 text-white/20 text-xs select-none pointer-events-none">+</div>
 
             <div className="relative z-10 flex flex-col items-center gap-2 text-center max-w-[90%]">
                 <div className="flex h-10 w-10 items-center justify-center border border-green-500/30 bg-green-500/10 text-green-300 shadow-[0_0_15px_rgba(74,222,128,0.15)] transition-transform group-hover:scale-110">
                     <Icon icon={icon} className="text-xl" />
                 </div>
                 <div className="flex flex-col gap-0.5">
-                    <span className="font-mono text-xs font-bold text-white/90 group-hover:text-green-300 transition-colors">
+                    <span className="text-xs font-bold text-white/90 group-hover:text-green-300 transition-colors">
                         {title}
                     </span>
-                    <span className="font-mono text-[10px] text-white/40">
+                    <span className="text-[10px] text-white/40">
                         Image placeholder · Recommended size {recommendSize}
                     </span>
                 </div>
@@ -93,6 +93,7 @@ function SpaceImageSlot({
 
 export function SpacePage({ current }: SpacePageProps) {
     const data = current.space_page
+    const fontClass = current.fontClass || 'font-pixel-hans'
     const defaultSpaceUrl = import.meta.env.DEV ? '/space/app/' : 'https://space.entropydrop.com/'
     const spaceAppUrl = import.meta.env.VITE_SPACE_URL || defaultSpaceUrl
     const [selectedWorld, setSelectedWorld] = useState<SpaceEntranceWorld>(SPACE_DEFAULT_ENTRANCE_WORLD)
@@ -155,7 +156,7 @@ export function SpacePage({ current }: SpacePageProps) {
             height="h-full"
             gap="gap-10 sm:gap-14"
             bg="bg-transparent"
-            className="relative space-world-page"
+            className={`relative space-world-page ${fontClass}`}
         >
             <SEO title={data.title} description={data.description} canonicalUrl="https://entropydrop.com/space/intro" />
 
@@ -163,7 +164,7 @@ export function SpacePage({ current }: SpacePageProps) {
             <section className="space-world-hero flex flex-col gap-6 border-b border-white/10 pb-10 sm:pb-14 shrink-0 w-full">
                 {/* Eyebrow */}
                 <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="inline-flex items-center gap-2 border border-green-500/40 bg-green-500/10 px-2.5 py-1 text-[11px] font-mono uppercase tracking-wider text-green-400">
+                    <span className="inline-flex items-center gap-2 border border-green-500/40 bg-green-500/10 px-2.5 py-1 text-[11px] uppercase tracking-wider text-green-400">
                         <span className="h-2 w-2 bg-green-400 animate-pulse" />
                         {data.eyebrow}
                     </span>
@@ -172,17 +173,17 @@ export function SpacePage({ current }: SpacePageProps) {
                 {/* Title & Tagline */}
                 <div className="flex flex-col gap-2.5">
                     <div className="flex items-start gap-3 flex-wrap">
-                        <h1 className={`m-0 text-3xl sm:text-5xl lg:text-6xl font-bold leading-[1.08] text-white ${current.fontClass}`}>
+                        <h1 className={`m-0 text-3xl sm:text-5xl lg:text-6xl font-bold leading-[1.08] text-white ${fontClass}`}>
                             {data.title}
                         </h1>
-                        <span className="inline-block border border-green-400/40 bg-green-400/15 text-green-400 text-xs sm:text-sm font-mono px-2 py-0.5 uppercase tracking-widest font-bold self-start mt-1">
+                        <span className="inline-block border border-green-400/40 bg-green-400/15 text-green-400 text-xs sm:text-sm px-2 py-0.5 uppercase tracking-widest font-bold self-start mt-1">
                             BETA
                         </span>
                     </div>
-                    <p className={`m-0 text-lg sm:text-2xl font-semibold text-green-400 leading-snug ${current.fontClass}`}>
+                    <p className={`m-0 text-lg sm:text-2xl font-semibold text-green-400 leading-snug ${fontClass}`}>
                         {data.tagline}
                     </p>
-                    <p className={`m-0 max-w-3xl text-sm sm:text-base leading-relaxed text-white/70 ${current.fontClass}`}>
+                    <p className={`m-0 max-w-3xl text-sm sm:text-base leading-relaxed text-white/70 ${fontClass}`}>
                         {data.description}
                     </p>
                 </div>
@@ -190,16 +191,16 @@ export function SpacePage({ current }: SpacePageProps) {
                 {/* Quick Specs Badges */}
                 <div className="grid grid-cols-3 gap-2 sm:gap-4 max-w-xl">
                     <div className="border border-white/10 bg-black/40 p-3 flex flex-col gap-1">
-                        <span className="text-[10px] font-mono text-green-400 font-bold uppercase tracking-wider">PHYSICS</span>
-                        <span className={`text-xs font-bold text-white ${current.fontClass}`}>{data.stats.physics}</span>
+                        <span className="text-[10px] text-green-400 font-bold uppercase tracking-wider">PHYSICS</span>
+                        <span className={`text-xs font-bold text-white ${fontClass}`}>{data.stats.physics}</span>
                     </div>
                     <div className="border border-white/10 bg-black/40 p-3 flex flex-col gap-1">
-                        <span className="text-[10px] font-mono text-blue-400 font-bold uppercase tracking-wider">AI AGENT</span>
-                        <span className={`text-xs font-bold text-blue-300 ${current.fontClass}`}>{data.stats.programmable}</span>
+                        <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider">AI AGENT</span>
+                        <span className={`text-xs font-bold text-blue-300 ${fontClass}`}>{data.stats.programmable}</span>
                     </div>
                     <div className="border border-white/10 bg-black/40 p-3 flex flex-col gap-1">
-                        <span className="text-[10px] font-mono text-yellow-400 font-bold uppercase tracking-wider">WORLDS</span>
-                        <span className={`text-xs font-bold text-yellow-300 ${current.fontClass}`}>{data.stats.worlds}</span>
+                        <span className="text-[10px] text-yellow-400 font-bold uppercase tracking-wider">WORLDS</span>
+                        <span className={`text-xs font-bold text-yellow-300 ${fontClass}`}>{data.stats.worlds}</span>
                     </div>
                 </div>
 
@@ -221,15 +222,15 @@ export function SpacePage({ current }: SpacePageProps) {
                 <div className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-2 text-green-400">
                         <Icon icon="pixelarticons:sparkles" className="text-xl" />
-                        <span className="font-mono text-xs uppercase tracking-widest text-green-400 font-bold">
+                        <span className="text-xs uppercase tracking-widest text-green-400 font-bold">
                             GAMEPLAY & SYSTEMS
                         </span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
-                        <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${current.fontClass}`}>
+                        <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${fontClass}`}>
                             {data.featuresTitle}
                         </h2>
-                        <span className={`text-xs text-white/50 ${current.fontClass}`}>
+                        <span className={`text-xs text-white/50 ${fontClass}`}>
                             {data.featuresSubtitle}
                         </span>
                     </div>
@@ -265,24 +266,24 @@ export function SpacePage({ current }: SpacePageProps) {
                                                 <div className="flex h-8 w-8 items-center justify-center border border-green-500/30 bg-green-500/10 text-green-300">
                                                     <Icon icon={featureIcons[index] || 'pixelarticons:zap'} className="text-lg" />
                                                 </div>
-                                                <span className="font-mono text-xs uppercase text-green-400/80 font-bold tracking-wider">
+                                                <span className="text-xs uppercase text-green-400/80 font-bold tracking-wider">
                                                     {feature.tag}
                                                 </span>
                                             </div>
-                                            <span className="font-mono text-[10px] uppercase tracking-wider text-green-400 border border-green-500/20 bg-green-500/5 px-2 py-0.5">
+                                            <span className="text-[10px] uppercase tracking-wider text-green-400 border border-green-500/20 bg-green-500/5 px-2 py-0.5">
                                                 {feature.badge}
                                             </span>
                                         </div>
 
-                                        <h3 className={`m-0 text-lg font-bold text-white group-hover:text-green-300 transition-colors ${current.fontClass}`}>
+                                        <h3 className={`m-0 text-lg font-bold text-white group-hover:text-green-300 transition-colors ${fontClass}`}>
                                             {feature.title}
                                         </h3>
-                                        <p className={`m-0 text-xs sm:text-sm leading-relaxed text-white/65 ${current.fontClass}`}>
+                                        <p className={`m-0 text-xs sm:text-sm leading-relaxed text-white/65 ${fontClass}`}>
                                             {feature.description}
                                         </p>
                                     </div>
 
-                                    <div className="flex items-center justify-between border-t border-white/5 pt-3 font-mono text-[10px] text-white/30">
+                                    <div className="flex items-center justify-between border-t border-white/5 pt-3 text-[10px] text-white/30">
                                         <span>FEATURE // 0{index + 1}</span>
                                         <span className="text-green-400/50 group-hover:text-green-400 transition-colors">ACTIVE</span>
                                     </div>
@@ -300,15 +301,15 @@ export function SpacePage({ current }: SpacePageProps) {
                     <div className="flex flex-col gap-1.5">
                         <div className="flex items-center gap-2 text-green-400">
                             <Icon icon="pixelarticons:sliders" className="text-xl" />
-                            <span className="font-mono text-xs uppercase tracking-widest text-green-400 font-bold">
+                            <span className="text-xs uppercase tracking-widest text-green-400 font-bold">
                                 {data.toolsGuide.eyebrow}
                             </span>
                         </div>
                         <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
-                            <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${current.fontClass}`}>
+                            <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${fontClass}`}>
                                 {data.toolsGuide.title}
                             </h2>
-                            <span className={`text-xs text-white/50 ${current.fontClass}`}>
+                            <span className={`text-xs text-white/50 ${fontClass}`}>
                                 {data.toolsGuide.subtitle}
                             </span>
                         </div>
@@ -327,19 +328,19 @@ export function SpacePage({ current }: SpacePageProps) {
                                             <Icon icon={tool.icon} className="text-xl" />
                                         </div>
                                         <div className="flex flex-col">
-                                            <span className="font-mono text-sm font-bold text-white group-hover:text-green-300 transition-colors">
+                                            <span className="text-sm font-bold text-white group-hover:text-green-300 transition-colors">
                                                 {tool.name}
                                             </span>
-                                            <span className="font-mono text-[10px] text-white/40">
+                                            <span className="text-[10px] text-white/40">
                                                 SLOT // {tool.slot}
                                             </span>
                                         </div>
                                     </div>
-                                    <span className="font-mono text-[10px] uppercase tracking-wider text-green-400 border border-green-500/20 bg-green-500/5 px-2 py-0.5">
+                                    <span className="text-[10px] uppercase tracking-wider text-green-400 border border-green-500/20 bg-green-500/5 px-2 py-0.5">
                                         {tool.badge}
                                     </span>
                                 </div>
-                                <p className={`m-0 text-xs leading-relaxed text-white/70 ${current.fontClass}`}>
+                                <p className={`m-0 text-xs leading-relaxed text-white/70 ${fontClass}`}>
                                     {tool.desc}
                                 </p>
                             </div>
@@ -349,11 +350,11 @@ export function SpacePage({ current }: SpacePageProps) {
                     {/* Shortcuts Reference Bar */}
                     <div className="border border-white/10 bg-black/50 p-4 sm:p-6 flex flex-col gap-3">
                         <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                            <span className="font-mono text-xs font-bold uppercase tracking-wider text-green-400 flex items-center gap-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-green-400 flex items-center gap-2">
                                 <Icon icon="pixelarticons:command" className="text-base" />
                                 {data.toolsGuide.shortcutsTitle}
                             </span>
-                            <span className="font-mono text-[10px] text-white/40 uppercase">
+                            <span className="text-[10px] text-white/40 uppercase">
                                 QUICK REFERENCE
                             </span>
                         </div>
@@ -363,14 +364,14 @@ export function SpacePage({ current }: SpacePageProps) {
                                     key={shortcut.key}
                                     className="flex items-start gap-2.5 bg-white/[0.03] border border-white/5 p-2.5 hover:border-white/20 transition-colors"
                                 >
-                                    <kbd className="shrink-0 font-mono text-[11px] font-bold text-green-300 border border-green-500/40 bg-black/80 px-2 py-0.5 shadow-[0_0_8px_rgba(74,222,128,0.15)]">
+                                    <kbd className={`shrink-0 ${fontClass} text-[11px] font-bold text-green-300 border border-green-500/40 bg-black/80 px-2 py-0.5 shadow-[0_0_8px_rgba(74,222,128,0.15)]`}>
                                         {shortcut.key}
                                     </kbd>
                                     <div className="flex flex-col gap-0.5 min-w-0">
-                                        <span className={`text-xs font-bold text-white/90 ${current.fontClass}`}>
+                                        <span className={`text-xs font-bold text-white/90 ${fontClass}`}>
                                             {shortcut.label}
                                         </span>
-                                        <span className={`text-[11px] text-white/50 leading-relaxed ${current.fontClass}`}>
+                                        <span className={`text-[11px] text-white/50 leading-relaxed ${fontClass}`}>
                                             {shortcut.desc}
                                         </span>
                                     </div>
@@ -387,15 +388,15 @@ export function SpacePage({ current }: SpacePageProps) {
                 <div className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-2 text-purple-400">
                         <Icon icon="pixelarticons:script" className="text-xl" />
-                        <span className="font-mono text-xs uppercase tracking-widest text-purple-400 font-bold">
+                        <span className="text-xs uppercase tracking-widest text-purple-400 font-bold">
                             AGENT INTEGRATION & PROTOCOL
                         </span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
-                        <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${current.fontClass}`}>
+                        <h2 className={`m-0 text-2xl sm:text-3xl font-bold text-white ${fontClass}`}>
                             {data.agentModes.title}
                         </h2>
-                        <span className={`text-xs text-white/50 ${current.fontClass}`}>
+                        <span className={`text-xs text-white/50 ${fontClass}`}>
                             {data.agentModes.subtitle}
                         </span>
                     </div>
@@ -416,13 +417,13 @@ export function SpacePage({ current }: SpacePageProps) {
                             >
                                 <div className="flex items-center justify-between gap-3 text-purple-300">
                                     <Icon icon={card.icon} className="text-2xl" />
-                                    <span className="font-mono text-xs text-white/40">0{index + 1}</span>
+                                    <span className="text-xs text-white/40">0{index + 1}</span>
                                 </div>
                                 <div className="flex flex-col gap-2">
-                                    <h3 className={`m-0 text-xl font-bold text-white ${current.fontClass}`}>{isExternal ? data.agentSetup.title : card.title}</h3>
+                                    <h3 className={`m-0 text-xl font-bold text-white ${fontClass}`}>{isExternal ? data.agentSetup.title : card.title}</h3>
                                     <span className="self-start border border-green-400/25 bg-green-400/5 px-2 py-1 text-xs leading-relaxed text-green-300">{card.status}</span>
                                 </div>
-                                <p className={`m-0 text-sm leading-relaxed text-white/80 ${current.fontClass}`}>{isExternal ? data.agentSetup.description : card.description}</p>
+                                <p className={`m-0 text-sm leading-relaxed text-white/80 ${fontClass}`}>{isExternal ? data.agentSetup.description : card.description}</p>
 
                                 {isExternal ? (
                                     <div className="flex flex-col gap-3 my-1">
@@ -434,7 +435,7 @@ export function SpacePage({ current }: SpacePageProps) {
                                         </p>
                                         <button
                                             type="button"
-                                            className="w-full inline-flex min-h-11 items-center justify-center gap-2 border-2 border-black bg-[#3c8527] px-4 py-2.5 text-sm font-bold text-white shadow-[2px_2px_0_rgba(0,0,0,0.55)] hover:bg-[#4ea632] active:translate-y-0.5 active:shadow-none transition-all cursor-pointer"
+                                            className={`w-full inline-flex min-h-11 items-center justify-center gap-2 border-2 border-black bg-[#3c8527] px-4 py-2.5 text-sm font-bold text-white shadow-[2px_2px_0_rgba(0,0,0,0.55)] hover:bg-[#4ea632] active:translate-y-0.5 active:shadow-none transition-all cursor-pointer ${fontClass}`}
                                             onClick={() => {
                                                 if (!navigator.clipboard?.writeText) {
                                                     setAgentCopyMessage(data.agentSetup.copyFailed)
@@ -450,7 +451,7 @@ export function SpacePage({ current }: SpacePageProps) {
                                             <span>{data.agentSetup.copy}</span>
                                         </button>
                                         {agentCopyMessage ? (
-                                            <div role="status" className="text-xs font-mono text-green-300 bg-green-500/10 border border-green-500/30 p-2 text-center">
+                                            <div role="status" className="text-xs text-green-300 bg-green-500/10 border border-green-500/30 p-2 text-center">
                                                 {agentCopyMessage}
                                             </div>
                                         ) : null}
@@ -458,15 +459,15 @@ export function SpacePage({ current }: SpacePageProps) {
                                         <p className="m-0 text-xs leading-relaxed text-white/60">{data.agentSetup.note}</p>
 
                                         <details className="text-xs text-white/80 group">
-                                            <summary className="cursor-pointer text-purple-300 font-mono text-xs uppercase tracking-wider flex items-center gap-1.5 hover:text-purple-200 select-none py-1">
+                                            <summary className="cursor-pointer text-purple-300 text-xs uppercase tracking-wider flex items-center gap-1.5 hover:text-purple-200 select-none py-1">
                                                 <Icon icon="pixelarticons:script" className="text-sm" />
                                                 <span>{data.agentSetup.example}</span>
                                             </summary>
                                             <div className="relative mt-2">
-                                                <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed border border-purple-400/20 bg-black/70 p-3 max-h-48 overflow-y-auto text-purple-100/90">{agentPrompt}</pre>
+                                                <pre className={`m-0 whitespace-pre-wrap break-words ${fontClass} text-[11px] leading-relaxed border border-purple-400/20 bg-black/70 p-3 max-h-48 overflow-y-auto text-purple-100/90`}>{agentPrompt}</pre>
                                             </div>
                                             <p className="text-xs text-white/60 break-all">
-                                                {data.agentSetup.backend}: <code>{agentConnection.origin}</code>
+                                                {data.agentSetup.backend}: <code className={fontClass}>{agentConnection.origin}</code>
                                             </p>
                                             <div className="flex flex-wrap items-center gap-3 pt-1 text-xs">
                                                 <a href={agentConnection.spaceApiUrl} target="_blank" rel="noopener noreferrer" className="text-purple-300 underline">{data.agentSetup.guide}</a>
@@ -498,9 +499,9 @@ export function SpacePage({ current }: SpacePageProps) {
                 </div>
 
                 <div className="border-l-2 border-purple-400/40 pl-4 sm:pl-5 flex flex-col gap-2">
-                    <h3 className={`m-0 text-lg font-bold text-white ${current.fontClass}`}>{data.agentModes.sharedTitle}</h3>
-                    <p className={`m-0 max-w-5xl text-sm leading-relaxed text-white/75 ${current.fontClass}`}>{data.agentModes.sharedDescription}</p>
-                    <p className={`m-0 max-w-5xl text-sm leading-relaxed text-white/60 ${current.fontClass}`}>{data.agentModes.authNote}</p>
+                    <h3 className={`m-0 text-lg font-bold text-white ${fontClass}`}>{data.agentModes.sharedTitle}</h3>
+                    <p className={`m-0 max-w-5xl text-sm leading-relaxed text-white/75 ${fontClass}`}>{data.agentModes.sharedDescription}</p>
+                    <p className={`m-0 max-w-5xl text-sm leading-relaxed text-white/60 ${fontClass}`}>{data.agentModes.authNote}</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -512,10 +513,10 @@ export function SpacePage({ current }: SpacePageProps) {
                             <div className="flex h-10 w-10 items-center justify-center border border-purple-400/30 bg-purple-500/10 text-purple-300 group-hover:scale-110 transition-transform">
                                 <Icon icon={card.icon} className="text-xl" />
                             </div>
-                            <h3 className={`text-base font-bold text-white m-0 group-hover:text-purple-300 transition-colors ${current.fontClass}`}>
+                            <h3 className={`text-base font-bold text-white m-0 group-hover:text-purple-300 transition-colors ${fontClass}`}>
                                 {card.title}
                             </h3>
-                            <p className={`text-xs sm:text-sm text-white/60 leading-relaxed m-0 ${current.fontClass}`}>
+                            <p className={`text-xs sm:text-sm text-white/60 leading-relaxed m-0 ${fontClass}`}>
                                 {card.desc}
                             </p>
                         </div>
@@ -531,14 +532,14 @@ export function SpacePage({ current }: SpacePageProps) {
                     <div className="flex max-w-2xl flex-col gap-2">
                         <div className="flex items-center gap-2">
                             <span className="h-2 w-2 bg-green-400 animate-pulse" />
-                            <span className="font-mono text-xs uppercase tracking-widest text-green-400 font-bold">
+                            <span className="text-xs uppercase tracking-widest text-green-400 font-bold">
                                 LAUNCH PROTOTYPE
                             </span>
                         </div>
-                        <h2 className={`m-0 text-2xl sm:text-4xl font-bold text-white ${current.fontClass}`}>
+                        <h2 className={`m-0 text-2xl sm:text-4xl font-bold text-white ${fontClass}`}>
                             {data.closingTitle}
                         </h2>
-                        <p className={`m-0 text-sm sm:text-base leading-relaxed text-white/70 ${current.fontClass}`}>
+                        <p className={`m-0 text-sm sm:text-base leading-relaxed text-white/70 ${fontClass}`}>
                             {data.closingSubtitle}
                         </p>
                     </div>
@@ -546,7 +547,7 @@ export function SpacePage({ current }: SpacePageProps) {
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
                         <a
                             href={getSpaceLaunchUrl()}
-                            className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${current.fontClass}`}
+                            className={`group inline-flex min-h-12 items-center justify-center gap-2.5 border-2 border-black bg-[#3c8527] px-7 py-3 text-base font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.55)] transition-all hover:bg-[#4ea632] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none no-underline ${fontClass}`}
                         >
                             <Icon icon="pixelarticons:play" className="text-xl" />
                             <span>{data.primaryCta} · {worldName}</span>
@@ -556,7 +557,7 @@ export function SpacePage({ current }: SpacePageProps) {
                 </div>
 
                 {/* Footer Community Links */}
-                <div className="relative z-10 border-t border-white/10 mt-6 pt-4 flex flex-wrap items-center gap-4 text-xs font-mono text-white/50">
+                <div className="relative z-10 border-t border-white/10 mt-6 pt-4 flex flex-wrap items-center gap-4 text-xs text-white/50">
                     <a
                         href="https://github.com/EntropyDrop"
                         target="_blank"

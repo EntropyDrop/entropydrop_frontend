@@ -30,9 +30,10 @@ export function SpaceWorldControls({ current, world, launchUrl, onSelect, onPaus
     onSelect: (world: SpaceEntranceWorld) => void,
     onPauseChange: (paused: boolean) => void,
 }) {
+    const fontClass = current.fontClass || 'font-pixel-hans'
     return (
         <div
-            className="space-world-controls"
+            className={`space-world-controls ${fontClass}`}
             role="group"
             aria-label={current.space_page.worldCarousel.label}
             onMouseEnter={() => onPauseChange(true)}
@@ -47,7 +48,7 @@ export function SpaceWorldControls({ current, world, launchUrl, onSelect, onPaus
             {SPACE_ENTRANCE_WORLDS.map(entry => (
                 <div key={entry.slug} className="space-world-choice">
                     <button
-                        className="space-world-select"
+                        className={`space-world-select ${fontClass}`}
                         type="button"
                         title={entry.name}
                         aria-label={current.space_page.worldCarousel.select.replace('{world}', entry.name)}
@@ -61,12 +62,12 @@ export function SpaceWorldControls({ current, world, launchUrl, onSelect, onPaus
                             alt=""
                             decoding="async"
                         />
-                        <span className="space-world-name">{entry.name}</span>
+                        <span className={`space-world-name ${fontClass}`}>{entry.name}</span>
                     </button>
                     {entry.slug === world ? (
                         <a
                             href={launchUrl}
-                            className={`space-world-play ${current.fontClass}`}
+                            className={`space-world-play ${fontClass}`}
                             aria-label={`${current.space_page.primaryCta} · ${entry.name}`}
                         >
                             <Icon icon="pixelarticons:play" className="text-xl" />

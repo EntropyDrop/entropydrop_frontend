@@ -628,19 +628,6 @@ export function UserMenu({ current }: UserMenuProps) {
                         </>
                     )}
 
-                    <button
-                        onClick={() => { setIsOpen(false); window.open('/skin/tos', '_blank'); }}
-                        className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
-                    >
-                        <Icon icon="pixelarticons:notes" /> {current.terms.tos}
-                    </button>
-                    <button
-                        onClick={() => { setIsOpen(false); window.open('/skin/privacy', '_blank'); }}
-                        className={`w-full px-4 py-2.5 text-left text-white/80 hover:bg-white/10 hover:text-white transition-colors text-xs border-none cursor-pointer flex items-center gap-3 ${current.fontClass}`}
-                    >
-                        <Icon icon="pixelarticons:notes" /> {current.terms.privacy}
-                    </button>
-
                     {user && (
                         <>
                             <div className="h-0.5 bg-black/20" />

@@ -115,6 +115,13 @@ test('Footer.tsx renders language selector and UserMenu no longer contains it', 
     const userMenuSource = readFileSync(join(__dirname, '../src/components/UserMenu.tsx'), 'utf8');
     assert.doesNotMatch(userMenuSource, /current\.user\.language/);
     assert.doesNotMatch(userMenuSource, /LANGUAGE_LABELS/);
+
+    const dropdownSection = userMenuSource.slice(
+        userMenuSource.indexOf('{isOpen && ('),
+        userMenuSource.indexOf('{user && user.terms_agreed === false'),
+    );
+    assert.ok(dropdownSection.length > 0);
+    assert.doesNotMatch(dropdownSection, /\/skin\/tos|\/skin\/privacy|current\.terms\.tos|current\.terms\.privacy/);
 });
 
 test('GeneratePage, SpacePage, PublicPage, ProPage, CreditsPage, and FigurePrintPage render Footer', () => {
