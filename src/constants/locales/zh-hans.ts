@@ -1183,6 +1183,8 @@ Pro 商用许可为第 6 条所述的数字商用许可，不包含通过本下�
             {
                 title: '11. 联系我们',
                 content: `EntropyDrop LLC（美国怀俄明州有限责任公司）
+注册地址：30 N Gould St Ste N, Sheridan, WY 82801, USA
+运营地：中国上海
 电子邮箱：support@entropydrop.com
 请提供订单号和账号邮箱。
 
@@ -1372,7 +1374,9 @@ EntropyDrop LLC 是通过本服务销售的定制商品的销售方和制造方�
                 title: '17. 条款更新与联系我们',
                 content: `我们可能因服务、业务或规则变化更新本条款。重大变更将通过站内提示、电子邮件或其他合理方式通知。对于需要重新取得同意的重大变更，我们会在变更生效前再次征求您的同意。
 
-运营主体：EntropyDrop LLC
+运营主体：EntropyDrop LLC（美国怀俄明州有限责任公司）
+注册地址：30 N Gould St Ste N, Sheridan, WY 82801, USA
+运营地：中国上海
 产品名称：EntropyDrop
 网站：entropydrop.com
 电子邮箱：support@entropydrop.com`
@@ -1504,7 +1508,9 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
                 title: '13. 政策更新与联系我们',
                 content: `我们可能因功能、服务商或规则变化更新本政策。重大变化将通过站内通知、电子邮件或其他显著方式告知。涉及新增处理目的、敏感个人信息、公开展示、模型训练或跨境提供等需要重新取得同意的事项时，我们将重新征求同意。
 
-个人信息处理者：EntropyDrop LLC
+个人信息处理者：EntropyDrop LLC（美国怀俄明州有限责任公司）
+注册地址：30 N Gould St Ste N, Sheridan, WY 82801, USA
+运营地：中国上海
 产品名称：EntropyDrop
 网站：entropydrop.com
 电子邮箱：support@entropydrop.com`
@@ -1860,7 +1866,14 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         introduction: {
             title: '关于我们',
             company: 'EntropyDrop LLC',
-            desc: '致力于构建根信任基础设施与开放生产体系'
+            jurisdiction: '美国怀俄明州有限责任公司',
+            desc: '致力于构建根信任基础设施与开放生产体系',
+            registeredAddressLabel: '注册地址',
+            registeredAddress: '30 N Gould St Ste N, Sheridan, WY 82801, USA',
+            operationsLabel: '运营地',
+            operations: '中国上海',
+            supportLabel: '客服邮箱',
+            supportEmail: 'support@entropydrop.com',
         },
         vision: {
             title: '我们的愿景',
@@ -2218,6 +2231,9 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
             },
             disclaimer: '非官方 Minecraft 产品，未获 Mojang 或 Microsoft 批准，亦与其无关联。',
             contact: {
+                jurisdiction: 'Wyoming, USA',
+                registeredAddressLabel: '注册地址',
+                registeredAddress: '30 N Gould St Ste N, Sheridan, WY 82801, USA',
                 emailAddress: 'support@entropydrop.com'
             }
         },

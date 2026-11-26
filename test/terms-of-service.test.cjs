@@ -11,6 +11,8 @@ const compiled = build({
         export { MemoryRouter } from 'react-router-dom';
         export { TermsOfServicePage } from './src/pages/TermsOfServicePage';
         export { ShippingRefundPolicyPage } from './src/pages/ShippingRefundPolicyPage';
+        export { PublicPage } from './src/pages/PublicPage';
+        export { Footer } from './src/components/Footer';
         export { default as en } from './src/constants/locales/en';
         export { default as zh } from './src/constants/locales/zh-hans';
         export { FIGURE_PRINT_TERMS } from './src/constants/figurePrintTerms';`,
@@ -116,5 +118,29 @@ for (const [lang, pick] of [['en', m => m.en], ['zh', m => m.zh]]) {
         const privacy = current.privacyPolicy.sections.map(item => item.content).join('\n');
         assert.match(privacy, lang === 'en' ? /Creator program data[^;]*Stripe transfer receipt|transfer receipt/ : /创作者计划[^；]*转账回执/);
         for (const text of [earnings.content, privacy]) assert.doesNotMatch(text, /PayPal Payouts|PayPal 提现/);
+    });
+
+    test(`${lang}: the public about page and legal contact blocks list the registered address and city-level operations`, async () => {
+        const m = await compiled; const current = pick(m);
+        const registeredAddress = '30 N Gould St Ste N, Sheridan, WY 82801, USA';
+        const operations = lang === 'en' ? 'Shanghai, China' : '中国上海';
+        const html = m.renderToStaticMarkup(m.createElement(m.MemoryRouter, { initialEntries: ['/public'] },
+            m.createElement(m.PublicPage, { current })));
+        assert.ok(html.includes(registeredAddress));
+        assert.ok(html.includes(operations));
+        assert.ok(html.includes('support@entropydrop.com'));
+        for (const contactText of [
+            current.termsOfService.sections.at(-1).content,
+            current.privacyPolicy.sections.at(-1).content,
+            current.shippingRefundPolicy.sections.at(-1).content,
+        ]) {
+            assert.ok(contactText.includes(registeredAddress), contactText);
+            assert.ok(contactText.includes(operations), contactText);
+        }
+        const footerHtml = m.renderToStaticMarkup(m.createElement(m.MemoryRouter, { initialEntries: ['/'] },
+            m.createElement(m.Footer, { current })));
+        assert.ok(footerHtml.includes('(Wyoming, USA)'));
+        assert.ok(footerHtml.includes(registeredAddress));
+        assert.equal(footerHtml.includes(operations), false);
     });
 }

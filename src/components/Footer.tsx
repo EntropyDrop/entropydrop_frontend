@@ -60,11 +60,14 @@ export function Footer({
 
     return (
         <footer className={`w-full pt-6 pb-4 text-xs text-white/50 border-t border-white/10 ${fontClass}`}>
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
                 {/* Brand & Contact */}
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
-                    <span>© {currentYear} EntropyDrop LLC</span>
-                    <span className="text-white/20 hidden sm:inline">·</span>
+                <div className="flex flex-col items-center lg:items-start gap-1">
+                    <span>© {currentYear} EntropyDrop LLC ({data.contact.jurisdiction})</span>
+                    <p className={`m-0 text-[11px] text-white/40 text-center lg:text-left break-words ${fontClass}`}>
+                        <span>{data.contact.registeredAddressLabel}: </span>
+                        <span>{data.contact.registeredAddress}</span>
+                    </p>
                     <a
                         href={`mailto:${data.contact.emailAddress}`}
                         className="text-white/50 hover:text-white transition-colors no-underline inline-flex items-center gap-1.5"

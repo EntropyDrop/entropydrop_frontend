@@ -68,7 +68,7 @@ export function PublicPage({ current }: PublicPageProps) {
         : data.introduction.desc;
 
     return (
-        <PageContainer>
+        <PageContainer className={current.fontClass}>
             <SEO title={sectionTitle} description={sectionDesc} />
 
             {/* Header */}
@@ -108,12 +108,12 @@ export function PublicPage({ current }: PublicPageProps) {
                                 <div className="flex items-center gap-4 shrink-0">
                                     <div className="flex gap-2">
                                         {article.tags.map((tag: string, i: number) => (
-                                            <span key={i} className="text-sm font-mono text-white/40 border border-white/10 px-1.5 py-0.5 uppercase">
+                                            <span key={i} className={`text-sm text-white/40 border border-white/10 px-1.5 py-0.5 uppercase ${current.fontClass}`}>
                                                 {tag}
                                             </span>
                                         ))}
                                     </div>
-                                    <span className="text-sm font-mono text-green-500/60 group-hover:text-green-500 transition-colors">
+                                    <span className={`text-sm text-green-500/60 group-hover:text-green-500 transition-colors ${current.fontClass}`}>
                                         {article.date}
                                     </span>
                                     <Icon icon="pixelarticons:chevron-right" className="text-lg text-white/20 group-hover:text-green-500 transition-all transform group-hover:translate-x-1" />
@@ -135,20 +135,53 @@ export function PublicPage({ current }: PublicPageProps) {
                                 </div>
                                 <div className="flex flex-col gap-4 flex-1">
                                     <div className="flex flex-col gap-1">
-                                        <h4 className={`text-xl font-bold text-white ${current.fontClass}`}>
+                                        <h4 className={`text-xl font-bold text-white m-0 ${current.fontClass}`}>
                                             {data.introduction.company}
                                         </h4>
-
+                                        <p className={`text-xs text-white/45 m-0 ${current.fontClass}`}>
+                                            {data.introduction.jurisdiction}
+                                        </p>
                                     </div>
-                                    <p className={`text-white/70 text-sm leading-relaxed ${current.fontClass}`}>
+                                    <p className={`text-white/70 text-sm leading-relaxed m-0 ${current.fontClass}`}>
                                         {data.introduction.desc}
                                     </p>
+                                    <dl className={`grid grid-cols-1 gap-2 border-t border-white/10 pt-3.5 text-xs m-0 ${current.fontClass}`}>
+                                        <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-2">
+                                            <dt className={`text-white/45 shrink-0 sm:min-w-[116px] ${current.fontClass}`}>
+                                                {data.introduction.registeredAddressLabel}
+                                            </dt>
+                                            <dd className={`text-white/80 m-0 break-words ${current.fontClass}`}>
+                                                {data.introduction.registeredAddress}
+                                            </dd>
+                                        </div>
+                                        <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-2">
+                                            <dt className={`text-white/45 shrink-0 sm:min-w-[116px] ${current.fontClass}`}>
+                                                {data.introduction.operationsLabel}
+                                            </dt>
+                                            <dd className={`text-white/80 m-0 ${current.fontClass}`}>
+                                                {data.introduction.operations}
+                                            </dd>
+                                        </div>
+                                        <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-2">
+                                            <dt className={`text-white/45 shrink-0 sm:min-w-[116px] ${current.fontClass}`}>
+                                                {data.introduction.supportLabel}
+                                            </dt>
+                                            <dd className="m-0">
+                                                <a
+                                                    href={`mailto:${data.introduction.supportEmail}`}
+                                                    className={`text-white/80 hover:text-green-400 transition-colors no-underline ${current.fontClass}`}
+                                                >
+                                                    {data.introduction.supportEmail}
+                                                </a>
+                                            </dd>
+                                        </div>
+                                    </dl>
                                     <div className="flex flex-wrap items-center gap-2 xl:gap-2.5 mt-auto pt-2">
                                         <a
                                             href="https://github.com/EntropyDrop"
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/30 text-white/60 hover:text-white transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group"
+                                            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/30 text-white/60 hover:text-white transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group ${current.fontClass}`}
                                         >
                                             <Icon icon="mdi:github" className="text-lg sm:text-xl group-hover:scale-110 transition-transform" />
                                             <span>GitHub</span>
@@ -157,7 +190,7 @@ export function PublicPage({ current }: PublicPageProps) {
                                             href="https://huggingface.co/EntropyDrop"
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-[#FFD21E]/10 border border-white/10 hover:border-[#FFD21E]/30 text-white/60 hover:text-[#FFD21E] transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group"
+                                            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-[#FFD21E]/10 border border-white/10 hover:border-[#FFD21E]/30 text-white/60 hover:text-[#FFD21E] transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group ${current.fontClass}`}
                                         >
                                             <Icon icon="simple-icons:huggingface" className="text-lg sm:text-xl group-hover:scale-110 transition-transform" />
                                             <span>Hugging Face</span>
@@ -166,7 +199,7 @@ export function PublicPage({ current }: PublicPageProps) {
                                             href="https://discord.gg/zxd8RjUyYt"
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-[#5865F2]/20 border border-white/10 hover:border-[#5865F2]/50 text-white/60 hover:text-white transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group"
+                                            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-[#5865F2]/20 border border-white/10 hover:border-[#5865F2]/50 text-white/60 hover:text-white transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group ${current.fontClass}`}
                                         >
                                             <Icon icon="ic:baseline-discord" className="text-lg sm:text-xl group-hover:scale-110 transition-transform" />
                                             <span>Discord</span>
@@ -175,7 +208,7 @@ export function PublicPage({ current }: PublicPageProps) {
                                             href="https://www.youtube.com/@EntropyDrop"
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-[#FF0000]/10 border border-white/10 hover:border-[#FF0000]/30 text-white/60 hover:text-[#FF0000] transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group"
+                                            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-white/5 hover:bg-[#FF0000]/10 border border-white/10 hover:border-[#FF0000]/30 text-white/60 hover:text-[#FF0000] transition-all text-xs sm:text-sm font-medium self-start shrink-0 whitespace-nowrap group ${current.fontClass}`}
                                         >
                                             <Icon icon="simple-icons:youtube" className="text-lg sm:text-xl group-hover:scale-110 transition-transform" />
                                             <span>YouTube</span>
@@ -197,7 +230,7 @@ export function PublicPage({ current }: PublicPageProps) {
                                 </p>
                                 <Link
                                     to="/public/blog/root-trust-governance"
-                                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-400/10 hover:bg-blue-400/20 border border-blue-400/20 hover:border-blue-400/40 text-blue-300 hover:text-blue-200 transition-all text-sm font-mono self-start mt-auto group"
+                                    className={`flex items-center gap-2 px-3 py-1.5 bg-blue-400/10 hover:bg-blue-400/20 border border-blue-400/20 hover:border-blue-400/40 text-blue-300 hover:text-blue-200 transition-all text-sm self-start mt-auto group ${current.fontClass}`}
                                 >
                                     <span>{data.vision.moreLabel}</span>
                                     <Icon icon="pixelarticons:chevron-right" className="text-base transition-transform group-hover:translate-x-0.5" />
@@ -253,12 +286,12 @@ export function PublicPage({ current }: PublicPageProps) {
                                                     className={`bg-white/5 border border-white/10 p-4 flex flex-col gap-2 transition-all group h-full ${isClickable ? 'cursor-pointer hover:bg-white/10 hover:border-green-500/40' : 'cursor-default hover:bg-white/10 hover:border-green-500/20'}`}
                                                 >
                                                     <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
-                                                        <span className="text-sm font-mono text-white/30 uppercase">
+                                                        <span className={`text-sm text-white/30 uppercase ${current.fontClass}`}>
                                                             {module.title.split(' ')[0]}
                                                         </span>
                                                         <div className="flex items-center gap-1.5">
                                                             <div className={`w-1 h-1 rounded-full ${statusStyle.dot}`} />
-                                                            <span className={`text-sm ${statusStyle.text}`}>
+                                                            <span className={`text-sm ${statusStyle.text} ${current.fontClass}`}>
                                                                 {item.status}
                                                             </span>
                                                         </div>

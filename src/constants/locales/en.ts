@@ -1183,6 +1183,8 @@ Discounts have no cash value, cannot be transferred, and cannot be combined with
             {
                 title: '11. Contact',
                 content: `EntropyDrop LLC, a Wyoming limited liability company
+Registered Address: 30 N Gould St Ste N, Sheridan, WY 82801, USA
+Operations: Shanghai, China
 Email: support@entropydrop.com
 Please include your order number and the email address of your account.
 
@@ -1372,7 +1374,9 @@ Termination does not affect payment obligations accrued before termination, vali
                 title: '17. Updates and Contact',
                 content: `We may update these Terms as the Services, our business, or applicable rules change. We will notify you of material changes through an in-product notice, email, or another reasonable method. If a material change requires renewed consent, we will ask for consent before it takes effect.
 
-Operator: EntropyDrop LLC
+Operator: EntropyDrop LLC (a Wyoming limited liability company)
+Registered Address: 30 N Gould St Ste N, Sheridan, WY 82801, USA
+Operations: Shanghai, China
 Product: EntropyDrop
 Website: entropydrop.com
 Email: support@entropydrop.com`
@@ -1504,7 +1508,9 @@ If we learn that we collected information from a child under 14 without valid au
                 title: '13. Policy Updates and Contact',
                 content: `We may update this Policy as our features, providers, or applicable rules change. We will provide an in-product notice, email, or another prominent notice of material changes. If a change involving a new processing purpose, sensitive personal information, public display, model training, or international transfer requires renewed consent, we will ask for it again.
 
-Controller: EntropyDrop LLC
+Controller: EntropyDrop LLC (a Wyoming limited liability company)
+Registered Address: 30 N Gould St Ste N, Sheridan, WY 82801, USA
+Operations: Shanghai, China
 Product: EntropyDrop
 Website: entropydrop.com
 Email: support@entropydrop.com`
@@ -1847,7 +1853,14 @@ Email: support@entropydrop.com`
         introduction: {
             title: 'About Us',
             company: 'EntropyDrop LLC',
-            desc: 'Committed to building root trust infrastructure and an open production system.'
+            jurisdiction: 'Wyoming Limited Liability Company, USA',
+            desc: 'Committed to building root trust infrastructure and an open production system.',
+            registeredAddressLabel: 'Registered Address',
+            registeredAddress: '30 N Gould St Ste N, Sheridan, WY 82801, USA',
+            operationsLabel: 'Operations',
+            operations: 'Shanghai, China',
+            supportLabel: 'Support',
+            supportEmail: 'support@entropydrop.com',
         },
         vision: {
             title: 'Our Vision',
@@ -2205,6 +2218,9 @@ Email: support@entropydrop.com`
             },
             disclaimer: 'NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.',
             contact: {
+                jurisdiction: 'Wyoming, USA',
+                registeredAddressLabel: 'Registered Address',
+                registeredAddress: '30 N Gould St Ste N, Sheridan, WY 82801, USA',
                 emailAddress: 'support@entropydrop.com'
             }
         },
