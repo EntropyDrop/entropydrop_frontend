@@ -152,9 +152,10 @@ test('an empty page offers collections, Discover and Showcase without a local up
         assert.equal(env.node.querySelector('a[href="/figure/showcase"]').textContent, env.current.nav.showcase);
         assert.equal(env.button(env.current.figurePrint.commission), undefined);
         assert.equal(env.node.querySelector('input[type="file"]'), null);
-        assert.equal(env.node.querySelector('select'), null);
+        assert.equal(env.node.querySelector('select:not(#footer-language-select)'), null);
         assert.equal(downloadButtons(env.node).length, 0);
-        assert.equal(env.node.querySelectorAll('a').length, 3);
+        assert.equal(Array.from(env.node.querySelectorAll('a')).filter(link => !link.closest('footer')).length, 3);
+        assert.ok(env.node.querySelector('footer'));
         assert.equal(env.node.querySelector('header'), null);
         assert.equal(env.node.querySelector('a[href="/skin/edit"]'), null);
         assert.ok(env.node.textContent.includes(env.current.figurePrint.empty));

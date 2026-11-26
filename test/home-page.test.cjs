@@ -117,13 +117,14 @@ test('Footer.tsx renders language selector and UserMenu no longer contains it', 
     assert.doesNotMatch(userMenuSource, /LANGUAGE_LABELS/);
 });
 
-test('GeneratePage, SpacePage, PublicPage, ProPage, and CreditsPage render Footer', () => {
+test('GeneratePage, SpacePage, PublicPage, ProPage, CreditsPage, and FigurePrintPage render Footer', () => {
     for (const file of [
         'src/pages/GeneratePage.tsx',
         'src/pages/SpacePage.tsx',
         'src/pages/PublicPage.tsx',
         'src/pages/ProPage.tsx',
         'src/pages/CreditsPage.tsx',
+        'src/pages/FigurePrintPage.tsx',
     ]) {
         const source = readFileSync(join(__dirname, '..', file), 'utf8');
         assert.match(source, /import\s+.*Footer.*from\s+['"]\.\.\/components\/Footer['"]/);

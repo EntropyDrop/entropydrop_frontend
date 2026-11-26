@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Link, useLocation } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { PageContainer } from '../components/PageContainer'
+import { Footer } from '../components/Footer'
 import { SEO } from '../components/SEO'
 import type { LangData } from '../constants/lang'
 import { request } from '../utils/httpClient'
@@ -192,7 +193,7 @@ export function FigurePrintPage({ current }: { current: LangData }) {
         }
     }, [pendingDownload, output, busy, printModelType, t.generatingFull, t.generating])
 
-    if (production.active && !production.data) return <PageContainer className={current.fontClass}><p role={production.failed ? 'alert' : 'status'} className="text-sm text-white/65">{production.failed ? t.productionSourceFailed : t.productionSourceLoading}</p>{production.failed && <button type="button" className={buttonClass} onClick={production.retry}>{t.retry}</button>}<Link to="/figure/manage" className="text-xs text-[#a6df7a] underline">{t.backToManagement}</Link></PageContainer>
+    if (production.active && !production.data) return <PageContainer className={current.fontClass}><p role={production.failed ? 'alert' : 'status'} className="text-sm text-white/65">{production.failed ? t.productionSourceFailed : t.productionSourceLoading}</p>{production.failed && <button type="button" className={buttonClass} onClick={production.retry}>{t.retry}</button>}<Link to="/figure/manage" className="text-xs text-[#a6df7a] underline">{t.backToManagement}</Link><div className="mt-auto shrink-0"><Footer current={current} /></div></PageContainer>
 
     if (linkedSource.active && !linkedSource.data) return <PageContainer className={current.fontClass}>
         <SEO title={t.title} description={t.description} />
@@ -201,18 +202,20 @@ export function FigurePrintPage({ current }: { current: LangData }) {
             {linkedSource.error === 'loadFailed' && <button type="button" className={buttonClass} onClick={linkedSource.retry}>{t.retry}</button>}
             <Link to="/skin/" className={buttonClass}>{t.discoverSkins}</Link>
         </div>
+        <div className="mt-auto shrink-0"><Footer current={current} /></div>
     </PageContainer>
 
     if (!textureUrl) return (
-        <div className={`absolute inset-0 z-10 flex flex-col justify-between overflow-x-hidden overflow-y-auto custom-scrollbar ${current.fontClass}`}>
+        <div className={`absolute inset-0 z-10 flex flex-col overflow-x-hidden overflow-y-auto custom-scrollbar ${current.fontClass}`}>
             <SEO title={t.title} description={t.description} />
             {/* Background Physical Figure Showcase spanning entire screen from behind nav down */}
             <div className="fixed inset-0 pointer-events-none select-none overflow-hidden" aria-hidden="true">
                 <img
-                    src="/images/figure_physical_showcase.jpg"
+                    src="/images/figure_physical_showcase.jpg?v=2"
                     alt="Physical 3D printed voxel figures"
                     className="w-full h-full object-cover object-center filter brightness-[0.98] contrast-[1.02]"
                     loading="eager"
+                    fetchPriority="high"
                     decoding="async"
                 />
                 {/* Subtle gradient: soft darkening at top behind nav for contrast, gentle darkening at bottom behind dock */}
@@ -220,53 +223,50 @@ export function FigurePrintPage({ current }: { current: LangData }) {
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_65%,rgba(0,0,0,0.25)_100%)]" />
             </div>
 
-            {/* Top spacing below floating Navbar */}
-            <div className="pt-20 sm:pt-28 px-4 sm:px-8 max-w-7xl mx-auto w-full relative z-10 flex items-center justify-between pointer-events-none shrink-0">
-                <div className="flex items-center gap-2.5 pointer-events-auto">
-                    <Icon icon="pixelarticons:box" className="text-[#71bc56] text-xl sm:text-2xl drop-shadow" />
-                    <h1 className="text-base sm:text-xl font-bold text-white tracking-wide m-0 drop-shadow">
-                        {t.title}
-                    </h1>
+            {/* Full-viewport Hero Showcase */}
+            <div className="relative z-10 min-h-full shrink-0 flex flex-col justify-end pt-24 sm:pt-32">
+                {/* Bottom Floating Glassmorphism Hero Dock */}
+                <div className="pb-6 sm:pb-8 lg:pb-10 px-4 w-full">
+                    <div className="flex flex-col items-center text-center gap-3.5 max-w-2xl mx-auto w-full p-4 sm:p-5 bg-black/30 backdrop-blur-md border border-white/20 shadow-2xl">
+                        <div className="flex items-center gap-2">
+                            <span className={`px-2.5 py-0.5 text-[10px] sm:text-xs ${current.fontClass || 'font-pixel-hans'} uppercase tracking-wider border border-amber-500/40 bg-amber-500/20 text-amber-300 backdrop-blur-md`}>
+                                3D PRINT FIGURE
+                            </span>
+                        </div>
+                        <p className="text-xs sm:text-sm text-white/85 m-0 leading-relaxed max-w-md">
+                            {t.empty}
+                        </p>
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 w-full sm:w-auto">
+                            <Link
+                                to="/skin/collection"
+                                className="w-full sm:w-auto px-5 py-2.5 bg-[#3c8527] hover:bg-[#4ea632] text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-950/60 border border-black active:translate-y-px no-underline"
+                            >
+                                <Icon icon="pixelarticons:folder" className="text-base" />
+                                <span>{t.chooseCollection}</span>
+                            </Link>
+                            <Link
+                                to="/skin/"
+                                className="w-full sm:w-auto px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-white/20 hover:border-white/35 active:translate-y-px no-underline"
+                            >
+                                <Icon icon="pixelarticons:search" className="text-base" />
+                                <span>{t.discoverSkins}</span>
+                            </Link>
+                            <Link
+                                to="/figure/showcase"
+                                className="w-full sm:w-auto px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-white/20 hover:border-white/35 active:translate-y-px no-underline"
+                            >
+                                <Icon icon="pixelarticons:image" className="text-base" />
+                                <span>{current.nav.showcase}</span>
+                            </Link>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            {/* Center Spacer to showcase the 4 physical figures */}
-            <div className="relative z-10 flex-1 min-h-[40px] sm:min-h-[80px]" aria-hidden="true" />
-
-            {/* Bottom Floating Glassmorphism Hero Dock */}
-            <div className="relative z-10 pb-6 sm:pb-8 lg:pb-10 px-4 w-full">
-                <div className="flex flex-col items-center text-center gap-3.5 max-w-2xl mx-auto w-full p-4 sm:p-5 bg-black/30 backdrop-blur-md border border-white/20 shadow-2xl">
-                    <div className="flex items-center gap-2">
-                        <span className={`px-2.5 py-0.5 text-[10px] sm:text-xs ${current.fontClass || 'font-pixel-hans'} uppercase tracking-wider border border-amber-500/40 bg-amber-500/20 text-amber-300 backdrop-blur-md`}>
-                            3D PRINT FIGURE
-                        </span>
-                    </div>
-                    <p className="text-xs sm:text-sm text-white/85 m-0 leading-relaxed max-w-md">
-                        {t.empty}
-                    </p>
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 w-full sm:w-auto">
-                        <Link
-                            to="/skin/collection"
-                            className="w-full sm:w-auto px-5 py-2.5 bg-[#3c8527] hover:bg-[#4ea632] text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-950/60 border border-black active:translate-y-px no-underline"
-                        >
-                            <Icon icon="pixelarticons:folder" className="text-base" />
-                            <span>{t.chooseCollection}</span>
-                        </Link>
-                        <Link
-                            to="/skin/"
-                            className="w-full sm:w-auto px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-white/20 hover:border-white/35 active:translate-y-px no-underline"
-                        >
-                            <Icon icon="pixelarticons:search" className="text-base" />
-                            <span>{t.discoverSkins}</span>
-                        </Link>
-                        <Link
-                            to="/figure/showcase"
-                            className="w-full sm:w-auto px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-white/20 hover:border-white/35 active:translate-y-px no-underline"
-                        >
-                            <Icon icon="pixelarticons:image" className="text-base" />
-                            <span>{current.nav.showcase}</span>
-                        </Link>
-                    </div>
+            {/* Footer */}
+            <div className="relative z-10 w-full shrink-0 bg-black/75 backdrop-blur-md border-t border-white/15">
+                <div className="max-w-7xl mx-auto px-4 sm:px-8 [&>footer]:border-t-0">
+                    <Footer current={current} />
                 </div>
             </div>
         </div>
@@ -350,6 +350,9 @@ export function FigurePrintPage({ current }: { current: LangData }) {
                 </div>
                 <div className="p-3 border-t border-white/10"><div className="flex flex-wrap gap-2"><button type="button" disabled={!canDownload} onClick={() => requestDownload({ kind: 'cutter' })} className={`${buttonClass} flex-1`}><Icon icon="pixelarticons:download" />{t.exportSvg}</button><button type="button" disabled={!canDownload} onClick={() => requestDownload({ kind: 'sticker' })} className={`${buttonClass} flex-1`}><Icon icon="pixelarticons:download" />{t.downloadSticker}</button></div></div>
             </section>
+        </div>
+        <div className="shrink-0">
+            <Footer current={current} />
         </div>
         {pendingDownload && pendingDownload.output === output && !busy && <FigureDownloadDialog current={current} onClose={closeDownload} onDownload={completeDownload} />}
         {commissionSource && commissionSource === source && canDownload && <Suspense fallback={null}><FigureCommissionDialog key={model.id} current={current} source={commissionSource} model={model} onClose={closeCommission} /></Suspense>}
