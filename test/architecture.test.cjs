@@ -55,9 +55,14 @@ async function setup(fetch = async () => json({}), token = 'user') {
         const component = name.split(':')[1]; loads.push(component);
         if (component === 'Icon') return { Icon: ({ icon }) => React.createElement('svg', { 'data-icon': icon }) };
         if (component === 'DiscoveryBackground') return { DiscoveryBackground: ({ onSelect }) => React.createElement('button', { 'data-pick': true, onClick: () => onSelect(skin('picked')) }, 'pick skin') };
-        if (component === 'MCModal') return { MCModal: ({ item, closeModal, onItemSelect }) => React.createElement('div', { 'data-modal': item.id },
-            item.result, React.createElement('button', { onClick: closeModal }, 'close skin'),
-            React.createElement('button', { onClick: () => onItemSelect('next') }, 'next skin')) };
+        if (component === 'MCModal') return { MCModal: function MockModal({ item, closeModal, onItemSelect }) {
+            const [sidebarOpen, setSidebarOpen] = React.useState(false);
+            return React.createElement('div', { 'data-modal': item.id, 'data-sidebar': String(sidebarOpen) },
+                item.result,
+                React.createElement('button', { onClick: () => setSidebarOpen(true) }, 'open sidebar'),
+                React.createElement('button', { onClick: closeModal }, 'close skin'),
+                React.createElement('button', { onClick: () => onItemSelect('next') }, 'next skin'));
+        } };
         if (component === 'CreatePostForm') return { CreatePostForm: () => React.createElement('div', null, 'editor loaded') };
         return { [component]: () => null };
     };
@@ -221,10 +226,15 @@ test('Discovery selection uses one modal, preserves URL parameters and follows b
         assert.equal(env.node.querySelector('[data-modal]').dataset.modal, 'seed');
         await click(env, env.current.discovery.modeList);
         assert.equal(location.search, '?id=seed&keep=yes&view=list'); assert.equal(env.node.querySelectorAll('[data-modal]').length, 1);
+        await click(env, 'open sidebar');
+        assert.equal(env.node.querySelector('[data-modal]').dataset.sidebar, 'true');
         await click(env, 'next skin');
         assert.equal(env.node.querySelector('[data-modal]').dataset.modal, 'next'); assert.equal(env.node.querySelector('[data-modal]').textContent.includes('seed.png'), false);
+        assert.equal(env.node.querySelector('[data-modal]').dataset.sidebar, 'true');
         await React.act(() => navigate(-1)); assert.equal(env.node.querySelector('[data-modal]').dataset.modal, 'seed');
+        assert.equal(env.node.querySelector('[data-modal]').dataset.sidebar, 'true');
         await React.act(() => navigate(1)); assert.equal(env.node.querySelector('[data-modal]').dataset.modal, 'next');
+        assert.equal(env.node.querySelector('[data-modal]').dataset.sidebar, 'true');
         await click(env, 'close skin'); assert.equal(env.node.querySelector('[data-modal]'), null); assert.equal(location.search, '?keep=yes&view=list');
         await React.act(() => navigate('/other')); assert.equal(env.node.querySelector('[data-modal]'), null); assert.ok(env.node.textContent.includes('other page'));
     } finally { await env.close(); }
@@ -252,10 +262,10 @@ test('skin selection cancels detail ancestry and count requests together', async
     const env = await setup((url, options) => { const work = deferred(); calls.push({ url: String(url), options, work }); return work.promise; });
     function Consumer({ id }) { state = env.useSkinDetails(skin(id), `${id}.png`); return null; }
     try {
-        await env.render(React.createElement(Consumer, { id: 'old', key: 'old' }));
+        await env.render(React.createElement(Consumer, { id: 'old' }));
         await React.act(() => calls[0].work.resolve(json({ ...skin('old'), parent: 'parent-old' })));
         assert.equal(calls.length, 4);
-        await env.render(React.createElement(Consumer, { id: 'new', key: 'new' }));
+        await env.render(React.createElement(Consumer, { id: 'new' }));
         for (const call of calls.slice(0, 4)) assert.equal(call.options.signal.aborted, true);
         await React.act(() => calls[4].work.resolve(json(skin('new'))));
         await React.act(() => { for (const call of calls.slice(1, 4)) call.work.resolve(json({ ...skin('parent-old'), items: ['old'], total: 999 })); });

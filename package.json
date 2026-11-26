@@ -30,7 +30,7 @@
     "@mdxeditor/editor": "^4.0.2",
     "@react-oauth/google": "^0.13.4",
     "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.5.0",
+    "@react-three/fiber": "^9.8.2",
     "@tailwindcss/vite": "^4.2.1",
     "@types/three": "^0.183.1",
     "countries-list": "3.4.1",

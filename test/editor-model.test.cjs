@@ -256,3 +256,31 @@ test('dance caches bone lookups and matches world rotations without mutating a s
         assert.equal(inner.props.partsRefs.current.body.position.x, step);
     }
 });
+
+test('missing limb faces use hidden MeshBasicMaterial instead of MeshStandardMaterial and MC uses PCFShadowMap', () => {
+    const pixels = { width: 64, height: 64, data: new Uint8ClampedArray(64 * 64 * 4).fill(255) };
+    const texture = new THREE.Texture({ width: 64, height: 64, pixels, slim: false });
+    for (const mode of ['plane', 'cute']) {
+        for (const litMaterials of [false, true]) {
+            const tree = MinecraftCharacterInner({ texture, mode, litMaterials });
+            const materials = findAll(tree, node => node.type === 'mesh')
+                .flatMap(mesh => Array.isArray(mesh.props.material) ? mesh.props.material : [mesh.props.material])
+                .filter(Boolean);
+            const hiddenFaces = materials.filter(material => material.visible === false);
+            if (mode === 'plane') {
+                assert.ok(hiddenFaces.length > 0, 'plane mode has hidden inner joint faces');
+            }
+            for (const material of materials) {
+                assert.equal(material instanceof THREE.MeshStandardMaterial, false, 'Must not compile MeshStandardMaterial for hidden faces');
+            }
+            for (const material of hiddenFaces) {
+                assert.ok(material instanceof THREE.MeshBasicMaterial);
+            }
+        }
+    }
+    const litCanvas = MC({ litMaterials: true });
+    assert.equal(litCanvas.props.shadows, 'percentage');
+    assert.deepEqual(Array.from(litCanvas.props.dpr), [1, 1.5]);
+    assert.equal(typeof litCanvas.props.onCreated, 'function');
+    assert.equal(MC({ flatLighting: true }).props.shadows, false);
+});

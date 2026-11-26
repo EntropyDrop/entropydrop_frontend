@@ -412,14 +412,6 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     const [itemsPageByCol, setItemsPageByCol] = useState<{ [id: string]: number }>({});
     const [itemsTotalPagesByCol, setItemsTotalPagesByCol] = useState<{ [id: string]: number }>({});
     const [isLoadingNav, setIsLoadingNav] = useState(false);
-    const [visibleParts, setVisibleParts] = useState({
-        head: true,
-        body: true,
-        leftArm: true,
-        rightArm: true,
-        leftLeg: true,
-        rightLeg: true
-    });
 
     const lastSidebarContext = useRef<{ type: string; id: string } | null>(null);
     const reportRef = useRef<HTMLDivElement>(null);
@@ -450,10 +442,6 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         }
     }, [showSidebar]);
 
-    const togglePart = (part: keyof typeof visibleParts) => {
-        setVisibleParts(prev => ({ ...prev, [part]: !prev[part] }));
-    };
-
     useEffect(() => {
         setIsLiked(item.is_liked || false);
         setLikesCount(item.likes_count || 0);
@@ -462,19 +450,39 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     }, [item]);
 
     useEffect(() => {
-        if (!isLoggedIn) return;
+        setIsDropdownOpen(false);
+        setIsEditingName(false);
+        setEditedName('');
+        setIsReportOpen(false);
+        setIsReportSubmitted(false);
+        setShowShareToast(false);
+        setSkinSuccess(false);
+        setSkinError('');
+        setIsLicenseExpanded(false);
+    }, [item.id]);
+
+    useEffect(() => {
+        if (!isLoggedIn || !item.id) {
+            setIsFavorited(false);
+            return;
+        }
+        let cancelled = false;
+        setIsFavorited(false);
         const fetchFavorited = async () => {
             try {
                 const res = await apiFetch(`/api/logs/${item.id}/collections`);
-                if (res.ok) {
+                if (res.ok && !cancelled) {
                     const data = await apiResponseJson(res);
-                    setIsFavorited(data.length > 0);
+                    if (!cancelled) {
+                        setIsFavorited(data.length > 0);
+                    }
                 }
             } catch (e) {
                 console.error('Failed to fetch favorited status', e);
             }
         };
         fetchFavorited();
+        return () => { cancelled = true; };
     }, [item.id, isLoggedIn]);
 
     const fetchCollections = useCallback(async (pageNum: number = 1) => {
@@ -706,8 +714,13 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
 
     const handleItemSelect = async (logId: string) => {
+        if (logId === item.id) {
+            if (window.innerWidth < 1024) setShowSidebar(false);
+            return;
+        }
         if (onItemSelect) {
             onItemSelect(logId);
+            if (window.innerWidth < 1024) setShowSidebar(false);
             return;
         }
         await loadDetails(logId);
@@ -916,13 +929,11 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                 mode={mode}
                                                 action={action}
                                                 modelType={modelType}
-                                                visibleParts={visibleParts}
                                                 setMode={setMode}
                                                 setAction={setAction}
                                                 fbxUrl={fbxUrl}
                                                 setFbxUrl={setFbxUrl}
                                                 convertModel={convertModel}
-                                                togglePart={togglePart}
                                                 onEdit={onEdit ? () => onEdit(textureUrl, item.id, item.is_public === true, item.name) : undefined}
                                                 onPrint={handlePrint}
                                                 downloadFilename={item.id ? `skin_${item.id.toString().substring(0, 8)}.png` : 'skin.png'}

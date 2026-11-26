@@ -39,7 +39,7 @@ export function FigurePreview({ parts, isSlim, modelType = DEFAULT_PRINT_MODEL, 
         renderer.toneMapping = THREE.ACESFilmicToneMapping
         renderer.toneMappingExposure = 1.0
         renderer.shadowMap.enabled = true
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap
+        renderer.shadowMap.type = THREE.PCFShadowMap
         renderer.domElement.style.touchAction = 'none'
         renderer.domElement.tabIndex = 0
         container.appendChild(renderer.domElement)

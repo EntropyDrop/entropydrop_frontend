@@ -8,6 +8,7 @@ import { OrbitControls, useTexture, Stage, useFBX, useAnimations } from '@react-
 import { ensureSkinVoxelModeConsistency, isSlim } from './utils';
 import { EditorLighting } from './EditorLighting';
 import { createVoxelGeometry } from '../utils/voxelGeometry';
+import { useCanvasContextHandlers } from '../hooks/useCanvasContextHandlers';
 
 const CUTE_BODY_WIDTH = 8;
 const CUTE_BODY_HEIGHT = 8;
@@ -192,7 +193,7 @@ function createFaceMaterials(texture: THREE.Texture, textureSize: number, uvMap:
             if (missingColor && missingColor[face] !== undefined) {
                 materials.push(new Material({ color: missingColor[face] }));
             } else {
-                materials.push(new THREE.MeshStandardMaterial({ transparent: true, opacity: 0, alphaTest: litMaterials ? 0.5 : 0 }));
+                materials.push(new THREE.MeshBasicMaterial({ visible: false }));
             }
             continue;
         }
@@ -240,7 +241,7 @@ function createCuteFaceMaterials(imageData: ImageData | null, texture: THREE.Tex
             if (missingColor && missingColor[face] !== undefined) {
                 materials.push(new Material({ color: missingColor[face] }));
             } else {
-                materials.push(new THREE.MeshStandardMaterial({ transparent: true, opacity: 0, alphaTest: litMaterials ? 0.5 : 0 }));
+                materials.push(new THREE.MeshBasicMaterial({ visible: false }));
             }
             continue;
         }
@@ -1273,6 +1274,7 @@ export function MinecraftCharacterInner({ texture, mode = 'voxel', action = 'idl
 export function MC({ textureUrl, texture, mode = 'voxel', action = 'idle', visibleParts = {}, showOverlay = true, updateTrigger = 0, showEdges = false, litMaterials = false, unifiedArms = false, onPaint, onPaintEnd, onHover, onHoverEnd, flatLighting = false }: { textureUrl?: string, texture?: THREE.Texture, mode?: 'voxel' | 'plane' | 'cute', action?: 'idle' | 'walk' | 'walking' | 'dance', visibleParts?: VisibleParts, showOverlay?: boolean, updateTrigger?: number, showEdges?: boolean, litMaterials?: boolean, unifiedArms?: boolean, onPaint?: (x: number, y: number) => void, onPaintEnd?: () => void, onHover?: (x: number, y: number) => void, onHoverEnd?: () => void, flatLighting?: boolean }) {
     const isPaintingRef = useRef(false);
     const controlsRef = useRef<OrbitControlsInstance>(null);
+    const handleCanvasCreated = useCanvasContextHandlers();
 
     useEffect(() => {
         const handleMouseUp = () => {
@@ -1289,8 +1291,10 @@ export function MC({ textureUrl, texture, mode = 'voxel', action = 'idle', visib
     return (
         <Canvas
             camera={{ position: [25, 25, 25], fov: 50 }}
-            shadows={!flatLighting}
+            shadows={flatLighting ? false : 'percentage'}
             flat={flatLighting}
+            dpr={[1, 1.5]}
+            onCreated={handleCanvasCreated}
         >
             {!flatLighting && (litMaterials ? <EditorLighting /> : (
                 <>
@@ -1303,7 +1307,7 @@ export function MC({ textureUrl, texture, mode = 'voxel', action = 'idle', visib
                     key={`${mode}`}
                     environment={null}
                     intensity={flatLighting || litMaterials ? 0 : 0.6}
-                    shadows={flatLighting ? false : { type: 'contact', opacity: 0.6, blur: 1.5, frames: Infinity }}
+                    shadows={flatLighting ? false : { type: 'contact', opacity: 0.6, blur: 1.5, resolution: 256, smooth: false, frames: Infinity }}
                     adjustCamera={false}
                 >
                     <MinecraftCharacter

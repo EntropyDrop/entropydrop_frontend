@@ -137,3 +137,10 @@ test('ProPage does not render duplicate Support & Refunds mailto block above Foo
     assert.doesNotMatch(proSource, /current\.pro\.supportText/);
     assert.doesNotMatch(proSource, /mailto:support@entropydrop\.com/);
 });
+
+test('HomeHeroCarousel stacks text/CTA below the image on mobile and overlays on md+', () => {
+    const source = readFileSync(join(__dirname, '../src/components/HomeHeroCarousel.tsx'), 'utf8');
+    assert.match(source, /flex-none w-\[82%\] flex flex-col[\s\S]*?md:block md:aspect-video/);
+    assert.match(source, /relative w-full aspect-video md:h-full/);
+    assert.match(source, /relative z-30[\s\S]*?md:absolute md:bottom-4/);
+});

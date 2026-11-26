@@ -1,8 +1,9 @@
 import { Icon } from '@iconify/react'
-import { useState, Suspense } from 'react';
+import { useState, Suspense, useSyncExternalStore } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stage } from '@react-three/drei';
 import { MinecraftCharacter } from './MC';
+import { useCanvasContextHandlers } from '../hooks/useCanvasContextHandlers';
 import { type LangData } from '../constants/lang';
 
 interface Skin3DModalProps {
@@ -12,8 +13,16 @@ interface Skin3DModalProps {
     current: LangData;
 }
 
+function subscribeVisibility(listener: () => void) {
+    document.addEventListener('visibilitychange', listener);
+    return () => document.removeEventListener('visibilitychange', listener);
+}
+const isDocumentVisible = () => !document.hidden;
+
 export function Skin3DModal({ isOpen, onClose, textureUrl, current }: Skin3DModalProps) {
     const [action, setAction] = useState<'idle' | 'walk'>('idle');
+    const visible = useSyncExternalStore(subscribeVisibility, isDocumentVisible, () => true);
+    const handleCanvasCreated = useCanvasContextHandlers();
 
     if (!isOpen || !textureUrl) return null;
 
@@ -32,8 +41,11 @@ export function Skin3DModal({ isOpen, onClose, textureUrl, current }: Skin3DModa
                 <div className="w-full aspect-square bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] relative overflow-hidden">
                     <Canvas
                         camera={{ position: [35, 35, 35], fov: 40 }}
-                        shadows
+                        frameloop={!visible ? 'never' : action !== 'idle' ? 'always' : 'demand'}
+                        dpr={[1, 1.5]}
+                        shadows="percentage"
                         resize={{ offsetSize: true }}
+                        onCreated={handleCanvasCreated}
                     >
                         <color attach="background" args={['#1a1a1a']} />
                         <ambientLight intensity={0.6} />
@@ -44,7 +56,7 @@ export function Skin3DModal({ isOpen, onClose, textureUrl, current }: Skin3DModa
                             <Stage
                                 environment={null}
                                 intensity={0.5}
-                                shadows={{ type: 'contact', opacity: 0.6, blur: 1.5, frames: Infinity }}
+                                shadows={{ type: 'contact', opacity: 0.6, blur: 1.5, resolution: 256, smooth: false, frames: Infinity }}
                                 adjustCamera={false}
                             >
                                 <group position={[0, -0.5, 0]}>

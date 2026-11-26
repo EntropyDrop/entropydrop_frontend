@@ -1,7 +1,8 @@
-import { Component, Suspense, type ErrorInfo, type ReactNode } from 'react'
+import { Component, Suspense, useCallback, useState, useSyncExternalStore, type ErrorInfo, type ReactNode } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Stage } from '@react-three/drei'
 import { MinecraftCharacter } from './MC'
+import { useCanvasContextHandlers } from '../hooks/useCanvasContextHandlers'
 import { type LangData } from '../constants/lang'
 
 interface ProfileSkinPreviewProps {
@@ -52,16 +53,33 @@ function SkinImageFallback({ textureUrl, current }: ProfileSkinPreviewProps) {
     )
 }
 
+function subscribeVisibility(listener: () => void) {
+    document.addEventListener('visibilitychange', listener)
+    return () => document.removeEventListener('visibilitychange', listener)
+}
+const isDocumentVisible = () => !document.hidden
+
 export function ProfileSkinPreview({ textureUrl, current, className = 'w-24 h-28' }: ProfileSkinPreviewProps) {
+    const visible = useSyncExternalStore(subscribeVisibility, isDocumentVisible, () => true)
+    const [contextLost, setContextLost] = useState(false)
+    const handleContextLost = useCallback(() => setContextLost(true), [])
+    const handleContextRestored = useCallback(() => setContextLost(false), [])
+    const handleCanvasCreated = useCanvasContextHandlers({
+        onContextLost: handleContextLost,
+        onContextRestored: handleContextRestored,
+    })
     const fallback = <SkinImageFallback textureUrl={textureUrl} current={current} />
 
     return (
-        <div className={`${className} bg-zinc-900 border border-white/10 overflow-hidden shrink-0`}>
+        <div className={`${className} bg-zinc-900 border border-white/10 overflow-hidden shrink-0 relative`}>
             <PreviewBoundary key={textureUrl} fallback={fallback}>
                 <Canvas
                     camera={{ position: [28, 24, 32], fov: 36 }}
+                    frameloop={!visible ? 'never' : 'always'}
+                    dpr={[1, 1.5]}
                     resize={{ offsetSize: true }}
-                    shadows
+                    shadows="percentage"
+                    onCreated={handleCanvasCreated}
                 >
                     <color attach="background" args={['#18181b']} />
                     <ambientLight intensity={0.65} />
@@ -72,7 +90,7 @@ export function ProfileSkinPreview({ textureUrl, current, className = 'w-24 h-28
                         <Stage
                             environment={null}
                             intensity={0.5}
-                            shadows={{ type: 'contact', opacity: 0.6, blur: 1.5, frames: Infinity }}
+                            shadows={{ type: 'contact', opacity: 0.6, blur: 1.5, resolution: 256, smooth: false, frames: Infinity }}
                             adjustCamera={false}
                         >
                             <group position={[0, -0.5, 0]} rotation={[0, -0.35, 0]}>
@@ -90,6 +108,7 @@ export function ProfileSkinPreview({ textureUrl, current, className = 'w-24 h-28
                     />
                 </Canvas>
             </PreviewBoundary>
+            {contextLost && <div className="absolute inset-0">{fallback}</div>}
         </div>
     )
 }

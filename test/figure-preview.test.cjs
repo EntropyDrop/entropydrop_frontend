@@ -64,6 +64,7 @@ test('voxel switch starts on, removes resets and changes colors without resettin
         assert.equal(toggle.getAttribute('aria-checked'), 'true');
         assert.deepEqual(Array.from(document.querySelectorAll('button'), b => b.textContent), ['Exploded view', 'Voxel mode']);
         const renderer = renderers[0];
+        assert.equal(renderer.shadowMap.type, THREE.PCFShadowMap);
         const world = renderer.scene.children[0];
         const pivot = world.children[0];
         const mesh = pivot.children[0].children[0];

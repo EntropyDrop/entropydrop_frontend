@@ -2,28 +2,22 @@ import { FigurePrintOfferBadge } from './FigureDiscountBadge';
 import type { LangData } from '../constants/lang'
 import { request } from '../utils/httpClient'
 import { Icon } from '@iconify/react'
-import { Component, Suspense, memo, useState, useRef, useEffect, useCallback, useSyncExternalStore, type ErrorInfo, type ReactNode } from 'react'
+import { Component, Suspense, memo, useState, useRef, useEffect, useCallback, useSyncExternalStore, type ErrorInfo, type ReactNode, type RefObject } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Stage } from '@react-three/drei'
+import type { TOUCH } from 'three'
+import type { OrbitControls as OrbitControlsInstance } from 'three-stdlib'
 import { MinecraftCharacter } from './MC'
+import { useCanvasContextHandlers } from '../hooks/useCanvasContextHandlers'
 
 interface MCModalPreviewProps {
     textureUrl: string;
     mode: 'voxel' | 'plane' | 'cute';
     action: 'idle' | 'walk' | 'dance';
     modelType: 'steve' | 'alex';
-    visibleParts: {
-        head: boolean;
-        body: boolean;
-        leftArm: boolean;
-        rightArm: boolean;
-        leftLeg: boolean;
-        rightLeg: boolean;
-    };
     setMode: (m: 'voxel' | 'plane' | 'cute') => void;
     setAction: (a: 'idle' | 'walk' | 'dance') => void;
     convertModel: (target: 'steve' | 'alex') => void;
-    togglePart: (part: 'head' | 'body' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg') => void;
     onEdit?: () => void;
     onPrint?: () => void;
     downloadFilename?: string;
@@ -76,17 +70,383 @@ function subscribeVisibility(listener: () => void) {
 }
 const isDocumentVisible = () => !document.hidden;
 
+const CAMERA_VIEW_STORAGE_KEY = 'mcmodal_camera_angle';
+const DEFAULT_CAMERA_POSITION: [number, number, number] = [35, 35, 35];
+const DEFAULT_CAMERA_DISTANCE = Math.hypot(...DEFAULT_CAMERA_POSITION);
+const MIN_CAMERA_DISTANCE = 18;
+const MAX_CAMERA_DISTANCE = 160;
+const CAMERA_POLAR_EPS = 1e-6;
+const CAMERA_ANGLE_EPS = 1e-4;
+const CAMERA_DISTANCE_EPS = 1e-2;
+const CAMERA_VIEW_SAVE_DEBOUNCE_MS = 150;
+const ORBIT_TOUCHES: { ONE: TOUCH; TWO: undefined } = { ONE: 0 as TOUCH, TWO: undefined };
+
+interface SavedCameraView {
+    azimuth: number;
+    polar: number;
+    distance: number;
+}
+
+type ViewReadableControls = {
+    getAzimuthalAngle?: () => number;
+    getPolarAngle?: () => number;
+    getDistance?: () => number;
+    object?: {
+        position: {
+            x: number;
+            y: number;
+            z: number;
+            set: (x: number, y: number, z: number) => unknown;
+        };
+    };
+    target?: { x: number; y: number; z: number };
+    update?: () => unknown;
+};
+
+interface TouchPointLike {
+    clientX: number;
+    clientY: number;
+}
+
+interface PinchState {
+    startTouchDistance: number;
+    startCameraDistance: number;
+}
+
+function clampPolar(polar: number): number {
+    return Math.min(Math.PI - CAMERA_POLAR_EPS, Math.max(CAMERA_POLAR_EPS, polar));
+}
+
+function clampDistance(distance: number): number {
+    return Math.min(MAX_CAMERA_DISTANCE, Math.max(MIN_CAMERA_DISTANCE, distance));
+}
+
+function getTouchPairDistance(touches: ArrayLike<TouchPointLike>): number {
+    if (touches.length < 2) return 0;
+    return Math.hypot(
+        touches[0].clientX - touches[1].clientX,
+        touches[0].clientY - touches[1].clientY,
+    );
+}
+
+function getStorage(): Storage | null {
+    try {
+        return typeof window !== 'undefined' ? window.localStorage : null;
+    } catch {
+        return null;
+    }
+}
+
+function loadSavedCameraView(): SavedCameraView | null {
+    try {
+        const raw = getStorage()?.getItem(CAMERA_VIEW_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<SavedCameraView> | null;
+        if (
+            !parsed ||
+            typeof parsed.azimuth !== 'number' ||
+            typeof parsed.polar !== 'number' ||
+            !Number.isFinite(parsed.azimuth) ||
+            !Number.isFinite(parsed.polar)
+        ) {
+            return null;
+        }
+        const distance =
+            typeof parsed.distance === 'number' && Number.isFinite(parsed.distance) && parsed.distance > 0
+                ? clampDistance(parsed.distance)
+                : DEFAULT_CAMERA_DISTANCE;
+        return {
+            azimuth: parsed.azimuth,
+            polar: clampPolar(parsed.polar),
+            distance,
+        };
+    } catch {
+        return null;
+    }
+}
+
+function saveCameraView(view: SavedCameraView): void {
+    if (
+        !Number.isFinite(view.azimuth) ||
+        !Number.isFinite(view.polar) ||
+        !Number.isFinite(view.distance) ||
+        view.distance <= 0
+    ) {
+        return;
+    }
+    try {
+        getStorage()?.setItem(
+            CAMERA_VIEW_STORAGE_KEY,
+            JSON.stringify({
+                azimuth: view.azimuth,
+                polar: clampPolar(view.polar),
+                distance: clampDistance(view.distance),
+            }),
+        );
+    } catch {
+        // Ignore storage quota or restricted-mode errors.
+    }
+}
+
+function cameraPositionFromView(view: SavedCameraView | null): [number, number, number] {
+    if (!view) return DEFAULT_CAMERA_POSITION;
+    const polar = clampPolar(view.polar);
+    const distance = clampDistance(view.distance);
+    const sinPhiRadius = Math.sin(polar) * distance;
+    return [
+        sinPhiRadius * Math.sin(view.azimuth),
+        Math.cos(polar) * distance,
+        sinPhiRadius * Math.cos(view.azimuth),
+    ];
+}
+
+function readControlsDistance(controls: ViewReadableControls | null | undefined): number | null {
+    if (!controls) return null;
+    if (typeof controls.getDistance === 'function') {
+        const distance = controls.getDistance();
+        if (Number.isFinite(distance) && distance > 0) {
+            return clampDistance(distance);
+        }
+    }
+    if (controls.object?.position && controls.target) {
+        const distance = Math.hypot(
+            controls.object.position.x - controls.target.x,
+            controls.object.position.y - controls.target.y,
+            controls.object.position.z - controls.target.z,
+        );
+        if (Number.isFinite(distance) && distance > 0) {
+            return clampDistance(distance);
+        }
+    }
+    return null;
+}
+
+function readControlsView(
+    controls: ViewReadableControls | null | undefined,
+    fallbackDistance: number,
+): SavedCameraView | null {
+    if (
+        !controls ||
+        typeof controls.getAzimuthalAngle !== 'function' ||
+        typeof controls.getPolarAngle !== 'function'
+    ) {
+        return null;
+    }
+    const azimuth = controls.getAzimuthalAngle();
+    const polar = controls.getPolarAngle();
+    if (!Number.isFinite(azimuth) || !Number.isFinite(polar)) return null;
+    const distance = readControlsDistance(controls) ?? clampDistance(fallbackDistance);
+    return { azimuth, polar: clampPolar(polar), distance };
+}
+
+function applyControlsDistance(controls: ViewReadableControls | null | undefined, nextDistance: number): boolean {
+    const position = controls?.object?.position;
+    const target = controls?.target;
+    if (!position || !target || !Number.isFinite(nextDistance) || nextDistance <= 0) return false;
+    const offsetX = position.x - target.x;
+    const offsetY = position.y - target.y;
+    const offsetZ = position.z - target.z;
+    const currentDistance = Math.hypot(offsetX, offsetY, offsetZ);
+    if (!Number.isFinite(currentDistance) || currentDistance <= 1e-6) return false;
+    const factor = clampDistance(nextDistance) / currentDistance;
+    position.set(
+        target.x + offsetX * factor,
+        target.y + offsetY * factor,
+        target.z + offsetZ * factor,
+    );
+    controls.update?.();
+    return true;
+}
+
 // Sidebar, download and dropdown updates should not reconcile the Three scene.
-const PreviewScene = memo(function PreviewScene({ textureUrl, mode, action, fbxUrl, visibleParts, onError }:
-    Pick<MCModalPreviewProps, 'textureUrl' | 'mode' | 'action' | 'fbxUrl' | 'visibleParts'> & { onError: () => void }) {
+const PreviewScene = memo(function PreviewScene({ textureUrl, mode, action, fbxUrl, containerRef, onError, onRecover }:
+    Pick<MCModalPreviewProps, 'textureUrl' | 'mode' | 'action' | 'fbxUrl'> & {
+        containerRef: RefObject<HTMLDivElement | null>;
+        onError: () => void;
+        onRecover: () => void;
+    }) {
     const visible = useSyncExternalStore(subscribeVisibility, isDocumentVisible, () => true);
     const animated = action !== 'idle' || mode === 'cute';
+    const [initialCameraState] = useState(() => {
+        const saved = loadSavedCameraView();
+        return {
+            saved,
+            camera: { position: cameraPositionFromView(saved), fov: 40 },
+        };
+    });
+    const controlsRef = useRef<OrbitControlsInstance | null>(null);
+    const hasInteractedRef = useRef(false);
+    const pinchRef = useRef<PinchState | null>(null);
+    const pendingViewRef = useRef<SavedCameraView | null>(null);
+    const saveTimerRef = useRef<number | null>(null);
+    const lastSavedViewRef = useRef<SavedCameraView | null>(initialCameraState.saved);
+
+    const persistView = useCallback((view: SavedCameraView) => {
+        const prev = lastSavedViewRef.current;
+        if (
+            prev &&
+            Math.abs(prev.azimuth - view.azimuth) < CAMERA_ANGLE_EPS &&
+            Math.abs(prev.polar - view.polar) < CAMERA_ANGLE_EPS &&
+            Math.abs(prev.distance - view.distance) < CAMERA_DISTANCE_EPS
+        ) {
+            return;
+        }
+        lastSavedViewRef.current = view;
+        saveCameraView(view);
+    }, []);
+
+    const clearSaveTimer = useCallback(() => {
+        if (saveTimerRef.current !== null && typeof window !== 'undefined') {
+            window.clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+        }
+    }, []);
+
+    const scheduleSaveView = useCallback((view: SavedCameraView) => {
+        pendingViewRef.current = view;
+        clearSaveTimer();
+        if (typeof window !== 'undefined') {
+            saveTimerRef.current = window.setTimeout(() => {
+                saveTimerRef.current = null;
+                const pending = pendingViewRef.current;
+                pendingViewRef.current = null;
+                if (pending) persistView(pending);
+            }, CAMERA_VIEW_SAVE_DEBOUNCE_MS);
+        }
+    }, [clearSaveTimer, persistView]);
+
+    const handleControlsStart = useCallback(() => {
+        hasInteractedRef.current = true;
+    }, []);
+
+    const handleControlsChange = useCallback((event?: { target?: unknown }) => {
+        if (!hasInteractedRef.current) return;
+        const controls = (event?.target as ViewReadableControls | undefined) ?? controlsRef.current;
+        const fallbackDistance = lastSavedViewRef.current?.distance ?? DEFAULT_CAMERA_DISTANCE;
+        const view = readControlsView(controls, fallbackDistance);
+        if (!view) return;
+        scheduleSaveView(view);
+    }, [scheduleSaveView]);
+
+    const handleControlsEnd = useCallback((event?: { target?: unknown }) => {
+        hasInteractedRef.current = true;
+        clearSaveTimer();
+        const controls = (event?.target as ViewReadableControls | undefined) ?? controlsRef.current;
+        const fallbackDistance = lastSavedViewRef.current?.distance ?? DEFAULT_CAMERA_DISTANCE;
+        const view = readControlsView(controls, fallbackDistance) ?? pendingViewRef.current;
+        pendingViewRef.current = null;
+        if (view) persistView(view);
+    }, [clearSaveTimer, persistView]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleTouchStart = (event: TouchEvent) => {
+            if (event.touches.length < 2) return;
+            event.preventDefault();
+            const controls = controlsRef.current as ViewReadableControls | null;
+            const startTouchDistance = getTouchPairDistance(event.touches);
+            const startCameraDistance = readControlsDistance(controls);
+            if (startTouchDistance < 1 || startCameraDistance === null) return;
+            hasInteractedRef.current = true;
+            pinchRef.current = { startTouchDistance, startCameraDistance };
+        };
+
+        const handleTouchMove = (event: TouchEvent) => {
+            if (event.touches.length < 2) return;
+            event.preventDefault();
+            const controls = controlsRef.current as ViewReadableControls | null;
+            if (!controls) return;
+            const currentTouchDistance = getTouchPairDistance(event.touches);
+            if (currentTouchDistance < 1) return;
+            if (!pinchRef.current) {
+                const startCameraDistance = readControlsDistance(controls);
+                if (startCameraDistance === null) return;
+                hasInteractedRef.current = true;
+                pinchRef.current = { startTouchDistance: currentTouchDistance, startCameraDistance };
+                return;
+            }
+            const nextDistance = clampDistance(
+                pinchRef.current.startCameraDistance * (pinchRef.current.startTouchDistance / currentTouchDistance),
+            );
+            if (applyControlsDistance(controls, nextDistance)) {
+                const view = readControlsView(controls, nextDistance);
+                if (view) scheduleSaveView(view);
+            }
+        };
+
+        const handleTouchEnd = (event: TouchEvent) => {
+            if (event.touches.length >= 2) {
+                const controls = controlsRef.current as ViewReadableControls | null;
+                const startTouchDistance = getTouchPairDistance(event.touches);
+                const startCameraDistance = readControlsDistance(controls);
+                if (startTouchDistance >= 1 && startCameraDistance !== null) {
+                    pinchRef.current = { startTouchDistance, startCameraDistance };
+                }
+                return;
+            }
+            if (!pinchRef.current) return;
+            pinchRef.current = null;
+            clearSaveTimer();
+            const controls = controlsRef.current as ViewReadableControls | null;
+            const fallbackDistance = lastSavedViewRef.current?.distance ?? DEFAULT_CAMERA_DISTANCE;
+            const view = readControlsView(controls, fallbackDistance) ?? pendingViewRef.current;
+            pendingViewRef.current = null;
+            if (view) persistView(view);
+        };
+
+        const preventGesture = (event: Event) => {
+            event.preventDefault();
+        };
+
+        container.addEventListener('touchstart', handleTouchStart, { passive: false });
+        container.addEventListener('touchmove', handleTouchMove, { passive: false });
+        container.addEventListener('touchend', handleTouchEnd);
+        container.addEventListener('touchcancel', handleTouchEnd);
+        container.addEventListener('gesturestart', preventGesture, { passive: false });
+        container.addEventListener('gesturechange', preventGesture, { passive: false });
+        container.addEventListener('gestureend', preventGesture, { passive: false });
+
+        return () => {
+            pinchRef.current = null;
+            container.removeEventListener('touchstart', handleTouchStart);
+            container.removeEventListener('touchmove', handleTouchMove);
+            container.removeEventListener('touchend', handleTouchEnd);
+            container.removeEventListener('touchcancel', handleTouchEnd);
+            container.removeEventListener('gesturestart', preventGesture);
+            container.removeEventListener('gesturechange', preventGesture);
+            container.removeEventListener('gestureend', preventGesture);
+        };
+    }, [clearSaveTimer, containerRef, persistView, scheduleSaveView]);
+
+    useEffect(() => {
+        return () => {
+            clearSaveTimer();
+            const pending = pendingViewRef.current;
+            pendingViewRef.current = null;
+            if (pending) persistView(pending);
+        };
+    }, [clearSaveTimer, persistView]);
+
+    const handleContextCreated = useCanvasContextHandlers({
+        onContextLost: onError,
+        onContextRestored: onRecover,
+    });
+    const handleCanvasCreated = useCallback((state: Parameters<typeof handleContextCreated>[0]) => {
+        if (state.gl?.domElement?.style) {
+            state.gl.domElement.style.touchAction = 'none';
+        }
+        handleContextCreated(state);
+    }, [handleContextCreated]);
     return (
         <Canvas
-            camera={{ position: [35, 35, 35], fov: 40 }}
+            camera={initialCameraState.camera}
             frameloop={!visible ? 'never' : animated ? 'always' : 'demand'}
             dpr={[1, 1.5]}
             resize={{ offsetSize: true }}
+            style={{ touchAction: 'none' }}
+            onCreated={handleCanvasCreated}
         >
             <color attach="background" args={['#1a1a1a']} />
             <ambientLight intensity={0.6} />
@@ -102,12 +462,24 @@ const PreviewScene = memo(function PreviewScene({ textureUrl, mode, action, fbxU
                         adjustCamera={false}
                     >
                         <group position={[0, -0.5, 0]}>
-                            <MinecraftCharacter textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} />
+                            <MinecraftCharacter textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} />
                         </group>
                     </Stage>
                 </Suspense>
             </PreviewErrorBoundary>
-            <OrbitControls makeDefault enableDamping target={[0, 0, 0]} />
+            <OrbitControls
+                ref={controlsRef}
+                makeDefault
+                enableDamping
+                enableZoom
+                minDistance={MIN_CAMERA_DISTANCE}
+                maxDistance={MAX_CAMERA_DISTANCE}
+                touches={ORBIT_TOUCHES}
+                target={[0, 0, 0]}
+                onStart={handleControlsStart}
+                onChange={handleControlsChange}
+                onEnd={handleControlsEnd}
+            />
         </Canvas>
     );
 });
@@ -117,11 +489,9 @@ export function MCModalPreview({
     mode,
     action,
     modelType,
-    visibleParts,
     setMode,
     setAction,
     convertModel,
-    togglePart,
     onEdit,
     onPrint,
     downloadFilename,
@@ -132,6 +502,8 @@ export function MCModalPreview({
     const [isFbxDropdownOpen, setIsFbxDropdownOpen] = useState(false);
     const [previewFailed, setPreviewFailed] = useState(false);
     const handlePreviewError = useCallback(() => setPreviewFailed(true), []);
+    const handlePreviewRecover = useCallback(() => setPreviewFailed(false), []);
+    const previewContainerRef = useRef<HTMLDivElement>(null);
     const fbxDropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -181,8 +553,11 @@ export function MCModalPreview({
     };
 
     return (
-        <div className="w-full aspect-square lg:aspect-auto lg:w-[600px] h-full lg:h-full bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] relative overflow-hidden flex-shrink-0 border-b lg:border-b-0 lg:border-r border-white/10">
-            <PreviewScene textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} visibleParts={visibleParts} onError={handlePreviewError} />
+        <div
+            ref={previewContainerRef}
+            className="w-full aspect-square lg:aspect-auto lg:w-[600px] h-full lg:h-full bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] relative overflow-hidden flex-shrink-0 border-b lg:border-b-0 lg:border-r border-white/10 touch-none select-none"
+        >
+            <PreviewScene textureUrl={textureUrl} mode={mode} action={action} fbxUrl={fbxUrl} containerRef={previewContainerRef} onError={handlePreviewError} onRecover={handlePreviewRecover} />
 
             {previewFailed && (
                 <div className={`absolute inset-0 pointer-events-none flex items-center justify-center p-6 text-center ${current.fontClass}`}>
@@ -266,7 +641,7 @@ export function MCModalPreview({
                         </div>
                     </div>
 
-                    {/* Bottom-Right Stack: Edit above Toggler above Download */}
+                    {/* Bottom-Right Stack: Edit, Model Type, Print, Download */}
                     <div className="flex flex-col gap-2 items-end pointer-events-auto">
                         <div className="lg:hidden bg-black/40 backdrop-blur-md p-1 border border-white/10 flex gap-1 w-fit">
                             <button
@@ -291,23 +666,6 @@ export function MCModalPreview({
                             >
                                 {current.mcmodal.slimMode}
                             </button>
-                        </div>
-
-                        {/* Simplified Character Toggler */}
-                        <div className="bg-black/40 backdrop-blur-md p-3 border border-white/10 flex flex-col items-center gap-1.5">
-                            <div
-                                onClick={() => togglePart('head')}
-                                className={`w-4 h-4 cursor-pointer border-2 transition-colors ${visibleParts.head ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`}
-                            />
-                            <div className="flex gap-1">
-                                <div onClick={() => togglePart('rightArm')} className={`w-2 h-6 cursor-pointer border-2 transition-colors ${visibleParts.rightArm ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
-                                <div onClick={() => togglePart('body')} className={`w-4 h-6 cursor-pointer border-2 transition-colors ${visibleParts.body ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
-                                <div onClick={() => togglePart('leftArm')} className={`w-2 h-6 cursor-pointer border-2 transition-colors ${visibleParts.leftArm ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
-                            </div>
-                            <div className="flex gap-1">
-                                <div onClick={() => togglePart('rightLeg')} className={`w-2 h-6 cursor-pointer border-2 transition-colors ${visibleParts.rightLeg ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
-                                <div onClick={() => togglePart('leftLeg')} className={`w-2 h-6 cursor-pointer border-2 transition-colors ${visibleParts.leftLeg ? 'bg-[#4ea632] border-[#4ea632]' : 'bg-transparent border-white/20'}`} />
-                            </div>
                         </div>
 
                         {onPrint && (

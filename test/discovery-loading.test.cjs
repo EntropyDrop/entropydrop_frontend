@@ -234,6 +234,14 @@ test('scene pauses when hidden or covered and reduced motion uses demand renderi
         assert.equal(canvasProps.frameloop, 'never');
         await React.act(() => env.root.render(React.createElement(env.DiscoveryScene, props)));
         assert.equal(canvasProps.frameloop, 'demand');
+        const canvas = env.window.document.createElement('canvas');
+        let invalidated = 0;
+        canvasProps.onCreated({ gl: { domElement: canvas }, invalidate: () => { invalidated++; } });
+        const lostEvent = new env.window.Event('webglcontextlost', { cancelable: true });
+        canvas.dispatchEvent(lostEvent);
+        assert.equal(lostEvent.defaultPrevented, true);
+        canvas.dispatchEvent(new env.window.Event('webglcontextrestored'));
+        assert.equal(invalidated, 1);
     } finally { await env.close(); }
     assert.equal(listeners.size, 0);
 });
