@@ -148,6 +148,12 @@ npm run preview
 ```
 
 Production releases to S3/CloudFront are managed by the backend deployment tools.
+Run `python tools/deploy_aws.py --frontend-only` from the backend directory for a
+frontend-only release. The release requires `UMAMI_WEBSITE_ID` and
+`UMAMI_SCRIPT_URL=https://analytics.entropydrop.com/script.js` in the backend's
+`.env.prod`. Vite blocks builds with a configured loopback or HTTP tracker.
+For local Umami testing, put the local tracker settings in `.env.development.local`
+and use `npm run dev`.
 
 ### PWA installation
 

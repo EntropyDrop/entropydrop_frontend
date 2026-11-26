@@ -392,17 +392,6 @@ export function ProPage({ current }: ProPageProps) {
                     </button>
                 </div>
 
-                {/* Footer Info */}
-                <div className="flex flex-col gap-4 border-t border-white/10 pt-6">
-                    <div className={`text-[10px] text-white/40 flex items-center gap-2 ${current.fontClass}`}>
-                        <Icon icon="pixelarticons:mail" className="text-sm shrink-0" />
-                        <span>
-                            {current.pro.supportText}
-                            <a href="mailto:support@entropydrop.com" className="text-white/60 hover:text-white transition-colors cursor-pointer underline ml-1">support@entropydrop.com</a>
-                        </span>
-                    </div>
-                </div>
-
                 <Footer current={current} />
         </PageContainer>
     );

@@ -30,9 +30,10 @@ test('Home page zh-hans localization avoids mixed English labels and tags', () =
     assert.doesNotMatch(homeSection, /程序化 Realm/);
 });
 
-test('TOP_NAV_ITEMS contains home navigation item pointing to /', () => {
+test('TOP_NAV_ITEMS contains home navigation item pointing to / and pro pointing to /pro', () => {
     const navSource = readFileSync(join(__dirname, '../src/constants/nav.ts'), 'utf8');
     assert.match(navSource, /\{ key: 'home', icon: 'pixelarticons:home', path: '\/' \}/);
+    assert.match(navSource, /\{ key: 'pro', icon: 'pixelarticons:zap', path: '\/pro' \}/);
 });
 
 test('App.tsx defines HomePage route on / and redirects /home to /', () => {
@@ -128,4 +129,10 @@ test('GeneratePage, SpacePage, PublicPage, ProPage, and CreditsPage render Foote
         assert.match(source, /import\s+.*Footer.*from\s+['"]\.\.\/components\/Footer['"]/);
         assert.match(source, /<Footer\s+current=\{current\}\s*\/>/);
     }
+});
+
+test('ProPage does not render duplicate Support & Refunds mailto block above Footer', () => {
+    const proSource = readFileSync(join(__dirname, '../src/pages/ProPage.tsx'), 'utf8');
+    assert.doesNotMatch(proSource, /current\.pro\.supportText/);
+    assert.doesNotMatch(proSource, /mailto:support@entropydrop\.com/);
 });

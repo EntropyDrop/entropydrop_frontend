@@ -8,6 +8,37 @@ import { devTutorialLevel } from '../entropydrop_space/client/tools/dev-tutorial
 const spaceClientRoot = fileURLToPath(new URL('../entropydrop_space/client', import.meta.url))
 const spaceIndexPath = fileURLToPath(new URL('../entropydrop_space/client/index.html', import.meta.url))
 
+function validateAnalyticsBuild(): Plugin {
+  return {
+    name: 'entropydrop-validate-analytics-build',
+    apply: 'build',
+    configResolved({ env }) {
+      const scriptValue = env.VITE_UMAMI_SCRIPT_URL ?? ''
+      const scriptUrl = URL.canParse(scriptValue) ? new URL(scriptValue) : null
+
+      if (env.VITE_UMAMI_WEBSITE_ID && scriptValue) {
+        const hostname = scriptUrl?.hostname.replace(/\.$/, '') ?? ''
+        const isLoopback = hostname === 'localhost' || hostname.endsWith('.localhost') ||
+          hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(hostname)
+
+        if (scriptUrl?.protocol !== 'https:' || isLoopback) {
+          throw new Error('VITE_UMAMI_SCRIPT_URL must be a non-loopback HTTPS URL for a build. Use npm run dev for a local tracker.')
+        }
+      }
+
+      const apiUrl = env.VITE_API_BASE_URL ?? ''
+      const isMainSiteRelease = URL.canParse(apiUrl) && new URL(apiUrl).origin === 'https://api.entropydrop.com'
+      if (isMainSiteRelease && (
+        !process.env.VITE_UMAMI_WEBSITE_ID?.trim() ||
+        !process.env.VITE_UMAMI_SCRIPT_URL?.trim() ||
+        scriptUrl?.origin !== 'https://analytics.entropydrop.com'
+      )) {
+        throw new Error('Use tools/deploy_aws.py to build the main site with UMAMI_WEBSITE_ID and an https://analytics.entropydrop.com script URL from the backend .env.prod.')
+      }
+    },
+  }
+}
+
 /**
  * Mount the framework-independent Space document inside the main Vite server.
  * Production remains a separate build copied to dist/space/app, while development
@@ -56,6 +87,7 @@ function spaceDevMount(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    validateAnalyticsBuild(),
     spaceDevMount(),
     devTutorialLevel({ root: spaceClientRoot }),
     react(),

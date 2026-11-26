@@ -26,6 +26,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
     const isSpaceSection = location.pathname === '/space' || location.pathname.startsWith('/space/')
     const isFigureSection = location.pathname.startsWith('/figure')
     const isSkinSection = location.pathname.startsWith('/skin')
+    const isProSection = location.pathname === '/pro' || location.pathname.startsWith('/pro/')
     const isPublicSection = location.pathname.startsWith('/public')
 
     const activeSubNavItems = isHomeSection
@@ -93,6 +94,8 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                                             ? isSkinSection
                                             : item.key === 'figure'
                                             ? isFigureSection
+                                            : item.key === 'pro'
+                                            ? isProSection
                                             : location.pathname.startsWith(item.path)
                                         return (
                                             <Link
