@@ -305,7 +305,7 @@ export function UserMenu({ current }: UserMenuProps) {
     }, [])
 
     return (
-        <div className="relative pointer-events-auto flex items-center gap-2" ref={menuRef}>
+        <div className="relative z-[100000] pointer-events-auto flex items-center gap-2" ref={menuRef}>
             {user ? (
                 <div className="flex items-center h-10 bg-black/40 border border-white/10 shrink-0">
                     <button

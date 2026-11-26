@@ -66,12 +66,12 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
 
     return (
         <div className="relative w-screen h-screen bg-[#111] overflow-x-hidden overflow-y-auto overscroll-y-none">
-            {/* Top Navigation */}
-            <div className="absolute top-0 left-0 right-0 z-[100000] py-3 sm:py-5 pointer-events-none">
+            {/* Top Navigation: intentionally no z-index here so UserMenu can stack above MCModal while navbar elements stay below it */}
+            <div className="absolute top-0 left-0 right-0 py-3 sm:py-5 pointer-events-none">
                 <div className="max-w-7xl mx-auto px-4 sm:px-8 flex flex-row justify-between items-center gap-4">
                     <Link
                         to="/"
-                        className={`text-white text-left ${current.fontClass} flex flex-col justify-center pointer-events-auto no-underline group transition-opacity hover:opacity-90`}
+                        className={`relative z-[9999] text-white text-left ${current.fontClass} flex flex-col justify-center pointer-events-auto no-underline group transition-opacity hover:opacity-90`}
                         style={{ textShadow: '2px 2px 0px #000' }}
                     >
                         <h1 className="m-0 text-xl sm:text-5xl leading-tight group-hover:text-emerald-400 transition-colors">{current.title}</h1>
@@ -82,9 +82,9 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                         {/* Stacked Navigation Container */}
                         <div className="flex flex-col items-end gap-1.5 shrink-0">
                             {/* Top Row: Switcher and UserMenu */}
-                            <div className="flex items-center gap-3 sm:gap-4 shrink-0 pointer-events-auto">
+                            <div className="flex items-center gap-3 sm:gap-4 shrink-0">
                                 {/* First-Level Navigation Switcher */}
-                                <div className="hidden lg:flex border border-white/10 p-0.5 bg-black/40 backdrop-blur-md gap-0.5">
+                                <div className="relative z-[9999] hidden lg:flex border border-white/10 p-0.5 bg-black/40 backdrop-blur-md gap-0.5 pointer-events-auto">
                                     {TOP_NAV_ITEMS.map((item) => {
                                         const isCurrentSection = item.key === 'home'
                                             ? isHomeSection
@@ -123,7 +123,7 @@ export function Layout({ children, lang, setLang, isAuto, setIsAuto, current }: 
                             </div>
 
                             {/* Second-Level Sub-Navigation */}
-                            <div className="hidden lg:flex gap-5 sm:gap-7 shrink-0 pointer-events-auto items-center h-8">
+                            <div className="relative z-[9999] hidden lg:flex gap-5 sm:gap-7 shrink-0 pointer-events-auto items-center h-8">
                                 {activeSubNavItems.map((item) => {
                                     const isActive = item.path === '/skin/'
                                         ? (location.pathname === '/skin/' || location.pathname === '/skin')
