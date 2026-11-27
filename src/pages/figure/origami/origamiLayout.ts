@@ -103,12 +103,11 @@ export interface OrigamiPartNet {
 
 export interface OrigamiBasePage {
     pageNumber: number
-    role: 'all' | 'headTorso' | 'limbs'
+    role: 'all' | 'headTorso' | 'head' | 'torso' | 'limbs'
     pageWidthMm: number
     pageHeightMm: number
     parts: OrigamiPartNet[]
     headerArea: RectMm
-    guideArea: RectMm
     infoArea: RectMm
 }
 
@@ -126,7 +125,6 @@ export interface OrigamiLayout {
     basePages: OrigamiBasePage[]
     /** Backwards-compatible aliases pointing to Page 1 areas. */
     headerArea: RectMm
-    guideArea: RectMm
     infoArea: RectMm
 }
 
@@ -545,32 +543,168 @@ function buildCuteTaperedTorsoNet(def: RawPartDef, originX: number, originY: num
     }
 }
 
+/** Rigidly rotates an unfolded cuboid net 90° clockwise and places its top-left at `(originX, originY)`. */
+function buildRotatedCuboidNet90CW(
+    def: RawPartDef,
+    originX: number,
+    originY: number,
+    tabMm: number,
+    pageIndex: number,
+): OrigamiPartNet {
+    const raw = buildCuboidNet(def, 0, 0, tabMm, pageIndex)
+    const rawH = raw.bounds.height
+    const rot = ([x, y]: Point2D): Point2D => [originX + (rawH - y), originY + x]
+
+    const faces: OrigamiFaceSpec[] = raw.faces.map(face => {
+        const quad: [Point2D, Point2D, Point2D, Point2D] = [
+            rot(face.quad[0]),
+            rot(face.quad[1]),
+            rot(face.quad[2]),
+            rot(face.quad[3]),
+        ]
+        return {
+            ...face,
+            quad,
+            rect: quadBounds(quad),
+        }
+    })
+    const tabs: OrigamiTab[] = raw.tabs.map(tab => ({
+        ...tab,
+        points: tab.points.map(rot),
+    }))
+    const cutPolygon = raw.cutPolygon.map(rot)
+    const foldLines: OrigamiFoldLine[] = raw.foldLines.map(line => ({
+        ...line,
+        from: rot(line.from),
+        to: rot(line.to),
+    }))
+    const bounds = quadBounds(cutPolygon)
+    // After 90° CW rotation, the wide empty corner sits at bottom-left of the bounding box
+    const [W, , D] = def.sizeMm
+    const labelAnchor: Point2D = [originX + 3, originY + D + W + tabMm + 8]
+
+    return {
+        ...raw,
+        bounds,
+        faces,
+        tabs,
+        cutPolygon,
+        foldLines,
+        labelAnchor,
+    }
+}
+
 export function buildOrigamiLayout(isSlim: boolean, modelId: OrigamiModelId = DEFAULT_ORIGAMI_MODEL): OrigamiLayout {
     const profile = getOrigamiModelProfile(modelId)
-    const { mmPerPixel, tabMm, shape } = profile
+    const { mmPerPixel, tabMm, shape, heightCm } = profile
     const defs = Object.fromEntries(
         getRawPartDefs(isSlim, shape, mmPerPixel).map(def => [def.id, def]),
     ) as Record<OrigamiPartId, RawPartDef>
 
     const usableWidth = A4_WIDTH_MM - PAGE_MARGIN_X_MM * 2
     const headerArea: RectMm = { x: PAGE_MARGIN_X_MM, y: 7, width: usableWidth, height: 15 }
+    const netW = (def: RawPartDef) => 2 * def.sizeMm[0] + 2 * def.sizeMm[2] + tabMm
+    const netH = (def: RawPartDef) => def.sizeMm[1] + 2 * def.sizeMm[2] + 2 * tabMm
 
     if (shape === 'cute') {
-        // Page 1: HEAD (upright top) + Cute tapered TORSO (bottom-left) + Legend & Info (bottom-right)
-        const headW = 4 * defs.head.sizeMm[0] + tabMm
-        const headX = (A4_WIDTH_MM - headW) / 2
+        const headRawW = 4 * defs.head.sizeMm[0] + tabMm
+        const needsSeparatePages = headRawW > usableWidth
+
+        if (needsSeparatePages) {
+            // PAPER-CUTE-13cm (3 base A4 pages):
+            // Page 1: HEAD rotated 90° CW (~152.4 x 196.6 mm) + full-width attribution footer
+            const headRotW = netH(defs.head)
+            const headX = (A4_WIDTH_MM - headRotW) / 2
+            const head = buildRotatedCuboidNet90CW(defs.head, headX, 25, tabMm, 0)
+            const p1FooterY = head.bounds.y + head.bounds.height + 10
+            const p1InfoArea: RectMm = { x: PAGE_MARGIN_X_MM, y: p1FooterY, width: usableWidth, height: 26 }
+
+            // Page 2: Tapered Cute TORSO centered (~96.5 x 134.0 mm) + full-width attribution footer
+            const torsoProbe = buildCuteTaperedTorsoNet(defs.torso, PAGE_MARGIN_X_MM, 42, tabMm, 1)
+            const torsoX = (A4_WIDTH_MM - torsoProbe.bounds.width) / 2
+            const torso = buildCuteTaperedTorsoNet(defs.torso, torsoX, 42, tabMm, 1)
+            const p2InfoArea: RectMm = { x: PAGE_MARGIN_X_MM, y: 236, width: usableWidth, height: 26 }
+
+            // Page 3: All 4 Cute limbs upright in a 2x2 grid + full-width attribution footer
+            const armNetW = netW(defs.rightArm)
+            const legNetW = netW(defs.rightLeg)
+            const armGap = Math.max(3, Math.min(24, usableWidth - 2 * armNetW))
+            const armStartX = (A4_WIDTH_MM - (2 * armNetW + armGap)) / 2
+            const legGap = Math.max(3, Math.min(24, usableWidth - 2 * legNetW))
+            const legStartX = (A4_WIDTH_MM - (2 * legNetW + legGap)) / 2
+
+            const row1Y = 24
+            const rightArm = buildCuboidNet(defs.rightArm, armStartX, row1Y, tabMm, 2)
+            const leftArm = buildCuboidNet(defs.leftArm, armStartX + armNetW + armGap, row1Y, tabMm, 2)
+            const row2Y = rightArm.bounds.y + rightArm.bounds.height + 8
+            const rightLeg = buildCuboidNet(defs.rightLeg, legStartX, row2Y, tabMm, 2)
+            const leftLeg = buildCuboidNet(defs.leftLeg, legStartX + legNetW + legGap, row2Y, tabMm, 2)
+
+            const p3FooterY = rightLeg.bounds.y + rightLeg.bounds.height + 10
+            const p3InfoArea: RectMm = { x: PAGE_MARGIN_X_MM, y: p3FooterY, width: usableWidth, height: 26 }
+
+            const parts: OrigamiPartNet[] = [head, torso, rightArm, leftArm, rightLeg, leftLeg]
+            const basePages: OrigamiBasePage[] = [
+                {
+                    pageNumber: 1,
+                    role: 'head',
+                    pageWidthMm: A4_WIDTH_MM,
+                    pageHeightMm: A4_HEIGHT_MM,
+                    parts: [head],
+                    headerArea,
+                    infoArea: p1InfoArea,
+                },
+                {
+                    pageNumber: 2,
+                    role: 'torso',
+                    pageWidthMm: A4_WIDTH_MM,
+                    pageHeightMm: A4_HEIGHT_MM,
+                    parts: [torso],
+                    headerArea,
+                    infoArea: p2InfoArea,
+                },
+                {
+                    pageNumber: 3,
+                    role: 'limbs',
+                    pageWidthMm: A4_WIDTH_MM,
+                    pageHeightMm: A4_HEIGHT_MM,
+                    parts: [rightArm, leftArm, rightLeg, leftLeg],
+                    headerArea,
+                    infoArea: p3InfoArea,
+                },
+            ]
+
+            return {
+                modelId: profile.id,
+                modelName: profile.name,
+                shape,
+                heightCm,
+                mmPerPixel,
+                tabMm,
+                isSlim,
+                pageWidthMm: A4_WIDTH_MM,
+                pageHeightMm: A4_HEIGHT_MM,
+                parts,
+                basePages,
+                headerArea,
+                infoArea: p1InfoArea,
+            }
+        }
+
+        // PAPER-CUTE-10cm (2 base A4 pages):
+        // Page 1: HEAD (upright top) + Cute tapered TORSO (bottom-left) + Attribution Info (bottom-right)
+        const headX = (A4_WIDTH_MM - headRawW) / 2
         const head = buildCuboidNet(defs.head, headX, 26, tabMm, 0)
         const torsoY = head.bounds.y + head.bounds.height + 8
         const torso = buildCuteTaperedTorsoNet(defs.torso, PAGE_MARGIN_X_MM, torsoY, tabMm, 0)
 
         const p1PanelX = torso.bounds.x + torso.bounds.width + 10
         const p1PanelW = A4_WIDTH_MM - PAGE_MARGIN_X_MM - p1PanelX
-        const p1GuideArea: RectMm = { x: p1PanelX, y: torsoY + 6, width: p1PanelW, height: 34 }
-        const p1InfoArea: RectMm = { x: p1PanelX, y: torsoY + 46, width: p1PanelW, height: 38 }
+        const p1InfoArea: RectMm = { x: p1PanelX, y: torsoY + 6, width: p1PanelW, height: 28 }
 
-        // Page 2: All 4 Cute limbs upright in a clean 2x2 grid + Legend & Info below
-        const armNetW = 2 * defs.rightArm.sizeMm[0] + 2 * defs.rightArm.sizeMm[2] + tabMm
-        const legNetW = 2 * defs.rightLeg.sizeMm[0] + 2 * defs.rightLeg.sizeMm[2] + tabMm
+        // Page 2: All 4 Cute limbs upright in a clean 2x2 grid + Attribution Info below
+        const armNetW = netW(defs.rightArm)
+        const legNetW = netW(defs.rightLeg)
         const armGap = Math.max(12, Math.min(24, usableWidth - 2 * armNetW))
         const armStartX = (A4_WIDTH_MM - (2 * armNetW + armGap)) / 2
         const legGap = Math.max(12, Math.min(24, usableWidth - 2 * legNetW))
@@ -584,8 +718,7 @@ export function buildOrigamiLayout(isSlim: boolean, modelId: OrigamiModelId = DE
         const leftLeg = buildCuboidNet(defs.leftLeg, legStartX + legNetW + legGap, row2Y, tabMm, 1)
 
         const p2FooterY = rightLeg.bounds.y + rightLeg.bounds.height + 14
-        const p2GuideArea: RectMm = { x: PAGE_MARGIN_X_MM, y: p2FooterY, width: 112, height: 34 }
-        const p2InfoArea: RectMm = { x: PAGE_MARGIN_X_MM + 116, y: p2FooterY, width: usableWidth - 116, height: 34 }
+        const p2InfoArea: RectMm = { x: PAGE_MARGIN_X_MM, y: p2FooterY, width: usableWidth, height: 26 }
 
         const parts: OrigamiPartNet[] = [head, torso, rightArm, leftArm, rightLeg, leftLeg]
         const basePages: OrigamiBasePage[] = [
@@ -596,7 +729,6 @@ export function buildOrigamiLayout(isSlim: boolean, modelId: OrigamiModelId = DE
                 pageHeightMm: A4_HEIGHT_MM,
                 parts: [head, torso],
                 headerArea,
-                guideArea: p1GuideArea,
                 infoArea: p1InfoArea,
             },
             {
@@ -606,7 +738,6 @@ export function buildOrigamiLayout(isSlim: boolean, modelId: OrigamiModelId = DE
                 pageHeightMm: A4_HEIGHT_MM,
                 parts: [rightArm, leftArm, rightLeg, leftLeg],
                 headerArea,
-                guideArea: p2GuideArea,
                 infoArea: p2InfoArea,
             },
         ]
@@ -615,7 +746,7 @@ export function buildOrigamiLayout(isSlim: boolean, modelId: OrigamiModelId = DE
             modelId: profile.id,
             modelName: profile.name,
             shape,
-            heightCm: profile.heightCm,
+            heightCm,
             mmPerPixel,
             tabMm,
             isSlim,
@@ -624,18 +755,84 @@ export function buildOrigamiLayout(isSlim: boolean, modelId: OrigamiModelId = DE
             parts,
             basePages,
             headerArea,
-            guideArea: p1GuideArea,
             infoArea: p1InfoArea,
         }
     }
 
-    // Standard classic 1-page A4 layout
-    const netW = (def: RawPartDef) => 2 * def.sizeMm[0] + 2 * def.sizeMm[2] + tabMm
-    const netH = (def: RawPartDef) => def.sizeMm[1] + 2 * def.sizeMm[2] + 2 * tabMm
+    // Standard multi-page A4 layout when Head + Torso exceed a single A4 row (e.g. PAPER-STD-13cm)
+    const headW = netW(defs.head)
+    const torsoW = netW(defs.torso)
+    if (headW + torsoW + 4 > usableWidth) {
+        // Page 1: HEAD centered top + TORSO centered below + full-width attribution footer
+        const headX = (A4_WIDTH_MM - headW) / 2
+        const head = buildCuboidNet(defs.head, headX, 25, tabMm, 0)
+        const torsoX = (A4_WIDTH_MM - torsoW) / 2
+        const torsoY = head.bounds.y + head.bounds.height + 8
+        const torso = buildCuboidNet(defs.torso, torsoX, torsoY, tabMm, 0)
 
+        const p1FooterY = torso.bounds.y + torso.bounds.height + 8
+        const p1InfoArea: RectMm = { x: PAGE_MARGIN_X_MM, y: p1FooterY, width: usableWidth, height: 26 }
+
+        // Page 2: All 4 limbs upright in a clean 2x2 grid + full-width attribution footer
+        const armNetW = netW(defs.rightArm)
+        const legNetW = netW(defs.rightLeg)
+        const armGap = Math.max(12, Math.min(28, usableWidth - 2 * armNetW))
+        const armStartX = (A4_WIDTH_MM - (2 * armNetW + armGap)) / 2
+        const legGap = Math.max(12, Math.min(28, usableWidth - 2 * legNetW))
+        const legStartX = (A4_WIDTH_MM - (2 * legNetW + legGap)) / 2
+
+        const row1Y = 26
+        const rightArm = buildCuboidNet(defs.rightArm, armStartX, row1Y, tabMm, 1)
+        const leftArm = buildCuboidNet(defs.leftArm, armStartX + armNetW + armGap, row1Y, tabMm, 1)
+        const row2Y = rightArm.bounds.y + rightArm.bounds.height + 12
+        const rightLeg = buildCuboidNet(defs.rightLeg, legStartX, row2Y, tabMm, 1)
+        const leftLeg = buildCuboidNet(defs.leftLeg, legStartX + legNetW + legGap, row2Y, tabMm, 1)
+
+        const p2FooterY = rightLeg.bounds.y + rightLeg.bounds.height + 14
+        const p2InfoArea: RectMm = { x: PAGE_MARGIN_X_MM, y: p2FooterY, width: usableWidth, height: 26 }
+
+        const parts: OrigamiPartNet[] = [head, torso, rightArm, leftArm, rightLeg, leftLeg]
+        const basePages: OrigamiBasePage[] = [
+            {
+                pageNumber: 1,
+                role: 'headTorso',
+                pageWidthMm: A4_WIDTH_MM,
+                pageHeightMm: A4_HEIGHT_MM,
+                parts: [head, torso],
+                headerArea,
+                infoArea: p1InfoArea,
+            },
+            {
+                pageNumber: 2,
+                role: 'limbs',
+                pageWidthMm: A4_WIDTH_MM,
+                pageHeightMm: A4_HEIGHT_MM,
+                parts: [rightArm, leftArm, rightLeg, leftLeg],
+                headerArea,
+                infoArea: p2InfoArea,
+            },
+        ]
+
+        return {
+            modelId: profile.id,
+            modelName: profile.name,
+            shape,
+            heightCm,
+            mmPerPixel,
+            tabMm,
+            isSlim,
+            pageWidthMm: A4_WIDTH_MM,
+            pageHeightMm: A4_HEIGHT_MM,
+            parts,
+            basePages,
+            headerArea,
+            infoArea: p1InfoArea,
+        }
+    }
+
+    // Standard classic 1-page A4 layout (PAPER-STD-10cm)
     const row1Y = 26
     const headH = netH(defs.head)
-    const torsoW = netW(defs.torso)
     const torsoX = A4_WIDTH_MM - PAGE_MARGIN_X_MM - torsoW
 
     const rowGap = 8
@@ -660,8 +857,7 @@ export function buildOrigamiLayout(isSlim: boolean, modelId: OrigamiModelId = DE
 
     const panelX = PAGE_MARGIN_X_MM + lLegW + 10
     const panelW = A4_WIDTH_MM - PAGE_MARGIN_X_MM - panelX
-    const guideArea: RectMm = { x: panelX, y: row3Y + 1, width: panelW, height: 34 }
-    const infoArea: RectMm = { x: panelX, y: row3Y + 38, width: panelW, height: limbH - 39 }
+    const infoArea: RectMm = { x: panelX, y: row3Y + 4, width: panelW, height: 28 }
 
     const basePages: OrigamiBasePage[] = [
         {
@@ -671,7 +867,6 @@ export function buildOrigamiLayout(isSlim: boolean, modelId: OrigamiModelId = DE
             pageHeightMm: A4_HEIGHT_MM,
             parts,
             headerArea,
-            guideArea,
             infoArea,
         },
     ]
@@ -689,7 +884,6 @@ export function buildOrigamiLayout(isSlim: boolean, modelId: OrigamiModelId = DE
         parts,
         basePages,
         headerArea,
-        guideArea,
         infoArea,
     }
 }

@@ -135,10 +135,8 @@ for (const isSlim of [false, true]) {
             for (const other of layout.parts.slice(index + 1)) {
                 assert.equal(rectsOverlap(part.bounds, other.bounds), false, `${part.id} overlaps ${other.id}`);
             }
-            assert.equal(rectsOverlap(part.bounds, layout.guideArea), false, `${part.id} overlaps guideArea`);
             assert.equal(rectsOverlap(part.bounds, layout.infoArea), false, `${part.id} overlaps infoArea`);
         }
-        assert.equal(rectsOverlap(layout.guideArea, layout.infoArea), false, 'guideArea and infoArea do not overlap');
     });
 
     test(`cute ${isSlim ? 'slim (Alex)' : 'standard (Steve)'} PAPER-CUTE-10cm 2-page A4 layout fits safely with tapered torso and zero overlap`, () => {
@@ -176,16 +174,68 @@ for (const isSlim of [false, true]) {
                 for (const other of basePage.parts.slice(index + 1)) {
                     assert.equal(rectsOverlap(part.bounds, other.bounds), false, `P${basePage.pageNumber} ${part.id} overlaps ${other.id}`);
                 }
-                assert.equal(rectsOverlap(part.bounds, basePage.guideArea), false, `P${basePage.pageNumber} ${part.id} overlaps guideArea`);
                 assert.equal(rectsOverlap(part.bounds, basePage.infoArea), false, `P${basePage.pageNumber} ${part.id} overlaps infoArea`);
             }
-            assert.equal(rectsOverlap(basePage.guideArea, basePage.infoArea), false);
 
             const svg = engine.generateOrigamiBasePageSvg(basePage);
             assert.match(svg, /width="210mm" height="297mm" viewBox="0 0 210 297"/);
             assert.equal((svg.match(/<path id="cut-/g) || []).length, expectedCount);
             assert.equal((svg.match(/<path id="fold-/g) || []).length, expectedCount);
             assert.doesNotMatch(svg, /<rect|<image/);
+        }
+    });
+
+    test(`13cm models (${isSlim ? 'slim' : 'standard'}): PAPER-STD-13cm (2 base pages) and PAPER-CUTE-13cm (3 base pages w/ rotated head) fit safely with zero overlap`, () => {
+        // 1) PAPER-STD-13cm: 2 base pages (headTorso + limbs)
+        const std13 = engine.buildOrigamiLayout(isSlim, 'paper-std-13cm');
+        assert.equal(std13.modelName, 'PAPER-STD-13cm');
+        assert.equal(std13.shape, 'standard');
+        assert.equal(std13.heightCm, 13);
+        assert.equal(std13.basePages.length, 2);
+        assert.deepEqual(Array.from(std13.basePages, p => p.role), ['headTorso', 'limbs']);
+        for (const basePage of std13.basePages) {
+            const expectedCount = basePage.role === 'headTorso' ? 2 : 4;
+            assert.equal(basePage.parts.length, expectedCount);
+            for (const [index, part] of basePage.parts.entries()) {
+                assert.equal(part.cutPolygon.length, 26);
+                for (const [x, y] of part.cutPolygon) {
+                    assert.ok(x >= engine.PAGE_MARGIN_X_MM - 1e-6 && x <= 210 - engine.PAGE_MARGIN_X_MM + 1e-6, `STD-13 P${basePage.pageNumber} ${part.id} x=${x} within margin`);
+                    assert.ok(y >= engine.CUT_SAFE_TOP_MM && y <= engine.CUT_SAFE_BOTTOM_MM, `STD-13 P${basePage.pageNumber} ${part.id} y=${y} within safe cut area`);
+                }
+                for (const other of basePage.parts.slice(index + 1)) {
+                    assert.equal(rectsOverlap(part.bounds, other.bounds), false, `STD-13 P${basePage.pageNumber} ${part.id} overlaps ${other.id}`);
+                }
+                assert.equal(rectsOverlap(part.bounds, basePage.infoArea), false);
+            }
+            const svg = engine.generateOrigamiBasePageSvg(basePage);
+            assert.equal((svg.match(/<path id="cut-/g) || []).length, expectedCount);
+        }
+
+        // 2) PAPER-CUTE-13cm: 3 base pages (head rotated 90° + tapered torso + limbs)
+        const cute13 = engine.buildOrigamiLayout(isSlim, 'paper-cute-13cm');
+        assert.equal(cute13.modelName, 'PAPER-CUTE-13cm');
+        assert.equal(cute13.shape, 'cute');
+        assert.equal(cute13.heightCm, 13);
+        assert.equal(cute13.basePages.length, 3);
+        assert.deepEqual(Array.from(cute13.basePages, p => p.role), ['head', 'torso', 'limbs']);
+        const head13 = cute13.parts.find(p => p.id === 'head');
+        assert.ok(head13.bounds.height > head13.bounds.width, 'PAPER-CUTE-13cm head is rotated 90° so it fits within A4 width');
+        for (const basePage of cute13.basePages) {
+            const expectedCount = basePage.role === 'limbs' ? 4 : 1;
+            assert.equal(basePage.parts.length, expectedCount);
+            for (const [index, part] of basePage.parts.entries()) {
+                assert.equal(part.cutPolygon.length, part.id === 'torso' ? 28 : 26);
+                for (const [x, y] of part.cutPolygon) {
+                    assert.ok(x >= engine.PAGE_MARGIN_X_MM - 1e-6 && x <= 210 - engine.PAGE_MARGIN_X_MM + 1e-6, `CUTE-13 P${basePage.pageNumber} ${part.id} x=${x} within margin`);
+                    assert.ok(y >= engine.CUT_SAFE_TOP_MM && y <= engine.CUT_SAFE_BOTTOM_MM, `CUTE-13 P${basePage.pageNumber} ${part.id} y=${y} within safe cut area`);
+                }
+                for (const other of basePage.parts.slice(index + 1)) {
+                    assert.equal(rectsOverlap(part.bounds, other.bounds), false, `CUTE-13 P${basePage.pageNumber} ${part.id} overlaps ${other.id}`);
+                }
+                assert.equal(rectsOverlap(part.bounds, basePage.infoArea), false);
+            }
+            const svg = engine.generateOrigamiBasePageSvg(basePage);
+            assert.equal((svg.match(/<path id="cut-/g) || []).length, expectedCount);
         }
     });
 }
@@ -220,10 +270,10 @@ test('face extraction flips bottom UV vertically, merges outer layer into base w
     assert.equal(legacySkin.isSlim, false);
 });
 
-test('dual-layer support algorithm segments islands, traces hollow cutouts, and sizes 1-piece L-shaped supports', () => {
+test('dual-layer support algorithm segments islands, traces hollow cutouts, and sizes 1-piece equilateral triangular supports', () => {
     const mm = 3.125;
 
-    // 1) Solid 8x8 patch -> 4 symmetric corner-inset key voxels, all 1-piece L-shaped supports
+    // 1) Solid 8x8 patch -> 4 symmetric corner-inset key voxels, all 1-piece equilateral triangle supports
     const solid8x8 = [];
     for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) solid8x8.push([x, y]);
     const anchors8x8 = engine.selectKeySupportVoxels(solid8x8);
@@ -233,28 +283,28 @@ test('dual-layer support algorithm segments islands, traces hollow cutouts, and 
         'solid 8x8 gets 4 symmetric corner-inset anchors',
     );
     for (const pt of anchors8x8) {
-        const sized = engine.sizeLShapeSupport(solid8x8, pt, mm);
-        assert.equal(sized.kind, 'lshape');
-        assert.ok(sized.legXMm > 2.5 && sized.legYMm > 2.5);
+        const sized = engine.sizeTriangleSupport(solid8x8, pt, mm);
+        assert.equal(sized.kind, 'triangle');
+        assert.ok(sized.sideMm > 2.5);
     }
 
-    // 2) Thin 8x1 headband strip -> evenly spaced L-shaped supports hidden within 1px height
+    // 2) Thin 8x1 headband strip -> evenly spaced triangle supports hidden within 1px height
     const strip8x1 = Array.from({ length: 8 }, (_, x) => [x, 0]);
     const anchorsStrip = engine.selectKeySupportVoxels(strip8x1);
     assert.ok(anchorsStrip.length >= 2 && anchorsStrip.length <= 3, '8x1 strip gets 2-3 spaced supports');
     for (const pt of anchorsStrip) {
-        const sized = engine.sizeLShapeSupport(strip8x1, pt, mm);
-        assert.equal(sized.kind, 'lshape');
-        assert.ok(sized.legYMm < mm, 'L-leg across 1px strip stays strictly inside strip width');
+        const sized = engine.sizeTriangleSupport(strip8x1, pt, mm);
+        assert.equal(sized.kind, 'triangle');
+        assert.ok(sized.sideMm * (Math.sqrt(3) / 2) < mm, 'triangle altitude stays strictly inside 1px strip width');
     }
 
-    // 3) Single isolated 1x1 voxel -> 1 L-shaped support strictly smaller than one 3.125 mm pixel
+    // 3) Single isolated 1x1 voxel -> 1 triangle support strictly smaller than one 3.125 mm pixel
     const dot1x1 = [[3, 4]];
     const anchorsDot = engine.selectKeySupportVoxels(dot1x1);
     assert.deepEqual(Array.from(anchorsDot, p => Array.from(p)), [[3, 4]]);
-    const dotSized = engine.sizeLShapeSupport(dot1x1, anchorsDot[0], mm);
-    assert.equal(dotSized.kind, 'lshape');
-    assert.ok(dotSized.legXMm < mm && dotSized.legYMm < mm, 'single-voxel L-support stays hidden behind 1x1 voxel');
+    const dotSized = engine.sizeTriangleSupport(dot1x1, anchorsDot[0], mm);
+    assert.equal(dotSized.kind, 'triangle');
+    assert.ok(dotSized.sideMm < mm, 'single-voxel triangle support stays hidden behind 1x1 voxel');
 
     // 4) Hollow 5x5 helmet visor (center 3x1 eye slot cut out) -> produces 2 boundary loops (outer + inner hole)
     const hollow = [];
@@ -266,10 +316,50 @@ test('dual-layer support algorithm segments islands, traces hollow cutouts, and 
     }
     const loops = engine.tracePixelBoundaryLoops(hollow);
     assert.equal(loops.length, 2, 'hollow visor produces outer perimeter + inner eye cutout loop');
+
+    // 5) 4-connected geodesic stability: 3x3 centered, 4x4 & 5x5 4-corner (no seesaw), 4x1 2-end, U-shape supports both legs across air, staircase supports middle bend
+    const gridToPixels = rows => {
+        const pts = [];
+        rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === '#') pts.push([x, y]); }));
+        return pts;
+    };
+    const normPts = pts => Array.from(pts, p => Array.from(p));
+
+    assert.deepEqual(normPts(engine.selectKeySupportVoxels(gridToPixels(['###', '###', '###']))), [[1, 1]], '3x3 centered');
+    assert.deepEqual(normPts(engine.selectKeySupportVoxels(gridToPixels(['####']))), [[0, 0], [3, 0]], '4x1 bridged at both ends');
+    assert.deepEqual(
+        normPts(engine.selectKeySupportVoxels(gridToPixels(['####', '####', '####', '####']))),
+        [[0, 0], [3, 0], [0, 3], [3, 3]],
+        '4x4 gets 4 symmetric corner supports instead of 1 off-center support',
+    );
+    assert.deepEqual(
+        normPts(engine.selectKeySupportVoxels(gridToPixels(['#####', '#####', '#####', '#####', '#####']))),
+        [[1, 1], [3, 1], [1, 3], [3, 3]],
+        '5x5 gets 4 symmetric inset supports (no diagonal seesaw)',
+    );
+    const uSupports = normPts(engine.selectKeySupportVoxels(gridToPixels(['####', '#..#', '#..#', '#..#'])));
+    assert.ok(uSupports.some(([x, y]) => x === 0 && y === 3), 'narrow U-shape supports left hanging leg');
+    assert.ok(uSupports.some(([x, y]) => x === 3 && y === 3), 'narrow U-shape supports right hanging leg (geodesic does not jump across air)');
+    assert.ok(uSupports.length >= 3, 'narrow U-shape also braces top bridge');
+
+    const stairSupports = normPts(engine.selectKeySupportVoxels(gridToPixels(['##..', '.##.', '..##', '...#'])));
+    assert.equal(stairSupports.length, 3, '7px 1-wide diagonal staircase gets 3 supports (both ends + middle bend)');
+
+    // 6) Pure diagonally-touching pixels are split into separate 4-connected islands, each with its own support
+    const diagSkin = engine.processSkin(makeSkinCanvas({
+        markPixels: [
+            [40, 8, [255, 0, 0, 255]],
+            [41, 9, [0, 255, 0, 255]],
+            [42, 10, [0, 0, 255, 255]],
+        ],
+    }), 0.5);
+    const diagPlan = engine.buildDualLayerPlan(engine.buildOrigamiLayout(false, 'paper-std-10cm'), diagSkin.data);
+    assert.equal(diagPlan.islands.length, 3, 'diagonally-touching voxels are strictly split into 3 separate islands');
+    assert.equal(diagPlan.supportCount, 3, 'every diagonal-only voxel gets its own L-support');
 });
 
-for (const modelId of ['paper-std-10cm', 'paper-cute-10cm']) {
-    test(`dual-layer A4 packing (${modelId}) places all islands & L-shaped supports inside safe bounds with zero overlap even on 100% overlay skins`, () => {
+for (const modelId of ['paper-std-10cm', 'paper-std-13cm', 'paper-cute-10cm', 'paper-cute-13cm']) {
+    test(`dual-layer A4 packing (${modelId}) places all islands & triangular supports inside safe bounds with zero overlap even on 100% overlay skins`, () => {
         const markPixels = [];
         for (let y = 8; y < 16; y++) for (let x = 40; x < 48; x++) markPixels.push([x, y, [0, 0, 0, 0]]);
         for (let x = 40; x < 48; x++) markPixels.push([x, 8, [255, 200, 40, 255]]);
@@ -281,23 +371,23 @@ for (const modelId of ['paper-std-10cm', 'paper-cute-10cm']) {
         const plan = engine.buildDualLayerPlan(layout, skin.data);
 
         assert.ok(plan.islands.length >= 36, 'extracts islands across all faces');
-        assert.ok(plan.supportCount > 0, 'generates L-shaped supports');
+        assert.ok(plan.supportCount > 0, 'generates equilateral triangle supports');
         assert.equal(plan.supports.length, plan.supportCount);
-        assert.ok(plan.supports.every(s => s.kind === 'lshape'), 'every support uses the 1-piece L-shaped riser');
+        assert.ok(plan.supports.every(s => s.kind === 'triangle'), 'every support uses the 1-piece equilateral triangular prism');
 
-        if (modelId === 'paper-cute-10cm') {
+        const expectedStartPage = layout.basePages.length + 1;
+        assert.equal(plan.overlayPages[0].pageNumber, expectedStartPage, `${modelId} overlay starts on Page ${expectedStartPage}`);
+
+        if (layout.shape === 'cute') {
             const torsoFrontIsland = plan.islands.find(i => i.partId === 'torso' && i.faceName === 'front');
             assert.ok(torsoFrontIsland, 'Cute torso front overlay extracted');
             assert.equal(torsoFrontIsland.taperTopFactor, 0.3, 'Cute torso front overlay inherits CUTE_TAPER (0.3)');
-            assert.equal(plan.overlayPages[0].pageNumber, 3, 'Cute overlay starts on Page 3 after 2 base pages');
             const placedTorsoFront = plan.overlayPages.flatMap(p => p.islands).find(p => p.island === torsoFrontIsland);
             assert.ok(placedTorsoFront);
             const [p0, p1, p2, p3] = placedTorsoFront.cutLoopsMm[0];
             const topW = Math.abs(p1[0] - p0[0]);
             const botW = Math.abs(p2[0] - p3[0]);
             assert.ok(Math.abs(topW / botW - 0.7) < 1e-3, `Cute torso front overlay top/bottom width ratio (${topW}/${botW}) should equal 0.7`);
-        } else {
-            assert.equal(plan.overlayPages[0].pageNumber, 2, 'STD overlay starts on Page 2 after 1 base page');
         }
 
         // Every support anchor mounts strictly inside (0, 1) x (0, 1) on its base face
@@ -334,14 +424,14 @@ for (const modelId of ['paper-std-10cm', 'paper-cute-10cm']) {
                 }
             }
             for (const placed of page.supports) {
-                assert.equal(placed.pieces.length, 1, 'L-support is 1 unfolded piece');
-                assert.equal(placed.pieces[0].cutPolygon.length, 13, 'self-gluing closed L-support polygon has 13 vertices');
-                assert.equal(placed.pieces[0].foldLines.length, 5, 'closed L-support has 5 mountain fold lines (L-corner, brace, self-glue tab, top & bottom flaps)');
-                assert.equal(placed.pieces[0].glueTabPolygons.length, 3, 'closed L-support has top flap, bottom flap, and self-glue tab');
+                assert.equal(placed.pieces.length, 1, 'triangle support is 1 unfolded piece');
+                assert.equal(placed.pieces[0].cutPolygon.length, 13, 'self-gluing equilateral triangle support polygon has 13 vertices');
+                assert.equal(placed.pieces[0].foldLines.length, 5, 'triangle support has 5 mountain fold lines (3 equal sides, self-glue tab, top & bottom flaps)');
+                assert.equal(placed.pieces[0].glueTabPolygons.length, 3, 'triangle support has top flap, bottom flap, and self-glue tab');
                 assert.ok(placed.pieces[0].foldLines.every(l => l.kind === 'mountain'));
-                const expectedWallW = placed.anchor.legXMm + placed.anchor.legYMm + Number(Math.hypot(placed.anchor.legXMm, placed.anchor.legYMm).toFixed(2));
-                assert.ok(Math.abs(placed.pieces[0].wallRect.width - expectedWallW) < 0.02, 'wall strip includes both L-legs plus diagonal brace');
-                assert.ok(placed.bounds.width > expectedWallW + 0.9, 'bounds extend past wall strip with the extra self-gluing segment');
+                const expectedWallW = 3 * placed.anchor.sideMm;
+                assert.ok(Math.abs(placed.pieces[0].wallRect.width - expectedWallW) < 0.02, 'wall strip consists of 3 equal equilateral sides');
+                assert.ok(placed.bounds.width > expectedWallW + 0.9, 'bounds extend past 3-wall strip with the extra self-gluing segment');
                 for (const [x, y] of placed.pieces[0].cutPolygon) {
                     assert.ok(x >= engine.PAGE_MARGIN_X_MM - 1e-6 && x <= 210 - engine.PAGE_MARGIN_X_MM + 1e-6);
                     assert.ok(y >= engine.CUT_SAFE_TOP_MM && y <= engine.CUT_SAFE_BOTTOM_MM);
@@ -426,7 +516,7 @@ test('dual-layer outer skin dimensions and standoffs match MCModal (MC.tsx) rati
     const cornerPlacement = engine.computeSupportPlacement(cornerMetrics, cornerFace, [[0, 0]], [0, 0], 1.4);
     assert.ok(cornerPlacement.baseU > 0 && cornerPlacement.baseU < 0.125, 'corner anchor shifts inside base face');
     assert.ok(cornerPlacement.baseV > 0 && cornerPlacement.baseV < 0.125, 'corner anchor shifts inside base face vertically');
-    assert.ok(Math.abs(cornerPlacement.faceOffsetXMm) + cornerPlacement.legXMm / 2 < cornerMetrics.baseWidthMm / 2, 'corner L-leg does not overhang base edge');
+    assert.ok(Math.abs(cornerPlacement.faceOffsetXMm) + cornerPlacement.sideMm / 2 < cornerMetrics.baseWidthMm / 2, 'corner triangle does not overhang base edge');
 });
 
 test('dual-layer Page 1 keeps original base pixel colors intact and prints only anchor numbers (no crosshair strokes)', () => {
@@ -572,29 +662,37 @@ test('showGuideLines: false hides cut borders and dashed fold strokes on PNG whi
 
     // Inspect both renderOrigamiSheet and renderDualLayerOverlaySheet with a stroke-counting spy via OffscreenCanvas
     const countStrokes = fn => {
-        let count = 0;
+        let strokeCount = 0;
+        let strokeRectCount = 0;
         engineContext.OffscreenCanvas = function (w, h) {
             delete engineContext.OffscreenCanvas;
             const c = engine.createCanvas(w, h);
             engineContext.OffscreenCanvas = arguments.callee;
             const ctx = c.getContext('2d');
             const origStroke = ctx.stroke;
-            ctx.stroke = (...args) => { count++; return origStroke.apply(ctx, args); };
+            const origStrokeRect = ctx.strokeRect;
+            ctx.stroke = (...args) => { strokeCount++; return origStroke.apply(ctx, args); };
+            ctx.strokeRect = (...args) => { strokeRectCount++; return origStrokeRect.apply(ctx, args); };
             c.getContext = () => ctx;
             return c;
         };
         try { fn(); } finally { delete engineContext.OffscreenCanvas; }
-        return count;
+        return { strokeCount, strokeRectCount };
     };
 
     const page1On = countStrokes(() => engine.renderOrigamiSheet(layout, faceCanvases, 2, undefined, undefined, { showGuideLines: true }));
     const page1Off = countStrokes(() => engine.renderOrigamiSheet(layout, faceCanvases, 2, undefined, undefined, { showGuideLines: false }));
-    assert.ok(page1Off < page1On, `Page 1 strokes should drop when guide lines are off (${page1Off} < ${page1On})`);
+    assert.ok(page1Off.strokeCount < page1On.strokeCount, `Page 1 strokes should drop when guide lines are off (${page1Off.strokeCount} < ${page1On.strokeCount})`);
+    assert.equal(page1Off.strokeCount, 0, 'Page 1 has zero cut/fold strokes when guide lines are off');
+    assert.equal(page1On.strokeRectCount, 0, 'Page 1 renders no legend/guide border box next to Published by');
+    assert.equal(page1Off.strokeRectCount, 0, 'Page 1 renders no legend/guide border box when guide lines are off');
 
     const page2On = countStrokes(() => engine.renderDualLayerOverlaySheet(plan.overlayPages[0], 2, layout, skin.data, 2, undefined, undefined, { showGuideLines: true }));
     const page2Off = countStrokes(() => engine.renderDualLayerOverlaySheet(plan.overlayPages[0], 2, layout, skin.data, 2, undefined, undefined, { showGuideLines: false }));
-    assert.ok(page2Off < page2On, `Page 2 strokes should drop when guide lines are off (${page2Off} < ${page2On})`);
-    assert.equal(page2Off, 0, 'Page 2 has zero island/support border or fold strokes when guide lines are off');
+    assert.ok(page2Off.strokeCount < page2On.strokeCount, `Page 2 strokes should drop when guide lines are off (${page2Off.strokeCount} < ${page2On.strokeCount})`);
+    assert.equal(page2Off.strokeCount, 0, 'Page 2 has zero island/support border or fold strokes when guide lines are off');
+    assert.equal(page2On.strokeRectCount, 0, 'Page 2 overlay renders no legend border box next to Published by');
+    assert.equal(page2Off.strokeRectCount, 0, 'Page 2 overlay renders no legend border box when guide lines are off');
 });
 
 test('cutting and scoring SVG uses exact A4 millimetres with separate cut-lines and fold-lines groups', () => {
@@ -810,11 +908,21 @@ async function withOrigamiPage(options, check) {
                         const modelId = opts?.modelId || 'paper-std-10cm';
                         const layerMode = opts?.layerMode || 'dual';
                         const isDual = layerMode === 'dual';
-                        const isCute = modelId === 'paper-cute-10cm';
+                        const isCute = modelId.startsWith('paper-cute-');
+                        const heightCm = modelId.endsWith('-13cm') ? 13 : 10;
                         const layerTag = layerMode.toUpperCase();
                         const pending = currentDeferred;
                         const sheets = [];
-                        if (isCute) {
+                        if (modelId === 'paper-cute-13cm') {
+                            sheets.push(
+                                { pageNumber: 1, kind: 'base', baseRole: 'head', filenameSuffix: `${layerTag}_P1_head`, previewSheetUrl: 'blob:p1', sheetUrl: 'blob:p1', svgUrl: 'blob:svg1', isPreviewSheet: true },
+                                { pageNumber: 2, kind: 'base', baseRole: 'torso', filenameSuffix: `${layerTag}_P2_torso`, previewSheetUrl: 'blob:p2', sheetUrl: 'blob:p2', svgUrl: 'blob:svg2', isPreviewSheet: true },
+                                { pageNumber: 3, kind: 'base', baseRole: 'limbs', filenameSuffix: `${layerTag}_P3_limbs`, previewSheetUrl: 'blob:p3', sheetUrl: 'blob:p3', svgUrl: 'blob:svg3', isPreviewSheet: true },
+                            );
+                            if (isDual) {
+                                sheets.push({ pageNumber: 4, kind: 'overlay', filenameSuffix: `${layerTag}_P4_overlay_supports`, previewSheetUrl: 'blob:p4', sheetUrl: 'blob:p4', svgUrl: 'blob:svg4', isPreviewSheet: true });
+                            }
+                        } else if (modelId === 'paper-cute-10cm' || modelId === 'paper-std-13cm') {
                             sheets.push(
                                 { pageNumber: 1, kind: 'base', baseRole: 'headTorso', filenameSuffix: `${layerTag}_P1_head_torso`, previewSheetUrl: 'blob:p1', sheetUrl: 'blob:p1', svgUrl: 'blob:svg1', isPreviewSheet: true },
                                 { pageNumber: 2, kind: 'base', baseRole: 'limbs', filenameSuffix: `${layerTag}_P2_limbs`, previewSheetUrl: 'blob:p2', sheetUrl: 'blob:p2', svgUrl: 'blob:svg2', isPreviewSheet: true },
@@ -837,7 +945,7 @@ async function withOrigamiPage(options, check) {
                             layerMode,
                             isSlim: false,
                             includeOverlay: !isDual && (opts?.includeOverlay ?? true),
-                            layout: { heightCm: 10, shape: isCute ? 'cute' : 'standard', parts: [], basePages: [] },
+                            layout: { heightCm, shape: isCute ? 'cute' : 'standard', parts: [], basePages: [] },
                             faceCanvases: {},
                             dualPlan: isDual ? { islands: [{ id: 'H1' }, { id: 'T1' }], supports: [], supportCount: 5, overlayPages: [] } : undefined,
                             sheets,
@@ -927,7 +1035,7 @@ for (const lang of ['zh', 'en']) {
             assert.equal(modelSelect.value, 'paper-std-10cm');
             assert.deepEqual(
                 Array.from(modelSelect.options).map(o => o.textContent),
-                ['PAPER-STD-10cm', 'PAPER-CUTE-10cm'],
+                ['PAPER-STD-10cm', 'PAPER-STD-13cm', 'PAPER-CUTE-10cm', 'PAPER-CUTE-13cm'],
             );
             assert.equal(layerSelect.value, 'dual', 'layer defaults to DUAL');
             assert.deepEqual(
@@ -982,7 +1090,10 @@ for (const lang of ['zh', 'en']) {
             const cuteSingleTabs = Array.from(env.node.querySelectorAll('[role="tab"]'));
             assert.deepEqual(
                 cuteSingleTabs.map(el => el.textContent),
-                [env.current.figureOrigami.pages.headTorso, env.current.figureOrigami.pages.limbs],
+                [
+                    env.current.figureOrigami.pages.headTorso,
+                    env.current.figureOrigami.pages.limbs.replace('{page}', '2'),
+                ],
             );
             await env.click(cuteSingleTabs[1]);
             await env.click(env.button(`${env.current.figureOrigami.downloadSheet} (2/2)`));
@@ -996,6 +1107,23 @@ for (const lang of ['zh', 'en']) {
             await env.click(cuteDualTabs[2]);
             await env.click(env.button(`${env.current.figureOrigami.downloadSheet} (3/3)`));
             assert.equal(env.downloads.at(-1)[1], 'PAPER-CUTE-10cm_DUAL_P3_overlay_supports_A4.png');
+
+            // Switch Model to PAPER-CUTE-13cm (DUAL) -> 4 pages (Head, Torso, Limbs, Overlay & Supports)
+            await env.selectModel('paper-cute-13cm');
+            await env.finish();
+            const cute13Tabs = Array.from(env.node.querySelectorAll('[role="tab"]'));
+            assert.deepEqual(
+                cute13Tabs.map(el => el.textContent),
+                [
+                    env.current.figureOrigami.pages.head,
+                    env.current.figureOrigami.pages.torso,
+                    env.current.figureOrigami.pages.limbs.replace('{page}', '3'),
+                    env.current.figureOrigami.pages.overlay.replace('{page}', '4'),
+                ],
+            );
+            await env.click(cute13Tabs[0]);
+            await env.click(env.button(`${env.current.figureOrigami.downloadSheet} (1/4)`));
+            assert.equal(env.downloads.at(-1)[1], 'PAPER-CUTE-13cm_DUAL_P1_head_A4.png');
         });
     });
 }

@@ -16,7 +16,10 @@ import {
 } from './origamiLayout'
 import { getOrigamiModelProfile, type OrigamiModelId } from './origamiModels'
 
-export type SupportKind = 'lshape'
+export type SupportKind = 'triangle'
+
+const SQRT3 = Math.sqrt(3)
+const TRI_ALT_RATIO = SQRT3 / 2
 
 /**
  * Exact outer-layer face dimensions & standoff derived from MCModal (`MC.tsx`):
@@ -130,7 +133,7 @@ export function getOverlayFaceMetrics(
 }
 
 export interface SupportAnchor {
-    /** 1-based global index printed on both the base cuboid pixel and the L-support piece. */
+    /** 1-based global index printed on both the base cuboid pixel and the triangle support piece. */
     index: number
     islandId: string
     partId: OrigamiPartId
@@ -145,15 +148,13 @@ export interface SupportAnchor {
     faceOffsetXMm: number
     faceOffsetYMm: number
     kind: SupportKind
-    /** First L-leg wall width (mm), strictly hidden behind occupied island pixels & inside base face. */
-    legXMm: number
-    /** Second perpendicular L-leg wall width (mm), strictly hidden behind occupied island pixels & inside base face. */
-    legYMm: number
+    /** Equilateral triangle side length (mm), strictly hidden behind occupied island pixels & inside base face. */
+    sideMm: number
     /** Exact MCModal stand-off height in millimetres between base face and floating outer layer. */
     standoffMm: number
-    /** Folded top/bottom glue-flap depth in millimetres. */
+    /** Folded top/bottom 60° trapezoidal glue-flap depth in millimetres. */
     footMm: number
-    /** RGB color sampled from this key voxel so the L-walls blend discreetly from the side. */
+    /** RGB color sampled from this key voxel so the triangle walls blend discreetly from the side. */
     color: [number, number, number]
 }
 
@@ -206,13 +207,13 @@ export interface SupportFoldSegment {
 }
 
 export interface SupportCutPiece {
-    /** Single closed 13-vertex self-gluing L-corner column cut outline in A4 sheet millimetres. */
+    /** Single closed 13-vertex equilateral triangular prism cut outline in A4 sheet millimetres. */
     cutPolygon: Point2D[]
-    /** 5 all-mountain fold lines (90° L-corner, diagonal brace, self-glue tab, top & bottom glue flaps). */
+    /** 5 all-mountain fold lines (3 equal 60° walls + self-glue tab + top & bottom 60° glue flaps). */
     foldLines: SupportFoldSegment[]
-    /** Combined 3-wall vertical strip rect (L legs + closing brace) tinted with the key voxel color on PNG. */
+    /** Combined 3-wall vertical strip rect (3 equal sides) tinted with the key voxel color on PNG. */
     wallRect: RectMm
-    /** Light-tinted glue-tab polygons (beveled top flap, beveled bottom flap, and right-end self-glue tab). */
+    /** Light-tinted glue-tab polygons (top 60° flap, bottom 60° flap, and right-end self-glue tab). */
     glueTabPolygons: Point2D[][]
 }
 
@@ -231,7 +232,6 @@ export interface DualLayerOverlayPage {
     headerArea: RectMm
     islands: PlacedOverlayIsland[]
     supports: PlacedSupport[]
-    legendArea?: RectMm
     infoArea?: RectMm
 }
 
@@ -254,8 +254,7 @@ const PART_SHORT_CODE: Record<OrigamiPartId, string> = {
     leftLeg: 'LL',
 }
 
-const MAX_SUPPORTS_PER_ISLAND = 6
-const COVERAGE_RADIUS_PX = 3.2
+const MAX_SUPPORTS_PER_ISLAND = 12
 
 export function readOrientedSkinPixel(
     skinData: Uint8ClampedArray,
@@ -363,153 +362,291 @@ export function tracePixelBoundaryLoops(localPixels: Point2D[]): Point2D[][] {
 }
 
 /**
- * Computes structural key support voxel coordinates for a connected outer-layer island.
+ * Computes structural key support voxel coordinates for a 4-connected outer-layer island.
+ * Uses exact 4-connected geodesic distance strictly along connected paper pixels (never jumping
+ * across empty air or diagonal corners), gives tighter limits to thin 1-pixel filaments/tips,
+ * and adds off-diagonal supports on 2D plates so no patch balances on a single corner or seesaw hinge.
  */
 export function selectKeySupportVoxels(pixels: Point2D[]): Point2D[] {
     if (pixels.length === 0) return []
-    const set = new Set(pixels.map(([x, y]) => `${x},${y}`))
-    const has = (x: number, y: number) => set.has(`${x},${y}`)
-
+    const n = pixels.length
+    const idxByKey = new Map<string, number>()
     let minX = Infinity
     let minY = Infinity
     let maxX = -Infinity
     let maxY = -Infinity
-    let sumX = 0
-    let sumY = 0
-    for (const [x, y] of pixels) {
+    for (let i = 0; i < n; i++) {
+        const [x, y] = pixels[i]
+        idxByKey.set(`${x},${y}`, i)
         if (x < minX) minX = x
         if (y < minY) minY = y
         if (x > maxX) maxX = x
         if (y > maxY) maxY = y
-        sumX += x
-        sumY += y
     }
     const bw = maxX - minX + 1
     const bh = maxY - minY + 1
-    const cx = sumX / pixels.length
-    const cy = sumY / pixels.length
+    const has = (x: number, y: number) => idxByKey.has(`${x},${y}`)
 
-    const cardinalCount = ([x, y]: Point2D) =>
-        (has(x - 1, y) ? 1 : 0) + (has(x + 1, y) ? 1 : 0) + (has(x, y - 1) ? 1 : 0) + (has(x, y + 1) ? 1 : 0)
+    // Strict 4-connected adjacency graph + thin-filament detection (not part of any 2x2 solid block)
+    const adj: number[][] = Array.from({ length: n }, () => [])
+    const deg = new Uint8Array(n)
+    const isThin = new Uint8Array(n)
+    for (let i = 0; i < n; i++) {
+        const [x, y] = pixels[i]
+        for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] as Point2D[]) {
+            const j = idxByKey.get(`${nx},${ny}`)
+            if (j !== undefined) adj[i].push(j)
+        }
+        deg[i] = adj[i].length
+        const in2x2 =
+            (has(x - 1, y) && has(x, y - 1) && has(x - 1, y - 1)) ||
+            (has(x + 1, y) && has(x, y - 1) && has(x + 1, y - 1)) ||
+            (has(x - 1, y) && has(x, y + 1) && has(x - 1, y + 1)) ||
+            (has(x + 1, y) && has(x, y + 1) && has(x + 1, y + 1))
+        if (!in2x2) isThin[i] = 1
+    }
 
-    const distSq = (a: Point2D, b: Point2D) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
-
-    if (pixels.length <= 3 || (bw <= 2 && bh <= 2)) {
-        let best = pixels[0]
-        let bestScore = Infinity
-        let bestDeg = -1
-        for (const p of pixels) {
-            const score = (p[0] - cx) ** 2 + (p[1] - cy) ** 2
-            const deg = cardinalCount(p)
-            if (
-                score < bestScore - 1e-9 ||
-                (Math.abs(score - bestScore) <= 1e-9 && (deg > bestDeg || (deg === bestDeg && (p[1] < best[1] || (p[1] === best[1] && p[0] < best[0])))))
-            ) {
-                best = p
-                bestScore = score
-                bestDeg = deg
+    // All-pairs exact 4-connected BFS geodesic distance along the paper island (n <= 96)
+    const geo: Int16Array[] = Array.from({ length: n }, () => new Int16Array(n).fill(9999))
+    const queue = new Int32Array(n)
+    for (let s = 0; s < n; s++) {
+        const dist = geo[s]
+        dist[s] = 0
+        let qh = 0
+        let qt = 0
+        queue[qt++] = s
+        while (qh < qt) {
+            const u = queue[qh++]
+            const du = dist[u] + 1
+            for (const v of adj[u]) {
+                if (dist[v] > du) {
+                    dist[v] = du
+                    queue[qt++] = v
+                }
             }
         }
-        return [best]
     }
 
-    const inset = pixels.filter(p => cardinalCount(p) === 4)
-    let pool: Point2D[]
-    if (inset.length > 0 && Math.min(bw, bh) >= 4) {
-        const thinExtensions = pixels.filter(p => {
-            let minD = Infinity
-            for (const q of inset) {
-                const d = Math.hypot(p[0] - q[0], p[1] - q[1])
-                if (d < minD) minD = d
-            }
-            return minD > 2.2
-        })
-        pool = [...inset, ...thinExtensions]
-    } else {
-        pool = [...pixels]
-    }
+    const cmpPos = (a: number, b: number) =>
+        pixels[a][1] !== pixels[b][1] ? pixels[a][1] - pixels[b][1] : pixels[a][0] - pixels[b][0]
 
-    let first = pool[0]
-    let firstDist = -1
-    for (const p of pool) {
-        const d = (p[0] - cx) ** 2 + (p[1] - cy) ** 2
+    // Compact small islands (<= 3x3 and geodesic radius <= 2): single centered support at geodesic medoid
+    let medoid = 0
+    let medEcc = Infinity
+    let medSum = Infinity
+    for (let i = 0; i < n; i++) {
+        let ecc = 0
+        let sum = 0
+        for (let j = 0; j < n; j++) {
+            if (geo[i][j] > ecc) ecc = geo[i][j]
+            sum += geo[i][j]
+        }
         if (
-            d > firstDist + 1e-9 ||
-            (Math.abs(d - firstDist) <= 1e-9 && (p[1] < first[1] || (p[1] === first[1] && p[0] < first[0])))
+            ecc < medEcc ||
+            (ecc === medEcc &&
+                (sum < medSum ||
+                    (sum === medSum && (deg[i] > deg[medoid] || (deg[i] === deg[medoid] && cmpPos(i, medoid) < 0)))))
         ) {
-            first = p
-            firstDist = d
+            medoid = i
+            medEcc = ecc
+            medSum = sum
+        }
+    }
+    if (bw <= 3 && bh <= 3 && medEcc <= 2) {
+        return [pixels[medoid]]
+    }
+
+    // Per-pixel geodesic reach limit:
+    // - 1-px filaments, tips & diagonal staircases: <= 2 steps
+    // - 2D patch borders & corners: <= 3 steps
+    // - Solid interior surrounded on all 4 sides: <= 4 steps
+    const limit = new Int16Array(n)
+    for (let i = 0; i < n; i++) {
+        if (isThin[i]) limit[i] = 2
+        else if (deg[i] < 4) limit[i] = 3
+        else limit[i] = 4
+    }
+
+    // Candidate pool: prefer inset (deg=4) when the island is >= 5px in both dimensions so supports
+    // sit comfortably away from edges, while keeping any protruding thin branches eligible.
+    const inset: number[] = []
+    for (let i = 0; i < n; i++) {
+        if (deg[i] === 4) inset.push(i)
+    }
+    const useInset = inset.length >= 2 && Math.min(bw, bh) >= 5
+    const allIdx = Array.from({ length: n }, (_, i) => i)
+    let pool: number[]
+    if (useInset) {
+        pool = [...inset]
+        for (let i = 0; i < n; i++) {
+            if (deg[i] === 4) continue
+            let minToInset = Infinity
+            for (const q of inset) {
+                if (geo[i][q] < minToInset) minToInset = geo[i][q]
+            }
+            if (minToInset >= 3 || (isThin[i] && minToInset >= 2)) {
+                pool.push(i)
+            }
+        }
+    } else {
+        pool = allIdx
+    }
+
+    const cheb = (a: number, b: number) =>
+        Math.max(Math.abs(pixels[a][0] - pixels[b][0]), Math.abs(pixels[a][1] - pixels[b][1]))
+
+    // Seed with geodesic diameter endpoints in pool (stabilizes opposite ends of strips, U-shapes & plates)
+    let pA = pool[0]
+    let pB = pool[0]
+    let bestDia = -1
+    for (let ia = 0; ia < pool.length; ia++) {
+        for (let ib = ia + 1; ib < pool.length; ib++) {
+            const a = pool[ia]
+            const b = pool[ib]
+            const d = geo[a][b]
+            const degSum = deg[a] + deg[b]
+            const bestDegSum = deg[pA] + deg[pB]
+            if (
+                d > bestDia ||
+                (d === bestDia &&
+                    (degSum > bestDegSum ||
+                        (degSum === bestDegSum && (cmpPos(a, pA) < 0 || (a === pA && cmpPos(b, pB) < 0)))))
+            ) {
+                bestDia = d
+                pA = a
+                pB = b
+            }
         }
     }
 
-    const chosen: Point2D[] = [first]
-    const chosenSet = new Set([`${first[0]},${first[1]}`])
-    const maxDistSqLimit = COVERAGE_RADIUS_PX * COVERAGE_RADIUS_PX
+    const chosen: number[] = bestDia > 0 ? [pA, pB] : [pA]
+    const chosenSet = new Set<number>(chosen)
+
+    const pickCandidate = (worst: number, reqLimit: number): number => {
+        const search = (cands: number[], minCheb: number) => {
+            let best = -1
+            let bestToWorst = Infinity
+            let bestDeg = -1
+            let bestSpread = -1
+            for (const c of cands) {
+                if (chosenSet.has(c)) continue
+                let minC = Infinity
+                let minG = Infinity
+                for (const a of chosen) {
+                    const ch = cheb(c, a)
+                    if (ch < minC) minC = ch
+                    const gd = geo[c][a]
+                    if (gd < minG) minG = gd
+                }
+                if (minC < minCheb) continue
+                const tw = geo[c][worst]
+                const d = deg[c]
+                if (
+                    tw < bestToWorst ||
+                    (tw === bestToWorst &&
+                        (d > bestDeg ||
+                            (d === bestDeg && (minG > bestSpread || (minG === bestSpread && cmpPos(c, best) < 0)))))
+                ) {
+                    best = c
+                    bestToWorst = tw
+                    bestDeg = d
+                    bestSpread = minG
+                }
+            }
+            return best
+        }
+
+        const stages: [number[], number][] = [
+            [pool, 2],
+            [allIdx, 2],
+            [pool, 1],
+            [allIdx, 1],
+        ]
+        for (const [cands, mc] of stages) {
+            const hit = search(cands, mc)
+            if (hit !== -1 && geo[hit][worst] <= reqLimit) return hit
+        }
+        for (const [cands, mc] of stages) {
+            const hit = search(cands, mc)
+            if (hit !== -1) return hit
+        }
+        return -1
+    }
 
     while (chosen.length < MAX_SUPPORTS_PER_ISLAND) {
-        let worstPixel: Point2D | null = null
-        let worstDistSq = -1
-        for (const p of pixels) {
+        let worst = -1
+        let worstExcess = 0
+        let worstDeg = 99
+        let worstDist = -1
+        for (let i = 0; i < n; i++) {
             let nearest = Infinity
             for (const a of chosen) {
-                const d = distSq(p, a)
-                if (d < nearest) nearest = d
+                if (geo[i][a] < nearest) nearest = geo[i][a]
             }
+            const excess = nearest - limit[i]
             if (
-                nearest > worstDistSq + 1e-9 ||
-                (Math.abs(nearest - worstDistSq) <= 1e-9 && worstPixel && (p[1] < worstPixel[1] || (p[1] === worstPixel[1] && p[0] < worstPixel[0])))
+                excess > worstExcess ||
+                (excess === worstExcess &&
+                    excess > 0 &&
+                    (deg[i] < worstDeg ||
+                        (deg[i] === worstDeg &&
+                            (nearest > worstDist || (nearest === worstDist && cmpPos(i, worst) < 0)))))
             ) {
-                worstDistSq = nearest
-                worstPixel = p
+                worst = i
+                worstExcess = excess
+                worstDeg = deg[i]
+                worstDist = nearest
             }
         }
-        if (!worstPixel || worstDistSq <= maxDistSqLimit) break
-
-        let nextAnchor: Point2D | null = null
-        let bestToWorst = Infinity
-        let bestSpread = -1
-        let bestDeg = -1
-        for (const cand of pool) {
-            if (chosenSet.has(`${cand[0]},${cand[1]}`)) continue
-            const toWorst = distSq(cand, worstPixel)
-            let spread = Infinity
-            for (const a of chosen) {
-                const d = distSq(cand, a)
-                if (d < spread) spread = d
-            }
-            const deg = cardinalCount(cand)
-            if (
-                toWorst < bestToWorst - 1e-9 ||
-                (Math.abs(toWorst - bestToWorst) <= 1e-9 &&
-                    (spread > bestSpread + 1e-9 ||
-                        (Math.abs(spread - bestSpread) <= 1e-9 &&
-                            (deg > bestDeg || (deg === bestDeg && nextAnchor && (cand[1] < nextAnchor[1] || (cand[1] === nextAnchor[1] && cand[0] < nextAnchor[0])))))))
-            ) {
-                nextAnchor = cand
-                bestToWorst = toWorst
-                bestSpread = spread
-                bestDeg = deg
-            }
-        }
-        if (!nextAnchor) break
-        chosen.push(nextAnchor)
-        chosenSet.add(`${nextAnchor[0]},${nextAnchor[1]}`)
+        if (worst === -1) break
+        const next = pickCandidate(worst, limit[worst])
+        if (next === -1) break
+        chosen.push(next)
+        chosenSet.add(next)
     }
 
-    chosen.sort((a, b) => (a[1] !== b[1] ? a[1] - b[1] : a[0] - b[0]))
+    // Anti-seesaw check: any 2D plate (>= 4x4, >= 12px) left with only 2 supports rocks along that
+    // line; brace the farthest pixels on both sides of the hinge.
+    if (chosen.length === 2 && bw >= 4 && bh >= 4 && n >= 12) {
+        const [ax, ay] = pixels[chosen[0]]
+        const [bx, by] = pixels[chosen[1]]
+        const lineLen = Math.hypot(bx - ax, by - ay) || 1
+        for (const sign of [1, -1]) {
+            let far = -1
+            let farPerp = 1.6
+            for (let i = 0; i < n; i++) {
+                const [px, py] = pixels[i]
+                const signed = ((px - ax) * (by - ay) - (py - ay) * (bx - ax)) / lineLen
+                if (signed * sign > farPerp) {
+                    farPerp = signed * sign
+                    far = i
+                }
+            }
+            if (far !== -1) {
+                const next = pickCandidate(far, 2)
+                if (next !== -1) {
+                    chosen.push(next)
+                    chosenSet.add(next)
+                }
+            }
+        }
+    }
+
     return chosen
+        .map(i => pixels[i])
+        .sort((a, b) => (a[1] !== b[1] ? a[1] - b[1] : a[0] - b[0]))
 }
 
 /**
- * Sizes a 1-piece L-shaped 90° corner support for a key voxel so both folded walls and glue flaps stay
- * strictly hidden behind the occupied voxels of its outer-layer island.
+ * Sizes a 1-piece equilateral triangular prism support for a key voxel so all 3 walls and
+ * inward glue flaps stay strictly hidden behind the occupied voxels of its outer-layer island.
  */
-export function sizeLShapeSupport(
+export function sizeTriangleSupport(
     pixels: Point2D[],
     voxel: Point2D,
     cellWidthMm: number,
     cellHeightMm = cellWidthMm,
-): { kind: SupportKind; legXMm: number; legYMm: number } {
+): { kind: SupportKind; sideMm: number } {
     const set = new Set(pixels.map(([x, y]) => `${x},${y}`))
     const has = (x: number, y: number) => set.has(`${x},${y}`)
     const [vx, vy] = voxel
@@ -517,20 +654,20 @@ export function sizeLShapeSupport(
     const bothX = has(vx - 1, vy) && has(vx + 1, vy)
     const bothY = has(vx, vy - 1) && has(vx, vy + 1)
 
-    const legX = Number(Math.min(4.2, cellWidthMm * (bothX ? 1.15 : 0.9)).toFixed(2))
-    const legY = Number(Math.min(4.2, cellHeightMm * (bothY ? 1.15 : 0.9)).toFixed(2))
+    const availW = Math.min(4.2, cellWidthMm * (bothX ? 1.15 : 0.9))
+    const availH = Math.min(4.2, cellHeightMm * (bothY ? 1.15 : 0.9))
+    const sideMm = Number(Math.min(availW, availH / TRI_ALT_RATIO).toFixed(2))
 
     return {
-        kind: 'lshape',
-        legXMm: legX,
-        legYMm: legY,
+        kind: 'triangle',
+        sideMm,
     }
 }
 
 /**
- * Computes the vertically aligned base-to-outer support mount point and L-leg dimensions
- * so every support stands 100% inside the base face AND 100% hidden behind the inflated
- * MCModal outer-layer island.
+ * Computes the vertically aligned base-to-outer support mount point and equilateral triangle
+ * dimensions so every support stands 100% inside the base face AND 100% hidden behind the
+ * inflated MCModal outer-layer island.
  */
 export function computeSupportPlacement(
     metrics: OverlayFaceMetrics,
@@ -544,8 +681,7 @@ export function computeSupportPlacement(
     faceOffsetXMm: number
     faceOffsetYMm: number
     kind: SupportKind
-    legXMm: number
-    legYMm: number
+    sideMm: number
     footMm: number
 } {
     const [vx, vy] = voxel
@@ -576,25 +712,26 @@ export function computeSupportPlacement(
     const baseMarginX = Math.max(0.25, baseRowW / 2 - Math.abs(px))
     const baseMarginY = Math.max(0.25, metrics.baseHeightMm / 2 - Math.abs(py))
 
-    const sized = sizeLShapeSupport(pixels, voxel, outerRowW / gW, metrics.outerCellHeightMm)
     const set = new Set(pixels.map(([x, y]) => `${x},${y}`))
     const bothX = set.has(`${vx - 1},${vy}`) && set.has(`${vx + 1},${vy}`)
     const bothY = set.has(`${vx},${vy - 1}`) && set.has(`${vx},${vy + 1}`)
 
-    const maxOuterX = bothX ? sized.legXMm : Math.min(sized.legXMm, overlapX * 0.9)
-    const maxOuterY = bothY ? sized.legYMm : Math.min(sized.legYMm, overlapY * 0.9)
-    const legXMm = Number(Math.min(maxOuterX, baseMarginX * 2 * 0.92).toFixed(2))
-    const legYMm = Number(Math.min(maxOuterY, baseMarginY * 2 * 0.92).toFixed(2))
-    const footMm = Math.min(maxFootMm, Number((Math.min(legXMm, legYMm) * 0.65).toFixed(2)))
+    const rowCellW = outerRowW / gW
+    const availW = Math.min(4.2, rowCellW * (bothX ? 1.15 : 0.9))
+    const availH = Math.min(4.2, metrics.outerCellHeightMm * (bothY ? 1.15 : 0.9))
+    const maxW = Math.min(bothX ? availW : Math.min(availW, overlapX * 0.9), baseMarginX * 2 * 0.92)
+    const maxH = Math.min(bothY ? availH : Math.min(availH, overlapY * 0.9), baseMarginY * 2 * 0.92)
+    const sideMm = Number(Math.min(maxW, maxH / TRI_ALT_RATIO).toFixed(2))
+    const triAlt = sideMm * TRI_ALT_RATIO
+    const footMm = Number(Math.min(maxFootMm, triAlt * 0.72).toFixed(2))
 
     return {
         baseU,
         baseV,
         faceOffsetXMm: px,
         faceOffsetYMm: py,
-        kind: sized.kind,
-        legXMm,
-        legYMm,
+        kind: 'triangle',
+        sideMm,
         footMm,
     }
 }
@@ -684,8 +821,7 @@ export function extractOverlayIslands(
                             faceOffsetXMm: placed.faceOffsetXMm,
                             faceOffsetYMm: placed.faceOffsetYMm,
                             kind: placed.kind,
-                            legXMm: placed.legXMm,
-                            legYMm: placed.legYMm,
+                            sideMm: placed.sideMm,
                             standoffMm,
                             footMm: placed.footMm,
                             color: colors[voxel[1] * w + voxel[0]],
@@ -744,51 +880,46 @@ function measureIslandMm(island: OverlayIsland): { minXMm: number; widthMm: numb
 }
 
 function getSupportStripDims(anchor: SupportAnchor) {
-    const w1 = anchor.legXMm
-    const w2 = anchor.legYMm
-    const hyp = Number(Math.hypot(w1, w2).toFixed(2))
-    const selfGlueW = Number(Math.min(2.2, Math.max(1.0, w1 * 0.72)).toFixed(2))
+    const s = anchor.sideMm
+    const selfGlueW = Number(Math.min(2.2, Math.max(1.0, s * 0.72)).toFixed(2))
     const H = anchor.standoffMm
-    // Bevel top & bottom glue flaps strictly inside the right-triangle opening
-    const topFoot = Number(Math.min(anchor.footMm, w2 * 0.72).toFixed(2))
-    const botFoot = Number(Math.min(anchor.footMm, w1 * 0.72).toFixed(2))
-    const topInset = Number(((topFoot * w1) / Math.max(0.1, w2)).toFixed(2))
-    const botInset = Number(((botFoot * w2) / Math.max(0.1, w1)).toFixed(2))
+    const foot = Number(Math.min(anchor.footMm, s * TRI_ALT_RATIO * 0.72).toFixed(2))
+    const inset = Number((foot / SQRT3).toFixed(2))
     const tabBevel = Number(Math.min(H * 0.18, 0.22).toFixed(2))
-    return { w1, w2, hyp, selfGlueW, H, topFoot, botFoot, topInset, botInset, tabBevel }
+    return { s, selfGlueW, H, foot, inset, tabBevel }
 }
 
 /**
- * Builds a single 1-piece self-gluing L-corner triangular column:
- *   [wall 1 (w1)] : [wall 2 (w2)] : [diagonal brace (hyp)] : [self-glue tab]
- * Folding all 5 mountain creases and gluing the right-end self-glue tab onto the inside of
- * wall 1 locks the 90° L-corner into a rigid, self-standing prism of exact height `standoffMm`,
- * with beveled top & bottom glue flaps tucked strictly inside the triangular footprint.
+ * Builds a single 1-piece self-gluing equilateral triangular prism support:
+ *   [side 1 (s)] : [side 2 (s)] : [side 3 (s)] : [self-glue tab]
+ * All 3 vertical walls share equal width `s` and identical 60° folds; gluing the right-end
+ * self-glue tab onto the inside of side 1 locks the prism rigidly at exact height `standoffMm`,
+ * with symmetric 60° beveled top & bottom glue flaps tucked strictly inside the triangle opening.
  */
 function buildPlacedSupport(anchor: SupportAnchor, ox: number, oy: number): PlacedSupport {
-    const { w1, w2, hyp, selfGlueW, H, topFoot, botFoot, topInset, botInset, tabBevel } = getSupportStripDims(anchor)
+    const { s, selfGlueW, H, foot, inset, tabBevel } = getSupportStripDims(anchor)
 
     const x0 = ox
-    const x1 = ox + w1
-    const x2 = x1 + w2
-    const x3 = x2 + hyp
+    const x1 = ox + s
+    const x2 = ox + 2 * s
+    const x3 = ox + 3 * s
     const x4 = x3 + selfGlueW
     const y0 = oy
-    const y1 = oy + topFoot
+    const y1 = oy + foot
     const y2 = y1 + H
-    const y3 = y2 + botFoot
+    const y3 = y2 + foot
 
     const topFlapPoly: Point2D[] = [
         [x0, y1],
-        [x0 + topInset, y0],
-        [x1, y0],
+        [x0 + inset, y0],
+        [x1 - inset, y0],
         [x1, y1],
     ]
     const botFlapPoly: Point2D[] = [
         [x1, y2],
         [x2, y2],
-        [x2 - botInset, y3],
-        [x1, y3],
+        [x2 - inset, y3],
+        [x1 + inset, y3],
     ]
     const selfGluePoly: Point2D[] = [
         [x3, y1],
@@ -800,27 +931,27 @@ function buildPlacedSupport(anchor: SupportAnchor, ox: number, oy: number): Plac
     const piece: SupportCutPiece = {
         cutPolygon: [
             [x0, y1],
-            [x0 + topInset, y0],
-            [x1, y0],
+            [x0 + inset, y0],
+            [x1 - inset, y0],
             [x1, y1],
             [x3, y1],
             [x4, y1 + tabBevel],
             [x4, y2 - tabBevel],
             [x3, y2],
             [x2, y2],
-            [x2 - botInset, y3],
-            [x1, y3],
+            [x2 - inset, y3],
+            [x1 + inset, y3],
             [x1, y2],
             [x0, y2],
         ],
         foldLines: [
-            { from: [x1, y1], to: [x1, y2], kind: 'mountain' }, // 90° L-corner
-            { from: [x2, y1], to: [x2, y2], kind: 'mountain' }, // wall 2 -> diagonal brace
-            { from: [x3, y1], to: [x3, y2], kind: 'mountain' }, // diagonal brace -> self-glue tab
-            { from: [x0, y1], to: [x1, y1], kind: 'mountain' }, // top glue flap
-            { from: [x1, y2], to: [x2, y2], kind: 'mountain' }, // bottom glue flap
+            { from: [x1, y1], to: [x1, y2], kind: 'mountain' }, // 60° corner 1
+            { from: [x2, y1], to: [x2, y2], kind: 'mountain' }, // 60° corner 2
+            { from: [x3, y1], to: [x3, y2], kind: 'mountain' }, // 60° self-glue fold
+            { from: [x0, y1], to: [x1, y1], kind: 'mountain' }, // top 60° glue flap
+            { from: [x1, y2], to: [x2, y2], kind: 'mountain' }, // bottom 60° glue flap
         ],
-        wallRect: { x: x0, y: y1, width: w1 + w2 + hyp, height: H },
+        wallRect: { x: x0, y: y1, width: 3 * s, height: H },
         glueTabPolygons: [topFlapPoly, botFlapPoly, selfGluePoly],
     }
 
@@ -835,10 +966,10 @@ function buildPlacedSupport(anchor: SupportAnchor, ox: number, oy: number): Plac
 }
 
 function measureSupportSlot(anchor: SupportAnchor): { width: number; height: number } {
-    const { w1, w2, hyp, selfGlueW, H, topFoot, botFoot } = getSupportStripDims(anchor)
+    const { s, selfGlueW, H, foot } = getSupportStripDims(anchor)
     return {
-        width: w1 + w2 + hyp + selfGlueW,
-        height: topFoot + H + botFoot + 3.0,
+        width: 3 * s + selfGlueW,
+        height: 2 * foot + H + 3.0,
     }
 }
 
@@ -855,7 +986,7 @@ export function buildDualLayerPlan(baseLayout: OrigamiLayout, skinData: Uint8Cla
     const minX = PAGE_MARGIN_X_MM
     const maxX = A4_WIDTH_MM - PAGE_MARGIN_X_MM
     const startY = Math.ceil(CUT_SAFE_TOP_MM) + 4 // 27 mm
-    const legendReserveH = 27
+    const infoReserveH = 24
     const maxY = Math.floor(CUT_SAFE_BOTTOM_MM) - 2 // 272 mm
 
     const firstOverlayPageNum = baseLayout.basePages.length + 1
@@ -965,18 +1096,12 @@ export function buildDualLayerPlan(baseLayout: OrigamiLayout, skinData: Uint8Cla
     }
 
     const usedBottom = page.islands.length === 0 && page.supports.length === 0 ? startY : cursorY + rowHeight + 6
-    if (usedBottom + legendReserveH <= maxY + 12) {
-        page.legendArea = {
-            x: minX,
-            y: Math.max(usedBottom, maxY - legendReserveH + 4),
-            width: 112,
-            height: legendReserveH,
-        }
+    if (usedBottom + infoReserveH <= maxY + 12) {
         page.infoArea = {
-            x: minX + 116,
-            y: Math.max(usedBottom, maxY - legendReserveH + 4),
-            width: maxX - (minX + 116),
-            height: legendReserveH,
+            x: minX,
+            y: Math.max(usedBottom, maxY - infoReserveH + 4),
+            width: maxX - minX,
+            height: infoReserveH,
         }
     }
 

@@ -16,7 +16,7 @@ interface FloatingOverlayRef {
 }
 
 interface SupportMeshRef {
-    mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshLambertMaterial>
+    mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>
     baseColor: THREE.Color
 }
 
@@ -336,31 +336,35 @@ export function OrigamiPreview({
                             anchor.color[2] / 255,
                         ).lerp(new THREE.Color('#d8dee6'), 0.35)
 
-                        const addSupportBox = (bw: number, bh: number, bd: number, px: number, py: number, pz: number, rotZ = 0) => {
-                            const sGeo = new THREE.BoxGeometry(bw, bh, bd)
-                            const sMat = new THREE.MeshLambertMaterial({ color: baseColor.clone() })
-                            extraGeometries.push(sGeo)
+                        const addSupportMesh = (geo: THREE.BufferGeometry, px: number, py: number, pz: number, rotZ = 0, doubleSide = false) => {
+                            const sMat = new THREE.MeshLambertMaterial({
+                                color: baseColor.clone(),
+                                ...(doubleSide ? { side: THREE.DoubleSide } : {}),
+                            })
+                            extraGeometries.push(geo)
                             extraMaterials.push(sMat)
-                            const sMesh = new THREE.Mesh(sGeo, sMat)
+                            const sMesh = new THREE.Mesh(geo, sMat)
                             sMesh.position.set(px, py, pz)
                             if (rotZ) sMesh.rotation.z = rotZ
                             faceGroup.add(sMesh)
                             allSupports.push({ mesh: sMesh, baseColor: baseColor.clone() })
                         }
 
-                        const w1 = anchor.legXMm * mmToWorld
-                        const w2 = anchor.legYMm * mmToWorld
-                        const hyp = Math.hypot(w1, w2)
-                        const foot = Math.min(anchor.footMm * mmToWorld, Math.min(w1, w2) * 0.55)
-                        const cornerX = lx - w1 / 2
-                        const cornerY = ly - w2 / 2
-                        // 90° L-legs + closing diagonal brace (forms a closed right-triangle column)
-                        addSupportBox(w1, paperThick, anchorStandoff, lx, cornerY + paperThick / 2, anchorStandoff / 2)
-                        addSupportBox(paperThick, w2, anchorStandoff, cornerX + paperThick / 2, ly, anchorStandoff / 2)
-                        addSupportBox(hyp, paperThick, anchorStandoff, lx, ly, anchorStandoff / 2, -Math.atan2(w2, w1))
-                        // Top & bottom glue flaps tucked inside the right-angle corner
-                        addSupportBox(w1 * 0.5, foot, paperThick, cornerX + w1 * 0.25, cornerY + foot / 2, anchorStandoff - paperThick / 2)
-                        addSupportBox(foot, w2 * 0.5, paperThick, cornerX + foot / 2, cornerY + w2 * 0.25, paperThick / 2)
+                        const side = anchor.sideMm * mmToWorld
+                        const hTri = side * (Math.sqrt(3) / 2)
+                        const triAngle = (2 * Math.PI) / 3
+                        // 3 equal vertical walls forming an equilateral triangular prism centered at (lx, ly)
+                        addSupportMesh(new THREE.BoxGeometry(side, paperThick, anchorStandoff), lx, ly - hTri / 2, anchorStandoff / 2, 0)
+                        addSupportMesh(new THREE.BoxGeometry(side, paperThick, anchorStandoff), lx + side / 4, ly, anchorStandoff / 2, triAngle)
+                        addSupportMesh(new THREE.BoxGeometry(side, paperThick, anchorStandoff), lx - side / 4, ly, anchorStandoff / 2, -triAngle)
+                        // Top & bottom triangular glue caps inside the prism
+                        const capShape = new THREE.Shape()
+                        capShape.moveTo(-side / 2, -hTri / 2)
+                        capShape.lineTo(side / 2, -hTri / 2)
+                        capShape.lineTo(0, hTri / 2)
+                        capShape.closePath()
+                        addSupportMesh(new THREE.ShapeGeometry(capShape), lx, ly, anchorStandoff - paperThick / 2, 0, true)
+                        addSupportMesh(new THREE.ShapeGeometry(capShape), lx, ly, paperThick / 2, 0, true)
                     }
                 }
             }

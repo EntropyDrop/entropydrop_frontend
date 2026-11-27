@@ -571,9 +571,13 @@ export function FigureOrigamiPage({ current }: { current: LangData }) {
                                             ? t.pages.overlay.replace('{page}', String(sheet.pageNumber))
                                             : sheet.baseRole === 'headTorso'
                                                 ? t.pages.headTorso
-                                                : sheet.baseRole === 'limbs'
-                                                    ? t.pages.limbs
-                                                    : t.pages.base
+                                                : sheet.baseRole === 'head'
+                                                    ? t.pages.head
+                                                    : sheet.baseRole === 'torso'
+                                                        ? t.pages.torso
+                                                        : sheet.baseRole === 'limbs'
+                                                            ? t.pages.limbs.replace('{page}', String(sheet.pageNumber))
+                                                            : t.pages.base
                                         const active = idx === activePageIndex
                                         return (
                                             <button

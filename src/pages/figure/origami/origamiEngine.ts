@@ -40,7 +40,7 @@ export interface OrigamiSheetLabels {
     tipFold: string
     tipGlue: string
     dualOverlayTitle?: string
-    dualLshapeLegend?: string
+    dualTriangleLegend?: string
     dualTip?: string
     dualEmptyOverlay?: string
 }
@@ -53,9 +53,9 @@ export const DEFAULT_SHEET_LABELS: OrigamiSheetLabels = {
     tipCut: '1. Print A4 at 100% scale (160-200g paper).',
     tipFold: '2. Cut solid lines, score & fold dashed lines away.',
     tipGlue: '3. Glue tabs inside, then join head, arms & legs with wooden sticks or glue.',
-    dualOverlayTitle: 'Outer Layer Stickers & L-Supports',
-    dualLshapeLegend: 'L-Support: 1 pc, 5 mountain folds (90 deg L + diagonal brace & self-glue tab)',
-    dualTip: 'Glue self-tab to close #N support, attach to number N on base sheet, then glue outer sticker on top.',
+    dualOverlayTitle: 'Outer Layer Stickers & Triangle Supports',
+    dualTriangleLegend: 'Triangle Support: 1 pc, 5 mountain folds (3 equal walls + self-glue tab + top/bottom flaps)',
+    dualTip: 'Glue self-tab to close #N triangle support, attach to number N on base sheet, then glue outer sticker on top.',
     dualEmptyOverlay: 'This skin has no opaque outer-layer pixels; only base sheets are needed.',
 }
 
@@ -477,71 +477,7 @@ export function renderOrigamiBasePage(
         ctx.restore()
     }
 
-    // Legend, 3 cm scale verification bar, and concise folding instructions
-    ctx.save()
-    const g = page.guideArea
-    ctx.strokeStyle = '#cbd5e1'
-    ctx.lineWidth = Math.max(1, 0.2 * s)
-    ctx.strokeRect(g.x * s, g.y * s, g.width * s, g.height * s)
-
-    const pad = 3.2
-    const lx = g.x + pad
-    let ly = g.y + 3.2
-    const maxW = (g.width - pad * 2) * s
-
-    const legendFont = fontPx(2.2)
-    ctx.font = `${legendFont}px ${STICKER_FONT_FAMILY}`
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'middle'
-
-    ctx.strokeStyle = '#0f172a'
-    ctx.lineWidth = Math.max(1, 0.3 * s)
-    strokeSegment(ctx, lx * s, (ly + 1.4) * s, (lx + 7) * s, (ly + 1.4) * s)
-    ctx.fillStyle = '#1e293b'
-    ctx.fillText(sheetLabels.cutLine, (lx + 8.5) * s, (ly + 1.4) * s)
-
-    const foldSwatchX = lx + Math.min(34, g.width * 0.32)
-    ctx.save()
-    ctx.strokeStyle = '#334155'
-    ctx.lineWidth = Math.max(1, 0.26 * s)
-    if (typeof ctx.setLineDash === 'function') ctx.setLineDash([1.4 * s, 1.1 * s])
-    strokeSegment(ctx, foldSwatchX * s, (ly + 1.4) * s, (foldSwatchX + 7) * s, (ly + 1.4) * s)
-    ctx.restore()
-    ctx.fillText(sheetLabels.foldLine, (foldSwatchX + 8.5) * s, (ly + 1.4) * s)
-
-    if (g.width >= 105) {
-        const tabSwatchX = lx + Math.min(76, g.width * 0.66)
-        ctx.fillStyle = '#eef2f6'
-        ctx.fillRect(tabSwatchX * s, (ly + 0.1) * s, 6.0 * s, 2.6 * s)
-        ctx.strokeStyle = '#0f172a'
-        ctx.lineWidth = Math.max(1, 0.2 * s)
-        ctx.strokeRect(tabSwatchX * s, (ly + 0.1) * s, 6.0 * s, 2.6 * s)
-        ctx.fillStyle = '#1e293b'
-        ctx.fillText(sheetLabels.glueTab, (tabSwatchX + 7.5) * s, (ly + 1.4) * s)
-    }
-
-    ly += 6.2
-    const barW = 30
-    const barH = 2.2
-    for (let cm = 0; cm < 3; cm++) {
-        ctx.fillStyle = cm % 2 === 0 ? '#1e293b' : '#ffffff'
-        ctx.fillRect((lx + cm * 10) * s, ly * s, 10 * s, barH * s)
-    }
-    ctx.strokeStyle = '#1e293b'
-    ctx.lineWidth = Math.max(1, 0.2 * s)
-    ctx.strokeRect(lx * s, ly * s, barW * s, barH * s)
-    ctx.fillStyle = '#334155'
-    ctx.fillText(fitText(ctx, sheetLabels.scaleLabel, Math.max(10, g.width - pad * 2 - barW - 3) * s), (lx + barW + 3) * s, (ly + barH / 2) * s)
-
-    ly += 5.4
-    ctx.textBaseline = 'top'
-    ctx.fillStyle = '#475569'
-    ctx.font = `${fontPx(2.1)}px ${STICKER_FONT_FAMILY}`
-    for (const tip of [sheetLabels.tipCut, sheetLabels.tipFold, sheetLabels.tipGlue]) {
-        ctx.fillText(fitText(ctx, tip, maxW), lx * s, ly * s)
-        ly += 4.6
-    }
-    ctx.restore()
+    void sheetLabels
 
     if (info) {
         drawAttributionInfo(ctx, page.infoArea, info, s, fontPx)
@@ -727,47 +663,7 @@ export function renderDualLayerOverlaySheet(
         ctx.textAlign = 'left'
         ctx.textBaseline = 'bottom'
         ctx.font = `${Math.max(8, Math.round(1.9 * s))}px ${STICKER_FONT_FAMILY}`
-        ctx.fillText(`#${placed.anchor.index} L`, placed.labelPos[0] * s, placed.labelPos[1] * s)
-        ctx.restore()
-    }
-
-    if (page.legendArea) {
-        const g = page.legendArea
-        ctx.save()
-        ctx.strokeStyle = '#cbd5e1'
-        ctx.lineWidth = Math.max(1, 0.2 * s)
-        ctx.strokeRect(g.x * s, g.y * s, g.width * s, g.height * s)
-
-        const pad = 3
-        const lx = g.x + pad
-        let ly = g.y + 3
-        const maxW = (g.width - pad * 2) * s
-
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'top'
-        ctx.font = `${fontPx(2.2)}px ${STICKER_FONT_FAMILY}`
-        ctx.fillStyle = '#047857'
-        ctx.fillText(fitText(ctx, sheetLabels.dualLshapeLegend || DEFAULT_SHEET_LABELS.dualLshapeLegend!, maxW), lx * s, ly * s)
-        ly += 5.4
-
-        const barW = 30
-        const barH = 2.0
-        for (let cm = 0; cm < 3; cm++) {
-            ctx.fillStyle = cm % 2 === 0 ? '#1e293b' : '#ffffff'
-            ctx.fillRect((lx + cm * 10) * s, ly * s, 10 * s, barH * s)
-        }
-        ctx.strokeStyle = '#1e293b'
-        ctx.lineWidth = Math.max(1, 0.2 * s)
-        ctx.strokeRect(lx * s, ly * s, barW * s, barH * s)
-        ctx.fillStyle = '#334155'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(sheetLabels.scaleLabel, (lx + barW + 2.5) * s, (ly + barH / 2) * s)
-
-        ly += 5.2
-        ctx.textBaseline = 'top'
-        ctx.fillStyle = '#475569'
-        ctx.font = `${fontPx(2.0)}px ${STICKER_FONT_FAMILY}`
-        ctx.fillText(fitText(ctx, sheetLabels.dualTip || DEFAULT_SHEET_LABELS.dualTip!, maxW), lx * s, ly * s)
+        ctx.fillText(`#${placed.anchor.index} △`, placed.labelPos[0] * s, placed.labelPos[1] * s)
         ctx.restore()
     }
 
@@ -843,7 +739,15 @@ export async function generateOrigami(
         const svgUrl = URL.createObjectURL(
             new Blob([generateOrigamiBasePageSvg(basePage)], { type: 'image/svg+xml;charset=utf-8' }),
         )
-        const roleTag = basePage.role === 'headTorso' ? 'head_torso' : basePage.role === 'limbs' ? 'limbs' : 'base'
+        const roleTag = basePage.role === 'headTorso'
+            ? 'head_torso'
+            : basePage.role === 'head'
+                ? 'head'
+                : basePage.role === 'torso'
+                    ? 'torso'
+                    : basePage.role === 'limbs'
+                        ? 'limbs'
+                        : 'base'
         const suffix = totalPages > 1 ? `${layerTag}_P${basePage.pageNumber}_${roleTag}` : `${layerTag}_origami`
         sheets.push({
             pageNumber: basePage.pageNumber,
