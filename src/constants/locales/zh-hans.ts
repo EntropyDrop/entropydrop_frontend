@@ -1629,6 +1629,8 @@ Agent 仅应在您授权的权限范围内连接外部服务。完成任务所�
         loading: '加载中...',
         slimMode: '纤细型',
         strongMode: '标准型',
+        modelTempNotice: '仅临时生效，如需修改请点击',
+        modelTempNoticeEdit: 'Edit',
         feedbackTitle: '生成质量反馈',
         feedbackGood: '效果很好',
         feedbackBad: '有瑕疵',

@@ -18,6 +18,7 @@ interface MCModalPreviewProps {
     setMode: (m: 'voxel' | 'plane' | 'cute') => void;
     setAction: (a: 'idle' | 'walk' | 'dance') => void;
     convertModel: (target: 'steve' | 'alex') => void;
+    showModelTempNotice?: boolean;
     onEdit?: () => void;
     onPrint?: () => void;
     onOrigami?: () => void;
@@ -493,6 +494,7 @@ export function MCModalPreview({
     setMode,
     setAction,
     convertModel,
+    showModelTempNotice,
     onEdit,
     onPrint,
     onOrigami,
@@ -503,6 +505,15 @@ export function MCModalPreview({
 }: MCModalPreviewProps) {
     const [isFbxDropdownOpen, setIsFbxDropdownOpen] = useState(false);
     const [previewFailed, setPreviewFailed] = useState(false);
+    const [localModelTempNotice, setLocalModelTempNotice] = useState(false);
+    const isModelTempNoticeVisible = showModelTempNotice ?? localModelTempNotice;
+    const handleModelSelect = useCallback((target: 'steve' | 'alex') => {
+        if (modelType === target) return;
+        convertModel(target);
+        if (showModelTempNotice === undefined) {
+            setLocalModelTempNotice(true);
+        }
+    }, [convertModel, modelType, showModelTempNotice]);
     const handlePreviewError = useCallback(() => setPreviewFailed(true), []);
     const handlePreviewRecover = useCallback(() => setPreviewFailed(false), []);
     const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -654,16 +665,39 @@ export function MCModalPreview({
                                 EDIT
                             </button>
                         </div>
+                        {isModelTempNoticeVisible && (
+                            <div
+                                role="status"
+                                aria-live="polite"
+                                className={`max-w-[220px] sm:max-w-[260px] bg-black/50 backdrop-blur-md border border-white/10 px-2.5 py-1.5 flex items-center justify-center gap-1.5 text-[10px] leading-snug text-white/60 text-center font-pixel-hans ${current.fontClass}`}
+                            >
+                                <Icon icon="pixelarticons:info-box" className="text-xs text-white/45 shrink-0" />
+                                <span className="text-center">
+                                    {current.mcmodal?.modelTempNotice || 'Temporary preview only. To modify, click'}{' '}
+                                    {onEdit ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => onEdit()}
+                                            className="inline align-baseline text-white/85 hover:text-[#4ea632] underline underline-offset-2 transition-colors cursor-pointer bg-transparent border-0 p-0 m-0 font-pixel-hans text-[10px] leading-snug"
+                                        >
+                                            {current.mcmodal?.modelTempNoticeEdit || 'Edit'}
+                                        </button>
+                                    ) : (
+                                        <span className="text-white/85">{current.mcmodal?.modelTempNoticeEdit || 'Edit'}</span>
+                                    )}
+                                </span>
+                            </div>
+                        )}
                         {/* Model Type Toggler */}
                         <div className="flex bg-black/40 backdrop-blur-md border border-white/10 p-0.5">
                             <button
-                                onClick={() => convertModel('steve')}
+                                onClick={() => handleModelSelect('steve')}
                                 className={`px-2 py-1 text-[9px] font-pixel-hans transition-all cursor-pointer ${current.fontClass} ${modelType === 'steve' ? 'bg-[#3c8527] text-white' : 'text-white/40 hover:text-white'}`}
                             >
                                 {current.mcmodal.strongMode}
                             </button>
                             <button
-                                onClick={() => convertModel('alex')}
+                                onClick={() => handleModelSelect('alex')}
                                 className={`px-2 py-1 text-[9px] font-pixel-hans transition-all cursor-pointer ${current.fontClass} ${modelType === 'alex' ? 'bg-[#3c8527] text-white' : 'text-white/40 hover:text-white'}`}
                             >
                                 {current.mcmodal.slimMode}

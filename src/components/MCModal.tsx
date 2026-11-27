@@ -142,6 +142,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
     }, []);
 
     const [modelType, setModelType] = useState<'steve' | 'alex'>('steve');
+    const [showModelTempNotice, setShowModelTempNotice] = useState(false);
     const [isLiked, setIsLiked] = useState(false);
     const [likesCount, setLikesCount] = useState(0);
     useEffect(() => {
@@ -462,6 +463,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
         setIsReportOpen(false);
         setIsReportSubmitted(false);
         setShowShareToast(false);
+        setShowModelTempNotice(false);
         setSkinSuccess(false);
         setSkinError('');
         setIsLicenseExpanded(false);
@@ -833,6 +835,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
 
             setTextureUrl(canvas.toDataURL());
             setModelType(target);
+            setShowModelTempNotice(true);
         };
     };
 
@@ -940,6 +943,7 @@ export function MCModal({ item: initialItem, closeModal: close, textureUrl: init
                                                 fbxUrl={fbxUrl}
                                                 setFbxUrl={setFbxUrl}
                                                 convertModel={convertModel}
+                                                showModelTempNotice={showModelTempNotice}
                                                 onEdit={onEdit ? () => onEdit(textureUrl, item.id, item.is_public === true, item.name) : undefined}
                                                 onPrint={handlePrint}
                                                 onOrigami={handleOrigami}

@@ -233,3 +233,85 @@ test('modal preview persists orbit rotation and pinch zoom distance to localStor
         dom.window.close();
     }
 });
+
+test('switching Strong/Slim shows a subtle temporary-effect reminder with clickable Edit without rebuilding the 3D scene', async () => {
+    const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/', pretendToBeVisual: true });
+    const previous = { window: global.window, document: global.document, act: global.IS_REACT_ACT_ENVIRONMENT };
+    global.window = dom.window; global.document = dom.window.document; global.IS_REACT_ACT_ENVIRONMENT = true;
+    const renders = [];
+    const module = { exports: {} };
+    vm.runInNewContext(code, { module, exports: module.exports, console, document, window,
+        require(name) {
+            if (name === '@react-three/fiber') return { Canvas: props => { renders.push(props); return null; } };
+            if (name === '@react-three/drei') return { Stage: () => null, OrbitControls: () => null };
+            if (name === './MC') return { MinecraftCharacter: () => null };
+            if (name === '@iconify/react') return { Icon: () => null };
+            if (name === './FigureDiscountBadge') return { FigurePrintOfferBadge: () => null };
+            if (name === '../utils/httpClient') return {};
+            return require(name);
+        },
+    });
+    const root = createRoot(document.getElementById('root'));
+    const converted = [];
+    let editClicks = 0;
+    const props = {
+        textureUrl: '/skin.png',
+        mode: 'plane',
+        action: 'idle',
+        modelType: 'steve',
+        setMode() {},
+        setAction() {},
+        convertModel(target) { converted.push(target); },
+        onEdit() { editClicks += 1; },
+        current: {
+            fontClass: 'font-pixel-hans',
+            mcmodal: {
+                strongMode: '标准型',
+                slimMode: '纤细型',
+                modelTempNotice: '仅临时生效，如需修改请点击',
+                modelTempNoticeEdit: 'Edit',
+            },
+        },
+    };
+    const render = async patch => {
+        Object.assign(props, patch);
+        await React.act(async () => root.render(React.createElement(module.exports.MCModalPreview, { ...props })));
+    };
+    try {
+        await render({});
+        assert.equal(document.querySelector('[role="status"]'), null, 'No temporary notice before switching Strong/Slim');
+
+        const findButton = text => Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === text);
+        const initialSceneRenders = renders.length;
+
+        // Clicking the already-active Strong button is a no-op.
+        await React.act(async () => { findButton('标准型').click(); });
+        assert.deepEqual(converted, []);
+        assert.equal(document.querySelector('[role="status"]'), null);
+
+        // Clicking Slim triggers convertModel and shows the subtle temporary reminder.
+        await React.act(async () => { findButton('纤细型').click(); });
+        assert.deepEqual(converted, ['alex']);
+        assert.equal(renders.length, initialSceneRenders, 'Showing the model reminder must not rebuild the 3D scene');
+        const notice = document.querySelector('[role="status"]');
+        assert.ok(notice, 'Temporary notice should appear after switching Strong/Slim');
+        assert.match(notice.textContent, /仅临时生效，如需修改请点击/);
+        assert.match(notice.textContent, /Edit/);
+
+        // Clicking Edit inside the reminder triggers onEdit.
+        const editButton = notice.querySelector('button');
+        assert.ok(editButton, 'Edit link inside notice should be clickable when onEdit is provided');
+        await React.act(async () => { editButton.click(); });
+        assert.equal(editClicks, 1);
+
+        // Controlled prop reset (e.g., switching to another skin in MCModal) hides the notice cleanly.
+        await render({ showModelTempNotice: false });
+        assert.equal(document.querySelector('[role="status"]'), null);
+        await render({ showModelTempNotice: true });
+        assert.ok(document.querySelector('[role="status"]'));
+    } finally {
+        await React.act(async () => root.unmount());
+        global.window = previous.window; global.document = previous.document; global.IS_REACT_ACT_ENVIRONMENT = previous.act;
+        dom.window.close();
+    }
+});

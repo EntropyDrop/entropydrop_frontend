@@ -1629,6 +1629,8 @@ Email: support@entropydrop.com`
         loading: 'Loading...',
         slimMode: 'Slim',
         strongMode: 'Strong',
+        modelTempNotice: 'Temporary preview only. To modify, click',
+        modelTempNoticeEdit: 'Edit',
         feedbackTitle: 'Generation Quality',
         feedbackGood: 'Looks Good',
         feedbackBad: 'Glitched',
