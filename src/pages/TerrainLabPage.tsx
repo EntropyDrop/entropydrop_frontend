@@ -54,6 +54,10 @@ import {
   createAeroglassEmissiveMaterial,
   createAeroglassSky,
 } from './terrainLab/aeroglassLook';
+import { generateSkyweaveInterchange, WEAVE_DEFAULTS, SKYWEAVE_SUN } from './terrainLab/skyweaveInterchange';
+import type { WeaveConfig } from './terrainLab/skyweaveInterchange';
+import skyweaveSource from './terrainLab/skyweaveInterchange.ts?raw';
+import { createSkyweaveNormalMaterial, createSkyweaveSky } from './terrainLab/skyweaveLook';
 
 /** SSAOPass wrapper that excludes translucent voxel meshes from the depth/normal AO pass
  * so glass tubes, biodomes and crystal facades never pick up dark opaque-AO smudges. */
@@ -73,7 +77,7 @@ class OpaqueSSAOPass extends SSAOPass {
       }
     });
     try {
-      super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+      super.render(renderer, writeBuffer, readBuffer, deltaTime ?? 0, maskActive ?? false);
     } finally {
       for (const obj of hidden) obj.visible = true;
     }
@@ -307,6 +311,7 @@ const TORUS_SPAWN_X = 8192;
 const TORUS_SPAWN_Z = 1024;
 
 export type AlgorithmType =
+  | 'skyweave_interchange'
   | 'aeroglass_valley'
   | 'sunset_conduit'
   | 'verdant_hyperloop'
@@ -328,7 +333,7 @@ export type AlgorithmType =
   | 'mandelbox_dusk'
   | 'custom_code';
 
-export interface TerrainConfig extends NexusConfig, MetropolisConfig, NeonRainConfig, BrutalistDuskConfig, AetherConfig, FoundryConfig, CanyonConfig, HarborConfig, HyperloopConfig, ConduitConfig, AeroglassConfig {
+export interface TerrainConfig extends NexusConfig, MetropolisConfig, NeonRainConfig, BrutalistDuskConfig, AetherConfig, FoundryConfig, CanyonConfig, HarborConfig, HyperloopConfig, ConduitConfig, AeroglassConfig, WeaveConfig {
   sizeX: number;
   sizeY: number;
   sizeZ: number;
@@ -408,6 +413,7 @@ const DEFAULT_CONFIG: TerrainConfig = {
   ...HYPERLOOP_DEFAULTS,
   ...CONDUIT_DEFAULTS,
   ...AEROGLASS_DEFAULTS,
+  ...WEAVE_DEFAULTS,
   sizeX: 64,
   sizeY: 56,
   sizeZ: 64,
@@ -457,6 +463,12 @@ return Math.round(16 + ripple + n);`,
   mandelboxThreshold: 0.16,
   mandelboxOffsetX: 1.05,
   mandelboxOffsetZ: 1.05,
+};
+
+const SKYWEAVE_PRESET: Partial<TerrainConfig> = {
+  ...WEAVE_DEFAULTS, algorithm: 'skyweave_interchange',
+  sizeX: 448, sizeY: 192, sizeZ: 448, yCutoff: 192,
+  offsetX: 0, offsetZ: 0, step: 1, theme: 'nature', renderMode: 'voxel',
 };
 
 const AEROGLASS_PRESET: Partial<TerrainConfig> = {
@@ -1382,6 +1394,10 @@ export function TerrainLabPage() {
   const aeroglassOverviewRef = useRef<ReturnType<typeof generateAeroglassValley>['overviewView'] | null>(null);
   const aeroglassViewsRef = useRef<ReturnType<typeof generateAeroglassValley>['landmarkViews']>([]);
   const aeroglassViewIndexRef = useRef(0);
+  const skyweaveSkyRef = useRef<THREE.CanvasTexture | null>(null);
+  const skyweaveOverviewRef = useRef<ReturnType<typeof generateSkyweaveInterchange>['overviewView'] | null>(null);
+  const skyweaveViewsRef = useRef<ReturnType<typeof generateSkyweaveInterchange>['landmarkViews']>([]);
+  const skyweaveViewIndexRef = useRef(0);
   const canyonSkyRef = useRef<THREE.CanvasTexture | null>(null);
   const astralSkyRef = useRef<THREE.CanvasTexture | null>(null);
   const canyonOverviewRef = useRef<ReturnType<typeof generateTitanCanyon>['overviewView'] | null>(null);
@@ -1685,6 +1701,8 @@ export function TerrainLabPage() {
       conduitSkyRef.current = null;
       aeroglassSkyRef.current?.dispose();
       aeroglassSkyRef.current = null;
+      skyweaveSkyRef.current?.dispose();
+      skyweaveSkyRef.current = null;
       canyonSkyRef.current?.dispose();
       canyonSkyRef.current = null;
       astralSkyRef.current?.dispose();
@@ -1760,6 +1778,10 @@ export function TerrainLabPage() {
     aeroglassOverviewRef.current = aeroglass?.overviewView ?? null;
     aeroglassViewsRef.current = aeroglass?.landmarkViews ?? [];
     aeroglassViewIndexRef.current = 0;
+    const skyweave = algorithm === 'skyweave_interchange' ? generateSkyweaveInterchange(config) : null;
+    skyweaveOverviewRef.current = skyweave?.overviewView ?? null;
+    skyweaveViewsRef.current = skyweave?.landmarkViews ?? [];
+    skyweaveViewIndexRef.current = 0;
     const harbor = algorithm === 'colossus_harbor' ? generateColossusHarbor(config) : null;
     harborOverviewRef.current = harbor?.overviewView ?? null;
     statueViewsRef.current = harbor?.statueViews ?? [];
@@ -1767,8 +1789,8 @@ export function TerrainLabPage() {
     const canyon = algorithm === 'titan_canyon' ? generateTitanCanyon(config) : null;
     const foundry = algorithm === 'astral_foundry' ? generateAstralFoundry(config) : null;
     canyonOverviewRef.current = canyon?.overviewView ?? null;
-    platformViewRef.current = aeroglass?.deckView ?? conduit?.deckView ?? hyperloop?.deckView ?? harbor?.deckView ?? canyon?.deckView ?? foundry?.deckView ?? null;
-    const city = aeroglass ?? conduit ?? hyperloop ?? harbor ?? canyon ?? foundry ?? metropolis ?? (algorithm === 'aether_archipelago' ? generateAetherArchipelago(config)
+    platformViewRef.current = skyweave?.deckView ?? aeroglass?.deckView ?? conduit?.deckView ?? hyperloop?.deckView ?? harbor?.deckView ?? canyon?.deckView ?? foundry?.deckView ?? null;
+    const city = skyweave ?? aeroglass ?? conduit ?? hyperloop ?? harbor ?? canyon ?? foundry ?? metropolis ?? (algorithm === 'aether_archipelago' ? generateAetherArchipelago(config)
       : algorithm === 'brutalist_dusk' ? generateBrutalistDusk(config)
       : algorithm === 'neon_rain' ? generateNeonRain(config)
       : algorithm === 'neon_nexus' ? generateNeonNexus(config) : null);
@@ -1811,17 +1833,18 @@ export function TerrainLabPage() {
       const isHyperloop = algorithm === 'verdant_hyperloop';
       const isConduit = algorithm === 'sunset_conduit';
       const isAeroglass = algorithm === 'aeroglass_valley';
-      if (controlsRef.current) controlsRef.current.maxPolarAngle = isAeroglass || isConduit || isHyperloop || isFoundry || isCanyon || isHarbor ? Math.PI * 0.85 : Math.PI / 2 + 0.1;
-      const composed = isNexus || isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass;
-      if (aoRef.current) aoRef.current.enabled = isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass;
+      const isSkyweave = algorithm === 'skyweave_interchange';
+      if (controlsRef.current) controlsRef.current.maxPolarAngle = isSkyweave || isAeroglass || isConduit || isHyperloop || isFoundry || isCanyon || isHarbor ? Math.PI * 0.85 : Math.PI / 2 + 0.1;
+      const composed = isSkyweave || isNexus || isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass;
+      if (aoRef.current) aoRef.current.enabled = isSkyweave || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass;
       cinematicRef.current = composed;
       if (rendererRef.current) {
         rendererRef.current.toneMapping = composed ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
-        rendererRef.current.toneMappingExposure = isAeroglass ? 0.96 : isConduit ? 1.0 : isHyperloop ? 1.03 : isHarbor ? 1.05 : isCanyon ? 1.14 : isFoundry ? 1.12 : isAether ? 1.05 : isBrutal ? 1.12 : isRain ? 1.1 : isCopper ? 0.92 : isNexus ? 1.05 : 1;
+        rendererRef.current.toneMappingExposure = isSkyweave ? 0.98 : isAeroglass ? 0.96 : isConduit ? 1.0 : isHyperloop ? 1.03 : isHarbor ? 1.05 : isCanyon ? 1.14 : isFoundry ? 1.12 : isAether ? 1.05 : isBrutal ? 1.12 : isRain ? 1.1 : isCopper ? 0.92 : isNexus ? 1.05 : 1;
       }
       if (bloomRef.current) {
-        bloomRef.current.threshold = isAeroglass ? 1.32 : 0.65;
-        bloomRef.current.strength = isAeroglass ? config.aeroGlow : isConduit ? config.conduitGlow : isHyperloop ? config.loopGlow : isHarbor ? config.harborGlow : isCanyon ? config.canyonGlow : isFoundry ? config.forgeGlow : isAether ? config.aetherGlow : isBrutal ? config.brutalGlow : isRain ? config.rainGlow : isCopper ? 0 : config.nexusGlow;
+        bloomRef.current.threshold = isSkyweave ? 1.3 : isAeroglass ? 1.32 : 0.65;
+        bloomRef.current.strength = isSkyweave ? config.weaveGlow : isAeroglass ? config.aeroGlow : isConduit ? config.conduitGlow : isHyperloop ? config.loopGlow : isHarbor ? config.harborGlow : isCanyon ? config.canyonGlow : isFoundry ? config.forgeGlow : isAether ? config.aetherGlow : isBrutal ? config.brutalGlow : isRain ? config.rainGlow : isCopper ? 0 : config.nexusGlow;
       }
       if (cameraRef.current && containerRef.current) {
         const { clientWidth: w, clientHeight: h } = containerRef.current;
@@ -1839,8 +1862,8 @@ export function TerrainLabPage() {
       hemi.groundColor.setHex(isHyperloop ? 0x4c3f58 : isHarbor ? 0x675741 : isCanyon ? 0x625449 : isFoundry ? 0x393644 : isAether ? 0x63546b : isBrutal ? 0x4a4342 : isRain ? 0x253f63 : isCopper ? 0x88775d : 0x1b2533);
       key.intensity = isHyperloop ? 4.1 : isHarbor ? 3.7 : isCanyon ? 3.6 : isFoundry ? 4.3 : isAether ? 3.8 : isBrutal ? 3.5 : isRain ? 2.5 : isCopper ? 2.8 : isNexus ? 1.5 : 2;
       key.color.setHex(isHyperloop ? 0xffbc75 : isHarbor ? 0xffd69b : isCanyon ? 0xffd7ab : isFoundry ? 0xffd09a : isAether ? 0xffd3a1 : isBrutal ? 0xffcf9d : isRain ? 0xc7dcff : isNexus ? 0x91b8e1 : 0xfffaed);
-      const shadowSpan = (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass) ? Math.max(sizeX, sizeZ) * 0.72 : 5;
-      if (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass) key.position.set(sizeX * 0.65, sizeY * 1.6, sizeZ * 0.42);
+      const shadowSpan = (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass || isSkyweave) ? Math.max(sizeX, sizeZ) * 0.72 : 5;
+      if (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass || isSkyweave) key.position.set(sizeX * 0.65, sizeY * 1.6, sizeZ * 0.42);
       else key.position.set(80, 120, 60);
       if (isBrutal) key.position.set(180, 115, 65);
       if (isAether) key.position.set(-150, 170, 80);
@@ -1861,6 +1884,19 @@ export function TerrainLabPage() {
         hemi.color.setHex(0x93a2d4);
         hemi.groundColor.setHex(0x3f3444);
       }
+      if (isSkyweave) {
+        // Bright morning key light from the sky's sun, cool azure fill and green ground bounce.
+        const sunLen = Math.hypot(SKYWEAVE_SUN.x, SKYWEAVE_SUN.y, SKYWEAVE_SUN.z) || 1;
+        key.position.set((SKYWEAVE_SUN.x / sunLen) * 300, (SKYWEAVE_SUN.y / sunLen) * 300 + 60, (SKYWEAVE_SUN.z / sunLen) * 300);
+        key.intensity = 2.5;
+        key.color.setHex(0xfff3e0);
+        fill.intensity = 0.6;
+        fill.color.setHex(0x92c4f2);
+        fill.position.set(-(SKYWEAVE_SUN.x / sunLen) * 180, 120, -(SKYWEAVE_SUN.z / sunLen) * 180);
+        hemi.intensity = 0.95;
+        hemi.color.setHex(0x9ad0ff);
+        hemi.groundColor.setHex(0x435f3a);
+      }
       if (isAeroglass) {
         // Crisp sunlit daytime key matching the sky sun, clear azure sky fill and natural foliage bounce.
         const sunLen = Math.hypot(AEROGLASS_SUN.x, AEROGLASS_SUN.y, AEROGLASS_SUN.z) || 1;
@@ -1878,16 +1914,21 @@ export function TerrainLabPage() {
       key.shadow.camera.right = shadowSpan;
       key.shadow.camera.top = shadowSpan;
       key.shadow.camera.bottom = -shadowSpan;
-      key.shadow.camera.far = (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass) ? Math.max(sizeX, sizeY, sizeZ) * 5 : 500;
+      key.shadow.camera.far = (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass || isSkyweave) ? Math.max(sizeX, sizeY, sizeZ) * 5 : 500;
       key.shadow.camera.updateProjectionMatrix();
-      key.shadow.normalBias = (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass) ? 0.06 : 0;
+      key.shadow.normalBias = (isCopper || isRain || isBrutal || isAether || isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass || isSkyweave) ? 0.06 : 0;
       // Static industrial geometry only needs a fresh shadow map after regeneration.
-      key.shadow.autoUpdate = !(isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass);
+      key.shadow.autoUpdate = !(isFoundry || isCanyon || isHarbor || isHyperloop || isConduit || isAeroglass || isSkyweave);
       key.shadow.needsUpdate = true;
       const grid = sceneRef.current.getObjectByName('terrain-grid');
       if (grid) grid.visible = !composed;
       sceneRef.current.environment = null;
-      if (isAeroglass) {
+      if (isSkyweave) {
+        skyweaveSkyRef.current ??= createSkyweaveSky();
+        sceneRef.current.background = skyweaveSkyRef.current;
+        sceneRef.current.environment = skyweaveSkyRef.current;
+        sceneRef.current.fog = new THREE.FogExp2(0xc9e0f0, 0.00062);
+      } else if (isAeroglass) {
         aeroglassSkyRef.current ??= createAeroglassSky();
         sceneRef.current.background = aeroglassSkyRef.current;
         sceneRef.current.environment = aeroglassSkyRef.current;
@@ -2048,7 +2089,7 @@ export function TerrainLabPage() {
             dummy.updateMatrix();
             instanced.setMatrixAt(i, dummy.matrix);
             dummyColor.setHex(voxel.color);
-            if ((algorithm === 'aeroglass_valley' || algorithm === 'neon_nexus' || algorithm === 'neon_rain' || algorithm === 'brutalist_dusk' || algorithm === 'aether_archipelago' || algorithm === 'astral_foundry' || algorithm === 'colossus_harbor' || algorithm === 'titan_canyon' || algorithm === 'verdant_hyperloop' || algorithm === 'sunset_conduit') && glows) dummyColor.multiplyScalar(voxel.intensity ?? 1);
+            if ((algorithm === 'skyweave_interchange' || algorithm === 'aeroglass_valley' || algorithm === 'neon_nexus' || algorithm === 'neon_rain' || algorithm === 'brutalist_dusk' || algorithm === 'aether_archipelago' || algorithm === 'astral_foundry' || algorithm === 'colossus_harbor' || algorithm === 'titan_canyon' || algorithm === 'verdant_hyperloop' || algorithm === 'sunset_conduit') && glows) dummyColor.multiplyScalar(voxel.intensity ?? 1);
             instanced.setColorAt(i, dummyColor);
           }
 
@@ -2059,7 +2100,9 @@ export function TerrainLabPage() {
 
         addVoxelBatch(
           solidVoxels,
-          algorithm === 'aeroglass_valley'
+          algorithm === 'skyweave_interchange'
+            ? createSkyweaveNormalMaterial(offsetX, offsetZ)
+            : algorithm === 'aeroglass_valley'
             ? createAeroglassNormalMaterial(offsetX, offsetZ)
             : algorithm === 'sunset_conduit'
             ? createConduitMaterial(offsetX, offsetZ)
@@ -2094,7 +2137,7 @@ export function TerrainLabPage() {
         // Emissive voxels (including Space 1-100% glow levels) use each cube's HDR
         // instance colour; normal blocks have no emissive contribution.
         let lightMaterial: THREE.Material;
-        if (algorithm === 'aeroglass_valley') {
+        if (algorithm === 'aeroglass_valley' || algorithm === 'skyweave_interchange') {
           lightMaterial = createAeroglassEmissiveMaterial();
         } else if (algorithm === 'neon_rain' || algorithm === 'brutalist_dusk' || algorithm === 'aether_archipelago' || algorithm === 'astral_foundry' || algorithm === 'colossus_harbor' || algorithm === 'titan_canyon' || algorithm === 'verdant_hyperloop' || algorithm === 'sunset_conduit') {
           const emissiveMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 1, toneMapped: false });
@@ -2192,7 +2235,7 @@ export function TerrainLabPage() {
     boxHelper.position.set(0, sizeY / 2, 0);
     sceneRef.current.add(boxHelper);
     bboxMeshRef.current = boxHelper;
-    boxHelper.visible = algorithm !== 'aeroglass_valley' && algorithm !== 'sunset_conduit' && algorithm !== 'verdant_hyperloop' && algorithm !== 'colossus_harbor' && algorithm !== 'titan_canyon' && algorithm !== 'astral_foundry' && algorithm !== 'aether_archipelago' && algorithm !== 'brutalist_dusk' && algorithm !== 'neon_nexus' && algorithm !== 'copper_metropolis' && algorithm !== 'neon_rain';
+    boxHelper.visible = algorithm !== 'skyweave_interchange' && algorithm !== 'aeroglass_valley' && algorithm !== 'sunset_conduit' && algorithm !== 'verdant_hyperloop' && algorithm !== 'colossus_harbor' && algorithm !== 'titan_canyon' && algorithm !== 'astral_foundry' && algorithm !== 'aether_archipelago' && algorithm !== 'brutalist_dusk' && algorithm !== 'neon_nexus' && algorithm !== 'copper_metropolis' && algorithm !== 'neon_rain';
 
     const t2 = performance.now();
 
@@ -2284,7 +2327,7 @@ export function TerrainLabPage() {
   }, [config.algorithm]);
 
   useEffect(() => {
-    const view = config.algorithm === 'aeroglass_valley' ? aeroglassOverviewRef.current : config.algorithm === 'sunset_conduit' ? conduitOverviewRef.current : config.algorithm === 'verdant_hyperloop' ? hyperloopOverviewRef.current : config.algorithm === 'colossus_harbor' ? harborOverviewRef.current : config.algorithm === 'titan_canyon' ? canyonOverviewRef.current : null;
+    const view = config.algorithm === 'skyweave_interchange' ? skyweaveOverviewRef.current : config.algorithm === 'aeroglass_valley' ? aeroglassOverviewRef.current : config.algorithm === 'sunset_conduit' ? conduitOverviewRef.current : config.algorithm === 'verdant_hyperloop' ? hyperloopOverviewRef.current : config.algorithm === 'colossus_harbor' ? harborOverviewRef.current : config.algorithm === 'titan_canyon' ? canyonOverviewRef.current : null;
     if (!view || !cameraRef.current || !controlsRef.current) return;
     const { position, target } = view;
     cameraRef.current.position.set(position.x, position.y, position.z);
@@ -2293,12 +2336,20 @@ export function TerrainLabPage() {
   }, [config.algorithm, config.offsetX, config.offsetZ, config.seed]);
 
   // Camera presets
-  const setCameraView = (view: 'iso' | 'top' | 'front' | 'side' | 'street' | 'foundry_deck' | 'sculpture' | 'landmark' | 'conduit_landmark' | 'aeroglass_landmark') => {
+  const setCameraView = (view: 'iso' | 'top' | 'front' | 'side' | 'street' | 'foundry_deck' | 'sculpture' | 'landmark' | 'conduit_landmark' | 'aeroglass_landmark' | 'skyweave_landmark') => {
     if (!cameraRef.current || !controlsRef.current) return;
     const { sizeX, sizeY, sizeZ } = config;
     const maxDim = Math.max(sizeX, sizeZ, sizeY);
 
-    if (view === 'aeroglass_landmark' && aeroglassViewsRef.current.length) {
+    if (view === 'skyweave_landmark' && skyweaveViewsRef.current.length) {
+      const { position, target } = skyweaveViewsRef.current[skyweaveViewIndexRef.current++ % skyweaveViewsRef.current.length];
+      cameraRef.current.position.set(position.x, position.y, position.z);
+      controlsRef.current.target.set(target.x, target.y, target.z);
+    } else if (view === 'iso' && config.algorithm === 'skyweave_interchange' && skyweaveOverviewRef.current) {
+      const { position, target } = skyweaveOverviewRef.current;
+      cameraRef.current.position.set(position.x, position.y, position.z);
+      controlsRef.current.target.set(target.x, target.y, target.z);
+    } else if (view === 'aeroglass_landmark' && aeroglassViewsRef.current.length) {
       const { position, target } = aeroglassViewsRef.current[aeroglassViewIndexRef.current++ % aeroglassViewsRef.current.length];
       cameraRef.current.position.set(position.x, position.y, position.z);
       controlsRef.current.target.set(target.x, target.y, target.z);
@@ -2378,6 +2429,14 @@ export function TerrainLabPage() {
 
   // Generate copyable code
   const generatedCode = useMemo(() => {
+    if (config.algorithm === 'skyweave_interchange') {
+      const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, weaveRelief, weaveSkyline, weaveDensity, weaveExpressways,
+        weaveDiamonds, weaveTubes, weaveTracks, weaveForest, weaveWater, weaveGlass, weaveLights, weaveGlow } = config;
+      return {
+        ts: `${skyweaveSource}\n\n// Coordinate-addressed Skyweave Interchange: crops tile seamlessly; Space materials normal (0), translucent 1-100% (2..101), emissive 1-100% (102..201).\nconst result = generateSkyweaveInterchange(${JSON.stringify({ sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, weaveRelief, weaveSkyline, weaveDensity, weaveExpressways, weaveDiamonds, weaveTubes, weaveTracks, weaveForest, weaveWater, weaveGlass, weaveLights, weaveGlow }, null, 2)});\n`,
+        py: '',
+      };
+    }
     if (config.algorithm === 'aeroglass_valley') {
       const { sizeX, sizeY, sizeZ, offsetX, offsetZ, yCutoff, seed, aeroRelief, aeroSkyline, aeroDensity, aeroTubes,
         aeroMonorails, aeroForest, aeroGlass, aeroHolo, aeroTraffic, aeroGlow } = config;
@@ -2728,6 +2787,14 @@ def sample_height(self, world_x: int, world_z: int) -> int:
         {/* Preset Switcher */}
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap bg-black/40 p-1 rounded-lg border border-white/10 text-xs [&>button]:shrink-0">
           <button
+            onClick={() => { setConfig(c => ({ ...c, ...SKYWEAVE_PRESET })); setActiveTab('algorithm'); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'skyweave_interchange' ? 'border-emerald-300/60 bg-emerald-300/20 text-emerald-100' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
+            title="云织立交：无限延展的生态山城路网；苜蓿叶 / 喇叭形 / 菱形立交、匝道合流、隧道与路堑、透明玻璃管廊与磁浮轨道（不生成飞行器与列车）"
+          >
+            <Icon icon="mdi:highway" className="text-emerald-300" />
+            <span>Skyweave · 云织立交</span>
+          </button>
+          <button
             onClick={() => { setConfig(c => ({ ...c, ...AEROGLASS_PRESET })); setActiveTab('algorithm'); }}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${config.algorithm === 'aeroglass_valley' ? 'border-sky-300/60 bg-sky-300/20 text-sky-100' : 'border-transparent text-white/60 hover:bg-white/5 hover:text-white'}`}
             title="晴空玻轨都会：普通 + 半透明(1-100) + 发光(1-100) 三材质；悬空透明玻璃高速管廊与内行发光列车、绿林山丘、单轨高架、玻璃生态穹顶与无人机"
@@ -2971,6 +3038,9 @@ def sample_height(self, world_x: int, world_z: int) -> int:
       {/* Floating View Angle Selector */}
       <div style={{ maxWidth: panelsVisible ? 'max(12rem, calc(100% - 24rem))' : 'calc(100% - 3rem)' }}
         className="absolute top-16 right-6 z-30 flex flex-wrap justify-end items-center gap-1 bg-[#0f1722]/85 backdrop-blur-md p-1 border border-white/10 rounded shadow-lg text-xs">
+        {config.algorithm === 'skyweave_interchange' && <button onClick={() => setCameraView('skyweave_landmark')}
+          className="px-3 py-1.5 bg-black/50 text-emerald-100 text-xs rounded border border-emerald-200/30 hover:bg-white/10"
+          title="依次查看立交枢纽、隧道洞口、玻璃管廊、菱形立交与地标塔楼">立交 / 地标</button>}
         {config.algorithm === 'aeroglass_valley' && <button onClick={() => setCameraView('aeroglass_landmark')}
           className="px-3 py-1.5 bg-black/50 text-sky-100 text-xs rounded border border-sky-200/30 hover:bg-white/10"
           title="依次查看透明玻璃管廊近景、玻璃生态穹顶与山丘塔群">玻轨 / 地标</button>}
@@ -2983,7 +3053,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
         {config.algorithm === 'colossus_harbor' && <button onClick={() => setCameraView('sculpture')}
           className="px-3 py-1.5 bg-black/50 text-amber-100 text-xs rounded border border-amber-100/20 hover:bg-white/10"
           title="依次查看当前区域中的完整雕塑">雕塑近景</button>}
-        {(config.algorithm === 'aeroglass_valley' || config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry') && <button
+        {(config.algorithm === 'skyweave_interchange' || config.algorithm === 'aeroglass_valley' || config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry') && <button
           onClick={() => setCameraView('foundry_deck')}
           className="px-2.5 py-1 rounded bg-amber-200/10 text-amber-100 hover:bg-amber-200/20"
         >Deck / 平台视角</button>}
@@ -3071,7 +3141,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 <input
                   type="range"
                   min="16"
-                  max={config.algorithm === 'aeroglass_valley' || config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' ? 384 : 192}
+                  max={config.algorithm === 'skyweave_interchange' ? 640 : config.algorithm === 'aeroglass_valley' || config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' ? 384 : 192}
                   step="8"
                   value={config.sizeX}
                   onChange={e => setConfig(c => ({ ...c, sizeX: Number(e.target.value) }))}
@@ -3101,7 +3171,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 <input
                   type="range"
                   min="16"
-                  max={config.algorithm === 'aeroglass_valley' || config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' ? 384 : 192}
+                  max={config.algorithm === 'skyweave_interchange' ? 640 : config.algorithm === 'aeroglass_valley' || config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' ? 384 : 192}
                   step="8"
                   value={config.sizeZ}
                   onChange={e => setConfig(c => ({ ...c, sizeZ: Number(e.target.value) }))}
@@ -3131,7 +3201,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 <input
                   type="range"
                   min="16"
-                  max={config.algorithm === 'aeroglass_valley' || config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' ? 192 : config.algorithm === 'brutalist_dusk' || config.algorithm === 'copper_metropolis' || config.algorithm === 'neon_rain' ? 160 : 96}
+                  max={config.algorithm === 'skyweave_interchange' || config.algorithm === 'aeroglass_valley' || config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' ? 192 : config.algorithm === 'brutalist_dusk' || config.algorithm === 'copper_metropolis' || config.algorithm === 'neon_rain' ? 160 : 96}
                   step="4"
                   value={config.sizeY}
                   onChange={e => setConfig(c => ({ ...c, sizeY: Number(e.target.value) }))}
@@ -3204,10 +3274,11 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                   value={config.algorithm}
                   onChange={e => {
                     const algorithm = e.target.value as AlgorithmType;
-                    setConfig(c => ({ ...c, ...(algorithm === 'aeroglass_valley' ? AEROGLASS_PRESET : algorithm === 'sunset_conduit' ? CONDUIT_PRESET : algorithm === 'verdant_hyperloop' ? HYPERLOOP_PRESET : algorithm === 'colossus_harbor' ? HARBOR_PRESET : algorithm === 'titan_canyon' ? CANYON_PRESET : algorithm === 'astral_foundry' ? FOUNDRY_PRESET : algorithm === 'aether_archipelago' ? AETHER_PRESET : algorithm === 'brutalist_dusk' ? BRUTALIST_DUSK_PRESET : algorithm === 'neon_rain' ? NEON_RAIN_PRESET : algorithm === 'copper_metropolis' ? METROPOLIS_PRESET : algorithm === 'neon_nexus' ? NEXUS_PRESET : {}), algorithm }));
+                    setConfig(c => ({ ...c, ...(algorithm === 'skyweave_interchange' ? SKYWEAVE_PRESET : algorithm === 'aeroglass_valley' ? AEROGLASS_PRESET : algorithm === 'sunset_conduit' ? CONDUIT_PRESET : algorithm === 'verdant_hyperloop' ? HYPERLOOP_PRESET : algorithm === 'colossus_harbor' ? HARBOR_PRESET : algorithm === 'titan_canyon' ? CANYON_PRESET : algorithm === 'astral_foundry' ? FOUNDRY_PRESET : algorithm === 'aether_archipelago' ? AETHER_PRESET : algorithm === 'brutalist_dusk' ? BRUTALIST_DUSK_PRESET : algorithm === 'neon_rain' ? NEON_RAIN_PRESET : algorithm === 'copper_metropolis' ? METROPOLIS_PRESET : algorithm === 'neon_nexus' ? NEXUS_PRESET : {}), algorithm }));
                   }}
                   className="w-full bg-[#182330] border border-white/15 rounded px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#f59e0b]"
                 >
+                  <option value="skyweave_interchange">Skyweave Interchange · 云织立交 / 立交隧道生态山城</option>
                   <option value="aeroglass_valley">AeroGlass Valley · 晴空玻轨 / 普通+半透明+发光</option>
                   <option value="sunset_conduit">Sunset Conduit · 晚霞管城 / 管廊未来都会</option>
                   <option value="verdant_hyperloop">Verdant Hyperloop · 绿穹天轨 / 夕照生态都会</option>
@@ -3233,7 +3304,48 @@ def sample_height(self, world_x: int, world_z: int) -> int:
 
               {/* Algorithm-Specific Sliders */}
               <div className="space-y-3 pt-2 border-t border-white/10">
-                {config.algorithm === 'aeroglass_valley' ? (
+                {config.algorithm === 'skyweave_interchange' ? (
+                  <>
+                    <div className="rounded border border-emerald-300/30 bg-[#16302a] p-3 leading-relaxed">
+                      <div className="mb-1 text-xs tracking-wider text-emerald-100">SKYWEAVE INTERCHANGE / 云织立交</div>
+                      <p className="text-[11px] text-slate-300">无限延展、坐标寻址的生态山城：抖动宏观网格上的高架快速路在交叉点生成苜蓿叶立交，T 形节点生成喇叭形立交，主线与大道相交处生成菱形 / 半菱形立交。所有匝道都从右侧外车道渐变分流、在目标车道同一高程渐变合流；两条快速路只在节点相交且恒定相差一层（9 m）。</p>
+                      <p className="mt-2 text-[11px] text-emerald-200/80">纵断面随平滑地形与坡度限制：山体高于路面时生成带挡土墙的路堑，覆土超过 8 m 时生成带衬砌、灯带与洞门的隧道；跨越河谷时上桥。透明玻璃管廊（内含磁浮轨道）与双线磁浮高架始终高于路网，不生成飞行器与列车。相邻区块可无缝拼接。</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: c.offsetX + 384 }))} className="rounded border border-emerald-200/25 px-2 py-1 text-emerald-200 hover:bg-white/10">向东 384m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: c.offsetX - 384 }))} className="rounded border border-emerald-200/25 px-2 py-1 text-emerald-200 hover:bg-white/10">向西 384m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetZ: c.offsetZ - 384 }))} className="rounded border border-emerald-200/25 px-2 py-1 text-emerald-200 hover:bg-white/10">向北 384m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetZ: c.offsetZ + 384 }))} className="rounded border border-emerald-200/25 px-2 py-1 text-emerald-200 hover:bg-white/10">向南 384m</button>
+                      <button onClick={() => setConfig(c => ({ ...c, offsetX: 0, offsetZ: 0 }))} className="rounded border border-white/15 px-2 py-1 text-white/60 hover:bg-white/10">回到原点</button>
+                    </div>
+                    <p className="text-[10px] text-slate-400">当前世界位置：X {config.offsetX}m / Z {config.offsetZ}m · 区块尺寸最大 640m</p>
+                    {([
+                      { key: 'weaveRelief', label: '山体起伏', min: 0.3, max: 1.6, step: 0.05, unit: '×' },
+                      { key: 'weaveSkyline', label: '天际线高度', min: 100, max: 186, step: 2, unit: 'm' },
+                      { key: 'weaveDensity', label: '城市密度', min: 0.3, max: 1, step: 0.05, unit: '%' },
+                      { key: 'weaveExpressways', label: '南北快速路 / 立交', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'weaveDiamonds', label: '菱形立交匝道', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'weaveTubes', label: '透明玻璃管廊', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'weaveTracks', label: '磁浮高架轨道', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'weaveForest', label: '森林与屋顶绿化', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'weaveWater', label: '河流与湖泊', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'weaveGlass', label: '玻璃透明度基准', min: 0.25, max: 0.9, step: 0.05, unit: '%' },
+                      { key: 'weaveLights', label: '路灯 / 信号 / 灯牌', min: 0, max: 1, step: 0.05, unit: '%' },
+                      { key: 'weaveGlow', label: '发光辉光强度', min: 0, max: 0.8, step: 0.02, unit: '' },
+                    ] as const).map(control => (
+                      <label key={control.key} className="block space-y-1.5 pt-1">
+                        <span className="flex justify-between text-white/60">
+                          <span>{control.label}</span>
+                          <span className="font-bold text-emerald-100">{control.unit === '%' ? Math.round(config[control.key] * 100) : config[control.key]}{control.unit}</span>
+                        </span>
+                        <input type="range" aria-label={control.label} min={control.min} max={control.max} step={control.step}
+                          value={config[control.key]} onChange={e => setConfig(c => ({ ...c, [control.key]: Number(e.target.value) }))}
+                          className="w-full accent-emerald-300" />
+                      </label>
+                    ))}
+                    <p className="text-[10px] leading-relaxed text-slate-500">仅 1m / 0.125m 方块；完整使用 Space 普通（0）、半透明 1-100（2–101）、发光 1-100（102–201）三类材质。车道线、路灯、信号灯与磁浮钢轨为 0.125m 细节。</p>
+                  </>
+                ) : config.algorithm === 'aeroglass_valley' ? (
                   <>
                     <div className="rounded border border-sky-300/30 bg-[#172838] p-3 leading-relaxed">
                       <div className="mb-1 text-xs tracking-wider text-sky-100">AEROGLASS VALLEY / 晴空玻轨</div>
@@ -4196,8 +4308,8 @@ def sample_height(self, world_x: int, world_z: int) -> int:
               <div className="text-[11px] uppercase tracking-wider text-white/40 font-bold">
                 Export to Game Code
               </div>
-              {(config.algorithm === 'aeroglass_valley' || config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' || config.algorithm === 'brutalist_dusk' || config.algorithm === 'neon_rain' || config.algorithm === 'neon_nexus' || config.algorithm === 'copper_metropolis') && (
-                <p className="text-[11px] leading-relaxed text-cyan-200/70">完整 TypeScript 生成器与当前参数。导出结果包含每个方块的位置、尺寸和颜色{config.algorithm === 'aeroglass_valley' ? '，以及 Space 三材质标记（normal / translucent 1-100 / emissive 1-100 与 materialId）' : config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' || config.algorithm === 'neon_rain' || config.algorithm === 'brutalist_dusk' ? '，以及普通 / 发光材质标记和发光强度' : config.algorithm === 'neon_nexus' ? '，以及发光强度' : ''}，可直接接入实例渲染。</p>
+              {(config.algorithm === 'skyweave_interchange' || config.algorithm === 'aeroglass_valley' || config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' || config.algorithm === 'brutalist_dusk' || config.algorithm === 'neon_rain' || config.algorithm === 'neon_nexus' || config.algorithm === 'copper_metropolis') && (
+                <p className="text-[11px] leading-relaxed text-cyan-200/70">完整 TypeScript 生成器与当前参数。导出结果包含每个方块的位置、尺寸和颜色{config.algorithm === 'aeroglass_valley' || config.algorithm === 'skyweave_interchange' ? '，以及 Space 三材质标记（normal / translucent 1-100 / emissive 1-100 与 materialId）' : config.algorithm === 'sunset_conduit' || config.algorithm === 'verdant_hyperloop' || config.algorithm === 'colossus_harbor' || config.algorithm === 'titan_canyon' || config.algorithm === 'astral_foundry' || config.algorithm === 'aether_archipelago' || config.algorithm === 'neon_rain' || config.algorithm === 'brutalist_dusk' ? '，以及普通 / 发光材质标记和发光强度' : config.algorithm === 'neon_nexus' ? '，以及发光强度' : ''}，可直接接入实例渲染。</p>
               )}
 
               <div className="space-y-2">
@@ -4219,7 +4331,7 @@ def sample_height(self, world_x: int, world_z: int) -> int:
                 </pre>
               </div>
 
-              {config.algorithm !== 'aeroglass_valley' && config.algorithm !== 'sunset_conduit' && config.algorithm !== 'verdant_hyperloop' && config.algorithm !== 'colossus_harbor' && config.algorithm !== 'titan_canyon' && config.algorithm !== 'astral_foundry' && config.algorithm !== 'aether_archipelago' && config.algorithm !== 'brutalist_dusk' && config.algorithm !== 'neon_rain' && config.algorithm !== 'neon_nexus' && config.algorithm !== 'copper_metropolis' && <div className="space-y-2 pt-2 border-t border-white/10">
+              {config.algorithm !== 'skyweave_interchange' && config.algorithm !== 'aeroglass_valley' && config.algorithm !== 'sunset_conduit' && config.algorithm !== 'verdant_hyperloop' && config.algorithm !== 'colossus_harbor' && config.algorithm !== 'titan_canyon' && config.algorithm !== 'astral_foundry' && config.algorithm !== 'aether_archipelago' && config.algorithm !== 'brutalist_dusk' && config.algorithm !== 'neon_rain' && config.algorithm !== 'neon_nexus' && config.algorithm !== 'copper_metropolis' && <div className="space-y-2 pt-2 border-t border-white/10">
                 <div className="flex justify-between items-center">
                   <span className="text-white font-semibold flex items-center gap-1">
                     <Icon icon="mdi:language-python" className="text-yellow-400 text-base" />
