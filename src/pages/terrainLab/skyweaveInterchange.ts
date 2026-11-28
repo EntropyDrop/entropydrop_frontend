@@ -1721,7 +1721,10 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
   }];
   const ids = new Map<number, number>();
   const terrainId = new Uint8Array(65536);
-  const micros = new Map<number, WeaveVoxel>();
+  // 8x8x8 macro-brick Uint32 pool for 0.125 m micro-voxels: packs (color<<8)|(mid+1)
+  // directly per brick cell with zero per-voxel Map entries or JS object allocations.
+  const mBricks = new Map<number, Uint32Array>();
+  const mBrickKeys: number[] = [];
   const voxels: WeaveVoxel[] = [];
 
   const glassBase = clamp(config.weaveGlass, 0.25, 0.92);
@@ -1807,26 +1810,36 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
     }
   };
 
+  const mw = width * 8;
+  const md = depth * 8;
+  const mh = ceiling * 8;
+  const packMicroVal = (color: number, mid: number) => (((color & 0xffffff) << 8) | ((mid + 1) & 0xff)) >>> 0;
+  const microRaw = (ix: number, iy: number, iz: number, val: number) => {
+    if (ix < 0 || iz < 0 || ix >= mw || iz >= md || iy < 0 || iy >= mh) return;
+    const bKey = (ix >> 3) + (iz >> 3) * width + (iy >> 3) * layer;
+    let brick = mBricks.get(bKey);
+    if (!brick) {
+      brick = new Uint32Array(512);
+      mBricks.set(bKey, brick);
+      mBrickKeys.push(bKey);
+    }
+    brick[((iy & 7) << 6) | ((iz & 7) << 3) | (ix & 7)] = val;
+  };
+  const microRawIfEmpty = (ix: number, iy: number, iz: number, val: number) => {
+    if (ix < 0 || iz < 0 || ix >= mw || iz >= md || iy < 0 || iy >= mh) return;
+    const bKey = (ix >> 3) + (iz >> 3) * width + (iy >> 3) * layer;
+    let brick = mBricks.get(bKey);
+    if (!brick) {
+      brick = new Uint32Array(512);
+      mBricks.set(bKey, brick);
+      mBrickKeys.push(bKey);
+    }
+    const slot = ((iy & 7) << 6) | ((iz & 7) << 3) | (ix & 7);
+    if (!brick[slot]) brick[slot] = val;
+  };
   const micro = (x: number, y: number, z: number, color: number, kind: WeaveMaterialKind = 'normal', level = 0) => {
     const ix = Math.round((x - ox) * 8), iy = Math.round(y * 8), iz = Math.round((z - oz) * 8);
-    if (ix < 0 || iz < 0 || ix >= width * 8 || iz >= depth * 8 || iy < 0 || iy >= ceiling * 8) return;
-    const clamped = kind === 'normal' ? 0 : Math.max(1, Math.min(100, Math.round(level)));
-    const transparency = kind === 'translucent' ? clamped : 0;
-    const emission = kind === 'emissive' ? clamped : 0;
-    const key = ix + iz * width * 8 + iy * width * 8 * depth * 8;
-    micros.set(key, {
-      x: ix * M + M / 2 - width / 2,
-      y: iy * M,
-      z: iz * M + M / 2 - depth / 2,
-      sizeX: M, sizeY: M, sizeZ: M,
-      color,
-      material: kind,
-      materialId: encodeSpaceMaterialId(kind, clamped),
-      transparency,
-      emission,
-      emissive: kind === 'emissive',
-      intensity: emission / 50,
-    });
+    microRaw(ix, iy, iz, packMicroVal(color, kind === 'normal' ? 0 : encodeSpaceMaterialId(kind, level)));
   };
 
   const microLine = (
@@ -2123,26 +2136,62 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
   }
 
   // -------------------------------------------------------------------------
-  // 4. Roads: earthworks, decks, parapets, tunnels, portals and piers.
+  // 4. Roads: earthworks, 1 m base decks + smooth 0.125 m sloped ramps,
+  //    curved/sloped micro-voxel Jersey barriers, thin glass noise barriers,
+  //    beveled kerbs, micro crosswalks, tunnels, portals and piers.
   // -------------------------------------------------------------------------
   const asphaltExp = normalMat(C.asphalt), asphaltArt = normalMat(C.asphaltArt), asphaltLane = normalMat(C.asphaltLane);
   const sidewalkId = normalMat(C.sidewalk);
-  const paintId = normalMat(C.paint);
   const girderId = normalMat(C.girder), girderShadeId = normalMat(C.girderShade);
-  const parapetId = normalMat(C.parapet), medianId = normalMat(C.concrete);
   const embankId = normalMat(C.embank, true);
   const pierId = normalMat(C.pier), pierCapId = normalMat(C.concreteShade);
   const liningId = normalMat(C.tunnelTile), portalId = normalMat(C.portal), retainId = normalMat(C.retaining);
-  const barrierGlassId = glassMat(C.barrierGlass, Math.round(60 + glassBase * 18));
-  const railingGlassId = glassMat(C.railingGlass, Math.round(52 + glassBase * 20));
+  const barrierGlassTrans = Math.round(62 + glassBase * 18);
+  const railingGlassTrans = Math.round(54 + glassBase * 18);
   const tunnelLightId = glowMat(0xffe6bf, 46);
   const portalSignId = glowMat(0xdff1ff, 30);
   const portalGrassId = normalMat(C.grassB, true);
   const isAsphalt = (id: number) => id === asphaltExp || id === asphaltArt || id === asphaltLane;
-  const deckInfo = new Map<number, number>();
   const deckGrid = new Uint8Array(layer * ceiling);
   const KIND_CODE: Record<WeaveDeckKind, number> = { exp: 0, ramp: 1, art: 2, lane: 3 };
   const clearH = (d: WeaveDeck) => (d.kind === 'exp' || d.kind === 'ramp' ? 7 : 6);
+
+  /** Continuous 1/8 m road surface height:
+   * - Expressways, interchange ramps & lanes follow exact Math.round(h * 8) everywhere.
+   * - Wide avenues stay pure 1 m slabs on level stretches and transition smoothly at 0.125 m
+   *   steps across every grade change (pure monotonic function of h -> 100% crop-independent). */
+  const slopeH8 = (h: number, kind: WeaveDeckKind): number => {
+    if (kind !== 'art') return Math.round(h * 8);
+    const fl = Math.floor(h);
+    const f = h - fl;
+    if (f <= 0.58) return fl * 8;
+    return fl * 8 + Math.round(((f - 0.58) / 0.42) * 8);
+  };
+  const deckY = (h: number, kind: WeaveDeckKind) => Math.floor(slopeH8(h, kind) / 8);
+
+  // Precompute spatially overlapping neighbor decks (for crop-independent merge/junction detection).
+  const deckNeighbors: WeaveDeck[][] = decks.map(d =>
+    decks.filter(o => o !== d && d.maxX >= o.minX - 4 && d.minX <= o.maxX + 4 && d.maxZ >= o.minZ - 4 && d.minZ <= o.maxZ + 4),
+  );
+  const isMergedWithNeighbor = (di: number, x: number, z: number, h: number): boolean => {
+    for (const o of deckNeighbors[di]) {
+      if (x < o.minX - 1.5 || x > o.maxX + 1.5 || z < o.minZ - 1.5 || z > o.maxZ + 1.5) continue;
+      const pts = o.pts;
+      const lim = o.hw + 0.65;
+      const lim2 = lim * lim;
+      for (let q = 0; q < pts.length; q += 3) {
+        const op = pts[q];
+        const dx = x - op.x, dz = z - op.z;
+        if (dx * dx + dz * dz > (lim + 2.5) * (lim + 2.5)) continue;
+        for (let r = Math.max(0, q - 2); r <= Math.min(pts.length - 1, q + 2); r++) {
+          const rp = pts[r];
+          const rx2 = x - rp.x, rz2 = z - rp.z;
+          if (rx2 * rx2 + rz2 * rz2 <= lim2 && Math.abs(rp.h - h) <= 2.2) return true;
+        }
+      }
+    }
+    return false;
+  };
 
   // 4a. Earthworks: open cuts, tunnel bores and embankment fills.
   decks.forEach((d, di) => {
@@ -2152,10 +2201,10 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
       if (!inCrop(x, z)) return;
       const lx = Math.floor(x) - ox, lz = Math.floor(z) - oz;
       const t = tmap[lx + lz * width];
-      const y = Math.round(d.pts[k].h);
+      const y = deckY(d.pts[k].h, d.kind);
       const m = mode[k];
       if (m === MODE_TUNNEL) {
-        for (let yy = y + 1; yy <= y + ch; yy++) carve(lx, yy, lz);
+        for (let yy = y + 1; yy <= y + ch + 1; yy++) carve(lx, yy, lz);
         return;
       }
       if (t > y) for (let yy = y + 1; yy <= Math.min(t, ceiling - 1); yy++) carve(lx, yy, lz);
@@ -2168,28 +2217,36 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
     });
   });
 
-  // 4b. Deck surfaces & box girders.
+  // 4b. 1 m base deck surfaces & recessed cantilevered box girders (at floor of exact 1/8 m height).
   decks.forEach((d, di) => {
     const mode = modes[di];
     const code = KIND_CODE[d.kind];
+    const isHighway = d.kind === 'exp' || d.kind === 'ramp';
     walkDeck(d, d.hw, 0.5, ox, X1, oz, Z1, (x, z, k, w) => {
       if (!inCrop(x, z)) return;
       const lx = Math.floor(x) - ox, lz = Math.floor(z) - oz;
-      const y = Math.round(d.pts[k].h);
-      if (y < 0 || y >= ceiling) return;
+      const m = mode[k];
       const aw = Math.abs(w);
+      // On elevated highways & ramps, recess the 1 m base deck slightly inside the curved
+      // 0.125 m cantilevered wing slab so jagged 1 m dark-asphalt corners never poke past barriers.
+      if (isHighway && m === MODE_ELEV && aw > d.hw - 0.6) return;
+      const h8 = slopeH8(d.pts[k].h, d.kind);
+      const y = h8 >> 3;
+      if (y < 0 || y >= ceiling) return;
       const side = d.kind === 'art' && aw > ART_ROAD;
       const idx = lx + lz * width + y * layer;
       if (side && isAsphalt(cells[idx]) && deckGrid[idx]) return;
-      cells[idx] = d.kind === 'art' ? (side ? sidewalkId : asphaltArt) : d.kind === 'lane' ? asphaltLane : asphaltExp;
-      const m = mode[k];
+      // On sloped elevated highway wings, the 1 m base deck rim is covered on top by 0.125 m
+      // asphalt/wing micros, so tinting its exposed side face as pale concrete girder keeps the
+      // viaduct elevation clean and bright instead of dark charcoal blocks under the parapet.
+      const isCoveredWingRim = isHighway && m === MODE_ELEV && (h8 & 7) !== 0 && aw > d.hw - 1.5;
+      cells[idx] = d.kind === 'art' ? (side ? sidewalkId : asphaltArt) : d.kind === 'lane' ? asphaltLane : isCoveredWingRim ? girderId : asphaltExp;
       let bits = code | (m << 2);
       if (d.kind === 'exp' && aw < 0.75) bits |= 16;
       if (d.barrier && d.barrier[k]) bits |= 32;
-      if (!deckGrid[idx]) deckInfo.set(idx, 0);
       deckGrid[idx] = bits | 128;
       if (m === MODE_ELEV || (m !== MODE_TUNNEL && tmap[lx + lz * width] < y - 1 && aw > d.hw - 1)) {
-        if (y >= 1 && aw <= d.hw - 0.4) {
+        if (y >= 1 && aw <= d.hw - (isHighway && m === MODE_ELEV ? 1.15 : 0.4)) {
           const gi = idx - layer;
           if (!cells[gi] || terrainId[cells[gi]]) cells[gi] = girderId;
         }
@@ -2201,51 +2258,247 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
     });
   });
 
-  // 4c. Zebra crossings at every avenue intersection approach.
-  decks.forEach(d => {
-    if (d.kind !== 'art') return;
-    const L = d.pts[d.pts.length - 1].s;
-    walkDeck(d, ART_ROAD - 0.5, 0.5, ox, X1, oz, Z1, (x, z, k, w) => {
-      const s = d.pts[k].s;
-      if (!((s >= 11 && s <= 14) || (s >= L - 14 && s <= L - 11))) return;
-      if (mod(Math.floor(w + 0.25), 2) !== 0) return;
-      const lx = Math.floor(x) - ox, lz = Math.floor(z) - oz;
-      if (lx < 0 || lz < 0 || lx >= width || lz >= depth) return;
-      const y = Math.round(d.pts[k].h);
-      const idx = lx + lz * width + y * layer;
-      if (cells[idx] === asphaltArt) cells[idx] = paintId;
-    });
+  // 4b-micro. Exact integer micro-grid rasterization for pinhole-free 0.125 m sloped road decks,
+  //           sleek cantilevered concrete fascia wings on elevated viaducts & beveled avenue kerbs.
+  const valConcrete = packMicroVal(C.concrete, 0);
+  const valConcreteShade = packMicroVal(C.concreteShade, 0);
+  const valGirder = packMicroVal(C.girder, 0);
+  const valGirderShade = packMicroVal(C.girderShade, 0);
+  const valSidewalk = packMicroVal(C.sidewalk, 0);
+  decks.forEach((d, di) => {
+    const mode = modes[di];
+    const pts = d.pts;
+    const n = pts.length;
+    const roadVal = packMicroVal(d.kind === 'art' ? C.asphaltArt : d.kind === 'lane' ? C.asphaltLane : C.asphalt, 0);
+    const isArt = d.kind === 'art';
+    const isHighway = d.kind === 'exp' || d.kind === 'ramp';
+    for (let k = 0; k + 1 < n; k++) {
+      const p = pts[k], q = pts[k + 1];
+      if (!near((p.x + q.x) * 0.5, (p.z + q.z) * 0.5, d.hw + 2.5)) continue;
+      const h8a = slopeH8(p.h, d.kind), h8b = slopeH8(q.h, d.kind);
+      const hasSlope = (h8a & 7) !== 0 || (h8b & 7) !== 0 || h8a !== h8b;
+      const inIntersect = isArt && (p.s < d.trim0 || p.s > d.trim1);
+      const isElev = mode[k] === MODE_ELEV || mode[k + 1] === MODE_ELEV;
+      const needWing = isHighway && isElev;
+
+      if (hasSlope || needWing) {
+        const dx = q.x - p.x, dz = q.z - p.z;
+        const len2 = dx * dx + dz * dz || 1;
+        const len = Math.sqrt(len2);
+        const rx = -dz / len, rz = dx / len;
+        const midX = (p.x + q.x) * 0.5, midZ = (p.z + q.z) * 0.5, midH = (p.h + q.h) * 0.5;
+        const openL = isMergedWithNeighbor(di, midX - rx * (d.hw + 0.35), midZ - rz * (d.hw + 0.35), midH);
+        const openR = isMergedWithNeighbor(di, midX + rx * (d.hw + 0.35), midZ + rz * (d.hw + 0.35), midH);
+        const dh = q.h - p.h;
+        const isSloping = Math.abs(dh) > 1e-4;
+
+        const ix0 = Math.max(0, Math.floor((Math.min(p.x, q.x) - d.hw - 0.5 - ox) * 8));
+        const ix1 = Math.min(mw - 1, Math.ceil((Math.max(p.x, q.x) + d.hw + 0.5 - ox) * 8));
+        const iz0 = Math.max(0, Math.floor((Math.min(p.z, q.z) - d.hw - 0.5 - oz) * 8));
+        const iz1 = Math.min(md - 1, Math.ceil((Math.max(p.z, q.z) + d.hw + 0.5 - oz) * 8));
+
+        for (let iz = iz0; iz <= iz1; iz++) {
+          const wz = oz + (iz + 0.5) * M;
+          const rz0 = wz - p.z;
+          for (let ix = ix0; ix <= ix1; ix++) {
+            const wx = ox + (ix + 0.5) * M;
+            const rx0 = wx - p.x;
+            const t = (rx0 * dx + rz0 * dz) / len2;
+            if (t < -0.04 || t > 1.04) continue;
+            const w = rx0 * rx + rz0 * rz;
+            const aw = Math.abs(w);
+            if (aw > d.hw + 0.02) continue;
+
+            const tc = t < 0 ? 0 : t > 1 ? 1 : t;
+            const h = p.h + dh * tc;
+            const h8 = slopeH8(h, d.kind);
+            const yB = h8 >> 3;
+            const sub = h8 & 7;
+            const onWing = needWing && aw > d.hw - 1.35;
+            if (sub === 0 && !onWing) continue;
+
+            const onSidewalk = isArt && aw > ART_ROAD;
+            if (onSidewalk && inIntersect) continue;
+            const mergedEdge = w < 0 ? openL : openR;
+            const isFasciaRim = !mergedEdge && aw > d.hw - 0.30;
+            const topVal = onSidewalk ? valSidewalk : isFasciaRim ? valConcrete : roadVal;
+            const iyTop = h8 + 7;
+
+            if (onWing) {
+              // Cantilevered curved precast concrete wing + fascia soffit (tapers toward box girder).
+              microRaw(ix, iyTop, iz, topVal);
+              const depthMicros = aw > d.hw - 0.35 ? 4 : aw > d.hw - 0.8 ? 5 : 6;
+              for (let d2 = 1; d2 < depthMicros; d2++) {
+                microRaw(ix, iyTop - d2, iz, d2 === depthMicros - 1 ? valGirderShade : valGirder);
+              }
+            } else {
+              microRaw(ix, iyTop, iz, topVal);
+              if (isFasciaRim) {
+                const iyFloor = (yB << 3) + 8;
+                for (let yy = iyFloor; yy < iyTop; yy++) microRaw(ix, yy, iz, isElev ? valGirder : valConcreteShade);
+              } else if (sub >= 2 && isSloping) {
+                const hPrev = slopeH8(p.h + dh * (tc - 0.18), d.kind);
+                const hNext = slopeH8(p.h + dh * (tc + 0.18), d.kind);
+                if (hPrev < h8 || hNext < h8) microRawIfEmpty(ix, iyTop - 1, iz, topVal);
+              }
+            }
+          }
+        }
+      }
+
+      // Crisp 0.25 m raised beveled concrete kerb separating dark asphalt from sidewalks on avenues.
+      if (isArt && !inIntersect && mode[k] !== MODE_TUNNEL) {
+        for (let st = 0; st < 8; st++) {
+          const t = (st + 0.5) / 8;
+          const h = lerp(p.h, q.h, t);
+          const h8 = slopeH8(h, d.kind);
+          const ySurf = Math.floor(h8 / 8) + 1 + (h8 & 7) * M;
+          const cx = lerp(p.x, q.x, t), cz = lerp(p.z, q.z, t);
+          const rx = -lerp(p.tz, q.tz, t), rz = lerp(p.tx, q.tx, t);
+          for (const sg of [-1, 1]) {
+            const kx = cx + rx * sg * (ART_ROAD + 0.125), kz = cz + rz * sg * (ART_ROAD + 0.125);
+            if (!inCrop(kx, kz)) continue;
+            micro(kx, ySurf, kz, C.concrete);
+            micro(kx, ySurf + M, kz, C.paving);
+          }
+        }
+      }
+    }
   });
 
-  // 4d. Parapets, median barriers, glass noise barriers and bridge balustrades derived from
-  // the union of all decks, so merges, splits and junctions never get a wall across them.
-  for (const idx of deckInfo.keys()) {
-    const bits = deckGrid[idx] & 127;
-    const y = Math.floor(idx / layer);
-    const rem = idx - y * layer;
-    const lz = Math.floor(rem / width), lx = rem - lz * width;
-    const kind = bits & 3, m = (bits >> 2) & 3;
-    const wx = lx + ox, wz = lz + oz;
-    if (bits & 16) putIfAir(wx, y + 1, wz, medianId);
-    let edge = false;
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = lx + dx, nz = lz + dz;
-      if (nx < 0 || nz < 0 || nx >= width || nz >= depth) continue;
-      let conn = false;
-      for (let dy = -1; dy <= 1 && !conn; dy++) {
-        const yy = y + dy;
-        if (yy >= 0 && yy < ceiling && deckGrid[nx + nz * width + yy * layer]) conn = true;
+  // 4c. Crisp 0.125 m micro-voxel zebra crosswalks at every avenue intersection approach.
+  decks.forEach(d => {
+    if (d.kind !== 'art') return;
+    const pts = d.pts;
+    const n = pts.length;
+    const L = pts[n - 1].s;
+    for (let k = 0; k + 1 < n; k++) {
+      const p = pts[k], q = pts[k + 1];
+      if (!((p.s >= 10.5 && p.s <= 14.2) || (p.s >= L - 14.2 && p.s <= L - 10.5))) continue;
+      if (!near(p.x, p.z, ART_ROAD + 2)) continue;
+      for (let st = 0; st < 8; st++) {
+        const t = (st + 0.5) / 8;
+        const h = lerp(p.h, q.h, t);
+        const h8 = slopeH8(h, d.kind);
+        const yB = Math.floor(h8 / 8), sub = h8 - yB * 8;
+        const paintY = sub === 0 ? yB + 1 : yB + 1 + (sub - 1) * M;
+        const cx = lerp(p.x, q.x, t), cz = lerp(p.z, q.z, t);
+        const rx = -lerp(p.tz, q.tz, t), rz = lerp(p.tx, q.tx, t);
+        for (let w = -(ART_ROAD - 0.5); w <= ART_ROAD - 0.5; w += M) {
+          // Crisp 0.5 m wide zebra bars separated by 0.5 m asphalt gaps.
+          if (mod(w + 0.25, 1.0) >= 0.5) continue;
+          const wx = cx + rx * w, wz = cz + rz * w;
+          if (inCrop(wx, wz)) micro(wx, paintY, wz, C.paint);
+        }
       }
-      if (!conn) { edge = true; break; }
     }
-    if (!edge) continue;
-    if (kind <= 1) {
-      putIfAir(wx, y + 1, wz, parapetId);
-      if (bits & 32) { putIfAir(wx, y + 2, wz, barrierGlassId); putIfAir(wx, y + 3, wz, barrierGlassId); }
-    } else if (m === MODE_ELEV) {
-      putIfAir(wx, y + 1, wz, railingGlassId);
+  });
+
+  // 4d. Silky-smooth 0.125 m curved & sloped Jersey barriers, center medians, brushed titanium
+  //     handrails, thin translucent glass acoustic noise walls & bridge balustrades.
+  decks.forEach((d, di) => {
+    const mode = modes[di];
+    const pts = d.pts;
+    const n = pts.length;
+    const isHighway = d.kind === 'exp' || d.kind === 'ramp';
+    const reflectorGlow = 28;
+
+    for (let k = 0; k + 1 < n; k++) {
+      const p = pts[k], q = pts[k + 1];
+      if (!near((p.x + q.x) * 0.5, (p.z + q.z) * 0.5, d.hw + 2.5)) continue;
+      const m = mode[k];
+      const hasNoiseWall = !!(d.barrier && d.barrier[k]);
+      const midX = (p.x + q.x) * 0.5, midZ = (p.z + q.z) * 0.5, midH = (p.h + q.h) * 0.5;
+      const mrx = -(p.tz + q.tz) * 0.5, mrz = (p.tx + q.tx) * 0.5;
+      const ml = Math.hypot(mrx, mrz) || 1;
+      const erx = mrx / ml, erz = mrz / ml;
+
+      // Test once per 1 m segment whether each outer edge merges into another carriageway.
+      const openSide: [boolean, boolean] = [
+        isMergedWithNeighbor(di, midX - erx * (d.hw + 0.35), midZ - erz * (d.hw + 0.35), midH),
+        isMergedWithNeighbor(di, midX + erx * (d.hw + 0.35), midZ + erz * (d.hw + 0.35), midH),
+      ];
+
+      const needOuter = isHighway || m === MODE_ELEV;
+      const needMedian = d.kind === 'exp';
+      if (!needOuter && !needMedian) continue;
+
+      for (let st = 0; st < 8; st++) {
+        const t = (st + 0.5) / 8;
+        const h = lerp(p.h, q.h, t);
+        const h8 = slopeH8(h, d.kind);
+        const ySurf = Math.floor(h8 / 8) + 1 + (h8 & 7) * M;
+        const sPos = lerp(p.s, q.s, t);
+        const cx = lerp(p.x, q.x, t), cz = lerp(p.z, q.z, t);
+        let tx = lerp(p.tx, q.tx, t), tz = lerp(p.tz, q.tz, t);
+        const tl = Math.hypot(tx, tz) || 1;
+        tx /= tl;
+        tz /= tl;
+        const rx = -tz, rz = tx;
+
+        // Expressway center median: tapered concrete Jersey divider + titanium top rail + amber reflectors.
+        if (needMedian && inCrop(cx, cz)) {
+          const isRefl = mod(sPos, 8) < 0.22;
+          for (let ly = 0; ly < 6; ly++) {
+            const yy = ySurf + ly * M;
+            if (ly < 2) {
+              micro(cx - rx * M, yy, cz - rz * M, C.concreteShade);
+              micro(cx, yy, cz, C.concrete);
+              micro(cx + rx * M, yy, cz + rz * M, C.concreteShade);
+            } else {
+              const col = ly === 4 && isRefl ? 0xffd57a : C.parapet;
+              const knd: WeaveMaterialKind = ly === 4 && isRefl ? 'emissive' : 'normal';
+              micro(cx, yy, cz, col, knd, reflectorGlow);
+            }
+          }
+          micro(cx, ySurf + 6 * M, cz, C.titanium);
+        }
+
+        if (!needOuter) continue;
+        for (let si = 0; si < 2; si++) {
+          if (openSide[si]) continue;
+          const sg = si === 0 ? -1 : 1;
+          const bw = sg * (d.hw - 0.14);
+          const bx = cx + rx * bw, bz = cz + rz * bw;
+          if (!inCrop(bx, bz)) continue;
+          const inX = bx - rx * sg * M, inZ = bz - rz * sg * M;
+
+          if (isHighway) {
+            // Sleek tapered 0.125 m concrete Jersey barrier + brushed titanium top handrail.
+            const isRefl = mod(sPos, 8) < 0.22;
+            const isPost = mod(sPos, 4) < 0.18;
+            for (let ly = 0; ly < 6; ly++) {
+              const yy = ySurf + ly * M;
+              micro(bx, yy, bz, ly === 0 ? C.concreteShade : C.parapet);
+              if (ly < 2) micro(inX, yy, inZ, C.concrete);
+              else if (ly === 4 && isRefl) micro(inX, yy, inZ, sg > 0 ? 0xfff3d1 : 0xffe099, 'emissive', reflectorGlow);
+            }
+            micro(bx, ySurf + 6 * M, bz, C.titanium);
+            // Razor-thin 0.125 m translucent glass acoustic noise barrier framed by titanium mullions!
+            if (hasNoiseWall) {
+              for (let ly = 7; ly < 18; ly++) {
+                const yy = ySurf + ly * M;
+                if (isPost) micro(bx, yy, bz, C.titanium);
+                else micro(bx, yy, bz, C.barrierGlass, 'translucent', barrierGlassTrans);
+              }
+              micro(bx, ySurf + 18 * M, bz, C.titanium);
+            }
+          } else {
+            // Elevated avenue / street bridge: crisp concrete kerb + thin 0.125 m crystal glass balustrade.
+            const isPost = mod(sPos, 3) < 0.18;
+            micro(bx, ySurf, bz, C.concrete);
+            micro(bx, ySurf + M, bz, C.parapet);
+            for (let ly = 2; ly < 8; ly++) {
+              const yy = ySurf + ly * M;
+              if (isPost) micro(bx, yy, bz, C.titanium);
+              else micro(bx, yy, bz, C.railingGlass, 'translucent', railingGlassTrans);
+            }
+            micro(bx, ySurf + 8 * M, bz, C.titanium);
+          }
+        }
+      }
     }
-  }
+  });
 
   // 4e. Tunnel linings, portals and retaining walls.
   decks.forEach((d, di) => {
@@ -2254,7 +2507,7 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
     const n = d.pts.length;
     const lining = (k: number, overwrite: boolean) => {
       const p = d.pts[k];
-      const y = Math.round(p.h);
+      const y = deckY(p.h, d.kind);
       const rx = -p.tz, rz = p.tx;
       const w0 = (wd: number, yy: number, id: number) => {
         const x = p.x + rx * wd, z = p.z + rz * wd;
@@ -2274,7 +2527,7 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
       const p = d.pts[k];
       if (!near(p.x, p.z, d.hw + 8)) continue;
       const m = mode[k];
-      const y = Math.round(p.h);
+      const y = deckY(p.h, d.kind);
       const rx = -p.tz, rz = p.tx;
       if (m === MODE_TUNNEL) {
         lining(k, true);
@@ -2291,7 +2544,7 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
           }
           const kf = Math.max(0, Math.min(n - 1, k + dir * 3));
           const q = d.pts[kf];
-          const qy = Math.round(q.h);
+          const qy = deckY(q.h, d.kind);
           const qrx = -q.tz, qrz = q.tx;
           for (let t = 0; t <= 1; t++) {
             const fx = q.x + q.tx * dir * t * 0.5, fz = q.z + q.tz * dir * t * 0.5;
@@ -2302,6 +2555,30 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
                 put(fx + qrx * wd, yy, fz + qrz * wd, id);
               }
               putIfAir(fx + qrx * wd, qy + ch + 6, fz + qrz * wd, portalGrassId);
+            }
+          }
+          // 0.125 m portal finish: yellow/charcoal safety jamb chevrons, titanium lintel & green lane arrows!
+          const faceX = q.x + q.tx * dir * 0.85, faceZ = q.z + q.tz * dir * 0.85;
+          for (const sg of [-1, 1]) {
+            const jx = faceX + qrx * sg * (d.hw + 0.35), jz = faceZ + qrz * sg * (d.hw + 0.35);
+            for (let yy = 0; yy < (ch - 1) * 8; yy++) {
+              const col = ((yy >> 2) & 1) === 0 ? C.paintYellow : C.steelDark;
+              micro(jx, qy + 1 + yy * M, jz, col);
+              micro(jx + qrx * sg * M, qy + 1 + yy * M, jz + qrz * sg * M, col);
+            }
+          }
+          for (let wd = -d.hw - 0.5; wd <= d.hw + 0.5; wd += M) {
+            micro(faceX + qrx * wd, qy + ch + 1.125, faceZ + qrz * wd, C.titanium);
+          }
+          const laneOffsets = d.kind === 'exp' ? [-6.5, -3.5, 3.5, 6.5] : [-3.5, 3.5];
+          for (const lw of laneOffsets) {
+            const ax = faceX + qrx * lw, az = faceZ + qrz * lw;
+            for (let a = 0; a <= 5; a++) {
+              micro(ax, qy + ch + 1.5 + a * M, az, 0x32ff78, 'emissive', 74);
+            }
+            for (let a = 1; a <= 3; a++) {
+              micro(ax - qrx * a * M, qy + ch + 1.5 + a * M, az - qrz * a * M, 0x32ff78, 'emissive', 74);
+              micro(ax + qrx * a * M, qy + ch + 1.5 + a * M, az + qrz * a * M, 0x32ff78, 'emissive', 74);
             }
           }
         }
@@ -2335,7 +2612,7 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
       const k = Math.round(s);
       const p = d.pts[k];
       if (!near(p.x, p.z, d.hw + 4) || mode[k] !== MODE_ELEV) continue;
-      const y = Math.round(p.h);
+      const y = deckY(p.h, d.kind);
       if (y - d.terr[k] < 4.5) continue;
       const rx = -p.tz, rz = p.tx;
       const cols = d.kind === 'exp' ? [-(d.hw - 3.5), d.hw - 3.5] : d.kind === 'art' ? [-5, 5] : [0];
@@ -2528,6 +2805,22 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
               put(Math.round(b.x + Math.cos(ang) * (rad + 0.4)), y, Math.round(b.z + Math.sin(ang) * (rad + 0.4)), leafIds[(a + k) % leafIds.length]);
             }
           }
+          // Delicate 0.125 m translucent glass balcony balustrades + titanium handrail on cantilevered rings.
+          if ((k > 0 && k % 4 === 0) || y === y1 - 1) {
+            const railR = rad + 0.72;
+            const segs = Math.ceil(railR * Math.PI * 2 / 0.16);
+            for (let a = 0; a < segs; a++) {
+              const ang = (a / segs) * Math.PI * 2;
+              const rxp = b.x + 0.5 + Math.cos(ang) * railR, rzp = b.z + 0.5 + Math.sin(ang) * railR;
+              if (!inCrop(rxp, rzp)) continue;
+              const isPost = a % 16 === 0;
+              for (let ly = 0; ly < 4; ly++) {
+                if (isPost) micro(rxp, y + 1 + ly * M, rzp, C.titanium);
+                else micro(rxp, y + 1 + ly * M, rzp, C.railingGlass, 'translucent', railingGlassTrans);
+              }
+              micro(rxp, y + 1 + 4 * M, rzp, C.white);
+            }
+          }
         }
         if (forest > 0.1 && y1 < ceiling - 3 && rad > 5.5) {
           const treeCount = Math.max(3, Math.floor((rad * rad) / 22 * forest));
@@ -2572,6 +2865,18 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
         }
       }
       const indoorY = b.base + 2;
+      // Fine 0.125 m titanium geodesic purlin rings & crown skylight collar on the biodome exterior.
+      for (const fH of [0.28, 0.72]) {
+        const yy = b.base + 1 + ry * fH;
+        const rScale = Math.sqrt(Math.max(0.05, 1 - fH * fH));
+        const segs = Math.ceil(rx * rScale * Math.PI * 2 / 0.16);
+        for (let a = 0; a < segs; a++) {
+          const ang = (a / segs) * Math.PI * 2;
+          const lx = Math.cos(ang) * (rx * rScale + 0.2), lz = Math.sin(ang) * (rz * rScale + 0.2);
+          micro(b.x + 0.5 + lx * cA - lz * sA, yy, b.z + 0.5 + lx * sA + lz * cA, C.titanium);
+          micro(b.x + 0.5 + lx * cA - lz * sA, yy + M, b.z + 0.5 + lx * sA + lz * cA, C.white);
+        }
+      }
       tree(b.x, indoorY, b.z, Math.min(2.6, ry * 0.26), 95);
       for (let t = 0; t < 5; t++) {
         const ang = b.angle + (t * Math.PI * 2) / 5 + 0.4;
@@ -2814,6 +3119,30 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
           for (let s = -1.5; s <= 1.5; s += 0.5) putIfAir(b.x + u * cA - s * sA, yTop, b.z + u * sA + s * cA, t % 2 ? solarId : hvacId);
         }
       }
+      // Flush 0.125 m brushed-titanium architectural cornice ledges every 12 floors on tall glass towers.
+      for (let k = 12; k < b.height - 8; k += 12) {
+        const yy = b.base + k;
+        if (yy >= ceiling) break;
+        const f = clamp(k / b.height);
+        const taper = isCrystal ? 1 - 0.34 * f ** 1.35 : 1 - 0.22 * f;
+        const aBase = Math.max(2.6, b.radius * taper);
+        const bBase = Math.max(2.0, b.radius * (isCrystal ? 0.74 : 0.56) * taper);
+        const segs = Math.ceil((aBase + bBase) * Math.PI / 0.16);
+        const pwr = isCrystal ? 2 / 3 : 2 / 2.2;
+        for (let a = 0; a < segs; a++) {
+          const ang = (a / segs) * Math.PI * 2;
+          const ca = Math.cos(ang), sa = Math.sin(ang);
+          const su = Math.sign(ca) * (Math.abs(ca) ** pwr);
+          const sv = Math.sign(sa) * (Math.abs(sa) ** pwr);
+          for (const dr of [-0.12, 0.04, 0.16]) {
+            const u = su * (aBase + dr), v = sv * (bBase + dr);
+            const wx = b.x + 0.5 + u * cA - v * sA, wz = b.z + 0.5 + u * sA + v * cA;
+            if (!inCrop(wx, wz)) continue;
+            micro(wx, yy + 0.75, wz, C.titanium);
+            micro(wx, yy + 0.875, wz, C.white);
+          }
+        }
+      }
       if (b.holo) {
         const sunAng = Math.atan2(-SKYWEAVE_SUN.z, -SKYWEAVE_SUN.x);
         const dirAng = sunAng + (r(118) - 0.5) * 1.1;
@@ -2914,7 +3243,7 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
         const i = rIdx(x, z);
         if (i >= 0 && rmask[i] & (BIT_EXP | BIT_BUILD)) continue;
         if (!inCrop(x, z)) continue;
-        const y = Math.round(p.h);
+        const y = deckY(p.h, 'art');
         if (cells[(x - ox) + (z - oz) * width + y * layer] !== sidewalkId) continue;
         put(x, y, z, grassTopId);
         tree(x, y + 1, z, 1.3 + hash(x, z, 160, seed) * 0.5, 161);
@@ -3006,13 +3335,40 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
             C.titanium, 'normal', 0, 2,
           );
         }
+        // Fine 0.125 m brushed-titanium secondary aerospace hoop ribs every 6 m between major collars,
+        // plus smooth sloped 0.125 m dual silver maglev guide rails & glowing cyan coil strips inside!
+        const s0 = sp.base + prev.s;
+        if (mod(s0, 6) < 1 && mod(s0, 18) >= 3) {
+          for (let a = -0.35; a <= Math.PI + 0.35; a += 0.045) {
+            const ca = Math.cos(a) * (R + 0.16), sa = Math.sin(a) * (R + 0.16);
+            micro(cur.x + bx * ca + ux * sa, cur.h + uy * sa, cur.z + bz * ca + uz * sa, C.titanium);
+          }
+        }
+        const railU = -R * 0.44;
+        for (const sg of [-1, 1]) {
+          const rb = sg * 1.75;
+          microLine(
+            { x: prev.x + bx * rb + ux * railU, y: prev.h + uy * railU, z: prev.z + bz * rb + uz * railU },
+            { x: cur.x + bx * rb + ux * railU, y: cur.h + uy * railU, z: cur.z + bz * rb + uz * railU },
+            C.railSilver, 'normal', 0, 1,
+          );
+          if (k % 2 === 0) {
+            const gb = sg * 2.65;
+            microLine(
+              { x: prev.x + bx * gb + ux * railU, y: prev.h + uy * railU, z: prev.z + bz * gb + uz * railU },
+              { x: cur.x + bx * gb + ux * railU, y: cur.h + uy * railU, z: cur.z + bz * gb + uz * railU },
+              0x66e8ff, 'emissive', 54, 1,
+            );
+          }
+        }
       }
     } else {
-      // Open twin maglev guideway: two white beams on a box spine, silver rails and guide strips.
+      // Open twin maglev guideway: two white beams on a box spine, smooth sloped 0.125 m silver rails,
+      // cyan guide strips and thin 0.125 m translucent glass wind-screens.
       for (let k = 0; k < n; k++) {
         const p = pts[k];
         if (!near(p.x, p.z, 7)) continue;
-        const y = Math.round(p.h);
+        const y = Math.floor(p.h);
         const rx = -p.tz, rz = p.tx;
         for (let w = -4.5; w <= 4.5; w += 0.5) {
           const aw = Math.abs(w);
@@ -3026,13 +3382,25 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
         }
         if (k + 1 < n) {
           const q = pts[k + 1];
+          const yh0 = Math.floor(p.h * 8) * M + 1, yh1 = Math.floor(q.h * 8) * M + 1;
           for (const sg of [-1, 1]) {
             for (const off of [1.7, 3.3]) {
               const w = sg * off;
-              microLine({ x: p.x + rx * w, y: y + 1, z: p.z + rz * w }, { x: q.x + rx * w, y: Math.round(q.h) + 1, z: q.z + rz * w }, C.railSilver, 'normal', 0, 1);
+              microLine({ x: p.x + rx * w, y: yh0, z: p.z + rz * w }, { x: q.x + rx * w, y: yh1, z: q.z + rz * w }, C.railSilver, 'normal', 0, 1);
             }
             const wg = sg * 2.5;
-            if (k % 2 === 0) microLine({ x: p.x + rx * wg, y: y + 1, z: p.z + rz * wg }, { x: q.x + rx * wg, y: Math.round(q.h) + 1, z: q.z + rz * wg }, 0x6fe6ff, 'emissive', 40, 1);
+            if (k % 2 === 0) microLine({ x: p.x + rx * wg, y: yh0, z: p.z + rz * wg }, { x: q.x + rx * wg, y: yh1, z: q.z + rz * wg }, 0x6fe6ff, 'emissive', 46, 1);
+            // Sleek 0.125 m translucent wind-screen along both outer guideway flanks!
+            const wf = sg * 4.1;
+            const isPost = k % 5 === 0;
+            for (let ly = 0; ly < 5; ly++) {
+              microLine(
+                { x: p.x + rx * wf, y: yh0 + ly * M, z: p.z + rz * wf },
+                { x: q.x + rx * wf, y: yh1 + ly * M, z: q.z + rz * wf },
+                isPost ? C.titanium : C.railingGlass, isPost ? 'normal' : 'translucent', isPost ? 0 : railingGlassTrans, 1,
+              );
+            }
+            microLine({ x: p.x + rx * wf, y: yh0 + 5 * M, z: p.z + rz * wf }, { x: q.x + rx * wf, y: yh1 + 5 * M, z: q.z + rz * wf }, C.titanium, 'normal', 0, 1);
           }
         }
       }
@@ -3120,8 +3488,10 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
           const w = side * (mode[k] === MODE_ELEV ? 9.3 : 8.6);
           const x = p.x + rx * w, z = p.z + rz * w;
           const i = rIdx(x, z);
-          if (i >= 0 && rmask[i] & BIT_EXP && deckMin[i] < Math.round(p.h) + 10) continue;
-          streetLight(Math.floor(x) + 0.5, Math.round(p.h) + 1, Math.floor(z) + 0.5, -rx * side, -rz * side, 7, 1.75);
+          const h8 = slopeH8(p.h, 'art');
+          const ySurf = Math.floor(h8 / 8) + 1 + (h8 & 7) * M;
+          if (i >= 0 && rmask[i] & BIT_EXP && deckMin[i] < ySurf + 9) continue;
+          streetLight(Math.floor(x) + 0.5, ySurf, Math.floor(z) + 0.5, -rx * side, -rz * side, 7, 1.75);
         }
       } else if (d.kind === 'exp') {
         for (let s = 21; s < L; s += 42) {
@@ -3129,7 +3499,8 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
           if (mode[k] === MODE_TUNNEL) continue;
           const p = d.pts[k];
           if (!near(p.x, p.z, 4)) continue;
-          const y = Math.round(p.h) + 2;
+          const h8 = slopeH8(p.h, 'exp');
+          const y = Math.floor(h8 / 8) + 1 + (h8 & 7) * M + 0.75;
           const rx = -p.tz, rz = p.tx;
           const x = Math.floor(p.x) + 0.5, z = Math.floor(p.z) + 0.5;
           if (!inCrop(x, z)) continue;
@@ -3169,7 +3540,8 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
         const fx = e === 0 ? -p.tx : p.tx, fz = e === 0 ? -p.tz : p.tz;
         const x = p.x + rx * sg * 8.4, z = p.z + rz * sg * 8.4;
         if (!inCrop(x, z)) continue;
-        const y = Math.round(p.h) + 1;
+        const h8 = slopeH8(p.h, 'art');
+        const y = Math.floor(h8 / 8) + 1 + (h8 & 7) * M;
         microLine({ x, y, z }, { x, y: y + 5.5, z }, C.pole, 'normal', 0, 2);
         const ex = x - rx * sg * 5.2, ez = z - rz * sg * 5.2;
         microLine({ x, y: y + 5.5, z }, { x: ex, y: y + 5.5, z: ez }, C.pole, 'normal', 0, 2);
@@ -3185,35 +3557,71 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
     }
   }
 
-  // Overhead direction-sign gantries ahead of every diverge.
+  // Overhead 0.125 m open-web titanium truss sign gantries ahead of every diverge.
   for (const g of plan.gantries) {
     if (!near(g.x, g.z, 14)) continue;
-    const y = Math.round(g.h) + 1;
+    const h8 = slopeH8(g.h, 'exp');
+    const y = Math.floor(h8 / 8) + 1 + (h8 & 7) * M;
     if (terrainAt(g.x, g.z) > y + 1) continue;
     const rx = -g.tz, rz = g.tx;
-    const post = (w: number) => {
-      const x = g.x + rx * w, z = g.z + rz * w;
-      microLine({ x, y, z }, { x, y: y + 7, z }, C.titanium, 'normal', 0, 3);
-    };
-    post(0.4);
-    post(9.6);
-    for (let w = 0.4; w <= 9.6; w += 0.5) {
-      microLine({ x: g.x + rx * w, y: y + 7, z: g.z + rz * w }, { x: g.x + rx * w, y: y + 7.25, z: g.z + rz * w }, C.titanium, 'normal', 0, 2);
+    // Twin open-lattice support legs on median and outer verge.
+    for (const pw of [0.35, 9.7]) {
+      const px = g.x + rx * pw, pz = g.z + rz * pw;
+      microLine({ x: px, y, z: pz }, { x: px, y: y + 7.25, z: pz }, C.titanium, 'normal', 0, 2);
+      microLine({ x: px + g.tx * 0.5, y, z: pz + g.tz * 0.5 }, { x: px + g.tx * 0.5, y: y + 7.25, z: pz + g.tz * 0.5 }, C.titanium, 'normal', 0, 2);
+      for (let yy = 0.75; yy < 7; yy += 1.25) {
+        microLine({ x: px, y: y + yy, z: pz }, { x: px + g.tx * 0.5, y: y + yy + 1.1, z: pz + g.tz * 0.5 }, C.titaniumMid, 'normal', 0, 1);
+      }
     }
-    const signGreen = normalMat(C.signGreen);
-    for (let w = 2; w <= 9; w += 0.5) for (let yy = 7; yy <= 8; yy++) put(g.x + rx * w, y + yy, g.z + rz * w, signGreen);
-    for (let w = 3; w <= 8; w += M) {
-      if (mod(Math.floor(w * 2.6), 3) === 0) continue;
-      micro(g.x + rx * w - g.tx * 0.6, y + 8.4, g.z + rz * w - g.tz * 0.6, C.paint);
+    // Horizontal space-frame truss spanning the carriageway (top & bottom chords + diagonal bracing).
+    for (const dy of [6.375, 7.25]) {
+      for (const dt of [0, 0.5]) {
+        microLine(
+          { x: g.x + rx * 0.35 + g.tx * dt, y: y + dy, z: g.z + rz * 0.35 + g.tz * dt },
+          { x: g.x + rx * 9.7 + g.tx * dt, y: y + dy, z: g.z + rz * 9.7 + g.tz * dt },
+          C.titanium, 'normal', 0, 1,
+        );
+      }
     }
-    for (let a = 0; a <= 0.75; a += M) {
-      micro(g.x + rx * (7.6 + a * 0.5) - g.tx * 0.6, y + 7.4 + a, g.z + rz * (7.6 + a * 0.5) - g.tz * 0.6, C.paint);
-      micro(g.x + rx * (8.4 - a * 0.5) - g.tx * 0.6, y + 7.4 + a, g.z + rz * (8.4 - a * 0.5) - g.tz * 0.6, C.paint);
+    for (let w = 0.5; w < 9.2; w += 1.0) {
+      const up = (Math.floor(w) & 1) === 0;
+      microLine(
+        { x: g.x + rx * w, y: y + (up ? 6.375 : 7.25), z: g.z + rz * w },
+        { x: g.x + rx * (w + 1), y: y + (up ? 7.25 : 6.375), z: g.z + rz * (w + 1) },
+        C.titaniumMid, 'normal', 0, 1,
+      );
+    }
+    // Sleek 0.25 m thin emerald-green highway signboard with crisp 0.125 m white border, glyphs,
+    // downward exit arrow & brushed aluminum rear backing + horizontal mounting rails!
+    const fx = -g.tx * 0.25, fz = -g.tz * 0.25;
+    for (let w = 2.0; w <= 8.8; w += M) {
+      for (let hy = 0; hy <= 1.875; hy += M) {
+        const bx = g.x + rx * w + fx, bz = g.z + rz * w + fz;
+        const isBorder = w <= 2.13 || w >= 8.67 || hy <= 0.13 || hy >= 1.74;
+        const isText = !isBorder && (
+          (hy >= 1.24 && hy <= 1.38 && w >= 2.6 && w <= 7.0 && mod(Math.floor(w * 2.5), 3) !== 0)
+          || (hy >= 0.74 && hy <= 0.88 && w >= 2.6 && w <= 6.2 && mod(Math.floor(w * 2.8), 4) !== 0)
+        );
+        const isMountBar = Math.abs(hy - 0.5) < 0.08 || Math.abs(hy - 1.375) < 0.08;
+        micro(bx, y + 5.875 + hy, bz, isBorder || isText ? C.paint : C.signGreen);
+        micro(bx + g.tx * 0.18, y + 5.875 + hy, bz + g.tz * 0.18, isMountBar ? C.titanium : C.titaniumMid);
+      }
+    }
+    // Crisp downward white exit arrow on the right panel + downward glowing sign floodlights.
+    for (let a = 0; a <= 0.875; a += M) {
+      micro(g.x + rx * 7.8 + fx - g.tx * M, y + 6.375 + a, g.z + rz * 7.8 + fz - g.tz * M, C.paint);
+    }
+    for (let a = 1; a <= 3; a++) {
+      micro(g.x + rx * (7.8 - a * M) + fx - g.tx * M, y + 6.375 + a * M, g.z + rz * (7.8 - a * M) + fz - g.tz * M, C.paint);
+      micro(g.x + rx * (7.8 + a * M) + fx - g.tx * M, y + 6.375 + a * M, g.z + rz * (7.8 + a * M) + fz - g.tz * M, C.paint);
+    }
+    for (const lw of [3.5, 5.5, 7.5]) {
+      micro(g.x + rx * lw + fx - g.tx * 0.375, y + 7.75, g.z + rz * lw + fz - g.tz * 0.375, 0xfff4d8, 'emissive', Math.round(36 + 32 * lights));
     }
   }
 
   // -------------------------------------------------------------------------
-  // 10. Lane markings (0.125 m paint): edge lines, lane dashes, centre lines, stop lines.
+  // 10. Continuous sloped lane markings (crisp 0.125 m paint embedded flush on all decks & ramps).
   // -------------------------------------------------------------------------
   for (let di = 0; di < decks.length; di++) {
     const d = decks[di];
@@ -3222,13 +3630,13 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
     const L = pts[n - 1].s;
     const lines: { w: number; dash: boolean; col: number }[] =
       d.kind === 'exp' ? [
-        { w: 1.55, dash: false, col: C.paintYellow }, { w: -1.55, dash: false, col: C.paintYellow },
+        { w: 1.45, dash: false, col: C.paintYellow }, { w: -1.45, dash: false, col: C.paintYellow },
         { w: 9.0, dash: false, col: C.paint }, { w: -9.0, dash: false, col: C.paint },
         { w: 5.3, dash: true, col: C.paint }, { w: -5.3, dash: true, col: C.paint },
       ]
       : d.kind === 'ramp' ? [{ w: 2.55, dash: false, col: C.paint }, { w: -2.55, dash: false, col: C.paint }]
       : d.kind === 'art' ? [
-        { w: 0.3, dash: false, col: C.paintYellow }, { w: -0.3, dash: false, col: C.paintYellow },
+        { w: 0.25, dash: false, col: C.paintYellow }, { w: -0.25, dash: false, col: C.paintYellow },
         { w: 3.5, dash: true, col: C.paint }, { w: -3.5, dash: true, col: C.paint },
       ]
       : [{ w: 0, dash: true, col: C.paintYellow }];
@@ -3236,16 +3644,17 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
       const p = pts[k], q = pts[k + 1];
       if (!near(p.x, p.z, d.hw + 2)) continue;
       if (p.s < d.trim0 || p.s > d.trim1) continue;
-      const y = Math.round(p.h) + 1;
-      if (Math.round(q.h) + 1 !== y) continue;
       for (const ln of lines) {
         if (ln.dash && mod(Math.floor(p.s / 6), 2) === 1) continue;
         for (let t = 0; t < 1; t += M) {
+          const h = lerp(p.h, q.h, t);
+          const h8 = slopeH8(h, d.kind);
+          const yB = Math.floor(h8 / 8), sub = h8 - yB * 8;
+          const paintY = sub === 0 ? yB + 1 : yB + 1 + (sub - 1) * M;
           const x = lerp(p.x, q.x, t), z = lerp(p.z, q.z, t);
           const tx = lerp(p.tx, q.tx, t), tz = lerp(p.tz, q.tz, t);
           const wx = x - tz * ln.w, wz = z + tx * ln.w;
-          micro(wx, y, wz, ln.col);
-          micro(wx - tz * M, y, wz + tx * M, ln.col);
+          micro(wx, paintY, wz, ln.col);
         }
       }
     }
@@ -3255,10 +3664,12 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
         const k = Math.round(s);
         const p = pts[Math.min(n - 1, k)];
         if (!near(p.x, p.z, 10)) continue;
-        const y = Math.round(p.h) + 1;
+        const h8 = slopeH8(p.h, d.kind);
+        const yB = Math.floor(h8 / 8), sub = h8 - yB * 8;
+        const paintY = sub === 0 ? yB + 1 : yB + 1 + (sub - 1) * M;
         const sg = e === 0 ? -1 : 1;
         for (let w = 0.6; w <= 6.6; w += M) {
-          for (let a = 0; a < 3; a++) micro(p.x - p.tz * sg * w + p.tx * a * M, y, p.z + p.tx * sg * w + p.tz * a * M, C.paint);
+          for (let a = 0; a < 3; a++) micro(p.x - p.tz * sg * w + p.tx * a * M, paintY, p.z + p.tx * sg * w + p.tz * a * M, C.paint);
         }
       }
     }
@@ -3307,9 +3718,49 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
       }
     }
   }
-  for (const v of micros.values()) {
-    if (get(Math.floor(v.x + width / 2), Math.floor(v.y), Math.floor(v.z + depth / 2))) continue;
-    emit(v);
+  for (let bi = 0; bi < mBrickKeys.length; bi++) {
+    const bKey = mBrickKeys[bi];
+    if (cells[bKey]) continue;
+    const brick = mBricks.get(bKey)!;
+    const by = Math.floor(bKey / layer);
+    const rem = bKey - by * layer;
+    const bz = Math.floor(rem / width);
+    const bx = rem - bz * width;
+    const baseIx = bx << 3, baseIy = by << 3, baseIz = bz << 3;
+    for (let slot = 0; slot < 512; slot++) {
+      const val = brick[slot];
+      if (!val) continue;
+      const ix = baseIx | (slot & 7);
+      const iz = baseIz | ((slot >> 3) & 7);
+      const iy = baseIy | (slot >> 6);
+      const mid = (val & 0xff) - 1;
+      const col = val >>> 8;
+      let material: WeaveMaterialKind = 'normal';
+      let transparency = 0;
+      let emission = 0;
+      if (mid >= SPACE_MATERIAL_IDS.TRANSLUCENT_MIN && mid <= SPACE_MATERIAL_IDS.TRANSLUCENT_MAX) {
+        material = 'translucent';
+        transparency = mid - 1;
+      } else if (mid >= SPACE_MATERIAL_IDS.EMISSIVE_MIN && mid <= SPACE_MATERIAL_IDS.EMISSIVE_MAX) {
+        material = 'emissive';
+        emission = mid - 101;
+      }
+      emit({
+        x: ix * M + M / 2 - hx,
+        y: iy * M,
+        z: iz * M + M / 2 - hz,
+        sizeX: M,
+        sizeY: M,
+        sizeZ: M,
+        color: col,
+        material,
+        materialId: mid,
+        transparency,
+        emission,
+        emissive: material === 'emissive',
+        intensity: emission / 50,
+      });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -3387,13 +3838,30 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
       target: local({ x: p.x, y: p.h - 3, z: p.z }),
     });
   }
+  const tubeSpans = spans.filter(sp => sp.kind === 'tube');
+  const clearOfTubes = (p: WeavePoint) => {
+    for (const sp of tubeSpans) {
+      for (let k = 0; k < sp.pts.length; k += 2) {
+        const q = sp.pts[k];
+        if (Math.hypot(p.x - q.x, p.y - q.h, p.z - q.z) < TUBE_R + 14) return false;
+      }
+    }
+    return true;
+  };
   const notable = buildings
     .filter(b => (b.family === 1 || b.family === 2 || b.family === 6) && inside(b.x, b.z, 24))
     .sort((a, b) => b.height - a.height);
   for (const t of notable.slice(0, 2)) {
+    const candidates: WeavePoint[] = [
+      clampIn({ x: t.x - 46, y: t.base + t.height * 0.55, z: t.z + 56 }),
+      clampIn({ x: t.x + 52, y: t.base + t.height * 0.58, z: t.z + 48 }),
+      clampIn({ x: t.x - 52, y: t.base + t.height * 0.58, z: t.z - 48 }),
+      clampIn({ x: t.x + 46, y: t.base + t.height * 0.65, z: t.z - 56 }),
+    ];
+    const camPos = candidates.find(clearOfTubes) ?? clampIn({ x: t.x - 46, y: Math.min(ceiling - 8, t.base + t.height * 0.85), z: t.z + 56 });
     landmarkViews.push({
       label: `${WEAVE_FAMILIES[t.family]} ${t.id}`,
-      position: local(clampIn({ x: t.x - 46, y: t.base + t.height * 0.55, z: t.z + 56 })),
+      position: local(camPos),
       target: local({ x: t.x, y: t.base + t.height * 0.5, z: t.z }),
     });
   }

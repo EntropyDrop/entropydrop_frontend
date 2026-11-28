@@ -36,11 +36,15 @@ test('emits 1m and 0.125m cubes with exact Space normal / translucent 1-100 / em
   const transparency = new Set();
   const emission = new Set();
   let micro = 0;
+  let microTranslucent = 0;
   for (const v of world.voxels) {
     assert.ok(v.sizeX === 1 || v.sizeX === 0.125);
     assert.equal(v.sizeY, v.sizeX);
     assert.equal(v.sizeZ, v.sizeX);
-    if (v.sizeX < 1) micro++;
+    if (v.sizeX < 1) {
+      micro++;
+      if (v.material === 'translucent') microTranslucent++;
+    }
     if (v.material === 'normal') {
       assert.equal(v.materialId, 0);
       assert.equal(v.transparency + v.emission + v.intensity, 0);
@@ -60,7 +64,8 @@ test('emits 1m and 0.125m cubes with exact Space normal / translucent 1-100 / em
     assert.ok(!seen.has(key), `duplicate voxel ${key}`);
     seen.add(key);
   }
-  assert.ok(micro > 1000, 'fine 0.125 m detail (paint, lamps, rails) is present');
+  assert.ok(micro > 20000, `fine 0.125 m detail (sloped ramps, barriers, rails, paint) is present (${micro})`);
+  assert.ok(microTranslucent > 200, `fine 0.125 m translucent glass barriers/balustrades present (${microTranslucent})`);
   assert.ok(transparency.size >= 3, `several transparency levels (${[...transparency]})`);
   assert.ok(emission.size >= 4, `several glow levels (${[...emission]})`);
 });
