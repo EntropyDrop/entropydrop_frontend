@@ -96,43 +96,148 @@ const CUBE_FACES: ReadonlyArray<{
   { dir: [0, 0, -1], corners: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] },
 ];
 
-/** Builds a face-culled BufferGeometry for translucent voxels (1m and 0.125m) carrying
- * linear RGB vertex colors and Space per-voxel opacity ((100 - transparency) / 100)
- * in attribute `aOpacity`. Adjacent glass faces merge seamlessly with zero internal grid seams. */
+interface SolidMicroBrickIndex {
+  brickMap: Map<number, number>;
+  bricks: Uint16Array[];
+}
+
+/** Builds a face-culled, 2D-greedy-merged BufferGeometry for translucent voxels (1m and 0.125m)
+ * carrying linear RGB vertex colors and Space per-voxel opacity ((100 - transparency) / 100)
+ * in attribute `aOpacity`. Uses an 8x8x8 macro-brick Uint16 palette grid for 0.125m glass cubes
+ * so crystal sky-tubes, noise barriers and balustrades cull internal seams against both
+ * translucent and opaque 1m/0.125m neighbors and merge coplanar faces cleanly. */
 function buildTranslucentVoxelGeometry(
   translucentVoxels: TerrainVoxel[],
   opaqueVoxels: TerrainVoxel[],
   step: number,
+  sharedSolidMicros?: SolidMicroBrickIndex | null,
 ): THREE.BufferGeometry | null {
   if (translucentVoxels.length === 0) return null;
   const pack1 = (x: number, y: number, z: number) => (x + 2048) + (z + 2048) * 4096 + (y + 16) * 16777216;
-  const pack8 = (x: number, y: number, z: number) => (x + 16384) + (z + 16384) * 32768 + (y + 64) * 1073741824;
 
   const occupied1 = new Set<number>();
-  const occupied8 = new Set<number>();
-  for (const v of opaqueVoxels) {
-    const s = v.sizeX ?? step;
-    if (s === 1) occupied1.add(pack1(Math.round(v.x - 0.5), Math.round(v.y), Math.round(v.z - 0.5)));
+  for (let i = 0; i < opaqueVoxels.length; i++) {
+    const v = opaqueVoxels[i];
+    if ((v.sizeX ?? step) === 1) {
+      occupied1.add(pack1(Math.round(v.x - 0.5), Math.round(v.y), Math.round(v.z - 0.5)));
+    }
   }
-  for (const v of translucentVoxels) {
-    const s = v.sizeX ?? step;
-    if (s === 1) occupied1.add(pack1(Math.round(v.x - 0.5), Math.round(v.y), Math.round(v.z - 0.5)));
-    else if (s === 0.125) occupied8.add(pack8(Math.round((v.x - 0.0625) * 8), Math.round(v.y * 8), Math.round((v.z - 0.0625) * 8)));
+
+  // Palette keyed by (color << 8) | transparency -> 1-based Uint16 ID for 0.125m translucent bricks.
+  const matToId = new Map<number, number>();
+  const matR: number[] = [0];
+  const matG: number[] = [0];
+  const matB: number[] = [0];
+  const matA: number[] = [0];
+  const tmpColor = new THREE.Color();
+
+  const unitGlass: TerrainVoxel[] = [];
+  const brickMap = new Map<number, number>();
+  const bricks: Uint16Array[] = [];
+  const brickBx: number[] = [];
+  const brickBy: number[] = [];
+  const brickBz: number[] = [];
+
+  for (let i = 0; i < translucentVoxels.length; i++) {
+    const v = translucentVoxels[i];
+    const sx = v.sizeX ?? step;
+    const sy = v.sizeY ?? 1;
+    const sz = v.sizeZ ?? step;
+    if (sx === 0.125 && sy === 0.125 && sz === 0.125) {
+      const transparency = Math.max(1, Math.min(100, Math.round(v.transparency ?? 60)));
+      const opacity = (100 - transparency) / 100;
+      if (opacity <= 0.001) continue;
+      const gx = Math.round((v.x - 0.0625) * 8);
+      const gy = Math.round(v.y * 8);
+      const gz = Math.round((v.z - 0.0625) * 8);
+      const bx = gx >> 3, by = gy >> 3, bz = gz >> 3;
+      const bKey = pack1(bx, by, bz);
+      let bIdx = brickMap.get(bKey);
+      let brick: Uint16Array;
+      if (bIdx === undefined) {
+        bIdx = bricks.length;
+        brickMap.set(bKey, bIdx);
+        brick = new Uint16Array(512);
+        bricks.push(brick);
+        brickBx.push(bx);
+        brickBy.push(by);
+        brickBz.push(bz);
+      } else {
+        brick = bricks[bIdx];
+      }
+      const mKey = v.color * 256 + transparency;
+      let mid = matToId.get(mKey);
+      if (mid === undefined) {
+        mid = matR.length;
+        matToId.set(mKey, mid);
+        tmpColor.setHex(v.color);
+        matR.push(tmpColor.r);
+        matG.push(tmpColor.g);
+        matB.push(tmpColor.b);
+        matA.push(opacity);
+      }
+      brick[((gy & 7) << 6) | ((gz & 7) << 3) | (gx & 7)] = mid;
+    } else {
+      if (sx === 1 && sy === 1 && sz === 1) {
+        occupied1.add(pack1(Math.round(v.x - 0.5), Math.round(v.y), Math.round(v.z - 0.5)));
+      }
+      unitGlass.push(v);
+    }
   }
+
+  // Reuse the prebuilt solid 0.125m brick index when available (skips scanning millions of solid
+  // road micros); otherwise fall back to compact 64-byte bitsets for bricks near glass.
+  const solidBrickMap = sharedSolidMicros?.brickMap ?? null;
+  const solidBricks = sharedSolidMicros?.bricks ?? null;
+  const solidMicroBits = new Map<number, Uint8Array>();
+  if (bricks.length > 0 && !solidBrickMap) {
+    const nearGlass = new Set<number>();
+    for (let bi = 0; bi < bricks.length; bi++) {
+      const bx = brickBx[bi], by = brickBy[bi], bz = brickBz[bi];
+      nearGlass.add(pack1(bx, by, bz));
+      nearGlass.add(pack1(bx + 1, by, bz));
+      nearGlass.add(pack1(bx - 1, by, bz));
+      nearGlass.add(pack1(bx, by + 1, bz));
+      nearGlass.add(pack1(bx, by - 1, bz));
+      nearGlass.add(pack1(bx, by, bz + 1));
+      nearGlass.add(pack1(bx, by, bz - 1));
+    }
+    for (let i = 0; i < opaqueVoxels.length; i++) {
+      const v = opaqueVoxels[i];
+      if (v.sizeX !== 0.125 || v.sizeY !== 0.125 || v.sizeZ !== 0.125) continue;
+      const gx = Math.round((v.x - 0.0625) * 8);
+      const gy = Math.round(v.y * 8);
+      const gz = Math.round((v.z - 0.0625) * 8);
+      const bKey = pack1(gx >> 3, gy >> 3, gz >> 3);
+      if (!nearGlass.has(bKey)) continue;
+      let bits = solidMicroBits.get(bKey);
+      if (!bits) {
+        bits = new Uint8Array(64);
+        solidMicroBits.set(bKey, bits);
+      }
+      const slot = ((gy & 7) << 6) | ((gz & 7) << 3) | (gx & 7);
+      bits[slot >> 3] |= 1 << (slot & 7);
+    }
+  }
+  const getSolidBrick = (k: number): Uint16Array | null => {
+    if (!solidBrickMap || !solidBricks) return null;
+    const idx = solidBrickMap.get(k);
+    return idx !== undefined ? solidBricks[idx] : null;
+  };
 
   const positions: number[] = [];
   const normals: number[] = [];
   const colors: number[] = [];
   const opacities: number[] = [];
   const indices: number[] = [];
-  const tmpColor = new THREE.Color();
   let vertCount = 0;
 
-  for (const v of translucentVoxels) {
+  // 1. Emit 1m / custom translucent blocks.
+  for (let i = 0; i < unitGlass.length; i++) {
+    const v = unitGlass[i];
     const transparency = Math.max(1, Math.min(100, Math.round(v.transparency ?? 60)));
     const opacity = (100 - transparency) / 100;
     if (opacity <= 0.001) continue;
-
     const sx = v.sizeX ?? step;
     const sy = v.sizeY ?? 1;
     const sz = v.sizeZ ?? step;
@@ -140,20 +245,14 @@ function buildTranslucentVoxelGeometry(
     const y0 = v.y;
     const z0 = v.z - sz / 2;
     const isUnit = sx === 1 && sy === 1 && sz === 1;
-    const isMicro = sx === 0.125 && sy === 0.125 && sz === 0.125;
-    const gx = isUnit ? Math.round(x0) : isMicro ? Math.round(x0 * 8) : 0;
-    const gy = isUnit ? Math.round(y0) : isMicro ? Math.round(y0 * 8) : 0;
-    const gz = isUnit ? Math.round(z0) : isMicro ? Math.round(z0 * 8) : 0;
+    const gx = isUnit ? Math.round(x0) : 0;
+    const gy = isUnit ? Math.round(y0) : 0;
+    const gz = isUnit ? Math.round(z0) : 0;
 
     tmpColor.setHex(v.color);
     for (const face of CUBE_FACES) {
       const [dx, dy, dz] = face.dir;
       if (isUnit && occupied1.has(pack1(gx + dx, gy + dy, gz + dz))) continue;
-      if (isMicro) {
-        const nx = gx + dx, ny = gy + dy, nz = gz + dz;
-        if (occupied8.has(pack8(nx, ny, nz))) continue;
-        if (occupied1.has(pack1(nx >> 3, ny >> 3, nz >> 3))) continue;
-      }
       for (const [cx, cy, cz] of face.corners) {
         positions.push(x0 + cx * sx, y0 + cy * sy, z0 + cz * sz);
         normals.push(dx, dy, dz);
@@ -162,6 +261,223 @@ function buildTranslucentVoxelGeometry(
       }
       indices.push(vertCount, vertCount + 1, vertCount + 2, vertCount, vertCount + 2, vertCount + 3);
       vertCount += 4;
+    }
+  }
+
+  // 2. Emit 2D-greedy-merged 0.125m translucent micro-voxel bricks.
+  if (bricks.length > 0) {
+    const mask = new Uint16Array(64);
+    const M = 0.125;
+    const pushQuad = (
+      x0: number, y0: number, z0: number,
+      x1: number, y1: number, z1: number,
+      x2: number, y2: number, z2: number,
+      x3: number, y3: number, z3: number,
+      nx: number, ny: number, nz: number,
+      mid: number,
+    ) => {
+      const r = matR[mid], g = matG[mid], b = matB[mid], a = matA[mid];
+      positions.push(x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3);
+      normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
+      colors.push(r, g, b, r, g, b, r, g, b, r, g, b);
+      opacities.push(a, a, a, a);
+      indices.push(vertCount, vertCount + 1, vertCount + 2, vertCount, vertCount + 2, vertCount + 3);
+      vertCount += 4;
+    };
+
+    for (let bi = 0; bi < bricks.length; bi++) {
+      const brick = bricks[bi];
+      const bx = brickBx[bi], by = brickBy[bi], bz = brickBz[bi];
+      const ox = bx * 8, oy = by * 8, oz = bz * 8;
+      const selfKey = pack1(bx, by, bz);
+      const selfSolid = solidMicroBits.get(selfKey) ?? null;
+      const selfSolidU16 = getSolidBrick(selfKey);
+
+      const kPx = pack1(bx + 1, by, bz), kNx = pack1(bx - 1, by, bz);
+      const kPy = pack1(bx, by + 1, bz), kNy = pack1(bx, by - 1, bz);
+      const kPz = pack1(bx, by, bz + 1), kNz = pack1(bx, by, bz - 1);
+
+      const nbPx = brickMap.get(kPx), nbNx = brickMap.get(kNx);
+      const nbPy = brickMap.get(kPy), nbNy = brickMap.get(kNy);
+      const nbPz = brickMap.get(kPz), nbNz = brickMap.get(kNz);
+      const smPx = solidMicroBits.get(kPx) ?? null, smNx = solidMicroBits.get(kNx) ?? null;
+      const smPy = solidMicroBits.get(kPy) ?? null, smNy = solidMicroBits.get(kNy) ?? null;
+      const smPz = solidMicroBits.get(kPz) ?? null, smNz = solidMicroBits.get(kNz) ?? null;
+      const suPx = getSolidBrick(kPx), suNx = getSolidBrick(kNx);
+      const suPy = getSolidBrick(kPy), suNy = getSolidBrick(kNy);
+      const suPz = getSolidBrick(kPz), suNz = getSolidBrick(kNz);
+      const sPx = occupied1.has(kPx), sNx = occupied1.has(kNx);
+      const sPy = occupied1.has(kPy), sNy = occupied1.has(kNy);
+      const sPz = occupied1.has(kPz), sNz = occupied1.has(kNz);
+
+      // +X and -X slices (u = lz, v = ly)
+      for (let dir = 0; dir < 2; dir++) {
+        const pos = dir === 0;
+        const nx = pos ? 1 : -1;
+        const nbIdx = pos ? nbPx : nbNx;
+        const nbBrick = nbIdx !== undefined ? bricks[nbIdx] : null;
+        const nbSm = pos ? smPx : smNx;
+        const nbSu = pos ? suPx : suNx;
+        const nbSolid = pos ? sPx : sNx;
+        for (let lx = 0; lx < 8; lx++) {
+          const atEdge = pos ? lx === 7 : lx === 0;
+          if (atEdge && nbSolid) continue;
+          let any = 0;
+          for (let ly = 0; ly < 8; ly++) {
+            const yOff = ly << 6;
+            for (let lz = 0; lz < 8; lz++) {
+              const c = brick[yOff | (lz << 3) | lx];
+              let out = 0;
+              if (c) {
+                const nSlot = yOff | (lz << 3) | (atEdge ? (pos ? 0 : 7) : lx + nx);
+                const occ = atEdge
+                  ? ((nbBrick ? nbBrick[nSlot] : 0) || (nbSu ? nbSu[nSlot] : 0) || (nbSm ? (nbSm[nSlot >> 3] & (1 << (nSlot & 7))) : 0))
+                  : (brick[nSlot] || (selfSolidU16 ? selfSolidU16[nSlot] : 0) || (selfSolid ? (selfSolid[nSlot >> 3] & (1 << (nSlot & 7))) : 0));
+                if (!occ) { out = c; any = 1; }
+              }
+              mask[(ly << 3) | lz] = out;
+            }
+          }
+          if (!any) continue;
+          const px = (ox + lx + (pos ? 1 : 0)) * M;
+          for (let v = 0; v < 8; v++) {
+            for (let u = 0; u < 8; u++) {
+              const c = mask[(v << 3) | u];
+              if (!c) continue;
+              let w = 1;
+              while (u + w < 8 && mask[(v << 3) | (u + w)] === c) w++;
+              let h = 1;
+              outer: while (v + h < 8) {
+                const row = (v + h) << 3;
+                for (let k = 0; k < w; k++) if (mask[row | (u + k)] !== c) break outer;
+                h++;
+              }
+              for (let dv = 0; dv < h; dv++) {
+                const row = (v + dv) << 3;
+                for (let du = 0; du < w; du++) mask[row | (u + du)] = 0;
+              }
+              const z0 = (oz + u) * M, z1 = (oz + u + w) * M;
+              const y0 = (oy + v) * M, y1 = (oy + v + h) * M;
+              if (pos) pushQuad(px, y0, z1, px, y0, z0, px, y1, z0, px, y1, z1, 1, 0, 0, c);
+              else pushQuad(px, y0, z0, px, y0, z1, px, y1, z1, px, y1, z0, -1, 0, 0, c);
+            }
+          }
+        }
+      }
+
+      // +Y and -Y slices (u = lx, v = lz)
+      for (let dir = 0; dir < 2; dir++) {
+        const pos = dir === 0;
+        const ny = pos ? 1 : -1;
+        const nbIdx = pos ? nbPy : nbNy;
+        const nbBrick = nbIdx !== undefined ? bricks[nbIdx] : null;
+        const nbSm = pos ? smPy : smNy;
+        const nbSu = pos ? suPy : suNy;
+        const nbSolid = pos ? sPy : sNy;
+        for (let ly = 0; ly < 8; ly++) {
+          const atEdge = pos ? ly === 7 : ly === 0;
+          if (atEdge && nbSolid) continue;
+          const yOff = ly << 6;
+          const nyOff = atEdge ? (pos ? 0 : 7 << 6) : (ly + ny) << 6;
+          let any = 0;
+          for (let lz = 0; lz < 8; lz++) {
+            const zOff = lz << 3;
+            for (let lx = 0; lx < 8; lx++) {
+              const c = brick[yOff | zOff | lx];
+              let out = 0;
+              if (c) {
+                const nSlot = nyOff | zOff | lx;
+                const occ = atEdge
+                  ? ((nbBrick ? nbBrick[nSlot] : 0) || (nbSu ? nbSu[nSlot] : 0) || (nbSm ? (nbSm[nSlot >> 3] & (1 << (nSlot & 7))) : 0))
+                  : (brick[nSlot] || (selfSolidU16 ? selfSolidU16[nSlot] : 0) || (selfSolid ? (selfSolid[nSlot >> 3] & (1 << (nSlot & 7))) : 0));
+                if (!occ) { out = c; any = 1; }
+              }
+              mask[zOff | lx] = out;
+            }
+          }
+          if (!any) continue;
+          const py = (oy + ly + (pos ? 1 : 0)) * M;
+          for (let v = 0; v < 8; v++) {
+            for (let u = 0; u < 8; u++) {
+              const c = mask[(v << 3) | u];
+              if (!c) continue;
+              let w = 1;
+              while (u + w < 8 && mask[(v << 3) | (u + w)] === c) w++;
+              let h = 1;
+              outer: while (v + h < 8) {
+                const row = (v + h) << 3;
+                for (let k = 0; k < w; k++) if (mask[row | (u + k)] !== c) break outer;
+                h++;
+              }
+              for (let dv = 0; dv < h; dv++) {
+                const row = (v + dv) << 3;
+                for (let du = 0; du < w; du++) mask[row | (u + du)] = 0;
+              }
+              const x0 = (ox + u) * M, x1 = (ox + u + w) * M;
+              const z0 = (oz + v) * M, z1 = (oz + v + h) * M;
+              if (pos) pushQuad(x0, py, z1, x1, py, z1, x1, py, z0, x0, py, z0, 0, 1, 0, c);
+              else pushQuad(x0, py, z0, x1, py, z0, x1, py, z1, x0, py, z1, 0, -1, 0, c);
+            }
+          }
+        }
+      }
+
+      // +Z and -Z slices (u = lx, v = ly)
+      for (let dir = 0; dir < 2; dir++) {
+        const pos = dir === 0;
+        const nz = pos ? 1 : -1;
+        const nbIdx = pos ? nbPz : nbNz;
+        const nbBrick = nbIdx !== undefined ? bricks[nbIdx] : null;
+        const nbSm = pos ? smPz : smNz;
+        const nbSu = pos ? suPz : suNz;
+        const nbSolid = pos ? sPz : sNz;
+        for (let lz = 0; lz < 8; lz++) {
+          const atEdge = pos ? lz === 7 : lz === 0;
+          if (atEdge && nbSolid) continue;
+          const zOff = lz << 3;
+          const nzOff = atEdge ? (pos ? 0 : 7 << 3) : (lz + nz) << 3;
+          let any = 0;
+          for (let ly = 0; ly < 8; ly++) {
+            const yOff = ly << 6;
+            for (let lx = 0; lx < 8; lx++) {
+              const c = brick[yOff | zOff | lx];
+              let out = 0;
+              if (c) {
+                const nSlot = yOff | nzOff | lx;
+                const occ = atEdge
+                  ? ((nbBrick ? nbBrick[nSlot] : 0) || (nbSu ? nbSu[nSlot] : 0) || (nbSm ? (nbSm[nSlot >> 3] & (1 << (nSlot & 7))) : 0))
+                  : (brick[nSlot] || (selfSolidU16 ? selfSolidU16[nSlot] : 0) || (selfSolid ? (selfSolid[nSlot >> 3] & (1 << (nSlot & 7))) : 0));
+                if (!occ) { out = c; any = 1; }
+              }
+              mask[(ly << 3) | lx] = out;
+            }
+          }
+          if (!any) continue;
+          const pz = (oz + lz + (pos ? 1 : 0)) * M;
+          for (let v = 0; v < 8; v++) {
+            for (let u = 0; u < 8; u++) {
+              const c = mask[(v << 3) | u];
+              if (!c) continue;
+              let w = 1;
+              while (u + w < 8 && mask[(v << 3) | (u + w)] === c) w++;
+              let h = 1;
+              outer: while (v + h < 8) {
+                const row = (v + h) << 3;
+                for (let k = 0; k < w; k++) if (mask[row | (u + k)] !== c) break outer;
+                h++;
+              }
+              for (let dv = 0; dv < h; dv++) {
+                const row = (v + dv) << 3;
+                for (let du = 0; du < w; du++) mask[row | (u + du)] = 0;
+              }
+              const x0 = (ox + u) * M, x1 = (ox + u + w) * M;
+              const y0 = (oy + v) * M, y1 = (oy + v + h) * M;
+              if (pos) pushQuad(x0, y0, pz, x1, y0, pz, x1, y1, pz, x0, y1, pz, 0, 0, 1, c);
+              else pushQuad(x1, y0, pz, x0, y0, pz, x0, y1, pz, x1, y1, pz, 0, 0, -1, c);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -183,7 +499,7 @@ function buildTranslucentVoxelGeometry(
 function buildSolidMicroVoxelGeometry(
   microVoxels: TerrainVoxel[],
   unitOpaqueVoxels: TerrainVoxel[],
-): THREE.BufferGeometry | null {
+): { geometry: THREE.BufferGeometry; index: SolidMicroBrickIndex } | null {
   const count = microVoxels.length;
   if (count === 0) return null;
   const pack1 = (x: number, y: number, z: number) => (x + 2048) + (z + 2048) * 4096 + (y + 16) * 16777216;
@@ -445,7 +761,7 @@ function buildSolidMicroVoxelGeometry(
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
-  return geometry;
+  return { geometry, index: { brickMap, bricks } };
 }
 
 // ============================================================================
@@ -2409,17 +2725,19 @@ export function TerrainLabPage() {
               })
             : new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0.2 });
 
+        let solidMicroIndex: SolidMicroBrickIndex | null = null;
         if (algorithm === 'skyweave_interchange' || algorithm === 'aeroglass_valley') {
           const isMicroCube = (v: TerrainVoxel) => v.sizeX === 0.125 && v.sizeY === 0.125 && v.sizeZ === 0.125;
           const solidUnits = solidVoxels.filter(v => !isMicroCube(v));
           const solidMicros = solidVoxels.filter(isMicroCube);
           addVoxelBatch(solidUnits, makeSolidMaterial(), false);
           if (solidMicros.length > 0) {
-            const microGeo = buildSolidMicroVoxelGeometry(solidMicros, solidUnits);
-            if (microGeo) {
+            const built = buildSolidMicroVoxelGeometry(solidMicros, solidUnits);
+            if (built) {
+              solidMicroIndex = built.index;
               const microMat = makeSolidMaterial();
               microMat.vertexColors = true;
-              const microMesh = new THREE.Mesh(microGeo, microMat);
+              const microMesh = new THREE.Mesh(built.geometry, microMat);
               microMesh.castShadow = true;
               microMesh.receiveShadow = true;
               group.add(microMesh);
@@ -2447,7 +2765,7 @@ export function TerrainLabPage() {
 
         // Space 1-100% translucent glass bucket: face-culled continuous crystal mesh rendered after opaques.
         if (translucentVoxels.length > 0) {
-          const glassGeo = buildTranslucentVoxelGeometry(translucentVoxels, solidVoxels, step);
+          const glassGeo = buildTranslucentVoxelGeometry(translucentVoxels, solidVoxels, step, solidMicroIndex);
           if (glassGeo) {
             const glassMat = createAeroglassTranslucentMaterial(offsetX, offsetZ);
             const glassMesh = new THREE.Mesh(glassGeo, glassMat);

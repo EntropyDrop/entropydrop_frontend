@@ -2227,18 +2227,16 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
       const lx = Math.floor(x) - ox, lz = Math.floor(z) - oz;
       const m = mode[k];
       const aw = Math.abs(w);
-      // On elevated highways & ramps, recess the 1 m base deck slightly inside the curved
-      // 0.125 m cantilevered wing slab so jagged 1 m dark-asphalt corners never poke past barriers.
-      if (isHighway && m === MODE_ELEV && aw > d.hw - 0.6) return;
+      // On elevated highways & ramps, recess the 1 m base deck inside the cantilevered
+      // 0.125 m wing slab (which spans aw > d.hw - 1.35) so no dark 1 m asphalt corners
+      // or underside pockets ever peek out past the pale-concrete viaduct wing.
+      if (isHighway && m === MODE_ELEV && aw > d.hw - 1.05) return;
       const h8 = slopeH8(d.pts[k].h, d.kind);
       const y = h8 >> 3;
       if (y < 0 || y >= ceiling) return;
       const side = d.kind === 'art' && aw > ART_ROAD;
       const idx = lx + lz * width + y * layer;
       if (side && isAsphalt(cells[idx]) && deckGrid[idx]) return;
-      // On sloped elevated highway wings, the 1 m base deck rim is covered on top by 0.125 m
-      // asphalt/wing micros, so tinting its exposed side face as pale concrete girder keeps the
-      // viaduct elevation clean and bright instead of dark charcoal blocks under the parapet.
       const isCoveredWingRim = isHighway && m === MODE_ELEV && (h8 & 7) !== 0 && aw > d.hw - 1.5;
       cells[idx] = d.kind === 'art' ? (side ? sidewalkId : asphaltArt) : d.kind === 'lane' ? asphaltLane : isCoveredWingRim ? girderId : asphaltExp;
       let bits = code | (m << 2);
@@ -2325,11 +2323,21 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
             const iyTop = h8 + 7;
 
             if (onWing) {
-              // Cantilevered curved precast concrete wing + fascia soffit (tapers toward box girder).
+              // Cantilevered curved precast concrete wing + fascia soffit (hollow core saves hidden micros).
               microRaw(ix, iyTop, iz, topVal);
               const depthMicros = aw > d.hw - 0.35 ? 4 : aw > d.hw - 0.8 ? 5 : 6;
-              for (let d2 = 1; d2 < depthMicros; d2++) {
-                microRaw(ix, iyTop - d2, iz, d2 === depthMicros - 1 ? valGirderShade : valGirder);
+              if (aw > d.hw - 0.28) {
+                for (let d2 = 1; d2 < depthMicros; d2++) {
+                  microRaw(ix, iyTop - d2, iz, d2 === depthMicros - 1 ? valGirderShade : valGirder);
+                }
+              } else {
+                microRaw(ix, iyTop - (depthMicros - 1), iz, valGirderShade);
+                if (isSloping) microRawIfEmpty(ix, iyTop - (depthMicros - 2), iz, valGirder);
+                if (sub >= 2 && isSloping) {
+                  const hPrev = slopeH8(p.h + dh * (tc - 0.18), d.kind);
+                  const hNext = slopeH8(p.h + dh * (tc + 0.18), d.kind);
+                  if (hPrev < h8 || hNext < h8) microRawIfEmpty(ix, iyTop - 1, iz, topVal);
+                }
               }
             } else {
               microRaw(ix, iyTop, iz, topVal);
@@ -3252,155 +3260,228 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
   }
 
   // -------------------------------------------------------------------------
-  // 8. Glass sky-tubes (interior maglev rails, no pods) and open twin guideways.
+  // 8. Aerospace-grade 0.125 m crystal glass sky-tubes (hollow interior, dual maglev tracks,
+  //    machined multi-profile collar rings, secondary hoop ribs & sculpted pylon cradles)
+  //    and smooth sloped 0.125 m open twin maglev guideways.
   // -------------------------------------------------------------------------
-  const tubeTopGlass = glassMat(C.tubeGlassTop, Math.round(64 + glassBase * 16));
-  const tubeSideGlass = glassMat(C.tubeGlassSide, Math.round(58 + glassBase * 16));
-  const keelHull = normalMat(C.titaniumMid);
-  const keelLight = normalMat(C.titanium);
-  const keelUnder = normalMat(C.steelDark);
-  const trackBedId = normalMat(C.trackBed);
-  const railSilverId = normalMat(C.railSilver);
-  const railGlowId = glowMat(0x5ae2ff, 50);
-  const collarDarkId = normalMat(C.steelDark);
-  const collarLightId = glowMat(0xcaf2ff, 62);
-  const guideBeamId = normalMat(C.white);
-  const guideSideId = normalMat(C.concreteShade);
+  const tubeTopGlassVal = packMicroVal(C.tubeGlassTop, encodeSpaceMaterialId('translucent', Math.round(68 + glassBase * 14)));
+  const tubeSideGlassVal = packMicroVal(C.tubeGlassSide, encodeSpaceMaterialId('translucent', Math.round(62 + glassBase * 14)));
+  const valTubeWhite = packMicroVal(C.white, 0);
+  const valTubeTitanium = packMicroVal(C.titanium, 0);
+  const valTubeTitMid = packMicroVal(C.titaniumMid, 0);
+  const valTubeSteel = packMicroVal(C.steelDark, 0);
+  const valTrackBed = packMicroVal(C.trackBed, 0);
+  const valRailSilver = packMicroVal(C.railSilver, 0);
+  const valRailGlow = packMicroVal(0x5ee6ff, encodeSpaceMaterialId('emissive', 50));
+  const valSillGlow = packMicroVal(0xc6f4ff, encodeSpaceMaterialId('emissive', 38));
+  const valCollarGlow = packMicroVal(0xcaf4ff, encodeSpaceMaterialId('emissive', 54));
+  const valWindGlass = packMicroVal(C.railingGlass, encodeSpaceMaterialId('translucent', railingGlassTrans));
+  const guideSideId = normalMat(C.girder);
+  const guideUnderId = normalMat(C.girderShade);
+
+  // Precomputed 336-step unit circle (~0.112 m arc step at R = 6 m -> zero circumferential pinholes).
+  const TUBE_ANG_N = 336;
+  const tubeCos = new Float32Array(TUBE_ANG_N);
+  const tubeSin = new Float32Array(TUBE_ANG_N);
+  for (let a = 0; a < TUBE_ANG_N; a++) {
+    const ang = (a / TUBE_ANG_N) * Math.PI * 2;
+    tubeCos[a] = Math.cos(ang);
+    tubeSin[a] = Math.sin(ang);
+  }
+  const microWorld = (wx: number, wy: number, wz: number, val: number) =>
+    microRaw(Math.round((wx - ox) * 8), Math.round(wy * 8), Math.round((wz - oz) * 8), val);
+  const microWorldIfEmpty = (wx: number, wy: number, wz: number, val: number) =>
+    microRawIfEmpty(Math.round((wx - ox) * 8), Math.round(wy * 8), Math.round((wz - oz) * 8), val);
 
   for (const sp of spans) {
     const pts = sp.pts;
     const n = pts.length;
     if (sp.kind === 'tube') {
       const R = TUBE_R;
-      const pad = R + 1.4;
+      const uDeck = -R * 0.45;
       for (let k = 1; k < n; k++) {
         const prev = pts[k - 1], cur = pts[k];
-        if (!near((prev.x + cur.x) / 2, (prev.z + cur.z) / 2, pad + 2)) continue;
+        if (!near((prev.x + cur.x) * 0.5, (prev.z + cur.z) * 0.5, R + 3)) continue;
         const dx = cur.x - prev.x, dy = cur.h - prev.h, dz = cur.z - prev.z;
-        const l2 = dx * dx + dy * dy + dz * dz || 1;
-        const segLen = Math.sqrt(l2);
+        const segLen = Math.hypot(dx, dy, dz) || 1;
         const tx = dx / segLen, ty = dy / segLen, tz = dz / segLen;
         const bLen = Math.hypot(tz, tx) || 1;
         const bx = tz / bLen, bz = -tx / bLen;
         const ux = ty * bz, uy = tz * bx - tx * bz, uz = -ty * bx;
-        const y0 = Math.max(0, Math.floor(Math.min(prev.h, cur.h) - pad));
-        const y1 = Math.min(ceiling, Math.ceil(Math.max(prev.h, cur.h) + pad));
-        const z0 = Math.floor(Math.min(prev.z, cur.z) - pad), z1 = Math.ceil(Math.max(prev.z, cur.z) + pad);
-        const x0 = Math.floor(Math.min(prev.x, cur.x) - pad), x1 = Math.ceil(Math.max(prev.x, cur.x) + pad);
-        for (let y = y0; y < y1; y++) {
-          for (let z = z0; z < z1; z++) {
-            for (let x = x0; x < x1; x++) {
-              if (!inCrop(x, z)) continue;
-              const rx = x + 0.5 - prev.x, ry = y + 0.5 - prev.h, rz = z + 0.5 - prev.z;
-              const raw = (rx * dx + ry * dy + rz * dz) / l2;
-              if (raw < -0.05 || raw > 1.05) continue;
-              const t = clamp(raw);
-              const wx = rx - dx * t, wy = ry - dy * t, wz = rz - dz * t;
-              const bb = wx * bx + wz * bz;
-              const u = wx * ux + wy * uy + wz * uz;
-              const d = Math.hypot(bb, u);
-              if (d > pad) continue;
-              const sCoord = sp.base + prev.s + segLen * t;
-              const ringPhase = mod(sCoord, 18);
-              const isCollar = ringPhase < 2.2;
-              const outerR = isCollar ? R + 0.85 : R;
-              if (d > outerR) continue;
-              if (d < R - 1.05) {
-                if (u <= -R * 0.48 && u >= -R * 0.78 && Math.abs(bb) <= R * 0.64) {
-                  if (u > -R * 0.55 && Math.abs(Math.abs(bb) - 1.75) < 0.58) put(x, y, z, railSilverId);
-                  else if (u > -R * 0.58 && Math.abs(Math.abs(bb) - 2.8) < 0.45) put(x, y, z, railGlowId);
-                  else put(x, y, z, trackBedId);
-                  continue;
-                }
-                putAir(x, y, z);
-                continue;
+        const axialSteps = Math.max(8, Math.ceil(segLen * 8.6));
+        const isSloping = Math.abs(dy) > 0.004;
+
+        for (let st = 0; st < axialSteps; st++) {
+          const t = (st + 0.5) / axialSteps;
+          const cx = prev.x + dx * t, cy = prev.h + dy * t, cz = prev.z + dz * t;
+          const sCoord = sp.base + prev.s + segLen * t;
+          const ringPhase = mod(sCoord, 16);
+          const isMajor = ringPhase < 1.5;
+          const isSecHoop = !isMajor && (Math.abs(ringPhase - 5.33) < 0.13 || Math.abs(ringPhase - 10.67) < 0.13);
+          const isBevel = ringPhase < 0.25 || ringPhase > 1.25;
+          const isGroove = ringPhase >= 0.55 && ringPhase <= 0.95;
+          const isSillDash = mod(sCoord, 4) < 0.45;
+          const isCoilLit = mod(sCoord, 1.0) < 0.5;
+          const isWalkDash = mod(sCoord, 2.5) < 0.55;
+          const isCenterDash = mod(sCoord, 3.0) < 0.55;
+
+          // 1. Razor-thin 0.125 m crystal glass canopy, aerodynamic curved keel belly,
+          //    6 longitudinal titanium stringers, machined major collar rings & secondary divider hoops.
+          for (let a = 0; a < TUBE_ANG_N; a++) {
+            const ca = tubeCos[a], sa = tubeSin[a];
+            const nx = bx * ca + ux * sa, ny = uy * sa, nz = bz * ca + uz * sa;
+
+            if (isMajor) {
+              // Precision multi-profile machined aerospace collar bulkhead ring (hollow core skips buried micros).
+              const maxDr = isBevel ? 3 : isGroove ? 4 : 5;
+              const isSideLight = !isBevel && !isGroove && Math.abs(sa) < 0.15;
+              const isStepWall = isBevel || Math.abs(ringPhase - 0.55) < 0.14 || Math.abs(ringPhase - 0.95) < 0.14 || ringPhase < 0.38 || ringPhase > 1.12;
+              if (!isBevel) microWorld(cx + nx * (R - 0.125), cy + ny * (R - 0.125), cz + nz * (R - 0.125), valTubeSteel);
+              for (let dr = 0; dr <= maxDr; dr++) {
+                if (dr > 0 && dr < maxDr && !isStepWall) continue;
+                const rr = R + dr * M;
+                const val = dr === maxDr
+                  ? (isSideLight ? valCollarGlow : isGroove ? valTubeSteel : isBevel ? valTubeTitanium : valTubeWhite)
+                  : isGroove && dr >= 2 ? valTubeSteel
+                  : dr === 0 ? valTubeTitMid : valTubeTitanium;
+                microWorld(cx + nx * rr, cy + ny * rr, cz + nz * rr, val);
               }
-              if (isCollar) {
-                const isDarkBand = ringPhase >= 0.75 && ringPhase <= 1.45;
-                const isLight = !isDarkBand && Math.abs(u) < 0.8 && d > R + 0.2;
-                put(x, y, z, isLight ? collarLightId : isDarkBand ? collarDarkId : titaniumId);
-              } else if (u <= -R * 0.5) {
-                put(x, y, z, u < -R * 0.78 ? keelUnder : Math.abs(bb) > R * 0.5 ? keelLight : keelHull);
+            } else if (isSecHoop) {
+              // Slim 0.25 m brushed-titanium secondary divider hoop ring (3 panoramic window bays per collar).
+              microWorld(cx + nx * R, cy + ny * R, cz + nz * R, valTubeTitanium);
+              microWorld(cx + nx * (R + 0.125), cy + ny * (R + 0.125), cz + nz * (R + 0.125), valTubeWhite);
+            } else if (sa > -0.44) {
+              // Upper crystal-glass curved canopy + 6 precision longitudinal titanium stringers.
+              const isCrown = sa > 0.996;
+              const isShoulder = sa > 0 && Math.abs(Math.abs(ca) - 0.55) < 0.017;
+              const isMidMullion = Math.abs(sa - 0.20) < 0.017;
+              const isSill = sa <= -0.39;
+              if (isCrown) {
+                const isGrooveCenter = Math.abs(ca) < 0.022;
+                microWorld(cx + nx * R, cy + ny * R, cz + nz * R, valTubeTitanium);
+                microWorld(cx + nx * (R + 0.125), cy + ny * (R + 0.125), cz + nz * (R + 0.125), isGrooveCenter ? valTubeSteel : valTubeWhite);
+              } else if (isShoulder || isMidMullion) {
+                microWorld(cx + nx * R, cy + ny * R, cz + nz * R, valTubeTitanium);
+                microWorld(cx + nx * (R + 0.125), cy + ny * (R + 0.125), cz + nz * (R + 0.125), valTubeWhite);
+              } else if (isSill) {
+                microWorld(cx + nx * R, cy + ny * R, cz + nz * R, valTubeWhite);
+                microWorld(cx + nx * (R + 0.125), cy + ny * (R + 0.125), cz + nz * (R + 0.125), isSillDash && sa < -0.41 ? valSillGlow : valTubeTitanium);
               } else {
-                put(x, y, z, u > R * 0.32 ? tubeTopGlass : tubeSideGlass);
+                microWorld(cx + nx * R, cy + ny * R, cz + nz * R, sa > 0.34 ? tubeTopGlassVal : tubeSideGlassVal);
+              }
+            } else {
+              // Aerodynamic curved white/titanium fuselage keel belly + twin ventral strakes & center spine.
+              const isCheekSeam = Math.abs(sa + 0.57) < 0.02;
+              const isStrake = sa < -0.72 && Math.abs(Math.abs(ca) - 0.24) < 0.026;
+              const isCenterKeel = sa < -0.94 && Math.abs(ca) < 0.09;
+              const hullVal = isCheekSeam ? valTubeSteel : sa > -0.70 ? valTubeWhite : sa > -0.86 ? valTubeTitanium : valTubeTitMid;
+              microWorld(cx + nx * R, cy + ny * R, cz + nz * R, hullVal);
+              if (isStrake) {
+                microWorld(cx + nx * (R + 0.125), cy + ny * (R + 0.125), cz + nz * (R + 0.125), valTubeSteel);
+              } else if (isCenterKeel) {
+                microWorld(cx + nx * (R + 0.125), cy + ny * (R + 0.125), cz + nz * (R + 0.125), valTubeSteel);
+                microWorld(cx + nx * (R + 0.25), cy + ny * (R + 0.25), cz + nz * (R + 0.25), valTubeTitMid);
               }
             }
           }
-        }
-        for (const ang of [0.42, Math.PI - 0.42, 1.15, Math.PI - 1.15]) {
-          const ca = Math.cos(ang) * (R + 0.35), sa = Math.sin(ang) * (R + 0.35);
-          microLine(
-            { x: prev.x + bx * ca + ux * sa, y: prev.h + uy * sa, z: prev.z + bz * ca + uz * sa },
-            { x: cur.x + bx * ca + ux * sa, y: cur.h + uy * sa, z: cur.z + bz * ca + uz * sa },
-            C.titanium, 'normal', 0, 2,
-          );
-        }
-        // Fine 0.125 m brushed-titanium secondary aerospace hoop ribs every 6 m between major collars,
-        // plus smooth sloped 0.125 m dual silver maglev guide rails & glowing cyan coil strips inside!
-        const s0 = sp.base + prev.s;
-        if (mod(s0, 6) < 1 && mod(s0, 18) >= 3) {
-          for (let a = -0.35; a <= Math.PI + 0.35; a += 0.045) {
-            const ca = Math.cos(a) * (R + 0.16), sa = Math.sin(a) * (R + 0.16);
-            micro(cur.x + bx * ca + ux * sa, cur.h + uy * sa, cur.z + bz * ca + uz * sa, C.titanium);
-          }
-        }
-        const railU = -R * 0.44;
-        for (const sg of [-1, 1]) {
-          const rb = sg * 1.75;
-          microLine(
-            { x: prev.x + bx * rb + ux * railU, y: prev.h + uy * railU, z: prev.z + bz * rb + uz * railU },
-            { x: cur.x + bx * rb + ux * railU, y: cur.h + uy * railU, z: cur.z + bz * rb + uz * railU },
-            C.railSilver, 'normal', 0, 1,
-          );
-          if (k % 2 === 0) {
-            const gb = sg * 2.65;
-            microLine(
-              { x: prev.x + bx * gb + ux * railU, y: prev.h + uy * railU, z: prev.z + bz * gb + uz * railU },
-              { x: cur.x + bx * gb + ux * railU, y: cur.h + uy * railU, z: cur.z + bz * gb + uz * railU },
-              0x66e8ff, 'emissive', 54, 1,
-            );
+
+          // 2. Precision 0.125 m sloped interior dual-lane maglev track deck (hollow canopy above!).
+          const dxBase = cx + ux * uDeck, dyBase = cy + uy * uDeck, dzBase = cz + uz * uDeck;
+          for (let bb = -5.12; bb <= 5.13; bb += 0.116) {
+            const ab = Math.abs(bb);
+            const px = dxBase + bx * bb, py2 = dyBase, pz = dzBase + bz * bb;
+            if (ab >= 3.85) {
+              // Raised side maintenance walkways with white kerb trim & recessed edge guide lights.
+              const isCurb = ab < 4.02;
+              microWorld(px, py2 + 0.125, pz, isCurb ? valTubeWhite : valTubeTitMid);
+              microWorld(px, py2 + 0.25, pz, isCurb && isWalkDash ? valSillGlow : valTubeTitanium);
+            } else {
+              microWorld(px, py2, pz, valTrackBed);
+              if (isSloping) microWorldIfEmpty(px, py2 - 0.125, pz, valTrackBed);
+              if (ab <= 0.22) {
+                // Sleek central divider spine separating twin maglev guideway lanes.
+                microWorld(px, py2 + 0.125, pz, valTubeTitanium);
+                microWorld(px, py2 + 0.25, pz, ab < 0.08 && isCenterDash ? valRailGlow : valTubeWhite);
+              } else if (Math.abs(ab - 1.46) < 0.08 || Math.abs(ab - 2.74) < 0.08) {
+                // Twin raised brushed-silver maglev rails for each lane.
+                microWorld(px, py2 + 0.125, pz, valTubeTitMid);
+                microWorld(px, py2 + 0.25, pz, valRailSilver);
+              } else if (Math.abs(ab - 2.10) < 0.18) {
+                // Linear-induction stator coil dashes centered between each pair of rails.
+                microWorld(px, py2 + 0.125, pz, isCoilLit ? valRailGlow : valTubeSteel);
+              }
+            }
           }
         }
       }
     } else {
-      // Open twin maglev guideway: two white beams on a box spine, smooth sloped 0.125 m silver rails,
-      // cyan guide strips and thin 0.125 m translucent glass wind-screens.
+      // Open twin maglev guideway: recessed 1 m structural spine + smooth 0.125 m sloped white
+      // cantilevered beams, silver rails, cyan coil dashes & thin translucent glass wind-screens.
       for (let k = 0; k < n; k++) {
         const p = pts[k];
         if (!near(p.x, p.z, 7)) continue;
-        const y = Math.floor(p.h);
+        const y = Math.floor(Math.round(p.h * 8) / 8);
         const rx = -p.tz, rz = p.tx;
-        for (let w = -4.5; w <= 4.5; w += 0.5) {
-          const aw = Math.abs(w);
+        for (let w = -1.45; w <= 1.45; w += 0.5) {
           const x = p.x + rx * w, z = p.z + rz * w;
-          const onBeam = aw >= 1.1 && aw <= 3.9;
-          if (onBeam) {
-            put(x, y, z, aw > 3.5 || aw < 1.5 ? guideSideId : guideBeamId);
-            put(x, y - 1, z, guideSideId);
-          } else if (aw < 1.1 && k % 6 === 0) put(x, y, z, guideSideId);
-          if (aw <= 1.6) { put(x, y - 1, z, guideSideId); put(x, y - 2, z, guideSideId); }
+          put(x, y - 1, z, guideSideId);
+          put(x, y - 2, z, guideUnderId);
         }
-        if (k + 1 < n) {
-          const q = pts[k + 1];
-          const yh0 = Math.floor(p.h * 8) * M + 1, yh1 = Math.floor(q.h * 8) * M + 1;
-          for (const sg of [-1, 1]) {
-            for (const off of [1.7, 3.3]) {
-              const w = sg * off;
-              microLine({ x: p.x + rx * w, y: yh0, z: p.z + rz * w }, { x: q.x + rx * w, y: yh1, z: q.z + rz * w }, C.railSilver, 'normal', 0, 1);
+        if (k + 1 >= n) continue;
+        const q = pts[k + 1];
+        const dx = q.x - p.x, dz = q.z - p.z;
+        const len2 = dx * dx + dz * dz || 1;
+        const len = Math.sqrt(len2);
+        const rrx = -dz / len, rrz = dx / len;
+        const dh = q.h - p.h;
+        const isSloping = Math.abs(dh) > 1e-4;
+        const ix0 = Math.max(0, Math.floor((Math.min(p.x, q.x) - 4.5 - ox) * 8));
+        const ix1 = Math.min(mw - 1, Math.ceil((Math.max(p.x, q.x) + 4.5 - ox) * 8));
+        const iz0 = Math.max(0, Math.floor((Math.min(p.z, q.z) - 4.5 - oz) * 8));
+        const iz1 = Math.min(md - 1, Math.ceil((Math.max(p.z, q.z) + 4.5 - oz) * 8));
+        const isCrossTie = k % 6 === 0;
+        const isPost = k % 5 === 0;
+        const isCoilLit = k % 2 === 0;
+
+        for (let iz = iz0; iz <= iz1; iz++) {
+          const wz = oz + (iz + 0.5) * M;
+          const rz0 = wz - p.z;
+          for (let ix = ix0; ix <= ix1; ix++) {
+            const wx = ox + (ix + 0.5) * M;
+            const rx0 = wx - p.x;
+            const t = (rx0 * dx + rz0 * dz) / len2;
+            if (t < -0.04 || t > 1.04) continue;
+            const w = rx0 * rrx + rz0 * rrz;
+            const aw = Math.abs(w);
+            if (aw > 4.2) continue;
+            const tc = t < 0 ? 0 : t > 1 ? 1 : t;
+            const h8 = Math.round((p.h + dh * tc) * 8);
+            const iyTop = h8 + 7;
+
+            if (aw >= 1.05 && aw <= 4.05) {
+              const isEdge = aw > 3.72 || aw < 1.32;
+              const isRail = Math.abs(aw - 1.75) < 0.09 || Math.abs(aw - 3.25) < 0.09;
+              const isCoil = Math.abs(aw - 2.5) < 0.14;
+              microRaw(ix, iyTop, iz, isEdge ? valTubeTitanium : valTubeWhite);
+              if (isEdge) {
+                for (let d2 = 1; d2 <= 3; d2++) microRaw(ix, iyTop - d2, iz, d2 === 3 ? valGirderShade : valGirder);
+              } else {
+                microRaw(ix, iyTop - 3, iz, valGirderShade);
+                if (isSloping) microRawIfEmpty(ix, iyTop - 1, iz, valTubeWhite);
+              }
+              if (isRail) microRaw(ix, iyTop + 1, iz, valRailSilver);
+              else if (isCoil && isCoilLit) microRaw(ix, iyTop + 1, iz, valRailGlow);
+            } else if (isCrossTie && aw < 1.05) {
+              microRaw(ix, iyTop - 1, iz, valGirder);
+              microRaw(ix, iyTop - 2, iz, valGirderShade);
             }
-            const wg = sg * 2.5;
-            if (k % 2 === 0) microLine({ x: p.x + rx * wg, y: yh0, z: p.z + rz * wg }, { x: q.x + rx * wg, y: yh1, z: q.z + rz * wg }, 0x6fe6ff, 'emissive', 46, 1);
-            // Sleek 0.125 m translucent wind-screen along both outer guideway flanks!
-            const wf = sg * 4.1;
-            const isPost = k % 5 === 0;
-            for (let ly = 0; ly < 5; ly++) {
-              microLine(
-                { x: p.x + rx * wf, y: yh0 + ly * M, z: p.z + rz * wf },
-                { x: q.x + rx * wf, y: yh1 + ly * M, z: q.z + rz * wf },
-                isPost ? C.titanium : C.railingGlass, isPost ? 'normal' : 'translucent', isPost ? 0 : railingGlassTrans, 1,
-              );
+            // Razor-thin 0.125 m translucent wind-screen along both outer guideway flanks.
+            if (aw >= 4.02 && aw <= 4.18) {
+              for (let ly = 1; ly <= 5; ly++) {
+                microRaw(ix, iyTop + ly, iz, isPost ? valTubeTitanium : valWindGlass);
+              }
+              microRaw(ix, iyTop + 6, iz, valTubeWhite);
             }
-            microLine({ x: p.x + rx * wf, y: yh0 + 5 * M, z: p.z + rz * wf }, { x: q.x + rx * wf, y: yh1 + 5 * M, z: q.z + rz * wf }, C.titanium, 'normal', 0, 1);
           }
         }
       }
@@ -3412,20 +3493,20 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
     const ground = terrainAt(py.x, py.z);
     const px0 = Math.round(py.x), pz0 = Math.round(py.z);
     if (py.kind === 'track') {
-      const top = Math.round(py.y) - 3;
+      const top = Math.floor(py.y) - 3;
       boxId(px0 - 1, ground - 3, pz0 - 1, 2, Math.max(0, top - ground + 3), 2, pierId);
-      for (let w = -4.5; w <= 4.5; w += 0.5) {
+      for (let w = -4.2; w <= 4.2; w += 0.5) {
         put(py.x - py.tz * w, top, py.z + py.tx * w, pierCapId);
-        put(py.x - py.tz * w, top - 1, py.z + py.tx * w, Math.abs(w) < 3 ? pierCapId : 0);
+        put(py.x - py.tz * w, top - 1, py.z + py.tx * w, Math.abs(w) < 2.6 ? pierCapId : 0);
       }
       continue;
     }
-    // Sculpted tube pylon: tapered banded column rising into a titanium cradle ring.
+    // Sculpted tube pylon: tapered banded architectural column + precision 0.125 m aerospace saddle cradle!
     const R = TUBE_R;
-    const cradleBottom = Math.floor(py.y - R - 3);
+    const cradleBottom = Math.floor(py.y - R - 3.2);
     for (let y = Math.max(0, ground - 8); y <= cradleBottom && y < ceiling; y++) {
       const t = clamp((cradleBottom - y) / Math.max(12, cradleBottom - ground));
-      const hw = Math.round(3 + t * 2.5), hd = Math.round(2.5 + t * 2);
+      const hw = Math.round(2.5 + t * 2.5), hd = Math.round(2 + t * 2);
       const band = y % 6 === 0;
       for (let dz = -hd; dz <= hd; dz++) {
         for (let dx = -hw; dx <= hw; dx++) {
@@ -3435,25 +3516,53 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
         }
       }
     }
-    const pad = R + 3.5;
+    // Precision 0.125 m sculpted clamp collar, aerodynamic lower nacelle saddle & flared transition haunch.
     const tl = Math.hypot(py.tx, py.tz) || 1;
     const ftx = py.tx / tl, ftz = py.tz / tl;
     const fbx = ftz, fbz = -ftx;
-    for (let y = Math.max(0, Math.floor(py.y - pad - 4)); y <= Math.min(ceiling - 1, Math.ceil(py.y + pad)); y++) {
-      for (let z = Math.floor(py.z - pad - 4); z <= Math.ceil(py.z + pad + 4); z++) {
-        for (let x = Math.floor(py.x - pad - 4); x <= Math.ceil(py.x + pad + 4); x++) {
-          const rx = x + 0.5 - py.x, ry = y + 0.5 - py.y, rz = z + 0.5 - py.z;
-          const along = rx * ftx + rz * ftz;
-          if (Math.abs(along) > 4.8) continue;
-          const bb = rx * fbx + rz * fbz;
-          const u = ry;
-          const d = Math.hypot(bb, u);
-          const inRing = d >= R - 0.1 && d <= R + 2 && (Math.abs(along) < 4 || u < 1.4);
-          const inHaunch = u < -R * 0.42 && u > -R - 4.6 && Math.abs(bb) < R + 1.6 - (-u - R * 0.42) * 0.42 && Math.abs(along) < 3.6;
-          if (!inRing && !inHaunch) continue;
-          const isGroove = Math.abs(along) > 1.5 && Math.abs(along) < 2.6 && d > R + 0.7;
-          const isTrim = Math.abs(along) < 0.7 && Math.abs(u) < 1.2 && d > R + 1.1;
-          put(x, y, z, isTrim ? collarLightId : isGroove ? steelDarkId : d > R + 1 ? whiteId : titaniumId);
+    for (let al = -2.5; al <= 2.51; al += 0.118) {
+      const aAl = Math.abs(al);
+      const cx = py.x + ftx * al, cz = py.z + ftz * al;
+      const inClamp = aAl <= 0.82;
+      const saddleT = clamp(1 - aAl / 2.55);
+      const saddleDr = Math.max(1, Math.round(1 + saddleT * 7));
+      for (let a = 0; a < TUBE_ANG_N; a++) {
+        const ca = tubeCos[a], sa = tubeSin[a];
+        if (!inClamp && sa > -0.14) continue;
+        const maxDr = inClamp ? (aAl < 0.25 ? 6 : 8) : saddleDr;
+        const isSideGlow = inClamp && aAl < 0.35 && Math.abs(sa) < 0.16;
+        const isGroove = inClamp && aAl > 0.3 && aAl < 0.55;
+        for (let dr = 1; dr <= maxDr; dr++) {
+          if (dr < maxDr && aAl < 2.25 && !(inClamp && aAl > 0.68)) {
+            // Only fill surface skin & end caps of saddle/clamp to keep voxel count lean!
+            if (dr > 1) continue;
+          }
+          const rr = R + dr * M;
+          const wx = cx + fbx * ca * rr, wy = py.y + sa * rr, wz = cz + fbz * ca * rr;
+          const val = dr === maxDr
+            ? (isSideGlow ? valCollarGlow : isGroove ? valTubeSteel : valTubeWhite)
+            : valTubeTitanium;
+          microWorld(wx, wy, wz, val);
+        }
+      }
+    }
+    // Curved 0.125 m structural haunch flaring cleanly from the pylon shaft up into the cradle belly.
+    const yHaunch0 = cradleBottom + 1;
+    const yHaunch1 = py.y - R * 0.42;
+    for (let yy = yHaunch0; yy <= yHaunch1; yy += M) {
+      const u = yy - py.y;
+      const fH = clamp((yy - yHaunch0) / Math.max(0.5, yHaunch1 - yHaunch0));
+      const maxB = 2.6 + fH * 3.8;
+      const maxAl = 1.9 + fH * 0.45;
+      for (let al = -maxAl; al <= maxAl + 1e-4; al += 0.125) {
+        const isAlEdge = Math.abs(al) > maxAl - 0.18;
+        for (let bb = -maxB; bb <= maxB + 1e-4; bb += 0.125) {
+          const isBEdge = Math.abs(bb) > maxB - 0.2;
+          if (!isAlEdge && !isBEdge) continue;
+          if (Math.hypot(bb, u) < R + 0.05) continue;
+          const isRib = Math.abs(al) < 0.2 || Math.abs(Math.abs(al) - 1.1) < 0.16;
+          const wx = py.x + ftx * al + fbx * bb, wz = py.z + ftz * al + fbz * bb;
+          microWorld(wx, yy, wz, isRib ? valTubeWhite : isAlEdge ? valTubeTitanium : valTubeTitMid);
         }
       }
     }
@@ -3682,13 +3791,6 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
   const opq = new Uint8Array(palette.length);
   for (let q = 1; q < palette.length; q++) opq[q] = palette[q].material !== 'translucent' ? 1 : 0;
   let standardCount = 0, translucentCount = 0, emissiveCount = 0;
-  const emit = (v: WeaveVoxel) => {
-    voxels.push(v);
-    const i = Math.min(width - 1, Math.max(0, Math.floor(v.x + width / 2))) + Math.min(depth - 1, Math.max(0, Math.floor(v.z + depth / 2))) * width;
-    if (v.y + v.sizeY > heights[i]) heights[i] = v.y + v.sizeY;
-    if (v.material === 'translucent') translucentCount++;
-    else if (v.material === 'emissive') emissiveCount++;
-  };
   const hx = width / 2, hz = depth / 2;
   for (let y = 0; y < ceiling; y++) {
     const yInner = y > 0 && y < ceiling - 1;
@@ -3726,6 +3828,7 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
     const rem = bKey - by * layer;
     const bz = Math.floor(rem / width);
     const bx = rem - bz * width;
+    const hi = bx + bz * width;
     const baseIx = bx << 3, baseIy = by << 3, baseIz = bz << 3;
     for (let slot = 0; slot < 512; slot++) {
       const val = brick[slot];
@@ -3741,13 +3844,17 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
       if (mid >= SPACE_MATERIAL_IDS.TRANSLUCENT_MIN && mid <= SPACE_MATERIAL_IDS.TRANSLUCENT_MAX) {
         material = 'translucent';
         transparency = mid - 1;
+        translucentCount++;
       } else if (mid >= SPACE_MATERIAL_IDS.EMISSIVE_MIN && mid <= SPACE_MATERIAL_IDS.EMISSIVE_MAX) {
         material = 'emissive';
         emission = mid - 101;
+        emissiveCount++;
       }
-      emit({
+      const vy = iy * M;
+      if (vy + M > heights[hi]) heights[hi] = vy + M;
+      voxels.push({
         x: ix * M + M / 2 - hx,
-        y: iy * M,
+        y: vy,
         z: iz * M + M / 2 - hz,
         sizeX: M,
         sizeY: M,
@@ -3825,8 +3932,8 @@ export function generateSkyweaveInterchange(config: WeaveConfig) {
     const side = Math.hypot(p.x - p.tz * 40 - cxw, p.z + p.tx * 40 - czw) < Math.hypot(p.x + p.tz * 40 - cxw, p.z - p.tx * 40 - czw) ? 1 : -1;
     landmarkViews.push({
       label: `glass tube ${tubeSpan.id}`,
-      position: local(clampIn({ x: p.x - p.tx * 30 - p.tz * 40 * side, y: p.h + 8, z: p.z - p.tz * 30 + p.tx * 40 * side })),
-      target: local({ x: p.x + p.tx * 12, y: p.h - 3, z: p.z + p.tz * 12 }),
+      position: local(clampIn({ x: p.x - p.tx * 24 - p.tz * 22 * side, y: p.h + 5.5, z: p.z - p.tz * 24 + p.tx * 22 * side })),
+      target: local({ x: p.x + p.tx * 18, y: p.h - 1.5, z: p.z + p.tz * 18 }),
     });
   }
   const diamondSeg = plan.segments.find(sg => sg.diamonds.length && sg.diamondAt && inside(sg.deck.pts[Math.round(sg.diamondAt.s)].x, sg.deck.pts[Math.round(sg.diamondAt.s)].z, 30));
